@@ -43,6 +43,7 @@ pub fn bench_bitpacking(c: &mut Criterion) {
                 (bits, &data32[start..start + values])
             },
             |(bits, data)| {
+                out.clear();
                 let mut w = BitWriter::new(&mut out);
                 for &x in data {
                     w.write(x, bits);
