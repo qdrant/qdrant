@@ -108,7 +108,9 @@ fn basic_gpu_test() {
     // Third step: create computation pipeline.
 
     // Compile shader code to SPIR-V.
-    let spirv = instance.compile_shader(SHADER_CODE, None, None).unwrap();
+    let spirv = instance
+        .compile_shader(SHADER_CODE, "shader.glsl", None, None)
+        .unwrap();
     // Create shader.
     let shader = crate::Shader::new(device.clone(), &spirv).unwrap();
 

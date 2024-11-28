@@ -249,6 +249,7 @@ impl Instance {
     pub fn compile_shader(
         &self,
         shader: &str,
+        shader_name: &str,
         defines: Option<&HashMap<String, Option<String>>>,
         includes: Option<&HashMap<String, String>>,
     ) -> GpuResult<Vec<u8>> {
@@ -293,7 +294,7 @@ impl Instance {
             .compile_into_spirv(
                 shader,
                 shaderc::ShaderKind::Compute,
-                "shader.glsl",
+                shader_name,
                 "main",
                 Some(&options),
             )

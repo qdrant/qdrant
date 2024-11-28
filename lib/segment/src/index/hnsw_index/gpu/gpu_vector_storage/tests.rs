@@ -570,6 +570,7 @@ fn test_gpu_vector_storage_impl(
     )
     .unwrap();
 
+    assert_eq!(gpu_vector_storage.num_vectors(), num_vectors);
     assert_eq!(
         gpu_vector_storage.element_type,
         if let Some(_quantization_config) = quantization_config.as_ref() {
@@ -610,7 +611,7 @@ fn test_gpu_vector_storage_impl(
     let shader = ShaderBuilder::new(device.clone())
         .with_shader_code(include_str!("../shaders/tests/test_vector_storage.comp"))
         .with_parameters(&gpu_vector_storage)
-        .build()
+        .build("tests/test_vector_storage.comp")
         .unwrap();
 
     let pipeline = gpu::Pipeline::builder()

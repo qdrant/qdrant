@@ -1,0 +1,47 @@
+#ifndef VISITED_FLAGS_HEADER
+#define VISITED_FLAGS_HEADER
+
+#ifndef VISITED_FLAGS_LAYOUT_SET
+#error "VISITED_FLAGS_LAYOUT_SET not defined"
+#endif
+
+#include "common.comp"
+#include "vector_storage.comp"
+
+layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 0)
+readonly uniform VisitedFlagsParams {
+    uint generation;
+} visited_flags_params;
+
+layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 1)
+buffer VisitedFlagsBuffer {
+    uint8_t data[];
+} visited_flags;
+
+#ifdef VISITED_FLAGS_REMAP
+layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 2)
+buffer VisitedFlagsRemapBuffer {
+    POINT_ID data[];
+} visited_flags_remap;
+#endif
+
+#define BYTE_MASK 0xFF
+#define VISITED_GENERATION visited_flags_params.generation
+
+bool check_visited(POINT_ID point_id) {
+    #ifdef VISITED_FLAGS_REMAP
+    point_id = visited_flags_remap.data[point_id];
+    #endif
+
+    uint subgroup_index = SUBGROUP_ID;
+    uint index = subgroup_index * VISITED_FLAGS_CAPACITY + point_id % VISITED_FLAGS_CAPACITY;
+    uint prev_generation = uint(visited_flags.data[index]);
+    if (prev_generation == VISITED_GENERATION) {
+        return true;
+    } else {
+        visited_flags.data[index] = uint8_t(VISITED_GENERATION);
+        return false;
+    }
+}
+
+#endif

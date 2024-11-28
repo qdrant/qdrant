@@ -54,10 +54,11 @@ impl ShaderBuilder {
         self
     }
 
-    pub fn build(&self) -> OperationResult<Arc<gpu::Shader>> {
+    pub fn build(&self, shader_name: &str) -> OperationResult<Arc<gpu::Shader>> {
         let timer = std::time::Instant::now();
         let compiled = self.device.instance().compile_shader(
             &self.shader_code,
+            shader_name,
             Some(&self.defines),
             Some(&self.includes),
         )?;
