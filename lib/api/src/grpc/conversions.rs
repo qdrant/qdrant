@@ -1709,8 +1709,10 @@ pub fn into_named_vector_struct(
         Some(indices) => NamedVectorStruct::Sparse(NamedSparseVector {
             name: vector_name
                 .ok_or_else(|| Status::invalid_argument("Sparse vector must have a name"))?,
-            vector: SparseVector::new(indices.data, vector).map_err(|_| {
-                Status::invalid_argument("Sparse indices does not match sparse vector conditions")
+            vector: SparseVector::new(indices.data, vector).map_err(|e| {
+                Status::invalid_argument(format!(
+                    "Sparse indices does not match sparse vector conditions: {e}"
+                ))
             })?,
         }),
         None => {
@@ -1957,10 +1959,10 @@ impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
 
         if let Some(sparse_indices) = &search_points.sparse_indices {
             validate_sparse_vector_impl(&sparse_indices.data, &search_points.vector).map_err(
-                |_| {
-                    Status::invalid_argument(
-                        "Sparse indices does not match sparse vector conditions",
-                    )
+                |e| {
+                    Status::invalid_argument(format!(
+                        "Sparse indices does not match sparse vector conditions: {e}"
+                    ))
                 },
             )?;
         }

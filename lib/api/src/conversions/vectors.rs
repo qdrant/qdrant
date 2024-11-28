@@ -464,12 +464,11 @@ impl TryFrom<grpc::Vector> for VectorInternal {
         // sparse vector
         if let Some(indices) = vector.indices {
             return Ok(VectorInternal::Sparse(
-                sparse::common::sparse_vector::SparseVector::new(indices.data, vector.data)
-                    .map_err(|e| {
-                        Status::invalid_argument(format!(
-                            "Sparse indices does not match sparse vector conditions: {e}"
-                        ))
-                    })?,
+                SparseVector::new(indices.data, vector.data).map_err(|e| {
+                    Status::invalid_argument(format!(
+                        "Sparse indices does not match sparse vector conditions: {e}"
+                    ))
+                })?,
             ));
         }
 
