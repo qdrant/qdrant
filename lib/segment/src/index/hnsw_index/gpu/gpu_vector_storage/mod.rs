@@ -34,6 +34,8 @@ pub const STORAGES_COUNT: usize = 4;
 
 /// GPU storage for vectors.
 pub struct GpuVectorStorage {
+    device: Arc<gpu::Device>,
+    num_vectors: usize,
     descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     descriptor_set: Arc<gpu::DescriptorSet>,
     dim: usize,
@@ -161,27 +163,58 @@ impl GpuVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match quantized_storage {
-            QuantizedVectorStorage::ScalarRam(quantized_storage) => {
-                Self::new_sq(device.clone(), distance, quantized_storage, None, stopped)
-            }
-            QuantizedVectorStorage::ScalarMmap(quantized_storage) => {
-                Self::new_sq(device.clone(), distance, quantized_storage, None, stopped)
-            }
-            QuantizedVectorStorage::PQRam(quantized_storage) => {
-                Self::new_pq(device.clone(), distance, quantized_storage, None, stopped)
-            }
-            QuantizedVectorStorage::PQMmap(quantized_storage) => {
-                Self::new_pq(device.clone(), distance, quantized_storage, None, stopped)
-            }
-            QuantizedVectorStorage::BinaryRam(quantized_storage) => {
-                Self::new_bq(device.clone(), distance, quantized_storage, None, stopped)
-            }
-            QuantizedVectorStorage::BinaryMmap(quantized_storage) => {
-                Self::new_bq(device.clone(), distance, quantized_storage, None, stopped)
-            }
+            QuantizedVectorStorage::ScalarRam(quantized_storage) => Self::new_sq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::ScalarMmap(quantized_storage) => Self::new_sq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::PQRam(quantized_storage) => Self::new_pq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::PQMmap(quantized_storage) => Self::new_pq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::BinaryRam(quantized_storage) => Self::new_bq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
+            QuantizedVectorStorage::BinaryMmap(quantized_storage) => Self::new_bq(
+                device.clone(),
+                distance,
+                quantized_storage.vectors_count(),
+                quantized_storage,
+                None,
+                stopped,
+            ),
             QuantizedVectorStorage::ScalarRamMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
+                quantized_storage.vectors_count(),
                 quantized_storage.inner_storage(),
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
@@ -189,6 +222,7 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::ScalarMmapMulti(quantized_storage) => Self::new_sq(
                 device.clone(),
                 distance,
+                quantized_storage.vectors_count(),
                 quantized_storage.inner_storage(),
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
@@ -196,6 +230,7 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::PQRamMulti(quantized_storage) => Self::new_pq(
                 device.clone(),
                 distance,
+                quantized_storage.vectors_count(),
                 quantized_storage.inner_storage(),
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
@@ -203,6 +238,7 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::PQMmapMulti(quantized_storage) => Self::new_pq(
                 device.clone(),
                 distance,
+                quantized_storage.vectors_count(),
                 quantized_storage.inner_storage(),
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
@@ -210,6 +246,7 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::BinaryRamMulti(quantized_storage) => Self::new_bq(
                 device.clone(),
                 distance,
+                quantized_storage.vectors_count(),
                 quantized_storage.inner_storage(),
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
@@ -217,6 +254,7 @@ impl GpuVectorStorage {
             QuantizedVectorStorage::BinaryMmapMulti(quantized_storage) => Self::new_bq(
                 device.clone(),
                 distance,
+                quantized_storage.vectors_count(),
                 quantized_storage.inner_storage(),
                 Some(GpuMultivectors::new_quantized(device, quantized_storage)?),
                 stopped,
@@ -227,6 +265,7 @@ impl GpuVectorStorage {
     pub fn new_sq<TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         distance: Distance,
+        num_vectors: usize,
         quantized_storage: &EncodedVectorsU8<TStorage>,
         multivectors: Option<GpuMultivectors>,
         stopped: &AtomicBool,
@@ -235,6 +274,7 @@ impl GpuVectorStorage {
             device.clone(),
             distance,
             quantized_storage.vectors_count(),
+            num_vectors,
             quantized_storage.get_quantized_vector(0).1.len(),
             (0..quantized_storage.vectors_count()).map(|id| {
                 let (_, vector) = quantized_storage.get_quantized_vector(id as PointOffsetType);
@@ -249,6 +289,7 @@ impl GpuVectorStorage {
     fn new_pq<TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         distance: Distance,
+        num_vectors: usize,
         quantized_storage: &EncodedVectorsPQ<TStorage>,
         multivectors: Option<GpuMultivectors>,
         stopped: &AtomicBool,
@@ -257,6 +298,7 @@ impl GpuVectorStorage {
             device.clone(),
             distance,
             quantized_storage.vectors_count(),
+            num_vectors,
             quantized_storage.get_quantized_vector(0).len(),
             (0..quantized_storage.vectors_count()).map(|id| {
                 let vector = quantized_storage.get_quantized_vector(id as PointOffsetType);
@@ -271,6 +313,7 @@ impl GpuVectorStorage {
     fn new_bq<T: BitsStoreType, TStorage: EncodedStorage>(
         device: Arc<gpu::Device>,
         distance: Distance,
+        num_vectors: usize,
         quantized_storage: &EncodedVectorsBin<T, TStorage>,
         multivectors: Option<GpuMultivectors>,
         stopped: &AtomicBool,
@@ -279,6 +322,7 @@ impl GpuVectorStorage {
             device.clone(),
             distance,
             quantized_storage.vectors_count(),
+            num_vectors,
             quantized_storage.get_quantized_vector(0).len(),
             (0..quantized_storage.vectors_count()).map(|id| {
                 Cow::Borrowed(quantized_storage.get_quantized_vector(id as PointOffsetType))
@@ -397,6 +441,7 @@ impl GpuVectorStorage {
                 device,
                 vector_storage.distance(),
                 vector_storage.total_vector_count(),
+                vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
@@ -420,6 +465,7 @@ impl GpuVectorStorage {
         Self::new_typed::<TElement>(
             device,
             vector_storage.distance(),
+            vector_storage.total_vector_count(),
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
             (0..vector_storage.total_vector_count())
@@ -447,6 +493,7 @@ impl GpuVectorStorage {
                             .vectors_count()
                     })
                     .sum(),
+                vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 vector_storage.iterate_inner_vectors().map(|vector| {
                     VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(vector))
@@ -475,6 +522,7 @@ impl GpuVectorStorage {
                         .vectors_count()
                 })
                 .sum(),
+            vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
             vector_storage.iterate_inner_vectors().map(Cow::Borrowed),
             None,
@@ -487,7 +535,8 @@ impl GpuVectorStorage {
     fn new_typed<'a, TElement: PrimitiveVectorElement>(
         device: Arc<gpu::Device>,
         distance: Distance,
-        count: usize,
+        dense_count: usize,
+        num_vectors: usize,
         dim: usize,
         vectors: impl Iterator<Item = Cow<'a, [TElement]>> + Clone,
         quantization: Option<GpuQuantization>,
@@ -501,7 +550,7 @@ impl GpuVectorStorage {
         let gpu_vector_size = gpu_vector_capacity * std::mem::size_of::<TElement>();
         let upload_points_count = UPLOAD_CHUNK_SIZE / gpu_vector_size;
 
-        let points_in_storage_count = Self::points_in_storage_count(count);
+        let points_in_storage_count = Self::points_in_storage_count(dense_count);
         let vectors_buffer: Vec<Arc<gpu::Buffer>> = (0..STORAGES_COUNT)
             .map(|_| -> gpu::GpuResult<Arc<gpu::Buffer>> {
                 gpu::Buffer::new(
@@ -602,7 +651,7 @@ impl GpuVectorStorage {
         );
 
         let descriptor_set_layout =
-            Self::create_descriptor_set_layout(device, &quantization, &multivectors)?;
+            Self::create_descriptor_set_layout(device.clone(), &quantization, &multivectors)?;
         let descriptor_set = Self::create_descriptor_set(
             descriptor_set_layout.clone(),
             &vectors_buffer,
@@ -611,9 +660,11 @@ impl GpuVectorStorage {
         )?;
 
         Ok(Self {
+            device,
             descriptor_set_layout,
             descriptor_set,
             dim: gpu_vector_capacity,
+            num_vectors,
             element_type: TElement::datatype(),
             distance,
             quantization,
@@ -688,5 +739,13 @@ impl GpuVectorStorage {
 
     pub fn descriptor_set(&self) -> Arc<gpu::DescriptorSet> {
         self.descriptor_set.clone()
+    }
+
+    pub fn device(&self) -> Arc<gpu::Device> {
+        self.device.clone()
+    }
+
+    pub fn num_vectors(&self) -> usize {
+        self.num_vectors
     }
 }

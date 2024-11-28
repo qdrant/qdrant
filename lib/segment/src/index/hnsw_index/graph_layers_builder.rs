@@ -101,6 +101,32 @@ impl GraphLayersBuilder {
         })
     }
 
+    #[cfg(feature = "gpu")]
+    pub fn m(&self) -> usize {
+        self.m
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn m0(&self) -> usize {
+        self.m0
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn ef_construct(&self) -> usize {
+        self.ef_construct
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn links_layers(&self) -> &[LockedLayersContainer] {
+        &self.links_layers
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn clear_ready_list(&mut self) {
+        let num_vectors = self.num_points();
+        self.ready_list = RwLock::new(BitVec::repeat(true, num_vectors));
+    }
+
     pub fn new_with_params(
         num_vectors: usize, // Initial number of points in index
         m: usize,           // Expected M for non-first layer
@@ -206,7 +232,7 @@ impl GraphLayersBuilder {
         picked_level.round() as usize
     }
 
-    fn get_point_level(&self, point_id: PointOffsetType) -> usize {
+    pub(crate) fn get_point_level(&self, point_id: PointOffsetType) -> usize {
         self.links_layers[point_id as usize].len() - 1
     }
 
@@ -286,7 +312,7 @@ impl GraphLayersBuilder {
     }
 
     /// <https://github.com/nmslib/hnswlib/issues/99>
-    fn select_candidates_with_heuristic<F>(
+    pub(crate) fn select_candidates_with_heuristic<F>(
         candidates: FixedLengthPriorityQueue<ScoredPointOffset>,
         m: usize,
         score_internal: F,
