@@ -9,6 +9,7 @@ pub mod iterator_ext;
 pub mod math;
 pub mod mmap_hashmap;
 pub mod panic;
+pub mod rate_limiting;
 pub mod tar_ext;
 pub mod tempfile_ext;
 pub mod top_k;

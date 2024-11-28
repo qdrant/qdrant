@@ -39,6 +39,9 @@ impl ShardOperation for LocalShard {
         mut operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
+        // Check write rate limiter before proceeding
+        self.check_write_rate_limiter()?;
+
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
 
@@ -119,6 +122,8 @@ impl ShardOperation for LocalShard {
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter()?;
         match order_by {
             None => {
                 self.scroll_by_id(
@@ -172,6 +177,8 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter()?;
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
@@ -183,6 +190,8 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         _hw_measurement_acc: &HwMeasurementAcc, // TODO: measure hardware when counting
     ) -> CollectionResult<CountResult> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter()?;
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
             let all_points = tokio::time::timeout(
@@ -208,6 +217,8 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter()?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
@@ -238,6 +249,8 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter()?;
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
         self.do_planned_query(
@@ -255,6 +268,8 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
     ) -> CollectionResult<FacetResponse> {
+        // Check read rate limiter before proceeding
+        self.check_read_rate_limiter()?;
         let hits = if request.exact {
             self.exact_facet(request, search_runtime_handle, timeout)
                 .await?
