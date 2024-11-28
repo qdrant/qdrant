@@ -1,3 +1,7 @@
+use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter};
+use std::iter;
+
 use api::rest::{
     DenseVector, MultiDenseVector, ShardKeySelector, VectorOutput, VectorStructOutput,
 };
@@ -13,9 +17,6 @@ use segment::data_types::vectors::{
 };
 use segment::types::{Filter, Payload, PointIdType};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Debug, Formatter};
-use std::iter;
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationErrors};
 
