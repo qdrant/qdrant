@@ -446,6 +446,10 @@ pub(crate) fn sync_points(
             }
         })?;
 
+    // Deduplicate points to update, we only have to update each once
+    points_to_update.sort_by_key(|p| p.id);
+    points_to_update.dedup_by_key(|p| p.id);
+
     // 4. Select new points
     let num_updated = points_to_update.len();
     let mut num_new = 0;
