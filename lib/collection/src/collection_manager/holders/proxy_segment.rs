@@ -259,7 +259,7 @@ impl ProxySegment {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (point_id, _on_num) in deleted_points.iter() {
+                    for point_id in deleted_points.keys() {
                         wrapped_segment.delete_point(op_num, *point_id)?;
                     }
                     OperationResult::Ok(())
@@ -349,7 +349,7 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn point_version(&self, point_id: PointIdType) -> Option<SeqNumberType> {
-        // Write version is always higher if presence
+        // Write version is always higher if present
         self.write_segment
             .get()
             .read()
@@ -1127,7 +1127,7 @@ impl SegmentEntry for ProxySegment {
     ) -> OperationResult<()> {
         log::info!("Taking a snapshot of a proxy segment");
 
-        // snapshot wrapped segment data into the temporary dir
+        // Snapshot wrapped segment data into the temporary dir
         self.wrapped_segment.get().read().take_snapshot(
             temp_path,
             tar,
@@ -1135,8 +1135,7 @@ impl SegmentEntry for ProxySegment {
             snapshotted_segments,
         )?;
 
-        // snapshot write_segment
-        // Write segment is not unique to the proxy segment, therefore it might overwrite an existing snapshot.
+        // Snapshot write_segment
         self.write_segment.get().read().take_snapshot(
             temp_path,
             tar,
