@@ -1,11 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter};
 use std::iter;
 
 use api::rest::{
     DenseVector, MultiDenseVector, ShardKeySelector, VectorOutput, VectorStructOutput,
 };
 use common::validation::validate_multi_vector;
-use itertools::izip;
+use itertools::{izip, Itertools};
 use schemars::JsonSchema;
 use segment::common::operation_error::OperationError;
 use segment::common::utils::transpose_map_into_named_vector;
@@ -49,12 +50,49 @@ pub enum WriteOrdering {
 /// Single vector data, as it is persisted in WAL
 /// Unlike [`Vector`], this struct only stores raw vectors, inferenced or resolved.
 /// Unlike [`VectorInternal`], is not optimized for search
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorPersisted {
     Dense(DenseVector),
     Sparse(sparse::common::sparse_vector::SparseVector),
     MultiDense(MultiDenseVector),
+}
+
+impl Debug for VectorPersisted {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VectorPersisted::Dense(vector) => {
+                let first_elements = vector.iter().take(4).join(", ");
+                write!(f, "Dense([{}, ... x {}])", first_elements, vector.len())
+            }
+            VectorPersisted::Sparse(vector) => {
+                let first_elements = vector
+                    .indices
+                    .iter()
+                    .zip(vector.values.iter())
+                    .take(4)
+                    .map(|(k, v)| format!("{k}->{v}"))
+                    .join(", ");
+                write!(
+                    f,
+                    "Sparse([{}, ... x {})",
+                    first_elements,
+                    vector.indices.len()
+                )
+            }
+            VectorPersisted::MultiDense(vector) => {
+                let first_vectors = vector
+                    .iter()
+                    .take(4)
+                    .map(|v| {
+                        let first_elements = v.iter().take(4).join(", ");
+                        format!("[{}, ... x {}]", first_elements, v.len())
+                    })
+                    .join(", ");
+                write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
+            }
+        }
+    }
 }
 
 impl Validate for VectorPersisted {
@@ -149,12 +187,42 @@ impl From<VectorPersisted> for VectorInternal {
 //                              gPRC Response
 
 /// Data structure for point vectors, as it is persisted in WAL
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorStructPersisted {
     Single(DenseVector),
     MultiDense(MultiDenseVector),
     Named(HashMap<String, VectorPersisted>),
+}
+
+impl Debug for VectorStructPersisted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            VectorStructPersisted::Single(vector) => {
+                let first_elements = vector.iter().take(4).join(", ");
+                write!(f, "Single([{}, ... x {}])", first_elements, vector.len())
+            }
+            VectorStructPersisted::MultiDense(vector) => {
+                let first_vectors = vector
+                    .iter()
+                    .take(4)
+                    .map(|v| {
+                        let first_elements = v.iter().take(4).join(", ");
+                        format!("[{}, ... x {}]", first_elements, v.len())
+                    })
+                    .join(", ");
+                write!(f, "MultiDense([{}, ... x {})", first_vectors, vector.len())
+            }
+            VectorStructPersisted::Named(vectors) => write!(f, "Named(( ")
+                .and_then(|_| {
+                    for (name, vector) in vectors {
+                        write!(f, "{name}: {vector:?}, ")?;
+                    }
+                    Ok(())
+                })
+                .and_then(|_| write!(f, "))")),
+        }
+    }
 }
 
 impl VectorStructPersisted {
