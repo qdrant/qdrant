@@ -1016,6 +1016,8 @@ pub enum CollectionError {
     StrictMode { description: String },
     #[error("{description}")]
     InferenceError { description: String },
+    #[error("Rate limiting exceeded: {description}")]
+    RateLimitExceeded { description: String },
 }
 
 impl CollectionError {
@@ -1105,6 +1107,7 @@ impl CollectionError {
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
             Self::PreConditionFailed { .. } => true,
+            Self::RateLimitExceeded { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,

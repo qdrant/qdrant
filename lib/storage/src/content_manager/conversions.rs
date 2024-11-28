@@ -28,8 +28,9 @@ impl From<StorageError> for tonic::Status {
             StorageError::Forbidden { .. } => tonic::Code::PermissionDenied,
             StorageError::PreconditionFailed { .. } => tonic::Code::FailedPrecondition,
             StorageError::InferenceError { .. } => tonic::Code::InvalidArgument,
+            StorageError::RateLimitExceeded { .. } => tonic::Code::ResourceExhausted,
         };
-        tonic::Status::new(error_code, format!("{error}"))
+        Status::new(error_code, format!("{error}"))
     }
 }
 

@@ -36,6 +36,8 @@ pub enum StorageError {
     PreconditionFailed { description: String }, // system is not in the state to perform the operation
     #[error("{description}")]
     InferenceError { description: String },
+    #[error("Rate limiting exceeded: {description}")]
+    RateLimitExceeded { description: String },
 }
 
 impl StorageError {
@@ -145,6 +147,9 @@ impl StorageError {
             CollectionError::InferenceError { description } => {
                 StorageError::InferenceError { description }
             }
+            CollectionError::RateLimitExceeded { description } => {
+                StorageError::RateLimitExceeded { description }
+            }
         }
     }
 }
@@ -196,6 +201,9 @@ impl From<CollectionError> for StorageError {
             CollectionError::StrictMode { description } => StorageError::Forbidden { description },
             CollectionError::InferenceError { description } => {
                 StorageError::InferenceError { description }
+            }
+            CollectionError::RateLimitExceeded { description } => {
+                StorageError::RateLimitExceeded { description }
             }
         }
     }
