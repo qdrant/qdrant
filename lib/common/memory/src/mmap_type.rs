@@ -391,7 +391,6 @@ impl MmapBitSlice {
     }
 }
 
-// 1111 1111 1111 1111
 impl Deref for MmapBitSlice {
     type Target = BitSlice;
 

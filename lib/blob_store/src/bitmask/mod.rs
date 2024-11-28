@@ -172,6 +172,7 @@ impl Bitmask {
         create_and_ensure_length(&self.path, new_length).unwrap();
         let mmap = open_write_mmap(&self.path, AdviceSetting::from(DEFAULT_ADVICE), false)
             .map_err(|err| err.to_string())?;
+
         self.bitslice = MmapBitSlice::try_from(mmap, 0).map_err(|err| err.to_string())?;
 
         // extend the region gaps
