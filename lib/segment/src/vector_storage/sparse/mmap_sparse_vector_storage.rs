@@ -132,15 +132,16 @@ impl MmapSparseVectorStorage {
 
     fn set_deleted_flag(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
         if (key as usize) < self.deleted.len() {
-            return Ok(self.deleted.set(key as usize, deleted));
+            return Ok(self.deleted.set(key, deleted));
         }
 
         // Bitslice is too small; grow and set the deletion flag, but only if we need to set it to true.
         if deleted {
             self.deleted.set_len(key as usize + BITSLICE_GROWTH_SLACK)?;
+            return Ok(self.deleted.set(key, true));
         }
 
-        Ok(self.deleted.set(key as usize, deleted))
+        Ok(false)
     }
 
     #[inline]
