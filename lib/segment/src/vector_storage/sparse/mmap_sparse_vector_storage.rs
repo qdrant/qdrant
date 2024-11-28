@@ -9,7 +9,7 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{self};
-use memory::mmap_type::{MmapBitSlice, MmapType};
+use memory::mmap_type::MmapType;
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -18,13 +18,13 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
+use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 
 const METADATA_FILENAME: &str = "metadata.dat";
-const DELETED_FILENAME: &str = "deleted.dat";
+const DELETED_DIRNAME: &str = "deleted";
 const STORAGE_DIRNAME: &str = "store";
 
-const DELETED_MMAP_ADVICE: AdviceSetting = AdviceSetting::Global;
 /// When resizing bitslice, grow by this extra amount.
 const BITSLICE_GROWTH_SLACK: usize = 1024;
 
@@ -46,29 +46,24 @@ struct Metadata {
 pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<BlobStore<SparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
-    deleted: MmapBitSlice,
+    deleted: DynamicMmapFlags,
     /// Other information about the storage, stored in a memory-mapped file.
     metadata: MmapType<Metadata>,
     path: PathBuf,
-    populate: bool,
 }
 
 impl MmapSparseVectorStorage {
     pub fn open_or_create(path: &Path) -> OperationResult<Self> {
-        // Don't preload mmaps.
-        // To be changed once we want to use this as the only sparse storage
-        const POPULATE_MMAPS: bool = false;
-
         let meta_path = path.join(METADATA_FILENAME);
         if meta_path.is_file() {
             // Storage already exists, open it
-            return Self::open(path, POPULATE_MMAPS);
+            return Self::open(path);
         }
 
-        Self::create(path, POPULATE_MMAPS)
+        Self::create(path)
     }
 
-    fn open(path: &Path, populate: bool) -> OperationResult<Self> {
+    fn open(path: &Path) -> OperationResult<Self> {
         let path = path.to_path_buf();
 
         // Storage
@@ -80,14 +75,13 @@ impl MmapSparseVectorStorage {
         })?;
 
         // Deleted flags
-        let deleted_path = path.join(DELETED_FILENAME);
-        let deleted_mmap = mmap_ops::open_write_mmap(&deleted_path, DELETED_MMAP_ADVICE, populate)?;
-        let deleted = MmapBitSlice::try_from(deleted_mmap, 0)?;
+        let deleted_path = path.join(DELETED_DIRNAME);
+        let deleted = DynamicMmapFlags::open(&deleted_path)?;
 
         // Metadata
         let metadata_path = path.join(METADATA_FILENAME);
         let metadata_mmap =
-            mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, populate)?;
+            mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, false)?;
         let metadata = unsafe { MmapType::try_from(metadata_mmap)? };
 
         Ok(Self {
@@ -95,11 +89,10 @@ impl MmapSparseVectorStorage {
             deleted,
             metadata,
             path,
-            populate,
         })
     }
 
-    fn create(path: &Path, populate: bool) -> OperationResult<Self> {
+    fn create(path: &Path) -> OperationResult<Self> {
         let path = path.to_path_buf();
 
         // Storage
@@ -112,18 +105,16 @@ impl MmapSparseVectorStorage {
         })?;
 
         // Deleted flags
-        let deleted_path = path.join(DELETED_FILENAME);
-        mmap_ops::create_and_ensure_length(&deleted_path, size_of::<usize>())?;
-        let deleted_mmap = mmap_ops::open_write_mmap(&deleted_path, DELETED_MMAP_ADVICE, populate)?;
-        let deleted = MmapBitSlice::try_from(deleted_mmap, 0)?;
+        let deleted_path = path.join(DELETED_DIRNAME);
+        let deleted = DynamicMmapFlags::open(&deleted_path)?;
 
         // Metadata
         let metadata_path = path.join(METADATA_FILENAME);
         mmap_ops::create_and_ensure_length(&metadata_path, size_of::<Metadata>())?;
         let metadata_mmap =
-            mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, populate)?;
+            mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, false)?;
         let mut metadata = unsafe { MmapType::try_from(metadata_mmap)? };
-        // initialize metadata
+        // Initialize metadata
         *metadata = Metadata {
             deleted_count: 0,
             next_point_offset: 0,
@@ -136,34 +127,20 @@ impl MmapSparseVectorStorage {
             deleted,
             metadata,
             path,
-            populate,
         })
     }
 
-    fn set_deleted_bitslice(
-        &mut self,
-        key: PointOffsetType,
-        deleted: bool,
-    ) -> OperationResult<bool> {
+    fn set_deleted_flag(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
         if (key as usize) < self.deleted.len() {
-            return Ok(unsafe { self.deleted.replace_unchecked(key as usize, deleted) });
+            return Ok(self.deleted.set(key as usize, deleted));
         }
 
+        // Bitslice is too small; grow and set the deletion flag, but only if we need to set it to true.
         if deleted {
-            // Bitslice is too small; grow and set the deletion flag.
-            let bitslice_path = self.path.join(DELETED_FILENAME);
-            unsafe {
-                self.deleted.extend(
-                    &bitslice_path,
-                    key as usize + BITSLICE_GROWTH_SLACK,
-                    DELETED_MMAP_ADVICE,
-                    self.populate,
-                )?;
-                return Ok(self.deleted.replace_unchecked(key as usize, deleted));
-            }
+            self.deleted.set_len(key as usize + BITSLICE_GROWTH_SLACK)?;
         }
 
-        Ok(false)
+        Ok(self.deleted.set(key as usize, deleted))
     }
 
     #[inline]
@@ -172,17 +149,17 @@ impl MmapSparseVectorStorage {
             return Ok(false);
         }
         // set deleted flag
-        let previously_deleted = self.set_deleted_bitslice(key, deleted)?;
+        let previous_value = self.set_deleted_flag(key, deleted)?;
 
         // update deleted_count if it changed
-        match (previously_deleted, deleted) {
+        match (previous_value, deleted) {
             (false, true) => self.metadata.deleted_count += 1,
             (true, false) => {
                 self.metadata.deleted_count = self.metadata.deleted_count.saturating_sub(1)
             }
             _ => {}
         }
-        Ok(previously_deleted)
+        Ok(previous_value)
     }
 
     fn update_stored(
@@ -318,10 +295,8 @@ impl VectorStorage for MmapSparseVectorStorage {
 
     fn files(&self) -> Vec<std::path::PathBuf> {
         let mut files = self.storage.read().files();
-        files.extend([
-            self.path.join(DELETED_FILENAME),
-            self.path.join(METADATA_FILENAME),
-        ]);
+        files.extend(self.deleted.files());
+        files.push(self.path.join(METADATA_FILENAME));
 
         files
     }
@@ -338,7 +313,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn is_deleted_vector(&self, key: common::types::PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+        self.deleted.get(key as usize)
     }
 
     fn deleted_vector_count(&self) -> usize {
@@ -346,7 +321,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
-        self.deleted.as_ref()
+        self.deleted.get_bitslice()
     }
 }
 
@@ -389,7 +364,7 @@ mod test {
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
 
-        assert_eq!(storage_files.len(), 7);
+        assert_eq!(storage_files.len(), 8);
         assert!(storage_files.iter().all(|f| f.exists()));
         assert_eq!(storage_files, existing_files);
     }
