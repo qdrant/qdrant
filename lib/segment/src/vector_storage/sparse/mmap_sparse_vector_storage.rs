@@ -313,7 +313,13 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        self.storage.read().files()
+        let mut files = self.storage.read().files();
+        files.extend([
+            self.path.join(DELETED_FILENAME),
+            self.path.join(METADATA_FILENAME),
+        ]);
+
+        files
     }
 
     fn delete_vector(
@@ -337,5 +343,50 @@ impl VectorStorage for MmapSparseVectorStorage {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         self.deleted.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashSet;
+    use std::path::{Path, PathBuf};
+
+    use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+    use crate::vector_storage::VectorStorage;
+
+    fn visit_files_recursively(dir: &Path, cb: &mut impl FnMut(PathBuf)) -> std::io::Result<()> {
+        if dir.is_dir() {
+            for entry in std::fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    visit_files_recursively(&path, cb)?;
+                } else {
+                    cb(entry.path());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_files_consistency() {
+        let tmp_dir = tempfile::Builder::new()
+            .prefix("test_storage")
+            .tempdir()
+            .unwrap();
+        let storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
+
+        let mut existing_files = HashSet::new();
+        visit_files_recursively(tmp_dir.path(), &mut |path| {
+            existing_files.insert(path);
+        })
+        .unwrap();
+
+        let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
+
+        assert_eq!(storage_files.len(), 7);
+        assert!(storage_files.iter().all(|f| f.exists()));
+        assert_eq!(storage_files, existing_files);
     }
 }
