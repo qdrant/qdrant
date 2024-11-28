@@ -302,12 +302,16 @@ impl VectorStorage for MmapSparseVectorStorage {
 
     fn flusher(&self) -> crate::common::Flusher {
         let storage = self.storage.clone();
+        let deleted_flusher = self.deleted.flusher();
+        let metadata_flusher = self.metadata.flusher();
         Box::new(move || {
             storage.read().flush().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap sparse vector storage: {err}"
                 ))
             })?;
+            deleted_flusher()?;
+            metadata_flusher()?;
             Ok(())
         })
     }
