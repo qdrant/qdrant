@@ -98,7 +98,7 @@ impl SegmentEntry for Segment {
                 Ok((true, Some(existing_internal_id)))
             } else {
                 let new_index = segment.insert_new_vectors(point_id, &vectors)?;
-                Ok((false, Some(new_index)))
+                Ok((true, Some(new_index)))
             }
         })
     }

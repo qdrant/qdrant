@@ -424,7 +424,7 @@ impl SegmentsSearcher {
                 // If we already have the latest point version, keep that and continue
                 let version_entry = point_version.entry(id);
                 if matches!(&version_entry, Entry::Occupied(entry) if *entry.get() >= version) {
-                    return Ok(true);
+                    return Ok(false);
                 }
 
                 point_records.insert(
