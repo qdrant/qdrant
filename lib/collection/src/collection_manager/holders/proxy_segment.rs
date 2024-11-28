@@ -680,6 +680,7 @@ impl SegmentEntry for ProxySegment {
             .read_filtered(offset, limit, filter, is_stopped);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
+        read_points.dedup();
         read_points
     }
 
@@ -713,6 +714,7 @@ impl SegmentEntry for ProxySegment {
             .read_ordered_filtered(limit, filter, order_by, is_stopped)?;
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
+        read_points.dedup();
         Ok(read_points)
     }
 
@@ -743,6 +745,8 @@ impl SegmentEntry for ProxySegment {
             .read()
             .read_random_filtered(limit, filter, is_stopped);
         read_points.append(&mut write_segment_points);
+        read_points.sort_unstable();
+        read_points.dedup();
         read_points
     }
 
@@ -756,6 +760,7 @@ impl SegmentEntry for ProxySegment {
         let mut write_segment_points = self.write_segment.get().read().read_range(from, to);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
+        read_points.dedup();
         read_points
     }
 
