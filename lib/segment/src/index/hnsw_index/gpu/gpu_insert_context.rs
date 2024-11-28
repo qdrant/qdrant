@@ -546,7 +546,7 @@ mod tests {
         }
     }
 
-    fn create_insert_context<'a>(test_data: &'a TestData) -> GpuInsertContext<'a> {
+    fn create_insert_context(test_data: &TestData) -> GpuInsertContext<'_> {
         let total_num_vectors = test_data.gpu_vector_storage.num_vectors() + test_data.groups_count;
         let point_ids = (0..total_num_vectors as PointOffsetType).collect_vec();
 
