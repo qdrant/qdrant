@@ -435,6 +435,7 @@ pub struct QueryResponse {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
+#[serde(expecting = "Expected some form of vector, id, or a type of query")]
 pub enum QueryInterface {
     Nearest(VectorInput),
     Query(Query),
