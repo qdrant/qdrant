@@ -40,7 +40,7 @@ mod tests {
 
     impl OpenIndex for MmapBoolIndex {
         fn open_at(path: &Path) -> impl PayloadFieldIndex + ValueIndexer<ValueType = bool> {
-            MmapBoolIndex::open_or_create(path, FIELD_NAME.to_string(), false, 0).unwrap()
+            MmapBoolIndex::open_or_create(path, FIELD_NAME.to_string()).unwrap()
         }
     }
 

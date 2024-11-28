@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{self};
-use memory::mmap_type::{MmapBitSlice, MmapType};
+use memory::mmap_type::MmapType;
 
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -13,14 +13,15 @@ use crate::index::field_index::{
     PrimaryCondition, ValueIndexer,
 };
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
+use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
-const DIR_PREFIX: &str = "bool-";
+const BASE_DIR_PREFIX: &str = "bool-";
 const METADATA_FILE: &str = "metadata.dat";
-const TRUES_FILE: &str = "trues.dat";
-const FALSES_FILE: &str = "falses.dat";
+const TRUES_DIRNAME: &str = "trues";
+const FALSES_DIRNAME: &str = "falses";
 
 /// When bitslices are extended to fit a certain id, they get this much extra space to avoid resizing too often.
-const EXTEND_SLACK_CAPACITY: usize = 1028;
+const BITSLICE_GROWTH_SLACK: usize = 1028;
 
 #[repr(C)]
 struct BoolIndexMetadata {
@@ -34,72 +35,54 @@ struct BoolIndexMetadata {
 /// Payload index for boolean values, stored in memory-mapped files.
 pub struct MmapBoolIndex {
     base_dir: PathBuf,
-    populate: bool,
     metadata: MmapType<BoolIndexMetadata>,
-    trues_slice: MmapBitSlice,
-    falses_slice: MmapBitSlice,
+    trues_slice: DynamicMmapFlags,
+    falses_slice: DynamicMmapFlags,
 }
 
 impl MmapBoolIndex {
     /// Returns the directory name for the given field name, where the files should live.
     fn dirname(field_name: &str) -> String {
-        format!("{DIR_PREFIX}{field_name}")
+        format!("{BASE_DIR_PREFIX}{field_name}")
     }
 
     /// Creates a new boolean index at the given path. If it already exists, loads the index.
     ///
     /// # Arguments
     /// - `parent_path`: The path to the directory containing the rest of the indexes.
-    pub fn open_or_create(
-        indexes_path: &Path,
-        field_name: String,
-        populate_mmap: bool,
-        capacity: usize,
-    ) -> OperationResult<Self> {
+    pub fn open_or_create(indexes_path: &Path, field_name: String) -> OperationResult<Self> {
         let path = indexes_path.join(Self::dirname(&field_name));
 
         let header_path = path.join(METADATA_FILE);
         if header_path.exists() {
-            Self::open(&path, populate_mmap)
+            Self::open(&path)
         } else {
             std::fs::create_dir_all(&path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
             })?;
-            Self::create(&path, populate_mmap, capacity)
+            Self::create(&path)
         }
     }
 
-    fn create(path: &Path, populate_mmap: bool, capacity: usize) -> OperationResult<Self> {
+    fn create(path: &Path) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error("Path is not a directory"));
         }
 
-        // size of the bitslice files, which should cover all the points
-        let bitslice_bytes = size_of::<usize>().max(capacity.div_ceil(8));
-
         // Trues bitslice
-        let trues_path = path.join(TRUES_FILE);
-        mmap_ops::create_and_ensure_length(&trues_path, bitslice_bytes)?;
-        let trues_mmap =
-            mmap_ops::open_write_mmap(&trues_path, AdviceSetting::Global, populate_mmap)
-                .describe("Open trues bitslice mmap for writing")?;
-        let trues_slice = MmapBitSlice::try_from(trues_mmap, 0)?;
+        let trues_path = path.join(TRUES_DIRNAME);
+        let trues_slice = DynamicMmapFlags::open(&trues_path)?;
 
         // Falses bitslice
-        let falses_path = path.join(FALSES_FILE);
-        mmap_ops::create_and_ensure_length(&falses_path, bitslice_bytes)?;
-        let falses_mmap =
-            mmap_ops::open_write_mmap(&falses_path, AdviceSetting::Global, populate_mmap)
-                .describe("Open falses bitslice mmap for writing")?;
-        let falses_slice = MmapBitSlice::try_from(falses_mmap, 0)?;
+        let falses_path = path.join(FALSES_DIRNAME);
+        let falses_slice = DynamicMmapFlags::open(&falses_path)?;
 
         // Metadata
         let meta_path = path.join(METADATA_FILE);
         mmap_ops::create_and_ensure_length(&meta_path, size_of::<BoolIndexMetadata>())?;
-        let meta_mmap =
-            mmap_ops::open_write_mmap(&meta_path, AdviceSetting::Global, populate_mmap)?;
+        let meta_mmap = mmap_ops::open_write_mmap(&meta_path, AdviceSetting::Global, false)?;
         let mut metadata: MmapType<BoolIndexMetadata> = unsafe { MmapType::try_from(meta_mmap)? };
 
         *metadata.deref_mut() = BoolIndexMetadata {
@@ -109,37 +92,29 @@ impl MmapBoolIndex {
 
         Ok(Self {
             base_dir: path.to_path_buf(),
-            populate: populate_mmap,
             trues_slice,
             falses_slice,
             metadata,
         })
     }
 
-    fn open(path: &Path, populate_mmap: bool) -> OperationResult<Self> {
+    fn open(path: &Path) -> OperationResult<Self> {
         // Trues bitslice
-        let trues_path = path.join(TRUES_FILE);
-        let trues_mmap =
-            mmap_ops::open_write_mmap(&trues_path, AdviceSetting::Global, populate_mmap)
-                .describe("Open trues bitslice mmap for writing")?;
-        let trues_slice = MmapBitSlice::try_from(trues_mmap, 0)?;
+        let trues_path = path.join(TRUES_DIRNAME);
+        let trues_slice = DynamicMmapFlags::open(&trues_path)?;
 
         // Falses bitslice
-        let falses_path = path.join(FALSES_FILE);
-        let falses_mmap =
-            mmap_ops::open_write_mmap(&falses_path, AdviceSetting::Global, populate_mmap)
-                .describe("Open falses bitslice mmap for writing")?;
-        let falses_slice = MmapBitSlice::try_from(falses_mmap, 0)?;
+        let falses_path = path.join(FALSES_DIRNAME);
+        let falses_slice = DynamicMmapFlags::open(&falses_path)?;
 
         // Metadata
         let meta_path = path.join(METADATA_FILE);
-        let meta_mmap = mmap_ops::open_write_mmap(&meta_path, AdviceSetting::Global, populate_mmap)
+        let meta_mmap = mmap_ops::open_write_mmap(&meta_path, AdviceSetting::Global, false)
             .describe("Open header mmap for writing")?;
         let metadata = unsafe { MmapType::try_from(meta_mmap)? };
 
         Ok(Self {
             base_dir: path.to_path_buf(),
-            populate: populate_mmap,
             metadata,
             trues_slice,
             falses_slice,
@@ -147,43 +122,11 @@ impl MmapBoolIndex {
     }
 
     fn set_or_insert(&mut self, id: u32, has_true: bool, has_false: bool) -> OperationResult<()> {
-        let gets_indexed = has_true || has_false;
-
-        // Extend the slices if needed
-        if gets_indexed && id as usize >= self.trues_slice.len() {
-            unsafe {
-                if has_true {
-                    self.trues_slice.extend(
-                        &self.base_dir.join(TRUES_FILE),
-                        id as usize + EXTEND_SLACK_CAPACITY,
-                        AdviceSetting::Global,
-                        self.populate,
-                    )?;
-                }
-                if has_false {
-                    self.falses_slice.extend(
-                        &self.base_dir.join(FALSES_FILE),
-                        id as usize + EXTEND_SLACK_CAPACITY,
-                        AdviceSetting::Global,
-                        self.populate,
-                    )?;
-                }
-            }
-        }
-
-        let prev_true = if !has_true && id as usize >= self.trues_slice.len() {
-            false
-        } else {
-            self.trues_slice.replace(id as usize, has_true)
-        };
-
-        let prev_false = if !has_false && id as usize >= self.falses_slice.len() {
-            false
-        } else {
-            self.falses_slice.replace(id as usize, has_false)
-        };
+        let prev_true = set_or_insert_flag(&mut self.trues_slice, id as usize, has_true)?;
+        let prev_false = set_or_insert_flag(&mut self.falses_slice, id as usize, has_false)?;
 
         let was_indexed = prev_true || prev_false;
+        let gets_indexed = has_true || has_false;
 
         match (was_indexed, gets_indexed) {
             (false, true) => {
@@ -197,6 +140,31 @@ impl MmapBoolIndex {
 
         Ok(())
     }
+}
+
+/// Set or insert a flag in the given flags. Returns previous value.
+///
+/// Resizes if needed to set to true.
+fn set_or_insert_flag(
+    flags: &mut DynamicMmapFlags,
+    key: usize,
+    value: bool,
+) -> OperationResult<bool> {
+    // Set to true
+    if value {
+        // Make sure the key fits
+        if key >= flags.len() {
+            flags.set_len(key + BITSLICE_GROWTH_SLACK)?;
+        }
+        return Ok(flags.set(key, value));
+    }
+
+    // Set to false
+    if key < flags.len() {
+        return Ok(flags.set(key, value));
+    }
+
+    Ok(false)
 }
 
 pub struct BoolIndexBuilder(MmapBoolIndex);
@@ -269,7 +237,6 @@ impl PayloadFieldIndex for MmapBoolIndex {
     fn flusher(&self) -> crate::common::Flusher {
         let Self {
             base_dir: _,
-            populate: _,
             metadata,
             trues_slice,
             falses_slice,
@@ -288,11 +255,11 @@ impl PayloadFieldIndex for MmapBoolIndex {
     }
 
     fn files(&self) -> Vec<std::path::PathBuf> {
-        vec![
-            self.base_dir.join(METADATA_FILE),
-            self.base_dir.join(TRUES_FILE),
-            self.base_dir.join(FALSES_FILE),
-        ]
+        let mut files = self.trues_slice.files();
+        files.extend(self.falses_slice.files());
+        files.push(self.base_dir.join(METADATA_FILE));
+
+        files
     }
 
     fn filter<'a>(
@@ -305,11 +272,17 @@ impl PayloadFieldIndex for MmapBoolIndex {
             })) => {
                 if *value {
                     Some(Box::new(
-                        self.trues_slice.iter_ones().map(|x| x as PointOffsetType),
+                        self.trues_slice
+                            .get_bitslice()
+                            .iter_ones()
+                            .map(|x| x as PointOffsetType),
                     ))
                 } else {
                     Some(Box::new(
-                        self.falses_slice.iter_ones().map(|x| x as PointOffsetType),
+                        self.falses_slice
+                            .get_bitslice()
+                            .iter_ones()
+                            .map(|x| x as PointOffsetType),
                     ))
                 }
             }
@@ -323,8 +296,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
                 value: ValueVariants::Bool(value),
             })) => {
                 let count = match *value {
-                    true => self.trues_slice.count_ones(),
-                    false => self.falses_slice.count_ones(),
+                    true => self.trues_slice.count_flags(),
+                    false => self.falses_slice.count_flags(),
                 };
 
                 let estimation = CardinalityEstimation::exact(count)
@@ -359,8 +332,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
 
         // just two possible blocks: true and false
         let iter = [
-            make_block(self.trues_slice.count_ones(), true, key.clone()),
-            make_block(self.falses_slice.count_ones(), false, key),
+            make_block(self.trues_slice.count_flags(), true, key.clone()),
+            make_block(self.falses_slice.count_flags(), false, key),
         ]
         .into_iter()
         .flatten();
