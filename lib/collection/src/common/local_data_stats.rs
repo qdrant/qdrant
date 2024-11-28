@@ -12,6 +12,17 @@ pub(crate) struct LocalDataStatsCache {
 }
 
 impl LocalDataStatsCache {
+    pub fn new_with_values(stats: LocalDataStats) -> Self {
+        let LocalDataStats {
+            vector_storage_size,
+        } = stats;
+        let vector_storage_size = AtomicUsize::new(vector_storage_size);
+        Self {
+            vector_storage_size,
+            request_counter: AtomicUsize::new(1), // Prevent same data getting loaded a second time when doing the first request.
+        }
+    }
+
     /// Checks whether the cache needs to be updated.
     /// For performance reasons, this also assumes a cached value gets read afterwards and brings the
     /// Update counter one tick closer to the next update.
