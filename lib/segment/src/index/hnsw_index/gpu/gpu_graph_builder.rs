@@ -57,7 +57,7 @@ pub fn build_hnsw_on_gpu<'a>(
         groups_count,
     )?;
 
-    // Create all GPU resoures.
+    // Create all GPU resources.
     let mut gpu_search_context = GpuInsertContext::new(
         gpu_vector_storage,
         groups_count,
