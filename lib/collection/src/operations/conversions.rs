@@ -932,8 +932,10 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
         } = value;
 
         if let Some(sparse_indices) = &sparse_indices {
-            validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|_| {
-                Status::invalid_argument("Sparse indices does not match sparse vector conditions")
+            validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|e| {
+                Status::invalid_argument(format!(
+                    "Sparse indices does not match sparse vector conditions: {e}"
+                ))
             })?;
         }
 
@@ -1265,9 +1267,9 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     match vector.indices {
                         Some(indices) => {
                             validate_sparse_vector_impl(&indices.data, &vector.data).map_err(
-                                |_| {
+                                |e| {
                                     Status::invalid_argument(
-                                        "Sparse indices does not match sparse vector conditions",
+                                        format!("Sparse indices does not match sparse vector conditions: {e}"),
                                     )
                                 },
                             )?;
