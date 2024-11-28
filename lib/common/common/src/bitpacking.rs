@@ -159,6 +159,12 @@ fn read_buf_and_advance(input: &mut &[u8]) -> Buf {
     buf
 }
 
+/// Minimum amount of bits required to store a value in the range
+/// `0..=max_value`.
+pub fn packed_bits(max_value: u32) -> u8 {
+    (u32::BITS - max_value.leading_zeros()) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
@@ -234,5 +240,23 @@ mod tests {
                 assert_eq!(values, unpacked);
             }
         }
+    }
+
+    #[test]
+    fn test_packed_bits() {
+        assert_eq!(packed_bits(0), 0);
+
+        assert_eq!(packed_bits(1), 1);
+
+        assert_eq!(packed_bits(2), 2);
+        assert_eq!(packed_bits(3), 2);
+
+        assert_eq!(packed_bits(4), 3);
+        assert_eq!(packed_bits(7), 3);
+
+        assert_eq!(packed_bits(0x_7FFF_FFFF), 31);
+
+        assert_eq!(packed_bits(0x_8000_0000), 32);
+        assert_eq!(packed_bits(0x_FFFF_FFFF), 32);
     }
 }
