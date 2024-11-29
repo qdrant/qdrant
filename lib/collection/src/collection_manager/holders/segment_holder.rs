@@ -1174,10 +1174,11 @@ impl<'s> SegmentHolder {
 
         // Finalize temporary segment we proxied writes to
         // Append a temp segment to collection if it is not empty or there is no other appendable segment
-        let available_points = tmp_segment.get().read().available_point_count();
-        let has_appendable_segment = write_segments.has_appendable_segment();
-        if available_points > 0 || !has_appendable_segment {
-            log::trace!("Keeping temporary segment with {available_points} points");
+        if !write_segments.has_appendable_segment() || !tmp_segment.get().read().is_empty() {
+            log::trace!(
+                "Keeping temporary segment with {} points",
+                tmp_segment.get().read().available_point_count(),
+            );
             write_segments.add_new_locked(tmp_segment);
         } else {
             log::trace!("Dropping temporary segment with no changes");

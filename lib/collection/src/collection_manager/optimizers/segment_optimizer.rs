@@ -371,7 +371,7 @@ pub trait SegmentOptimizer {
         temp_segment: LockedSegment,
     ) -> OperationResult<()> {
         self.unwrap_proxy(segments, proxy_ids);
-        if temp_segment.get().read().available_point_count() > 0 {
+        if !temp_segment.get().read().is_empty() {
             let mut write_segments = segments.write();
             write_segments.add_new_locked(temp_segment);
         } else {
@@ -684,7 +684,7 @@ pub trait SegmentOptimizer {
             drop(optimizing_segments);
 
             // Append a temp segment to collection if it is not empty or there is no other appendable segment
-            if tmp_segment.get().read().available_point_count() > 0 || !has_appendable_segments {
+            if !has_appendable_segments || !tmp_segment.get().read().is_empty() {
                 write_segments_guard.add_new_locked(tmp_segment);
 
                 // unlock collection for search and updates

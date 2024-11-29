@@ -832,6 +832,10 @@ impl SegmentEntry for ProxySegment {
         };
     }
 
+    fn is_empty(&self) -> bool {
+        self.wrapped_segment.get().read().is_empty() && self.write_segment.get().read().is_empty()
+    }
+
     fn available_point_count(&self) -> usize {
         let deleted_points_count = self.deleted_points.read().len();
         let wrapped_segment_count = self.wrapped_segment.get().read().available_point_count();
