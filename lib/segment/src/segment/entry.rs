@@ -375,6 +375,10 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().internal_id(point_id).is_some()
     }
 
+    fn is_empty(&self) -> bool {
+        self.id_tracker.borrow().total_point_count() == 0
+    }
+
     fn available_point_count(&self) -> usize {
         self.id_tracker.borrow().available_point_count()
     }
