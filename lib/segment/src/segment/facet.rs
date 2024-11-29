@@ -22,6 +22,12 @@ impl Segment {
 
         let payload_index = self.payload_index.borrow();
 
+        // Shortcut if this segment has no points, prevent division by zero later
+        let available_points = self.available_point_count();
+        if available_points == 0 {
+            return Ok(HashMap::new());
+        }
+
         let facet_index = payload_index.get_facet_index(&request.key)?;
         let context;
 
@@ -29,8 +35,7 @@ impl Segment {
             let id_tracker = self.id_tracker.borrow();
             let filter_cardinality = payload_index.estimate_cardinality(filter);
 
-            let available = self.available_point_count();
-            let percentage_filtered = filter_cardinality.exp as f64 / available as f64;
+            let percentage_filtered = filter_cardinality.exp as f64 / available_points as f64;
 
             // TODO(facets): define a better estimate for this decision, the question is:
             // What is more expensive, to hash the same value excessively or to check with filter too many times?
