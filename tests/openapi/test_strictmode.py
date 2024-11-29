@@ -537,7 +537,7 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
 
     set_strict_mode(collection_name, {
         "enabled": True,
-        "max_collection_vector_size": 240,
+        "max_collection_vector_size_bytes": 240,
     })
 
     for _ in range(33):
@@ -586,7 +586,7 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
 
     set_strict_mode(collection_name, {
         "enabled": True,
-        "max_collection_vector_size": 240,
+        "max_collection_vector_size_bytes": 240,
     })
 
     for _ in range(33):
