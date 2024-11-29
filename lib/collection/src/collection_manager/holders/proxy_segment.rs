@@ -150,11 +150,6 @@ impl ProxySegment {
 
             let wrapped_segment_guard = wrapped_segment.read();
 
-            if !wrapped_segment_guard.has_point(point_id) {
-                // Point is not in wrapped segment
-                return Ok(false);
-            }
-
             // Since `deleted_points` are shared between multiple ProxySegments,
             // It is possible that some other Proxy moved its point with different version already
             // If this is the case, there are multiple scenarios:
