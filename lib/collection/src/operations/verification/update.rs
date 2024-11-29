@@ -190,12 +190,12 @@ async fn check_collection_vector_size_limit(
     collection: &Collection,
     strict_mode_config: &StrictModeConfig,
 ) -> Result<(), CollectionError> {
-    if let Some(max_vec_storage_size) = strict_mode_config.max_collection_vector_size_bytes {
-        let vec_storage_size = collection.estimated_local_vector_storage_size().await;
-        if vec_storage_size >= max_vec_storage_size {
-            let size_in_mb = max_vec_storage_size as f32 / (1024.0 * 1024.0);
+    if let Some(max_vec_storage_size_bytes) = strict_mode_config.max_collection_vector_size_bytes {
+        let vec_storage_size_bytes = collection.estimated_local_vector_storage_size().await;
+        if vec_storage_size_bytes >= max_vec_storage_size_bytes {
+            let size_in_mb = max_vec_storage_size_bytes as f32 / (1024.0 * 1024.0);
             return Err(CollectionError::bad_request(format!(
-                "Max vector size limit of {size_in_mb}MB reached!",
+                "Max vector storage size limit of {size_in_mb}MB reached!",
             )));
         }
     }

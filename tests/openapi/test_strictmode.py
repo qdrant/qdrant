@@ -597,7 +597,7 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
         failed_upsert = upsert_points([12, 13, 14, 15, 16])
         if failed_upsert.ok:
             continue
-        assert "Max vector size" in failed_upsert.json()['status']['error']
+        assert "Max vector storage size" in failed_upsert.json()['status']['error']
         assert not failed_upsert.ok
         return
 
