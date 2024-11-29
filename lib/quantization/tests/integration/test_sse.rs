@@ -1,6 +1,8 @@
 #[cfg(test)]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
@@ -32,7 +34,7 @@ mod tests {
                 invert: false,
             },
             None,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -69,7 +71,7 @@ mod tests {
                 invert: false,
             },
             None,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -106,7 +108,7 @@ mod tests {
                 invert: false,
             },
             None,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);

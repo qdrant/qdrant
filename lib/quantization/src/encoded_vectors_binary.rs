@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use serde::{Deserialize, Serialize};
@@ -169,12 +170,12 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<TStorage>,
         vector_parameters: &VectorParameters,
-        stop_condition: impl Fn() -> bool,
+        stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         debug_assert!(validate_vector_parameters(orig_data.clone(), vector_parameters).is_ok());
 
         for vector in orig_data {
-            if stop_condition() {
+            if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 
