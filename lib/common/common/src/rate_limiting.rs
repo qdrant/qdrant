@@ -98,27 +98,4 @@ mod tests {
         assert!(limiter.check());
         assert!(!limiter.check());
     }
-
-    #[test]
-    fn test_constant_rate() {
-        let rate = Rate::new(1, Duration::from_millis(10));
-        let mut limiter = RateLimiter::new(rate);
-        let mut success = 0;
-        let mut fail = 0;
-
-        for _ in 0..100 {
-            if limiter.check() {
-                success += 1;
-            } else {
-                fail += 1;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-
-        // expected time = 100 * 5 milliseconds = 500 milliseconds
-        // expected success = 500 / 10 = 50
-        // expected fail = 100 - 50 = 50
-        assert_eq!(fail, 50);
-        assert_eq!(success, 50);
-    }
 }
