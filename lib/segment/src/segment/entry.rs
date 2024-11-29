@@ -376,7 +376,7 @@ impl SegmentEntry for Segment {
     }
 
     fn is_empty(&self) -> bool {
-        self.id_tracker.borrow().total_point_count() > 0
+        self.id_tracker.borrow().total_point_count() == 0
     }
 
     fn available_point_count(&self) -> usize {
