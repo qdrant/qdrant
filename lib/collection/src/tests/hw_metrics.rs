@@ -14,7 +14,7 @@ use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::types::{CoreSearchRequest, CoreSearchRequestBatch};
+use crate::operations::types::{CollectionError, CoreSearchRequest, CoreSearchRequestBatch};
 use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
@@ -80,17 +80,23 @@ async fn test_hw_metrics_cancellation() {
             .do_search(
                 Arc::new(req),
                 &current_runtime,
-                Some(Duration::from_millis(3)),
+                Some(Duration::from_millis(3)), // Very short duration to hit timeout before the search finishes
                 &hw_counter,
             )
             .await;
 
-        // std::thread::sleep(Duration::from_millis(2));
+        // Ensure we triggered a timeout and the search didn't exit too early.
+        assert!(matches!(
+            search_res.unwrap_err(),
+            CollectionError::Timeout { description: _ }
+        ));
 
-        assert!(search_res.is_err());
+        // Currently this test only passes with this delay
+        // std::thread::sleep(Duration::from_millis(2));
     }
 
     assert!(!outer_hw.is_zero());
+
     outer_hw.discard();
 }
 
