@@ -6,11 +6,21 @@ use super::hardware_counter::HardwareCounterCell;
 /// Data structure, that routes hardware measurement counters to specific location.
 /// Shared drain MUST NOT create its own counters, but only hold a reference to the existing one,
 /// as it doesn't provide any checks on drop.
-struct HwSharedDrain {
-    cpu_counter: Arc<AtomicUsize>,
+#[derive(Debug)]
+pub struct HwSharedDrain {
+    pub(crate) cpu_counter: Arc<AtomicUsize>,
 }
 
 impl HwSharedDrain {
+    pub(super) fn new_with_drain(drain: &HwMeasurementAcc) -> Self {
+        let HwMeasurementAcc {
+            cpu_counter,
+            drain: _,
+        } = drain;
+
+        Self::new(cpu_counter.clone())
+    }
+
     fn new(cpu: Arc<AtomicUsize>) -> Self {
         Self { cpu_counter: cpu }
     }
@@ -18,6 +28,7 @@ impl HwSharedDrain {
 
 /// A "slow" but thread-safe accumulator for measurement results of `HardwareCounterCell` values.
 /// This type is completely reference counted and clones of this type will read/write the same values as their origin structure.
+#[derive(Debug)]
 pub struct HwMeasurementAcc {
     cpu_counter: Arc<AtomicUsize>,
     drain: Option<HwSharedDrain>,
@@ -40,6 +51,10 @@ impl HwMeasurementAcc {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
             drain: Some(HwSharedDrain::new(drain.cpu_counter.clone())),
         }
+    }
+
+    pub fn make_drain(&self) -> HwSharedDrain {
+        HwSharedDrain::new_with_drain(self)
     }
 
     /// Creates a new instance of `HwMeasurementAcc` we call "collector" with self as a "parent".
@@ -100,7 +115,12 @@ impl HwMeasurementAcc {
 
     /// Consumes and accumulates the values from `hw_counter_cell` into the accumulator.
     pub fn merge_from_cell(&self, hw_counter_cell: impl Into<HardwareCounterCell>) {
-        let HardwareCounterCell { ref cpu_counter } = hw_counter_cell.into();
+        let HardwareCounterCell {
+            ref cpu_counter,
+            ref drain,
+        } = hw_counter_cell.into();
+
+        debug_assert!(drain.is_none()); // We should never merge a cell that is also configured to drain!
 
         self.cpu_counter
             .fetch_add(cpu_counter.take(), Ordering::Relaxed);

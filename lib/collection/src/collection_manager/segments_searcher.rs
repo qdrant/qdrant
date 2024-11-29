@@ -265,25 +265,21 @@ impl SegmentsSearcher {
             segments
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
-                    let hw_collector = hw_measurement_acc.new_collector();
+
+                    let hw_drain = hw_measurement_acc.make_drain();
 
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
                         move || {
-                            let segment_query_context =
-                                query_context_arc_segment.get_segment_query_context();
+                            let segment_query_context = query_context_arc_segment
+                                .get_segment_query_context_draining_hw_counter(hw_drain);
 
-                            let res = search_in_segment(
+                            search_in_segment(
                                 segment,
                                 batch_request,
                                 use_sampling,
                                 &segment_query_context,
-                            );
-
-                            hw_collector
-                                .merge_from_cell(segment_query_context.take_hardware_counter());
-
-                            res
+                            )
                         }
                     });
                     (segment, search)

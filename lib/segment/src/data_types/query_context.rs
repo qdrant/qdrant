@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use common::counter::hardware_counter::HardwareCounterCell;
 use sparse::common::types::{DimId, DimWeight};
 
@@ -84,6 +85,18 @@ impl QueryContext {
             query_context: self,
             deleted_points: None,
             hardware_counter: HardwareCounterCell::new(),
+        }
+    }
+
+    pub fn get_segment_query_context_draining_hw_counter(
+        &self,
+        drain: HwSharedDrain,
+    ) -> SegmentQueryContext {
+        let hardware_counter = HardwareCounterCell::new_with_drain(drain);
+        SegmentQueryContext {
+            query_context: self,
+            deleted_points: None,
+            hardware_counter,
         }
     }
 }
