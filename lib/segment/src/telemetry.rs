@@ -86,6 +86,7 @@ impl Anonymize for SegmentInfo {
             num_indexed_vectors: self.num_indexed_vectors.anonymize(),
             num_deleted_vectors: self.num_deleted_vectors.anonymize(),
             vectors_size_bytes: self.vectors_size_bytes.anonymize(),
+            payloads_size_bytes: self.payloads_size_bytes.anonymize(),
             ram_usage_bytes: self.ram_usage_bytes.anonymize(),
             disk_usage_bytes: self.disk_usage_bytes.anonymize(),
             is_appendable: self.is_appendable,
