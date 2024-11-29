@@ -365,6 +365,7 @@ pub(crate) fn delete_field_index(
         .map_err(Into::into)
 }
 
+/// Upsert to a point ID with the specified vectors and payload in the given segment.
 ///
 /// Returns
 /// - Ok(true) if the operation was successful and point replaced existing value
@@ -384,7 +385,7 @@ fn upsert_with_payload(
     Ok(res)
 }
 
-/// Sync points within a given [from_id; to_id) range
+/// Sync points within a given [from_id; to_id) range.
 ///
 /// 1. Retrieve existing points for a range
 /// 2. Remove points, which are not present in the sync operation
@@ -503,7 +504,7 @@ where
 
     let mut res = updated_points.len();
     // Insert new points, which was not updated or existed
-    let new_point_ids = ids.iter().cloned().filter(|x| !updated_points.contains(x));
+    let new_point_ids = ids.iter().copied().filter(|x| !updated_points.contains(x));
 
     {
         let default_write_segment = segments.smallest_appendable_segment().ok_or_else(|| {
