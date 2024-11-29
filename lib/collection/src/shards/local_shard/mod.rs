@@ -563,6 +563,12 @@ impl LocalShard {
             .expect("Failed to create progress style");
         bar.set_style(progress_style);
 
+        log::debug!(
+            "Recovering shard {} starting reading WAL from {}",
+            &self.path,
+            wal.first_index()
+        );
+
         bar.set_message(format!("Recovering collection {collection_id}"));
         let segments = self.segments();
 
