@@ -564,7 +564,7 @@ impl LocalShard {
         bar.set_style(progress_style);
 
         log::debug!(
-            "Recovering shard {} starting reading WAL from {}",
+            "Recovering shard {:?} starting reading WAL from {}",
             &self.path,
             wal.first_index()
         );
