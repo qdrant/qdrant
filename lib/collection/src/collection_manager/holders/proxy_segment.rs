@@ -991,7 +991,7 @@ impl SegmentEntry for ProxySegment {
 
         let flushed_version = if is_all_empty {
             // It might happen, that wrapped segment still has some data which is not flushed
-            // Because we are going async flush and call ot `.flush` doesn't guarantee that all data is already persisted
+            // Because we are going async flush and call to `.flush` doesn't guarantee that all data is already persisted
             // If this happens, we can't ack WAL based on write segment and should wait for wrapped segment to be flushed
 
             let wrapped_full_persisted = wrapped_persisted_version >= wrapped_version;
