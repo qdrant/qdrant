@@ -970,17 +970,59 @@ impl SegmentEntry for ProxySegment {
         let deleted_indexes_guard = self.deleted_indexes.read();
         let created_indexes_guard = self.created_indexes.read();
 
-        let wrapped_version = self.wrapped_segment.get().read().flush(sync, force)?;
-        let write_segment_version = self.write_segment.get().read().flush(sync, force)?;
+        let (wrapped_version, wrapped_persisted_version) = {
+            let wrapped_segment = self.wrapped_segment.get();
+            let wrapped_segment_guard = wrapped_segment.read();
+            let persisted_version = wrapped_segment_guard.flush(sync, force)?;
+            let version = wrapped_segment_guard.version();
+            (version, persisted_version)
+        };
 
+        // In case there are no updates happened to the proxy, this value can be
+        // - either higher than wrapped segment (in case new updates were written to proxy as an appendable segment)
+        // - or lower than wrapped segment (in case no updates were written to proxy, so the version is 0)
+        let write_persisted_version = self.write_segment.get().read().flush(sync, force)?;
+
+        // As soon as anything is written to the proxy, the max version of the proxy if fixed to
+        // minimal of both versions. So we should never ack operation, which does copy-on-write.
         let is_all_empty = deleted_points_guard.is_empty()
             && deleted_indexes_guard.is_empty()
             && created_indexes_guard.is_empty();
 
         let flushed_version = if is_all_empty {
-            cmp::max(write_segment_version, wrapped_version)
+            // It might happen, that wrapped segment still has some data which is not flushed
+            // Because we are going async flush and call to `.flush` doesn't guarantee that all data is already persisted
+            // If this happens, we can't ack WAL based on write segment and should wait for wrapped segment to be flushed
+
+            let wrapped_full_persisted = wrapped_persisted_version >= wrapped_version;
+
+            if wrapped_full_persisted {
+                debug_assert!(wrapped_persisted_version == wrapped_version);
+                debug_assert!(
+                    write_persisted_version == 0
+                        || write_persisted_version >= wrapped_persisted_version
+                );
+                // This is the case, if **wrapped segment is fully persisted and will not be changed anymore**
+                // Examples:
+                // write_persisted_version = 0, wrapped_persisted_version = 10 -> flushed_version = 10
+                // write_persisted_version = 15, wrapped_persisted_version = 10 -> flushed_version = 15
+                // write_persisted_version = 7, wrapped_persisted_version = 10 -> flushed_version = 10 // should never happen
+                cmp::max(write_persisted_version, wrapped_persisted_version)
+            } else {
+                // This is the case, if wrapped segment is not fully persisted yet
+                // We should wait for it to be fully persisted.
+                // At the same time "write_segment_version" can be either higher than wrapped_version
+                // Or it can be 0, if no updates were written to proxy
+                // In both cases it should be fine to return minimal of both.
+                // Even if for the short of first period we would think that accepted version goes back to 0,
+                // it shouldn't be a problem for was, as it will just stop ack WAL changes.
+                // Examples:
+                // write_persisted_version = 0, wrapped_persisted_version = 10 -> flushed_version = 0
+                // write_persisted_version = 15, wrapped_persisted_version = 10 -> flushed_version = 10
+                cmp::min(write_persisted_version, wrapped_persisted_version)
+            }
         } else {
-            cmp::min(write_segment_version, wrapped_version)
+            cmp::min(write_persisted_version, wrapped_persisted_version)
         };
 
         Ok(flushed_version)
