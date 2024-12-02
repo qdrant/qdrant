@@ -495,14 +495,22 @@ impl SegmentEntry for Segment {
 
         let vectors_size_bytes = total_average_vectors_size_bytes * num_points;
 
+        // Unwrap and default to 0 here because the RocksDB storage is the only faillible one, and we will remove it eventually.
+        let payloads_size_bytes = self
+            .payload_storage
+            .borrow()
+            .get_storage_size_bytes()
+            .unwrap_or(0);
+
         SegmentInfo {
             segment_type: self.segment_type,
             num_vectors,
             num_indexed_vectors,
             num_points: self.available_point_count(),
             num_deleted_vectors: self.deleted_point_count(),
-            vectors_size_bytes, // Considers vector storage, but not payload or indices
-            ram_usage_bytes: 0, // ToDo: Implement
+            vectors_size_bytes,  // Considers vector storage, but not indices
+            payloads_size_bytes, // Considers payload storage, but not indices
+            ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
             index_schema: schema,
