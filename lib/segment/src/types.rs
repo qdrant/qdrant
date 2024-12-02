@@ -327,6 +327,8 @@ pub struct SegmentInfo {
     /// An ESTIMATION of effective amount of bytes used for vectors
     /// Do NOT rely on this number unless you know what you are doing
     pub vectors_size_bytes: usize,
+    /// An estimation of the effective amount of bytes used for payloads
+    pub payloads_size_bytes: usize,
     pub ram_usage_bytes: usize,
     pub disk_usage_bytes: usize,
     pub is_appendable: bool,

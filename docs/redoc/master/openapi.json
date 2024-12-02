@@ -11253,6 +11253,7 @@
           "num_indexed_vectors",
           "num_points",
           "num_vectors",
+          "payloads_size_bytes",
           "ram_usage_bytes",
           "segment_type",
           "vector_data",
@@ -11284,6 +11285,12 @@
           },
           "vectors_size_bytes": {
             "description": "An ESTIMATION of effective amount of bytes used for vectors Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "payloads_size_bytes": {
+            "description": "An estimation of the effective amount of bytes used for payloads",
             "type": "integer",
             "format": "uint",
             "minimum": 0
