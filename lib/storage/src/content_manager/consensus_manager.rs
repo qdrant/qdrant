@@ -363,7 +363,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                         );
                         stop_consensus
                     }
-                    ty => {
+                    ty @ EntryType::EntryConfChange => {
                         return Err(anyhow!("Unexpected entry type: {:?}", ty));
                     }
                 }

@@ -41,9 +41,9 @@ where
     match Helper::deserialize(deserializer)? {
         Helper::ReadConsistency(read_consistency) => Ok(Some(read_consistency)),
         Helper::Str("") => Ok(None),
-        _ => Err(serde::de::Error::custom(
-            "failed to deserialize read consistency query parameter value",
-        )),
+        Helper::Str(x) => Err(serde::de::Error::custom(format!(
+            "failed to deserialize read consistency query parameter value '{x}'"
+        ))),
     }
 }
 

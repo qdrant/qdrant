@@ -285,7 +285,7 @@ impl IndexSelector<'_> {
     fn as_rocksdb(&self) -> OperationResult<&IndexSelectorRocksDb> {
         match self {
             IndexSelector::RocksDb(mode) => Ok(mode),
-            _ => Err(OperationError::service_error("Expected RocksDB mode")), // Should never happen
+            IndexSelector::OnDisk(_) => Err(OperationError::service_error("Expected RocksDB mode")), // Should never happen
         }
     }
 }
