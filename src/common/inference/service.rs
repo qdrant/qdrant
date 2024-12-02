@@ -173,12 +173,14 @@ pub struct InferenceService {
 }
 
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
+const DEFAULT_POOL_SIZE: usize = 10;
 
 impl InferenceService {
     pub fn new(config: InferenceConfig) -> Self {
         let timeout = Duration::from_secs(config.timeout);
         let client_builder = Client::builder().timeout(timeout);
-        let pool_size = config.connection_pool_size;
+        let pool_size = config.connection_pool_size.unwrap_or(DEFAULT_POOL_SIZE);
+        info!("InferenceService: initializing with pool size {pool_size}",);
         let connection_pool = ConnectionPool::new(pool_size, client_builder);
         Self {
             config,
