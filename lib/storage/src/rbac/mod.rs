@@ -87,7 +87,9 @@ impl Access {
     ) -> Result<CollectionMultipass, StorageError> {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
-            _ => return Err(StorageError::forbidden("Global access is required")),
+            Access::Collection(_) => {
+                return Err(StorageError::forbidden("Global access is required"))
+            }
         }
         Ok(CollectionMultipass)
     }
