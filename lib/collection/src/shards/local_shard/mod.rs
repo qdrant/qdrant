@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use common::cpu::CpuBudget;
+use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -95,6 +96,8 @@ pub struct LocalShard {
     update_runtime: Handle,
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
+    read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
+    write_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -211,6 +214,8 @@ impl LocalShard {
             optimizers_log,
             total_optimized_points,
             disk_usage_watcher,
+            read_rate_limiter: None, // TODO initialize rate limiter from config
+            write_rate_limiter: None, // TODO initialize rate limiter from config
         }
     }
 
@@ -1096,6 +1101,34 @@ impl LocalShard {
     /// This also updates the highest seen clocks.
     pub async fn update_cutoff(&self, cutoff: &RecoveryPoint) {
         self.wal.update_cutoff(cutoff).await
+    }
+
+    /// Check if the write rate limiter allows the operation to proceed
+    ///
+    /// Returns an error if the rate limit is exceeded.
+    fn check_write_rate_limiter(&self) -> CollectionResult<()> {
+        if let Some(rate_limiter) = &self.write_rate_limiter {
+            if !rate_limiter.lock().check() {
+                return Err(CollectionError::RateLimitExceeded {
+                    description: "Write rate limit exceeded, retry later".to_string(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if the read rate limiter allows the operation to proceed
+    ///
+    /// Returns an error if the rate limit is exceeded.
+    fn check_read_rate_limiter(&self) -> CollectionResult<()> {
+        if let Some(rate_limiter) = &self.read_rate_limiter {
+            if !rate_limiter.lock().check() {
+                return Err(CollectionError::RateLimitExceeded {
+                    description: "Read rate limit exceeded, retry later".to_string(),
+                });
+            }
+        }
+        Ok(())
     }
 }
 
