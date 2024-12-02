@@ -416,3 +416,30 @@ impl PayloadFieldIndex for MmapBoolIndex {
         Box::new(iter)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use io::visit_files::visit_files_recursively;
+
+    use super::MmapBoolIndex;
+    use crate::index::field_index::PayloadFieldIndex;
+
+    #[test]
+    fn test_files() {
+        let dir = std::env::temp_dir().join("test_mmap_bool_index");
+        let index = MmapBoolIndex::open_or_create(&dir, true).unwrap();
+
+        let reported = index.files().into_iter().collect::<HashSet<_>>();
+
+        let mut actual = HashSet::new();
+        visit_files_recursively(&dir, &mut |filepath| {
+            actual.insert(filepath);
+        })
+        .unwrap();
+
+        assert_eq!(reported.len(), actual.len());
+        assert_eq!(reported, actual);
+    }
+}
