@@ -4,8 +4,10 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Result;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
+use log::{error, info, warn};
 use parking_lot::RwLock;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -116,9 +118,58 @@ impl From<InferenceData> for InferenceInput {
     }
 }
 
+pub struct ConnectionPool {
+    connections: RwLock<Vec<Client>>,
+    size: usize,
+}
+
+impl ConnectionPool {
+    pub fn new(size: usize, client_builder: reqwest::ClientBuilder) -> Self {
+        let client = match client_builder.build() {
+            Ok(client) => client,
+            Err(e) => {
+                error!("Failed to build client: {}", e);
+                // Any inference attempt will fail with "No available clients..." error
+                return Self {
+                    connections: RwLock::new(Vec::new()),
+                    size: 0,
+                };
+            }
+        };
+
+        let connections = vec![client; size];
+        info!("Connection pool: initialized with {size} connections");
+        Self {
+            connections: RwLock::new(connections),
+            size,
+        }
+    }
+
+    pub fn get(&self) -> Option<Client> {
+        let mut conns = self.connections.write();
+        let client = conns.pop();
+        if client.is_none() {
+            warn!("Connection pool: no connections available");
+        }
+        client
+    }
+
+    pub fn put(&self, client: Client) {
+        let mut conns = self.connections.write();
+        if conns.len() < self.size {
+            conns.push(client);
+        } else {
+            warn!(
+                "Connection pool: discarding connection, pool is full at size {}",
+                self.size
+            );
+        }
+    }
+}
+
 pub struct InferenceService {
     pub(crate) config: InferenceConfig,
-    pub(crate) client: Client,
+    pub(crate) connection_pool: ConnectionPool,
 }
 
 static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(None);
@@ -126,12 +177,12 @@ static INFERENCE_SERVICE: RwLock<Option<Arc<InferenceService>>> = RwLock::new(No
 impl InferenceService {
     pub fn new(config: InferenceConfig) -> Self {
         let timeout = Duration::from_secs(config.timeout);
+        let client_builder = Client::builder().timeout(timeout);
+        let pool_size = config.connection_pool_size;
+        let connection_pool = ConnectionPool::new(pool_size, client_builder);
         Self {
             config,
-            client: Client::builder()
-                .timeout(timeout)
-                .build()
-                .expect("Invalid timeout value for HTTP client"),
+            connection_pool,
         }
     }
 
@@ -146,7 +197,7 @@ impl InferenceService {
 
         if config.address.is_none() || config.address.as_ref().unwrap().is_empty() {
             return Err(StorageError::service_error(
-                "Cannot initialize InferenceService: address is required but not provided or empty in config"
+                "Cannot initialize InferenceService: address is required but not provided or empty in config",
             ));
         }
 
@@ -189,25 +240,29 @@ impl InferenceService {
             )
         })?;
 
-        let response = self
-            .client
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| {
+        let client = self.connection_pool.get().ok_or_else(|| {
+            StorageError::service_error("No available clients in the connection pool")
+        })?;
+
+        let result = async {
+            let response = client.post(url).json(&request).send().await.map_err(|e| {
                 let error_body = e.to_string();
                 StorageError::service_error(format!(
                     "Failed to send inference request to {url}: {e}, error details: {error_body}",
                 ))
             })?;
 
-        let status = response.status();
-        let response_body = response.text().await.map_err(|e| {
-            StorageError::service_error(format!("Failed to read inference response body: {e}",))
-        })?;
+            let status = response.status();
+            let response_body = response.text().await.map_err(|e| {
+                StorageError::service_error(format!("Failed to read inference response body: {e}",))
+            })?;
 
-        Self::handle_inference_response(status, &response_body)
+            Self::handle_inference_response(status, &response_body)
+        }
+        .await;
+
+        self.connection_pool.put(client);
+        result
     }
 
     pub(crate) fn handle_inference_response(
@@ -216,8 +271,8 @@ impl InferenceService {
     ) -> Result<Vec<VectorPersisted>, StorageError> {
         match status {
             reqwest::StatusCode::OK => {
-                let inference_response: InferenceResponse = serde_json::from_str(response_body)
-                    .map_err(|e| {
+                let inference_response: InferenceResponse =
+                    serde_json::from_str(response_body).map_err(|e| {
                         StorageError::service_error(format!(
                             "Failed to parse successful inference response: {e}. Response body: {response_body}",
                         ))
@@ -225,7 +280,7 @@ impl InferenceService {
 
                 if inference_response.embeddings.is_empty() {
                     Err(StorageError::service_error(
-                        "Inference response contained no embeddings - this may indicate an issue with the model or input"
+                        "Inference response contained no embeddings - this may indicate an issue with the model or input",
                     ))
                 } else {
                     Ok(inference_response.embeddings)
@@ -262,5 +317,115 @@ impl InferenceService {
                 "Unexpected inference service response ({status}): {response_body}"
             ))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pool_creation_success() {
+        let size = 5;
+        let client_builder = Client::builder().timeout(Duration::from_secs(1));
+        let pool = ConnectionPool::new(size, client_builder);
+
+        assert_eq!(pool.size, size);
+        assert_eq!(pool.connections.read().len(), size);
+    }
+
+    #[tokio::test]
+    async fn test_get_and_put() {
+        let size = 2;
+        let client_builder = Client::builder().timeout(Duration::from_secs(1));
+        let pool = ConnectionPool::new(size, client_builder);
+
+        let client1 = pool.get();
+        assert!(client1.is_some());
+        assert_eq!(pool.connections.read().len(), 1);
+
+        let client2 = pool.get();
+        assert!(client2.is_some());
+        assert_eq!(pool.connections.read().len(), 0);
+
+        let client3 = pool.get();
+        assert!(client3.is_none());
+        assert_eq!(pool.connections.read().len(), 0);
+
+        if let Some(client) = client1 {
+            pool.put(client);
+            assert_eq!(pool.connections.read().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pool_max_size() {
+        let size = 1;
+        let client_builder = Client::builder().timeout(Duration::from_secs(1));
+        let pool = ConnectionPool::new(size, client_builder);
+
+        let extra_client = Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .unwrap();
+
+        assert_eq!(pool.connections.read().len(), 1);
+        pool.put(extra_client);
+        assert_eq!(pool.connections.read().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_access() {
+        let size = 50;
+        let client_builder = Client::builder().timeout(Duration::from_secs(1));
+        let pool = Arc::new(ConnectionPool::new(size, client_builder));
+        let tasks: Vec<_> = (0..100)
+            .map(|_| {
+                let pool = Arc::clone(&pool);
+                tokio::spawn(async move {
+                    if let Some(client) = pool.get() {
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                        pool.put(client);
+                    }
+                })
+            })
+            .collect();
+
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        assert_eq!(pool.connections.read().len(), size);
+    }
+
+    #[tokio::test]
+    async fn test_empty_pool_behavior() {
+        let size = 1;
+        let client_builder = Client::builder().timeout(Duration::from_secs(1));
+        let pool = ConnectionPool::new(size, client_builder);
+
+        let client = pool.get();
+        assert!(client.is_some());
+
+        let no_client = pool.get();
+        assert!(no_client.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_put_after_size_reduction() {
+        let original_size = 2;
+        let client_builder = Client::builder().timeout(Duration::from_secs(1));
+        let pool = ConnectionPool::new(original_size, client_builder);
+
+        let client1 = pool.get().unwrap();
+        let client2 = pool.get().unwrap();
+
+        let smaller_pool = ConnectionPool::new(1, Client::builder());
+        smaller_pool.put(client1);
+        smaller_pool.put(client2);
+
+        assert_eq!(smaller_pool.connections.read().len(), 1);
     }
 }
