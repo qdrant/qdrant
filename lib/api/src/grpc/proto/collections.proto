@@ -435,6 +435,7 @@ message TextIndexParams {
 }
 
 message BoolIndexParams {
+    optional bool on_disk = 1; // If true - store index on disk.
 }
 
 message DatetimeIndexParams {

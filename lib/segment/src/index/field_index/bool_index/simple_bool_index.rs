@@ -7,6 +7,7 @@ use rocksdb::DB;
 use serde_json::Value;
 
 use self::memory::{BoolMemory, BooleanItem};
+use super::BoolIndex;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -178,13 +179,13 @@ mod memory {
 }
 
 /// Payload index for boolean values, persisted in a RocksDB column family
-pub struct BoolIndex {
+pub struct SimpleBoolIndex {
     memory: BoolMemory,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
-impl BoolIndex {
-    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> BoolIndex {
+impl SimpleBoolIndex {
+    pub fn new(db: Arc<RwLock<DB>>, field_name: &str) -> SimpleBoolIndex {
         let store_cf_name = Self::storage_cf_name(field_name);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
@@ -213,6 +214,14 @@ impl BoolIndex {
         }
     }
 
+    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
+        if is_true {
+            self.values_has_true(point_id)
+        } else {
+            self.values_has_false(point_id)
+        }
+    }
+
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         let binary_item = self.memory.get(point_id);
         usize::from(binary_item.has_true()) + usize::from(binary_item.has_false())
@@ -233,11 +242,20 @@ impl BoolIndex {
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter<'_>)> + '_ {
-        vec![
+        [
             (false, Box::new(self.memory.iter_has_false()) as IdIter),
             (true, Box::new(self.memory.iter_has_true()) as IdIter),
         ]
         .into_iter()
+    }
+
+    pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {
+        [
+            self.memory.iter_has_true().next().map(|_| true),
+            self.memory.iter_has_false().next().map(|_| false),
+        ]
+        .into_iter()
+        .flatten()
     }
 
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (bool, usize)> + '_ {
@@ -249,7 +267,7 @@ impl BoolIndex {
     }
 }
 
-pub struct BoolIndexBuilder(BoolIndex);
+pub struct BoolIndexBuilder(SimpleBoolIndex);
 
 impl FieldIndexBuilderTrait for BoolIndexBuilder {
     type FieldIndexType = BoolIndex;
@@ -263,11 +281,11 @@ impl FieldIndexBuilderTrait for BoolIndexBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(self.0)
+        Ok(BoolIndex::Simple(self.0))
     }
 }
 
-impl PayloadFieldIndex for BoolIndex {
+impl PayloadFieldIndex for SimpleBoolIndex {
     fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
@@ -371,7 +389,7 @@ impl PayloadFieldIndex for BoolIndex {
     }
 }
 
-impl ValueIndexer for BoolIndex {
+impl ValueIndexer for SimpleBoolIndex {
     type ValueType = bool;
 
     fn add_many(&mut self, id: PointOffsetType, values: Vec<bool>) -> OperationResult<()> {

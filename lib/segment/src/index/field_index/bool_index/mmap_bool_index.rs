@@ -4,65 +4,68 @@ use bitvec::slice::BitSlice;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
+use super::BoolIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::index::field_index::map_index::IdIter;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
     PrimaryCondition, ValueIndexer,
 };
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
 use crate::vector_storage::common::PAGE_SIZE_BYTES;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
-const BASE_DIR_PREFIX: &str = "bool-";
 const TRUES_DIRNAME: &str = "trues";
 const FALSES_DIRNAME: &str = "falses";
+
 
 /// Payload index for boolean values, stored in memory-mapped files.
 pub struct MmapBoolIndex {
     base_dir: PathBuf,
     indexed_count: usize,
+    trues_count: usize,
+    falses_count: usize,
     trues_slice: DynamicMmapFlags,
     falses_slice: DynamicMmapFlags,
 }
 
 impl MmapBoolIndex {
-    /// Returns the directory name for the given field name, where the files should live.
-    fn dirname(field_name: &str) -> String {
-        format!("{BASE_DIR_PREFIX}{field_name}")
+    pub fn builder(path: &Path, populate: bool) -> OperationResult<MmapBoolIndexBuilder> {
+        Ok(MmapBoolIndexBuilder(Self::open_or_create(path, populate)?))
     }
 
     /// Creates a new boolean index at the given path. If it already exists, loads the index.
     ///
     /// # Arguments
-    /// - `parent_path`: The path to the directory containing the rest of the indexes.
-    pub fn open_or_create(indexes_path: &Path, field_name: String) -> OperationResult<Self> {
-        let path = indexes_path.join(Self::dirname(&field_name));
-
+    /// - `path` - The directory where the index files should live, must be exclusive to this index.
+    pub fn open_or_create(path: &Path, populate: bool) -> OperationResult<Self> {
         let falses_dir = path.join(FALSES_DIRNAME);
         if falses_dir.is_dir() {
-            Self::open(&path)
+            Self::open(&path, populate)
         } else {
             std::fs::create_dir_all(&path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
             })?;
-            Self::open(&path)
+            Self::open(&path, populate)
         }
     }
 
-    fn open(path: &Path) -> OperationResult<Self> {
+    fn open(path: &Path, populate: bool) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error("Path is not a directory"));
         }
 
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicMmapFlags::open(&trues_path)?;
+        let trues_slice = DynamicMmapFlags::open(&trues_path, populate)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicMmapFlags::open(&falses_path)?;
+        let falses_slice = DynamicMmapFlags::open(&falses_path, populate)?;
+
 
         Ok(Self {
             base_dir: path.to_path_buf(),
@@ -70,6 +73,8 @@ impl MmapBoolIndex {
             falses_slice,
             // loading is done after opening during `PayloadFieldIndex::load()`
             indexed_count: 0,
+            trues_count: 0,
+            falses_count: 0,
         })
     }
 
@@ -78,14 +83,34 @@ impl MmapBoolIndex {
         let prev_false = set_or_insert_flag(&mut self.falses_slice, id as usize, has_false)?;
 
         let was_indexed = prev_true || prev_false;
-        let gets_indexed = has_true || has_false;
+        let is_indexed = has_true || has_false;
 
-        match (was_indexed, gets_indexed) {
+        match (was_indexed, is_indexed) {
             (false, true) => {
                 self.indexed_count += 1;
             }
             (true, false) => {
                 self.indexed_count = self.indexed_count.saturating_sub(1);
+            }
+            _ => {}
+        }
+
+        match (prev_true, has_true) {
+            (false, true) => {
+                self.trues_count += 1;
+            }
+            (true, false) => {
+                self.trues_count = self.trues_count.saturating_sub(1);
+            }
+            _ => {}
+        }
+
+        match (prev_false, has_false) {
+            (false, true) => {
+                self.falses_count += 1;
+            }
+            (true, false) => {
+                self.falses_count = self.falses_count.saturating_sub(1);
             }
             _ => {}
         }
@@ -138,6 +163,58 @@ impl MmapBoolIndex {
 
         indexed_count
     }
+    
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.indexed_count as usize,
+            points_values_count: (self.trues_count + self.falses_count) as usize,
+            histogram_bucket_size: None,
+        }
+    }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        let has_true = self.trues_slice.get(point_id as usize);
+        let has_false = self.falses_slice.get(point_id as usize);
+        (has_true as usize) + (has_false as usize)
+    }
+
+    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
+        if is_true {
+            self.trues_slice.get(point_id as usize)
+        } else {
+            self.falses_slice.get(point_id as usize)
+        }
+    }
+
+    pub fn values_is_empty(&self, point_id: u32) -> bool {
+        !self.trues_slice.get(point_id as usize) && !self.falses_slice.get(point_id as usize)
+    }
+
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter<'_>)> + '_ {
+        [
+            (false, Box::new(self.falses_slice.iter_trues()) as IdIter),
+            (true, Box::new(self.trues_slice.iter_trues()) as IdIter),
+        ]
+        .into_iter()
+    }
+
+    pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {
+        [
+            self.falses_slice.iter_trues().next().map(|_| false),
+            self.trues_slice.iter_trues().next().map(|_| true),
+        ]
+        .into_iter()
+        .flatten()
+    }
+
+    pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (bool, usize)> + '_ {
+        [
+            (false, self.falses_slice.count_flags()),
+            (true, self.trues_slice.count_flags()),
+        ]
+        .into_iter()
+    }
 }
 
 /// Set or insert a flag in the given flags. Returns previous value.
@@ -166,10 +243,10 @@ fn set_or_insert_flag(
     Ok(false)
 }
 
-pub struct BoolIndexBuilder(MmapBoolIndex);
+pub struct MmapBoolIndexBuilder(MmapBoolIndex);
 
-impl FieldIndexBuilderTrait for BoolIndexBuilder {
-    type FieldIndexType = MmapBoolIndex;
+impl FieldIndexBuilderTrait for MmapBoolIndexBuilder {
+    type FieldIndexType = BoolIndex;
 
     fn init(&mut self) -> OperationResult<()> {
         // After Self is created, it is already initialized
@@ -185,7 +262,7 @@ impl FieldIndexBuilderTrait for BoolIndexBuilder {
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        Ok(self.0)
+        Ok(BoolIndex::Mmap(self.0))
     }
 }
 
@@ -230,12 +307,16 @@ impl PayloadFieldIndex for MmapBoolIndex {
         let Self {
             base_dir: _,
             indexed_count,
-            trues_slice: _,
-            falses_slice: _,
+            trues_count,
+            falses_count,
+            trues_slice,
+            falses_slice,
         } = self;
 
         *indexed_count = calculated_indexed_count as usize;
-
+        *trues_count = trues_slice.count_flags();
+        *falses_count = falses_slice.count_flags();
+        
         Ok(true)
     }
 
@@ -248,6 +329,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
         let Self {
             base_dir: _,
             indexed_count: _,
+            trues_count: _,
+            falses_count: _,
             trues_slice,
             falses_slice,
         } = self;

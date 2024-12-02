@@ -1,7 +1,7 @@
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
-use super::bool_index::simple_bool_index::BoolIndex;
+use super::bool_index::BoolIndex;
 use super::map_index::MapIndex;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::struct_filter_context::StructFilterContext;
@@ -49,13 +49,7 @@ impl<'a> FacetIndex<'a> {
                 Box::new(iter)
             }
             FacetIndex::Bool(index) => {
-                let iter = vec![
-                    index.values_has_true(point_id).then_some(true),
-                    index.values_has_false(point_id).then_some(false),
-                ]
-                .into_iter()
-                .flatten()
-                .map(FacetValueRef::Bool);
+                let iter = index.iter_values().map(FacetValueRef::Bool);
 
                 Box::new(iter)
             }
@@ -76,8 +70,8 @@ impl<'a> FacetIndex<'a> {
                 let iter = index.iter_values().map(FacetValueRef::Uuid);
                 Box::new(iter)
             }
-            FacetIndex::Bool(_index) => {
-                let iter = vec![true, false].into_iter().map(FacetValueRef::Bool);
+            FacetIndex::Bool(index) => {
+                let iter = index.iter_values().map(FacetValueRef::Bool);
                 Box::new(iter)
             }
         }

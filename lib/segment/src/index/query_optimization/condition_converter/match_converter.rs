@@ -41,11 +41,7 @@ fn get_match_value_checker(
         }
         (ValueVariants::Bool(is_true), FieldIndex::BoolIndex(index)) => {
             Some(Box::new(move |point_id: PointOffsetType| {
-                if is_true {
-                    index.values_has_true(point_id)
-                } else {
-                    index.values_has_false(point_id)
-                }
+                index.check_values_any(point_id, is_true)
             }))
         }
         (ValueVariants::Bool(_), FieldIndex::DatetimeIndex(_))

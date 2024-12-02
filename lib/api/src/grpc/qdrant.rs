@@ -732,7 +732,11 @@ pub struct TextIndexParams {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BoolIndexParams {}
+pub struct BoolIndexParams {
+    /// If true - store index on disk.
+    #[prost(bool, optional, tag = "1")]
+    pub on_disk: ::core::option::Option<bool>,
+}
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
