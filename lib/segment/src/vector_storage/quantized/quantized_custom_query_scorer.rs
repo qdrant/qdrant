@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
-use itertools::Itertools;
 
 use crate::data_types::named_vectors::CowMultiVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -95,11 +94,10 @@ where
     {
         let original_query: TOriginalQuery = raw_query
             .transform(|vector| {
-                let slices = vector.multi_vectors();
-                let preprocessed = slices
-                    .into_iter()
-                    .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
-                    .collect_vec();
+                let mut preprocessed = Vec::new();
+                for slice in vector.multi_vectors() {
+                    preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
+                }
                 let preprocessed = MultiDenseVectorInternal::new(preprocessed, vector.dim);
                 let converted =
                     TElement::from_float_multivector(CowMultiVector::Owned(preprocessed))

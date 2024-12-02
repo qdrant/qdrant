@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use rand::Rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
@@ -11,7 +13,7 @@ pub fn kmeans(
     max_iterations: usize,
     max_threads: usize,
     accuracy: f32,
-    stop_condition: &impl Fn() -> bool,
+    stopped: &AtomicBool,
 ) -> Result<Vec<f32>, EncodingError> {
     let pool = rayon::ThreadPoolBuilder::new()
         .thread_name(|idx| format!("kmeans-{idx}"))
@@ -26,7 +28,7 @@ pub fn kmeans(
     let mut centroid_indexes = vec![0u32; data.len() / dim];
 
     for _ in 0..max_iterations {
-        if stop_condition() {
+        if stopped.load(Ordering::Relaxed) {
             return Err(EncodingError::Stopped);
         }
 

@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use permutation_iterator::Permutor;
@@ -41,7 +43,7 @@ fn binary_bench(c: &mut Criterion) {
             distance_type: DistanceType::Dot,
             invert: false,
         },
-        || false,
+        &AtomicBool::new(false),
     )
     .unwrap();
 
@@ -80,7 +82,7 @@ fn binary_bench(c: &mut Criterion) {
             distance_type: DistanceType::Dot,
             invert: false,
         },
-        || false,
+        &AtomicBool::new(false),
     )
     .unwrap();
 
