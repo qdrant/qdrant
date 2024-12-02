@@ -4,7 +4,6 @@ use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
-use itertools::Itertools;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
@@ -913,22 +912,29 @@ where
             return vec![];
         }
 
-        let chunks = points
-            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
-            .filter(|point_id| self.check_vector(*point_id))
-            .chunks(VECTOR_READ_BATCH_SIZE); // batch points to leverage storage sequential access
-
         let mut pq = FixedLengthPriorityQueue::new(top);
 
         // Reuse the same buffer for all chunks, to avoid reallocation
         let mut chunk = [0; VECTOR_READ_BATCH_SIZE];
         let mut scores_buffer = [0.0; VECTOR_READ_BATCH_SIZE];
-
-        for points_chunk in &chunks {
+        loop {
             let mut chunk_size = 0;
-            for (i, point_id) in points_chunk.enumerate() {
-                chunk[i] = point_id;
+            for point_id in &mut *points {
+                if self.is_stopped.load(Ordering::Relaxed) {
+                    break;
+                }
+                if !self.check_vector(point_id) {
+                    continue;
+                }
+                chunk[chunk_size] = point_id;
                 chunk_size += 1;
+                if chunk_size == VECTOR_READ_BATCH_SIZE {
+                    break;
+                }
+            }
+
+            if chunk_size == 0 {
+                break;
             }
 
             self.query_scorer

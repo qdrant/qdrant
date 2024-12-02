@@ -34,11 +34,10 @@ impl<
     > MultiMetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
     pub fn new(query: &MultiDenseVectorInternal, vector_storage: &'a TVectorStorage) -> Self {
-        let slices = query.multi_vectors();
-        let preprocessed: DenseVector = slices
-            .into_iter()
-            .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
-            .collect();
+        let mut preprocessed = DenseVector::new();
+        for slice in query.multi_vectors() {
+            preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
+        }
         let preprocessed = MultiDenseVectorInternal::new(preprocessed, query.dim);
         Self {
             query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),

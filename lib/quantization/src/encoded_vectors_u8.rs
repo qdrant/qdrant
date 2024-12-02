@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use serde::{Deserialize, Serialize};
@@ -37,7 +38,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         mut storage_builder: impl EncodedStorageBuilder<TStorage>,
         vector_parameters: &VectorParameters,
         quantile: Option<f32>,
-        stop_condition: impl Fn() -> bool,
+        stopped: &AtomicBool,
     ) -> Result<Self, EncodingError> {
         let actual_dim = Self::get_actual_dim(vector_parameters);
 
@@ -72,7 +73,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         };
 
         for vector in orig_data {
-            if stop_condition() {
+            if stopped.load(Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
             }
 

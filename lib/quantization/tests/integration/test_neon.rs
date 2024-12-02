@@ -1,6 +1,8 @@
 #[cfg(test)]
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 mod tests {
+    use std::sync::atomic::AtomicBool;
+
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
@@ -31,7 +33,7 @@ mod tests {
                 invert: false,
             },
             None,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -67,7 +69,7 @@ mod tests {
                 invert: false,
             },
             None,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -103,7 +105,7 @@ mod tests {
                 invert: false,
             },
             None,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);

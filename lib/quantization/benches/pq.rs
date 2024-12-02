@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -27,7 +29,7 @@ fn encode_bench(c: &mut Criterion) {
         },
         2,
         2,
-        || false,
+        &AtomicBool::new(false),
     )
     .unwrap();
 

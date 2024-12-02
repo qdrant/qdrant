@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::{AtomicBool, AtomicUsize};
     use std::time::Duration;
 
     use common::counter::hardware_counter::HardwareCounterCell;
@@ -34,7 +34,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -68,7 +68,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -102,7 +102,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -136,7 +136,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -170,7 +170,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -204,7 +204,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
@@ -237,7 +237,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
 
@@ -269,7 +269,7 @@ mod tests {
             },
             1,
             1,
-            || false,
+            &AtomicBool::new(false),
         )
         .unwrap();
 
@@ -321,7 +321,7 @@ mod tests {
                     },
                     1,
                     5,
-                    || false,
+                    &AtomicBool::new(false),
                 )
                 .unwrap()
             })

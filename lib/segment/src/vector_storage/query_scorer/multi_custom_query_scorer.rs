@@ -47,11 +47,10 @@ impl<
         let query = query
             .transform(|vector| {
                 dim = vector.dim;
-                let slices = vector.multi_vectors();
-                let preprocessed: DenseVector = slices
-                    .into_iter()
-                    .flat_map(|slice| TMetric::preprocess(slice.to_vec()))
-                    .collect();
+                let mut preprocessed = DenseVector::new();
+                for slice in vector.multi_vectors() {
+                    preprocessed.extend_from_slice(&TMetric::preprocess(slice.to_vec()));
+                }
                 let preprocessed = MultiDenseVectorInternal::new(preprocessed, vector.dim);
                 let converted =
                     TElement::from_float_multivector(CowMultiVector::Owned(preprocessed))

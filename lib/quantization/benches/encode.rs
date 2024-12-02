@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use permutation_iterator::Permutor;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -26,7 +28,7 @@ fn encode_dot_bench(c: &mut Criterion) {
             invert: false,
         },
         None,
-        || false,
+        &AtomicBool::new(false),
     )
     .unwrap();
 
@@ -119,7 +121,7 @@ fn encode_l1_bench(c: &mut Criterion) {
             invert: true,
         },
         None,
-        || false,
+        &AtomicBool::new(false),
     )
     .unwrap();
 

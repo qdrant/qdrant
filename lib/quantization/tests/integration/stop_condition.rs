@@ -34,7 +34,7 @@ mod tests {
                 Vec::<u8>::new(),
                 &vector_parameters,
                 None,
-                || stopped_ref.load(Ordering::Relaxed),
+                stopped_ref,
             )
             .err()
                 == Some(EncodingError::Stopped)
@@ -71,7 +71,7 @@ mod tests {
                 &vector_parameters,
                 2,
                 1,
-                || stopped_ref.load(Ordering::Relaxed),
+                stopped_ref,
             )
             .err()
                 == Some(EncodingError::Stopped)
