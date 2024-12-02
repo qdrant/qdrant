@@ -731,8 +731,10 @@ impl<'s> SegmentHolder {
     /// If there are unsaved changes after flush - detects lowest unsaved change version.
     /// If all changes are saved - returns max version.
     pub fn flush_all(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+        let lock_order: Vec<_> = self.segment_flush_ordering().collect();
+
         // Grab and keep to segment RwLock's until the end of this function
-        let segments = self.segment_locks(self.segment_flush_ordering())?;
+        let segments = self.segment_locks(lock_order.iter().cloned())?;
 
         // Read-lock all segments before flushing any, must prevent any writes to any segment
         // That is to prevent any copy-on-write operation on two segments from occurring in between
@@ -778,12 +780,12 @@ impl<'s> SegmentHolder {
         let mut has_unsaved = false;
 
         // Flush and release each segment
-        for read_segment in segment_reads {
+        for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order.into_iter()) {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.flush(sync, force)?;
 
             log::debug!(
-                "Flushed segment {:?} version: {segment_version} to persisted: {segment_persisted_version}", &read_segment.data_path()
+                "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}", &read_segment.data_path()
             );
 
             if segment_version > segment_persisted_version {
