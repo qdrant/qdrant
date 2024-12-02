@@ -19,7 +19,6 @@ use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 const TRUES_DIRNAME: &str = "trues";
 const FALSES_DIRNAME: &str = "falses";
 
-
 /// Payload index for boolean values, stored in memory-mapped files.
 pub struct MmapBoolIndex {
     base_dir: PathBuf,
@@ -44,7 +43,7 @@ impl MmapBoolIndex {
         if falses_dir.is_dir() {
             Self::open(&path, populate)
         } else {
-            std::fs::create_dir_all(&path).map_err(|err| {
+            std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
@@ -65,7 +64,6 @@ impl MmapBoolIndex {
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
         let falses_slice = DynamicMmapFlags::open(&falses_path, populate)?;
-
 
         Ok(Self {
             base_dir: path.to_path_buf(),
@@ -163,7 +161,7 @@ impl MmapBoolIndex {
 
         indexed_count
     }
-    
+
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
@@ -176,7 +174,7 @@ impl MmapBoolIndex {
     pub fn values_count(&self, point_id: PointOffsetType) -> usize {
         let has_true = self.trues_slice.get(point_id as usize);
         let has_false = self.falses_slice.get(point_id as usize);
-        (has_true as usize) + (has_false as usize)
+        usize::from(has_true) + usize::from(has_false)
     }
 
     pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
@@ -316,7 +314,7 @@ impl PayloadFieldIndex for MmapBoolIndex {
         *indexed_count = calculated_indexed_count as usize;
         *trues_count = trues_slice.count_flags();
         *falses_count = falses_slice.count_flags();
-        
+
         Ok(true)
     }
 
