@@ -114,7 +114,7 @@ pub struct Task {
 }
 
 impl Task {
-    pub async fn exec(mut self) {
+    pub async fn exec(self) {
         while let Err(err) = self.exec_catch_unwind().await {
             let message = common::panic::downcast_str(&err).unwrap_or("");
             let separator = if !message.is_empty() { ": " } else { "" };
@@ -123,17 +123,17 @@ impl Task {
         }
     }
 
-    async fn exec_catch_unwind(&mut self) -> thread::Result<()> {
+    async fn exec_catch_unwind(&self) -> thread::Result<()> {
         panic::AssertUnwindSafe(self.exec_cancel())
             .catch_unwind()
             .await
     }
 
-    async fn exec_cancel(&mut self) {
+    async fn exec_cancel(&self) {
         let _ = cancel::future::cancel_on_token(self.cancel.clone(), self.exec_impl()).await;
     }
 
-    async fn exec_impl(&mut self) {
+    async fn exec_impl(&self) {
         // Wait until node joins cluster for the first time
         //
         // If this is a new deployment and `--bootstrap` CLI parameter was specified...
