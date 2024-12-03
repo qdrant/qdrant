@@ -57,6 +57,7 @@ pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
+    compressed: bool,
     use_heuristic: bool,
     rng: &mut R,
     links_path: Option<&Path>,
@@ -69,6 +70,8 @@ where
 
     (
         vector_holder,
-        graph_layers_builder.into_graph_layers(links_path).unwrap(),
+        graph_layers_builder
+            .into_graph_layers(links_path, compressed)
+            .unwrap(),
     )
 }

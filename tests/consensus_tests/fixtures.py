@@ -85,6 +85,7 @@ def create_collection(
     write_consistency_factor=1,
     timeout=10,
     sharding_method=None,
+    indexing_threshold=20000,
     headers={},
 ):
     # Create collection in peer_url
@@ -97,6 +98,9 @@ def create_collection(
             "replication_factor": replication_factor,
             "write_consistency_factor": write_consistency_factor,
             "sharding_method": sharding_method,
+            "optimizers_config": {
+                "indexing_threshold": indexing_threshold,
+            },
         },
         headers=headers,
     )

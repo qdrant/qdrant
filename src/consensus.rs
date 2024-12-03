@@ -704,7 +704,7 @@ impl Consensus {
         Ok(())
     }
 
-    fn try_sync_local_state(&mut self) -> anyhow::Result<()> {
+    fn try_sync_local_state(&self) -> anyhow::Result<()> {
         if !self.node.has_ready() {
             // No updates to process
             let store = self.node.store();
@@ -1242,7 +1242,7 @@ impl RaftMessageSender {
         }
     }
 
-    async fn send(&mut self, message: &RaftMessage) {
+    async fn send(&self, message: &RaftMessage) {
         if let Err(err) = self.try_send(message).await {
             let peer_id = message.to;
 
@@ -1254,7 +1254,7 @@ impl RaftMessageSender {
         }
     }
 
-    async fn try_send(&mut self, message: &RaftMessage) -> anyhow::Result<()> {
+    async fn try_send(&self, message: &RaftMessage) -> anyhow::Result<()> {
         let peer_id = message.to;
 
         let uri = self.uri(peer_id).await?;
@@ -1316,7 +1316,7 @@ impl RaftMessageSender {
         Ok(())
     }
 
-    async fn uri(&mut self, peer_id: PeerId) -> anyhow::Result<Uri> {
+    async fn uri(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
         let uri = self
             .consensus_state
             .peer_address_by_id()
@@ -1329,7 +1329,7 @@ impl RaftMessageSender {
         }
     }
 
-    async fn who_is(&mut self, peer_id: PeerId) -> anyhow::Result<Uri> {
+    async fn who_is(&self, peer_id: PeerId) -> anyhow::Result<Uri> {
         let bootstrap_uri = self
             .bootstrap_uri
             .clone()

@@ -87,7 +87,7 @@ byteorder = { workspace = true }
 zerocopy = { workspace = true }
 
 sysinfo = "0.32"
-charabia = { version = "0.9.1", default-features = false, features = ["greek", "hebrew", "thai"] }
+charabia = { version = "0.9.2", default-features = false, features = ["greek", "hebrew", "thai"] }
 
 blob_store = { path = "../blob_store" }
 
