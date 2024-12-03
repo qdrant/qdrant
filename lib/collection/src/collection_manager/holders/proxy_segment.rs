@@ -254,8 +254,14 @@ impl ProxySegment {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for point_id in deleted_points.keys() {
-                        wrapped_segment.delete_point(op_num, *point_id)?;
+                    for (point_id, version) in deleted_points.iter() {
+                        // Delete points here with their operation version, that'll bump the optimized
+                        // segment version and will ensure we flush the new changes
+                        debug_assert!(
+                            *version >= op_num,
+                            "proxied point deletes should have newer version than segment",
+                        );
+                        wrapped_segment.delete_point(*version, *point_id)?;
                     }
                     OperationResult::Ok(())
                 })?;
@@ -266,6 +272,8 @@ impl ProxySegment {
                 // Points are still marked as deleted in two places, which is fine
             }
         }
+
+        let op_num = wrapped_segment.version();
 
         // Propagate deleted indexes
         // Ordering is important here and must match the flush function to prevent a deadlock
