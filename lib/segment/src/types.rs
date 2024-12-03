@@ -2128,6 +2128,9 @@ impl NestedCondition {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(untagged)]
+#[serde(
+    expecting = "Expected some form of condition, which can be a field condition (like {\"key\": ..., \"match\": ... }), or some other mentioned in the documentation: https://qdrant.tech/documentation/concepts/filtering/#filtering-conditions"
+)]
 #[allow(clippy::large_enum_variant)]
 pub enum Condition {
     /// Check if field satisfies provided condition
@@ -2197,6 +2200,9 @@ pub trait CustomIdCheckerCondition: fmt::Debug {
 /// Options for specifying which payload to include or not
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(untagged, rename_all = "snake_case")]
+#[serde(
+    expecting = "Expected a boolean, an array of strings, or an object with an include/exclude field"
+)]
 pub enum WithPayloadInterface {
     /// If `true` - return all payload,
     /// If `false` - do not return payload
@@ -2222,6 +2228,7 @@ impl Default for WithPayloadInterface {
 /// Options for specifying which vector to include
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
+#[serde(expecting = "Expected a boolean, or an array of strings")]
 pub enum WithVector {
     /// If `true` - return all vector,
     /// If `false` - do not return vector
