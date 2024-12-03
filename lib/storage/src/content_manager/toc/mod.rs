@@ -97,8 +97,6 @@ impl TableOfContent {
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
     ) -> Self {
-        let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
-        create_dir_all(&snapshots_path).expect("Can't create Snapshots directory");
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
         if let Some(path) = storage_config.temp_path.as_deref() {
@@ -128,11 +126,11 @@ impl TableOfContent {
                 .to_str()
                 .expect("A filename of one of the collection files is not a valid UTF-8")
                 .to_string();
+
+            let snapshots_path = Path::new(&storage_config.snapshots_path.clone()).to_owned();
             let collection_snapshots_path =
                 Self::collection_snapshots_path(&snapshots_path, &collection_name);
-            create_dir_all(&collection_snapshots_path).unwrap_or_else(|e| {
-                panic!("Can't create a directory for snapshot of {collection_name}: {e}")
-            });
+
             log::info!("Loading collection: {collection_name}");
             let collection = general_runtime.block_on(Collection::load(
                 collection_name.clone(),
