@@ -229,6 +229,14 @@ test = false
 bench = false
 required-features = ["service_debug"]
 
+[[bin]]
+name = "segment_inspector"
+path = "src/segment_inspector.rs"
+test = false
+bench = false
+required-features = ["service_debug"]
+
+
 [workspace]
 members = [
     "lib/api",
