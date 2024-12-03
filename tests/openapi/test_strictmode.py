@@ -532,7 +532,7 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
         )
 
     # Overwriting the same points to trigger cache refreshing
-    for _ in range(33):
+    for _ in range(32):
         upsert_points([1, 2, 3, 4, 5]).raise_for_status()
 
     set_strict_mode(collection_name, {
@@ -540,11 +540,11 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
         "max_collection_vector_size_bytes": 240,
     })
 
-    for _ in range(33):
+    for _ in range(32):
         upsert_points([6, 7, 8, 9, 10]).raise_for_status()
 
     # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
-    for _ in range(33):
+    for _ in range(32):
         failed_upsert = upsert_points([12, 13, 14, 15, 16])
         if failed_upsert.ok:
             continue
@@ -581,7 +581,7 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
             }
         )
 
-    for _ in range(33):
+    for _ in range(32):
         upsert_points([1, 2, 3, 4, 5]).raise_for_status()
 
     set_strict_mode(collection_name, {
@@ -589,11 +589,11 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
         "max_collection_vector_size_bytes": 240,
     })
 
-    for _ in range(33):
+    for _ in range(32):
         upsert_points([6, 7, 8, 9, 10]).raise_for_status()
 
     # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
-    for _ in range(33):
+    for _ in range(32):
         failed_upsert = upsert_points([12, 13, 14, 15, 16])
         if failed_upsert.ok:
             continue

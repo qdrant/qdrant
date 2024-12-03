@@ -1015,7 +1015,7 @@ impl ShardReplicaSet {
     /// Returns the estimated size of all locally stored vectors in bytes.
     /// Locks and iterates over all segments.
     /// Cache this value in performance critical scenarios!
-    pub(crate) async fn load_local_shards_stats(&self) -> LocalDataStats {
+    pub(crate) async fn calculate_local_shards_stats(&self) -> LocalDataStats {
         self.local
             .read()
             .await
