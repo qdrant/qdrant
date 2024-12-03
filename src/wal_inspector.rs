@@ -66,13 +66,12 @@ fn print_collection_wal(wal_path: &Path) {
         Ok(wal) => {
             // print all entries
             let mut count = 0;
-            for (idx, op) in wal.read_all(false) {
+            for (idx, op) in wal.read_all(true) {
                 println!("==========================");
-                println!("Entry: {idx}");
-                println!("Operation: {:?}", op.operation);
-                if let Some(clock_tag) = op.clock_tag {
-                    println!("Clock: {clock_tag:?}");
-                }
+                println!(
+                    "Entry: {idx} Operation: {:?} Clock: {:?}",
+                    op.operation, op.clock_tag
+                );
                 count += 1;
             }
             println!("==========================");
