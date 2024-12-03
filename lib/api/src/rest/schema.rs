@@ -238,6 +238,7 @@ pub struct Batch {
 
 #[derive(Debug, Deserialize, Serialize, Clone, JsonSchema, PartialEq)]
 #[serde(untagged)]
+#[serde(expecting = "Expected a string or an integer")]
 pub enum ShardKeySelector {
     ShardKey(ShardKey),
     ShardKeys(Vec<ShardKey>),
@@ -339,6 +340,7 @@ pub enum NamedVectorStruct {
 
 #[derive(Deserialize, Serialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(untagged)]
+#[serde(expecting = "Expected a string, or an object with a key, direction and/or start_from")]
 pub enum OrderByInterface {
     Key(JsonPath),
     Struct(OrderBy),
@@ -403,6 +405,7 @@ pub struct QueryRequestInternal {
     pub offset: Option<usize>,
 
     /// Options for specifying which vectors to include into the response. Default is false.
+    #[serde(alias = "with_vectors")]
     pub with_vector: Option<WithVector>,
 
     /// Options for specifying which payload to include or not. Default is false.
