@@ -429,7 +429,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         continue;
                     }
                     // ToDo: reuse graph layer for same payload
-                    let additional_graph = GraphLayersBuilder::new_with_params(
+                    let mut additional_graph = GraphLayersBuilder::new_with_params(
                         total_vector_count,
                         payload_m,
                         config.payload_m0.unwrap_or(config.m0),
@@ -446,7 +446,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         payload_index,
                         &pool,
                         stopped,
-                        &additional_graph,
+                        &mut additional_graph,
                         payload_block.condition,
                         &mut block_filter_list,
                         &mut indexed_vectors_set,
@@ -494,7 +494,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         payload_index: &StructPayloadIndex,
         pool: &ThreadPool,
         stopped: &AtomicBool,
-        graph_layers_builder: &GraphLayersBuilder,
+        graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedListHandle,
         indexed_vectors_set: &mut BitVec,
