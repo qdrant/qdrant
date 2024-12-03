@@ -646,12 +646,17 @@ pub trait SegmentOptimizer {
             let mut write_segments_guard = segments.write();
             let deleted_points = proxy_deleted_points.read();
             let points_diff = deleted_points
-                .keys()
-                .filter(|&point_id| !already_remove_points.contains(point_id));
-            for &point_id in points_diff {
-                optimized_segment
-                    .delete_point(optimized_segment.version(), point_id)
-                    .unwrap();
+                .iter()
+                .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
+            let optimized_segment_version = optimized_segment.version();
+            for (&point_id, &version) in points_diff {
+                // Delete points here with their operation version, that'll bump the optimized
+                // segment version and will ensure we flush the new changes
+                debug_assert!(
+                    version >= optimized_segment_version,
+                    "proxied point deletes should have newer version than segment",
+                );
+                optimized_segment.delete_point(version, point_id).unwrap();
             }
 
             for deleted_field_name in proxy_deleted_indexes.read().iter() {
