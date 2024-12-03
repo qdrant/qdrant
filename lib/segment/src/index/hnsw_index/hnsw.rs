@@ -494,7 +494,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         payload_index: &StructPayloadIndex,
         pool: &ThreadPool,
         stopped: &AtomicBool,
-        graph_layers_builder: &mut GraphLayersBuilder,
+        #[allow(clippy::needless_pass_by_ref_mut)] graph_layers_builder: &mut GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedListHandle,
         indexed_vectors_set: &mut BitVec,
