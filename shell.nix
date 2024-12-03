@@ -65,6 +65,7 @@ mkShell {
     rust-combined
 
     # Crates' build dependencies
+    pkgs.cmake # for shaderc-sys
     pkgs.iconv # for libc on darwin
     pkgs.libunwind # for unwind-sys
     pkgs.pkg-config # for unwind-sys and other deps
