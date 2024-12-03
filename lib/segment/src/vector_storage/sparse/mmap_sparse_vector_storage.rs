@@ -82,7 +82,12 @@ impl MmapSparseVectorStorage {
         let metadata_path = path.join(METADATA_FILENAME);
         let metadata_mmap =
             mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, false)?;
-        let metadata = unsafe { MmapType::try_from(metadata_mmap)? };
+        let metadata: MmapType<Metadata> = unsafe { MmapType::try_from(metadata_mmap)? };
+
+        debug_assert_eq!(
+            metadata.next_point_offset as PointOffsetType,
+            storage.max_point_id()
+        );
 
         Ok(Self {
             storage: Arc::new(RwLock::new(storage)),
@@ -331,7 +336,11 @@ mod test {
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
-    use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
+    use sparse::common::sparse_vector;
+
+    use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
+        MmapSparseVectorStorage, VectorRef,
+    };
     use crate::vector_storage::VectorStorage;
 
     fn visit_files_recursively(dir: &Path, cb: &mut impl FnMut(PathBuf)) -> std::io::Result<()> {
@@ -368,5 +377,37 @@ mod test {
         assert_eq!(storage_files.len(), 8);
         assert!(storage_files.iter().all(|f| f.exists()));
         assert_eq!(storage_files, existing_files);
+    }
+
+    #[test]
+    fn test_create_insert_close_and_load() {
+        let tmp_dir = tempfile::Builder::new()
+            .prefix("test_storage")
+            .tempdir()
+            .unwrap();
+
+        let vector = sparse_vector::SparseVector {
+            indices: vec![1, 2, 3],
+            values: vec![0.1, 0.2, 0.3],
+        };
+
+        {
+            let mut storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
+
+            storage.insert_vector(0, VectorRef::from(&vector)).unwrap();
+            storage.insert_vector(2, VectorRef::from(&vector)).unwrap();
+            storage.insert_vector(4, VectorRef::from(&vector)).unwrap();
+            storage.flusher()().unwrap();
+        }
+
+        let storage = MmapSparseVectorStorage::open(tmp_dir.path()).unwrap();
+        let result_vector = storage.get_vector(0);
+
+        match result_vector {
+            crate::data_types::named_vectors::CowVector::Sparse(sparse) => {
+                assert_eq!(sparse.values, vector.values);
+            }
+            _ => panic!("Expected sparse vector"),
+        };
     }
 }
