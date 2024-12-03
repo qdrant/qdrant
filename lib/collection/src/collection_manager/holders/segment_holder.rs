@@ -1261,12 +1261,15 @@ impl<'s> SegmentHolder {
                     let mut removed_points = 0;
                     let segment_arc = locked_segment.get();
                     let mut write_segment = segment_arc.write();
-                    for point_id in points {
+                    for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {
                             removed_points += 1;
                             write_segment.delete_point(point_version, point_id)?;
                         }
                     }
+
+                    log::debug!("Deleted {removed_points} points from segment {segment_id} to deduplicate: {points:?}");
+
                     OperationResult::Ok(removed_points)
                 })
             })
@@ -1327,32 +1330,36 @@ impl<'s> SegmentHolder {
             }
 
             if last_point_id_opt == Some(point_id) {
-                let last_point_id = last_point_id_opt.unwrap();
                 let last_segment_id = last_segment_id_opt.unwrap();
 
                 let point_version = locked_segments[&segment_id].point_version(point_id);
                 let last_point_version = if let Some(last_point_version) = last_point_version_opt {
                     last_point_version
                 } else {
-                    let version = locked_segments[&last_segment_id].point_version(last_point_id);
+                    let version = locked_segments[&last_segment_id].point_version(point_id);
                     last_point_version_opt = Some(version);
                     version
                 };
 
                 // choose newer version between point_id and last_point_id
                 if point_version < last_point_version {
+                    log::debug!("Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})");
+
                     points_to_remove
                         .entry(segment_id)
                         .or_default()
                         .push(point_id);
                 } else {
-                    last_point_id_opt = Some(point_id);
-                    last_segment_id_opt = Some(segment_id);
-                    last_point_version_opt = Some(point_version);
+                    log::debug!("Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})");
+
                     points_to_remove
                         .entry(last_segment_id)
                         .or_default()
-                        .push(last_point_id);
+                        .push(point_id);
+
+                    last_point_id_opt = Some(point_id);
+                    last_segment_id_opt = Some(segment_id);
+                    last_point_version_opt = Some(point_version);
                 }
             } else {
                 last_point_id_opt = Some(point_id);
