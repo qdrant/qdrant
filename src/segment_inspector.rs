@@ -41,7 +41,7 @@ fn main() {
 
         // Open segment
 
-        let segment = load_segment(&path, &AtomicBool::new(false))
+        let segment = load_segment(path, &AtomicBool::new(false))
             .unwrap()
             .unwrap();
 
@@ -53,7 +53,7 @@ fn main() {
 
         if args.info {
             let info = segment.info();
-            eprintln!("info = {:#?}", info);
+            eprintln!("info = {info:#?}");
         }
 
         if let Some(point_id_int) = args.point_id_int {
