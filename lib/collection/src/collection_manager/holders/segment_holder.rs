@@ -1268,7 +1268,7 @@ impl<'s> SegmentHolder {
                         }
                     }
 
-                    log::debug!("Deleted {removed_points} point IDs from segment {segment_id} for deduplication: {points:?}");
+                    log::debug!("Deleted {removed_points} points from segment {segment_id} to deduplicate: {points:?}");
 
                     OperationResult::Ok(removed_points)
                 })
