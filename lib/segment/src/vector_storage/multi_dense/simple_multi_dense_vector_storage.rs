@@ -199,7 +199,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
     }
 
     fn update_stored(
-        &mut self,
+        &self,
         key: PointOffsetType,
         deleted: bool,
         vector: Option<TypedMultiDenseVectorRef<T>>,
