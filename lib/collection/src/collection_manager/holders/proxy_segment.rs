@@ -7,6 +7,7 @@ use std::sync::Arc;
 use bitvec::prelude::BitVec;
 use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
+use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::facets::{FacetParams, FacetValue};
@@ -27,8 +28,7 @@ use segment::types::{
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
 pub type LockedRmSet = Arc<RwLock<HashMap<PointIdType, ProxyDeletedPoint>>>;
-pub type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
-pub type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
+pub type LockedIndexChanges = Arc<RwLock<HashMap<PayloadKeyType, ProxyIndexChange>>>;
 
 /// This object is a wrapper around read-only segment.
 ///
@@ -42,12 +42,11 @@ pub struct ProxySegment {
     /// Present if the wrapped segment is a plain segment
     /// Used for faster deletion checks
     deleted_mask: Option<BitVec>,
+    changed_indexes: LockedIndexChanges,
     /// Points which should no longer used from wrapped_segment
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
     deleted_points: LockedRmSet,
-    created_indexes: LockedFieldsMap,
-    deleted_indexes: LockedFieldsSet,
     wrapped_config: SegmentConfig,
 }
 
@@ -56,8 +55,7 @@ impl ProxySegment {
         segment: LockedSegment,
         write_segment: LockedSegment,
         deleted_points: LockedRmSet,
-        created_indexes: LockedFieldsMap,
-        deleted_indexes: LockedFieldsSet,
+        changed_indexes: LockedIndexChanges,
     ) -> Self {
         let deleted_mask = match &segment {
             LockedSegment::Original(raw_segment) => {
@@ -72,9 +70,8 @@ impl ProxySegment {
             write_segment,
             wrapped_segment: segment,
             deleted_mask,
+            changed_indexes,
             deleted_points,
-            created_indexes,
-            deleted_indexes,
             wrapped_config,
         }
     }
@@ -253,6 +250,43 @@ impl ProxySegment {
         let mut wrapped_segment = wrapped_segment.upgradable_read();
         let op_num = wrapped_segment.version();
 
+        // Propagate index changes
+        // Ordering is important here and must match the flush function to prevent a deadlock
+        {
+            let changed_indexes = self.changed_indexes.upgradable_read();
+            if !changed_indexes.is_empty() {
+                wrapped_segment.with_upgraded(|wrapped_segment| {
+                    let changes = changed_indexes
+                        .iter()
+                        .sorted_by_key(|(_, change)| change.version())
+                        .collect::<Vec<_>>();
+                    for (field_name, change) in changes {
+                        // Change indexes here with their operation version, that'll bump the optimized
+                        // segment version and will ensure we flush the new changes
+                        debug_assert!(
+                            change.version() >= op_num,
+                            "proxied index change should have newer version than segment",
+                        );
+
+                        match change {
+                            ProxyIndexChange::Create(schema, version) => {
+                                wrapped_segment.create_field_index(
+                                    *version,
+                                    field_name,
+                                    Some(schema),
+                                )?;
+                            }
+                            ProxyIndexChange::Delete(version) => {
+                                wrapped_segment.delete_field_index(*version, field_name)?;
+                            }
+                        }
+                    }
+                    OperationResult::Ok(())
+                })?;
+                RwLockUpgradableReadGuard::upgrade(changed_indexes).clear();
+            }
+        }
+
         // Propagate deleted points
         // Ordering is important here and must match the flush function to prevent a deadlock
         {
@@ -275,38 +309,6 @@ impl ProxySegment {
                 // Note: We do not clear the deleted mask here, as it provides
                 // no performance advantage and does not affect the correctness of search.
                 // Points are still marked as deleted in two places, which is fine
-            }
-        }
-
-        let op_num = wrapped_segment.version();
-
-        // Propagate deleted indexes
-        // Ordering is important here and must match the flush function to prevent a deadlock
-        {
-            let deleted_indexes = self.deleted_indexes.upgradable_read();
-            if !deleted_indexes.is_empty() {
-                wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for key in deleted_indexes.iter() {
-                        wrapped_segment.delete_field_index(op_num, key)?;
-                    }
-                    OperationResult::Ok(())
-                })?;
-                RwLockUpgradableReadGuard::upgrade(deleted_indexes).clear();
-            }
-        }
-
-        // Propagate created indexes
-        // Ordering is important here and must match the flush function to prevent a deadlock
-        {
-            let created_indexes = self.created_indexes.upgradable_read();
-            if !created_indexes.is_empty() {
-                wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (key, field_schema) in created_indexes.iter() {
-                        wrapped_segment.create_field_index(op_num, key, Some(field_schema))?;
-                    }
-                    OperationResult::Ok(())
-                })?;
-                RwLockUpgradableReadGuard::upgrade(created_indexes).clear();
             }
         }
 
@@ -1000,9 +1002,8 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+        let changed_indexes_guard = self.changed_indexes.read();
         let deleted_points_guard = self.deleted_points.read();
-        let deleted_indexes_guard = self.deleted_indexes.read();
-        let created_indexes_guard = self.created_indexes.read();
 
         let (wrapped_version, wrapped_persisted_version) = {
             let wrapped_segment = self.wrapped_segment.get();
@@ -1019,9 +1020,7 @@ impl SegmentEntry for ProxySegment {
 
         // As soon as anything is written to the proxy, the max version of the proxy if fixed to
         // minimal of both versions. So we should never ack operation, which does copy-on-write.
-        let is_all_empty = deleted_points_guard.is_empty()
-            && deleted_indexes_guard.is_empty()
-            && created_indexes_guard.is_empty();
+        let is_all_empty = changed_indexes_guard.is_empty() && deleted_points_guard.is_empty();
 
         let flushed_version = if is_all_empty {
             // It might happen, that wrapped segment still has some data which is not flushed
@@ -1074,8 +1073,12 @@ impl SegmentEntry for ProxySegment {
         if self.version() > op_num {
             return Ok(false);
         }
-        self.deleted_indexes.write().insert(key.clone());
-        self.created_indexes.write().remove(key);
+
+        // Store index change to later propagate to optimized/wrapped segment
+        self.changed_indexes
+            .write()
+            .insert(key.clone(), ProxyIndexChange::Delete(op_num));
+
         self.write_segment
             .get()
             .write()
@@ -1118,27 +1121,29 @@ impl SegmentEntry for ProxySegment {
             return Ok(false);
         };
 
-        // Index was updated: mark as added and deleted
-        self.created_indexes
+        // Store index change to later propagate to optimized/wrapped segment
+        self.changed_indexes
             .write()
-            .insert(key.clone(), field_schema);
-        self.deleted_indexes.write().remove(&key);
+            .insert(key.clone(), ProxyIndexChange::Create(field_schema, op_num));
 
         Ok(true)
     }
 
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
-        let indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
+        let mut indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
+
+        for (field_name, change) in self.changed_indexes.read().iter() {
+            match change {
+                ProxyIndexChange::Create(schema, _) => {
+                    indexed_fields.insert(field_name.to_owned(), schema.to_owned());
+                }
+                ProxyIndexChange::Delete(_) => {
+                    indexed_fields.remove(field_name);
+                }
+            }
+        }
+
         indexed_fields
-            .into_iter()
-            .chain(
-                self.created_indexes
-                    .read()
-                    .iter()
-                    .map(|(k, v)| (k.to_owned(), v.to_owned())),
-            )
-            .filter(|(key, _)| !self.deleted_indexes.read().contains(key))
-            .collect()
     }
 
     fn check_error(&self) -> Option<SegmentFailedState> {
@@ -1254,6 +1259,21 @@ pub struct ProxyDeletedPoint {
     pub operation_version: SeqNumberType,
 }
 
+#[derive(Debug)]
+pub enum ProxyIndexChange {
+    Create(PayloadFieldSchema, SeqNumberType),
+    Delete(SeqNumberType),
+}
+
+impl ProxyIndexChange {
+    pub fn version(&self) -> SeqNumberType {
+        match self {
+            ProxyIndexChange::Create(_, version) => *version,
+            ProxyIndexChange::Delete(version) => *version,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -1278,8 +1298,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -1339,8 +1358,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -1403,8 +1421,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
@@ -1458,8 +1475,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         let q1 = [1.0, 1.0, 1.0, 0.1];
@@ -1519,8 +1535,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         )
     }
 
@@ -1607,8 +1622,7 @@ mod tests {
             original_segment.clone(),
             write_segment.clone(),
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         proxy_segment.replicate_field_indexes(0).unwrap();
@@ -1657,23 +1671,20 @@ mod tests {
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
         let deleted_points = LockedRmSet::default();
-        let created_indexes = LockedFieldsMap::default();
-        let deleted_indexes = LockedFieldsSet::default();
+        let changed_indexes = LockedIndexChanges::default();
 
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment.clone(),
             Arc::clone(&deleted_points),
-            Arc::clone(&created_indexes),
-            Arc::clone(&deleted_indexes),
+            Arc::clone(&changed_indexes),
         );
 
         let mut proxy_segment2 = ProxySegment::new(
             original_segment_2,
             write_segment,
             deleted_points,
-            created_indexes,
-            deleted_indexes,
+            changed_indexes,
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -1740,8 +1751,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         // We have 5 points by default, assert counts
@@ -1833,8 +1843,7 @@ mod tests {
             original_segment,
             write_segment,
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         // Assert counts from original segment
@@ -1924,8 +1933,7 @@ mod tests {
             locked_wrapped_segment.clone(),
             locked_write_segment.clone(),
             LockedRmSet::default(),
-            LockedFieldsMap::default(),
-            LockedFieldsSet::default(),
+            LockedIndexChanges::default(),
         );
 
         // Unwrapped `LockedSegment`s for convenient access

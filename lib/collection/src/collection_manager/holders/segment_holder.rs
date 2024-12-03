@@ -1030,7 +1030,6 @@ impl<'s> SegmentHolder {
                 tmp_segment.clone(),
                 Default::default(),
                 Default::default(),
-                Default::default(),
             );
 
             // Write segment is fresh, so it has no operations
