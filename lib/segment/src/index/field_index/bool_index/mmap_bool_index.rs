@@ -93,6 +93,14 @@ impl MmapBoolIndex {
         Ok(())
     }
 
+    fn get_slice_for(&self, value: bool) -> &BitSlice {
+        if value {
+            self.trues_slice.get_bitslice()
+        } else {
+            self.falses_slice.get_bitslice()
+        }
+    }
+
     fn bitslice_usize_view(bitslice: &BitSlice) -> &[usize] {
         let (head, body, tail) = bitslice
             .domain()
@@ -109,11 +117,11 @@ impl MmapBoolIndex {
     fn calculate_indexed_count(&self) -> u32 {
         // indexed_count would be trues_bitslice.union_count(falses_bitslice), but there is no such operation yet.
         // So we do it manually.
-        let trues = Self::bitslice_usize_view(&self.trues_slice.get_bitslice());
-        let falses = Self::bitslice_usize_view(&self.falses_slice.get_bitslice());
+        let trues = Self::bitslice_usize_view(self.get_slice_for(true));
+        let falses = Self::bitslice_usize_view(self.get_slice_for(false));
 
         let mut indexed_count = 0;
-        for elem in trues.iter().zip_longest(falses.iter()) {
+        for elem in trues.iter().zip_longest(falses) {
             match elem {
                 itertools::EitherOrBoth::Both(trues_elem, falses_elem) => {
                     let union = trues_elem | falses_elem;
@@ -294,10 +302,7 @@ impl PayloadFieldIndex for MmapBoolIndex {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
-                let count = match *value {
-                    true => self.trues_slice.count_flags(),
-                    false => self.falses_slice.count_flags(),
-                };
+                let count = self.get_slice_for(*value).count_ones();
 
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
