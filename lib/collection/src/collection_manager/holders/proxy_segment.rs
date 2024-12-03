@@ -26,9 +26,9 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
-type LockedRmSet = Arc<RwLock<HashMap<PointIdType, SeqNumberType>>>;
-type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
-type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
+pub type LockedRmSet = Arc<RwLock<HashMap<PointIdType, ProxyDeletedPoint>>>;
+pub type LockedFieldsSet = Arc<RwLock<HashSet<PayloadKeyType>>>;
+pub type LockedFieldsMap = Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>;
 
 /// This object is a wrapper around read-only segment.
 ///
@@ -166,7 +166,7 @@ impl ProxySegment {
             // wrapped segment and do not move it again
             if deleted_points_guard
                 .get(&point_id)
-                .is_some_and(|&deleted| deleted >= local_version)
+                .is_some_and(|&deleted| deleted.local_version >= local_version)
             {
                 drop(deleted_points_guard);
                 self.set_deleted_offset(point_offset);
@@ -193,7 +193,13 @@ impl ProxySegment {
 
         {
             let mut deleted_points_write = RwLockUpgradableReadGuard::upgrade(deleted_points_guard);
-            deleted_points_write.insert(point_id, local_version);
+            deleted_points_write.insert(
+                point_id,
+                ProxyDeletedPoint {
+                    local_version,
+                    operation_version: op_num,
+                },
+            );
         }
 
         self.set_deleted_offset(point_offset);
@@ -203,11 +209,10 @@ impl ProxySegment {
 
     fn add_deleted_points_condition_to_filter(
         filter: Option<&Filter>,
-        deleted_points: &HashMap<PointIdType, SeqNumberType>,
+        deleted_points: impl IntoIterator<Item = PointIdType>,
     ) -> Filter {
         #[allow(clippy::from_iter_instead_of_collect)]
-        let wrapper_condition =
-            Condition::HasId(HasIdCondition::from_iter(deleted_points.keys().copied()));
+        let wrapper_condition = Condition::HasId(HasIdCondition::from_iter(deleted_points));
         match filter {
             None => Filter::new_must_not(wrapper_condition),
             Some(f) => {
@@ -254,14 +259,14 @@ impl ProxySegment {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    for (point_id, version) in deleted_points.iter() {
+                    for (point_id, versions) in deleted_points.iter() {
                         // Delete points here with their operation version, that'll bump the optimized
                         // segment version and will ensure we flush the new changes
                         debug_assert!(
-                            *version >= op_num,
+                            versions.operation_version >= op_num,
                             "proxied point deletes should have newer version than segment",
                         );
-                        wrapped_segment.delete_point(*version, *point_id)?;
+                        wrapped_segment.delete_point(versions.operation_version, *point_id)?;
                     }
                     OperationResult::Ok(())
                 })?;
@@ -402,8 +407,10 @@ impl SegmentEntry for ProxySegment {
 
                 res?
             } else {
-                let wrapped_filter =
-                    Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
+                let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                    filter,
+                    deleted_points.keys().copied(),
+                );
 
                 self.wrapped_segment.get().read().search_batch(
                     vector_name,
@@ -471,7 +478,13 @@ impl SegmentEntry for ProxySegment {
                     was_deleted = self
                         .deleted_points
                         .write()
-                        .insert(point_id, op_num)
+                        .insert(
+                            point_id,
+                            ProxyDeletedPoint {
+                                local_version: op_num,
+                                operation_version: op_num,
+                            },
+                        )
                         .is_none();
                 }
                 point_offset
@@ -481,7 +494,13 @@ impl SegmentEntry for ProxySegment {
                     was_deleted = self
                         .deleted_points
                         .write()
-                        .insert(point_id, op_num)
+                        .insert(
+                            point_id,
+                            ProxyDeletedPoint {
+                                local_version: op_num,
+                                operation_version: op_num,
+                            },
+                        )
                         .is_none();
                 }
                 None
@@ -667,8 +686,10 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .read_filtered(offset, limit, filter, is_stopped)
         } else {
-            let wrapped_filter =
-                Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
+            let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                filter,
+                deleted_points.keys().copied(),
+            );
             self.wrapped_segment.get().read().read_filtered(
                 offset,
                 limit,
@@ -701,8 +722,10 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .read_ordered_filtered(limit, filter, order_by, is_stopped)?
         } else {
-            let wrapped_filter =
-                Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
+            let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                filter,
+                deleted_points.keys().copied(),
+            );
             self.wrapped_segment.get().read().read_ordered_filtered(
                 limit,
                 Some(&wrapped_filter),
@@ -734,8 +757,10 @@ impl SegmentEntry for ProxySegment {
                 .read()
                 .read_random_filtered(limit, filter, is_stopped)
         } else {
-            let wrapped_filter =
-                Self::add_deleted_points_condition_to_filter(filter, &deleted_points);
+            let wrapped_filter = Self::add_deleted_points_condition_to_filter(
+                filter,
+                deleted_points.keys().copied(),
+            );
             self.wrapped_segment.get().read().read_random_filtered(
                 limit,
                 Some(&wrapped_filter),
@@ -803,7 +828,7 @@ impl SegmentEntry for ProxySegment {
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 request.filter.as_ref(),
-                &deleted_points,
+                deleted_points.keys().copied(),
             );
             let new_request = FacetParams {
                 filter: Some(wrapped_filter),
@@ -1147,8 +1172,15 @@ impl SegmentEntry for ProxySegment {
         if !points_to_delete.is_empty() {
             deleted_points += points_to_delete.len();
             let mut deleted_points_guard = self.deleted_points.write();
-            deleted_points_guard
-                .extend(points_to_delete.iter().map(|&point_id| (point_id, op_num)));
+            deleted_points_guard.extend(points_to_delete.iter().map(|&point_id| {
+                (
+                    point_id,
+                    ProxyDeletedPoint {
+                        local_version: op_num,
+                        operation_version: op_num,
+                    },
+                )
+            }));
         }
 
         for point_offset in points_offsets_to_delete {
@@ -1207,6 +1239,19 @@ impl SegmentEntry for ProxySegment {
             .read()
             .fill_query_context(query_context)
     }
+}
+
+/// Point persion information of points to delete from a wrapped proxy segment.
+#[derive(Clone, Copy, Debug)]
+pub struct ProxyDeletedPoint {
+    /// Version the point had in the wrapped segment when the delete was scheduled.
+    /// We use it to determine if some other proxy segment should move the point again with
+    /// `move_if_exists` if it has newer point data.
+    pub local_version: SeqNumberType,
+    /// Version of the operation that caused the delete to be scheduled.
+    /// We use it for the delete operations when propagating them to the wrapped or optimized
+    /// segment.
+    pub operation_version: SeqNumberType,
 }
 
 #[cfg(test)]
