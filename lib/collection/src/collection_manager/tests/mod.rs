@@ -10,6 +10,7 @@ use segment::types::{Payload, PointIdType, WithPayload, WithVector};
 use serde_json::json;
 use tempfile::Builder;
 
+use super::holders::proxy_segment;
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
@@ -18,8 +19,6 @@ use crate::collection_manager::holders::segment_holder::{
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::collection_manager::segments_updater::{set_payload, upsert_points};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
-
-use super::holders::proxy_segment;
 
 mod test_search_aggregation;
 

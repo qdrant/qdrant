@@ -442,11 +442,7 @@ pub trait SegmentOptimizer {
 
         // Apply index changes to segment builder
         // Indexes are only used for defragmentation in segment builder, so versions are ignored
-        for (field_name, change) in proxy_changed_indexes
-            .read()
-            .iter()
-            .sorted_by_key(|(_, change)| change.version())
-        {
+        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
             match change {
                 ProxyIndexChange::Create(schema, _) => {
                     segment_builder.add_indexed_field(field_name.to_owned(), schema.to_owned());
@@ -475,14 +471,10 @@ pub trait SegmentOptimizer {
                 .unwrap();
         }
 
-        for (field_name, change) in proxy_changed_indexes
-            .read()
-            .iter()
-            .sorted_by_key(|(_, change)| change.version())
-        {
+        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
             match change {
                 ProxyIndexChange::Create(schema, version) => {
-                    optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                    optimized_segment.create_field_index(*version, field_name, Some(&schema))?;
                 }
                 ProxyIndexChange::Delete(version) => {
                     optimized_segment.delete_field_index(*version, field_name)?;
@@ -659,11 +651,7 @@ pub trait SegmentOptimizer {
                     .unwrap();
             }
 
-            for (field_name, change) in proxy_index_changes
-                .read()
-                .iter()
-                .sorted_by_key(|(_, change)| change.version())
-            {
+            for (field_name, change) in proxy_index_changes.read().iter_ordered() {
                 match change {
                     ProxyIndexChange::Create(schema, version) => {
                         optimized_segment.create_field_index(*version, field_name, Some(schema))?;

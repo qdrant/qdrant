@@ -28,7 +28,7 @@ use segment::types::{
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
 pub type LockedRmSet = Arc<RwLock<HashMap<PointIdType, ProxyDeletedPoint>>>;
-pub type LockedIndexChanges = Arc<RwLock<HashMap<PayloadKeyType, ProxyIndexChange>>>;
+pub type LockedIndexChanges = Arc<RwLock<ProxyIndexChanges>>;
 
 /// This object is a wrapper around read-only segment.
 ///
@@ -256,11 +256,7 @@ impl ProxySegment {
             let changed_indexes = self.changed_indexes.upgradable_read();
             if !changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
-                    let changes = changed_indexes
-                        .iter()
-                        .sorted_by_key(|(_, change)| change.version())
-                        .collect::<Vec<_>>();
-                    for (field_name, change) in changes {
+                    for (field_name, change) in changed_indexes.iter_ordered() {
                         // Change indexes here with their operation version, that'll bump the optimized
                         // segment version and will ensure we flush the new changes
                         debug_assert!(
@@ -1132,7 +1128,7 @@ impl SegmentEntry for ProxySegment {
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         let mut indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
 
-        for (field_name, change) in self.changed_indexes.read().iter() {
+        for (field_name, change) in self.changed_indexes.read().iter_ordered() {
             match change {
                 ProxyIndexChange::Create(schema, _) => {
                     indexed_fields.insert(field_name.to_owned(), schema.to_owned());
@@ -1257,6 +1253,43 @@ pub struct ProxyDeletedPoint {
     /// We use it for the delete operations when propagating them to the wrapped or optimized
     /// segment.
     pub operation_version: SeqNumberType,
+}
+
+#[derive(Debug, Default)]
+pub struct ProxyIndexChanges {
+    changes: HashMap<PayloadKeyType, ProxyIndexChange>,
+}
+
+impl ProxyIndexChanges {
+    pub fn insert(&mut self, key: PayloadKeyType, change: ProxyIndexChange) {
+        self.changes.insert(key, change);
+    }
+
+    pub fn remove(&mut self, key: &PayloadKeyType) {
+        self.changes.remove(key);
+    }
+
+    pub fn len(&self) -> usize {
+        self.changes.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.changes.clear();
+    }
+
+    /// Iterate over proxy index changes in order of version.
+    ///
+    /// Index changes msut be applied in order because changes with an old version will silently be
+    /// rejected.
+    pub fn iter_ordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
+        self.changes
+            .iter()
+            .sorted_by_key(|(_, change)| change.version())
+    }
 }
 
 #[derive(Debug)]
