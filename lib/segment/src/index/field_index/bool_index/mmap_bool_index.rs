@@ -152,7 +152,7 @@ fn set_or_insert_flag(
     if value {
         // Make sure the key fits
         if key >= flags.len() {
-            let new_len = key.next_multiple_of(PAGE_SIZE_BYTES);
+            let new_len = (key + 1).next_multiple_of(PAGE_SIZE_BYTES);
             flags.set_len(new_len)?;
         }
         return Ok(flags.set(key, value));
@@ -220,7 +220,7 @@ impl ValueIndexer for MmapBoolIndex {
 }
 impl PayloadFieldIndex for MmapBoolIndex {
     fn count_indexed_points(&self) -> usize {
-        self.indexed_count as usize
+        self.indexed_count
     }
 
     fn load(&mut self) -> OperationResult<bool> {

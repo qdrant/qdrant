@@ -138,6 +138,8 @@ mod tests {
 
         let point_offsets = new_index.filter(&match_bool(true)).unwrap().collect_vec();
         assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
+
+        assert_eq!(new_index.count_indexed_points(), 9);
     }
 
     #[rstest]
