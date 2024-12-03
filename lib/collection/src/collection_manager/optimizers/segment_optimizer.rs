@@ -547,9 +547,9 @@ pub trait SegmentOptimizer {
         check_process_stopped(stopped)?;
 
         let tmp_segment = self.temp_segment(false)?;
-
-        let (proxy_deleted_points, proxy_deleted_indexes, proxy_created_indexes) =
-            Default::default();
+        let proxy_deleted_points = proxy_segment::LockedRmSet::default();
+        let proxy_created_indexes = proxy_segment::LockedFieldsMap::default();
+        let proxy_deleted_indexes = proxy_segment::LockedFieldsSet::default();
 
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {

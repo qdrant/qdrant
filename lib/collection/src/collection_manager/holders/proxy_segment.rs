@@ -46,8 +46,8 @@ pub struct ProxySegment {
     /// May contain points which are not in wrapped_segment,
     /// because the set is shared among all proxy segments
     deleted_points: LockedRmSet,
-    deleted_indexes: LockedFieldsSet,
     created_indexes: LockedFieldsMap,
+    deleted_indexes: LockedFieldsSet,
     wrapped_config: SegmentConfig,
 }
 
@@ -1277,9 +1277,9 @@ mod tests {
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -1338,9 +1338,9 @@ mod tests {
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
@@ -1402,9 +1402,9 @@ mod tests {
         let proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
@@ -1457,9 +1457,9 @@ mod tests {
         let proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         let q1 = [1.0, 1.0, 1.0, 0.1];
@@ -1518,9 +1518,9 @@ mod tests {
         ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         )
     }
 
@@ -1606,9 +1606,9 @@ mod tests {
         let mut proxy_segment = ProxySegment::new(
             original_segment.clone(),
             write_segment.clone(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         proxy_segment.replicate_field_indexes(0).unwrap();
@@ -1656,9 +1656,9 @@ mod tests {
         let original_segment_2 = LockedSegment::new(build_segment_2(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
-        let deleted_points = Default::default();
-        let deleted_indexes = Default::default();
-        let created_indexes = Default::default();
+        let deleted_points = LockedRmSet::default();
+        let created_indexes = LockedFieldsMap::default();
+        let deleted_indexes = LockedFieldsSet::default();
 
         let mut proxy_segment = ProxySegment::new(
             original_segment,
@@ -1739,9 +1739,9 @@ mod tests {
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         // We have 5 points by default, assert counts
@@ -1832,9 +1832,9 @@ mod tests {
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         // Assert counts from original segment
@@ -1923,9 +1923,9 @@ mod tests {
         let mut proxy_segment = ProxySegment::new(
             locked_wrapped_segment.clone(),
             locked_write_segment.clone(),
-            Default::default(),
-            Default::default(),
-            Default::default(),
+            LockedRmSet::default(),
+            LockedFieldsMap::default(),
+            LockedFieldsSet::default(),
         );
 
         // Unwrapped `LockedSegment`s for convenient access
