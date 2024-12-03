@@ -94,6 +94,25 @@ pub struct HnswIndexOpenArgs<'a> {
     pub stopped: &'a AtomicBool,
 }
 
+fn use_links_compression(existing: bool) -> bool {
+    let name = "__QDRANT_COMPRESSED_LINKS";
+    match std::env::var(name).as_deref() {
+        // 0: Only read compressed links, but never write.
+        Ok("0") | Err(std::env::VarError::NotPresent) => false,
+        // 1: Enable for newly created graphs.
+        Ok("1") => !existing,
+        // 2: Same as 1 + convert existing graphs.
+        Ok("2") => true,
+        _ => {
+            log::warn!(
+                "Unknown value for {name}={:?}, defaulting to 0",
+                std::env::var_os(name),
+            );
+            false
+        }
+    }
+}
+
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     pub fn open(args: HnswIndexOpenArgs<'_>) -> OperationResult<Self> {
         let HnswIndexOpenArgs {
@@ -139,7 +158,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 )
             };
 
-            (config, GraphLayers::load(&graph_path, &graph_links_path)?)
+            (
+                config,
+                GraphLayers::load(&graph_path, &graph_links_path, use_links_compression(true))?,
+            )
         } else {
             let num_cpus = match permit {
                 Some(p) => p.num_cpus as usize,
@@ -375,7 +397,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         continue;
                     }
                     // ToDo: reuse graph layer for same payload
-                    let mut additional_graph = GraphLayersBuilder::new_with_params(
+                    let additional_graph = GraphLayersBuilder::new_with_params(
                         total_vector_count,
                         payload_m,
                         config.payload_m0.unwrap_or(config.m0),
@@ -391,7 +413,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                         payload_index,
                         &pool,
                         stopped,
-                        &mut additional_graph,
+                        &additional_graph,
                         payload_block.condition,
                         &mut block_filter_list,
                         &mut indexed_vectors_set,
@@ -412,8 +434,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         config.indexed_vector_count.replace(indexed_vectors);
 
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
-        let graph: GraphLayers<TGraphLinks> =
-            graph_layers_builder.into_graph_layers(Some(&graph_links_path))?;
+        let graph: GraphLayers<TGraphLinks> = graph_layers_builder
+            .into_graph_layers(Some(&graph_links_path), use_links_compression(false))?;
 
         #[cfg(debug_assertions)]
         {
@@ -438,7 +460,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         payload_index: &StructPayloadIndex,
         pool: &ThreadPool,
         stopped: &AtomicBool,
-        graph_layers_builder: &mut GraphLayersBuilder,
+        graph_layers_builder: &GraphLayersBuilder,
         condition: FieldCondition,
         block_filter_list: &mut VisitedListHandle,
         indexed_vectors_set: &mut BitVec,

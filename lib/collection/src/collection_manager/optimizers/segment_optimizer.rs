@@ -8,7 +8,7 @@ use common::cpu::CpuPermit;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
-use parking_lot::{Mutex, RwLock, RwLockUpgradableReadGuard};
+use parking_lot::{Mutex, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{check_process_stopped, OperationResult};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -18,12 +18,9 @@ use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::types::{
-    HnswConfig, Indexes, PayloadFieldSchema, PayloadKeyType, PointIdType, QuantizationConfig,
-    SegmentConfig, SeqNumberType, VectorStorageType,
-};
+use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType};
 
-use crate::collection_manager::holders::proxy_segment::ProxySegment;
+use crate::collection_manager::holders::proxy_segment::{self, ProxySegment};
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -399,9 +396,9 @@ pub trait SegmentOptimizer {
     fn build_new_segment(
         &self,
         optimizing_segments: &[LockedSegment],
-        proxy_deleted_points: Arc<RwLock<HashMap<PointIdType, SeqNumberType>>>,
-        proxy_deleted_indexes: Arc<RwLock<HashSet<PayloadKeyType>>>,
-        proxy_created_indexes: Arc<RwLock<HashMap<PayloadKeyType, PayloadFieldSchema>>>,
+        proxy_deleted_points: proxy_segment::LockedRmSet,
+        proxy_deleted_indexes: proxy_segment::LockedFieldsSet,
+        proxy_created_indexes: proxy_segment::LockedFieldsMap,
         permit: CpuPermit,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
@@ -459,12 +456,15 @@ pub trait SegmentOptimizer {
         // Second step - delete all the rest points with full write lock
         //
         // Use collection copy to prevent long time lock of `proxy_deleted_points`
-        let deleted_points_snapshot: Vec<PointIdType> =
-            proxy_deleted_points.read().keys().copied().collect();
+        let deleted_points_snapshot = proxy_deleted_points
+            .read()
+            .iter()
+            .map(|(point_id, versions)| (*point_id, *versions))
+            .collect::<Vec<_>>();
 
-        for &point_id in &deleted_points_snapshot {
+        for (point_id, versions) in deleted_points_snapshot {
             optimized_segment
-                .delete_point(optimized_segment.version(), point_id)
+                .delete_point(versions.operation_version, point_id)
                 .unwrap();
         }
 
@@ -547,23 +547,18 @@ pub trait SegmentOptimizer {
         check_process_stopped(stopped)?;
 
         let tmp_segment = self.temp_segment(false)?;
-
-        let proxy_deleted_points =
-            Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
-        let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-        let proxy_created_indexes = Arc::new(RwLock::new(HashMap::<
-            PayloadKeyType,
-            PayloadFieldSchema,
-        >::new()));
+        let proxy_deleted_points = proxy_segment::LockedRmSet::default();
+        let proxy_created_indexes = proxy_segment::LockedFieldsMap::default();
+        let proxy_deleted_indexes = proxy_segment::LockedFieldsSet::default();
 
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {
             let mut proxy = ProxySegment::new(
                 sg.clone(),
                 tmp_segment.clone(),
-                proxy_deleted_points.clone(),
-                proxy_created_indexes.clone(),
-                proxy_deleted_indexes.clone(),
+                Arc::clone(&proxy_deleted_points),
+                Arc::clone(&proxy_created_indexes),
+                Arc::clone(&proxy_deleted_indexes),
             );
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
@@ -606,9 +601,9 @@ pub trait SegmentOptimizer {
 
         let mut optimized_segment = match self.build_new_segment(
             &optimizing_segments,
-            proxy_deleted_points.clone(),
-            proxy_deleted_indexes.clone(),
-            proxy_created_indexes.clone(),
+            Arc::clone(&proxy_deleted_points),
+            Arc::clone(&proxy_deleted_indexes),
+            Arc::clone(&proxy_created_indexes),
             permit,
             stopped,
         ) {
@@ -646,11 +641,18 @@ pub trait SegmentOptimizer {
             let mut write_segments_guard = segments.write();
             let deleted_points = proxy_deleted_points.read();
             let points_diff = deleted_points
-                .keys()
-                .filter(|&point_id| !already_remove_points.contains(point_id));
-            for &point_id in points_diff {
+                .iter()
+                .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
+            let optimized_segment_version = optimized_segment.version();
+            for (&point_id, &versions) in points_diff {
+                // Delete points here with their operation version, that'll bump the optimized
+                // segment version and will ensure we flush the new changes
+                debug_assert!(
+                    versions.operation_version >= optimized_segment_version,
+                    "proxied point deletes should have newer version than segment",
+                );
                 optimized_segment
-                    .delete_point(optimized_segment.version(), point_id)
+                    .delete_point(versions.operation_version, point_id)
                     .unwrap();
             }
 
