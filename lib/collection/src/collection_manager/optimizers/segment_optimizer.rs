@@ -459,13 +459,14 @@ pub trait SegmentOptimizer {
         // Second step - delete all the rest points with full write lock
         //
         // Use collection copy to prevent long time lock of `proxy_deleted_points`
-        let deleted_points_snapshot: Vec<PointIdType> =
-            proxy_deleted_points.read().keys().copied().collect();
+        let deleted_points_snapshot: Vec<(PointIdType, SeqNumberType)> = proxy_deleted_points
+            .read()
+            .iter()
+            .map(|(point_id, version)| (*point_id, *version))
+            .collect();
 
-        for &point_id in &deleted_points_snapshot {
-            optimized_segment
-                .delete_point(optimized_segment.version(), point_id)
-                .unwrap();
+        for &(point_id, version) in &deleted_points_snapshot {
+            optimized_segment.delete_point(version, point_id).unwrap();
         }
 
         let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
