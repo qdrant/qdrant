@@ -247,7 +247,7 @@ impl DatabaseColumnWrapper {
 
     fn make_write_options() -> WriteOptions {
         let mut write_options = WriteOptions::default();
-        write_options.set_sync(true);
+        write_options.set_sync(false);
         // RocksDB WAL is required for durability even if data is flushed
         write_options.disable_wal(false);
         write_options
