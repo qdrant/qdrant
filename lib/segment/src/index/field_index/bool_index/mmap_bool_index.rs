@@ -10,14 +10,12 @@ use crate::index::field_index::{
     PrimaryCondition, ValueIndexer,
 };
 use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVariants};
+use crate::vector_storage::common::PAGE_SIZE_BYTES;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 
 const BASE_DIR_PREFIX: &str = "bool-";
 const TRUES_DIRNAME: &str = "trues";
 const FALSES_DIRNAME: &str = "falses";
-
-/// When bitslices are extended to fit a certain id, they get this much extra space to avoid resizing too often.
-const BITSLICE_GROWTH_SLACK: usize = 1028;
 
 /// Payload index for boolean values, stored in memory-mapped files.
 pub struct MmapBoolIndex {
@@ -146,7 +144,8 @@ fn set_or_insert_flag(
     if value {
         // Make sure the key fits
         if key >= flags.len() {
-            flags.set_len(key + BITSLICE_GROWTH_SLACK)?;
+            let new_len = key.next_multiple_of(PAGE_SIZE_BYTES);
+            flags.set_len(new_len)?;
         }
         return Ok(flags.set(key, value));
     }
