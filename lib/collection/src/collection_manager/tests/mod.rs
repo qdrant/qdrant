@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -7,10 +6,7 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
-use segment::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SeqNumberType, WithPayload,
-    WithVector,
-};
+use segment::types::{Payload, PointIdType, WithPayload, WithVector};
 use serde_json::json;
 use tempfile::Builder;
 
@@ -32,18 +28,12 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
 
     let optimizing_segment = write_segments.get(sid).unwrap().clone();
 
-    let proxy_deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
-    let proxy_deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-    let proxy_created_indexes = Arc::new(RwLock::new(
-        HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-    ));
-
     let proxy = ProxySegment::new(
         optimizing_segment,
         temp_segment,
-        proxy_deleted_points,
-        proxy_created_indexes,
-        proxy_deleted_indexes,
+        Default::default(),
+        Default::default(),
+        Default::default(),
     );
 
     let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
@@ -288,12 +278,9 @@ fn test_proxy_shared_updates() {
         .unwrap();
     segment2.set_payload(10, idx2, &old_payload, &None).unwrap();
 
-    let deleted_points = Arc::new(RwLock::new(HashMap::<PointIdType, SeqNumberType>::new()));
-
-    let deleted_indexes = Arc::new(RwLock::new(HashSet::<PayloadKeyType>::new()));
-    let created_indexes = Arc::new(RwLock::new(
-        HashMap::<PayloadKeyType, PayloadFieldSchema>::new(),
-    ));
+    let deleted_points = Default::default();
+    let deleted_indexes = Default::default();
+    let created_indexes = Default::default();
 
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
@@ -301,9 +288,9 @@ fn test_proxy_shared_updates() {
     let proxy_segment_1 = ProxySegment::new(
         locked_segment_1,
         write_segment.clone(),
-        deleted_points.clone(),
-        created_indexes.clone(),
-        deleted_indexes.clone(),
+        Arc::clone(&deleted_points),
+        Arc::clone(&created_indexes),
+        Arc::clone(&deleted_indexes),
     );
 
     let proxy_segment_2 = ProxySegment::new(
