@@ -165,12 +165,13 @@ pub struct GpuConfig {
     /// Default: "" - all devices are accepted.
     #[serde(default)]
     pub device_filter: String,
-    /// How many gpu devices to skip before starting to use them.
+    /// List of explicit GPU devices to use.
+    /// If host has multiple GPUs, this option allows to select specific devices
+    /// by their index in the list of found devices.
+    /// If `device_filter` is set, indexes are applied after filtering.
+    /// By default, all devices are accepted.
     #[serde(default)]
-    pub skip_devices: Option<usize>,
-    /// How many gpu devices to use.
-    #[serde(default)]
-    pub devices_count: Option<usize>,
+    pub devices: Option<Vec<usize>>,
     /// How many parallel indexing processes are allowed to run.
     /// Default: 1
     #[serde(default)]

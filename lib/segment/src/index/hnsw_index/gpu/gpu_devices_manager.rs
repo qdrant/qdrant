@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use itertools::Itertools;
 use parking_lot::{Mutex, MutexGuard};
 
 use crate::common::check_stopped;
@@ -30,38 +31,54 @@ impl<'a> LockedGpuDevice<'a> {
 impl GpuDevicesMaganer {
     pub fn new(
         filter: &str,
-        start_index: usize,
-        count: usize,
+        device_indexes: Option<&[usize]>,
         allow_integrated: bool,
         allow_emulated: bool,
         wait_free: bool,
         parallel_indexes: usize,
     ) -> OperationResult<Self> {
         let instance = gpu::Instance::new(None, None, false)?;
+
+        // Device filter is case-insensitive and comma-separated.
         let filter = filter.to_lowercase();
         let filter = filter
             .split(",")
             .map(|s| s.trim().to_owned())
             .collect::<Vec<_>>();
+
+        // Collect physical devices that match the filter.
+        let filtered_physical_devices = instance
+            .physical_devices()
+            .iter()
+            // Apply device name filter.
+            .filter(|device| {
+                let device_name = device.name.to_lowercase();
+                filter.iter().any(|filter| device_name.contains(filter))
+            })
+            // Filter out integrated and emulated devices.
+            .filter(|device| {
+                device.device_type == gpu::PhysicalDeviceType::Discrete
+                    || (allow_integrated
+                        && device.device_type == gpu::PhysicalDeviceType::Integrated)
+                    || (allow_emulated && device.device_type == gpu::PhysicalDeviceType::Other)
+            })
+            .collect::<Vec<_>>();
+
+        // Collect device indexes to use.
+        let device_indexes: Vec<_> = if let Some(device_indexes) = device_indexes {
+            device_indexes.iter().copied().unique().collect()
+        } else {
+            (0..filtered_physical_devices.len()).collect()
+        };
+
         let mut devices = Vec::new();
         for queue_index in 0..parallel_indexes {
             devices.extend(
-                instance
-                    .physical_devices()
+                device_indexes
                     .iter()
-                    .filter(|device| {
-                        let device_name = device.name.to_lowercase();
-                        filter.iter().any(|filter| device_name.contains(filter))
-                    })
-                    .filter(|device| {
-                        device.device_type == gpu::PhysicalDeviceType::Discrete
-                            || (allow_integrated
-                                && device.device_type == gpu::PhysicalDeviceType::Integrated)
-                            || (allow_emulated
-                                && device.device_type == gpu::PhysicalDeviceType::Other)
-                    })
-                    .skip(start_index)
-                    .take(count)
+                    // Get vk physical device. Filter out invalid device indexes.
+                    .filter_map(|&device_index| filtered_physical_devices.get(device_index))
+                    // Try to create a gpu device.
                     .filter_map(|physical_device| {
                         match gpu::Device::new_with_queue_index(
                             instance.clone(),
@@ -85,9 +102,11 @@ impl GpuDevicesMaganer {
             );
         }
 
-        let device_names = devices
+        // All found devices to include it to the telemetry.
+        let device_names = instance
+            .physical_devices()
             .iter()
-            .map(|device| device.lock().name().to_owned())
+            .map(|device| device.name.clone())
             .collect();
 
         Ok(Self {
@@ -117,7 +136,8 @@ impl GpuDevicesMaganer {
         }
     }
 
-    pub fn device_names(&self) -> Vec<String> {
+    /// Returns all found device names without filtering.
+    pub fn all_found_device_names(&self) -> Vec<String> {
         self.device_names.clone()
     }
 }

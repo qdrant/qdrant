@@ -183,8 +183,7 @@ fn main() -> anyhow::Result<()> {
             let mut gpu_device_manager = GPU_DEVICES_MANAGER.write();
             *gpu_device_manager = match gpu_devices_manager::GpuDevicesMaganer::new(
                 &settings_gpu.device_filter,
-                settings_gpu.skip_devices.unwrap_or(0),
-                settings_gpu.devices_count.unwrap_or(usize::MAX),
+                settings_gpu.devices.as_deref(),
                 settings_gpu.allow_integrated,
                 settings_gpu.allow_emulated,
                 true, // Currently we always wait for the free gpu device.

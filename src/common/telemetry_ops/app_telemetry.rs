@@ -135,7 +135,7 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         .as_ref()
         .map(|gpu_devices_manager| {
             gpu_devices_manager
-                .device_names()
+                .all_found_device_names()
                 .iter()
                 .map(|name| GpuDeviceTelemetry { name: name.clone() })
                 .collect::<Vec<_>>()
