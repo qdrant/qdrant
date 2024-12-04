@@ -1786,9 +1786,9 @@ mod tests {
         ];
 
         // Insert points into all segments with random versions
-        let mut point_versions = HashMap::new();
+        let mut highest_point_version = HashMap::new();
         for id in 0..POINT_COUNT {
-            let mut versions = Vec::with_capacity(segments.len());
+            let mut max_version = 0;
             let point_id = PointIdType::from(id as u64);
 
             for segment in &mut segments {
@@ -1796,10 +1796,10 @@ mod tests {
                 segment
                     .upsert_point(version, point_id, vector.clone())
                     .unwrap();
-                versions.push(version);
+                max_version = version.max(max_version);
             }
 
-            point_versions.insert(id, versions);
+            highest_point_version.insert(id, max_version);
         }
 
         // Put segments into holder
@@ -1821,9 +1821,8 @@ mod tests {
 
         // Assert points after deduplication
         for id in 0..POINT_COUNT {
-            let versions = &point_versions[&id];
-            let max = *versions.iter().max().unwrap();
             let point_id = PointIdType::from(id as u64);
+            let max_version = highest_point_version[&id];
 
             let found_versions = segment_ids
                 .iter()
@@ -1844,7 +1843,7 @@ mod tests {
                 "point version must be maximum known version",
             );
             assert_eq!(
-                found_versions[0], max,
+                found_versions[0], max_version,
                 "point version must be maximum known version",
             );
         }
