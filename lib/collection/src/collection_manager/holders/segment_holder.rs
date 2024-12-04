@@ -1384,7 +1384,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 
     #[test]
     fn test_add_and_swap() {
@@ -1686,6 +1686,84 @@ mod tests {
         assert!(holder.get(sid2).unwrap().get().read().has_point(5.into()));
         assert!(!holder.get(sid1).unwrap().get().read().has_point(4.into()));
         assert!(!holder.get(sid1).unwrap().get().read().has_point(5.into()));
+    }
+
+    #[tokio::test]
+    async fn test_points_deduplication_bug() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let mut segment1 = empty_segment(dir.path());
+        let mut segment2 = empty_segment(dir.path());
+
+        segment1
+            .upsert_point(
+                2,
+                10.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+        segment2
+            .upsert_point(
+                3,
+                10.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+
+        segment1
+            .upsert_point(
+                1,
+                11.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+        segment2
+            .upsert_point(
+                2,
+                11.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+
+        let mut holder = SegmentHolder::default();
+
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
+
+        let duplicate_count = holder
+            .find_duplicated_points()
+            .values()
+            .map(|ids| ids.len())
+            .sum::<usize>();
+        assert_eq!(2, duplicate_count);
+
+        let removed_count = holder.deduplicate_points().await.unwrap();
+        assert_eq!(2, removed_count);
+
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(10.into()));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(10.into()));
+
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(11.into()));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(11.into()));
+
+        assert_eq!(
+            holder
+                .get(sid1)
+                .unwrap()
+                .get()
+                .read()
+                .available_point_count(),
+            0,
+        );
+        assert_eq!(
+            holder
+                .get(sid2)
+                .unwrap()
+                .get()
+                .read()
+                .available_point_count(),
+            2,
+        );
     }
 
     #[test]
