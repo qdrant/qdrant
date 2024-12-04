@@ -148,15 +148,21 @@ pub struct GpuConfig {
     #[serde(default)]
     pub indexing: bool,
     /// Force half precision for `f32` values while indexing.
+    /// `f16` conversion will take place only inside GPU memory and won't affect storage type.
     #[serde(default)]
     pub force_half_precision: bool,
-    /// Warps count for GPU.
-    /// In other words, how many parallel points can be indexed by GPU.
+    /// Used vulkan "groups" of GPU. In other words, how many parallel points can be indexed by GPU.
+    /// Optimal value might depend on the GPU model.
+    /// Proportional, but doesn't necessary equal to the physical number of warps.
+    /// Do not change this value unless you know what you are doing.
+    /// Default: 512
     #[serde(default)]
     #[validate(range(min = 1))]
     pub groups_count: Option<usize>,
-    /// Filter for GPU devices by hardware name.
+    /// Filter for GPU devices by hardware name. Case insensitive.
     /// Comma-separated list of substrings to match against the gpu device name.
+    /// Example: "nvidia"
+    /// Default: "" - all devices are accepted.
     #[serde(default)]
     pub device_filter: String,
     /// How many gpu devices to skip before starting to use them.
@@ -165,13 +171,16 @@ pub struct GpuConfig {
     /// How many gpu devices to use.
     #[serde(default)]
     pub devices_count: Option<usize>,
-    /// How many parallel indexes to run.
+    /// How many parallel indexing processes are allowed to run.
+    /// Default: 1
     #[serde(default)]
     pub parallel_indexes: Option<usize>,
     /// Allow to use integrated GPUs.
+    /// Default: false
     #[serde(default)]
     pub allow_integrated: bool,
     /// Allow to use emulated GPUs like LLVMpipe. Useful for CI.
+    /// Default: false
     #[serde(default)]
     pub allow_emulated: bool,
 }
