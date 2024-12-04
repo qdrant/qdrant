@@ -20,6 +20,7 @@ use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
+use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::plain_payload_index::PlainIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;
@@ -371,6 +372,7 @@ pub(crate) fn create_vector_index(
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     permit: Option<Arc<CpuPermit>>,
+    gpu_device: Option<&LockedGpuDevice>,
     stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
@@ -386,6 +388,7 @@ pub(crate) fn create_vector_index(
                 payload_index,
                 hnsw_config: vector_hnsw_config.clone(),
                 permit,
+                gpu_device,
                 stopped,
             };
             if vector_hnsw_config.on_disk == Some(true) {
@@ -580,6 +583,7 @@ fn create_segment(
             vector_storage.clone(),
             payload_index.clone(),
             quantized_vectors.clone(),
+            Default::default(),
             None,
             stopped,
         )?);

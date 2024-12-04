@@ -394,7 +394,11 @@ impl SegmentBuilder {
         Ok(true)
     }
 
-    pub fn build(self, permit: CpuPermit, stopped: &AtomicBool) -> Result<Segment, OperationError> {
+    pub fn build(
+        self,
+        mut permit: CpuPermit,
+        stopped: &AtomicBool,
+    ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
             let SegmentBuilder {
                 version,
@@ -429,9 +433,6 @@ impl SegmentBuilder {
             id_tracker.mapping_flusher()()?;
             id_tracker.versions_flusher()()?;
             let id_tracker_arc = Arc::new(AtomicRefCell::new(id_tracker));
-
-            // Arc permit to share it with each vector store
-            let permit = Arc::new(permit);
 
             let mut quantized_vectors = Self::update_quantization(
                 &segment_config,
@@ -489,6 +490,28 @@ impl SegmentBuilder {
             payload_index.flusher()()?;
             let payload_index_arc = Arc::new(AtomicRefCell::new(payload_index));
 
+            // Try to lock GPU device.
+            #[cfg(feature = "gpu")]
+            let gpu_devices_manager = crate::index::hnsw_index::gpu::GPU_DEVICES_MANAGER.read();
+            #[cfg(feature = "gpu")]
+            let gpu_device = gpu_devices_manager
+                .as_ref()
+                .map(|devices_manager| devices_manager.lock_device(stopped))
+                .transpose()?
+                .flatten();
+            #[cfg(not(feature = "gpu"))]
+            let gpu_device = None;
+
+            // If GPU is enabled, release all CPU cores except one.
+            if let Some(_gpu_device) = &gpu_device {
+                if permit.num_cpus > 1 {
+                    permit.release_count(permit.num_cpus - 1);
+                }
+            }
+
+            // Arc permit to share it with each vector store
+            let permit = Arc::new(permit);
+
             for (vector_name, vector_config) in &segment_config.vector_data {
                 let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
                 let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
@@ -503,6 +526,7 @@ impl SegmentBuilder {
                     payload_index_arc.clone(),
                     quantized_vectors_arc,
                     Some(permit.clone()),
+                    gpu_device.as_ref(),
                     stopped,
                 )?;
             }

@@ -10913,6 +10913,7 @@
         "type": "object",
         "required": [
           "debug",
+          "gpu",
           "recovery_mode",
           "service_debug_feature",
           "web_feature"
@@ -10928,6 +10929,9 @@
             "type": "boolean"
           },
           "recovery_mode": {
+            "type": "boolean"
+          },
+          "gpu": {
             "type": "boolean"
           }
         }
@@ -10980,6 +10984,13 @@
                 "nullable": true
               }
             ]
+          },
+          "gpu_devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GpuDeviceTelemetry"
+            },
+            "nullable": true
           }
         }
       },
@@ -10990,6 +11001,17 @@
           "big",
           "other"
         ]
+      },
+      "GpuDeviceTelemetry": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
       },
       "CollectionsTelemetry": {
         "type": "object",

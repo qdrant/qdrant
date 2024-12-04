@@ -170,6 +170,7 @@ fn test_batch_and_single_request_equivalency() {
         payload_index: payload_index_ptr,
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

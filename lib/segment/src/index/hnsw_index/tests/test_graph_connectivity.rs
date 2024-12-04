@@ -86,6 +86,7 @@ fn test_graph_connectivity() {
         payload_index: payload_index_ptr,
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

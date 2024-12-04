@@ -16,6 +16,9 @@ pub struct Device {
     /// Native Vulkan device handle.
     vk_device: ash::Device,
 
+    /// Hardware device name.
+    name: String,
+
     /// GPU memory allocator from `gpu-allocator` crate.
     /// It's an Option because of drop order. We need to drop it before the device.
     /// But `Allocator` is destroyed by it's own drop.
@@ -303,6 +306,7 @@ impl Device {
             max_buffer_size,
             is_dynamic_subgroup_size,
             queue_index,
+            name: vk_physical_device.name.clone(),
         }))
     }
 
@@ -365,6 +369,10 @@ impl Device {
 
     pub fn compute_queue(&self) -> &Queue {
         &self.compute_queues[self.queue_index % self.compute_queues.len()]
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     fn check_extensions_list(

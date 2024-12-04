@@ -11,15 +11,50 @@ pub mod shader_builder;
 #[cfg(test)]
 mod gpu_heap_tests;
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
 use batched_points::BatchedPoints;
+use gpu_devices_manager::GpuDevicesMaganer;
+use lazy_static::lazy_static;
+use parking_lot::RwLock;
 
 use super::graph_layers_builder::GraphLayersBuilder;
+
+lazy_static! {
+    pub static ref GPU_DEVICES_MANAGER: RwLock<Option<GpuDevicesMaganer>> = RwLock::new(None);
+}
 
 /// Each GPU operation has a timeout by Vulkan API specification.
 /// Choose large enough timeout.
 /// We cannot use too small timeout and check stopper in the loop because
 /// GPU resources should be alive while GPU operation is in progress.
 static GPU_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Warps count for GPU.
+/// In other words, how many parallel points can be indexed by GPU.
+static GPU_GROUPS_COUNT: AtomicUsize = AtomicUsize::new(GPU_GROUPS_COUNT_DEFAULT);
+pub const GPU_GROUPS_COUNT_DEFAULT: usize = 512;
+
+/// Global option from settings to force half precision on GPU for `f32` values.
+static GPU_FORCE_HALF_PRECISION: AtomicBool = AtomicBool::new(false);
+
+pub fn set_gpu_force_half_precision(force_half_precision: bool) {
+    GPU_FORCE_HALF_PRECISION.store(force_half_precision, Ordering::Relaxed);
+}
+
+pub fn get_gpu_force_half_precision() -> bool {
+    GPU_FORCE_HALF_PRECISION.load(Ordering::Relaxed)
+}
+
+pub fn set_gpu_groups_count(groups_count: Option<usize>) {
+    if let Some(groups_count) = groups_count {
+        GPU_GROUPS_COUNT.store(groups_count, Ordering::Relaxed);
+    }
+}
+
+pub fn get_gpu_groups_count() -> usize {
+    GPU_GROUPS_COUNT.load(Ordering::Relaxed)
+}
 
 fn create_graph_layers_builder(
     batched_points: &BatchedPoints,

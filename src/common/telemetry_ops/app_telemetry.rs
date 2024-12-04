@@ -26,6 +26,7 @@ pub struct AppFeaturesTelemetry {
     pub web_feature: bool,
     pub service_debug_feature: bool,
     pub recovery_mode: bool,
+    pub gpu: bool,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -39,6 +40,8 @@ pub struct RunningEnvironmentTelemetry {
     cpu_flags: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     cpu_endian: Option<CpuEndian>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gpu_devices: Option<Vec<GpuDeviceTelemetry>>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -70,6 +73,7 @@ impl AppBuildTelemetry {
                 web_feature: cfg!(feature = "web"),
                 service_debug_feature: cfg!(feature = "service_debug"),
                 recovery_mode: settings.storage.recovery_mode.is_some(),
+                gpu: cfg!(feature = "gpu"),
             }),
             system: (detail.level >= DetailsLevel::Level1).then(get_system_data),
             jwt_rbac: settings.service.jwt_rbac,
@@ -124,6 +128,22 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
             cpu_flags.push("fp16");
         }
     }
+
+    #[cfg(feature = "gpu")]
+    let gpu_devices = segment::index::hnsw_index::gpu::GPU_DEVICES_MANAGER
+        .read()
+        .as_ref()
+        .map(|gpu_devices_manager| {
+            gpu_devices_manager
+                .all_found_device_names()
+                .iter()
+                .map(|name| GpuDeviceTelemetry { name: name.clone() })
+                .collect::<Vec<_>>()
+        });
+
+    #[cfg(not(feature = "gpu"))]
+    let gpu_devices = None;
+
     RunningEnvironmentTelemetry {
         distribution,
         distribution_version,
@@ -133,6 +153,7 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
         disk_size: sys_info::disk_info().ok().map(|x| x.total as usize),
         cpu_flags: cpu_flags.join(","),
         cpu_endian: Some(CpuEndian::current()),
+        gpu_devices,
     }
 }
 
@@ -157,6 +178,19 @@ impl CpuEndian {
     }
 }
 
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct GpuDeviceTelemetry {
+    pub name: String,
+}
+
+impl Anonymize for GpuDeviceTelemetry {
+    fn anonymize(&self) -> Self {
+        GpuDeviceTelemetry {
+            name: self.name.clone(),
+        }
+    }
+}
+
 impl Anonymize for AppFeaturesTelemetry {
     fn anonymize(&self) -> Self {
         AppFeaturesTelemetry {
@@ -164,6 +198,7 @@ impl Anonymize for AppFeaturesTelemetry {
             web_feature: self.web_feature,
             service_debug_feature: self.service_debug_feature,
             recovery_mode: self.recovery_mode,
+            gpu: self.gpu,
         }
     }
 }
@@ -193,6 +228,7 @@ impl Anonymize for RunningEnvironmentTelemetry {
             disk_size: self.disk_size.anonymize(),
             cpu_flags: self.cpu_flags.clone(),
             cpu_endian: self.cpu_endian,
+            gpu_devices: self.gpu_devices.anonymize(),
         }
     }
 }

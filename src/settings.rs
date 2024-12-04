@@ -141,6 +141,51 @@ pub struct TlsConfig {
     pub cert_ttl: Option<u64>,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Debug, Deserialize, Validate)]
+pub struct GpuConfig {
+    /// Enable GPU indexing.
+    #[serde(default)]
+    pub indexing: bool,
+    /// Force half precision for `f32` values while indexing.
+    /// `f16` conversion will take place only inside GPU memory and won't affect storage type.
+    #[serde(default)]
+    pub force_half_precision: bool,
+    /// Used vulkan "groups" of GPU. In other words, how many parallel points can be indexed by GPU.
+    /// Optimal value might depend on the GPU model.
+    /// Proportional, but doesn't necessary equal to the physical number of warps.
+    /// Do not change this value unless you know what you are doing.
+    /// Default: 512
+    #[serde(default)]
+    #[validate(range(min = 1))]
+    pub groups_count: Option<usize>,
+    /// Filter for GPU devices by hardware name. Case insensitive.
+    /// Comma-separated list of substrings to match against the gpu device name.
+    /// Example: "nvidia"
+    /// Default: "" - all devices are accepted.
+    #[serde(default)]
+    pub device_filter: String,
+    /// List of explicit GPU devices to use.
+    /// If host has multiple GPUs, this option allows to select specific devices
+    /// by their index in the list of found devices.
+    /// If `device_filter` is set, indexes are applied after filtering.
+    /// By default, all devices are accepted.
+    #[serde(default)]
+    pub devices: Option<Vec<usize>>,
+    /// How many parallel indexing processes are allowed to run.
+    /// Default: 1
+    #[serde(default)]
+    pub parallel_indexes: Option<usize>,
+    /// Allow to use integrated GPUs.
+    /// Default: false
+    #[serde(default)]
+    pub allow_integrated: bool,
+    /// Allow to use emulated GPUs like LLVMpipe. Useful for CI.
+    /// Default: false
+    #[serde(default)]
+    pub allow_emulated: bool,
+}
+
 #[derive(Debug, Deserialize, Clone, Validate)]
 #[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct Settings {
@@ -168,6 +213,9 @@ pub struct Settings {
     pub load_errors: Vec<LogMsg>,
     #[serde(default)]
     pub inference: Option<InferenceConfig>,
+    #[serde(default)]
+    #[validate(nested)]
+    pub gpu: Option<GpuConfig>,
 }
 
 impl Settings {
