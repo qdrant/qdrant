@@ -1247,8 +1247,6 @@ impl<'s> SegmentHolder {
     /// Checks all segments and removes duplicated and outdated points.
     /// If two points have the same id, the point with the highest version is kept.
     /// If two points have the same id and version, one of them is kept.
-    ///
-    /// Deduplication works with plain segments only.
     pub async fn deduplicate_points(&self) -> OperationResult<usize> {
         let points_to_remove = self.find_duplicated_points();
 
@@ -1364,6 +1362,7 @@ impl<'s> SegmentHolder {
             } else {
                 last_point_id_opt = Some(point_id);
                 last_segment_id_opt = Some(segment_id);
+                last_point_version_opt = None;
             }
         }
 
@@ -1376,6 +1375,7 @@ mod tests {
     use std::fs::File;
     use std::str::FromStr;
 
+    use rand::Rng;
     use segment::data_types::vectors::VectorInternal;
     use segment::json_path::JsonPath;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -1384,7 +1384,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2};
+    use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 
     #[test]
     fn test_add_and_swap() {
@@ -1686,6 +1686,167 @@ mod tests {
         assert!(holder.get(sid2).unwrap().get().read().has_point(5.into()));
         assert!(!holder.get(sid1).unwrap().get().read().has_point(4.into()));
         assert!(!holder.get(sid1).unwrap().get().read().has_point(5.into()));
+    }
+
+    /// Unit test for a specific bug we caught before.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/5585>
+    #[tokio::test]
+    async fn test_points_deduplication_bug() {
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let mut segment1 = empty_segment(dir.path());
+        let mut segment2 = empty_segment(dir.path());
+
+        segment1
+            .upsert_point(
+                2,
+                10.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+        segment2
+            .upsert_point(
+                3,
+                10.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+
+        segment1
+            .upsert_point(
+                1,
+                11.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+        segment2
+            .upsert_point(
+                2,
+                11.into(),
+                segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+            )
+            .unwrap();
+
+        let mut holder = SegmentHolder::default();
+
+        let sid1 = holder.add_new(segment1);
+        let sid2 = holder.add_new(segment2);
+
+        let duplicate_count = holder
+            .find_duplicated_points()
+            .values()
+            .map(|ids| ids.len())
+            .sum::<usize>();
+        assert_eq!(2, duplicate_count);
+
+        let removed_count = holder.deduplicate_points().await.unwrap();
+        assert_eq!(2, removed_count);
+
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(10.into()));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(10.into()));
+
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(11.into()));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(11.into()));
+
+        assert_eq!(
+            holder
+                .get(sid1)
+                .unwrap()
+                .get()
+                .read()
+                .available_point_count(),
+            0,
+        );
+        assert_eq!(
+            holder
+                .get(sid2)
+                .unwrap()
+                .get()
+                .read()
+                .available_point_count(),
+            2,
+        );
+    }
+
+    #[tokio::test]
+    async fn test_points_deduplication_randomized() {
+        const POINT_COUNT: usize = 1000;
+
+        let mut rand = rand::thread_rng();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
+
+        let mut segments = [
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+        ];
+
+        // Insert points into all segments with random versions
+        let mut highest_point_version = HashMap::new();
+        for id in 0..POINT_COUNT {
+            let mut max_version = 0;
+            let point_id = PointIdType::from(id as u64);
+
+            for segment in &mut segments {
+                let version = rand.gen_range(1..10);
+                segment
+                    .upsert_point(version, point_id, vector.clone())
+                    .unwrap();
+                max_version = version.max(max_version);
+            }
+
+            highest_point_version.insert(id, max_version);
+        }
+
+        // Put segments into holder
+        let mut holder = SegmentHolder::default();
+        let segment_ids = segments
+            .into_iter()
+            .map(|segment| holder.add_new(segment))
+            .collect::<Vec<_>>();
+
+        let duplicate_count = holder
+            .find_duplicated_points()
+            .values()
+            .map(|ids| ids.len())
+            .sum::<usize>();
+        assert_eq!(POINT_COUNT * (segment_ids.len() - 1), duplicate_count);
+
+        let removed_count = holder.deduplicate_points().await.unwrap();
+        assert_eq!(POINT_COUNT * (segment_ids.len() - 1), removed_count);
+
+        // Assert points after deduplication
+        for id in 0..POINT_COUNT {
+            let point_id = PointIdType::from(id as u64);
+            let max_version = highest_point_version[&id];
+
+            let found_versions = segment_ids
+                .iter()
+                .filter_map(|segment_id| {
+                    holder
+                        .get(*segment_id)
+                        .unwrap()
+                        .get()
+                        .read()
+                        .point_version(point_id)
+                })
+                .collect::<Vec<_>>();
+
+            // We must have exactly one version, and it must be the highest we inserted
+            assert_eq!(
+                found_versions.len(),
+                1,
+                "point version must be maximum known version",
+            );
+            assert_eq!(
+                found_versions[0], max_version,
+                "point version must be maximum known version",
+            );
+        }
     }
 
     #[test]
