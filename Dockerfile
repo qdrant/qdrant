@@ -81,6 +81,9 @@ ARG RUSTFLAGS
 # Select linker (e.g., `mold`, `lld` or an empty string for the default linker)
 ARG LINKER=mold
 
+# Enable GPU support
+ARG GPU
+
 COPY --from=planner /qdrant/recipe.json recipe.json
 # `PKG_CONFIG=...` is a workaround for `xx-cargo` bug for crates using `pkg-config`!
 #
@@ -144,6 +147,7 @@ RUN apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8
     && rm -rf /var/lib/apt/lists/*
 
 # Install GPU dependencies
+ARG GPU
 RUN if [ -n "$GPU" ]; then \
     apt-get update && apt-get install -y \
     libvulkan1 \
