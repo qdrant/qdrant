@@ -31,10 +31,6 @@ const BITSLICE_GROWTH_SLACK: usize = 1024;
 #[repr(C)]
 #[derive(Debug)]
 struct Metadata {
-    /// Current number of deleted vectors.
-    deleted_count: usize,
-    /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
-    next_point_offset: usize,
     /// Total number of non-zero elements in all vectors. Used to estimate average vector size.
     total_sparse_size: usize,
     /// Reserved for extensibility
@@ -47,6 +43,10 @@ pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<BlobStore<SparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
     deleted: DynamicMmapFlags,
+    /// Current number of deleted vectors.
+    deleted_count: usize,
+    /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
+    next_point_offset: usize,
     /// Other information about the storage, stored in a memory-mapped file.
     metadata: MmapType<Metadata>,
     path: PathBuf,
@@ -84,14 +84,18 @@ impl MmapSparseVectorStorage {
             mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, false)?;
         let metadata: MmapType<Metadata> = unsafe { MmapType::try_from(metadata_mmap)? };
 
-        debug_assert_eq!(
-            metadata.next_point_offset as PointOffsetType,
-            storage.max_point_id()
-        );
+        let deleted_count = deleted.count_flags();
+        let next_point_offset = deleted
+            .get_bitslice()
+            .last_one()
+            .max(Some(storage.max_point_id() as usize))
+            .unwrap_or_default();
 
         Ok(Self {
             storage: Arc::new(RwLock::new(storage)),
             deleted,
+            deleted_count,
+            next_point_offset,
             metadata,
             path,
         })
@@ -121,8 +125,6 @@ impl MmapSparseVectorStorage {
         let mut metadata = unsafe { MmapType::try_from(metadata_mmap)? };
         // Initialize metadata
         *metadata = Metadata {
-            deleted_count: 0,
-            next_point_offset: 0,
             total_sparse_size: 0,
             _reserved: [0; 64],
         };
@@ -130,6 +132,8 @@ impl MmapSparseVectorStorage {
         Ok(Self {
             storage: Arc::new(RwLock::new(storage)),
             deleted,
+            deleted_count: 0,
+            next_point_offset: 0,
             metadata,
             path,
         })
@@ -151,7 +155,7 @@ impl MmapSparseVectorStorage {
 
     #[inline]
     fn set_deleted(&mut self, key: PointOffsetType, deleted: bool) -> OperationResult<bool> {
-        if !deleted && key as usize >= self.metadata.next_point_offset {
+        if !deleted && key as usize >= self.next_point_offset {
             return Ok(false);
         }
         // set deleted flag
@@ -159,10 +163,8 @@ impl MmapSparseVectorStorage {
 
         // update deleted_count if it changed
         match (previous_value, deleted) {
-            (false, true) => self.metadata.deleted_count += 1,
-            (true, false) => {
-                self.metadata.deleted_count = self.metadata.deleted_count.saturating_sub(1)
-            }
+            (false, true) => self.deleted_count += 1,
+            (true, false) => self.deleted_count = self.deleted_count.saturating_sub(1),
             _ => {}
         }
         Ok(previous_value)
@@ -198,8 +200,7 @@ impl MmapSparseVectorStorage {
             }
         }
 
-        self.metadata.next_point_offset =
-            std::cmp::max(self.metadata.next_point_offset, key as usize + 1);
+        self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
 
         Ok(())
     }
@@ -236,7 +237,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn total_vector_count(&self) -> usize {
-        self.metadata.next_point_offset
+        self.next_point_offset
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
@@ -267,20 +268,20 @@ impl VectorStorage for MmapSparseVectorStorage {
         other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let start_index = self.metadata.next_point_offset as PointOffsetType;
+        let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in
             other_vectors.check_stop(|| stopped.load(Ordering::Relaxed))
         {
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = other_vector.as_vec_ref().try_into()?;
-            let new_id = self.metadata.next_point_offset as PointOffsetType;
-            self.metadata.next_point_offset += 1;
+            let new_id = self.next_point_offset as PointOffsetType;
+            self.next_point_offset += 1;
             self.set_deleted(new_id, other_deleted)?;
 
             let vector = (!other_deleted).then_some(other_vector);
             self.update_stored(new_id, vector)?;
         }
-        Ok(start_index..self.metadata.next_point_offset as PointOffsetType)
+        Ok(start_index..self.next_point_offset as PointOffsetType)
     }
 
     fn flusher(&self) -> crate::common::Flusher {
@@ -323,7 +324,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn deleted_vector_count(&self) -> usize {
-        self.metadata.deleted_count
+        self.deleted_count
     }
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
