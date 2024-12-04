@@ -1377,6 +1377,7 @@ mod tests {
     use std::fs::File;
     use std::str::FromStr;
 
+    use rand::Rng;
     use segment::data_types::vectors::VectorInternal;
     use segment::json_path::JsonPath;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -1765,6 +1766,87 @@ mod tests {
                 .available_point_count(),
             2,
         );
+    }
+
+    #[tokio::test]
+    async fn test_points_deduplication_randomized() {
+        const POINT_COUNT: usize = 1000;
+
+        let mut rand = rand::thread_rng();
+        let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
+
+        let mut segments = [
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+            empty_segment(dir.path()),
+        ];
+
+        // Insert points into all segments with random versions
+        let mut point_versions = HashMap::new();
+        for id in 0..POINT_COUNT {
+            let mut versions = Vec::with_capacity(segments.len());
+            let point_id = PointIdType::from(id as u64);
+
+            for segment in &mut segments {
+                let version = rand.gen_range(1..10);
+                segment
+                    .upsert_point(version, point_id, vector.clone())
+                    .unwrap();
+                versions.push(version);
+            }
+
+            point_versions.insert(id, versions);
+        }
+
+        // Put segments into holder
+        let mut holder = SegmentHolder::default();
+        let segment_ids = segments
+            .into_iter()
+            .map(|segment| holder.add_new(segment))
+            .collect::<Vec<_>>();
+
+        let duplicate_count = holder
+            .find_duplicated_points()
+            .values()
+            .map(|ids| ids.len())
+            .sum::<usize>();
+        assert_eq!(POINT_COUNT * (segment_ids.len() - 1), duplicate_count);
+
+        let removed_count = holder.deduplicate_points().await.unwrap();
+        assert_eq!(POINT_COUNT * (segment_ids.len() - 1), removed_count);
+
+        // Assert points after deduplication
+        for id in 0..POINT_COUNT {
+            let versions = &point_versions[&id];
+            let max = *versions.iter().max().unwrap();
+            let point_id = PointIdType::from(id as u64);
+
+            let found_versions = segment_ids
+                .iter()
+                .filter_map(|segment_id| {
+                    holder
+                        .get(*segment_id)
+                        .unwrap()
+                        .get()
+                        .read()
+                        .point_version(point_id)
+                })
+                .collect::<Vec<_>>();
+
+            // We must have exactly one version, and it must be the highest we inserted
+            assert_eq!(
+                found_versions.len(),
+                1,
+                "point version must be maximum known version",
+            );
+            assert_eq!(
+                found_versions[0], max,
+                "point version must be maximum known version",
+            );
+        }
     }
 
     #[test]
