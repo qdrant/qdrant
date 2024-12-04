@@ -161,7 +161,7 @@ pub struct GpuConfig {
     pub device_filter: String,
     /// How many gpu devices to skip before starting to use them.
     #[serde(default)]
-    pub device_index: Option<usize>,
+    pub skip_devices: Option<usize>,
     /// How many gpu devices to use.
     #[serde(default)]
     pub devices_count: Option<usize>,
