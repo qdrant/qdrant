@@ -1364,6 +1364,7 @@ impl<'s> SegmentHolder {
             } else {
                 last_point_id_opt = Some(point_id);
                 last_segment_id_opt = Some(segment_id);
+                last_point_version_opt = None;
             }
         }
 
