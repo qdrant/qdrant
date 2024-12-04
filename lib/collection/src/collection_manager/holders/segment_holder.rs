@@ -1247,8 +1247,6 @@ impl<'s> SegmentHolder {
     /// Checks all segments and removes duplicated and outdated points.
     /// If two points have the same id, the point with the highest version is kept.
     /// If two points have the same id and version, one of them is kept.
-    ///
-    /// Deduplication works with plain segments only.
     pub async fn deduplicate_points(&self) -> OperationResult<usize> {
         let points_to_remove = self.find_duplicated_points();
 
