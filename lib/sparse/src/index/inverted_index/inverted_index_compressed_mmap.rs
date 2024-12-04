@@ -39,8 +39,12 @@ impl StorageVersion for Version {
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct InvertedIndexFileHeader {
-    pub posting_count: usize, // number of posting lists
-    pub vector_count: usize,  // number of unique vectors indexed
+    /// Number of posting lists
+    pub posting_count: usize,
+    /// Number of unique vectors indexed
+    pub vector_count: usize,
+    /// Total size of all searchable sparse vectors in bytes
+    pub total_sparse_size: usize,
 }
 
 /// Inverted flatten index from dimension id to posting list
@@ -129,6 +133,10 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
 
     fn vector_count(&self) -> usize {
         self.file_header.vector_count
+    }
+
+    fn total_sparse_vectors_size(&self) -> usize {
+        self.file_header.total_sparse_size
     }
 
     fn max_index(&self) -> Option<DimId> {
@@ -253,6 +261,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let file_header = InvertedIndexFileHeader {
             posting_count: index.postings.as_slice().len(),
             vector_count: index.vector_count,
+            total_sparse_size: index.total_sparse_size,
         };
         atomic_save_json(&Self::index_config_file_path(path.as_ref()), &file_header)?;
 

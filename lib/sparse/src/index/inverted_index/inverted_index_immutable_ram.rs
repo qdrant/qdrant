@@ -27,6 +27,7 @@ impl InvertedIndex for InvertedIndexImmutableRam {
         let mut inverted_index = InvertedIndexRam {
             postings: Default::default(),
             vector_count: mmap_inverted_index.file_header.vector_count,
+            total_sparse_size: mmap_inverted_index.file_header.total_sparse_size,
         };
 
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
@@ -91,6 +92,10 @@ impl InvertedIndex for InvertedIndexImmutableRam {
 
     fn vector_count(&self) -> usize {
         self.inner.vector_count()
+    }
+
+    fn total_sparse_vectors_size(&self) -> usize {
+        self.inner.total_sparse_vectors_size()
     }
 
     fn max_index(&self) -> Option<DimOffset> {

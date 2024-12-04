@@ -54,7 +54,11 @@ pub trait VectorStorage {
             .saturating_sub(self.deleted_vector_count())
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize;
+    /// Get the total size of available vectors in bytes, if it is known.
+    /// Returns `None` if the size is not known.
+    ///
+    /// This should be a cheap operation.
+    fn size_of_available_vectors_in_bytes(&self) -> Option<usize>;
 
     /// Get the vector by the given key
     fn get_vector(&self, key: PointOffsetType) -> CowVector;
@@ -463,7 +467,7 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self) -> Option<usize> {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.size_of_available_vectors_in_bytes(),
             VectorStorageEnum::DenseSimpleByte(v) => v.size_of_available_vectors_in_bytes(),

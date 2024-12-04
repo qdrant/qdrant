@@ -107,6 +107,11 @@ impl RemappedSparseVector {
         debug_assert!(other.is_sorted());
         score_vectors(&self.indices, &self.values, &other.indices, &other.values)
     }
+
+    pub fn size_in_bytes(&self) -> usize {
+        self.indices.len() * std::mem::size_of::<DimOffset>()
+            + self.values.len() * std::mem::size_of::<DimWeight>()
+    }
 }
 
 impl SparseVector {
