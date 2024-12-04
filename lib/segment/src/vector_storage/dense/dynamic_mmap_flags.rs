@@ -89,7 +89,7 @@ impl DynamicMmapFlags {
         self.status.len == 0
     }
 
-    pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open(directory: &Path) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
         let mut status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
@@ -105,7 +105,7 @@ impl DynamicMmapFlags {
         }
 
         // Open first mmap
-        let (flags, flags_flusher) = Self::open_mmap(status.len, directory, populate)?;
+        let (flags, flags_flusher) = Self::open_mmap(status.len, directory)?;
         Ok(Self {
             flags,
             flags_flusher: Arc::new(Mutex::new(Some(flags_flusher))),
@@ -117,7 +117,6 @@ impl DynamicMmapFlags {
     fn open_mmap(
         num_flags: usize,
         directory: &Path,
-        populate: bool,
     ) -> OperationResult<(MmapBitSlice, MmapFlusher)> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
 
@@ -131,11 +130,6 @@ impl DynamicMmapFlags {
 
         let flags_mmap = unsafe { MmapMut::map_mut(&file)? };
         drop(file);
-
-        // Populate before advising, because we want to read with normal advice.
-        if populate {
-            flags_mmap.populate();
-        }
 
         flags_mmap.madvise(madvise::get_global())?;
 
@@ -168,7 +162,7 @@ impl DynamicMmapFlags {
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
-            let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory, false)?;
+            let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
             {
@@ -267,7 +261,7 @@ mod tests {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+            let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
             random_flags
                 .iter()
@@ -286,7 +280,7 @@ mod tests {
         }
 
         {
-            let dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+            let dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i), *flag);
@@ -302,7 +296,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
+        let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
         dynamic_flags.set_len(num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(num_flags).collect();
         random_flags

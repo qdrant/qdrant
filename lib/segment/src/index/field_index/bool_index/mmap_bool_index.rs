@@ -30,40 +30,40 @@ pub struct MmapBoolIndex {
 }
 
 impl MmapBoolIndex {
-    pub fn builder(path: &Path, populate: bool) -> OperationResult<MmapBoolIndexBuilder> {
-        Ok(MmapBoolIndexBuilder(Self::open_or_create(path, populate)?))
+    pub fn builder(path: &Path) -> OperationResult<MmapBoolIndexBuilder> {
+        Ok(MmapBoolIndexBuilder(Self::open_or_create(path)?))
     }
 
     /// Creates a new boolean index at the given path. If it already exists, loads the index.
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path, populate: bool) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
         let falses_dir = path.join(FALSES_DIRNAME);
         if falses_dir.is_dir() {
-            Self::open(&path, populate)
+            Self::open(&path)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
             })?;
-            Self::open(&path, populate)
+            Self::open(&path)
         }
     }
 
-    fn open(path: &Path, populate: bool) -> OperationResult<Self> {
+    fn open(path: &Path) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error("Path is not a directory"));
         }
 
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicMmapFlags::open(&trues_path, populate)?;
+        let trues_slice = DynamicMmapFlags::open(&trues_path)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicMmapFlags::open(&falses_path, populate)?;
+        let falses_slice = DynamicMmapFlags::open(&falses_path)?;
 
         Ok(Self {
             base_dir: path.to_path_buf(),
@@ -427,7 +427,7 @@ mod tests {
     #[test]
     fn test_files() {
         let dir = std::env::temp_dir().join("test_mmap_bool_index");
-        let index = MmapBoolIndex::open_or_create(&dir, true).unwrap();
+        let index = MmapBoolIndex::open_or_create(&dir).unwrap();
 
         let reported = index.files().into_iter().collect::<HashSet<_>>();
 

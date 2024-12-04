@@ -365,7 +365,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         Some(false),
     )?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, false)?;
+    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
     let deleted_count = deleted.count_flags();
 
     Ok(AppendableMmapMultiDenseVectorStorage {
@@ -446,7 +446,7 @@ pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElemen
     let vectors = InRamPersistedVectors::open(&vectors_path, dim)?;
     let offsets = InRamPersistedVectors::open(&offsets_path, 1)?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, false)?;
+    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
     let deleted_count = deleted.count_flags();
 
     Ok(AppendableMmapMultiDenseVectorStorage {

@@ -16,7 +16,7 @@ use super::numeric_index::{
 };
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::OperationResult;
-use crate::data_types::index::{BoolIndexParams, TextIndexParams};
+use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
@@ -71,8 +71,8 @@ impl IndexSelector<'_> {
                     self.text_new(field, text_index_params.clone())?,
                 )]
             }
-            PayloadSchemaParams::Bool(params) => {
-                vec![self.bool_new(field, params)?]
+            PayloadSchemaParams::Bool(_) => {
+                vec![self.bool_new(field)?]
             }
             PayloadSchemaParams::Datetime(_) => {
                 vec![FieldIndex::DatetimeIndex(self.numeric_new(field)?)]
@@ -131,8 +131,8 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Text(text_index_params) => {
                 vec![self.text_builder(field, text_index_params.clone())]
             }
-            PayloadSchemaParams::Bool(params) => {
-                vec![self.bool_builder(field, params)?]
+            PayloadSchemaParams::Bool(_) => {
+                vec![self.bool_builder(field)?]
             }
             PayloadSchemaParams::Datetime(_) => {
                 vec![self.numeric_builder(
@@ -278,11 +278,7 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn bool_builder(
-        &self,
-        field: &JsonPath,
-        params: &BoolIndexParams,
-    ) -> OperationResult<FieldIndexBuilder> {
+    fn bool_builder(&self, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
         match self {
             IndexSelector::RocksDb(index_selector_rocks_db) => Ok(FieldIndexBuilder::BoolIndex(
                 SimpleBoolIndex::builder(index_selector_rocks_db.db.clone(), &field.to_string()),
@@ -291,13 +287,12 @@ impl IndexSelector<'_> {
                 let dir = bool_dir(index_selector_on_disk.dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
                     &dir,
-                    !params.on_disk.unwrap_or_default(),
                 )?))
             }
         }
     }
 
-    fn bool_new(&self, field: &JsonPath, params: &BoolIndexParams) -> OperationResult<FieldIndex> {
+    fn bool_new(&self, field: &JsonPath) -> OperationResult<FieldIndex> {
         Ok(match self {
             IndexSelector::RocksDb(index_selector_rocks_db) => {
                 FieldIndex::BoolIndex(BoolIndex::Simple(SimpleBoolIndex::new(
@@ -307,10 +302,7 @@ impl IndexSelector<'_> {
             }
             IndexSelector::OnDisk(index_selector_on_disk) => {
                 let dir = bool_dir(index_selector_on_disk.dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(
-                    &dir,
-                    !params.on_disk.unwrap_or_default(),
-                )?))
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(&dir)?))
             }
         })
     }
