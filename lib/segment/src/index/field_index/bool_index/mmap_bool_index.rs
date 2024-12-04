@@ -77,12 +77,14 @@ impl MmapBoolIndex {
     }
 
     fn set_or_insert(&mut self, id: u32, has_true: bool, has_false: bool) -> OperationResult<()> {
+        // Set or insert the flags
         let prev_true = set_or_insert_flag(&mut self.trues_slice, id as usize, has_true)?;
         let prev_false = set_or_insert_flag(&mut self.falses_slice, id as usize, has_false)?;
 
         let was_indexed = prev_true || prev_false;
         let is_indexed = has_true || has_false;
 
+        // update indexed_count
         match (was_indexed, is_indexed) {
             (false, true) => {
                 self.indexed_count += 1;
@@ -93,6 +95,7 @@ impl MmapBoolIndex {
             _ => {}
         }
 
+        // update trues_count
         match (prev_true, has_true) {
             (false, true) => {
                 self.trues_count += 1;
@@ -103,6 +106,7 @@ impl MmapBoolIndex {
             _ => {}
         }
 
+        // update falses_count
         match (prev_false, has_false) {
             (false, true) => {
                 self.falses_count += 1;
@@ -419,25 +423,27 @@ impl PayloadFieldIndex for MmapBoolIndex {
 mod tests {
     use std::collections::HashSet;
 
-    use io::visit_files::visit_files_recursively;
+    use tempfile::TempDir;
+    use walkdir::WalkDir;
 
     use super::MmapBoolIndex;
     use crate::index::field_index::PayloadFieldIndex;
 
     #[test]
     fn test_files() {
-        let dir = std::env::temp_dir().join("test_mmap_bool_index");
-        let index = MmapBoolIndex::open_or_create(&dir).unwrap();
+        let dir = TempDir::with_prefix("test_mmap_bool_index").unwrap();
+        let index = MmapBoolIndex::open_or_create(dir.path()).unwrap();
 
         let reported = index.files().into_iter().collect::<HashSet<_>>();
 
-        let mut actual = HashSet::new();
-        visit_files_recursively(&dir, &mut |filepath| {
-            actual.insert(filepath);
-        })
-        .unwrap();
+        let actual = WalkDir::new(dir.path())
+            .into_iter()
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                entry.path().is_file().then_some(entry.into_path())
+            })
+            .collect::<HashSet<_>>();
 
-        assert_eq!(reported.len(), actual.len());
         assert_eq!(reported, actual);
     }
 }
