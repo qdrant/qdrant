@@ -1,3 +1,8 @@
+# Enable GPU support.
+# This option can be set to `nvidia` or `amd` to enable GPU support.
+# This option is defined here because it is used in `FROM` instructions.
+ARG GPU
+
 # Cross-compiling using Docker multi-platform builds/images and `xx`.
 #
 # https://docs.docker.com/build/building/multi-platform/
@@ -84,7 +89,7 @@ COPY --from=planner /qdrant/recipe.json recipe.json
 RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
+    xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace ${GPU:+--features=gpu} --recipe-path recipe.json
 
 COPY . .
 # Include git commit into Qdrant binary during build
@@ -96,15 +101,38 @@ ARG GIT_COMMIT_ID
 RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
     RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
-    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
+    xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace ${GPU:+--features=gpu} --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
 
 # Download and extract web UI
 RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
+# Dockerfile does not support conditional `FROM` directly.
+# To workaround this limitation, we use a multi-stage build with a different base images which have equal name to ARG value.
 
-FROM debian:12-slim AS qdrant
+# Base image for Qdrant.
+FROM debian:12-slim AS qdrant-cpu
+
+# Base images for Qdrant with nvidia GPU support.
+FROM nvidia/opengl:1.0-glvnd-devel-ubuntu22.04 AS qdrant-gpu-nvidia
+# Set non-interactive mode for apt-get.
+ARG DEBIAN_FRONTEND=noninteractive
+# Set NVIDIA driver capabilities. By default, all capabilities are disabled.
+ENV NVIDIA_DRIVER_CAPABILITIES compute,graphics,utility
+# Copy Nvidia ICD loader file into the container.
+COPY --from=builder /qdrant/lib/gpu/nvidia_icd.json /etc/vulkan/icd.d/
+# Override maintainer label. Nvidia base image have it's own maintainer label.
+LABEL maintainer "Qdrant Team <info@qdrant.tech>"
+
+# Base images for Qdrant with amd GPU support.
+FROM rocm/dev-ubuntu-22.04 AS qdrant-gpu-amd
+# Set non-interactive mode for apt-get.
+ARG DEBIAN_FRONTEND=noninteractive
+# Override maintainer label. AMD base image have it's own maintainer label.
+LABEL maintainer "Qdrant Team <info@qdrant.tech>"
+
+FROM qdrant-${GPU:+gpu-}${GPU:-cpu} AS qdrant
 
 RUN apt-get update
 
@@ -114,6 +142,14 @@ ARG PACKAGES
 
 RUN apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
     && rm -rf /var/lib/apt/lists/*
+
+# Install GPU dependencies
+RUN if [ -n "$GPU" ]; then \
+    apt-get update && apt-get install -y \
+    libvulkan1 \
+    libvulkan-dev \
+    vulkan-tools \
+    ; fi
 
 # Copy Qdrant source files into the container. Useful for debugging.
 #
