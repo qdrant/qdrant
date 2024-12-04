@@ -169,6 +169,8 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_default(),
     );
 
+    welcome(&settings);
+
     #[cfg(feature = "gpu")]
     if let Some(settings_gpu) = &settings.gpu {
         use segment::index::hnsw_index::gpu::*;
@@ -196,8 +198,6 @@ fn main() -> anyhow::Result<()> {
             }
         }
     }
-
-    welcome(&settings);
 
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
         log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
