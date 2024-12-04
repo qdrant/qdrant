@@ -1688,6 +1688,9 @@ mod tests {
         assert!(!holder.get(sid1).unwrap().get().read().has_point(5.into()));
     }
 
+    /// Unit test for a specific bug we caught before.
+    ///
+    /// See: <https://github.com/qdrant/qdrant/pull/5585>
     #[tokio::test]
     async fn test_points_deduplication_bug() {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
