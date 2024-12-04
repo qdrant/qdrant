@@ -249,10 +249,14 @@ impl PlainIndex {
         filter: Option<&Filter>,
     ) -> bool {
         let vector_storage = self.vector_storage.borrow();
+        let Some(size_of_available_vectors) = vector_storage.size_of_available_vectors_in_bytes()
+        else {
+            // In case this gets called with sparse vectors, which are always indexed.
+            return false;
+        };
         let available_vector_count = vector_storage.available_vector_count();
         if available_vector_count > 0 {
-            let vector_size_bytes =
-                vector_storage.size_of_available_vectors_in_bytes() / available_vector_count;
+            let vector_size_bytes = size_of_available_vectors / available_vector_count;
             let indexing_threshold_bytes = search_optimized_threshold_kb * BYTES_IN_KB;
 
             if let Some(payload_filter) = filter {
@@ -373,6 +377,11 @@ impl VectorIndex for PlainIndex {
 
     fn indexed_vector_count(&self) -> usize {
         0
+    }
+
+    fn size_of_searchable_vectors_in_bytes(&self) -> Option<usize> {
+        // get the size from the vector storage
+        None
     }
 
     fn update_vector(

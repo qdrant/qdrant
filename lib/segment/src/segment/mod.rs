@@ -24,11 +24,11 @@ use rocksdb::DB;
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::VectorIndexEnum;
+use crate::index::{VectorIndex, VectorIndexEnum};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{SegmentConfig, SegmentType, SeqNumberType, VectorName};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::VectorStorageEnum;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
@@ -104,6 +104,16 @@ impl VectorData {
         };
 
         index_task.into_iter().chain(storage_task)
+    }
+
+    pub fn size_of_available_vectors_in_bytes(
+        storage: &VectorStorageEnum,
+        index: &VectorIndexEnum,
+    ) -> usize {
+        storage
+            .size_of_available_vectors_in_bytes()
+            .or_else(|| index.size_of_searchable_vectors_in_bytes())
+            .unwrap_or(0)
     }
 }
 

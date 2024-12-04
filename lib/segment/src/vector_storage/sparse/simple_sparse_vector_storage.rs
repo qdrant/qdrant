@@ -167,14 +167,14 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
+    fn size_of_available_vectors_in_bytes(&self) -> Option<usize> {
         if self.total_vector_count == 0 {
-            return 0;
+            return Some(0);
         }
         let available_fraction =
             (self.total_vector_count - self.deleted_count) as f32 / self.total_vector_count as f32;
         let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
-        available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
+        Some(available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>()))
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
