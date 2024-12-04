@@ -257,13 +257,10 @@ impl ProxySegment {
             if !changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
                     for (field_name, change) in changed_indexes.iter_ordered() {
-                        // Change indexes here with their operation version, that'll bump the optimized
-                        // segment version and will ensure we flush the new changes
                         debug_assert!(
                             change.version() >= op_num,
                             "proxied index change should have newer version than segment",
                         );
-
                         match change {
                             ProxyIndexChange::Create(schema, version) => {
                                 wrapped_segment.create_field_index(

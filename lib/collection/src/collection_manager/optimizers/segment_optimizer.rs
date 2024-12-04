@@ -454,12 +454,27 @@ pub trait SegmentOptimizer {
         }
 
         let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;
+        let optimized_segment_version = optimized_segment.version();
 
-        // Delete points in 2 steps
-        // First step - delete all points with read lock
-        // Second step - delete all the rest points with full write lock
-        //
-        // Use collection copy to prevent long time lock of `proxy_deleted_points`
+        // Apply index changes before point deletions
+        // Point deletions bump the segment version, can cause index changes to be ignored
+        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
+            debug_assert!(
+                change.version() >= optimized_segment_version,
+                "proxied index change should have newer version than segment",
+            );
+            match change {
+                ProxyIndexChange::Create(schema, version) => {
+                    optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                }
+                ProxyIndexChange::Delete(version) => {
+                    optimized_segment.delete_field_index(*version, field_name)?;
+                }
+            }
+            self.check_cancellation(stopped)?;
+        }
+
+        // Delete points
         let deleted_points_snapshot = proxy_deleted_points
             .read()
             .iter()
@@ -469,18 +484,6 @@ pub trait SegmentOptimizer {
             optimized_segment
                 .delete_point(versions.operation_version, point_id)
                 .unwrap();
-        }
-
-        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
-            match change {
-                ProxyIndexChange::Create(schema, version) => {
-                    optimized_segment.create_field_index(*version, field_name, Some(&schema))?;
-                }
-                ProxyIndexChange::Delete(version) => {
-                    optimized_segment.delete_field_index(*version, field_name)?;
-                }
-            }
-            self.check_cancellation(stopped)?;
         }
 
         Ok(optimized_segment)
@@ -634,11 +637,30 @@ pub trait SegmentOptimizer {
         {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
+            let optimized_segment_version = optimized_segment.version();
+
+            // Apply index changes before point deletions
+            // Point deletions bump the segment version, can cause index changes to be ignored
+            for (field_name, change) in proxy_index_changes.read().iter_ordered() {
+                debug_assert!(
+                    change.version() >= optimized_segment_version,
+                    "proxied index change should have newer version than segment",
+                );
+                match change {
+                    ProxyIndexChange::Create(schema, version) => {
+                        optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                    }
+                    ProxyIndexChange::Delete(version) => {
+                        optimized_segment.delete_field_index(*version, field_name)?;
+                    }
+                }
+                self.check_cancellation(stopped)?;
+            }
+
             let deleted_points = proxy_deleted_points.read();
             let points_diff = deleted_points
                 .iter()
                 .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
-            let optimized_segment_version = optimized_segment.version();
             for (&point_id, &versions) in points_diff {
                 // Delete points here with their operation version, that'll bump the optimized
                 // segment version and will ensure we flush the new changes
@@ -649,18 +671,6 @@ pub trait SegmentOptimizer {
                 optimized_segment
                     .delete_point(versions.operation_version, point_id)
                     .unwrap();
-            }
-
-            for (field_name, change) in proxy_index_changes.read().iter_ordered() {
-                match change {
-                    ProxyIndexChange::Create(schema, version) => {
-                        optimized_segment.create_field_index(*version, field_name, Some(schema))?;
-                    }
-                    ProxyIndexChange::Delete(version) => {
-                        optimized_segment.delete_field_index(*version, field_name)?;
-                    }
-                }
-                self.check_cancellation(stopped)?;
             }
 
             optimized_segment.prefault_mmap_pages();
