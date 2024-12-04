@@ -22,6 +22,7 @@ use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType, SnapshotFormat};
 
+use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::config::CollectionParams;
@@ -1028,8 +1029,8 @@ impl<'s> SegmentHolder {
             let mut proxy = ProxySegment::new(
                 segment.clone(),
                 tmp_segment.clone(),
-                Default::default(),
-                Default::default(),
+                LockedRmSet::default(),
+                LockedIndexChanges::default(),
             );
 
             // Write segment is fresh, so it has no operations

@@ -442,7 +442,7 @@ pub trait SegmentOptimizer {
 
         // Apply index changes to segment builder
         // Indexes are only used for defragmentation in segment builder, so versions are ignored
-        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
+        for (field_name, change) in proxy_changed_indexes.read().iter_unordered() {
             match change {
                 ProxyIndexChange::Create(schema, _) => {
                     segment_builder.add_indexed_field(field_name.to_owned(), schema.to_owned());
@@ -454,13 +454,13 @@ pub trait SegmentOptimizer {
         }
 
         let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;
-        let optimized_segment_version = optimized_segment.version();
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
+        let old_optimized_segment_version = optimized_segment.version();
         for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
             debug_assert!(
-                change.version() >= optimized_segment_version,
+                change.version() >= old_optimized_segment_version,
                 "proxied index change should have newer version than segment",
             );
             match change {
@@ -637,13 +637,13 @@ pub trait SegmentOptimizer {
         {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
-            let optimized_segment_version = optimized_segment.version();
+            let old_optimized_segment_version = optimized_segment.version();
 
             // Apply index changes before point deletions
             // Point deletions bump the segment version, can cause index changes to be ignored
             for (field_name, change) in proxy_index_changes.read().iter_ordered() {
                 debug_assert!(
-                    change.version() >= optimized_segment_version,
+                    change.version() >= old_optimized_segment_version,
                     "proxied index change should have newer version than segment",
                 );
                 match change {
@@ -665,7 +665,7 @@ pub trait SegmentOptimizer {
                 // Delete points here with their operation version, that'll bump the optimized
                 // segment version and will ensure we flush the new changes
                 debug_assert!(
-                    versions.operation_version >= optimized_segment_version,
+                    versions.operation_version >= old_optimized_segment_version,
                     "proxied point deletes should have newer version than segment",
                 );
                 optimized_segment

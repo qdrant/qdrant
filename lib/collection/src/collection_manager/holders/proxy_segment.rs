@@ -250,8 +250,9 @@ impl ProxySegment {
         let mut wrapped_segment = wrapped_segment.upgradable_read();
         let op_num = wrapped_segment.version();
 
-        // Propagate index changes
-        // Ordering is important here and must match the flush function to prevent a deadlock
+        // Propagate index changes before point deletions
+        // Point deletions bump the segment version, can cause index changes to be ignored
+        // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
             let changed_indexes = self.changed_indexes.upgradable_read();
             if !changed_indexes.is_empty() {
@@ -281,7 +282,7 @@ impl ProxySegment {
         }
 
         // Propagate deleted points
-        // Ordering is important here and must match the flush function to prevent a deadlock
+        // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
             let deleted_points = self.deleted_points.upgradable_read();
             if !deleted_points.is_empty() {
@@ -1125,7 +1126,7 @@ impl SegmentEntry for ProxySegment {
     fn get_indexed_fields(&self) -> HashMap<PayloadKeyType, PayloadFieldSchema> {
         let mut indexed_fields = self.wrapped_segment.get().read().get_indexed_fields();
 
-        for (field_name, change) in self.changed_indexes.read().iter_ordered() {
+        for (field_name, change) in self.changed_indexes.read().iter_unordered() {
             match change {
                 ProxyIndexChange::Create(schema, _) => {
                     indexed_fields.insert(field_name.to_owned(), schema.to_owned());
@@ -1280,12 +1281,17 @@ impl ProxyIndexChanges {
 
     /// Iterate over proxy index changes in order of version.
     ///
-    /// Index changes msut be applied in order because changes with an old version will silently be
+    /// Index changes must be applied in order because changes with an old version will silently be
     /// rejected.
     pub fn iter_ordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
         self.changes
             .iter()
             .sorted_by_key(|(_, change)| change.version())
+    }
+
+    /// Iterate over proxy index changes in arbitrary order.
+    pub fn iter_unordered(&self) -> impl Iterator<Item = (&PayloadKeyType, &ProxyIndexChange)> {
+        self.changes.iter()
     }
 }
 
