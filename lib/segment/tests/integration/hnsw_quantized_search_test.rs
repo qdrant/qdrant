@@ -141,6 +141,7 @@ fn hnsw_quantized_search_test(
         payload_index: segment.payload_index.clone(),
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

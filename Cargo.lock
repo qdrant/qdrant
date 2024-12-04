@@ -5984,6 +5984,7 @@ dependencies = [
  "is_sorted",
  "issues",
  "itertools 0.13.0",
+ "lazy_static",
  "log",
  "macro_rules_attribute",
  "memmap2 0.9.5",

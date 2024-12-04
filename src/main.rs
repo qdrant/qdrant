@@ -171,6 +171,33 @@ fn main() -> anyhow::Result<()> {
 
     welcome(&settings);
 
+    #[cfg(feature = "gpu")]
+    if let Some(settings_gpu) = &settings.gpu {
+        use segment::index::hnsw_index::gpu::*;
+
+        // initialize GPU devices manager.
+        if settings_gpu.indexing {
+            set_gpu_force_half_precision(settings_gpu.force_half_precision);
+            set_gpu_groups_count(settings_gpu.groups_count);
+
+            let mut gpu_device_manager = GPU_DEVICES_MANAGER.write();
+            *gpu_device_manager = match gpu_devices_manager::GpuDevicesMaganer::new(
+                &settings_gpu.device_filter,
+                settings_gpu.devices.as_deref(),
+                settings_gpu.allow_integrated,
+                settings_gpu.allow_emulated,
+                true, // Currently we always wait for the free gpu device.
+                settings_gpu.parallel_indexes.unwrap_or(1),
+            ) {
+                Ok(gpu_device_manager) => Some(gpu_device_manager),
+                Err(err) => {
+                    log::error!("Can't initialize GPU devices manager: {err}");
+                    None
+                }
+            }
+        }
+    }
+
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
         log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
         log::warn!(

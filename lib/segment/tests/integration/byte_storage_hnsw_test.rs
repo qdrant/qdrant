@@ -223,6 +223,7 @@ fn test_byte_storage_hnsw(
         payload_index: segment_byte.payload_index.clone(),
         hnsw_config,
         permit: Some(permit),
+        gpu_device: None,
         stopped: &stopped,
     })
     .unwrap();

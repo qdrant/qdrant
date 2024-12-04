@@ -14,6 +14,22 @@ mod search_context;
 #[cfg(feature = "gpu")]
 pub mod gpu;
 
+/// Placeholders for GPU logic when the `gpu` feature is not enabled.
+#[cfg(not(feature = "gpu"))]
+pub mod gpu {
+    pub mod gpu_devices_manager {
+        /// Placeholder for GPU device to process indexing on.
+        pub struct LockedGpuDevice<'a> {
+            phantom: std::marker::PhantomData<&'a usize>,
+        }
+    }
+
+    pub mod gpu_vector_storage {
+        /// Placeholder for GPU vector storage.
+        pub struct GpuVectorStorage {}
+    }
+}
+
 #[cfg(test)]
 mod tests;
 
