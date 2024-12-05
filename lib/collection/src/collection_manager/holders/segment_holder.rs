@@ -1281,6 +1281,12 @@ impl<'s> SegmentHolder {
     }
 
     fn find_duplicated_points(&self) -> HashMap<SegmentId, Vec<PointIdType>> {
+        struct DedupPoint {
+            segment_id: SegmentId,
+            point_id: PointIdType,
+            version: Option<SeqNumberType>,
+        }
+
         let segments = self
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
@@ -1296,52 +1302,53 @@ impl<'s> SegmentHolder {
             .map(|(&segment_id, locked_segment)| {
                 locked_segment
                     .iter_points()
-                    .map(move |point_id| (segment_id, point_id))
+                    .map(move |point_id| DedupPoint {
+                        segment_id,
+                        point_id,
+                        version: None,
+                    })
             })
-            .kmerge_by(|a, b| a.1 < b.1);
+            .kmerge_by(|a, b| a.point_id < b.point_id);
 
-        let mut last_point_id_opt = None;
-        let mut last_segment_id_opt = None;
-        let mut last_point_version_opt = None;
-        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
+        // Iterator produces groups of point IDs
+        let chunked_iter = ordered_iter.chunk_by(|entry| entry.point_id);
 
-        for (segment_id, point_id) in ordered_iter {
-            if last_point_id_opt == Some(point_id) {
-                let last_segment_id = last_segment_id_opt.unwrap();
+        let mut points = Vec::new();
+        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = HashMap::new();
 
-                let point_version = locked_segments[&segment_id].point_version(point_id);
-                let last_point_version = if let Some(last_point_version) = last_point_version_opt {
-                    last_point_version
-                } else {
-                    let version = locked_segments[&last_segment_id].point_version(point_id);
-                    last_point_version_opt = Some(version);
-                    version
-                };
+        for (point_id, group_iter) in &chunked_iter {
+            // Fill buffer with points of current chunk, need at least 2 points to deduplicate
+            points.clear();
+            points.extend(group_iter);
+            if points.len() < 2 {
+                continue;
+            }
 
-                // choose newer version between point_id and last_point_id
-                if point_version < last_point_version {
-                    log::trace!("Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})");
+            // Attach point version to
+            for dedup_point in &mut points {
+                dedup_point.version =
+                    locked_segments[&dedup_point.segment_id].point_version(dedup_point.point_id);
+            }
 
-                    points_to_remove
-                        .entry(segment_id)
-                        .or_default()
-                        .push(point_id);
-                } else {
-                    log::trace!("Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})");
+            // Sort points from highest to lowest version
+            points.sort_unstable_by(|a, b| b.version.cmp(&a.version));
 
-                    points_to_remove
-                        .entry(last_segment_id)
-                        .or_default()
-                        .push(point_id);
-
-                    last_point_id_opt = Some(point_id);
-                    last_segment_id_opt = Some(segment_id);
-                    last_point_version_opt = Some(point_version);
-                }
-            } else {
-                last_point_id_opt = Some(point_id);
-                last_segment_id_opt = Some(segment_id);
-                last_point_version_opt = None;
+            // Keep the first point, remove all others which are older
+            for &DedupPoint {
+                segment_id,
+                point_id,
+                version,
+            } in &points[1..]
+            {
+                log::trace!(
+                    "Selected point {point_id} in segment {segment_id} for deduplication (version {version:?} versus {:?} in segment {})",
+                    points[0].version,
+                    points[0].segment_id,
+                );
+                points_to_remove
+                    .entry(segment_id)
+                    .or_default()
+                    .push(point_id);
             }
         }
 
