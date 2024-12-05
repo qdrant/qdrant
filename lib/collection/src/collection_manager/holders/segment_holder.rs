@@ -1296,8 +1296,8 @@ impl<'s> SegmentHolder {
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
 
-        // Iterator produces segment:point tuples in order of point ID from all segments
-        let ordered_iter = locked_segments
+        // Iterator produces groups of points with the same point ID
+        let point_group_iter = locked_segments
             .iter()
             .map(|(&segment_id, locked_segment)| {
                 locked_segment
@@ -1308,15 +1308,13 @@ impl<'s> SegmentHolder {
                         version: None,
                     })
             })
-            .kmerge_by(|a, b| a.point_id < b.point_id);
-
-        // Iterator produces groups of point IDs
-        let chunked_iter = ordered_iter.chunk_by(|entry| entry.point_id);
+            .kmerge_by(|a, b| a.point_id < b.point_id)
+            .chunk_by(|entry| entry.point_id);
 
         let mut points = Vec::new();
         let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = HashMap::new();
 
-        for (point_id, group_iter) in &chunked_iter {
+        for (_, group_iter) in &point_group_iter {
             // Fill buffer with points of current chunk, need at least 2 points to deduplicate
             points.clear();
             points.extend(group_iter);
