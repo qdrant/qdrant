@@ -20,7 +20,9 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
-use segment::types::{Payload, PointIdType, SegmentConfig, SeqNumberType, SnapshotFormat};
+use segment::types::{
+    Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType, SnapshotFormat,
+};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
@@ -778,6 +780,7 @@ impl<'s> SegmentHolder {
         let mut max_persisted_version: SeqNumberType = SeqNumberType::MIN;
         let mut min_unsaved_version: SeqNumberType = SeqNumberType::MAX;
         let mut has_unsaved = false;
+        let mut proxy_segments = vec![];
 
         // Flush and release each segment
         for (read_segment, segment_id) in segment_reads.into_iter().zip(lock_order.into_iter()) {
@@ -795,9 +798,17 @@ impl<'s> SegmentHolder {
 
             max_persisted_version = max(max_persisted_version, segment_persisted_version);
 
-            // Release read-lock immediately after flush, explicit to make this more clear
-            drop(read_segment);
+            // Release segment read-lock right away now or keep it until the end
+            match read_segment.segment_type() {
+                // Regular segment: release now to allow new writes
+                SegmentType::Plain | SegmentType::Indexed => drop(read_segment),
+                // Proxy segment: release at the end, proxy segments may share the write segment
+                // Prevent new updates from changing write segment on yet-to-be-flushed proxies
+                SegmentType::Special => proxy_segments.push(read_segment),
+            }
         }
+
+        drop(proxy_segments);
 
         if has_unsaved {
             log::debug!(
