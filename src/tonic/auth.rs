@@ -19,7 +19,7 @@ pub struct AuthMiddleware<S> {
 }
 
 async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, Status> {
-    let access = auth_keys
+    let (access, api_key) = auth_keys
         .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
         .await
         .map_err(|e| match e {
@@ -29,6 +29,7 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         })?;
 
     let previous = req.extensions_mut().insert::<Access>(access);
+    req.extensions_mut().insert(api_key);
     debug_assert!(
         previous.is_none(),
         "Previous access object should not exist in the request"

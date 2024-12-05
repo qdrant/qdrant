@@ -74,7 +74,7 @@ impl AuthKeys {
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-    ) -> Result<Access, AuthError> {
+    ) -> Result<(Access, String), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -84,11 +84,11 @@ impl AuthKeys {
         };
 
         if self.can_write(key) {
-            return Ok(Access::full("Read-write access by key"));
+            return Ok((Access::full("Read-write access by key"), key.to_string()));
         }
 
         if self.can_read(key) {
-            return Ok(Access::full_ro("Read-only access by key"));
+            return Ok((Access::full_ro("Read-only access by key"), key.to_string()));
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {
@@ -102,7 +102,7 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok(access);
+            return Ok((access, key.to_string()));
         }
 
         Err(AuthError::Unauthorized(
