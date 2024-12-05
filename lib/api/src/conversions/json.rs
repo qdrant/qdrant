@@ -148,13 +148,14 @@ mod tests {
             ),
         ];
 
-        let json_map: HashMap<String, serde_json::Value> = serde_json::from_str(&raw_json).unwrap();
+        let json_map: HashMap<String, serde_json::Value> = serde_json::from_str(raw_json).unwrap();
 
         let proto_map: HashMap<String, Value> = values
             .into_iter()
             .map(|(k, v)| (k.to_string(), Value { kind: Some(v) }))
             .collect();
-        return (json_map, proto_map);
+
+        (json_map, proto_map)
     }
 
     #[test]
@@ -170,7 +171,7 @@ mod tests {
         json_map.insert("unknown".to_string(), serde_json::Value::default());
 
         let got_json_map = proto_dict_to_json(proto_map);
-        assert_eq!(got_json_map.is_err(), false);
+        assert!(got_json_map.is_ok());
         assert_eq!(got_json_map.unwrap(), json_map);
     }
 
@@ -178,13 +179,12 @@ mod tests {
     fn test_proto_payload() {
         let (json_map, proto_map) = gen_proto_json_dicts();
 
-        let payload: serde_json::Map<String, serde_json::Value> =
-            json_map.into_iter().map(|(k, v)| (k, v)).collect();
-        let payload = segment::types::Payload { 0: payload };
+        let payload: serde_json::Map<String, serde_json::Value> = json_map.into_iter().collect();
+        let payload = segment::types::Payload(payload);
 
         // proto to payload
         let got_json_payload = proto_to_payloads(proto_map.clone());
-        assert_eq!(got_json_payload.is_err(), false);
+        assert!(got_json_payload.is_ok());
         assert_eq!(got_json_payload.unwrap(), payload);
 
         // payload to proto
