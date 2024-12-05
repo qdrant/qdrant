@@ -5,6 +5,7 @@ use common::types::PointOffsetType;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::posting_list::PostingBuilder;
+use crate::index::posting_list_common::PostingElementEx;
 
 /// Builder for InvertedIndexRam
 pub struct InvertedIndexBuilder {
@@ -30,7 +31,7 @@ impl InvertedIndexBuilder {
 
     /// Add a vector to the inverted index builder
     pub fn add(&mut self, id: PointOffsetType, vector: RemappedSparseVector) {
-        let sparse_size = vector.size_in_bytes();
+        let sparse_size = vector.len() * size_of::<PostingElementEx>();
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             self.posting_builders.resize_with(

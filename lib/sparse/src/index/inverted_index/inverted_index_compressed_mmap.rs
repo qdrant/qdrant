@@ -270,9 +270,8 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             vector_count: index.vector_count,
             total_sparse_size: Some(index.total_sparse_size),
         };
-        atomic_save_json(&Self::index_config_file_path(path.as_ref()), &file_header)?;
 
-        Ok(Self {
+        let mut compressed_index = Self {
             path: path.as_ref().to_owned(),
             mmap: Arc::new(open_read_mmap(
                 file_path.as_ref(),
@@ -281,7 +280,18 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             )?),
             file_header,
             _phantom: PhantomData,
-        })
+        };
+
+        // total_sparse_size is recalculated because now it is compressed
+        compressed_index.file_header.total_sparse_size =
+            Some(compressed_index.calculate_total_sparse_size());
+
+        atomic_save_json(
+            &Self::index_config_file_path(path.as_ref()),
+            &compressed_index.file_header,
+        )?;
+
+        Ok(compressed_index)
     }
 
     pub fn load<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
