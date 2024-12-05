@@ -36,7 +36,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         let mut inverted_index = InvertedIndexCompressedImmutableRam {
             postings: Vec::with_capacity(mmap_inverted_index.file_header.posting_count),
             vector_count: mmap_inverted_index.file_header.vector_count,
-            total_sparse_size: mmap_inverted_index.file_header.total_sparse_size,
+            total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
         };
 
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
