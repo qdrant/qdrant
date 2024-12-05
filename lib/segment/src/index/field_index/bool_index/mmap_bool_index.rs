@@ -41,14 +41,14 @@ impl MmapBoolIndex {
     pub fn open_or_create(path: &Path) -> OperationResult<Self> {
         let falses_dir = path.join(FALSES_DIRNAME);
         if falses_dir.is_dir() {
-            Self::open(&path)
+            Self::open(path)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
             })?;
-            Self::open(&path)
+            Self::open(path)
         }
     }
 
@@ -169,8 +169,8 @@ impl MmapBoolIndex {
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
-            points_count: self.indexed_count as usize,
-            points_values_count: (self.trues_count + self.falses_count) as usize,
+            points_count: self.indexed_count,
+            points_values_count: (self.trues_count + self.falses_count),
             histogram_bucket_size: None,
         }
     }
