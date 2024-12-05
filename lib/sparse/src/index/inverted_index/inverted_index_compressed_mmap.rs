@@ -44,7 +44,10 @@ pub struct InvertedIndexFileHeader {
     /// Number of unique vectors indexed
     pub vector_count: usize,
     /// Total size of all searchable sparse vectors in bytes
-    pub total_sparse_size: usize,
+    // This is an option because earlier versions of the index did not store this information.
+    // In case it is not present, it will be calculated on load.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_sparse_size: Option<usize>,
 }
 
 /// Inverted flatten index from dimension id to posting list
@@ -136,7 +139,11 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
     }
 
     fn total_sparse_vectors_size(&self) -> usize {
-        self.file_header.total_sparse_size
+        debug_assert!(
+            self.file_header.total_sparse_size.is_some(),
+            "The field should be populated from the file, or on load"
+        );
+        self.file_header.total_sparse_size.unwrap_or(0)
     }
 
     fn max_index(&self) -> Option<DimId> {
@@ -261,7 +268,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let file_header = InvertedIndexFileHeader {
             posting_count: index.postings.as_slice().len(),
             vector_count: index.vector_count,
-            total_sparse_size: index.total_sparse_size,
+            total_sparse_size: Some(index.total_sparse_size),
         };
         atomic_save_json(&Self::index_config_file_path(path.as_ref()), &file_header)?;
 
@@ -289,12 +296,26 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             AdviceSetting::from(Advice::Normal),
             false,
         )?;
-        Ok(Self {
+
+        let mut index = Self {
             path: path.as_ref().to_owned(),
             mmap: Arc::new(mmap),
             file_header,
             _phantom: PhantomData,
-        })
+        };
+
+        if index.file_header.total_sparse_size.is_none() {
+            index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size());
+            atomic_save_json(&config_file_path, &index.file_header)?;
+        }
+
+        Ok(index)
+    }
+
+    fn calculate_total_sparse_size(&self) -> usize {
+        (0..self.file_header.posting_count as DimId)
+            .filter_map(|id| self.get(&id).map(|posting| posting.store_size().total))
+            .sum()
     }
 }
 

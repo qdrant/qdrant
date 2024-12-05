@@ -11,7 +11,7 @@ use validator::ValidationErrors;
 
 use crate::common::sparse_vector::SparseVector;
 
-/// Compressed Sparse Row matrix, baked by memory-mapped file.
+/// Compressed Sparse Row matrix, backed by memory-mapped file.
 ///
 /// The layout of the memory-mapped file is as follows:
 ///

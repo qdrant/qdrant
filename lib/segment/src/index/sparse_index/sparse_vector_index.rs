@@ -176,6 +176,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         // Simple migration mechanism for 0.1.0.
         let old_path = path.join(OLD_INDEX_FILE_NAME);
         if TInvertedIndex::Version::current() == Version::new(0, 1, 0) && old_path.exists() {
+            // Didn't have a version file, but uses 0.1.0 index. Create a version file.
             rename(old_path, path.join(INDEX_FILE_NAME))?;
             TInvertedIndex::Version::save(path)?;
             stored_version = Some(TInvertedIndex::Version::current());
