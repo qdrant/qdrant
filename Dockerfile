@@ -111,11 +111,13 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
 # Download and extract web UI
 RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
+
 # Dockerfile does not support conditional `FROM` directly.
 # To workaround this limitation, we use a multi-stage build with a different base images which have equal name to ARG value.
 
 # Base image for Qdrant.
 FROM debian:12-slim AS qdrant-cpu
+
 
 # Base images for Qdrant with nvidia GPU support.
 FROM nvidia/opengl:1.0-glvnd-devel-ubuntu22.04 AS qdrant-gpu-nvidia
@@ -128,12 +130,14 @@ COPY --from=builder /qdrant/lib/gpu/nvidia_icd.json /etc/vulkan/icd.d/
 # Override maintainer label. Nvidia base image have it's own maintainer label.
 LABEL maintainer "Qdrant Team <info@qdrant.tech>"
 
+
 # Base images for Qdrant with amd GPU support.
 FROM rocm/dev-ubuntu-22.04 AS qdrant-gpu-amd
 # Set non-interactive mode for apt-get.
 ARG DEBIAN_FRONTEND=noninteractive
 # Override maintainer label. AMD base image have it's own maintainer label.
 LABEL maintainer "Qdrant Team <info@qdrant.tech>"
+
 
 FROM qdrant-${GPU:+gpu-}${GPU:-cpu} AS qdrant
 
