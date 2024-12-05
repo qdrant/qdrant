@@ -251,7 +251,11 @@ impl PlainIndex {
         let vector_storage = self.vector_storage.borrow();
         let Some(size_of_available_vectors) = vector_storage.size_of_available_vectors_in_bytes()
         else {
-            // In case this gets called with sparse vectors, which are always indexed.
+            debug_assert!(
+                false,
+                "`size_of_available_vectors` does not work the same way for sparse vectors, this function should 
+                only be called for storages which can determine the total size of their vectors efficiently"
+            );
             return false;
         };
         let available_vector_count = vector_storage.available_vector_count();
