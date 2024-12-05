@@ -7,7 +7,6 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointsSelector, WriteOrdering};
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
-use collection::operations::verification::new_unchecked_verification_pass;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
@@ -106,12 +105,15 @@ async fn update_vectors(
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    // Nothing to verify here.
-    let pass = new_unchecked_verification_pass();
-
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
+
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     helpers::time(do_update_vectors(
         dispatcher.toc(&access, &pass).clone(),

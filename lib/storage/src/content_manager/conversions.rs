@@ -86,6 +86,9 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
         search_allow_exact: value.search_allow_exact,
         search_max_oversampling: value.search_max_oversampling.map(f64::from),
         upsert_max_batchsize: value.upsert_max_batchsize.map(|i| i as usize),
+        max_collection_vector_size_bytes: value
+            .max_collection_vector_size_bytes
+            .map(|i| i as usize),
     }
 }
 

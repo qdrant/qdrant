@@ -23,6 +23,7 @@ use super::resharding::tasks_pool::ReshardTasksPool;
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::local_data_stats::LocalDataStats;
 use crate::common::snapshot_stream::SnapshotStream;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
@@ -1116,6 +1117,15 @@ impl ShardHolder {
             replica_set.remove_peer(peer_id).await?;
         }
         Ok(())
+    }
+
+    /// Queries and accumulates the statistics for local data, uncached.
+    pub async fn calculate_local_segments_stats(&self) -> LocalDataStats {
+        let mut stats = LocalDataStats::default();
+        for shard in self.shards.iter() {
+            stats.accumulate_from(&shard.1.calculate_local_shards_stats().await)
+        }
+        stats
     }
 }
 

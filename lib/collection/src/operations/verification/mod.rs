@@ -35,7 +35,8 @@ pub struct VerificationPass {
 /// This trait ignores the `enabled` parameter in `StrictModeConfig`.
 pub trait StrictModeVerification {
     /// Implementing this method allows adding a custom check for request specific values.
-    fn check_custom(
+    #[allow(async_fn_in_trait)]
+    async fn check_custom(
         &self,
         _collection: &Collection,
         _strict_mode_config: &StrictModeConfig,
@@ -86,13 +87,14 @@ pub trait StrictModeVerification {
     }
 
     /// Checks search parameters.
-    fn check_search_params(
+    #[allow(async_fn_in_trait)]
+    async fn check_search_params(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         if let Some(search_params) = self.request_search_params() {
-            search_params.check_strict_mode(collection, strict_mode_config)?;
+            Box::pin(search_params.check_strict_mode(collection, strict_mode_config)).await?;
         }
         Ok(())
     }
@@ -140,16 +142,18 @@ pub trait StrictModeVerification {
 
     /// Does the verification of all configured parameters. Only implement this function if you know what
     /// you are doing. In most cases implementing `check_custom` is sufficient.
-    fn check_strict_mode(
+    #[allow(async_fn_in_trait)]
+    async fn check_strict_mode(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        self.check_custom(collection, strict_mode_config)?;
+        self.check_custom(collection, strict_mode_config).await?;
         self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
         self.check_request_exact(strict_mode_config)?;
-        self.check_search_params(collection, strict_mode_config)?;
+        self.check_search_params(collection, strict_mode_config)
+            .await?;
         Ok(())
     }
 }
@@ -196,7 +200,7 @@ pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
 }
 
 impl StrictModeVerification for SearchParams {
-    fn check_custom(
+    async fn check_custom(
         &self,
         _collection: &Collection,
         strict_mode_config: &StrictModeConfig,
@@ -338,6 +342,7 @@ mod test {
         let strict_mode_config = collection.strict_mode_config().await.unwrap();
         let error = request
             .check_strict_mode(collection, &strict_mode_config)
+            .await
             .expect_err("Expected strict mode error but got Ok() value");
         if !matches!(error, CollectionError::StrictMode { .. }) {
             panic!("Expected strict mode error but got {error:#}");
@@ -349,7 +354,9 @@ mod test {
         collection: &Collection,
     ) {
         let strict_mode_config = collection.strict_mode_config().await.unwrap();
-        let res = request.check_strict_mode(collection, &strict_mode_config);
+        let res = request
+            .check_strict_mode(collection, &strict_mode_config)
+            .await;
         if let Err(CollectionError::StrictMode { description }) = res {
             panic!("Strict mode check should've passed but failed with error: {description:?}");
         } else if res.is_err() {
@@ -401,6 +408,7 @@ mod test {
             search_allow_exact: Some(false),
             search_max_oversampling: Some(0.2),
             upsert_max_batchsize: None,
+            max_collection_vector_size_bytes: None,
         };
 
         fixture_collection(&strict_mode_config).await

@@ -26,6 +26,7 @@ use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use super::CollectionId;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
+use crate::common::local_data_stats::LocalDataStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::point_ops::{self};
@@ -1009,6 +1010,35 @@ impl ShardReplicaSet {
         };
         shard.trigger_optimizers();
         true
+    }
+
+    /// Returns the estimated size of all locally stored vectors in bytes.
+    /// Locks and iterates over all segments.
+    /// Cache this value in performance critical scenarios!
+    pub(crate) async fn calculate_local_shards_stats(&self) -> LocalDataStats {
+        self.local
+            .read()
+            .await
+            .as_ref()
+            .map(|i| match i {
+                Shard::Local(local) => {
+                    let mut total_vector_size = 0;
+
+                    for segment in local.segments.read().iter() {
+                        let size_info = segment.1.get().read().size_info();
+                        total_vector_size += size_info.vectors_size_bytes;
+                    }
+
+                    LocalDataStats {
+                        vector_storage_size: total_vector_size,
+                    }
+                }
+                Shard::Proxy(_)
+                | Shard::ForwardProxy(_)
+                | Shard::QueueProxy(_)
+                | Shard::Dummy(_) => LocalDataStats::default(),
+            })
+            .unwrap_or_default()
     }
 }
 

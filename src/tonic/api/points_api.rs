@@ -16,7 +16,6 @@ use api::grpc::qdrant::{
     UpdatePointVectors, UpsertPoints,
 };
 use collection::operations::types::CoreSearchRequest;
-use collection::operations::verification::new_unchecked_verification_pass;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
@@ -66,13 +65,10 @@ impl Points for PointsService {
     ) -> Result<Response<PointsOperationResponse>, Status> {
         validate(request.get_ref())?;
 
-        // Nothing to verify here.
-        let pass = new_unchecked_verification_pass();
-
         let access = extract_access(&mut request);
 
         upsert(
-            self.dispatcher.toc(&access, &pass).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,
@@ -122,12 +118,11 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         // Nothing to verify here.
-        let pass = new_unchecked_verification_pass();
 
         let access = extract_access(&mut request);
 
         update_vectors(
-            self.dispatcher.toc(&access, &pass).clone(),
+            StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             None,
             None,

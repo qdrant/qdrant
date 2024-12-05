@@ -209,6 +209,10 @@ pub trait SegmentEntry {
     /// Get current stats of the segment
     fn info(&self) -> SegmentInfo;
 
+    /// Get size related stats of the segment.
+    /// This returns `SegmentInfo` with some non size-related data (like `schema`) unset to improve performance.
+    fn size_info(&self) -> SegmentInfo;
+
     /// Get segment configuration
     fn config(&self) -> &SegmentConfig;
 

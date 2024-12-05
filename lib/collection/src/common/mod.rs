@@ -3,6 +3,7 @@ pub mod eta_calculator;
 pub mod fetch_vectors;
 pub mod file_utils;
 pub mod is_ready;
+pub mod local_data_stats;
 pub mod retrieve_request_trait;
 pub mod sha_256;
 pub mod snapshot_stream;

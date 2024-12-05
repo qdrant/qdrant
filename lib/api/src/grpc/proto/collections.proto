@@ -321,6 +321,7 @@ message StrictModeConfig {
   optional bool search_allow_exact  = 7;
   optional float search_max_oversampling  = 8;
   optional uint64 upsert_max_batchsize  = 9;
+  optional uint64 max_collection_vector_size_bytes  = 10;
 }
 
 message CreateCollection {

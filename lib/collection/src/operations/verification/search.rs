@@ -50,7 +50,7 @@ impl StrictModeVerification for CoreSearchRequest {
 }
 
 impl StrictModeVerification for SearchRequestBatch {
-    fn check_strict_mode(
+    async fn check_strict_mode(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
@@ -58,7 +58,8 @@ impl StrictModeVerification for SearchRequestBatch {
         for search_request in &self.searches {
             search_request
                 .search_request
-                .check_strict_mode(collection, strict_mode_config)?;
+                .check_strict_mode(collection, strict_mode_config)
+                .await?;
         }
         Ok(())
     }
