@@ -8,14 +8,16 @@ use crate::operations::universal_query::collection_query::{
 };
 
 impl StrictModeVerification for QueryRequestInternal {
-    fn check_custom(
+    async fn check_custom(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), crate::operations::types::CollectionError> {
         if let Some(prefetch) = &self.prefetch {
             for prefetch in prefetch {
-                prefetch.check_strict_mode(collection, strict_mode_config)?;
+                prefetch
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await?;
             }
         }
 
@@ -44,7 +46,7 @@ impl StrictModeVerification for QueryRequestInternal {
 }
 
 impl StrictModeVerification for Prefetch {
-    fn check_custom(
+    async fn check_custom(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
@@ -52,7 +54,7 @@ impl StrictModeVerification for Prefetch {
         // Prefetch.prefetch is of type Prefetch (recursive type)
         if let Some(prefetch) = &self.prefetch {
             for prefetch in prefetch {
-                prefetch.check_strict_mode(collection, strict_mode_config)?;
+                Box::pin(prefetch.check_strict_mode(collection, strict_mode_config)).await?;
             }
         }
 

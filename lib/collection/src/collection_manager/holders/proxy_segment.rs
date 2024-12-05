@@ -944,9 +944,14 @@ impl SegmentEntry for ProxySegment {
         SegmentType::Special
     }
 
+    fn size_info(&self) -> SegmentInfo {
+        // To reduce code complexity for estimations, we use `.info()` directly here.
+        self.info()
+    }
+
     fn info(&self) -> SegmentInfo {
         let wrapped_info = self.wrapped_segment.get().read().info();
-        let write_info = self.write_segment.get().read().info();
+        let write_info = self.write_segment.get().read().size_info(); // Only fields set by `size_info()` needed!
 
         let vector_name_count =
             self.config().vector_data.len() + self.config().sparse_vector_data.len();

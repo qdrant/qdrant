@@ -454,6 +454,8 @@ pub struct StrictModeConfig {
     pub search_max_oversampling: ::core::option::Option<f32>,
     #[prost(uint64, optional, tag = "9")]
     pub upsert_max_batchsize: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "10")]
+    pub max_collection_vector_size_bytes: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

@@ -434,17 +434,7 @@ impl SegmentEntry for Segment {
         self.segment_type
     }
 
-    fn info(&self) -> SegmentInfo {
-        let payload_index = self.payload_index.borrow();
-        let schema = payload_index
-            .indexed_fields()
-            .into_iter()
-            .map(|(key, index_schema)| {
-                let points_count = payload_index.indexed_points(&key);
-                (key, PayloadIndexInfo::new(index_schema, points_count))
-            })
-            .collect();
-
+    fn size_info(&self) -> SegmentInfo {
         let num_vectors = self
             .vector_data
             .values()
@@ -513,9 +503,26 @@ impl SegmentEntry for Segment {
             ram_usage_bytes: 0,  // ToDo: Implement
             disk_usage_bytes: 0, // ToDo: Implement
             is_appendable: self.appendable_flag,
-            index_schema: schema,
+            index_schema: HashMap::new(),
             vector_data: vector_data_info,
         }
+    }
+
+    fn info(&self) -> SegmentInfo {
+        let payload_index = self.payload_index.borrow();
+        let schema = payload_index
+            .indexed_fields()
+            .into_iter()
+            .map(|(key, index_schema)| {
+                let points_count = payload_index.indexed_points(&key);
+                (key, PayloadIndexInfo::new(index_schema, points_count))
+            })
+            .collect();
+
+        let mut info = self.size_info();
+        info.index_schema = schema;
+
+        info
     }
 
     fn config(&self) -> &SegmentConfig {

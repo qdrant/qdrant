@@ -31,7 +31,9 @@ where
     if let Some(strict_mode_config) = &collection.strict_mode_config().await {
         if strict_mode_config.enabled.unwrap_or_default() {
             for request in requests {
-                request.check_strict_mode(&collection, strict_mode_config)?;
+                request
+                    .check_strict_mode(&collection, strict_mode_config)
+                    .await?;
             }
 
             if let Some(timeout) = timeout {

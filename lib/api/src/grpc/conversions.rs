@@ -1632,6 +1632,9 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             search_allow_exact: value.search_allow_exact,
             search_max_oversampling: value.search_max_oversampling.map(f64::from),
             upsert_max_batchsize: value.upsert_max_batchsize.map(|i| i as usize),
+            max_collection_vector_size_bytes: value
+                .max_collection_vector_size_bytes
+                .map(|i| i as usize),
         }
     }
 }
@@ -1648,6 +1651,9 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
             search_allow_exact: value.search_allow_exact,
             search_max_oversampling: value.search_max_oversampling.map(|i| i as f32),
             upsert_max_batchsize: value.upsert_max_batchsize.map(|i| i as u64),
+            max_collection_vector_size_bytes: value
+                .max_collection_vector_size_bytes
+                .map(|i| i as u64),
         }
     }
 }
