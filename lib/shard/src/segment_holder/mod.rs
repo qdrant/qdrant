@@ -7,7 +7,7 @@ mod tests;
 
 use std::cmp::{max, min};
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::path::Path;
@@ -21,6 +21,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::process_counter::ProcessCounter;
 use common::save_on_disk::SaveOnDisk;
 use common::toposort::TopoSort;
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
@@ -35,25 +36,6 @@ use crate::locked_segment::LockedSegment;
 use crate::payload_index_schema::PayloadIndexSchema;
 
 pub type SegmentId = usize;
-
-/// Internal structure for deduplication of points. Used for BinaryHeap
-#[derive(Eq, PartialEq)]
-struct DedupPoint {
-    point_id: PointIdType,
-    segment_id: SegmentId,
-}
-
-impl Ord for DedupPoint {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.point_id.cmp(&other.point_id).reverse()
-    }
-}
-
-impl PartialOrd for DedupPoint {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
@@ -922,37 +904,23 @@ impl SegmentHolder {
             .iter()
             .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.read()))
             .collect::<BTreeMap<_, _>>();
-        let mut iterators = locked_segments
-            .iter()
-            .map(|(segment_id, locked_segment)| (*segment_id, locked_segment.iter_points()))
-            .collect::<BTreeMap<_, _>>();
 
-        // heap contains the current iterable point id from each segment
-        let mut heap = iterators
-            .iter_mut()
-            .filter_map(|(&segment_id, iter)| {
-                iter.next().map(|point_id| DedupPoint {
-                    point_id,
-                    segment_id,
-                })
+        // Iterator produces segment:point tuples in order of point ID from all segments
+        let ordered_iter = locked_segments
+            .iter()
+            .map(|(&segment_id, locked_segment)| {
+                locked_segment
+                    .iter_points()
+                    .map(move |point_id| (segment_id, point_id))
             })
-            .collect::<BinaryHeap<_>>();
+            .kmerge_by(|a, b| a.1 < b.1);
 
         let mut last_point_id_opt = None;
         let mut last_segment_id_opt = None;
         let mut last_point_version_opt = None;
         let mut points_to_remove: AHashMap<SegmentId, Vec<PointIdType>> = Default::default();
 
-        while let Some(entry) = heap.pop() {
-            let point_id = entry.point_id;
-            let segment_id = entry.segment_id;
-            if let Some(next_point_id) = iterators.get_mut(&segment_id).and_then(|i| i.next()) {
-                heap.push(DedupPoint {
-                    segment_id,
-                    point_id: next_point_id,
-                });
-            }
-
+        for (segment_id, point_id) in ordered_iter {
             if last_point_id_opt == Some(point_id) {
                 let last_segment_id = last_segment_id_opt.unwrap();
 
