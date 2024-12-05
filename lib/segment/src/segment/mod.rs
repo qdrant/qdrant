@@ -110,10 +110,13 @@ impl VectorData {
         storage: &VectorStorageEnum,
         index: &VectorIndexEnum,
     ) -> usize {
-        storage
+        let size = storage
             .size_of_available_vectors_in_bytes()
-            .or_else(|| index.size_of_searchable_vectors_in_bytes())
-            .unwrap_or(0)
+            .or_else(|| index.size_of_searchable_vectors_in_bytes());
+
+        debug_assert!(size.is_some());
+
+        size.unwrap_or(0)
     }
 }
 
