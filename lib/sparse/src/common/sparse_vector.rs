@@ -108,9 +108,9 @@ impl RemappedSparseVector {
         score_vectors(&self.indices, &self.values, &other.indices, &other.values)
     }
 
-    pub fn size_in_bytes(&self) -> usize {
-        self.indices.len() * std::mem::size_of::<DimOffset>()
-            + self.values.len() * std::mem::size_of::<DimWeight>()
+    /// Returns the number of elements in the vector.
+    pub fn len(&self) -> usize {
+        self.indices.len()
     }
 }
 

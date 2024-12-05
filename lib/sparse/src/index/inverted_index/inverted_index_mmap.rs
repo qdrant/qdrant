@@ -161,7 +161,7 @@ impl InvertedIndexMmap {
         path: P,
     ) -> std::io::Result<Self> {
         let total_posting_headers_size = Self::total_posting_headers_size(inverted_index_ram);
-        let total_posting_elements_size = Self::total_posting_elements_size(inverted_index_ram);
+        let total_posting_elements_size = inverted_index_ram.total_posting_elements_size();
 
         let file_length = total_posting_headers_size + total_posting_elements_size;
         let file_path = Self::index_file_path(path.as_ref());
@@ -220,15 +220,6 @@ impl InvertedIndexMmap {
 
     fn total_posting_headers_size(inverted_index_ram: &InvertedIndexRam) -> usize {
         inverted_index_ram.postings.len() * POSTING_HEADER_SIZE
-    }
-
-    fn total_posting_elements_size(inverted_index_ram: &InvertedIndexRam) -> usize {
-        let mut total_posting_elements_size = 0;
-        for posting in &inverted_index_ram.postings {
-            total_posting_elements_size += posting.elements.len() * size_of::<PostingElementEx>();
-        }
-
-        total_posting_elements_size
     }
 
     fn save_posting_headers(

@@ -61,7 +61,7 @@ impl InvertedIndex for InvertedIndexRam {
     }
 
     fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector) {
-        let old_vector_size = old_vector.size_in_bytes();
+        let old_vector_size = old_vector.len() * size_of::<PostingElementEx>();
         for dim_id in old_vector.indices {
             if let Some(posting) = self.postings.get_mut(dim_id as usize) {
                 posting.delete(id);
@@ -144,7 +144,7 @@ impl InvertedIndexRam {
             }
         }
 
-        let new_vector_size = vector.size_in_bytes();
+        let new_vector_size = vector.len() * size_of::<PostingElementEx>();
 
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
@@ -163,12 +163,21 @@ impl InvertedIndexRam {
             }
         }
         if let Some(old) = old_vector {
-            self.total_sparse_size = self.total_sparse_size.saturating_sub(old.size_in_bytes());
+            self.total_sparse_size = self
+                .total_sparse_size
+                .saturating_sub(old.len() * size_of::<PostingElementEx>());
         } else {
             self.vector_count += 1;
         }
 
         self.total_sparse_size += new_vector_size
+    }
+
+    pub fn total_posting_elements_size(&self) -> usize {
+        self.postings
+            .iter()
+            .map(|posting| posting.elements.len() * size_of::<PostingElementEx>())
+            .sum()
     }
 }
 

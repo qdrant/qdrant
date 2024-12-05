@@ -28,6 +28,7 @@ impl InvertedIndex for InvertedIndexImmutableRam {
         let mut inverted_index = InvertedIndexRam {
             postings: Default::default(),
             vector_count: mmap_inverted_index.file_header.vector_count,
+            // Calculated after reading mmap
             total_sparse_size: 0,
         };
 
@@ -42,6 +43,8 @@ impl InvertedIndex for InvertedIndexImmutableRam {
                 elements: posting_list.to_owned(),
             });
         }
+
+        inverted_index.total_sparse_size = inverted_index.total_posting_elements_size();
 
         Ok(InvertedIndexImmutableRam {
             inner: inverted_index,
