@@ -361,16 +361,7 @@ pub fn convert_to_compressed(path: &Path, m: usize, m0: usize) -> OperationResul
         return Ok(());
     }
 
-    let edges = (0..links.num_points())
-        .map(|point_id| {
-            let num_levels = links.point_level(point_id as PointOffsetType) + 1;
-            (0..num_levels)
-                .map(|level| links.links_vec(point_id as PointOffsetType, level))
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    drop(links);
-    let mut converter = GraphLinksConverter::new(edges, true, m, m0);
+    let mut converter = GraphLinksConverter::new(links.into_edges(), true, m, m0);
 
     let original_size = path.metadata()?.len();
     converter.save_as(path)?;
@@ -407,6 +398,21 @@ pub trait GraphLinks: Sized {
         let mut links = Vec::new();
         self.for_each_link(point_id, level, |link| links.push(link));
         links
+    }
+
+    /// Convert the graph links to a vector of edges, suitable for passing into
+    /// [`GraphLinksConverter::new`] or using in tests.
+    fn into_edges(self) -> Vec<Vec<Vec<PointOffsetType>>> {
+        let mut edges = Vec::new();
+        for point_id in 0..self.num_points() {
+            let num_levels = self.point_level(point_id as PointOffsetType) + 1;
+            let mut levels = Vec::with_capacity(num_levels);
+            for level in 0..num_levels {
+                levels.push(self.links_vec(point_id as PointOffsetType, level));
+            }
+            edges.push(levels);
+        }
+        edges
     }
 }
 
@@ -647,21 +653,6 @@ mod tests {
 
     use super::*;
 
-    fn to_vec<TGraphLinks: GraphLinks>(links: &TGraphLinks) -> Vec<Vec<Vec<PointOffsetType>>> {
-        let mut result = Vec::new();
-        let num_points = links.num_points();
-        for i in 0..num_points {
-            let mut layers = Vec::new();
-            let num_levels = links.point_level(i as PointOffsetType) + 1;
-            for level in 0..num_levels {
-                let links = links.links_vec(i as PointOffsetType, level);
-                layers.push(links);
-            }
-            result.push(layers);
-        }
-        result
-    }
-
     fn random_links(
         points_count: usize,
         max_levels_count: usize,
@@ -734,7 +725,7 @@ mod tests {
             let mut links_converter = GraphLinksConverter::new(links.clone(), compressed, m, m0);
             links_converter.save_as(&links_file).unwrap();
         }
-        let cmp_links = to_vec(&A::load_from_file(&links_file).unwrap());
+        let cmp_links = A::load_from_file(&links_file).unwrap().into_edges();
         compare_links(links, cmp_links, compressed, m, m0);
     }
 
@@ -749,15 +740,14 @@ mod tests {
                               m: usize,
                               m0: usize|
          -> Vec<Vec<Vec<PointOffsetType>>> {
-            to_vec(
-                &GraphLinksRam::from_converter(GraphLinksConverter::new(
-                    links.clone(),
-                    compressed,
-                    m,
-                    m0,
-                ))
-                .unwrap(),
-            )
+            GraphLinksRam::from_converter(GraphLinksConverter::new(
+                links.clone(),
+                compressed,
+                m,
+                m0,
+            ))
+            .unwrap()
+            .into_edges()
         };
 
         // no points
