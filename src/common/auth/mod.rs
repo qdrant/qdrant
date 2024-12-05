@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -11,11 +12,31 @@ use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
 use crate::settings::ServiceConfig;
-
 pub mod claims;
 pub mod jwt_parser;
 
 pub const HTTP_HEADER_API_KEY: &str = "api-key";
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApiKey(pub String);
+
+impl ApiKey {
+    #[allow(dead_code)]
+    pub fn new(key: ApiKey) -> Self {
+        ApiKey(key.to_string())
+    }
+
+    #[allow(dead_code)]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ApiKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// The API keys used for auth
 #[derive(Clone)]
@@ -74,7 +95,7 @@ impl AuthKeys {
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-    ) -> Result<(Access, String), AuthError> {
+    ) -> Result<(Access, ApiKey), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -84,11 +105,17 @@ impl AuthKeys {
         };
 
         if self.can_write(key) {
-            return Ok((Access::full("Read-write access by key"), key.to_string()));
+            return Ok((
+                Access::full("Read-write access by key"),
+                ApiKey(key.to_string()),
+            ));
         }
 
         if self.can_read(key) {
-            return Ok((Access::full_ro("Read-only access by key"), key.to_string()));
+            return Ok((
+                Access::full_ro("Read-only access by key"),
+                ApiKey(key.to_string()),
+            ));
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {
@@ -102,7 +129,7 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok((access, key.to_string()));
+            return Ok((access, ApiKey(key.to_string())));
         }
 
         Err(AuthError::Unauthorized(
