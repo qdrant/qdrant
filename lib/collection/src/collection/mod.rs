@@ -822,6 +822,14 @@ impl Collection {
         }
         self.local_stats_cache.get_vector_storage()
     }
+
+    /// Returns the estimated local payload storage size for this collection, cached and auto-updated.
+    pub async fn estimated_local_payload_storage_size(&self) -> usize {
+        if let Some(shard_stats) = self.check_and_update_local_size_stats().await {
+            return shard_stats.payload_storage_size;
+        }
+        self.local_stats_cache.get_payload_storage()
+    }
 }
 
 struct CollectionVersion;

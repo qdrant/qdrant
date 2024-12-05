@@ -56,17 +56,13 @@ impl StrictModeVerification for DeleteVectors {
 }
 
 impl StrictModeVerification for SetPayload {
-    // TODO: Payload storage size limit
-    /*
     async fn check_custom(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
-        check_collection_vector_size_limit(collection, strict_mode_config).await?;
-        Ok(())
+        check_collection_payload_size_limit(collection, strict_mode_config).await
     }
-    */
 
     fn indexed_filter_write(&self) -> Option<&Filter> {
         self.filter.as_ref()
@@ -124,6 +120,7 @@ impl StrictModeVerification for PointInsertOperations {
         )?;
 
         check_collection_vector_size_limit(collection, strict_mode_config).await?;
+        check_collection_payload_size_limit(collection, strict_mode_config).await?;
 
         Ok(())
     }
@@ -196,6 +193,25 @@ async fn check_collection_vector_size_limit(
             let size_in_mb = max_vec_storage_size_bytes as f32 / (1024.0 * 1024.0);
             return Err(CollectionError::bad_request(format!(
                 "Max vector storage size limit of {size_in_mb}MB reached!",
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+async fn check_collection_payload_size_limit(
+    collection: &Collection,
+    strict_mode_config: &StrictModeConfig,
+) -> Result<(), CollectionError> {
+    if let Some(max_payload_storage_size_bytes) =
+        strict_mode_config.max_collection_payload_size_bytes
+    {
+        let payload_storage_size_bytes = collection.estimated_local_payload_storage_size().await;
+        if payload_storage_size_bytes >= max_payload_storage_size_bytes {
+            let size_in_mb = max_payload_storage_size_bytes as f32 / (1024.0 * 1024.0);
+            return Err(CollectionError::bad_request(format!(
+                "Max payload storage size limit of {size_in_mb}MB reached!",
             )));
         }
     }

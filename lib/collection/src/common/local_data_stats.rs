@@ -7,7 +7,7 @@ const UPDATE_INTERVAL: usize = 32;
 #[derive(Default)]
 pub(crate) struct LocalDataStatsCache {
     vector_storage_size: AtomicUsize,
-
+    payload_storage_size: AtomicUsize,
     request_counter: AtomicUsize,
 }
 
@@ -15,10 +15,13 @@ impl LocalDataStatsCache {
     pub fn new_with_values(stats: LocalDataStats) -> Self {
         let LocalDataStats {
             vector_storage_size,
+            payload_storage_size,
         } = stats;
         let vector_storage_size = AtomicUsize::new(vector_storage_size);
+        let payload_storage_size = AtomicUsize::new(payload_storage_size);
         Self {
             vector_storage_size,
+            payload_storage_size,
             request_counter: AtomicUsize::new(1), // Prevent same data getting loaded a second time when doing the first request.
         }
     }
@@ -35,15 +38,23 @@ impl LocalDataStatsCache {
     pub fn update(&self, new_stats: LocalDataStats) {
         let LocalDataStats {
             vector_storage_size,
+            payload_storage_size,
         } = new_stats;
 
         self.vector_storage_size
             .store(vector_storage_size, Ordering::Relaxed);
+        self.payload_storage_size
+            .store(payload_storage_size, Ordering::Relaxed);
     }
 
     /// Returns cached vector storage size estimation.
     pub fn get_vector_storage(&self) -> usize {
         self.vector_storage_size.load(Ordering::Relaxed)
+    }
+
+    /// Returns cached payload storage size estimation.
+    pub fn get_payload_storage(&self) -> usize {
+        self.payload_storage_size.load(Ordering::Relaxed)
     }
 }
 
@@ -52,14 +63,18 @@ impl LocalDataStatsCache {
 pub struct LocalDataStats {
     /// Estimated amount of vector storage size.
     pub vector_storage_size: usize,
+    /// Estimated amount of payload storage size.
+    pub payload_storage_size: usize,
 }
 
 impl LocalDataStats {
     pub fn accumulate_from(&mut self, other: &Self) {
         let LocalDataStats {
             vector_storage_size,
+            payload_storage_size,
         } = other;
 
         self.vector_storage_size += vector_storage_size;
+        self.payload_storage_size += payload_storage_size;
     }
 }
