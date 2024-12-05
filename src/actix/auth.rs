@@ -9,7 +9,7 @@ use futures_util::future::LocalBoxFuture;
 use storage::rbac::Access;
 
 use super::helpers::HttpError;
-use crate::common::auth::{AuthError, AuthKeys};
+use crate::common::auth::{ApiKey, AuthError, AuthKeys};
 
 pub struct Auth {
     auth_keys: AuthKeys,
@@ -122,7 +122,7 @@ where
             {
                 Ok((access, api_key)) => {
                     let previous = req.extensions_mut().insert::<Access>(access);
-                    req.extensions_mut().insert(api_key.to_string());
+                    req.extensions_mut().insert(ApiKey::new(api_key));
                     debug_assert!(
                         previous.is_none(),
                         "Previous access object should not exist in the request"

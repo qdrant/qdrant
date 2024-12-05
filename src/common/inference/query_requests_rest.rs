@@ -10,6 +10,7 @@ use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal, DEF
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use storage::content_manager::errors::StorageError;
 
+use crate::common::auth::ApiKey;
 use crate::common::inference::batch_processing::{
     collect_query_groups_request, collect_query_request,
 };
@@ -18,6 +19,7 @@ use crate::common::inference::service::{InferenceData, InferenceType};
 
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
+    _api_key: Option<ApiKey>,
 ) -> Result<CollectionQueryGroupsRequest, StorageError> {
     let batch = collect_query_groups_request(&request);
     let rest::QueryGroupsRequestInternal {
@@ -71,6 +73,7 @@ pub async fn convert_query_groups_request_from_rest(
 
 pub async fn convert_query_request_from_rest(
     request: rest::QueryRequestInternal,
+    _api_key: Option<ApiKey>,
 ) -> Result<CollectionQueryRequest, StorageError> {
     let batch = collect_query_request(&request);
     let inferred = BatchAccumInferred::from_batch_accum(batch, InferenceType::Search).await?;
