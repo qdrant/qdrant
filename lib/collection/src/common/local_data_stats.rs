@@ -41,13 +41,6 @@ impl LocalDataStatsCache {
             .store(vector_storage_size, Ordering::Relaxed);
     }
 
-    /// Returns all currently cached values.
-    pub fn get(&self) -> LocalDataStats {
-        LocalDataStats {
-            vector_storage_size: self.get_vector_storage(),
-        }
-    }
-
     /// Returns cached vector storage size estimation.
     pub fn get_vector_storage(&self) -> usize {
         self.vector_storage_size.load(Ordering::Relaxed)

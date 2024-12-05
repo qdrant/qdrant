@@ -815,14 +815,6 @@ impl Collection {
         None
     }
 
-    /// Returns the local data statistics for this collection, cached and auto-updated.
-    pub async fn local_data_stats(&self) -> LocalDataStats {
-        if let Some(shard_stats) = self.check_and_update_local_size_stats().await {
-            return shard_stats;
-        }
-        self.local_stats_cache.get()
-    }
-
     /// Returns the estimated local vector storage size for this collection, cached and auto-updated.
     pub async fn estimated_local_vector_storage_size(&self) -> usize {
         if let Some(shard_stats) = self.check_and_update_local_size_stats().await {
