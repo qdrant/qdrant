@@ -299,7 +299,7 @@ impl GraphLinksConverter {
             + self.offsets.as_bytes().len()
     }
 
-    fn serialize_to_vec(&self) -> Vec<u8> {
+    pub fn serialize_to_vec(&self) -> Vec<u8> {
         let mut data = Vec::with_capacity(self.data_size());
         // Unwrap should be the safe as `impl Write` for `Vec` never fails.
         self.serialize_to_writer(&mut data).unwrap();
@@ -383,6 +383,8 @@ pub trait GraphLinks: Sized {
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self>;
 
+    fn compressed(&self) -> bool;
+
     fn num_points(&self) -> usize;
 
     fn for_each_link(
@@ -424,7 +426,7 @@ pub struct GraphLinksRam {
 }
 
 impl GraphLinksRam {
-    fn from_bytes(data: Vec<u8>) -> Self {
+    pub fn from_bytes(data: Vec<u8>) -> Self {
         let info = GraphLinksFileInfo::load(&data).unwrap();
         let level_offsets = info.get_level_offsets(&data).to_vec();
         Self {
@@ -461,6 +463,10 @@ impl GraphLinks for GraphLinksRam {
 
     fn from_converter(converter: GraphLinksConverter) -> OperationResult<Self> {
         Ok(Self::from_bytes(converter.serialize_to_vec()))
+    }
+
+    fn compressed(&self) -> bool {
+        self.info.compression.is_some()
     }
 
     fn num_points(&self) -> usize {
@@ -531,6 +537,10 @@ impl GraphLinks for GraphLinksMmap {
                 "HNSW links Data needs to be saved to file before it can be loaded as mmap",
             ))
         }
+    }
+
+    fn compressed(&self) -> bool {
+        self.info.compression.is_some()
     }
 
     fn num_points(&self) -> usize {
