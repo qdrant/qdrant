@@ -58,6 +58,12 @@ impl RateLimiter {
         }
     }
 
+    /// Create a new rate limiter from a rate per second.
+    pub fn with_rate_per_sec(rate_per_sec: usize) -> Self {
+        let rate = Rate::new(rate_per_sec as u64, Duration::from_secs(1));
+        Self::new(rate)
+    }
+
     /// Attempt to consume a token. Returns `true` if allowed, `false` otherwise.
     pub fn check(&mut self) -> bool {
         let now = Instant::now();

@@ -603,3 +603,84 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
 
     assert False, "Upserting should have failed but didn't"
 
+
+def test_strict_mode_read_rate_limiting(collection_name):
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit_per_sec": 1,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['read_rate_limit_per_sec'] == 1
+
+    failed_count = 0
+
+    for _ in range(10):
+        response = request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 4
+            }
+        )
+        if not response.ok:
+            failed_count += 1
+            assert response.status_code == 429
+            assert "Rate limiting exceeded: Read rate limit exceeded, retry later" in response.json()['status']['error']
+
+    # loose check, as the rate limiting might not be exact
+    assert failed_count > 5, "Rate limiting did not work"
+
+
+def test_strict_mode_write_rate_limiting(collection_name):
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "write_rate_limit_per_sec": 1,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['write_rate_limit_per_sec'] == 1
+
+    failed_count = 0
+
+    for _ in range(10):
+        response = request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'true'},
+            body={
+                "points": [
+                    {
+                        "id": 1,
+                        "vector": [0.05, 0.61, 0.76, 0.74],
+                    },
+                ]
+            }
+        )
+
+        if not response.ok:
+            failed_count += 1
+            assert response.status_code == 429
+            assert "Rate limiting exceeded: Write rate limit exceeded, retry later" in response.json()['status']['error']
+
+    # loose check, as the rate limiting might not be exact
+    assert failed_count > 5, "Rate limiting did not work"

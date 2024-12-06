@@ -409,6 +409,8 @@ mod test {
             search_max_oversampling: Some(0.2),
             upsert_max_batchsize: None,
             max_collection_vector_size_bytes: None,
+            read_rate_limit_per_sec: None,
+            write_rate_limit_per_sec: None,
         };
 
         fixture_collection(&strict_mode_config).await

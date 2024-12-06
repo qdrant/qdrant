@@ -85,6 +85,10 @@ impl ProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
+    pub async fn on_strict_mode_config_update(&self) {
+        self.wrapped_shard.on_strict_mode_config_update().await;
+    }
+
     pub fn trigger_optimizers(&self) {
         // TODO: we might want to defer this trigger until we unproxy
         self.wrapped_shard.trigger_optimizers();
