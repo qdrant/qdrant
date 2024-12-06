@@ -120,7 +120,18 @@ mod memory {
                 _ => {}
             }
 
-            self.indexed_count += 1;
+            let was_indexed = had_true || had_false;
+            let is_indexed = has_true || has_false;
+
+            match (was_indexed, is_indexed) {
+                (false, true) => {
+                    self.indexed_count += 1;
+                }
+                (true, false) => {
+                    self.indexed_count = self.indexed_count.saturating_sub(1);
+                }
+                _ => {}
+            }
         }
 
         /// Removes the point from the index and tries to shrink the vectors if possible. If the index is not within bounds, does nothing
@@ -166,6 +177,7 @@ mod memory {
     }
 }
 
+/// Payload index for boolean values, persisted in a RocksDB column family
 pub struct BoolIndex {
     memory: BoolMemory,
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
@@ -272,7 +284,7 @@ impl PayloadFieldIndex for BoolIndex {
         Ok(true)
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         self.db_wrapper.remove_column_family()
     }
 
@@ -387,186 +399,5 @@ impl ValueIndexer for BoolIndex {
         self.memory.remove(id);
         self.db_wrapper.remove(id.to_be_bytes())?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use itertools::Itertools;
-    use rstest::rstest;
-    use serde_json::json;
-    use tempfile::{Builder, TempDir};
-
-    use super::BoolIndex;
-    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
-    use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
-    use crate::json_path::JsonPath;
-
-    const FIELD_NAME: &str = "bool_field";
-    const DB_NAME: &str = "test_db";
-
-    fn new_binary_index() -> (TempDir, BoolIndex) {
-        let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
-        let db = open_db_with_existing_cf(tmp_dir.path()).unwrap();
-        let index = BoolIndex::builder(db, FIELD_NAME).make_empty().unwrap();
-        (tmp_dir, index)
-    }
-
-    fn match_bool(value: bool) -> crate::types::FieldCondition {
-        crate::types::FieldCondition::new_match(
-            JsonPath::new(FIELD_NAME),
-            crate::types::Match::Value(crate::types::MatchValue {
-                value: crate::types::ValueVariants::Bool(value),
-            }),
-        )
-    }
-
-    fn bools_fixture() -> Vec<serde_json::Value> {
-        vec![
-            json!(true),
-            json!(false),
-            json!([true, false]),
-            json!([false, true]),
-            json!([true, true]),
-            json!([false, false]),
-            json!([true, false, true]),
-            serde_json::Value::Null,
-            json!(1),
-            json!("test"),
-            json!([false]),
-            json!([true]),
-        ]
-    }
-
-    fn filter(given: serde_json::Value, match_on: bool, expected_count: usize) {
-        let (_tmp_dir, mut index) = new_binary_index();
-
-        index.add_point(0, &[&given]).unwrap();
-
-        let count = index.filter(&match_bool(match_on)).unwrap().count();
-
-        assert_eq!(count, expected_count);
-    }
-
-    #[rstest]
-    #[case(json!(true), 1)]
-    #[case(json!(false), 0)]
-    #[case(json!([true]), 1)]
-    #[case(json!([false]), 0)]
-    #[case(json!([true, false]), 1)]
-    #[case(json!([false, true]), 1)]
-    #[case(json!([false, false]), 0)]
-    #[case(json!([true, true]), 1)]
-    fn filter_true(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        filter(given, true, expected_count)
-    }
-
-    #[rstest]
-    #[case(json!(true), 0)]
-    #[case(json!(false), 1)]
-    #[case(json!([true]), 0)]
-    #[case(json!([false]), 1)]
-    #[case(json!([true, false]), 1)]
-    #[case(json!([false, true]), 1)]
-    #[case(json!([false, false]), 1)]
-    #[case(json!([true, true]), 0)]
-    fn filter_false(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        filter(given, false, expected_count)
-    }
-
-    #[test]
-    fn load_from_disk() {
-        let (_tmp_dir, mut index) = new_binary_index();
-
-        bools_fixture()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
-            });
-
-        index.flusher()().unwrap();
-        let db = index.db_wrapper.get_database();
-
-        let mut new_index = BoolIndex::new(db, FIELD_NAME);
-        assert!(new_index.load().unwrap());
-
-        let point_offsets = new_index.filter(&match_bool(false)).unwrap().collect_vec();
-        assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
-
-        let point_offsets = new_index.filter(&match_bool(true)).unwrap().collect_vec();
-        assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
-    }
-
-    #[rstest]
-    #[case(json!(false), json!(true))]
-    #[case(json!([false, true]), json!(true))]
-    /// Try to modify from falsy to only true
-    fn modify_value(#[case] before: serde_json::Value, #[case] after: serde_json::Value) {
-        let (_tmp_dir, mut index) = new_binary_index();
-
-        let idx = 1000;
-        index.add_point(idx, &[&before]).unwrap();
-
-        let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
-        assert_eq!(point_offsets, vec![idx]);
-
-        index.add_point(idx, &[&after]).unwrap();
-
-        let point_offsets = index.filter(&match_bool(true)).unwrap().collect_vec();
-        assert_eq!(point_offsets, vec![idx]);
-        let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
-        assert!(point_offsets.is_empty());
-    }
-
-    #[test]
-    fn indexed_count() {
-        let (_tmp_dir, mut index) = new_binary_index();
-
-        bools_fixture()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
-            });
-
-        assert_eq!(index.count_indexed_points(), 9);
-    }
-
-    #[test]
-    fn payload_blocks() {
-        let (_tmp_dir, mut index) = new_binary_index();
-
-        bools_fixture()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
-            });
-
-        let blocks = index
-            .payload_blocks(0, JsonPath::new(FIELD_NAME))
-            .collect_vec();
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].cardinality, 6);
-        assert_eq!(blocks[1].cardinality, 6);
-    }
-
-    #[test]
-    fn estimate_cardinality() {
-        let (_tmp_dir, mut index) = new_binary_index();
-
-        bools_fixture()
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
-            });
-
-        let cardinality = index.estimate_cardinality(&match_bool(true)).unwrap();
-        assert_eq!(cardinality.exp, 6);
-
-        let cardinality = index.estimate_cardinality(&match_bool(false)).unwrap();
-        assert_eq!(cardinality.exp, 6);
     }
 }

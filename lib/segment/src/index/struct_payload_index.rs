@@ -468,7 +468,7 @@ impl PayloadIndex for StructPayloadIndex {
 
         if let Some(indexes) = removed_indexes {
             for index in indexes {
-                index.clear()?;
+                index.cleanup()?;
             }
         }
 

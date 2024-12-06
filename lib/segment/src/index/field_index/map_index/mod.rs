@@ -491,7 +491,7 @@ impl PayloadFieldIndex for MapIndex<str> {
         self.load_from_db()
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         self.clear()
     }
 
@@ -628,7 +628,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         self.load_from_db()
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         self.clear()
     }
 
@@ -806,7 +806,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
         self.load_from_db()
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         self.clear()
     }
 

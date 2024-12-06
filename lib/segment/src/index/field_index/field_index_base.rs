@@ -33,8 +33,8 @@ pub trait PayloadFieldIndex {
     /// Load index from disk.
     fn load(&mut self) -> OperationResult<bool>;
 
-    /// Remove db content of the current payload index
-    fn clear(self) -> OperationResult<()>;
+    /// Remove db content or files of the current payload index
+    fn cleanup(self) -> OperationResult<()>;
 
     /// Return function that flushes all pending updates to disk.
     fn flusher(&self) -> Flusher;
@@ -207,18 +207,18 @@ impl FieldIndex {
         }
     }
 
-    pub fn clear(self) -> OperationResult<()> {
+    pub fn cleanup(self) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(index) => index.clear(),
-            FieldIndex::DatetimeIndex(index) => index.clear(),
-            FieldIndex::IntMapIndex(index) => index.clear(),
-            FieldIndex::KeywordIndex(index) => index.clear(),
-            FieldIndex::FloatIndex(index) => index.clear(),
-            FieldIndex::GeoIndex(index) => index.clear(),
-            FieldIndex::BoolIndex(index) => index.clear(),
-            FieldIndex::FullTextIndex(index) => index.clear(),
-            FieldIndex::UuidIndex(index) => index.clear(),
-            FieldIndex::UuidMapIndex(index) => index.clear(),
+            FieldIndex::IntIndex(index) => index.cleanup(),
+            FieldIndex::DatetimeIndex(index) => index.cleanup(),
+            FieldIndex::IntMapIndex(index) => index.cleanup(),
+            FieldIndex::KeywordIndex(index) => index.cleanup(),
+            FieldIndex::FloatIndex(index) => index.cleanup(),
+            FieldIndex::GeoIndex(index) => index.cleanup(),
+            FieldIndex::BoolIndex(index) => index.cleanup(),
+            FieldIndex::FullTextIndex(index) => index.cleanup(),
+            FieldIndex::UuidIndex(index) => index.cleanup(),
+            FieldIndex::UuidMapIndex(index) => index.cleanup(),
         }
     }
 
