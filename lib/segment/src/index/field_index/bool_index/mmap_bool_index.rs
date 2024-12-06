@@ -276,23 +276,11 @@ impl PayloadFieldIndex for MmapBoolIndex {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
-            })) => {
-                if *value {
-                    Some(Box::new(
-                        self.trues_slice
-                            .get_bitslice()
-                            .iter_ones()
-                            .map(|x| x as PointOffsetType),
-                    ))
-                } else {
-                    Some(Box::new(
-                        self.falses_slice
-                            .get_bitslice()
-                            .iter_ones()
-                            .map(|x| x as PointOffsetType),
-                    ))
-                }
-            }
+            })) => Some(Box::new(
+                self.get_slice_for(*value)
+                    .iter_ones()
+                    .map(|x| x as PointOffsetType),
+            )),
             _ => None,
         }
     }
