@@ -161,6 +161,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("UpdateCollectionClusterSetupRequest.operation", ""),
             ("StrictModeConfig.max_query_limit", "range(min = 1)"),
             ("StrictModeConfig.max_timeout", "range(min = 1)"),
+            ("StrictModeConfig.read_rate_limit_per_minute", "range(min = 1)"),
+            ("StrictModeConfig.write_rate_limit_per_minute", "range(min = 1)"),
         ], &[
             "ListCollectionsRequest",
             "CollectionParamsDiff",

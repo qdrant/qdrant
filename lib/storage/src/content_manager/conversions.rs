@@ -89,8 +89,8 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
         max_collection_vector_size_bytes: value
             .max_collection_vector_size_bytes
             .map(|i| i as usize),
-        read_rate_limit_per_sec: value.write_rate_limit_per_sec.map(|i| i as usize),
-        write_rate_limit_per_sec: value.write_rate_limit_per_sec.map(|i| i as usize),
+        read_rate_limit_per_minute: value.write_rate_limit_per_minute.map(|i| i as usize),
+        write_rate_limit_per_minute: value.write_rate_limit_per_minute.map(|i| i as usize),
     }
 }
 
