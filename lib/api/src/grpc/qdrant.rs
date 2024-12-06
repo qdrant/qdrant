@@ -457,9 +457,11 @@ pub struct StrictModeConfig {
     #[prost(uint64, optional, tag = "10")]
     pub max_collection_vector_size_bytes: ::core::option::Option<u64>,
     #[prost(uint32, optional, tag = "11")]
-    pub read_rate_limit_per_sec: ::core::option::Option<u32>,
+    #[validate(range(min = 1))]
+    pub read_rate_limit_per_minute: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "12")]
-    pub write_rate_limit_per_sec: ::core::option::Option<u32>,
+    #[validate(range(min = 1))]
+    pub write_rate_limit_per_minute: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
