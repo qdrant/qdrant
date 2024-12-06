@@ -974,27 +974,51 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
 
     fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
         let collections_data = self.toc.collections_snapshot();
+
+        // TODO: Should we lock `persistent` *before* calling `TableOfContent::collections_snapshot`!?
         let persistent = self.persistent.read();
-        let raft_state = persistent.state().clone();
-        if raft_state.hard_state.commit >= request_index {
-            let snapshot = SnapshotData {
-                collections_data,
-                address_by_id: persistent.peer_address_by_id(),
-                metadata_by_id: persistent.peer_metadata_by_id(),
-            };
-            Ok(raft::eraftpb::Snapshot {
-                data: serde_cbor::to_vec(&snapshot).map_err(raft_error_other)?,
-                metadata: Some(raft::eraftpb::SnapshotMetadata {
-                    conf_state: Some(raft_state.conf_state),
-                    index: raft_state.hard_state.commit,
-                    term: raft_state.hard_state.term,
-                }),
-            })
-        } else {
-            Err(raft::Error::Store(
+
+        if persistent.state.hard_state.commit < request_index {
+            // TODO: `raft::storage::MemStorage::snapshot` does `snapshot.mut_metadata().index = request_index` in this case... 🤔
+            return Err(raft::Error::Store(
                 raft::StorageError::SnapshotTemporarilyUnavailable,
-            ))
+            ));
         }
+
+        let data = SnapshotData {
+            collections_data,
+            address_by_id: persistent.peer_address_by_id(),
+            metadata_by_id: persistent.peer_metadata_by_id(),
+        };
+
+        let raft_state = persistent.state();
+
+        // Index of snapshot is the current *commit* index.
+        let index = raft_state.hard_state.commit;
+
+        // Term of snapshot is the term of the entry at current commit index. Not the current term!
+        //
+        // Last committed entry should either be available in the WAL, or, if current node applied
+        // Raft snapshot (and so completely compacted the WAL) and no new entries were committed yet,
+        // it should be the term of `latest_snapshot_meta`.
+        let term = if index == persistent.latest_snapshot_meta.index {
+            persistent.latest_snapshot_meta.term
+        } else {
+            self.wal.lock().entry(index)?.term
+        };
+
+        let meta = raft::eraftpb::SnapshotMetadata {
+            conf_state: Some(raft_state.conf_state.clone()),
+            index,
+            term,
+        };
+
+        let snapshot = raft::eraftpb::Snapshot {
+            data: serde_cbor::to_vec(&data).map_err(raft_error_other)?,
+            metadata: Some(meta),
+        };
+
+        Ok(snapshot)
     }
 }
 
