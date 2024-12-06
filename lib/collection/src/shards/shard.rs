@@ -130,6 +130,16 @@ impl Shard {
         }
     }
 
+    pub async fn on_strict_mode_config_update(&self) {
+        match self {
+            Shard::Local(local_shard) => local_shard.on_strict_mode_config_update().await,
+            Shard::Proxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
+            Shard::QueueProxy(proxy_shard) => proxy_shard.on_strict_mode_config_update().await,
+            Shard::Dummy(dummy_shard) => dummy_shard.on_strict_mode_config_update().await,
+        }
+    }
+
     pub fn trigger_optimizers(&self) {
         match self {
             Shard::Local(local_shard) => local_shard.trigger_optimizers(),

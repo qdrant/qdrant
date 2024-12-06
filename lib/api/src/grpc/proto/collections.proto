@@ -322,6 +322,8 @@ message StrictModeConfig {
   optional float search_max_oversampling  = 8;
   optional uint64 upsert_max_batchsize  = 9;
   optional uint64 max_collection_vector_size_bytes  = 10;
+  optional uint32 read_rate_limit_per_sec = 11;
+  optional uint32 write_rate_limit_per_sec = 12;
 }
 
 message CreateCollection {

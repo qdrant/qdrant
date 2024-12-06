@@ -7298,6 +7298,20 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "read_rate_limit_per_sec": {
+            "description": "Max number of read operations per second per shard per peer",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "write_rate_limit_per_sec": {
+            "description": "Max number of write operations per second per shard per peer",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },

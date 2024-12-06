@@ -96,8 +96,8 @@ pub struct LocalShard {
     update_runtime: Handle,
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
-    read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
-    write_rate_limiter: Option<ParkingMutex<RateLimiter>>,
+    read_rate_limiter: ParkingMutex<Option<RateLimiter>>,
+    write_rate_limiter: ParkingMutex<Option<RateLimiter>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -196,6 +196,20 @@ impl LocalShard {
 
         let update_tracker = segment_holder.read().update_tracker();
 
+        let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .read_rate_limit_per_sec
+                .map(RateLimiter::with_rate_per_sec)
+        });
+        let read_rate_limiter = ParkingMutex::new(read_rate_limiter);
+
+        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .write_rate_limit_per_sec
+                .map(RateLimiter::with_rate_per_sec)
+        });
+        let write_rate_limiter = ParkingMutex::new(write_rate_limiter);
+
         drop(config); // release `shared_config` from borrow checker
 
         Self {
@@ -214,8 +228,8 @@ impl LocalShard {
             optimizers_log,
             total_optimized_points,
             disk_usage_watcher,
-            read_rate_limiter: None, // TODO initialize rate limiter from config
-            write_rate_limiter: None, // TODO initialize rate limiter from config
+            read_rate_limiter,
+            write_rate_limiter,
         }
     }
 
@@ -741,6 +755,28 @@ impl LocalShard {
         Ok(())
     }
 
+    /// Apply shard's strict mode configuration update
+    /// - Update read and write rate limiters
+    pub async fn on_strict_mode_config_update(&self) {
+        let config = self.collection_config.read().await;
+
+        if let Some(strict_mode_config) = &config.strict_mode_config {
+            // Update read rate limiter
+            if let Some(read_rate_limit_per_sec) = strict_mode_config.read_rate_limit_per_sec {
+                let mut read_rate_limiter_guard = self.read_rate_limiter.lock();
+                read_rate_limiter_guard
+                    .replace(RateLimiter::with_rate_per_sec(read_rate_limit_per_sec));
+            }
+
+            // update write rate limiter
+            if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit_per_sec {
+                let mut write_rate_limiter_guard = self.write_rate_limiter.lock();
+                write_rate_limiter_guard
+                    .replace(RateLimiter::with_rate_per_sec(write_rate_limit_per_sec));
+            }
+        }
+    }
+
     pub fn trigger_optimizers(&self) {
         // Send a trigger signal and ignore errors because all error cases are acceptable:
         // - If receiver is already dead - we do not care
@@ -1107,8 +1143,8 @@ impl LocalShard {
     ///
     /// Returns an error if the rate limit is exceeded.
     fn check_write_rate_limiter(&self) -> CollectionResult<()> {
-        if let Some(rate_limiter) = &self.write_rate_limiter {
-            if !rate_limiter.lock().check() {
+        if let Some(rate_limiter) = self.write_rate_limiter.lock().as_mut() {
+            if !rate_limiter.check() {
                 return Err(CollectionError::RateLimitExceeded {
                     description: "Write rate limit exceeded, retry later".to_string(),
                 });
@@ -1121,8 +1157,8 @@ impl LocalShard {
     ///
     /// Returns an error if the rate limit is exceeded.
     fn check_read_rate_limiter(&self) -> CollectionResult<()> {
-        if let Some(rate_limiter) = &self.read_rate_limiter {
-            if !rate_limiter.lock().check() {
+        if let Some(rate_limiter) = self.read_rate_limiter.lock().as_mut() {
+            if !rate_limiter.check() {
                 return Err(CollectionError::RateLimitExceeded {
                     description: "Read rate limit exceeded, retry later".to_string(),
                 });
