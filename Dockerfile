@@ -143,21 +143,17 @@ FROM qdrant-${GPU:+gpu-}${GPU:-cpu} AS qdrant
 
 RUN apt-get update
 
+# Install GPU dependencies
+ARG GPU
+
+RUN [ -n "$GPU" ] && apt-get install -y libvulkan1 libvulkan-dev vulkan-tools
+
 # Install additional packages into the container.
 # E.g., the debugger of choice: gdb/gdbserver/lldb.
 ARG PACKAGES
 
 RUN apt-get install -y --no-install-recommends ca-certificates tzdata libunwind8 $PACKAGES \
     && rm -rf /var/lib/apt/lists/*
-
-# Install GPU dependencies
-ARG GPU
-RUN if [ -n "$GPU" ]; then \
-    apt-get update && apt-get install -y \
-    libvulkan1 \
-    libvulkan-dev \
-    vulkan-tools \
-    ; fi
 
 # Copy Qdrant source files into the container. Useful for debugging.
 #
