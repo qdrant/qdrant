@@ -28,6 +28,7 @@ use tonic::{Request, Response, Status};
 
 use super::points_common::{core_search_list, scroll};
 use super::validate_and_log;
+use crate::common::inference::InferenceToken;
 use crate::settings::ServiceConfig;
 use crate::tonic::api::points_common::{
     clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
@@ -177,6 +178,8 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
+        let inference_token = request.extensions().get::<InferenceToken>().cloned();
+
         let UpsertPointsInternal {
             upsert_points,
             shard_id,
@@ -192,6 +195,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            inference_token,
         )
         .await
     }
@@ -201,6 +205,8 @@ impl PointsInternal for PointsInternalService {
         request: Request<DeletePointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+
+        let inference_token = request.extensions().get::<InferenceToken>().cloned();
 
         let DeletePointsInternal {
             delete_points,
@@ -217,6 +223,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            inference_token,
         )
         .await
     }
@@ -570,6 +577,7 @@ impl PointsInternal for PointsInternalService {
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
+        let inference_token = request.extensions().get::<InferenceToken>().cloned();
 
         let SyncPointsInternal {
             sync_points,
@@ -585,6 +593,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            inference_token,
         )
         .await
     }

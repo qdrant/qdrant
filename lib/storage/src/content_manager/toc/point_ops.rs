@@ -443,6 +443,7 @@ impl TableOfContent {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update(
         &self,
         collection_name: &str,
@@ -451,6 +452,7 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         access: Access,
+        _inference_token: Option<String>,
     ) -> StorageResult<UpdateResult> {
         let collection_pass = access.check_point_op(collection_name, &mut operation.operation)?;
 

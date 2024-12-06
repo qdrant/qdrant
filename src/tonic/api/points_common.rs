@@ -58,6 +58,7 @@ use crate::common::inference::query_requests_grpc::{
 };
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
+use crate::common::inference::InferenceToken;
 use crate::common::points::{
     do_clear_payload, do_core_search_points, do_count_points, do_create_index,
     do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
@@ -116,6 +117,7 @@ pub async fn upsert(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    inference_token: Option<InferenceToken>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -146,6 +148,7 @@ pub async fn upsert(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        inference_token,
     )
     .await?;
 
@@ -159,6 +162,7 @@ pub async fn sync(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    inference_token: Option<InferenceToken>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SyncPoints {
         collection_name,
@@ -175,7 +179,8 @@ pub async fn sync(
 
     // No actual inference should happen here, as we are just syncing existing points
     // So this function is used for consistency only
-    let points = convert_point_struct(point_structs?, InferenceType::Update).await?;
+    let points =
+        convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
 
     let operation = PointSyncOperation {
         points,
@@ -200,6 +205,7 @@ pub async fn sync(
             write_ordering_from_proto(ordering)?,
             shard_selector,
             access,
+            None,
         )
         .await?;
 
@@ -213,6 +219,7 @@ pub async fn delete(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    inference_token: Option<InferenceToken>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -241,6 +248,7 @@ pub async fn delete(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        inference_token,
     )
     .await?;
 
@@ -542,6 +550,7 @@ pub async fn update_batch(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    inference_token: Option<InferenceToken>,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -575,6 +584,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
@@ -591,6 +601,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
@@ -763,6 +774,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
