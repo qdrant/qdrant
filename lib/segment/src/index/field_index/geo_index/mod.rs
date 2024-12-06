@@ -467,7 +467,7 @@ impl PayloadFieldIndex for GeoMapIndex {
         }
     }
 
-    fn clear(self) -> OperationResult<()> {
+    fn cleanup(self) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
             GeoMapIndex::Immutable(index) => index.db_wrapper().remove_column_family(),
