@@ -1613,7 +1613,7 @@ impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
                 .map(NonZeroU32::try_from)
                 .transpose()
                 .map_err(|err| {
-                    Status::invalid_argument(format!("Shard number factor cannot be zero: {err}"))
+                    Status::invalid_argument(format!("Shard number cannot be zero: {err}"))
                 })?,
             replication_factor: op
                 .replication_factor
