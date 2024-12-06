@@ -7,7 +7,8 @@ use tonic::body::BoxBody;
 use tonic::Status;
 use tower::{Layer, Service};
 
-use crate::common::auth::{ApiKey, AuthError, AuthKeys};
+use crate::common::auth::{AuthError, AuthKeys};
+use crate::common::inference::InferenceToken;
 
 type Request = tonic::codegen::http::Request<tonic::transport::Body>;
 type Response = tonic::codegen::http::Response<BoxBody>;
@@ -29,7 +30,8 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         })?;
 
     let previous = req.extensions_mut().insert::<Access>(access);
-    req.extensions_mut().insert(ApiKey::new(api_key));
+    req.extensions_mut()
+        .insert(InferenceToken::new(api_key.to_string()));
     debug_assert!(
         previous.is_none(),
         "Previous access object should not exist in the request"

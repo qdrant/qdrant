@@ -27,6 +27,7 @@ use super::points_common::{
     recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
 };
 use super::validate;
+use crate::common::inference::extract_token;
 use crate::settings::ServiceConfig;
 use crate::tonic::api::points_common::{
     clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
@@ -70,6 +71,7 @@ impl Points for PointsService {
         let pass = new_unchecked_verification_pass();
 
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&mut request);
 
         upsert(
             self.dispatcher.toc(&access, &pass).clone(),
@@ -77,6 +79,7 @@ impl Points for PointsService {
             None,
             None,
             access,
+            inference_token,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -89,6 +92,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&mut request);
 
         delete(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -96,6 +100,7 @@ impl Points for PointsService {
             None,
             None,
             access,
+            inference_token,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -239,8 +244,17 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&mut request);
 
-        update_batch(&self.dispatcher, request.into_inner(), None, None, access).await
+        update_batch(
+            &self.dispatcher,
+            request.into_inner(),
+            None,
+            None,
+            access,
+            inference_token,
+        )
+        .await
     }
 
     async fn create_field_index(

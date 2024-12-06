@@ -11,12 +11,16 @@ use storage::content_manager::errors::StorageError;
 use crate::common::inference::batch_processing::BatchAccum;
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
+use crate::common::inference::InferenceToken;
 
 pub async fn convert_point_struct(
     point_structs: Vec<PointStruct>,
     inference_type: InferenceType,
+    inference_token: Option<InferenceToken>,
 ) -> Result<Vec<PointStructPersisted>, StorageError> {
     let mut batch_accum = BatchAccum::new();
+
+    println!("InferenceToken {inference_token:?}");
 
     for point_struct in &point_structs {
         match &point_struct.vector {
@@ -143,12 +147,17 @@ pub async fn convert_point_struct(
     Ok(converted_points)
 }
 
-pub async fn convert_batch(batch: Batch) -> Result<BatchPersisted, StorageError> {
+pub async fn convert_batch(
+    batch: Batch,
+    inference_token: Option<InferenceToken>,
+) -> Result<BatchPersisted, StorageError> {
     let Batch {
         ids,
         vectors,
         payloads,
     } = batch;
+
+    println!("InferenceToken {inference_token:?}",);
 
     let batch_persisted = BatchPersisted {
         ids,
