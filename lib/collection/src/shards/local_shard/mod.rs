@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use common::cpu::CpuBudget;
-use common::rate_limiting::{Rate, RateLimiter};
+use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -197,18 +197,16 @@ impl LocalShard {
         let update_tracker = segment_holder.read().update_tracker();
 
         let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
-            strict_mode.read_rate_limit_per_sec.map(|read_limit| {
-                let read_rate = Rate::new(read_limit as u64, Duration::from_secs(1));
-                RateLimiter::new(read_rate)
-            })
+            strict_mode
+                .read_rate_limit_per_sec
+                .map(RateLimiter::with_rate_per_sec)
         });
         let read_rate_limiter = ParkingMutex::new(read_rate_limiter);
 
         let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
-            strict_mode.write_rate_limit_per_sec.map(|write_limit| {
-                let write_rate = Rate::new(write_limit as u64, Duration::from_secs(1));
-                RateLimiter::new(write_rate)
-            })
+            strict_mode
+                .write_rate_limit_per_sec
+                .map(RateLimiter::with_rate_per_sec)
         });
         let write_rate_limiter = ParkingMutex::new(write_rate_limiter);
 
@@ -765,16 +763,16 @@ impl LocalShard {
         if let Some(strict_mode_config) = &config.strict_mode_config {
             // Update read rate limiter
             if let Some(read_rate_limit_per_sec) = strict_mode_config.read_rate_limit_per_sec {
-                let read_rate = Rate::new(read_rate_limit_per_sec as u64, Duration::from_secs(1));
                 let mut read_rate_limiter_guard = self.read_rate_limiter.lock();
-                read_rate_limiter_guard.replace(RateLimiter::new(read_rate));
+                read_rate_limiter_guard
+                    .replace(RateLimiter::with_rate_per_sec(read_rate_limit_per_sec));
             }
 
             // update write rate limiter
             if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit_per_sec {
-                let write_rate = Rate::new(write_rate_limit_per_sec as u64, Duration::from_secs(1));
                 let mut write_rate_limiter_guard = self.write_rate_limiter.lock();
-                write_rate_limiter_guard.replace(RateLimiter::new(write_rate));
+                write_rate_limiter_guard
+                    .replace(RateLimiter::with_rate_per_sec(write_rate_limit_per_sec));
             }
         }
     }

@@ -712,11 +712,11 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_vector_size_bytes: Option<usize>,
 
-    /// Max number of read operations per second
+    /// Max number of read operations per second per shard per peer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_rate_limit_per_sec: Option<usize>,
 
-    /// Max number of write operations per second
+    /// Max number of write operations per second per shard per peer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub write_rate_limit_per_sec: Option<usize>,
 }

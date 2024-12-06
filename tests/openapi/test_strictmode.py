@@ -621,7 +621,7 @@ def test_strict_mode_read_rate_limiting(collection_name):
     assert new_strict_mode_config['enabled']
     assert new_strict_mode_config['read_rate_limit_per_sec'] == 1
 
-    failed = False
+    failed_count = 0
 
     for _ in range(10):
         response = request_with_validation(
@@ -634,12 +634,12 @@ def test_strict_mode_read_rate_limiting(collection_name):
             }
         )
         if not response.ok:
+            failed_count += 1
             assert response.status_code == 429
             assert "Rate limiting exceeded: Read rate limit exceeded, retry later" in response.json()['status']['error']
-            failed = True
-            break
 
-    assert failed, "Rate limiting did not work"
+    # loose check, as the rate limiting might not be exact
+    assert failed_count > 5, "Rate limiting did not work"
 
 
 def test_strict_mode_write_rate_limiting(collection_name):
@@ -659,7 +659,7 @@ def test_strict_mode_write_rate_limiting(collection_name):
     assert new_strict_mode_config['enabled']
     assert new_strict_mode_config['write_rate_limit_per_sec'] == 1
 
-    failed = False
+    failed_count = 0
 
     for _ in range(10):
         response = request_with_validation(
@@ -678,9 +678,9 @@ def test_strict_mode_write_rate_limiting(collection_name):
         )
 
         if not response.ok:
+            failed_count += 1
             assert response.status_code == 429
             assert "Rate limiting exceeded: Write rate limit exceeded, retry later" in response.json()['status']['error']
-            failed = True
-            break
 
-    assert failed, "Rate limiting did not work"
+    # loose check, as the rate limiting might not be exact
+    assert failed_count > 5, "Rate limiting did not work"
