@@ -787,7 +787,7 @@ impl<'s> SegmentHolder {
             let segment_version = read_segment.version();
             let segment_persisted_version = read_segment.flush(sync, force)?;
 
-            log::debug!(
+            log::trace!(
                 "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}", &read_segment.data_path()
             );
 
@@ -811,12 +811,12 @@ impl<'s> SegmentHolder {
         drop(proxy_segments);
 
         if has_unsaved {
-            log::debug!(
+            log::trace!(
                 "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
             );
             Ok(min_unsaved_version)
         } else {
-            log::debug!(
+            log::trace!(
                 "All segments flushed successfully, max persisted version: {max_persisted_version}"
             );
             Ok(max_persisted_version)
