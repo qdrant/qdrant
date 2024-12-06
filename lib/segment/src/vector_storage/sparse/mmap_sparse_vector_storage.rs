@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -18,7 +18,6 @@ use crate::types::VectorStorageDatatype;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
 use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 
-const METADATA_FILENAME: &str = "metadata.dat";
 const DELETED_DIRNAME: &str = "deleted";
 const STORAGE_DIRNAME: &str = "store";
 
@@ -35,13 +34,12 @@ pub struct MmapSparseVectorStorage {
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
     next_point_offset: usize,
-    path: PathBuf,
 }
 
 impl MmapSparseVectorStorage {
     pub fn open_or_create(path: &Path) -> OperationResult<Self> {
-        let meta_path = path.join(METADATA_FILENAME);
-        if meta_path.is_file() {
+        let deleted_dir = path.join(DELETED_DIRNAME);
+        if deleted_dir.is_dir() {
             // Storage already exists, open it
             return Self::open(path);
         }
@@ -76,7 +74,6 @@ impl MmapSparseVectorStorage {
             deleted,
             deleted_count,
             next_point_offset,
-            path,
         })
     }
 
@@ -101,7 +98,6 @@ impl MmapSparseVectorStorage {
             deleted,
             deleted_count: 0,
             next_point_offset: 0,
-            path,
         })
     }
 
@@ -253,7 +249,6 @@ impl VectorStorage for MmapSparseVectorStorage {
     fn files(&self) -> Vec<std::path::PathBuf> {
         let mut files = self.storage.read().files();
         files.extend(self.deleted.files());
-        files.push(self.path.join(METADATA_FILENAME));
 
         files
     }
