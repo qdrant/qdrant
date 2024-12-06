@@ -69,6 +69,9 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     /// Number of indexed vectors
     fn vector_count(&self) -> usize;
 
-    // Get max existed index
+    /// Total size of all the sparse vectors in bytes
+    fn total_sparse_vectors_size(&self) -> usize;
+
+    /// Get max existed index
     fn max_index(&self) -> Option<DimOffset>;
 }

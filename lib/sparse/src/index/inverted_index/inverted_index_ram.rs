@@ -27,6 +27,8 @@ pub struct InvertedIndexRam {
     /// Number of unique indexed vectors
     /// pre-computed on build and upsert to avoid having to traverse the posting lists.
     pub vector_count: usize,
+    /// Total size of all searchable sparse vectors in bytes
+    pub total_sparse_size: usize,
 }
 
 impl InvertedIndex for InvertedIndexRam {
@@ -59,6 +61,7 @@ impl InvertedIndex for InvertedIndexRam {
     }
 
     fn remove(&mut self, id: PointOffsetType, old_vector: RemappedSparseVector) {
+        let old_vector_size = old_vector.len() * size_of::<PostingElementEx>();
         for dim_id in old_vector.indices {
             if let Some(posting) = self.postings.get_mut(dim_id as usize) {
                 posting.delete(id);
@@ -67,6 +70,7 @@ impl InvertedIndex for InvertedIndexRam {
             }
         }
 
+        self.total_sparse_size = self.total_sparse_size.saturating_sub(old_vector_size);
         self.vector_count = self.vector_count.saturating_sub(1);
     }
 
@@ -90,6 +94,10 @@ impl InvertedIndex for InvertedIndexRam {
         self.vector_count
     }
 
+    fn total_sparse_vectors_size(&self) -> usize {
+        self.total_sparse_size
+    }
+
     fn max_index(&self) -> Option<DimId> {
         match self.postings.len() {
             0 => None,
@@ -104,6 +112,7 @@ impl InvertedIndexRam {
         InvertedIndexRam {
             postings: Vec::new(),
             vector_count: 0,
+            total_sparse_size: 0,
         }
     }
 
@@ -135,6 +144,8 @@ impl InvertedIndexRam {
             }
         }
 
+        let new_vector_size = vector.len() * size_of::<PostingElementEx>();
+
         for (dim_id, weight) in vector.indices.into_iter().zip(vector.values.into_iter()) {
             let dim_id = dim_id as usize;
             match self.postings.get_mut(dim_id) {
@@ -151,9 +162,22 @@ impl InvertedIndexRam {
                 }
             }
         }
-        if old_vector.is_none() {
+        if let Some(old) = old_vector {
+            self.total_sparse_size = self
+                .total_sparse_size
+                .saturating_sub(old.len() * size_of::<PostingElementEx>());
+        } else {
             self.vector_count += 1;
         }
+
+        self.total_sparse_size += new_vector_size
+    }
+
+    pub fn total_posting_elements_size(&self) -> usize {
+        self.postings
+            .iter()
+            .map(|posting| posting.elements.len() * size_of::<PostingElementEx>())
+            .sum()
     }
 }
 

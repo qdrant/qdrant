@@ -162,8 +162,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>()
+    fn size_of_available_vectors_in_bytes(&self) -> Option<usize> {
+        Some(self.available_vector_count() * self.vector_dim() * std::mem::size_of::<T>())
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

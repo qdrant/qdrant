@@ -129,6 +129,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 let available_vectors = vector_storage.available_vector_count();
                 let full_scan_threshold = vector_storage
                     .size_of_available_vectors_in_bytes()
+                    .expect("Dense vector storages always know their size")
                     .checked_div(available_vectors)
                     .and_then(|avg_vector_size| {
                         hnsw_config
@@ -226,6 +227,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         let full_scan_threshold = vector_storage
             .size_of_available_vectors_in_bytes()
+            .expect("Dense vector storages always know their size")
             .checked_div(total_vector_count)
             .and_then(|avg_vector_size| {
                 hnsw_config
@@ -1253,6 +1255,11 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .indexed_vector_count
             // If indexed vector count is unknown, fall back to number of points
             .unwrap_or_else(|| self.graph.num_points())
+    }
+
+    fn size_of_searchable_vectors_in_bytes(&self) -> Option<usize> {
+        // get the size from the vector storage
+        None
     }
 
     fn update_vector(
