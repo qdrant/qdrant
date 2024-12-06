@@ -75,6 +75,7 @@ impl LocalDataAtomicStats {
             vector_storage_size,
             payload_storage_size,
         } = data;
+
         let vector_storage_size = AtomicUsize::new(vector_storage_size);
         let payload_storage_size = AtomicUsize::new(payload_storage_size);
         Self {

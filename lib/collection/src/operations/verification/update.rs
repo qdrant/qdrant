@@ -190,6 +190,7 @@ impl StrictModeVerification for UpdateVectors {
     }
 }
 
+/// Checks all collection size limits that are configured in strict mode.
 async fn check_collection_size_limit(
     collection: &Collection,
     strict_mode_config: &StrictModeConfig,
@@ -197,7 +198,7 @@ async fn check_collection_size_limit(
     let vector_limit = strict_mode_config.max_collection_vector_size_bytes;
     let payload_limit = strict_mode_config.max_collection_payload_size_bytes;
 
-    // All configs to test are disabled/unset so we don't need to check anything nor update cache!.
+    // If all configs are disabled/unset, don't need to check anything nor update cache for performance.
     if (vector_limit, payload_limit) == (None, None) {
         return Ok(());
     }
@@ -215,11 +216,13 @@ async fn check_collection_size_limit(
     Ok(())
 }
 
+/// Check collections vector storage size limit.
 fn check_collection_vector_size_limit(
     max_vec_storage_size_bytes: usize,
     stats: &LocalDataAtomicStats,
 ) -> Result<(), CollectionError> {
     let vec_storage_size_bytes = stats.get_vector_storage_size();
+
     if vec_storage_size_bytes >= max_vec_storage_size_bytes {
         let size_in_mb = max_vec_storage_size_bytes as f32 / (1024.0 * 1024.0);
         return Err(CollectionError::bad_request(format!(
@@ -230,11 +233,13 @@ fn check_collection_vector_size_limit(
     Ok(())
 }
 
+/// Check collections payload storage size limit.
 fn check_collection_payload_size_limit(
     max_payload_storage_size_bytes: usize,
     stats: &LocalDataAtomicStats,
 ) -> Result<(), CollectionError> {
     let payload_storage_size_bytes = stats.get_payload_storage_size();
+
     if payload_storage_size_bytes >= max_payload_storage_size_bytes {
         let size_in_mb = max_payload_storage_size_bytes as f32 / (1024.0 * 1024.0);
         return Err(CollectionError::bad_request(format!(

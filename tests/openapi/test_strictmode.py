@@ -645,7 +645,7 @@ def test_strict_mode_read_rate_limiting(collection_name):
 
 
 def test_strict_mode_max_collection_payload_size_upsert(collection_name):
-    # TODO: Update this function when payload rocksDB storage has been replaced by mmap payload storage!
+    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
     # For now were just asserting a very loose condition to ensure it works at all.
     # Every required change for the mmap migration has been marked with a "TODO"
 
@@ -707,7 +707,7 @@ def test_strict_mode_max_collection_payload_size_upsert(collection_name):
 
 
 def test_strict_mode_max_collection_payload_size_upsert_batch(collection_name):
-    # TODO: Update this function when payload rocksDB storage has been replaced by mmap payload storage!
+    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
     # For now were just asserting a very loose condition to ensure it works at all.
     # Every required change for the mmap migration has been marked with a "TODO"
 
