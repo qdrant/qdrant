@@ -28,7 +28,7 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::common::is_ready::IsReady;
-use crate::common::local_data_stats::{LocalDataStats, LocalDataStatsCache};
+use crate::common::local_data_stats::{LocalDataAtomicStats, LocalDataStats, LocalDataStatsCache};
 use crate::config::CollectionConfigInternal;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -803,32 +803,12 @@ impl Collection {
         shard_lock.calculate_local_segments_stats().await
     }
 
-    /// Checks and performs a cache update for local data statistics if needed.
-    /// Returns `Some(..)` with the new values if a cache update has been performed and `None` otherwise.
-    async fn check_and_update_local_size_stats(&self) -> Option<LocalDataStats> {
-        if self.local_stats_cache.check_need_update_and_increment() {
-            let new_stats = Self::calculate_segment_stats(&self.shards_holder).await;
-            self.local_stats_cache.update(new_stats);
-            return Some(new_stats);
-        }
-
-        None
-    }
-
-    /// Returns the estimated local vector storage size for this collection, cached and auto-updated.
-    pub async fn estimated_local_vector_storage_size(&self) -> usize {
-        if let Some(shard_stats) = self.check_and_update_local_size_stats().await {
-            return shard_stats.vector_storage_size;
-        }
-        self.local_stats_cache.get_vector_storage()
-    }
-
-    /// Returns the estimated local payload storage size for this collection, cached and auto-updated.
-    pub async fn estimated_local_payload_storage_size(&self) -> usize {
-        if let Some(shard_stats) = self.check_and_update_local_size_stats().await {
-            return shard_stats.payload_storage_size;
-        }
-        self.local_stats_cache.get_payload_storage()
+    /// Returns estimations of local shards statistics. This values are cached and might be not 100% up to date.
+    /// The cache gets updated every 32 calls.
+    pub async fn local_stats_estimations(&self) -> &LocalDataAtomicStats {
+        self.local_stats_cache
+            .get_or_update_cache(|| Self::calculate_segment_stats(&self.shards_holder))
+            .await
     }
 }
 
