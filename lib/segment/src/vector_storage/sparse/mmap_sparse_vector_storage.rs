@@ -7,9 +7,6 @@ use bitvec::slice::BitSlice;
 use blob_store::BlobStore;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
-use memory::madvise::AdviceSetting;
-use memory::mmap_ops::{self};
-use memory::mmap_type::MmapType;
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -28,15 +25,6 @@ const STORAGE_DIRNAME: &str = "store";
 /// When resizing bitslice, grow by this extra amount.
 const BITSLICE_GROWTH_SLACK: usize = 1024;
 
-#[repr(C)]
-#[derive(Debug)]
-struct Metadata {
-    /// Total number of non-zero elements in all vectors. Used to estimate average vector size.
-    total_sparse_size: usize,
-    /// Reserved for extensibility
-    _reserved: [u8; 64],
-}
-
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
@@ -47,8 +35,6 @@ pub struct MmapSparseVectorStorage {
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
     next_point_offset: usize,
-    /// Other information about the storage, stored in a memory-mapped file.
-    metadata: MmapType<Metadata>,
     path: PathBuf,
 }
 
@@ -78,12 +64,6 @@ impl MmapSparseVectorStorage {
         let deleted_path = path.join(DELETED_DIRNAME);
         let deleted = DynamicMmapFlags::open(&deleted_path)?;
 
-        // Metadata
-        let metadata_path = path.join(METADATA_FILENAME);
-        let metadata_mmap =
-            mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, false)?;
-        let metadata: MmapType<Metadata> = unsafe { MmapType::try_from(metadata_mmap)? };
-
         let deleted_count = deleted.count_flags();
         let next_point_offset = deleted
             .get_bitslice()
@@ -96,7 +76,6 @@ impl MmapSparseVectorStorage {
             deleted,
             deleted_count,
             next_point_offset,
-            metadata,
             path,
         })
     }
@@ -117,24 +96,11 @@ impl MmapSparseVectorStorage {
         let deleted_path = path.join(DELETED_DIRNAME);
         let deleted = DynamicMmapFlags::open(&deleted_path)?;
 
-        // Metadata
-        let metadata_path = path.join(METADATA_FILENAME);
-        mmap_ops::create_and_ensure_length(&metadata_path, size_of::<Metadata>())?;
-        let metadata_mmap =
-            mmap_ops::open_write_mmap(&metadata_path, AdviceSetting::Global, false)?;
-        let mut metadata = unsafe { MmapType::try_from(metadata_mmap)? };
-        // Initialize metadata
-        *metadata = Metadata {
-            total_sparse_size: 0,
-            _reserved: [0; 64],
-        };
-
         Ok(Self {
             storage: Arc::new(RwLock::new(storage)),
             deleted,
             deleted_count: 0,
             next_point_offset: 0,
-            metadata,
             path,
         })
     }
@@ -178,26 +144,12 @@ impl MmapSparseVectorStorage {
         let mut storage_guard = self.storage.write();
         if let Some(vector) = vector {
             // upsert vector
-            if let Some(old_vector) = storage_guard.get_value(key) {
-                // it is an update
-                self.metadata.total_sparse_size = self
-                    .metadata
-                    .total_sparse_size
-                    .saturating_sub(old_vector.values.len());
-            }
-
-            self.metadata.total_sparse_size += vector.values.len();
             storage_guard
                 .put_value(key, vector)
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
-            if let Some(old_vector) = storage_guard.delete_value(key) {
-                self.metadata.total_sparse_size = self
-                    .metadata
-                    .total_sparse_size
-                    .saturating_sub(old_vector.values.len());
-            }
+            storage_guard.delete_value(key);
         }
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
@@ -287,7 +239,6 @@ impl VectorStorage for MmapSparseVectorStorage {
     fn flusher(&self) -> crate::common::Flusher {
         let storage = self.storage.clone();
         let deleted_flusher = self.deleted.flusher();
-        let metadata_flusher = self.metadata.flusher();
         Box::new(move || {
             storage.read().flush().map_err(|err| {
                 OperationError::service_error(format!(
@@ -295,7 +246,6 @@ impl VectorStorage for MmapSparseVectorStorage {
                 ))
             })?;
             deleted_flusher()?;
-            metadata_flusher()?;
             Ok(())
         })
     }
