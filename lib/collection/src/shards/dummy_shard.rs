@@ -49,6 +49,8 @@ impl DummyShard {
         self.dummy()
     }
 
+    pub async fn on_strict_mode_config_update(&self) {}
+
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {
             variant_name: Some("dummy shard".into()),

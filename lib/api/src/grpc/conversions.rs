@@ -1635,6 +1635,8 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             max_collection_vector_size_bytes: value
                 .max_collection_vector_size_bytes
                 .map(|i| i as usize),
+            read_rate_limit_per_sec: value.read_rate_limit_per_sec.map(|i| i as usize),
+            write_rate_limit_per_sec: value.write_rate_limit_per_sec.map(|i| i as usize),
         }
     }
 }
@@ -1654,6 +1656,8 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
             max_collection_vector_size_bytes: value
                 .max_collection_vector_size_bytes
                 .map(|i| i as u64),
+            read_rate_limit_per_sec: value.read_rate_limit_per_sec.map(|i| i as u32),
+            write_rate_limit_per_sec: value.write_rate_limit_per_sec.map(|i| i as u32),
         }
     }
 }

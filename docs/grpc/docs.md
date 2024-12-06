@@ -1432,6 +1432,8 @@ Note: 1kB = 1 vector of size 256. |
 | search_max_oversampling | [float](#float) | optional |  |
 | upsert_max_batchsize | [uint64](#uint64) | optional |  |
 | max_collection_vector_size_bytes | [uint64](#uint64) | optional |  |
+| read_rate_limit_per_sec | [uint32](#uint32) | optional |  |
+| write_rate_limit_per_sec | [uint32](#uint32) | optional |  |
 
 
 

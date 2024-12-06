@@ -159,6 +159,13 @@ impl QueueProxyShard {
             .await
     }
 
+    pub async fn on_strict_mode_config_update(&self) {
+        self.inner_unchecked()
+            .wrapped_shard
+            .on_strict_mode_config_update()
+            .await
+    }
+
     pub fn trigger_optimizers(&self) {
         self.inner_unchecked().wrapped_shard.trigger_optimizers();
     }

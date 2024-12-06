@@ -730,7 +730,15 @@ impl ShardReplicaSet {
         }
     }
 
-    /// Check if the are any locally disabled peers
+    pub(crate) async fn on_strict_mode_config_update(&self) -> CollectionResult<()> {
+        let read_local = self.local.read().await;
+        if let Some(shard) = &*read_local {
+            shard.on_strict_mode_config_update().await
+        }
+        Ok(())
+    }
+
+    /// Check if there are any locally disabled peers
     /// And if so, report them to the consensus
     pub fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
     where

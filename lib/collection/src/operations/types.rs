@@ -1107,7 +1107,6 @@ impl CollectionError {
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
             Self::PreConditionFailed { .. } => true,
-            Self::RateLimitExceeded { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,
@@ -1119,6 +1118,7 @@ impl CollectionError {
             Self::ObjectStoreError { .. } => false,
             Self::StrictMode { .. } => false,
             Self::InferenceError { .. } => false,
+            Self::RateLimitExceeded { .. } => false,
         }
     }
 
