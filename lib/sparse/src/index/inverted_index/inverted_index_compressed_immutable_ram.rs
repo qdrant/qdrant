@@ -100,10 +100,13 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             }
             postings.push(new_posting_list.build());
         }
+
+        let total_sparse_size = postings.iter().map(|p| p.view().store_size().total).sum();
+
         Ok(InvertedIndexCompressedImmutableRam {
             postings,
             vector_count: ram_index.vector_count,
-            total_sparse_size: ram_index.total_sparse_size,
+            total_sparse_size,
         })
     }
 
