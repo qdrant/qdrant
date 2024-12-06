@@ -146,7 +146,12 @@ RUN apt-get update
 # Install GPU dependencies
 ARG GPU
 
-RUN [ -n "$GPU" ] && apt-get install -y libvulkan1 libvulkan-dev vulkan-tools
+RUN if [ -n "$GPU" ]; then \
+    apt-get install -y \
+    libvulkan1 \
+    libvulkan-dev \
+    vulkan-tools \
+    ; fi
 
 # Install additional packages into the container.
 # E.g., the debugger of choice: gdb/gdbserver/lldb.
