@@ -163,11 +163,10 @@ fn batch_search_bench(c: &mut Criterion) {
                                 }),
                                 search_runtime_handle,
                                 None,
-                                &hw_acc,
+                                hw_acc,
                             )
                             .await
                             .unwrap();
-                        hw_acc.discard();
                         assert!(!result.is_empty());
                     }
                 });
@@ -197,11 +196,10 @@ fn batch_search_bench(c: &mut Criterion) {
                     let hw_acc = HwMeasurementAcc::new();
                     let search_query = CoreSearchRequestBatch { searches };
                     let result = shard
-                        .core_search(Arc::new(search_query), search_runtime_handle, None, &hw_acc)
+                        .core_search(Arc::new(search_query), search_runtime_handle, None, hw_acc)
                         .await
                         .unwrap();
                     assert!(!result.is_empty());
-                    hw_acc.discard();
                 });
             })
         });

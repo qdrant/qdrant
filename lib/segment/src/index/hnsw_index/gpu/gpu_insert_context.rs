@@ -525,7 +525,6 @@ mod tests {
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers_builder.link_new_point(idx, scorer);
-            raw_scorer.take_hardware_counter().discard_results();
         }
 
         // Create GPU search context
@@ -757,7 +756,6 @@ mod tests {
                 assert!((cpu.score - gpu_1.score).abs() < 1e-5);
                 assert!((cpu.score - gpu_2.score).abs() < 1e-5);
             }
-            raw_scorer.take_hardware_counter().discard_results();
         }
     }
 
@@ -804,7 +802,6 @@ mod tests {
                 .graph_layers_builder
                 .search_entry_on_level(0, 0, &mut scorer);
             assert_eq!(search_result.idx, gpu_search_result);
-            raw_scorer.take_hardware_counter().discard_results();
         }
     }
 
@@ -987,7 +984,6 @@ mod tests {
             for (&cpu, gpu) in heuristic.iter().zip(gpu_group_result.iter()) {
                 assert_eq!(cpu, gpu.idx);
             }
-            raw_scorer.take_hardware_counter().discard_results();
         }
     }
 }

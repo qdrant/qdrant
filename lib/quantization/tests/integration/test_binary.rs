@@ -67,7 +67,6 @@ mod tests {
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() <= error);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -115,7 +114,6 @@ mod tests {
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() <= error);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -160,7 +158,6 @@ mod tests {
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() <= error);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -205,7 +202,6 @@ mod tests {
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() <= error);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -252,7 +248,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -315,7 +310,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -375,7 +369,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -435,7 +428,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -498,7 +490,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -561,7 +552,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_point(&query_b, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -621,7 +611,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
@@ -681,7 +670,6 @@ mod tests {
             .enumerate()
             .map(|(i, _)| (encoded.score_internal(0, i as u32, &counter), i))
             .collect();
-        counter.discard_results();
 
         scores.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 

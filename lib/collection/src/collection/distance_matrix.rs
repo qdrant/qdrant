@@ -140,7 +140,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CollectionSearchMatrixResponse> {
         let start = std::time::Instant::now();
         let CollectionSearchMatrixRequest {
@@ -184,7 +184,7 @@ impl Collection {
                 read_consistency,
                 shard_selection.clone(),
                 timeout,
-                hw_measurement_acc,
+                hw_measurement_acc.clone(),
             )
             .await?;
 

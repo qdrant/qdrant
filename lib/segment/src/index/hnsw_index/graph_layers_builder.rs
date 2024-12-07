@@ -570,7 +570,6 @@ mod tests {
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
                     graph_layers.link_new_point(idx, scorer);
-                    raw_scorer.take_hardware_counter().discard_results();
                 });
         });
 
@@ -612,7 +611,6 @@ mod tests {
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers.link_new_point(idx, scorer);
-            raw_scorer.take_hardware_counter().discard_results();
         }
 
         (vector_holder, graph_layers)
@@ -684,7 +682,6 @@ mod tests {
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
 
-        raw_scorer.take_hardware_counter().discard_results();
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
@@ -767,7 +764,6 @@ mod tests {
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
-        raw_scorer.take_hardware_counter().discard_results();
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
@@ -793,7 +789,6 @@ mod tests {
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
-            raw_scorer.take_hardware_counter().discard_results();
         }
         let graph_layers = graph_layers_builder
             .into_graph_layers::<GraphLinksRam>(None)
@@ -862,7 +857,6 @@ mod tests {
             eprintln!("selected_candidates = {x}");
         }
 
-        scorer.take_hardware_counter().discard_results();
     }
 
     #[test]

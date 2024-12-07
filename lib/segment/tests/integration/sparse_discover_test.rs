@@ -217,24 +217,15 @@ fn sparse_index_discover_test() {
         let sparse_search_result = sparse_index
             .search(&[&sparse_query], None, top, None, &vector_context)
             .unwrap();
-        assert!(
-            vector_context
-                .hardware_counter()
-                .unwrap()
-                .cpu_counter()
-                .get()
-                > 0
-        );
+
+        let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
+        assert!(cpu_usage > 0);
 
         let dense_search_result = dense_segment.vector_data[SPARSE_VECTOR_NAME]
             .vector_index
             .borrow()
             .search(&[&dense_query], None, top, None, &vector_context)
             .unwrap();
-
-        segment_query_context
-            .take_hardware_counter()
-            .discard_results();
 
         // check that nearest search uses sparse index
         let telemetry = sparse_index.get_telemetry_data(TelemetryDetail::default());
@@ -311,15 +302,9 @@ fn sparse_index_hardware_measurement_test() {
     let query_context = QueryContext::default();
     let segment_query_context = query_context.get_segment_query_context();
     let vector_context = segment_query_context.get_vector_context(SPARSE_VECTOR_NAME);
-    assert!(vector_context.hardware_counter().is_some());
-    assert_eq!(
-        vector_context
-            .hardware_counter()
-            .unwrap()
-            .cpu_counter()
-            .get(),
-        0
-    );
+
+    let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
+    assert_eq!(cpu_usage, 0);
 
     // Some filter so we do plain sparse search
     let ids: HashSet<PointIdType> = (0..3).map(ExtendedPointId::NumId).collect();
@@ -329,16 +314,6 @@ fn sparse_index_hardware_measurement_test() {
         .search(&[&query_vec], Some(&filter), 1, None, &vector_context)
         .unwrap();
 
-    assert!(
-        vector_context
-            .hardware_counter()
-            .unwrap()
-            .cpu_counter()
-            .get()
-            > 0
-    );
-
-    segment_query_context
-        .take_hardware_counter()
-        .discard_results();
+    let cpu_usage = query_context.hardware_usage_accumulator().get_cpu();
+    assert!(cpu_usage > 0);
 }

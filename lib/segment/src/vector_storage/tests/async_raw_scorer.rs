@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
-
+use common::counter::hardware_counter::HardwareCounterCell;
 use super::utils::{delete_random_vectors, insert_distributed_vectors, sampler, score, Result};
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
@@ -15,7 +15,7 @@ use crate::types::Distance;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{async_raw_scorer, new_raw_scorer, VectorStorageEnum};
+use crate::vector_storage::{async_raw_scorer, new_raw_scorer_for_test, VectorStorageEnum};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
@@ -110,11 +110,11 @@ fn test_random_score(
 ) -> Result<()> {
     let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 
-    let raw_scorer = new_raw_scorer(query.clone(), storage, deleted_points).unwrap();
+    let raw_scorer = new_raw_scorer_for_test(query.clone(), storage, deleted_points).unwrap();
 
     let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::DenseMemmap(storage) = storage {
-        async_raw_scorer::new(query, storage, deleted_points, &is_stopped)?
+        async_raw_scorer::new(query, storage, deleted_points, &is_stopped, HardwareCounterCell::new())?
     } else {
         unreachable!();
     };
@@ -126,8 +126,5 @@ fn test_random_score(
     let async_res = score(&*async_raw_scorer, &points);
 
     assert_eq!(res, async_res);
-
-    raw_scorer.take_hardware_counter().discard_results();
-    async_raw_scorer.take_hardware_counter().discard_results();
     Ok(())
 }

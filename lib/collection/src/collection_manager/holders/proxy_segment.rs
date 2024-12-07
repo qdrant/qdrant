@@ -339,11 +339,6 @@ impl ProxySegment {
             &segment_query_context,
         )?;
 
-        // This function is only for testing and no measurements are needed.
-        segment_query_context
-            .take_hardware_counter()
-            .discard_results();
-
         Ok(result.into_iter().next().unwrap())
     }
 }
@@ -387,9 +382,8 @@ impl SegmentEntry for ProxySegment {
             // we can make this hack of replacing deleted_points of the wrapped_segment
             // with our proxied deleted_points, do avoid additional filter creation
             if let Some(deleted_points) = self.deleted_mask.as_ref() {
-                let query_context_with_deleted = query_context
-                    .clone_no_counters()
-                    .with_deleted_points(deleted_points);
+                let query_context_with_deleted =
+                    query_context.fork().with_deleted_points(deleted_points);
 
                 let res = self.wrapped_segment.get().read().search_batch(
                     vector_name,
@@ -401,9 +395,6 @@ impl SegmentEntry for ProxySegment {
                     params,
                     &query_context_with_deleted,
                 );
-
-                let counters = query_context_with_deleted.take_hardware_counter();
-                query_context.merge_hardware_counter(counters);
 
                 res?
             } else {
@@ -1263,15 +1254,15 @@ pub struct ProxyDeletedPoint {
 mod tests {
     use std::fs::File;
 
-    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
-    use segment::types::{FieldCondition, PayloadSchemaType};
-    use serde_json::json;
-    use tempfile::{Builder, TempDir};
-
     use super::*;
     use crate::collection_manager::fixtures::{
         build_segment_1, build_segment_2, empty_segment, random_segment,
     };
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+    use segment::types::{FieldCondition, PayloadSchemaType};
+    use serde_json::json;
+    use tempfile::{Builder, TempDir};
 
     #[test]
     fn test_writing() {
@@ -1373,7 +1364,8 @@ mod tests {
 
         eprintln!("search_result = {search_result:#?}");
 
-        let query_context = QueryContext::default();
+        let hardware_accumulator = HwMeasurementAcc::new();
+        let query_context = QueryContext::new(10000, hardware_accumulator.clone());
         let segment_query_context = query_context.get_segment_query_context();
 
         let search_batch_result = proxy_segment
@@ -1393,9 +1385,7 @@ mod tests {
 
         assert!(!search_result.is_empty());
         assert_eq!(search_result, search_batch_result[0].clone());
-        let counter = segment_query_context.take_hardware_counter();
-        assert!(counter.cpu_counter().get() > 0);
-        counter.discard_results();
+        assert!(hardware_accumulator.get_cpu() > 0);
     }
 
     #[test]
@@ -1442,10 +1432,6 @@ mod tests {
                 &segment_query_context,
             )
             .unwrap();
-
-        segment_query_context
-            .take_hardware_counter()
-            .discard_results();
 
         eprintln!("search_batch_result = {search_batch_result:#?}");
 
@@ -1507,10 +1493,6 @@ mod tests {
                 &segment_query_context,
             )
             .unwrap();
-
-        segment_query_context
-            .take_hardware_counter()
-            .discard_results();
 
         eprintln!("search_batch_result = {search_batch_result:#?}");
 

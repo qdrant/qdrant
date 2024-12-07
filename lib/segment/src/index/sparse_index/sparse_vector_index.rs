@@ -294,6 +294,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &vector_storage,
             deleted_point_bitslice,
             &is_stopped,
+            vector_query_context.hardware_counter(),
         )?;
         match filter {
             Some(filter) => {
@@ -307,12 +308,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     }
                 };
                 let res = raw_scorer.peek_top_iter(&mut filtered_points, top);
-                vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
                 Ok(res)
             }
             None => {
                 let res = raw_scorer.peek_top_all(top);
-                vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
                 Ok(res)
             }
         }
@@ -357,9 +356,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &self.inverted_index,
             memory_handle,
             &is_stopped,
+            vector_query_context.hardware_counter(),
         );
         let search_result = search_context.plain_search(&ids);
-        vector_query_context.apply_hardware_counter(search_context.take_hardware_counter());
         Ok(search_result)
     }
 
@@ -392,6 +391,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &self.inverted_index,
             memory_handle,
             &is_stopped,
+            vector_query_context.hardware_counter(),
         );
 
         match filter {
@@ -401,15 +401,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };
-                let res = search_context.search(&matches_filter_condition);
-                vector_query_context.apply_hardware_counter(search_context.take_hardware_counter());
-                res
+                search_context.search(&matches_filter_condition)
             }
-            None => {
-                let res = search_context.search(&not_deleted_condition);
-                vector_query_context.apply_hardware_counter(search_context.take_hardware_counter());
-                res
-            }
+            None => search_context.search(&not_deleted_condition),
         }
     }
 

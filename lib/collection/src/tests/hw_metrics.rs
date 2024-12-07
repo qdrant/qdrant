@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::cpu::CpuBudget;
 use rand::rngs::ThreadRng;
 use rand::{thread_rng, RngCore};
@@ -72,16 +72,16 @@ async fn test_hw_metrics_cancellation() {
         }],
     };
 
-    let outer_hw = HwMeasurementAcc::new();
+    let outer_hw = HwSharedDrain::default();
 
     {
-        let hw_counter = HwMeasurementAcc::new_with_drain(&outer_hw);
+        let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());
         let search_res = shard
             .do_search(
                 Arc::new(req),
                 &current_runtime,
-                Some(Duration::from_millis(3)), // Very short duration to hit timeout before the search finishes
-                &hw_counter,
+                Some(Duration::from_millis(10)), // Very short duration to hit timeout before the search finishes
+                hw_counter,
             )
             .await;
 
@@ -95,9 +95,7 @@ async fn test_hw_metrics_cancellation() {
         // std::thread::sleep(Duration::from_millis(2));
     }
 
-    assert!(!outer_hw.is_zero());
-
-    outer_hw.discard();
+    assert!(outer_hw.get_cpu() > 0);
 }
 
 fn make_random_points_upsert_op(len: usize) -> CollectionUpdateOperations {

@@ -88,8 +88,6 @@ pub trait RawScorer {
     ) -> Vec<ScoredPointOffset>;
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset>;
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell;
 }
 
 pub struct RawScorerImpl<'a, TVector: ?Sized, TQueryScorer>
@@ -116,22 +114,30 @@ pub fn new_stoppable_raw_scorer<'a>(
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hc: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
-        VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, point_deleted, is_stopped),
+        VectorStorageEnum::DenseSimple(vs) => {
+            raw_scorer_impl(query, vs, point_deleted, is_stopped, hc)
+        }
         VectorStorageEnum::DenseSimpleByte(vs) => {
-            raw_scorer_byte_impl(query, vs, point_deleted, is_stopped)
+            raw_scorer_byte_impl(query, vs, point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseSimpleHalf(vs) => {
-            raw_scorer_half_impl(query, vs, point_deleted, is_stopped)
+            raw_scorer_half_impl(query, vs, point_deleted, is_stopped, hc)
         }
 
         VectorStorageEnum::DenseMemmap(vs) => {
             if vs.has_async_reader() {
                 #[cfg(target_os = "linux")]
                 {
-                    let scorer_result =
-                        super::async_raw_scorer::new(query.clone(), vs, point_deleted, is_stopped);
+                    let scorer_result = super::async_raw_scorer::new(
+                        query.clone(),
+                        vs,
+                        point_deleted,
+                        is_stopped,
+                        hc.fork(),
+                    );
                     match scorer_result {
                         Ok(raw_scorer) => return Ok(raw_scorer),
                         Err(err) => log::error!("failed to initialize async raw scorer: {err}"),
@@ -142,67 +148,67 @@ pub fn new_stoppable_raw_scorer<'a>(
                 log::warn!("async raw scorer is only supported on Linux");
             }
 
-            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
 
         // TODO(byte_storage): Implement async raw scorer for DenseMemmapByte and DenseMemmapHalf
         VectorStorageEnum::DenseMemmapByte(vs) => {
-            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseMemmapHalf(vs) => {
-            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
 
         VectorStorageEnum::DenseAppendableMemmap(vs) => {
-            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseAppendableMemmapByte(vs) => {
-            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseAppendableMemmapHalf(vs) => {
-            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseAppendableInRam(vs) => {
-            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseAppendableInRamByte(vs) => {
-            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::DenseAppendableInRamHalf(vs) => {
-            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::SparseSimple(vs) => {
-            raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)
+            raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::SparseMmap(vs) => {
-            raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped)
+            raw_sparse_scorer_impl(query, vs, point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseSimple(vs) => {
-            raw_multi_scorer_impl(query, vs, point_deleted, is_stopped)
+            raw_multi_scorer_impl(query, vs, point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseSimpleByte(vs) => {
-            raw_multi_scorer_byte_impl(query, vs, point_deleted, is_stopped)
+            raw_multi_scorer_byte_impl(query, vs, point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseSimpleHalf(vs) => {
-            raw_multi_scorer_half_impl(query, vs, point_deleted, is_stopped)
+            raw_multi_scorer_half_impl(query, vs, point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseAppendableMemmap(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_multi_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => {
-            raw_multi_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_multi_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => {
-            raw_multi_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_multi_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseAppendableInRam(vs) => {
-            raw_multi_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_multi_scorer_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseAppendableInRamByte(vs) => {
-            raw_multi_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_multi_scorer_byte_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
         VectorStorageEnum::MultiDenseAppendableInRamHalf(vs) => {
-            raw_multi_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped)
+            raw_multi_scorer_half_impl(query, vs.as_ref(), point_deleted, is_stopped, hc)
         }
     }
 }
@@ -214,6 +220,7 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -223,7 +230,7 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
         QueryVector::Recommend(reco_query) => {
             let reco_query: RecoQuery<SparseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                SparseCustomQueryScorer::<_, _>::new(reco_query, vector_storage),
+                SparseCustomQueryScorer::<_, _>::new(reco_query, vector_storage, hardware_counter),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -232,7 +239,11 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<SparseVector> = discovery_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                SparseCustomQueryScorer::<_, _>::new(discovery_query, vector_storage),
+                SparseCustomQueryScorer::<_, _>::new(
+                    discovery_query,
+                    vector_storage,
+                    hardware_counter,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -241,7 +252,11 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<SparseVector> = context_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                SparseCustomQueryScorer::<_, _>::new(context_query, vector_storage),
+                SparseCustomQueryScorer::<_, _>::new(
+                    context_query,
+                    vector_storage,
+                    hardware_counter,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -250,12 +265,35 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
     }
 }
 
-pub fn new_raw_scorer<'a>(
+#[cfg(feature = "testing")]
+pub fn new_raw_scorer_for_test<'a>(
     vector: QueryVector,
     vector_storage: &'a VectorStorageEnum,
     point_deleted: &'a BitSlice,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    new_stoppable_raw_scorer(vector, vector_storage, point_deleted, &DEFAULT_STOPPED)
+    new_stoppable_raw_scorer(
+        vector,
+        vector_storage,
+        point_deleted,
+        &DEFAULT_STOPPED,
+        HardwareCounterCell::new(),
+    )
+}
+
+pub fn new_raw_scorer<'a>(
+    vector: QueryVector,
+    vector_storage: &'a VectorStorageEnum,
+    point_deleted: &'a BitSlice,
+    is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
+) -> OperationResult<Box<dyn RawScorer + 'a>> {
+    new_stoppable_raw_scorer(
+        vector,
+        vector_storage,
+        point_deleted,
+        is_stopped,
+        hardware_counter,
+    )
 }
 
 pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>>(
@@ -263,6 +301,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_scorer_with_metric::<CosineMetric, _>(
@@ -270,24 +309,28 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Euclid => new_scorer_with_metric::<EuclidMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Dot => new_scorer_with_metric::<DotProductMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Manhattan => new_scorer_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
     }
 }
@@ -301,6 +344,7 @@ fn new_scorer_with_metric<
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -308,6 +352,7 @@ fn new_scorer_with_metric<
             MetricQueryScorer::<VectorElementType, TMetric, _>::new(
                 vector.try_into()?,
                 vector_storage,
+                hardware_counter,
             ),
             point_deleted,
             vec_deleted,
@@ -319,6 +364,7 @@ fn new_scorer_with_metric<
                 CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     reco_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -331,6 +377,7 @@ fn new_scorer_with_metric<
                 CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     discovery_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -343,6 +390,7 @@ fn new_scorer_with_metric<
                 CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     context_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -357,6 +405,7 @@ pub fn raw_scorer_byte_impl<'a, TVectorStorage: DenseVectorStorage<VectorElement
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_scorer_byte_with_metric::<CosineMetric, _>(
@@ -364,24 +413,28 @@ pub fn raw_scorer_byte_impl<'a, TVectorStorage: DenseVectorStorage<VectorElement
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Euclid => new_scorer_byte_with_metric::<EuclidMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Dot => new_scorer_byte_with_metric::<DotProductMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Manhattan => new_scorer_byte_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
     }
 }
@@ -395,6 +448,7 @@ fn new_scorer_byte_with_metric<
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -402,6 +456,7 @@ fn new_scorer_byte_with_metric<
             MetricQueryScorer::<VectorElementTypeByte, TMetric, _>::new(
                 vector.try_into()?,
                 vector_storage,
+                hardware_counter,
             ),
             point_deleted,
             vec_deleted,
@@ -413,6 +468,7 @@ fn new_scorer_byte_with_metric<
                 CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     reco_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -425,6 +481,7 @@ fn new_scorer_byte_with_metric<
                 CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     discovery_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -437,6 +494,7 @@ fn new_scorer_byte_with_metric<
                 CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     context_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -451,6 +509,7 @@ pub fn raw_scorer_half_impl<'a, TVectorStorage: DenseVectorStorage<VectorElement
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_scorer_half_with_metric::<CosineMetric, _>(
@@ -458,24 +517,28 @@ pub fn raw_scorer_half_impl<'a, TVectorStorage: DenseVectorStorage<VectorElement
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Euclid => new_scorer_half_with_metric::<EuclidMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Dot => new_scorer_half_with_metric::<DotProductMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Manhattan => new_scorer_half_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
     }
 }
@@ -489,6 +552,7 @@ fn new_scorer_half_with_metric<
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter_cell: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -496,6 +560,7 @@ fn new_scorer_half_with_metric<
             MetricQueryScorer::<VectorElementTypeHalf, TMetric, _>::new(
                 vector.try_into()?,
                 vector_storage,
+                hardware_counter_cell,
             ),
             point_deleted,
             vec_deleted,
@@ -507,6 +572,7 @@ fn new_scorer_half_with_metric<
                 CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     reco_query,
                     vector_storage,
+                    hardware_counter_cell,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -519,6 +585,7 @@ fn new_scorer_half_with_metric<
                 CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     discovery_query,
                     vector_storage,
+                    hardware_counter_cell,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -531,6 +598,7 @@ fn new_scorer_half_with_metric<
                 CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     context_query,
                     vector_storage,
+                    hardware_counter_cell,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -564,6 +632,7 @@ pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage<VectorElemen
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_multi_scorer_with_metric::<CosineMetric, _>(
@@ -571,24 +640,28 @@ pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage<VectorElemen
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Euclid => new_multi_scorer_with_metric::<EuclidMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Dot => new_multi_scorer_with_metric::<DotProductMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Manhattan => new_multi_scorer_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
     }
 }
@@ -602,6 +675,7 @@ fn new_multi_scorer_with_metric<
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -609,6 +683,7 @@ fn new_multi_scorer_with_metric<
             MultiMetricQueryScorer::<VectorElementType, TMetric, _>::new(
                 &vector.try_into()?,
                 vector_storage,
+                hardware_counter,
             ),
             point_deleted,
             vec_deleted,
@@ -620,6 +695,7 @@ fn new_multi_scorer_with_metric<
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     reco_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -633,6 +709,7 @@ fn new_multi_scorer_with_metric<
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     discovery_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -646,6 +723,7 @@ fn new_multi_scorer_with_metric<
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     context_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -660,6 +738,7 @@ pub fn raw_multi_scorer_byte_impl<'a, TVectorStorage: MultiVectorStorage<VectorE
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_multi_scorer_byte_with_metric::<CosineMetric, _>(
@@ -667,24 +746,28 @@ pub fn raw_multi_scorer_byte_impl<'a, TVectorStorage: MultiVectorStorage<VectorE
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Euclid => new_multi_scorer_byte_with_metric::<EuclidMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Dot => new_multi_scorer_byte_with_metric::<DotProductMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Manhattan => new_multi_scorer_byte_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
     }
 }
@@ -698,6 +781,7 @@ fn new_multi_scorer_byte_with_metric<
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -705,6 +789,7 @@ fn new_multi_scorer_byte_with_metric<
             MultiMetricQueryScorer::<VectorElementTypeByte, TMetric, _>::new(
                 &vector.try_into()?,
                 vector_storage,
+                hardware_counter,
             ),
             point_deleted,
             vec_deleted,
@@ -716,6 +801,7 @@ fn new_multi_scorer_byte_with_metric<
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     reco_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -729,6 +815,7 @@ fn new_multi_scorer_byte_with_metric<
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     discovery_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -742,6 +829,7 @@ fn new_multi_scorer_byte_with_metric<
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
                     context_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -756,6 +844,7 @@ pub fn raw_multi_scorer_half_impl<'a, TVectorStorage: MultiVectorStorage<VectorE
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage.distance() {
         Distance::Cosine => new_multi_scorer_half_with_metric::<CosineMetric, _>(
@@ -763,24 +852,28 @@ pub fn raw_multi_scorer_half_impl<'a, TVectorStorage: MultiVectorStorage<VectorE
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Euclid => new_multi_scorer_half_with_metric::<EuclidMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Dot => new_multi_scorer_half_with_metric::<DotProductMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
         Distance::Manhattan => new_multi_scorer_half_with_metric::<ManhattanMetric, _>(
             query,
             vector_storage,
             point_deleted,
             is_stopped,
+            hardware_counter,
         ),
     }
 }
@@ -794,6 +887,7 @@ fn new_multi_scorer_half_with_metric<
     vector_storage: &'a TVectorStorage,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     let vec_deleted = vector_storage.deleted_vector_bitslice();
     match query {
@@ -801,6 +895,7 @@ fn new_multi_scorer_half_with_metric<
             MultiMetricQueryScorer::<VectorElementTypeHalf, TMetric, _>::new(
                 &vector.try_into()?,
                 vector_storage,
+                hardware_counter,
             ),
             point_deleted,
             vec_deleted,
@@ -812,6 +907,7 @@ fn new_multi_scorer_half_with_metric<
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     reco_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -825,6 +921,7 @@ fn new_multi_scorer_half_with_metric<
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     discovery_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -838,6 +935,7 @@ fn new_multi_scorer_half_with_metric<
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
                     context_query,
                     vector_storage,
+                    hardware_counter,
                 ),
                 point_deleted,
                 vec_deleted,
@@ -954,10 +1052,6 @@ where
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
         let mut point_ids = 0..self.point_deleted.len() as PointOffsetType;
         self.peek_top_iter(&mut point_ids, top)
-    }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.query_scorer.take_hardware_counter()
     }
 }
 
