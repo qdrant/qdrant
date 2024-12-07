@@ -43,6 +43,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
+        hardware_counter: HardwareCounterCell,
     ) -> SearchContext<'a, 'b, T> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
@@ -88,7 +89,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             max_record_id,
             pooled,
             use_pruning,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter,
         }
     }
 
@@ -395,11 +396,6 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         // no pruning took place
         false
     }
-
-    /// Return the current hardware measurement counter.
-    pub fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.take()
-    }
 }
 
 #[cfg(test)]
@@ -409,6 +405,7 @@ mod tests {
     use std::borrow::Cow;
     use std::sync::OnceLock;
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use rand::Rng;
     use tempfile::TempDir;
 
@@ -521,6 +518,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            HardwareCounterCell::new(),
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
     }
@@ -536,6 +534,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -545,6 +545,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         assert_eq!(
@@ -565,10 +566,10 @@ mod tests {
             ]
         );
 
+        drop(search_context);
+
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
-        let counter = search_context.take_hardware_counter();
-        assert_eq!(counter.cpu_counter().get(), 9);
-        counter.discard_results();
+        assert_eq!(accumulator.get_cpu(), 9);
     }
 
     #[test]
@@ -587,6 +588,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -596,6 +599,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         assert_eq!(
@@ -615,7 +619,6 @@ mod tests {
                 },
             ]
         );
-        search_context.take_hardware_counter().discard_results();
         drop(search_context);
 
         // update index with new point
@@ -627,6 +630,7 @@ mod tests {
             },
             None,
         );
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -636,6 +640,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         assert_eq!(
@@ -659,7 +664,6 @@ mod tests {
                 },
             ]
         );
-        search_context.take_hardware_counter().discard_results();
     }
 
     #[test]
@@ -679,6 +683,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -688,6 +694,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         assert_eq!(
@@ -708,13 +715,15 @@ mod tests {
             ]
         );
 
+        drop(search_context);
         // [ID=1] (Retrieve all 9 Vectors) => 9
         // [ID=2] (Retrieve 1-3)           => 3
         // [ID=3] (Retrieve 1-3)           => 3
         //                       3 + 3 + 9 => 15
-        assert_eq!(search_context.hardware_counter.cpu_counter().get(), 15);
-        search_context.take_hardware_counter().discard_results();
+        assert_eq!(accumulator.get_cpu(), 15);
 
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -724,6 +733,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         assert_eq!(
@@ -745,10 +755,11 @@ mod tests {
             ]
         );
 
+        drop(search_context);
+
         // No difference to previous calculation because it's the same amount of score
         // calculations when increasing the "top" parameter.
-        assert_eq!(search_context.hardware_counter.cpu_counter().get(), 15);
-        search_context.take_hardware_counter().discard_results();
+        assert_eq!(accumulator.get_cpu(), 15);
     }
 
     #[test]
@@ -762,6 +773,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -771,6 +784,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -798,6 +812,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -807,6 +823,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -839,6 +856,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -848,6 +867,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
@@ -892,6 +912,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -901,6 +923,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         assert_eq!(
@@ -931,6 +954,8 @@ mod tests {
         });
 
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -940,6 +965,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         let scores = search_context.plain_search(&[1, 3, 2]);
@@ -961,13 +987,13 @@ mod tests {
             ]
         );
 
+        drop(search_context);
+
         // [ID=1] (Retrieve three sparse vectors (1,2,3)) + QueryLength=3 => 6
         // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
         // [ID=3] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
         //                                                      6 + 5 + 5 => 16
-        let hardware_counter = search_context.take_hardware_counter();
-        assert_eq!(hardware_counter.cpu_counter().get(), 16);
-        hardware_counter.discard_results();
+        assert_eq!(accumulator.get_cpu(), 16);
     }
 
     #[test]
@@ -982,6 +1008,8 @@ mod tests {
 
         // query vector has a gap for dimension 2
         let is_stopped = AtomicBool::new(false);
+        let accumulator = HwMeasurementAcc::new();
+        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 3],
@@ -991,6 +1019,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
+            hardware_counter,
         );
 
         let scores = search_context.plain_search(&[1, 2, 3]);
@@ -1012,12 +1041,12 @@ mod tests {
             ]
         );
 
+        drop(search_context);
+
         // [ID=1] (Retrieve two sparse vectors (1,2)) + QueryLength=2 => 4
         // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4
         // [ID=3] (Retrieve one sparse vector (3))    + QueryLength=2 => 3
         //                                                  4 + 4 + 3 => 11
-        let hardware_counter = search_context.take_hardware_counter();
-        assert_eq!(hardware_counter.cpu_counter().get(), 11);
-        hardware_counter.discard_results();
+        assert_eq!(accumulator.get_cpu(), 11);
     }
 }

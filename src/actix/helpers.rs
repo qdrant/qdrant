@@ -17,9 +17,10 @@ pub fn get_request_hardware_counter(
     report_to_api: bool,
 ) -> RequestHwCounter {
     RequestHwCounter::new(
-        HwMeasurementAcc::new_with_drain(&dispatcher.get_collection_hw_metrics(collection_name)),
+        HwMeasurementAcc::new_with_metrics_drain(
+            dispatcher.get_collection_hw_metrics(collection_name),
+        ),
         report_to_api,
-        false,
     )
 }
 

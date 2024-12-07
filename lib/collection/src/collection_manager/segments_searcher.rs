@@ -170,6 +170,7 @@ impl SegmentsSearcher {
         batch_request: &CoreSearchRequestBatch,
         collection_config: &CollectionConfigInternal,
         is_stopped_guard: &StoppingGuard,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<QueryContext>> {
         let indexing_threshold_kb = collection_config
             .optimizer_config
@@ -196,9 +197,11 @@ impl SegmentsSearcher {
             }
         }
 
-        let mut query_context =
-            QueryContext::new(indexing_threshold_kb.max(full_scan_threshold_kb))
-                .with_is_stopped(is_stopped_guard.get_is_stopped());
+        let mut query_context = QueryContext::new(
+            indexing_threshold_kb.max(full_scan_threshold_kb),
+            hw_measurement_acc,
+        )
+        .with_is_stopped(is_stopped_guard.get_is_stopped());
 
         for search_request in &batch_request.searches {
             search_request
@@ -240,7 +243,6 @@ impl SegmentsSearcher {
         runtime_handle: &Handle,
         sampling_enabled: bool,
         query_context: QueryContext,
-        hw_measurement_acc: &HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let query_context_arc = Arc::new(query_context);
 
@@ -265,7 +267,6 @@ impl SegmentsSearcher {
             segments
                 .map(|segment| {
                     let query_context_arc_segment = query_context_arc.clone();
-                    let hw_collector = hw_measurement_acc.new_collector();
 
                     let search = runtime_handle.spawn_blocking({
                         let (segment, batch_request) = (segment.clone(), batch_request.clone());
@@ -273,17 +274,12 @@ impl SegmentsSearcher {
                             let segment_query_context =
                                 query_context_arc_segment.get_segment_query_context();
 
-                            let res = search_in_segment(
+                            search_in_segment(
                                 segment,
                                 batch_request,
                                 use_sampling,
                                 &segment_query_context,
-                            );
-
-                            hw_collector
-                                .merge_from_cell(segment_query_context.take_hardware_counter());
-
-                            res
+                            )
                         }
                     });
                     (segment, search)
@@ -325,22 +321,17 @@ impl SegmentsSearcher {
                             .map(|batch_id| batch_request.searches[*batch_id].clone())
                             .collect(),
                     });
-                    let hw_collector = hw_measurement_acc.new_collector();
 
                     res.push(runtime_handle.spawn_blocking(move || {
                         let segment_query_context =
                             query_context_arc_segment.get_segment_query_context();
 
-                        let result = search_in_segment(
+                        search_in_segment(
                             segment,
                             partial_batch_request,
                             false,
                             &segment_query_context,
-                        );
-
-                        hw_collector.merge_from_cell(segment_query_context.take_hardware_counter());
-
-                        result
+                        )
                     }))
                 }
                 res
@@ -777,15 +768,13 @@ mod tests {
             Arc::new(batch_request),
             &Handle::current(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-            &hw_acc,
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
         )
         .await
         .unwrap()
         .into_iter()
         .next()
         .unwrap();
-        hw_acc.discard();
 
         // eprintln!("result = {:?}", &result);
 
@@ -840,22 +829,24 @@ mod tests {
             let batch_request = Arc::new(batch_request);
 
             let hw_measurement_acc = HwMeasurementAcc::new();
+            let query_context =
+                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
 
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
                 batch_request.clone(),
                 &Handle::current(),
                 false,
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-                &hw_measurement_acc,
+                query_context,
             )
             .await
             .unwrap();
 
             assert_ne!(hw_measurement_acc.get_cpu(), 0);
-            hw_measurement_acc.discard();
 
             let hw_measurement_acc = HwMeasurementAcc::new();
+            let query_context =
+                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
 
             assert!(!result_no_sampling.is_empty());
 
@@ -864,15 +855,13 @@ mod tests {
                 batch_request,
                 &Handle::current(),
                 true,
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB),
-                &hw_measurement_acc,
+                query_context,
             )
             .await
             .unwrap();
             assert!(!result_sampling.is_empty());
 
             assert_ne!(hw_measurement_acc.get_cpu(), 0);
-            hw_measurement_acc.discard();
 
             // assert equivalence in depth
             assert_eq!(result_no_sampling[0].len(), result_sampling[0].len());

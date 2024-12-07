@@ -162,10 +162,11 @@ impl PointsInternalService {
         &self,
         collection_name: String,
     ) -> RequestHwCounter {
-        let counter =
-            HwMeasurementAcc::new_with_drain(&self.toc.get_collection_hw_metrics(collection_name));
+        let counter = HwMeasurementAcc::new_with_metrics_drain(
+            self.toc.get_collection_hw_metrics(collection_name),
+        );
 
-        RequestHwCounter::new(counter, self.service_config.hardware_reporting(), true)
+        RequestHwCounter::new(counter, self.service_config.hardware_reporting())
     }
 }
 

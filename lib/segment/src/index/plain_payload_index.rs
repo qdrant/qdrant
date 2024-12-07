@@ -309,11 +309,11 @@ impl VectorIndex for PlainIndex {
                             &vector_storage,
                             deleted_points,
                             &is_stopped,
+                            query_context.hardware_counter(),
                         )
                         .map(|scorer| {
                             let res =
                                 scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top);
-                            query_context.apply_hardware_counter(scorer.take_hardware_counter());
                             res
                         })
                     })
@@ -334,12 +334,9 @@ impl VectorIndex for PlainIndex {
                             &vector_storage,
                             deleted_points,
                             &is_stopped,
+                            query_context.hardware_counter(),
                         )
-                        .map(|scorer| {
-                            let res = scorer.peek_top_all(top);
-                            query_context.apply_hardware_counter(scorer.take_hardware_counter());
-                            res
-                        })
+                        .map(|scorer| scorer.peek_top_all(top))
                     })
                     .collect()
             }

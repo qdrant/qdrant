@@ -23,7 +23,11 @@ impl<
         TQuery: Query<SparseVector> + TransformInto<TQuery, SparseVector, SparseVector>,
     > SparseCustomQueryScorer<'a, TVectorStorage, TQuery>
 {
-    pub fn new(query: TQuery, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(
+        query: TQuery,
+        vector_storage: &'a TVectorStorage,
+        hardware_counter: HardwareCounterCell,
+    ) -> Self {
         let query: TQuery = TransformInto::transform(query, |mut vector| {
             vector.sort_by_indices();
             Ok(vector)
@@ -33,7 +37,7 @@ impl<
         Self {
             vector_storage,
             query,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter,
         }
     }
 }
@@ -74,9 +78,5 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
-    }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.take()
     }
 }

@@ -94,7 +94,7 @@ async fn do_recommend_batch_points(
     read_consistency: Option<ReadConsistency>,
     access: Access,
     timeout: Option<Duration>,
-    hw_measurement_acc: &HwMeasurementAcc,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<Vec<ScoredPoint>>, StorageError> {
     let requests = request
         .searches

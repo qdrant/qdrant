@@ -20,7 +20,7 @@ impl TableOfContent {
         requests: Vec<ShardQueryRequest>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<ShardQueryResponse>> {
         let collection = self.get_collection_unchecked(collection_name).await?;
 

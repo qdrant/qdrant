@@ -87,10 +87,9 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await;
-    hw_acc.discard();
 
     match search_res {
         Ok(res) => {
@@ -158,10 +157,9 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await;
-    hw_acc.discard();
 
     match search_res {
         Ok(res) => {
@@ -194,12 +192,11 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .unwrap();
     assert_eq!(count_res.count, 1);
-    hw_acc.discard();
 }
 
 // FIXME: does not work
@@ -386,13 +383,12 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
         None,
         ShardSelectorInternal::All,
         None,
-        &hw_acc,
+        hw_acc,
     )
     .await
     .unwrap();
     assert!(!result.is_empty());
     let top1 = &result[0];
-    hw_acc.discard();
 
     assert!(top1.id == 5.into() || top1.id == 6.into());
 }
