@@ -623,15 +623,23 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer_builder = |vector_id| {
             let vector = vector_storage.get_vector(vector_id);
             let vector = vector.as_vec_ref().into();
+            let hardware_counter = HardwareCounterCell::disposable();
             let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
                 quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
                     stopped,
+                    hardware_counter,
                 )
             } else {
-                new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice())
+                new_raw_scorer(
+                    vector,
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    stopped,
+                    hardware_counter,
+                )
             }?;
             Ok((raw_scorer, None))
         };
@@ -662,14 +670,22 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer_builder = |block_point_id| -> OperationResult<_> {
             let vector = vector_storage.get_vector(block_point_id);
             let vector = vector.as_vec_ref().into();
+            let hardware_counter = HardwareCounterCell::disposable();
             let raw_scorer = match quantized_vectors.as_ref() {
                 Some(quantized_storage) => quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     deleted_bitslice,
                     stopped,
+                    hardware_counter,
                 ),
-                None => new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice()),
+                None => new_raw_scorer(
+                    vector,
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    stopped,
+                    hardware_counter,
+                ),
             }?;
             let block_condition_checker: Box<dyn FilterContext> = Box::new(BuildConditionChecker {
                 filter_list: block_filter_list,
