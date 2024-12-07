@@ -73,6 +73,9 @@ ARG FEATURES
 # Pass custom `RUSTFLAGS` (e.g., `--cfg tokio_unstable` to enable Tokio tracing/`tokio-console`)
 ARG RUSTFLAGS
 
+# Enable debug symbols (defaults to 0/false)
+ARG DEBUG_SYMBOLS=0
+
 # Select linker (e.g., `mold`, `lld` or an empty string for the default linker)
 ARG LINKER=mold
 
@@ -83,7 +86,7 @@ COPY --from=planner /qdrant/recipe.json recipe.json
 # https://github.com/tonistiigi/xx/pull/108
 RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
-    RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
+    RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS $([ "$DEBUG_SYMBOLS" = 1 ] && echo '-C debuginfo=2')" \
     xx-cargo chef cook --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --recipe-path recipe.json
 
 COPY . .
@@ -95,7 +98,7 @@ ARG GIT_COMMIT_ID
 # https://github.com/tonistiigi/xx/pull/108
 RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
     PATH="$PATH:/opt/mold/bin" \
-    RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS" \
+    RUSTFLAGS="${LINKER:+-C link-arg=-fuse-ld=}$LINKER $RUSTFLAGS $([ "$DEBUG_SYMBOLS" = 1 ] && echo '-C debuginfo=2')" \
     xx-cargo build --profile $PROFILE ${FEATURES:+--features} $FEATURES --features=stacktrace --bin qdrant \
     && PROFILE_DIR=$(if [ "$PROFILE" = dev ]; then echo debug; else echo $PROFILE; fi) \
     && mv target/$(xx-cargo --print-target-triple)/$PROFILE_DIR/qdrant /qdrant/qdrant
