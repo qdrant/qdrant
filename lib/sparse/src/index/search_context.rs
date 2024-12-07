@@ -566,6 +566,8 @@ mod tests {
             ]
         );
 
+        drop(search_context);
+
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
         assert_eq!(accumulator.get_cpu(), 9);
     }
@@ -713,6 +715,7 @@ mod tests {
             ]
         );
 
+        drop(search_context);
         // [ID=1] (Retrieve all 9 Vectors) => 9
         // [ID=2] (Retrieve 1-3)           => 3
         // [ID=3] (Retrieve 1-3)           => 3
@@ -751,6 +754,8 @@ mod tests {
                 ScoredPointOffset { score: 6.0, idx: 9 },
             ]
         );
+
+        drop(search_context);
 
         // No difference to previous calculation because it's the same amount of score
         // calculations when increasing the "top" parameter.
@@ -982,6 +987,8 @@ mod tests {
             ]
         );
 
+        drop(search_context);
+
         // [ID=1] (Retrieve three sparse vectors (1,2,3)) + QueryLength=3 => 6
         // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
         // [ID=3] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
@@ -1033,6 +1040,8 @@ mod tests {
                 },
             ]
         );
+
+        drop(search_context);
 
         // [ID=1] (Retrieve two sparse vectors (1,2)) + QueryLength=2 => 4
         // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4
