@@ -91,8 +91,8 @@ async fn test_hw_metrics_cancellation() {
             CollectionError::Timeout { description: _ }
         ));
 
-        // Currently this test only passes with this delay
-        // std::thread::sleep(Duration::from_millis(2));
+        // Wait until the cancellation is processed is finished
+        std::thread::sleep(Duration::from_millis(50));
     }
 
     assert!(outer_hw.get_cpu() > 0);
