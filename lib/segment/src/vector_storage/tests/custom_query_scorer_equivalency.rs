@@ -3,6 +3,14 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
+use itertools::Itertools;
+use rand::rngs::StdRng;
+use rand::seq::IteratorRandom;
+use rand::{thread_rng, Rng, SeedableRng};
+use rstest::rstest;
+
 use super::utils::sampler;
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
@@ -20,13 +28,6 @@ use crate::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, Re
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 use crate::vector_storage::{new_raw_scorer_for_test, VectorStorageEnum};
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use itertools::Itertools;
-use rand::rngs::StdRng;
-use rand::seq::IteratorRandom;
-use rand::{thread_rng, Rng, SeedableRng};
-use rstest::rstest;
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;

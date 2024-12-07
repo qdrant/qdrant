@@ -405,6 +405,10 @@ mod tests {
     use std::borrow::Cow;
     use std::sync::OnceLock;
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use rand::Rng;
+    use tempfile::TempDir;
+
     use super::*;
     use crate::common::scores_memory_pool::ScoresMemoryPool;
     use crate::common::sparse_vector::SparseVector;
@@ -416,9 +420,6 @@ mod tests {
     use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
     use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
     use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use rand::Rng;
-    use tempfile::TempDir;
 
     // ---- Test instantiations ----
 

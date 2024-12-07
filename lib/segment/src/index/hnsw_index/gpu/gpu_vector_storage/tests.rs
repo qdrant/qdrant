@@ -2,6 +2,14 @@
 
 use std::path::Path;
 
+use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
+use parking_lot::RwLock;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use rocksdb::DB;
+use rstest::rstest;
+
 use super::*;
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorRef};
@@ -23,13 +31,6 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage_half,
 };
 use crate::vector_storage::{new_raw_scorer_for_test, RawScorer};
-use bitvec::vec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
-use parking_lot::RwLock;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
-use rocksdb::DB;
-use rstest::rstest;
 
 #[derive(Debug, Clone, Copy)]
 enum TestElementType {

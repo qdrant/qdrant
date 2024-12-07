@@ -1254,15 +1254,16 @@ pub struct ProxyDeletedPoint {
 mod tests {
     use std::fs::File;
 
-    use super::*;
-    use crate::collection_manager::fixtures::{
-        build_segment_1, build_segment_2, empty_segment, random_segment,
-    };
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
     use segment::types::{FieldCondition, PayloadSchemaType};
     use serde_json::json;
     use tempfile::{Builder, TempDir};
+
+    use super::*;
+    use crate::collection_manager::fixtures::{
+        build_segment_1, build_segment_2, empty_segment, random_segment,
+    };
 
     #[test]
     fn test_writing() {

@@ -37,7 +37,7 @@ impl<
         Self {
             vector_storage,
             query,
-            hardware_counter
+            hardware_counter,
         }
     }
 }

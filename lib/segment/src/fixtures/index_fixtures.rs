@@ -3,6 +3,11 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
+use rand::Rng;
+
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
@@ -14,10 +19,6 @@ use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
     raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, DEFAULT_STOPPED,
 };
-use bitvec::prelude::{BitSlice, BitVec};
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use rand::Rng;
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
     (0..size).map(|_| rnd_gen.gen_range(-1.0..1.0)).collect()

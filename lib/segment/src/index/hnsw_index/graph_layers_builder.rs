@@ -856,7 +856,6 @@ mod tests {
         for x in selected_candidates.iter() {
             eprintln!("selected_candidates = {x}");
         }
-
     }
 
     #[test]

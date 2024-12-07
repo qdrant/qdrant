@@ -282,6 +282,12 @@ mod tests {
     use std::mem::transmute;
     use std::sync::Arc;
 
+    use atomic_refcell::AtomicRefCell;
+    use common::counter::hardware_counter::HardwareCounterCell;
+    use common::types::ScoredPointOffset;
+    use memory::mmap_ops::transmute_to_u8_slice;
+    use tempfile::Builder;
+
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::data_types::vectors::{DenseVector, QueryVector};
@@ -291,11 +297,6 @@ mod tests {
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
     use crate::vector_storage::new_raw_scorer_for_test;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-    use atomic_refcell::AtomicRefCell;
-    use common::counter::hardware_counter::HardwareCounterCell;
-    use common::types::ScoredPointOffset;
-    use memory::mmap_ops::transmute_to_u8_slice;
-    use tempfile::Builder;
 
     #[test]
     fn test_basic_persistence() {
@@ -597,7 +598,6 @@ mod tests {
         .unwrap();
         let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
 
-
         drop(scorer);
 
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
@@ -672,7 +672,6 @@ mod tests {
         let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
         let res_count = scorer.score_points(&query_points, &mut res);
         res.resize(res_count, ScoredPointOffset { idx: 0, score: 0. });
-
 
         assert_eq!(res.len(), 3);
         assert_eq!(res[0].idx, 0);

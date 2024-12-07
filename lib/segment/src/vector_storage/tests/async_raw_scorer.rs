@@ -1,11 +1,12 @@
 use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
-use common::counter::hardware_counter::HardwareCounterCell;
+
 use super::utils::{delete_random_vectors, insert_distributed_vectors, sampler, score, Result};
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
@@ -114,7 +115,13 @@ fn test_random_score(
 
     let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::DenseMemmap(storage) = storage {
-        async_raw_scorer::new(query, storage, deleted_points, &is_stopped, HardwareCounterCell::new())?
+        async_raw_scorer::new(
+            query,
+            storage,
+            deleted_points,
+            &is_stopped,
+            HardwareCounterCell::new(),
+        )?
     } else {
         unreachable!();
     };

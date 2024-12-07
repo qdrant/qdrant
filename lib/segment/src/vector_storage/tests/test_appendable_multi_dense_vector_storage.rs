@@ -18,7 +18,9 @@ use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
-use crate::vector_storage::{new_raw_scorer_for_test, MultiVectorStorage, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{
+    new_raw_scorer_for_test, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+};
 
 #[derive(Clone, Copy)]
 enum MultiDenseStorageType {
@@ -120,7 +122,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let vector: Vec<Vec<f32>> = vec![vec![2.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
@@ -140,7 +143,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let vector: Vec<Vec<f32>> = vec![vec![1.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     drop(scorer);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
@@ -159,7 +163,8 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     let vector: Vec<Vec<f32>> = vec![vec![1.0; vector_dim]];
     let query = QueryVector::Nearest(vector.try_into().unwrap());
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_all(5);
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
@@ -219,7 +224,8 @@ fn do_test_update_from_delete_points(
     let query = QueryVector::Nearest(vector.try_into().unwrap());
 
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");

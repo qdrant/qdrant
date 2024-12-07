@@ -49,7 +49,6 @@ impl HwMeasurementAcc {
         }
     }
 
-
     /// Create a disposable accumulator, which will not accumulate any values.
     /// WARNING: This is intended for specific internal use-cases only.
     /// DO NOT use it in tests or if you don't know what you're doing.

@@ -2,9 +2,10 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use tempfile::Builder;
-use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -52,7 +53,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -72,7 +74,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
@@ -91,7 +94,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_all(5);
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
@@ -149,7 +153,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let query = vector.as_slice().into();
 
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
@@ -210,7 +215,8 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         .unwrap();
 
     let raw_scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
     let query_points = vec![0, 1, 2, 3, 4];
@@ -283,7 +289,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
             borrowed_id_tracker.deleted_point_bitslice(),
             storage.deleted_vector_bitslice(),
             &stopped,
-            hardware_counter
+            hardware_counter,
         )
         .unwrap();
     let scorer_orig = new_raw_scorer_for_test(
@@ -317,11 +323,12 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
             borrowed_id_tracker.deleted_point_bitslice(),
             storage.deleted_vector_bitslice(),
             &stopped,
-            hardware_counter
+            hardware_counter,
         )
         .unwrap();
     let scorer_orig =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice()).unwrap();
+        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
+            .unwrap();
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);
