@@ -104,7 +104,7 @@ RUN PKG_CONFIG="/usr/bin/$(xx-info)-pkg-config" \
 RUN mkdir /static && STATIC_DIR=/static ./tools/sync-web-ui.sh
 
 
-FROM debian:12-slim AS qdrant
+FROM gcr.io/distroless/cc-debian12 AS qdrant
 
 RUN apt-get update
 
