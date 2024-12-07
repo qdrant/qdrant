@@ -7,7 +7,6 @@ N_PEERS = 3
 N_SHARDS = 3
 COLLECTION_NAME = "test_collection"
 
-
 def create_snapshot(peer_api_uri):
     r = requests.post(f"{peer_api_uri}/collections/{COLLECTION_NAME}/snapshots")
     assert_http_ok(r)
@@ -87,9 +86,14 @@ def recover_from_snapshot(tmp_path: pathlib.Path, n_replicas):
     snapshot_name = create_snapshot(peer_api_uris[-1])
     assert snapshot_name is not None
 
-    # move file
+    # move snapshots across peers. 
+    #
     snapshot_path = Path(peer_dirs[-1]) / "snapshots" / COLLECTION_NAME / snapshot_name
     assert snapshot_path.exists()
+    # we setup the snapshots base paths on the peer where snapshot from an another peer will 
+    # be moved.
+    create_snapshot(peer_api_uris[0]) 
+    # move
     snapshot_path.rename(Path(peer_dirs[0]) / "snapshots" / COLLECTION_NAME / snapshot_name)
 
     process_peer_id = get_peer_id(peer_api_uris[-1])

@@ -70,7 +70,9 @@ impl TableOfContent {
         }
 
         let collection_path = self.create_collection_path(collection_name).await?;
-        let snapshots_path = self.create_snapshots_path(collection_name).await?;
+        // derive the snapshots path for the collection to be used across collection operation, the directories for the snapshot
+        // is created only when a create snapshot api is invoked.
+        let snapshots_path = self.snapshots_path_for_collection(collection_name);
 
         let collection_defaults_config = self.storage_config.collection.as_ref();
 
