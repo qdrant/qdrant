@@ -226,9 +226,11 @@ mod tests {
         ef: usize,
         accuracy: f32,
     ) {
-        let graph: GraphLayers<GraphLinksRam> = graph.into_graph_layers(None).unwrap();
-        let ref_graph: GraphLayers<GraphLinksRam> =
-            test.graph_layers_builder.into_graph_layers(None).unwrap();
+        let graph: GraphLayers<GraphLinksRam> = graph.into_graph_layers(None, false).unwrap();
+        let ref_graph: GraphLayers<GraphLinksRam> = test
+            .graph_layers_builder
+            .into_graph_layers(None, false)
+            .unwrap();
 
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();
