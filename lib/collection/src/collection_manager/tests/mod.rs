@@ -10,6 +10,7 @@ use segment::types::{Payload, PointIdType, WithPayload, WithVector};
 use serde_json::json;
 use tempfile::Builder;
 
+use super::holders::proxy_segment;
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
@@ -31,9 +32,8 @@ fn wrap_proxy(segments: LockedSegmentHolder, sid: SegmentId, path: &Path) -> Seg
     let proxy = ProxySegment::new(
         optimizing_segment,
         temp_segment,
-        Default::default(),
-        Default::default(),
-        Default::default(),
+        proxy_segment::LockedRmSet::default(),
+        proxy_segment::LockedIndexChanges::default(),
     );
 
     let (new_id, _replaced_segments) = write_segments.swap_new(proxy, &[sid]);
@@ -278,9 +278,8 @@ fn test_proxy_shared_updates() {
         .unwrap();
     segment2.set_payload(10, idx2, &old_payload, &None).unwrap();
 
-    let deleted_points = Default::default();
-    let deleted_indexes = Default::default();
-    let created_indexes = Default::default();
+    let deleted_points = proxy_segment::LockedRmSet::default();
+    let changed_indexes = proxy_segment::LockedIndexChanges::default();
 
     let locked_segment_1 = LockedSegment::new(segment1);
     let locked_segment_2 = LockedSegment::new(segment2);
@@ -289,16 +288,14 @@ fn test_proxy_shared_updates() {
         locked_segment_1,
         write_segment.clone(),
         Arc::clone(&deleted_points),
-        Arc::clone(&created_indexes),
-        Arc::clone(&deleted_indexes),
+        Arc::clone(&changed_indexes),
     );
 
     let proxy_segment_2 = ProxySegment::new(
         locked_segment_2,
         write_segment,
         deleted_points,
-        created_indexes,
-        deleted_indexes,
+        changed_indexes,
     );
 
     let mut holder = SegmentHolder::default();

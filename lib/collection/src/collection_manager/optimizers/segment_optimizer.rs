@@ -20,7 +20,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentConfig, VectorStorageType};
 
-use crate::collection_manager::holders::proxy_segment::{self, ProxySegment};
+use crate::collection_manager::holders::proxy_segment::{self, ProxyIndexChange, ProxySegment};
 use crate::collection_manager::holders::segment_holder::{
     LockedSegment, LockedSegmentHolder, SegmentId,
 };
@@ -386,8 +386,7 @@ pub trait SegmentOptimizer {
     ///
     /// * `optimizing_segments` - Segments to optimize
     /// * `proxy_deleted_points` - Holds a set of points, deleted while optimization was running
-    /// * `proxy_deleted_indexes` - Holds a set of Indexes, deleted while optimization was running
-    /// * `proxy_created_indexes` - Holds a set of Indexes, created while optimization was running
+    /// * `proxy_changed_indexes` - Holds a set of indexes changes, created or deleted while optimization was running
     /// * `stopped` - flag to check if optimization was cancelled by external thread
     ///
     /// # Result
@@ -397,8 +396,7 @@ pub trait SegmentOptimizer {
         &self,
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: proxy_segment::LockedRmSet,
-        proxy_deleted_indexes: proxy_segment::LockedFieldsSet,
-        proxy_created_indexes: proxy_segment::LockedFieldsMap,
+        proxy_changed_indexes: proxy_segment::LockedIndexChanges,
         permit: CpuPermit,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
@@ -442,47 +440,50 @@ pub trait SegmentOptimizer {
             )?;
         }
 
-        for field in proxy_deleted_indexes.read().iter() {
-            segment_builder.remove_indexed_field(field);
-        }
-        for (field, schema_type) in proxy_created_indexes.read().iter() {
-            segment_builder.add_indexed_field(field.to_owned(), schema_type.to_owned());
+        // Apply index changes to segment builder
+        // Indexes are only used for defragmentation in segment builder, so versions are ignored
+        for (field_name, change) in proxy_changed_indexes.read().iter_unordered() {
+            match change {
+                ProxyIndexChange::Create(schema, _) => {
+                    segment_builder.add_indexed_field(field_name.to_owned(), schema.to_owned());
+                }
+                ProxyIndexChange::Delete(_) => {
+                    segment_builder.remove_indexed_field(field_name);
+                }
+            }
         }
 
         let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;
 
-        // Delete points in 2 steps
-        // First step - delete all points with read lock
-        // Second step - delete all the rest points with full write lock
-        //
-        // Use collection copy to prevent long time lock of `proxy_deleted_points`
+        // Apply index changes before point deletions
+        // Point deletions bump the segment version, can cause index changes to be ignored
+        let old_optimized_segment_version = optimized_segment.version();
+        for (field_name, change) in proxy_changed_indexes.read().iter_ordered() {
+            debug_assert!(
+                change.version() >= old_optimized_segment_version,
+                "proxied index change should have newer version than segment",
+            );
+            match change {
+                ProxyIndexChange::Create(schema, version) => {
+                    optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                }
+                ProxyIndexChange::Delete(version) => {
+                    optimized_segment.delete_field_index(*version, field_name)?;
+                }
+            }
+            self.check_cancellation(stopped)?;
+        }
+
+        // Delete points
         let deleted_points_snapshot = proxy_deleted_points
             .read()
             .iter()
             .map(|(point_id, versions)| (*point_id, *versions))
             .collect::<Vec<_>>();
-
         for (point_id, versions) in deleted_points_snapshot {
             optimized_segment
                 .delete_point(versions.operation_version, point_id)
                 .unwrap();
-        }
-
-        let deleted_indexes = proxy_deleted_indexes.read().iter().cloned().collect_vec();
-        let create_indexes = proxy_created_indexes.read().clone();
-
-        for delete_field_name in &deleted_indexes {
-            optimized_segment.delete_field_index(optimized_segment.version(), delete_field_name)?;
-            self.check_cancellation(stopped)?;
-        }
-
-        for (create_field_name, schema) in create_indexes {
-            optimized_segment.create_field_index(
-                optimized_segment.version(),
-                &create_field_name,
-                Some(&schema),
-            )?;
-            self.check_cancellation(stopped)?;
         }
 
         Ok(optimized_segment)
@@ -548,8 +549,7 @@ pub trait SegmentOptimizer {
 
         let tmp_segment = self.temp_segment(false)?;
         let proxy_deleted_points = proxy_segment::LockedRmSet::default();
-        let proxy_created_indexes = proxy_segment::LockedFieldsMap::default();
-        let proxy_deleted_indexes = proxy_segment::LockedFieldsSet::default();
+        let proxy_index_changes = proxy_segment::LockedIndexChanges::default();
 
         let mut proxies = Vec::new();
         for sg in optimizing_segments.iter() {
@@ -557,8 +557,7 @@ pub trait SegmentOptimizer {
                 sg.clone(),
                 tmp_segment.clone(),
                 Arc::clone(&proxy_deleted_points),
-                Arc::clone(&proxy_created_indexes),
-                Arc::clone(&proxy_deleted_indexes),
+                Arc::clone(&proxy_index_changes),
             );
             // Wrapped segment is fresh, so it has no operations
             // Operation with number 0 will be applied
@@ -602,8 +601,7 @@ pub trait SegmentOptimizer {
         let mut optimized_segment = match self.build_new_segment(
             &optimizing_segments,
             Arc::clone(&proxy_deleted_points),
-            Arc::clone(&proxy_deleted_indexes),
-            Arc::clone(&proxy_created_indexes),
+            Arc::clone(&proxy_index_changes),
             permit,
             stopped,
         ) {
@@ -639,34 +637,40 @@ pub trait SegmentOptimizer {
         {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
+            let old_optimized_segment_version = optimized_segment.version();
+
+            // Apply index changes before point deletions
+            // Point deletions bump the segment version, can cause index changes to be ignored
+            for (field_name, change) in proxy_index_changes.read().iter_ordered() {
+                debug_assert!(
+                    change.version() >= old_optimized_segment_version,
+                    "proxied index change should have newer version than segment",
+                );
+                match change {
+                    ProxyIndexChange::Create(schema, version) => {
+                        optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                    }
+                    ProxyIndexChange::Delete(version) => {
+                        optimized_segment.delete_field_index(*version, field_name)?;
+                    }
+                }
+                self.check_cancellation(stopped)?;
+            }
+
             let deleted_points = proxy_deleted_points.read();
             let points_diff = deleted_points
                 .iter()
                 .filter(|&(point_id, _version)| !already_remove_points.contains(point_id));
-            let optimized_segment_version = optimized_segment.version();
             for (&point_id, &versions) in points_diff {
                 // Delete points here with their operation version, that'll bump the optimized
                 // segment version and will ensure we flush the new changes
                 debug_assert!(
-                    versions.operation_version >= optimized_segment_version,
+                    versions.operation_version >= old_optimized_segment_version,
                     "proxied point deletes should have newer version than segment",
                 );
                 optimized_segment
                     .delete_point(versions.operation_version, point_id)
                     .unwrap();
-            }
-
-            for deleted_field_name in proxy_deleted_indexes.read().iter() {
-                optimized_segment
-                    .delete_field_index(optimized_segment.version(), deleted_field_name)?;
-            }
-
-            for (created_field_name, schema_type) in proxy_created_indexes.read().iter() {
-                optimized_segment.create_field_index(
-                    optimized_segment.version(),
-                    created_field_name,
-                    Some(schema_type),
-                )?;
             }
 
             optimized_segment.prefault_mmap_pages();
@@ -677,7 +681,7 @@ pub trait SegmentOptimizer {
             debug_assert_eq!(
                 proxies.len(),
                 proxy_ids.len(),
-                "swapped different number of proxies on unwrap, missing or incorrect segment IDs?"
+                "swapped different number of proxies on unwrap, missing or incorrect segment IDs?",
             );
 
             let has_appendable_segments = write_segments_guard.has_appendable_segment();
