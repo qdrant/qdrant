@@ -154,7 +154,7 @@ impl QueryGroupRequest {
         // Adjust limit to fetch enough points to fill groups
         request.limit = self.groups * self.group_size;
         request.prefetches.iter_mut().for_each(|prefetch| {
-            increase_limit_for_group(prefetch, self.groups);
+            increase_limit_for_group(prefetch, self.group_size);
         });
 
         let key_not_empty = Filter::new_must_not(Condition::IsEmpty(self.group_by.clone().into()));
@@ -541,10 +541,10 @@ fn values_to_any_variants(values: &[Value]) -> Vec<AnyVariants> {
     any_variants
 }
 
-fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, groups: usize) {
-    shard_prefetch.limit *= groups;
+fn increase_limit_for_group(shard_prefetch: &mut ShardPrefetch, group_size: usize) {
+    shard_prefetch.limit *= group_size;
     shard_prefetch.prefetches.iter_mut().for_each(|prefetch| {
-        increase_limit_for_group(prefetch, groups);
+        increase_limit_for_group(prefetch, group_size);
     });
 }
 
