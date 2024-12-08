@@ -122,7 +122,7 @@ FROM debian:12-slim AS qdrant-cpu
 # Base images for Qdrant with nvidia GPU support.
 FROM nvidia/opengl:1.0-glvnd-devel-ubuntu22.04 AS qdrant-gpu-nvidia
 # Set non-interactive mode for apt-get.
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 # Set NVIDIA driver capabilities. By default, all capabilities are disabled.
 ENV NVIDIA_DRIVER_CAPABILITIES compute,graphics,utility
 # Copy Nvidia ICD loader file into the container.
@@ -134,7 +134,7 @@ LABEL maintainer "Qdrant Team <info@qdrant.tech>"
 # Base images for Qdrant with amd GPU support.
 FROM rocm/dev-ubuntu-22.04 AS qdrant-gpu-amd
 # Set non-interactive mode for apt-get.
-ARG DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive
 # Override maintainer label. AMD base image have it's own maintainer label.
 LABEL maintainer "Qdrant Team <info@qdrant.tech>"
 
