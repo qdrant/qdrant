@@ -529,8 +529,8 @@ impl ShardReplicaSet {
         if !self.replica_state.read().is_local || state.is_some() {
             self.replica_state.write(|rs| {
                 rs.is_local = true;
-                if let Some(active) = state {
-                    rs.set_peer_state(self.this_peer_id(), active);
+                if let Some(state) = state {
+                    rs.set_peer_state(self.this_peer_id(), state);
                 }
             })?;
         }
