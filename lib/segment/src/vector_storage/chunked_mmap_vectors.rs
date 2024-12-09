@@ -105,8 +105,14 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
     fn load_config(config_file: &Path) -> Option<ChunkedMmapConfig> {
         if config_file.exists() {
-            let file = std::fs::File::open(config_file).ok()?;
-            let config: ChunkedMmapConfig = serde_json::from_reader(file).ok()?;
+            let file = std::fs::File::open(config_file)
+                .inspect_err(|e| log::error!("Failed to open config file {config_file:?}: {e}"))
+                .ok()?;
+            let config: ChunkedMmapConfig = serde_json::from_reader(file)
+                .inspect_err(|e| {
+                    log::error!("Failed to deserialize config file {config_file:?}: {e}")
+                })
+                .ok()?;
             Some(config)
         } else {
             None
