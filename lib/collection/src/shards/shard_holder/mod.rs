@@ -1120,7 +1120,7 @@ impl ShardHolder {
     }
 
     /// Queries and accumulates the statistics for local data, uncached.
-    pub async fn calculate_local_segments_stats(&self) -> LocalDataStats {
+    pub async fn calculate_local_shards_stats(&self) -> LocalDataStats {
         let mut stats = LocalDataStats::default();
         for shard in self.shards.iter() {
             stats.accumulate_from(&shard.1.calculate_local_shards_stats().await)
