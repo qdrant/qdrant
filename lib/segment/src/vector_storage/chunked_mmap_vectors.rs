@@ -105,7 +105,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
 
     fn load_config(config_file: &Path) -> Option<ChunkedMmapConfig> {
         if config_file.exists() {
-            let file = std::fs::File::open(&config_file).ok()?;
+            let file = std::fs::File::open(config_file).ok()?;
             let config: ChunkedMmapConfig = serde_json::from_reader(file).ok()?;
             Some(config)
         } else {
