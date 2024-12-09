@@ -332,6 +332,66 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     (now.elapsed().as_millis() as u64, is_cancelled)
 }
 
+/// Unit test for a specific bug we caught before.
+#[test]
+fn test_building_new_segment_bug() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
+
+    let stopped = AtomicBool::new(false);
+
+    let mut segment1 = build_segment_1(dir.path());
+    let mut segment2 = build_segment_2(dir.path());
+
+    let mut builder =
+        SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
+
+    let vector_100_low = only_default_vector(&[1., 1., 0., 0.]);
+    let vector_101_low = only_default_vector(&[2., 2., 0., 0.]);
+    let vector_100_high = only_default_vector(&[3., 3., 0., 0.]);
+    let vector_101_high = only_default_vector(&[4., 4., 0., 0.]);
+
+    // Insert point 100 and 101 in both segments
+    // Do this in a specific order so that:
+    // - the latter segment has a higher point version
+    // - the internal point IDs don't match across segments
+    segment1
+        .upsert_point(123, 100.into(), vector_100_low)
+        .unwrap();
+    segment1
+        .upsert_point(123, 101.into(), vector_101_low)
+        .unwrap();
+
+    segment2
+        .upsert_point(124, 101.into(), vector_101_high.clone())
+        .unwrap();
+    segment2
+        .upsert_point(124, 100.into(), vector_100_high.clone())
+        .unwrap();
+
+    builder.update(&[&segment1, &segment2], &stopped).unwrap();
+
+    let permit_cpu_count = num_rayon_threads(0);
+    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+
+    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+
+    // Assert correct point versions - must have latest
+    assert_eq!(merged_segment.point_version(100.into()), Some(124));
+    assert_eq!(merged_segment.point_version(101.into()), Some(124));
+
+    // Assert correct vectors still belong to the point
+    // This was broken before <https://github.com/qdrant/qdrant/pull/5543>
+    assert_eq!(
+        merged_segment.all_vectors(100.into()).unwrap(),
+        vector_100_high,
+    );
+    assert_eq!(
+        merged_segment.all_vectors(101.into()).unwrap(),
+        vector_101_high,
+    );
+}
+
 #[test]
 fn test_building_cancellation() {
     let baseline_dir = Builder::new()
