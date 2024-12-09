@@ -154,7 +154,7 @@ impl Collection {
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
         let local_stats_cache = LocalDataStatsCache::new_with_values(
-            Self::calculate_segment_stats(&locked_shard_holder).await,
+            Self::calculate_local_shards_stats(&locked_shard_holder).await,
         );
 
         // Once the config is persisted - the collection is considered to be successfully created.
@@ -272,7 +272,7 @@ impl Collection {
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
         let local_stats_cache = LocalDataStatsCache::new_with_values(
-            Self::calculate_segment_stats(&locked_shard_holder).await,
+            Self::calculate_local_shards_stats(&locked_shard_holder).await,
         );
 
         Self {
@@ -798,16 +798,18 @@ impl Collection {
         self.shards_holder.read().await.trigger_optimizers().await;
     }
 
-    async fn calculate_segment_stats(shards_holder: &Arc<RwLock<ShardHolder>>) -> LocalDataStats {
+    async fn calculate_local_shards_stats(
+        shards_holder: &Arc<RwLock<ShardHolder>>,
+    ) -> LocalDataStats {
         let shard_lock = shards_holder.read().await;
-        shard_lock.calculate_local_segments_stats().await
+        shard_lock.calculate_local_shards_stats().await
     }
 
     /// Returns estimations of local shards statistics. This values are cached and might be not 100% up to date.
     /// The cache gets updated every 32 calls.
     pub async fn local_stats_estimations(&self) -> &LocalDataAtomicStats {
         self.local_stats_cache
-            .get_or_update_cache(|| Self::calculate_segment_stats(&self.shards_holder))
+            .get_or_update_cache(|| Self::calculate_local_shards_stats(&self.shards_holder))
             .await
     }
 }
