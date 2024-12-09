@@ -719,6 +719,10 @@ pub struct StrictModeConfig {
     /// Max number of write operations per second per shard per peer
     #[serde(skip_serializing_if = "Option::is_none")]
     pub write_rate_limit_per_sec: Option<usize>,
+
+    /// Max size of a collections payload storage in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_collection_payload_size_bytes: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -739,6 +743,7 @@ impl Hash for StrictModeConfig {
             max_collection_vector_size_bytes,
             read_rate_limit_per_sec,
             write_rate_limit_per_sec,
+            max_collection_payload_size_bytes,
         } = self;
         (
             enabled,
@@ -752,6 +757,7 @@ impl Hash for StrictModeConfig {
             max_collection_vector_size_bytes,
             read_rate_limit_per_sec,
             write_rate_limit_per_sec,
+            max_collection_payload_size_bytes,
         )
             .hash(state);
     }

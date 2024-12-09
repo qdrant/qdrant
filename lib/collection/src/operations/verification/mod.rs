@@ -411,6 +411,7 @@ mod test {
             max_collection_vector_size_bytes: None,
             read_rate_limit_per_sec: None,
             write_rate_limit_per_sec: None,
+            max_collection_payload_size_bytes: None,
         };
 
         fixture_collection(&strict_mode_config).await
