@@ -5002,6 +5002,7 @@ dependencies = [
  "cc",
  "common",
  "criterion",
+ "io",
  "num-traits",
  "num_threads",
  "permutation_iterator",
