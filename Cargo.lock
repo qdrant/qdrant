@@ -1251,7 +1251,7 @@ dependencies = [
  "object_store",
  "ordered-float 4.5.0",
  "parking_lot",
- "pprof 0.13.0",
+ "pprof 0.14.0",
  "proptest",
  "rand 0.8.5",
  "ringbuffer",
@@ -4513,10 +4513,11 @@ dependencies = [
 
 [[package]]
 name = "pprof"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef5c97c51bd34c7e742402e216abdeb44d415fbe6ae41d56b114723e953711cb"
+checksum = "ebbe2f8898beba44815fdc9e5a4ae9c929e21c5dc29b0c774a15555f7f58d6d0"
 dependencies = [
+ "aligned-vec",
  "backtrace",
  "cfg-if",
  "findshlibs",
@@ -5996,7 +5997,7 @@ dependencies = [
  "num-traits",
  "ordered-float 4.5.0",
  "parking_lot",
- "pprof 0.13.0",
+ "pprof 0.14.0",
  "procfs",
  "proptest",
  "quantization",
@@ -6409,7 +6410,7 @@ dependencies = [
  "memory",
  "ordered-float 4.5.0",
  "parking_lot",
- "pprof 0.13.0",
+ "pprof 0.14.0",
  "rand 0.8.5",
  "schemars",
  "serde",
