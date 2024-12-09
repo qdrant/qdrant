@@ -87,7 +87,7 @@ impl GraphLayersBuilder {
             .collect();
 
         let mut links_converter =
-            GraphLinksConverter::new(unlocker_links_layers, compressed, self.m);
+            GraphLinksConverter::new(unlocker_links_layers, compressed, self.m, self.m0);
         if let Some(path) = path {
             links_converter.save_as(path)?;
         }

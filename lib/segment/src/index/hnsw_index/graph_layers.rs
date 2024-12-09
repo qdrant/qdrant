@@ -369,6 +369,7 @@ mod tests {
                 graph_links.clone(),
                 compressed,
                 m,
+                2 * m,
             ))
             .unwrap(),
             entry_points: EntryPoints::new(entry_points_num),
