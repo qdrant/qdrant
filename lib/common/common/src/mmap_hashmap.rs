@@ -146,6 +146,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         }
 
         drop(bufw);
+        file.as_file().sync_all()?;
         file.persist(path)?;
 
         Ok(())
