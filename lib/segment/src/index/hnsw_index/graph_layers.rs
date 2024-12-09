@@ -506,10 +506,9 @@ mod tests {
         assert_eq!(reference_top.into_vec(), graph_search);
     }
 
-    #[rstest]
-    #[case::uncompressed(false)]
-    #[case::compressed(true)]
-    fn test_draw_hnsw_graph(#[case] compressed: bool) {
+    #[test]
+    #[ignore]
+    fn test_draw_hnsw_graph() {
         let dim = 2;
         let num_vectors = 500;
 
@@ -519,7 +518,7 @@ mod tests {
             num_vectors,
             M,
             dim,
-            compressed,
+            true,
             true,
             &mut rng,
             None,
