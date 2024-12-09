@@ -506,7 +506,6 @@ pub trait SegmentOptimizer {
     /// If there were any record changes during the optimization - an additional plain segment will be created.
     ///
     /// Returns id of the created optimized segment. If no optimization was done - returns None
-    ///
     fn optimize(
         &self,
         segments: LockedSegmentHolder,
@@ -584,8 +583,7 @@ pub trait SegmentOptimizer {
                 // because optimized segments could have been changed.
                 // The probability is small, though,
                 // so we can afford this operation under the full collection write lock
-                let op_num = 0;
-                proxy.replicate_field_indexes(op_num)?; // Slow only in case the index is change in the gap between two calls
+                proxy.replicate_field_indexes(0)?; // Slow only in case the index is change in the gap between two calls
                 proxy_ids.push(write_segments.swap_new(proxy, &[idx]).0);
             }
             proxy_ids

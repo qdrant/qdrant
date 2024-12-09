@@ -108,7 +108,7 @@ impl LockedSegment {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
                     Err(locked_segment) => Err(OperationError::service_error(format!(
                         "Removing segment which is still in use: {:?}",
-                        locked_segment.read().data_path()
+                        locked_segment.read().data_path(),
                     ))),
                 }
             }
@@ -117,7 +117,7 @@ impl LockedSegment {
                     Ok(raw_locked_segment) => raw_locked_segment.into_inner().drop_data(),
                     Err(locked_segment) => Err(OperationError::service_error(format!(
                         "Removing proxy segment which is still in use: {:?}",
-                        locked_segment.read().data_path()
+                        locked_segment.read().data_path(),
                     ))),
                 }
             }

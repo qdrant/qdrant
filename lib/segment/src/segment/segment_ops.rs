@@ -284,20 +284,20 @@ impl Segment {
             }
         }
 
-        let (applied, point_id) = operation(self)?;
+        let (applied, internal_id) = operation(self)?;
 
         self.bump_segment_version(op_num);
-        if let Some(point_id) = point_id {
+        if let Some(internal_id) = internal_id {
             self.id_tracker
                 .borrow_mut()
-                .set_internal_version(point_id, op_num)?;
+                .set_internal_version(internal_id, op_num)?;
         }
 
         Ok(applied)
     }
 
     fn bump_segment_version(&mut self, op_num: SeqNumberType) {
-        self.version = Some(max(op_num, self.version.unwrap_or(0)));
+        self.version.replace(max(op_num, self.version.unwrap_or(0)));
     }
 
     pub fn get_internal_id(&self, point_id: PointIdType) -> Option<PointOffsetType> {
