@@ -80,7 +80,8 @@ impl ProxySegment {
     pub fn replicate_field_indexes(&mut self, op_num: SeqNumberType) -> OperationResult<()> {
         let existing_indexes = self.write_segment.get().read().get_indexed_fields();
         let expected_indexes = self.wrapped_segment.get().read().get_indexed_fields();
-        // create missing indexes
+
+        // Add missing indexes
         for (expected_field, expected_schema) in &expected_indexes {
             let existing_schema = existing_indexes.get(expected_field);
 
@@ -98,7 +99,8 @@ impl ProxySegment {
                 )?;
             }
         }
-        // remove extra indexes
+
+        // Remove extra indexes
         for existing_field in existing_indexes.keys() {
             if !expected_indexes.contains_key(existing_field) {
                 self.write_segment
@@ -107,6 +109,7 @@ impl ProxySegment {
                     .delete_field_index(op_num, existing_field)?;
             }
         }
+
         Ok(())
     }
 
@@ -183,7 +186,7 @@ impl ProxySegment {
                 if !payload.is_empty() {
                     write_segment.set_full_payload(op_num, point_id, &payload)?;
                 }
-            };
+            }
 
             (point_offset, local_version)
         };

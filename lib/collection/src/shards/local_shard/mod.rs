@@ -75,6 +75,10 @@ const WAL_PATH: &str = "wal";
 
 const SEGMENTS_PATH: &str = "segments";
 
+const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
+
+const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
+
 /// LocalShard
 ///
 /// LocalShard is an entity that can be moved between peers and contains some part of one collections data.
@@ -1182,10 +1186,6 @@ impl Drop for LocalShard {
         })
     }
 }
-
-const NEWEST_CLOCKS_PATH: &str = "newest_clocks.json";
-
-const OLDEST_CLOCKS_PATH: &str = "oldest_clocks.json";
 
 /// Convenience struct for combining clock maps belonging to a shard
 ///
