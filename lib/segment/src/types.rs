@@ -712,13 +712,15 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_vector_size_bytes: Option<usize>,
 
-    /// Max number of read operations per second per shard per peer
+    /// Max number of read operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub read_rate_limit_per_sec: Option<usize>,
+    #[validate(range(min = 1))]
+    pub read_rate_limit: Option<usize>,
 
-    /// Max number of write operations per second per shard per peer
+    /// Max number of write operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub write_rate_limit_per_sec: Option<usize>,
+    #[validate(range(min = 1))]
+    pub write_rate_limit: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -737,8 +739,8 @@ impl Hash for StrictModeConfig {
             search_max_oversampling: _,
             upsert_max_batchsize,
             max_collection_vector_size_bytes,
-            read_rate_limit_per_sec,
-            write_rate_limit_per_sec,
+            read_rate_limit: read_rate_limit_per_minute,
+            write_rate_limit: write_rate_limit_per_minute,
         } = self;
         (
             enabled,
@@ -750,8 +752,8 @@ impl Hash for StrictModeConfig {
             search_allow_exact,
             upsert_max_batchsize,
             max_collection_vector_size_bytes,
-            read_rate_limit_per_sec,
-            write_rate_limit_per_sec,
+            read_rate_limit_per_minute,
+            write_rate_limit_per_minute,
         )
             .hash(state);
     }

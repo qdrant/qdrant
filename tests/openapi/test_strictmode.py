@@ -607,7 +607,7 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
 def test_strict_mode_read_rate_limiting(collection_name):
     set_strict_mode(collection_name, {
         "enabled": True,
-        "read_rate_limit_per_sec": 1,
+        "read_rate_limit": 1,
     })
 
     response = request_with_validation(
@@ -619,7 +619,7 @@ def test_strict_mode_read_rate_limiting(collection_name):
     assert response.ok
     new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
     assert new_strict_mode_config['enabled']
-    assert new_strict_mode_config['read_rate_limit_per_sec'] == 1
+    assert new_strict_mode_config['read_rate_limit'] == 1
 
     failed_count = 0
 
@@ -645,7 +645,7 @@ def test_strict_mode_read_rate_limiting(collection_name):
 def test_strict_mode_write_rate_limiting(collection_name):
     set_strict_mode(collection_name, {
         "enabled": True,
-        "write_rate_limit_per_sec": 1,
+        "write_rate_limit": 1,
     })
 
     response = request_with_validation(
@@ -657,7 +657,7 @@ def test_strict_mode_write_rate_limiting(collection_name):
     assert response.ok
     new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
     assert new_strict_mode_config['enabled']
-    assert new_strict_mode_config['write_rate_limit_per_sec'] == 1
+    assert new_strict_mode_config['write_rate_limit'] == 1
 
     failed_count = 0
 
