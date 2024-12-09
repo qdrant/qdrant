@@ -7299,14 +7299,14 @@
             "minimum": 0,
             "nullable": true
           },
-          "read_rate_limit_per_minute": {
+          "read_rate_limit": {
             "description": "Max number of read operations per minute per replica",
             "type": "integer",
             "format": "uint",
             "minimum": 1,
             "nullable": true
           },
-          "write_rate_limit_per_minute": {
+          "write_rate_limit": {
             "description": "Max number of write operations per minute per replica",
             "type": "integer",
             "format": "uint",

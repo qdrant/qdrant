@@ -196,16 +196,15 @@ impl LocalShard {
 
         let update_tracker = segment_holder.read().update_tracker();
 
-        let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
-            strict_mode
-                .read_rate_limit_per_minute
-                .map(RateLimiter::new_per_minute)
-        });
+        let read_rate_limiter = config
+            .strict_mode_config
+            .as_ref()
+            .and_then(|strict_mode| strict_mode.read_rate_limit.map(RateLimiter::new_per_minute));
         let read_rate_limiter = ParkingMutex::new(read_rate_limiter);
 
         let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
             strict_mode
-                .write_rate_limit_per_minute
+                .write_rate_limit
                 .map(RateLimiter::new_per_minute)
         });
         let write_rate_limiter = ParkingMutex::new(write_rate_limiter);
@@ -762,14 +761,14 @@ impl LocalShard {
 
         if let Some(strict_mode_config) = &config.strict_mode_config {
             // Update read rate limiter
-            if let Some(read_rate_limit_per_sec) = strict_mode_config.read_rate_limit_per_minute {
+            if let Some(read_rate_limit_per_sec) = strict_mode_config.read_rate_limit {
                 let mut read_rate_limiter_guard = self.read_rate_limiter.lock();
                 read_rate_limiter_guard
                     .replace(RateLimiter::new_per_minute(read_rate_limit_per_sec));
             }
 
             // update write rate limiter
-            if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit_per_minute {
+            if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit {
                 let mut write_rate_limiter_guard = self.write_rate_limiter.lock();
                 write_rate_limiter_guard
                     .replace(RateLimiter::new_per_minute(write_rate_limit_per_sec));

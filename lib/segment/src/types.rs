@@ -715,12 +715,12 @@ pub struct StrictModeConfig {
     /// Max number of read operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
-    pub read_rate_limit_per_minute: Option<usize>,
+    pub read_rate_limit: Option<usize>,
 
     /// Max number of write operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
-    pub write_rate_limit_per_minute: Option<usize>,
+    pub write_rate_limit: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -739,8 +739,8 @@ impl Hash for StrictModeConfig {
             search_max_oversampling: _,
             upsert_max_batchsize,
             max_collection_vector_size_bytes,
-            read_rate_limit_per_minute,
-            write_rate_limit_per_minute,
+            read_rate_limit: read_rate_limit_per_minute,
+            write_rate_limit: write_rate_limit_per_minute,
         } = self;
         (
             enabled,
