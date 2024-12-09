@@ -1,6 +1,7 @@
 [package]
 name = "qdrant"
 version = "1.12.6-dev"
+description = "Qdrant - Vector Search engine"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
     "Qdrant Team <info@qdrant.tech>",
@@ -38,6 +39,7 @@ stacktrace = ["rstack-self"]
 chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
+deb = []
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
@@ -287,6 +289,7 @@ tar = { git = "https://github.com/qdrant/tar-rs", branch = "main" }
 [package.metadata.deb]
 maintainer = "Qdrant Team <team@qdrant.com>"
 depends = "$auto"
+features = ["deb"]
 license-file = "LICENSE"
 section = "database"
 priority = "optional"
