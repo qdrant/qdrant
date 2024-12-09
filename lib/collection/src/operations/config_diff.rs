@@ -1,6 +1,7 @@
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
+use common::types::MaxOptimizationThreads;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::{
@@ -164,7 +165,7 @@ pub struct OptimizersConfigDiff {
     /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
     /// If null - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
-    pub max_optimization_threads: Option<usize>,
+    pub max_optimization_threads: Option<MaxOptimizationThreads>,
 }
 
 impl std::hash::Hash for OptimizersConfigDiff {

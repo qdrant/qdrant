@@ -52,7 +52,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                     .transpose()?,
                 hnsw_config: value.hnsw_config.map(|v| v.into()),
                 wal_config: value.wal_config.map(|v| v.into()),
-                optimizers_config: value.optimizers_config.map(|v| v.into()),
+                optimizers_config: value.optimizers_config.map(TryFrom::try_from).transpose()?,
                 shard_number: value.shard_number,
                 on_disk_payload: value.on_disk_payload,
                 replication_factor: value.replication_factor,
@@ -111,7 +111,10 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
                     .params
                     .map(CollectionParamsDiff::try_from)
                     .transpose()?,
-                optimizers_config: value.optimizers_config.map(OptimizersConfigDiff::from),
+                optimizers_config: value
+                    .optimizers_config
+                    .map(OptimizersConfigDiff::try_from)
+                    .transpose()?,
                 quantization_config: value
                     .quantization_config
                     .map(QuantizationConfigDiff::try_from)

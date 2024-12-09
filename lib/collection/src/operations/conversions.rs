@@ -295,9 +295,11 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
     }
 }
 
-impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
-    fn from(value: api::grpc::qdrant::OptimizersConfigDiff) -> Self {
-        Self {
+impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
+    type Error = Status;
+
+    fn try_from(value: api::grpc::qdrant::OptimizersConfigDiff) -> Result<Self, Self::Error> {
+        Ok(Self {
             deleted_threshold: value.deleted_threshold,
             vacuum_min_vector_number: value.vacuum_min_vector_number.map(|v| v as usize),
             default_segment_number: value.default_segment_number.map(|v| v as usize),
@@ -305,8 +307,15 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
             memmap_threshold: value.memmap_threshold.map(|v| v as usize),
             indexing_threshold: value.indexing_threshold.map(|v| v as usize),
             flush_interval_sec: value.flush_interval_sec,
-            max_optimization_threads: value.max_optimization_threads.map(|v| v as usize),
-        }
+            // TODO: remove deprecated field in a later version
+            max_optimization_threads: value
+                .deprecated_max_optimization_threads
+                .map(|v| MaxOptimizationThreads::Threads(v as usize))
+                .or(value
+                    .max_optimization_threads
+                    .map(TryFrom::try_from)
+                    .transpose()?),
+        })
     }
 }
 
@@ -426,11 +435,16 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    max_optimization_threads: match config.optimizer_config.max_optimization_threads
+                    deprecated_max_optimization_threads: match config
+                        .optimizer_config
+                        .max_optimization_threads
                     {
                         MaxOptimizationThreads::Auto => None,
                         MaxOptimizationThreads::Threads(n) => Some(n as u64),
                     },
+                    max_optimization_threads: Some(From::from(
+                        config.optimizer_config.max_optimization_threads,
+                    )),
                 }),
                 wal_config: config
                     .wal_config
@@ -485,9 +499,18 @@ impl TryFrom<i32> for CollectionStatus {
     }
 }
 
-impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
-    fn from(optimizer_config: api::grpc::qdrant::OptimizersConfigDiff) -> Self {
-        Self {
+impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
+    type Error = Status;
+
+    fn try_from(
+        optimizer_config: api::grpc::qdrant::OptimizersConfigDiff,
+    ) -> Result<Self, Self::Error> {
+        debug_assert!(
+            optimizer_config.max_optimization_threads.is_some(),
+            "This conversion is for CollectionInfo, max_optimization_threads should always have a value"
+        );
+
+        Ok(Self {
             deleted_threshold: optimizer_config.deleted_threshold.unwrap_or_default(),
             vacuum_min_vector_number: optimizer_config
                 .vacuum_min_vector_number
@@ -498,12 +521,11 @@ impl From<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
             indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
             flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
-            max_optimization_threads: optimizer_config
-                .max_optimization_threads
-                .map_or(MaxOptimizationThreads::Auto, |n| {
-                    MaxOptimizationThreads::Threads(n as usize)
-                }),
-        }
+            max_optimization_threads: match optimizer_config.max_optimization_threads {
+                None => return Err(Status::invalid_argument("Malformed OptimizersConfig")),
+                Some(max_optimization_threads) => TryFrom::try_from(max_optimization_threads)?,
+            },
+        })
     }
 }
 
@@ -1798,7 +1820,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
             },
             optimizer_config: match config.optimizer_config {
                 None => return Err(Status::invalid_argument("Malformed OptimizerConfig type")),
-                Some(optimizer_config) => OptimizersConfig::from(optimizer_config),
+                Some(optimizer_config) => OptimizersConfig::try_from(optimizer_config)?,
             },
             wal_config: match config.wal_config {
                 None => return Err(Status::invalid_argument("Malformed WalConfig type")),

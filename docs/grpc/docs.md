@@ -47,6 +47,7 @@
     - [ListCollectionsRequest](#qdrant-ListCollectionsRequest)
     - [ListCollectionsResponse](#qdrant-ListCollectionsResponse)
     - [LocalShardInfo](#qdrant-LocalShardInfo)
+    - [MaxOptimizationThreads](#qdrant-MaxOptimizationThreads)
     - [MoveShard](#qdrant-MoveShard)
     - [MultiVectorConfig](#qdrant-MultiVectorConfig)
     - [OptimizerStatus](#qdrant-OptimizerStatus)
@@ -89,6 +90,7 @@
     - [CompressionRatio](#qdrant-CompressionRatio)
     - [Datatype](#qdrant-Datatype)
     - [Distance](#qdrant-Distance)
+    - [MaxOptimizationThreads.Setting](#qdrant-MaxOptimizationThreads-Setting)
     - [Modifier](#qdrant-Modifier)
     - [MultiVectorComparator](#qdrant-MultiVectorComparator)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
@@ -1013,6 +1015,22 @@
 
 
 
+<a name="qdrant-MaxOptimizationThreads"></a>
+
+### MaxOptimizationThreads
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| value | [uint64](#uint64) |  |  |
+| setting | [MaxOptimizationThreads.Setting](#qdrant-MaxOptimizationThreads-Setting) |  |  |
+
+
+
+
+
+
 <a name="qdrant-MoveShard"></a>
 
 ### MoveShard
@@ -1096,7 +1114,8 @@ To disable vector indexing, set to `0`.
 
 Note: 1kB = 1 vector of size 256. |
 | flush_interval_sec | [uint64](#uint64) | optional | Interval between forced flushes. |
-| max_optimization_threads | [uint64](#uint64) | optional | Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled. |
+| deprecated_max_optimization_threads | [uint64](#uint64) | optional | Deprecated in favor of `max_optimization_threads` |
+| max_optimization_threads | [MaxOptimizationThreads](#qdrant-MaxOptimizationThreads) | optional | Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled. |
 
 
 
@@ -1742,6 +1761,17 @@ Note: 1kB = 1 vector of size 256. |
 | Euclid | 2 |  |
 | Dot | 3 |  |
 | Manhattan | 4 |  |
+
+
+
+<a name="qdrant-MaxOptimizationThreads-Setting"></a>
+
+### MaxOptimizationThreads.Setting
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Auto | 0 |  |
 
 
 

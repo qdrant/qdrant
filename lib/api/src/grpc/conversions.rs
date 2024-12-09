@@ -23,10 +23,10 @@ use super::qdrant::{
     raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
     DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
     FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
-    HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MultiVectorComparator,
-    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
-    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
-    UuidIndexParams, VectorsOutput, WithLookup,
+    HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
+    ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, VectorsOutput, WithLookup,
 };
 use crate::conversions::json;
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1603,6 +1603,51 @@ impl From<segment::data_types::order_by::StartFrom> for StartFrom {
                     start_from::Value::Timestamp(date_time_to_proto(datetime))
                 }
             }),
+        }
+    }
+}
+
+impl TryFrom<MaxOptimizationThreads> for common::types::MaxOptimizationThreads {
+    type Error = Status;
+
+    fn try_from(value: MaxOptimizationThreads) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::max_optimization_threads::{Setting, Variant};
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("Malformed MaxOptimizationThreads"))?;
+
+        let converted = match variant {
+            Variant::Setting(setting_int) => {
+                let setting = Setting::try_from(setting_int).map_err(|err| {
+                    Status::invalid_argument(format!(
+                        "Invalid MaxOptimizationThreads setting: {err}"
+                    ))
+                })?;
+
+                match setting {
+                    Setting::Auto => Self::Auto,
+                }
+            }
+            Variant::Value(num_threads) => Self::Threads(num_threads as usize),
+        };
+        Ok(converted)
+    }
+}
+
+impl From<common::types::MaxOptimizationThreads> for MaxOptimizationThreads {
+    fn from(value: common::types::MaxOptimizationThreads) -> Self {
+        use crate::grpc::qdrant::max_optimization_threads::{Setting, Variant};
+
+        let variant = match value {
+            common::types::MaxOptimizationThreads::Auto => Variant::Setting(Setting::Auto as i32),
+            common::types::MaxOptimizationThreads::Threads(num_threads) => {
+                Variant::Value(num_threads as u64)
+            }
+        };
+
+        Self {
+            variant: Some(variant),
         }
     }
 }
