@@ -110,6 +110,10 @@ impl Issue for UnindexedField {
         "UNINDEXED_FIELD"
     }
 
+    fn related_collection(&self) -> Option<String> {
+        Some(self.collection_name.clone())
+    }
+
     fn description(&self) -> String {
         format!(
             "Unindexed field '{}' might be slowing queries down in collection '{}'",

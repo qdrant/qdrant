@@ -1,16 +1,34 @@
 use actix_web::{delete, get, web, Responder};
 use collection::operations::types::IssuesReport;
-use storage::rbac::AccessRequirements;
+use storage::rbac::{Access, AccessRequirements};
 
 use crate::actix::auth::ActixAccess;
 
 #[get("/issues")]
 async fn get_issues(ActixAccess(access): ActixAccess) -> impl Responder {
     crate::actix::helpers::time(async move {
-        access.check_global_access(AccessRequirements::new().manage())?;
-        Ok(IssuesReport {
-            issues: issues::all_issues(),
-        })
+        match access {
+            Access::Global(_) => Ok(IssuesReport {
+                issues: issues::all_issues(),
+            }),
+            Access::Collection(collection_access_list) => {
+                let mut allowed_issues = Vec::new();
+                for collection_access in collection_access_list.0 {
+                    if collection_access.payload.is_some() {
+                        // if the access is not for the whole collection, we can't get issues
+                        continue;
+                    }
+                    let collection_name = collection_access.collection;
+
+                    let collection_issues = issues::all_collection_issues(&collection_name);
+                    allowed_issues.extend(collection_issues);
+                }
+
+                Ok(IssuesReport {
+                    issues: allowed_issues,
+                })
+            }
+        }
     })
     .await
 }

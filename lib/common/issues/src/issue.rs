@@ -13,6 +13,10 @@ pub trait Issue {
     /// The codename for all issues of this type
     fn name() -> &'static str;
 
+    /// The name of the collection that this issue is related to
+    /// If none, collection is not relevant to any particular collection
+    fn related_collection(&self) -> Option<String>;
+
     /// A human-readable description of the issue
     fn description(&self) -> String;
 
@@ -35,6 +39,7 @@ pub struct IssueRecord {
     pub description: String,
     pub solution: Solution,
     pub timestamp: DateTime<Utc>,
+    pub related_collection: Option<String>,
 }
 
 impl<I: Issue> From<I> for IssueRecord {
@@ -45,6 +50,7 @@ impl<I: Issue> From<I> for IssueRecord {
             description: val.description(),
             solution: val.solution(),
             timestamp: Utc::now(),
+            related_collection: val.related_collection(),
         }
     }
 }
@@ -73,6 +79,10 @@ impl Issue for DummyIssue {
 
     fn name() -> &'static str {
         "DUMMY"
+    }
+
+    fn related_collection(&self) -> Option<String> {
+        None
     }
 
     fn description(&self) -> String {
