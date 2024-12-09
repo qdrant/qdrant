@@ -1,8 +1,8 @@
 use std::cmp::max;
-use std::fs::{create_dir_all, OpenOptions};
-use std::io::Write;
+use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
+use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
 use memory::chunked_utils::{chunk_name, create_chunk, read_mmaps, UniversalMmapChunk};
 use memory::madvise::{Advice, AdviceSetting};
@@ -75,7 +75,17 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         populate: Option<bool>,
     ) -> OperationResult<ChunkedMmapConfig> {
         let config_file = Self::config_file(directory);
-        if !config_file.exists() {
+        if let Some(config) = Self::load_config(&config_file) {
+            if config.dim != dim {
+                return Err(OperationError::service_error(format!(
+                    "Wrong configuration in {}: expected {}, found {dim}",
+                    config_file.display(),
+                    config.dim,
+                )));
+            }
+
+            Ok(config)
+        } else {
             let chunk_size_bytes = CHUNK_SIZE;
             let vector_size_bytes = dim * std::mem::size_of::<T>();
             let chunk_size_vectors = chunk_size_bytes / vector_size_bytes;
@@ -88,27 +98,18 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
                 mlock,
                 populate,
             };
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&config_file)?;
-            serde_json::to_writer(&mut file, &config)?;
-            file.flush()?;
+            atomic_save_json(&config_file, &config)?;
             Ok(config)
+        }
+    }
+
+    fn load_config(config_file: &Path) -> Option<ChunkedMmapConfig> {
+        if config_file.exists() {
+            let file = std::fs::File::open(&config_file).ok()?;
+            let config: ChunkedMmapConfig = serde_json::from_reader(file).ok()?;
+            Some(config)
         } else {
-            let file = std::fs::File::open(&config_file)?;
-            let config: ChunkedMmapConfig = serde_json::from_reader(file)?;
-
-            if config.dim != dim {
-                return Err(OperationError::service_error(format!(
-                    "Wrong configuration in {}: expected {}, found {dim}",
-                    config_file.display(),
-                    config.dim,
-                )));
-            }
-
-            Ok(config)
+            None
         }
     }
 
