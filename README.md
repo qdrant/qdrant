@@ -168,7 +168,7 @@ You can also download raw OpenAPI [definitions](https://github.com/qdrant/qdrant
 
 ### gRPC
 
-For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/quick-start/#grpc).
+For faster production-tier searches, Qdrant also provides a gRPC interface. You can find gRPC documentation [here](https://qdrant.tech/documentation/interfaces/#grpc-interface).
 
 ## Features
 
