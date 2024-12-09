@@ -333,8 +333,10 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
 }
 
 /// Unit test for a specific bug we caught before.
+///
+/// See: <https://github.com/qdrant/qdrant/pull/5614>
 #[test]
-fn test_building_new_segment_bug() {
+fn test_building_new_segment_bug_5614() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
