@@ -42,6 +42,16 @@ pub struct CollectionAccess {
     pub payload: Option<PayloadConstraint>,
 }
 
+impl CollectionAccess {
+    fn view(&self) -> CollectionAccessView {
+        CollectionAccessView {
+            collection: &self.collection,
+            access: self.access,
+            payload: &self.payload,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Eq, PartialEq, Copy, Clone, Debug)]
 pub enum GlobalAccessMode {
     /// Read-only access
@@ -124,11 +134,16 @@ impl CollectionAccessList {
                     "Access to collection {collection_name} is required"
                 ))
             })?;
-        Ok(CollectionAccessView {
-            collection: collection_name,
-            access: access.access,
-            payload: &access.payload,
-        })
+        Ok(access.view())
+    }
+
+    /// Lists the collections which fulfill the requirements.
+    pub fn meeting_requirements(&self, requirements: AccessRequirements) -> Vec<&String> {
+        self.0
+            .iter()
+            .filter(|access| access.view().meets_requirements(requirements).is_ok())
+            .map(|access| &access.collection)
+            .collect()
     }
 }
 

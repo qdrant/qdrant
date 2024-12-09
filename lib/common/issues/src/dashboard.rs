@@ -64,6 +64,19 @@ impl Dashboard {
         self.issues.iter().map(|kv| kv.value().clone()).collect()
     }
 
+    pub(crate) fn get_all_collection_issues(&self, collection_name: &str) -> Vec<IssueRecord> {
+        self.issues
+            .iter()
+            .filter(|kv| {
+                kv.value()
+                    .related_collection
+                    .as_ref()
+                    .map_or(false, |c| c == collection_name)
+            })
+            .map(|kv| kv.value().clone())
+            .collect()
+    }
+
     fn get_codes<I: 'static>(&self) -> HashSet<Code> {
         let type_id = TypeId::of::<I>();
         self.issues
@@ -93,6 +106,10 @@ pub fn solve<C: AsRef<Code>>(code: C) -> bool {
 
 pub fn all_issues() -> Vec<IssueRecord> {
     dashboard().get_all_issues()
+}
+
+pub fn all_collection_issues(collection_name: &str) -> Vec<IssueRecord> {
+    dashboard().get_all_collection_issues(collection_name)
 }
 
 /// Clears all issues from the dashboard
