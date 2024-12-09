@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use io::file_operations::atomic_save_json;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
@@ -288,9 +289,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 
 impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectorsU8<TStorage> {
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
-        let metadata_bytes = serde_json::to_vec(&self.metadata)?;
         meta_path.parent().map(std::fs::create_dir_all);
-        std::fs::write(meta_path, metadata_bytes)?;
+        atomic_save_json(meta_path, &self.metadata)?;
 
         data_path.parent().map(std::fs::create_dir_all);
         self.encoded_vectors.save_to_file(data_path)?;
