@@ -218,7 +218,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let file_path = Self::index_file_path(path.as_ref());
         let file = create_and_ensure_length(file_path.as_ref(), file_length)?;
 
-        let mut buf = BufWriter::new(file);
+        let mut buf = BufWriter::new(&file);
 
         // Save posting headers
         let mut offset: usize = total_posting_headers_size;
@@ -246,6 +246,8 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
         buf.flush()?;
         drop(buf);
+
+        file.sync_all()?;
 
         // save header properties
         let file_header = InvertedIndexFileHeader {

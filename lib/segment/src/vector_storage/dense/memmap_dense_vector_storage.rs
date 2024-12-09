@@ -212,7 +212,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
                 deleted_ids.push(start_index as PointOffsetType + offset as PointOffsetType);
             }
         }
-        vectors_file.flush()?;
+        vectors_file.sync_all()?;
         drop(vectors_file);
 
         // Load store with updated files

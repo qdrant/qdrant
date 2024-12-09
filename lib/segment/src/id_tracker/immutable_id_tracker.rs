@@ -316,8 +316,10 @@ impl ImmutableIdTracker {
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_wrapper);
 
         // Write mappings to disk.
-        let writer = BufWriter::new(File::create(Self::mappings_file_path(path))?);
+        let file = File::create(Self::mappings_file_path(path))?;
+        let writer = BufWriter::new(&file);
         Self::store_mapping(&mappings, writer)?;
+        file.sync_all()?;
 
         deleted_wrapper.flusher()()?;
         internal_to_version_wrapper.flusher()()?;

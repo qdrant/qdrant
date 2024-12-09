@@ -203,7 +203,7 @@ impl MmapPostings {
 
         // Dropping will flush the buffer to the file
         drop(bufw);
-
+        file.as_file().sync_all()?;
         file.persist(path)?;
 
         Ok(())
