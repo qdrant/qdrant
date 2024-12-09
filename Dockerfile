@@ -120,7 +120,7 @@ FROM debian:12-slim AS qdrant-cpu
 
 
 # Base images for Qdrant with nvidia GPU support.
-FROM nvidia/opengl:1.0-glvnd-devel-ubuntu22.04 AS qdrant-gpu-nvidia
+FROM nvidia/opengl:1.2-glvnd-devel-ubuntu22.04 AS qdrant-gpu-nvidia
 # Set non-interactive mode for apt-get.
 ENV DEBIAN_FRONTEND=noninteractive
 # Set NVIDIA driver capabilities. By default, all capabilities are disabled.
