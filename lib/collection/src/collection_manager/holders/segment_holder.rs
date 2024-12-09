@@ -1277,7 +1277,7 @@ impl<'s> SegmentHolder {
                         }
                     }
 
-                    log::debug!("Deleted {removed_points} points from segment {segment_id} to deduplicate: {points:?}");
+                    log::trace!("Deleted {removed_points} points from segment {segment_id} to deduplicate: {points:?}");
 
                     OperationResult::Ok(removed_points)
                 })
@@ -1352,14 +1352,14 @@ impl<'s> SegmentHolder {
 
                 // choose newer version between point_id and last_point_id
                 if point_version < last_point_version {
-                    log::debug!("Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})");
+                    log::trace!("Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})");
 
                     points_to_remove
                         .entry(segment_id)
                         .or_default()
                         .push(point_id);
                 } else {
-                    log::debug!("Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})");
+                    log::trace!("Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})");
 
                     points_to_remove
                         .entry(last_segment_id)
