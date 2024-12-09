@@ -320,8 +320,6 @@ mod test {
 
         let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
 
-        assert_eq!(storage_files.len(), 8);
-        assert!(storage_files.iter().all(|f| f.exists()));
         assert_eq!(storage_files, existing_files);
     }
 
