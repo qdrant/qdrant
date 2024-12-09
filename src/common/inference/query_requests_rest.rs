@@ -19,7 +19,7 @@ use crate::common::inference::InferenceToken;
 
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
-    inference_key: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<CollectionQueryGroupsRequest, StorageError> {
     let batch = collect_query_groups_request(&request);
     let rest::QueryGroupsRequestInternal {
@@ -34,9 +34,9 @@ pub async fn convert_query_groups_request_from_rest(
         lookup_from,
         group_request,
     } = request;
-    println!("InferenceKey (convert_query_groups_request_from_rest) >> {inference_key:?}",);
 
-    let inferred = BatchAccumInferred::from_batch_accum(batch, InferenceType::Search).await?;
+    let inferred =
+        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, inference_token).await?;
     let query = query
         .map(|q| convert_query_with_inferred(q, &inferred))
         .transpose()?;
@@ -74,10 +74,11 @@ pub async fn convert_query_groups_request_from_rest(
 
 pub async fn convert_query_request_from_rest(
     request: rest::QueryRequestInternal,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<CollectionQueryRequest, StorageError> {
     let batch = collect_query_request(&request);
-    let inferred = BatchAccumInferred::from_batch_accum(batch, InferenceType::Search).await?;
+    let inferred =
+        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, inference_token).await?;
     let rest::QueryRequestInternal {
         prefetch,
         query,
@@ -91,8 +92,6 @@ pub async fn convert_query_request_from_rest(
         with_payload,
         lookup_from,
     } = request;
-
-    println!("InferenceKey >> {inference_token:?}");
 
     let prefetch = prefetch
         .map(|prefetches| {

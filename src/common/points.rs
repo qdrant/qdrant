@@ -263,7 +263,7 @@ pub async fn do_upsert_points(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
     let (shard_key, operation) = match operation {
         PointInsertOperations::PointsBatch(PointsBatch { batch, shard_key }) => (
@@ -292,7 +292,6 @@ pub async fn do_upsert_points(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -307,7 +306,7 @@ pub async fn do_delete_points(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
-    _inference_token: Option<InferenceToken>,
+    _inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -327,7 +326,6 @@ pub async fn do_delete_points(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -342,10 +340,12 @@ pub async fn do_update_vectors(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
-    let persisted_points = convert_point_vectors(points, InferenceType::Update).await?;
+    let persisted_points =
+        convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
     let collection_operation = CollectionUpdateOperations::VectorOperation(
         VectorOperations::UpdateVectors(UpdateVectorsOp {
@@ -362,7 +362,6 @@ pub async fn do_update_vectors(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -406,7 +405,6 @@ pub async fn do_delete_vectors(
                 ordering,
                 shard_selector.clone(),
                 access.clone(),
-                None,
             )
             .await?,
         );
@@ -423,7 +421,6 @@ pub async fn do_delete_vectors(
                 ordering,
                 shard_selector,
                 access,
-                None,
             )
             .await?,
         );
@@ -468,7 +465,6 @@ pub async fn do_set_payload(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -510,7 +506,6 @@ pub async fn do_overwrite_payload(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -549,7 +544,6 @@ pub async fn do_delete_payload(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -585,7 +579,6 @@ pub async fn do_clear_payload(
         ordering,
         shard_selector,
         access,
-        None,
     )
     .await
 }
@@ -600,7 +593,7 @@ pub async fn do_batch_update_points(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<Vec<UpdateResult>, StorageError> {
     let mut results = Vec::with_capacity(operations.len());
     for operation in operations {
@@ -695,6 +688,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
@@ -748,7 +742,6 @@ pub async fn do_create_index_internal(
         ordering,
         shard_selector,
         Access::full("Internal API"),
-        None,
     )
     .await
 }
@@ -835,7 +828,6 @@ pub async fn do_delete_index_internal(
         ordering,
         shard_selector,
         Access::full("Internal API"),
-        None,
     )
     .await
 }

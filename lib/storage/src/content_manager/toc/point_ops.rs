@@ -452,7 +452,6 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         access: Access,
-        _inference_token: Option<String>,
     ) -> StorageResult<UpdateResult> {
         let collection_pass = access.check_point_op(collection_name, &mut operation.operation)?;
 

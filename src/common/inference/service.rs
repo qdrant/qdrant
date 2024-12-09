@@ -13,6 +13,7 @@ use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
 use crate::common::inference::config::InferenceConfig;
+use crate::common::inference::InferenceToken;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
@@ -138,12 +139,6 @@ impl InferenceService {
     pub fn init_global(config: InferenceConfig) -> Result<(), StorageError> {
         let mut inference_service = INFERENCE_SERVICE.write();
 
-        if config.token.is_none() {
-            return Err(StorageError::service_error(
-                "Cannot initialize InferenceService: token is required but not provided in config",
-            ));
-        }
-
         if config.address.is_none() || config.address.as_ref().unwrap().is_empty() {
             return Err(StorageError::service_error(
                 "Cannot initialize InferenceService: address is required but not provided or empty in config"
@@ -176,11 +171,16 @@ impl InferenceService {
         &self,
         inference_inputs: Vec<InferenceInput>,
         inference_type: InferenceType,
+        inference_token: InferenceToken,
     ) -> Result<Vec<VectorPersisted>, StorageError> {
+        let token = inference_token
+            .0
+            .unwrap_or_else(|| self.config.token.clone().unwrap_or_default());
+
         let request = InferenceRequest {
             inputs: inference_inputs,
             inference: Some(inference_type),
-            token: self.config.token.clone(),
+            token: Some(token),
         };
 
         let url = self.config.address.as_ref().ok_or_else(|| {

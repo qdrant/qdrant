@@ -14,14 +14,13 @@ pub mod service;
 pub mod update_requests;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct InferenceToken(pub String);
+pub struct InferenceToken(pub Option<String>);
 
 impl InferenceToken {
     pub fn new(key: String) -> Self {
-        InferenceToken(key)
+        InferenceToken(Option::from(key))
     }
-
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &Option<String> {
         &self.0
     }
 }
@@ -35,16 +34,19 @@ impl FromRequest for InferenceToken {
         _payload: &mut actix_web::dev::Payload,
     ) -> Self::Future {
         let api_key = req.extensions().get::<InferenceToken>().cloned();
-        ready(Ok(api_key.unwrap_or_else(|| InferenceToken("".to_string()))))
+        ready(Ok(api_key.unwrap_or(InferenceToken(None))))
     }
 }
 
 impl fmt::Display for InferenceToken {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{:?}", self.0)
     }
 }
 
-pub fn extract_token<R>(req: &mut tonic::Request<R>) -> Option<InferenceToken> {
-    req.extensions_mut().get::<InferenceToken>().cloned()
+pub fn extract_token<R>(req: &tonic::Request<R>) -> InferenceToken {
+    req.extensions()
+        .get::<InferenceToken>()
+        .cloned()
+        .unwrap_or(InferenceToken(None))
 }

@@ -86,14 +86,14 @@ impl AuthKeys {
         if self.can_write(key) {
             return Ok((
                 Access::full("Read-write access by key"),
-                InferenceToken(key.to_string()),
+                InferenceToken(Some(key.to_string())),
             ));
         }
 
         if self.can_read(key) {
             return Ok((
                 Access::full_ro("Read-only access by key"),
-                InferenceToken(key.to_string()),
+                InferenceToken(Some(key.to_string())),
             ));
         }
 
@@ -108,7 +108,7 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok((access, InferenceToken(key.to_string())));
+            return Ok((access, InferenceToken(Some(key.to_string()))));
         }
 
         Err(AuthError::Unauthorized(

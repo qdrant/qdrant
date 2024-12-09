@@ -63,7 +63,7 @@ async fn query_points(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let result = async move {
         let request =
-            convert_query_request_from_rest(query_request, Some(inference_token.clone())).await?;
+            convert_query_request_from_rest(query_request, inference_token.clone()).await?;
 
         let points = dispatcher
             .toc(&access, &pass)
@@ -133,7 +133,7 @@ async fn query_points_batch(
             } = request;
 
             let request =
-                convert_query_request_from_rest(internal, Some(inference_token.clone())).await?;
+                convert_query_request_from_rest(internal, inference_token.clone()).await?;
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
                 Some(shard_keys) => shard_keys.into(),
@@ -209,11 +209,9 @@ async fn query_points_groups(
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
-        let query_group_request = convert_query_groups_request_from_rest(
-            search_group_request,
-            Some(inference_token.clone()),
-        )
-        .await?;
+        let query_group_request =
+            convert_query_groups_request_from_rest(search_group_request, inference_token.clone())
+                .await?;
 
         do_query_point_groups(
             dispatcher.toc(&access, &pass),

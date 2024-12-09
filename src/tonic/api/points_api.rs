@@ -67,7 +67,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
-        let inference_token = extract_token(&mut request);
+        let inference_token = extract_token(&request);
 
         upsert(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -88,7 +88,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
-        let inference_token = extract_token(&mut request);
+        let inference_token = extract_token(&request);
 
         delete(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -125,6 +125,7 @@ impl Points for PointsService {
         // Nothing to verify here.
 
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&request);
 
         update_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -132,6 +133,7 @@ impl Points for PointsService {
             None,
             None,
             access,
+            inference_token,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -239,7 +241,7 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
-        let inference_token = extract_token(&mut request);
+        let inference_token = extract_token(&request);
 
         update_batch(
             &self.dispatcher,
@@ -534,6 +536,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
 
@@ -543,6 +546,7 @@ impl Points for PointsService {
             None,
             access,
             hw_metrics,
+            inference_token,
         )
         .await?;
 
@@ -555,6 +559,7 @@ impl Points for PointsService {
     ) -> Result<Response<QueryBatchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&request);
         let request = request.into_inner();
         let QueryBatchPoints {
             collection_name,
@@ -572,6 +577,7 @@ impl Points for PointsService {
             access,
             timeout,
             hw_metrics,
+            inference_token,
         )
         .await?;
 
@@ -583,6 +589,7 @@ impl Points for PointsService {
         mut request: Request<QueryPointGroups>,
     ) -> Result<Response<QueryGroupsResponse>, Status> {
         let access = extract_access(&mut request);
+        let inference_token = extract_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
 
@@ -592,6 +599,7 @@ impl Points for PointsService {
             None,
             access,
             hw_metrics,
+            inference_token,
         )
         .await?;
 

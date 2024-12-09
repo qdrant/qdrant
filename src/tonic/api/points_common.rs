@@ -117,7 +117,7 @@ pub async fn upsert(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -162,7 +162,7 @@ pub async fn sync(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SyncPoints {
         collection_name,
@@ -205,7 +205,6 @@ pub async fn sync(
             write_ordering_from_proto(ordering)?,
             shard_selector,
             access,
-            None,
         )
         .await?;
 
@@ -219,7 +218,7 @@ pub async fn delete(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -262,6 +261,7 @@ pub async fn update_vectors(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    inference_token: InferenceToken,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
@@ -304,6 +304,7 @@ pub async fn update_vectors(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        inference_token,
     )
     .await?;
 
@@ -550,7 +551,7 @@ pub async fn update_batch(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -716,6 +717,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
@@ -1779,6 +1781,7 @@ pub async fn query(
     shard_selection: Option<ShardId>,
     access: Access,
     request_hw_counter: RequestHwCounter,
+    inference_token: InferenceToken,
 ) -> Result<Response<QueryResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1789,7 +1792,7 @@ pub async fn query(
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
     let timeout = query_points.timeout;
-    let request = convert_query_points_from_grpc(query_points).await?;
+    let request = convert_query_points_from_grpc(query_points, inference_token).await?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -1827,6 +1830,7 @@ pub async fn query(
     Ok(Response::new(response))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn query_batch(
     toc_provider: impl CheckedTocProvider,
     collection_name: &str,
@@ -1835,13 +1839,14 @@ pub async fn query_batch(
     access: Access,
     timeout: Option<Duration>,
     request_hw_counter: RequestHwCounter,
+    inference_token: InferenceToken,
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let mut requests = Vec::with_capacity(points.len());
     for query_points in points {
         let shard_key_selector = query_points.shard_key_selector.clone();
         let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
-        let request = convert_query_points_from_grpc(query_points).await?;
+        let request = convert_query_points_from_grpc(query_points, inference_token.clone()).await?;
         requests.push((request, shard_selector));
     }
 
@@ -1887,6 +1892,7 @@ pub async fn query_groups(
     shard_selection: Option<ShardId>,
     access: Access,
     request_hw_counter: RequestHwCounter,
+    inference_token: InferenceToken,
 ) -> Result<Response<QueryGroupsResponse>, Status> {
     let shard_key_selector = query_points.shard_key_selector.clone();
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
@@ -1897,7 +1903,7 @@ pub async fn query_groups(
         .transpose()?;
     let timeout = query_points.timeout;
     let collection_name = query_points.collection_name.clone();
-    let request = convert_query_point_groups_from_grpc(query_points).await?;
+    let request = convert_query_point_groups_from_grpc(query_points, inference_token).await?;
 
     let toc = toc_provider
         .check_strict_mode(
