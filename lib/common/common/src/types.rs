@@ -1,3 +1,4 @@
+use std::any::type_name;
 use std::cmp::Ordering;
 
 use ordered_float::OrderedFloat;
@@ -61,11 +62,45 @@ impl From<usize> for DetailsLevel {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, JsonSchema)]
-#[serde(untagged)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash)]
+#[serde(rename_all = "snake_case")]
 pub enum MaxOptimizationThreads {
-    Auto, // Represents the "null-like" or default state
+    Auto,
+    #[serde(untagged)]
     Threads(usize),
+}
+
+// schemars does not yet support `untagged` variant attribute: https://github.com/GREsau/schemars/issues/222
+// So, we need to implement JsonSchema for MaxOptimizationThreads manually to get a nice looking schema.
+impl JsonSchema for MaxOptimizationThreads {
+    fn schema_name() -> String {
+        type_name::<Self>().to_string()
+    }
+
+    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+        #[derive(JsonSchema)]
+        #[schemars(untagged)]
+        pub enum BaseSchema {
+            _Threads(usize),
+        }
+
+        let mut schema: schemars::schema::SchemaObject = <BaseSchema>::json_schema(gen).into();
+
+        let mut auto = schemars::schema::SchemaObject::default();
+        auto.enum_values = Some(vec!["auto".into()]);
+        auto.instance_type = Some(schemars::schema::SingleOrVec::Single(Box::new(
+            schemars::schema::InstanceType::String,
+        )));
+
+        schema
+            .subschemas()
+            .any_of
+            .as_mut()
+            .unwrap()
+            .push(auto.into());
+
+        schema.into()
+    }
 }
 
 #[allow(clippy::derivable_impls)]
