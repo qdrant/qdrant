@@ -178,7 +178,11 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request.extensions().get::<InferenceToken>().cloned();
+        let inference_token = request
+            .extensions()
+            .get::<InferenceToken>()
+            .cloned()
+            .unwrap_or(InferenceToken(None));
 
         let UpsertPointsInternal {
             upsert_points,
@@ -206,7 +210,11 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request.extensions().get::<InferenceToken>().cloned();
+        let inference_token = request
+            .extensions()
+            .get::<InferenceToken>()
+            .cloned()
+            .unwrap_or(InferenceToken(None));
 
         let DeletePointsInternal {
             delete_points,
@@ -234,6 +242,11 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
+        let inference_token = request
+            .extensions()
+            .get::<InferenceToken>()
+            .cloned()
+            .unwrap_or(InferenceToken(None));
         let request = request.into_inner();
 
         let shard_id = request.shard_id;
@@ -249,6 +262,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            inference_token,
         )
         .await
     }
@@ -577,7 +591,11 @@ impl PointsInternal for PointsInternalService {
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
-        let inference_token = request.extensions().get::<InferenceToken>().cloned();
+        let inference_token = request
+            .extensions()
+            .get::<InferenceToken>()
+            .cloned()
+            .unwrap_or(InferenceToken(None));
 
         let SyncPointsInternal {
             sync_points,

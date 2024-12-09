@@ -44,7 +44,7 @@ async fn upsert_points(
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let pass =
         match check_strict_mode(&operation.0, None, &collection.name, &dispatcher, &access).await {
@@ -77,7 +77,7 @@ async fn delete_points(
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
     let pass =
@@ -110,6 +110,7 @@ async fn update_vectors(
     operation: Json<UpdateVectors>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
@@ -127,6 +128,7 @@ async fn update_vectors(
         wait,
         ordering,
         access,
+        inference_token,
     ))
     .await
 }
@@ -295,7 +297,7 @@ async fn update_batch(
     operations: Json<UpdateOperations>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
-    inference_token: Option<InferenceToken>,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let timing = Instant::now();
     let operations = operations.into_inner();

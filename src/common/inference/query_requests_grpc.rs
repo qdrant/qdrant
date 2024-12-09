@@ -19,10 +19,12 @@ use crate::common::inference::batch_processing_grpc::{
 };
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
+use crate::common::inference::InferenceToken;
 
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_point_groups_from_grpc(
     query: grpc::QueryPointGroups,
+    inference_token: InferenceToken,
 ) -> Result<CollectionQueryGroupsRequest, Status> {
     let grpc::QueryPointGroups {
         collection_name: _,
@@ -56,9 +58,10 @@ pub async fn convert_query_point_groups_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    let inferred = BatchAccumInferred::from_objects(objects, InferenceType::Search)
-        .await
-        .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
+    let inferred =
+        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
+            .await
+            .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
     let query = if let Some(q) = query {
         Some(convert_query_with_inferred(q, &inferred)?)
@@ -102,6 +105,7 @@ pub async fn convert_query_point_groups_from_grpc(
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_points_from_grpc(
     query: grpc::QueryPoints,
+    inference_token: InferenceToken,
 ) -> Result<CollectionQueryRequest, Status> {
     let grpc::QueryPoints {
         collection_name: _,
@@ -133,9 +137,10 @@ pub async fn convert_query_points_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    let inferred = BatchAccumInferred::from_objects(objects, InferenceType::Search)
-        .await
-        .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
+    let inferred =
+        BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
+            .await
+            .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
     let prefetch = prefetch
         .into_iter()
