@@ -12,15 +12,11 @@ async fn get_issues(ActixAccess(access): ActixAccess) -> impl Responder {
                 issues: issues::all_issues(),
             }),
             Access::Collection(collection_access_list) => {
-                let mut allowed_issues = Vec::new();
-                for collection_access in collection_access_list.0 {
-                    if collection_access.payload.is_some() {
-                        // if the access is not for the whole collection, we can't get issues
-                        continue;
-                    }
-                    let collection_name = collection_access.collection;
+                let requirements = AccessRequirements::new().whole();
 
-                    let collection_issues = issues::all_collection_issues(&collection_name);
+                let mut allowed_issues = Vec::new();
+                for collection_name in collection_access_list.meeting_requirements(requirements) {
+                    let collection_issues = issues::all_collection_issues(collection_name);
                     allowed_issues.extend(collection_issues);
                 }
 
