@@ -255,7 +255,9 @@ impl Settings {
             // Uses RUN_MODE, defaults to 'development'
             .add_source(File::with_name(&config_path_env).required(false))
             // Merge local config, not tracked in git: config/local
-            .add_source(File::with_name("config/local").required(false));
+            .add_source(File::with_name("config/local").required(false))
+            // Debian/Ubuntu style config: /etc/qdrant/config.yaml
+            .add_source(File::with_name("/etc/qdrant/config").required(false));
 
         // Merge user provided config with --config-path
         if let Some(path) = custom_config_path {
