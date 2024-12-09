@@ -456,10 +456,12 @@ pub struct StrictModeConfig {
     pub upsert_max_batchsize: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "10")]
     pub max_collection_vector_size_bytes: ::core::option::Option<u64>,
+    /// Max number of read operations per minute per replica
     #[prost(uint32, optional, tag = "11")]
-    pub read_rate_limit_per_sec: ::core::option::Option<u32>,
+    pub read_rate_limit: ::core::option::Option<u32>,
+    /// Max number of write operations per minute per replica
     #[prost(uint32, optional, tag = "12")]
-    pub write_rate_limit_per_sec: ::core::option::Option<u32>,
+    pub write_rate_limit: ::core::option::Option<u32>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
