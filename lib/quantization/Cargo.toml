@@ -23,6 +23,7 @@ rayon = { workspace = true }
 num-traits = { workspace = true }
 
 common = { path = "../common/common" }
+io = { path = "../common/io" }
 
 [dev-dependencies]
 criterion = { workspace = true }
