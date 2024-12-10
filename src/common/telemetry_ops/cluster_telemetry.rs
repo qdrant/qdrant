@@ -79,7 +79,7 @@ impl ClusterTelemetry {
         settings: &Settings,
     ) -> Option<ClusterTelemetry> {
         let global_access = AccessRequirements::new().whole();
-        if !access.check_global_access(global_access).is_ok() {
+        if access.check_global_access(global_access).is_err() {
             return None;
         }
 

@@ -239,7 +239,7 @@ impl TableOfContent {
             .keys()
             .filter_map(|name| {
                 access
-                    .check_collection_access(name, access_requirements.clone())
+                    .check_collection_access(name, access_requirements)
                     .ok()
                     .map(|pass| pass.into_static())
             })
