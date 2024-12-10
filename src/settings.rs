@@ -257,6 +257,12 @@ impl Settings {
             // Merge local config, not tracked in git: config/local
             .add_source(File::with_name("config/local").required(false));
 
+        #[cfg(feature = "deb")]
+        {
+            // Read config, installed with deb package
+            config = config.add_source(File::with_name("/etc/qdrant/config").required(false));
+        }
+
         // Merge user provided config with --config-path
         if let Some(path) = custom_config_path {
             config = config.add_source(File::with_name(&path).required(false));
