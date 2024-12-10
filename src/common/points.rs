@@ -52,6 +52,7 @@ use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::{
     convert_batch, convert_point_struct, convert_point_vectors,
 };
+use crate::common::inference::InferenceToken;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct CreateFieldIndex {
@@ -262,16 +263,19 @@ pub async fn do_upsert_points(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
     let (shard_key, operation) = match operation {
         PointInsertOperations::PointsBatch(PointsBatch { batch, shard_key }) => (
             shard_key,
-            PointInsertOperationsInternal::PointsBatch(convert_batch(batch).await?),
+            PointInsertOperationsInternal::PointsBatch(
+                convert_batch(batch, inference_token).await?,
+            ),
         ),
         PointInsertOperations::PointsList(PointsList { points, shard_key }) => (
             shard_key,
             PointInsertOperationsInternal::PointsList(
-                convert_point_struct(points, InferenceType::Update).await?,
+                convert_point_struct(points, InferenceType::Update, inference_token).await?,
             ),
         ),
     };
@@ -302,6 +306,7 @@ pub async fn do_delete_points(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    _inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -335,10 +340,12 @@ pub async fn do_update_vectors(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
-    let persisted_points = convert_point_vectors(points, InferenceType::Update).await?;
+    let persisted_points =
+        convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
     let collection_operation = CollectionUpdateOperations::VectorOperation(
         VectorOperations::UpdateVectors(UpdateVectorsOp {
@@ -586,6 +593,7 @@ pub async fn do_batch_update_points(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    inference_token: InferenceToken,
 ) -> Result<Vec<UpdateResult>, StorageError> {
     let mut results = Vec::with_capacity(operations.len());
     for operation in operations {
@@ -600,6 +608,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
@@ -613,6 +622,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }
@@ -678,6 +688,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    inference_token.clone(),
                 )
                 .await
             }

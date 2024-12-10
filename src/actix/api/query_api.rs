@@ -17,6 +17,7 @@ use crate::actix::helpers::{self, get_request_hardware_counter, process_response
 use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
+use crate::common::inference::InferenceToken;
 use crate::common::points::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
@@ -28,6 +29,7 @@ async fn query_points(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequest {
         internal: query_request,
@@ -59,9 +61,8 @@ async fn query_points(
         Some(shard_keys) => shard_keys.into(),
     };
     let hw_measurement_acc = request_hw_counter.get_counter();
-
     let result = async move {
-        let request = convert_query_request_from_rest(query_request).await?;
+        let request = convert_query_request_from_rest(query_request, &inference_token).await?;
 
         let points = dispatcher
             .toc(&access, &pass)
@@ -97,6 +98,7 @@ async fn query_points_batch(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
 
@@ -129,7 +131,7 @@ async fn query_points_batch(
                 shard_key,
             } = request;
 
-            let request = convert_query_request_from_rest(internal).await?;
+            let request = convert_query_request_from_rest(internal, &inference_token).await?;
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
                 Some(shard_keys) => shard_keys.into(),
@@ -172,6 +174,7 @@ async fn query_points_groups(
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryGroupsRequest {
         search_group_request,
@@ -204,9 +207,8 @@ async fn query_points_groups(
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
-
         let query_group_request =
-            convert_query_groups_request_from_rest(search_group_request).await?;
+            convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
 
         do_query_point_groups(
             dispatcher.toc(&access, &pass),

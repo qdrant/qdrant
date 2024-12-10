@@ -10,8 +10,8 @@ use storage::rbac::Access;
 use self::claims::{Claims, ValueExists};
 use self::jwt_parser::JwtParser;
 use super::strings::ct_eq;
+use crate::common::inference::InferenceToken;
 use crate::settings::ServiceConfig;
-
 pub mod claims;
 pub mod jwt_parser;
 
@@ -74,7 +74,7 @@ impl AuthKeys {
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-    ) -> Result<Access, AuthError> {
+    ) -> Result<(Access, InferenceToken), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
         else {
@@ -84,15 +84,22 @@ impl AuthKeys {
         };
 
         if self.can_write(key) {
-            return Ok(Access::full("Read-write access by key"));
+            return Ok((
+                Access::full("Read-write access by key"),
+                InferenceToken(None),
+            ));
         }
 
         if self.can_read(key) {
-            return Ok(Access::full_ro("Read-only access by key"));
+            return Ok((
+                Access::full_ro("Read-only access by key"),
+                InferenceToken(None),
+            ));
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {
             let Claims {
+                sub,
                 exp: _, // already validated on decoding
                 access,
                 value_exists,
@@ -102,7 +109,7 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok(access);
+            return Ok((access, InferenceToken(sub)));
         }
 
         Err(AuthError::Unauthorized(
