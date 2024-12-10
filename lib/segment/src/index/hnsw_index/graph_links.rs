@@ -13,6 +13,7 @@ use common::zeros::WriteZerosExt as _;
 use itertools::Either;
 use memmap2::Mmap;
 use memory::{madvise, mmap_ops};
+use zerocopy::little_endian::U64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -54,62 +55,127 @@ links offset = level_offsets[level] + offsets[reindex[point_id]]
 
 const HEADER_SIZE: usize = 64;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct GraphLinksFileInfo {
-    compressed: bool,
-    m: usize,
-    m0: usize,
     point_count: usize,
     reindex_start: usize,
     links_start: usize,
     offsets_start: usize,
     offsets_end: usize,
+    compression: Option<CompressionInfo>,
+}
+
+#[derive(Clone, Debug)]
+struct CompressionInfo {
+    m: usize,
+    m0: usize,
     bits_per_unsorted: u8,
 }
 
+/// File header for the plain format.
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
-struct GraphLinksFileHeader {
+struct HeaderPlain {
     point_count: u64,
     levels_count: u64,
-    total_links_len: u64,
-    total_offsets_len: u64,
-    offsets_padding: u64,
-    m: u16,
-    m0: u16,
-    padding: [u8; 4],
+    total_links_count: u64,
+    total_offset_count: u64,
+    /// Either 0 or 4.
+    offsets_padding_bytes: u64,
+    zero_padding: [u8; 24],
 }
 
+/// File header for the compressed format.
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
+#[repr(C)]
+struct HeaderCompressed {
+    point_count: U64,
+    /// Should be [`HEADER_VERSION_COMPRESSED`].
+    ///
+    /// Deliberately placed at the same offset as [`HeaderPlain::levels_count`]
+    /// and set to an impossibly large number to make old Qdrant versions fail
+    /// fast when trying to read the new format.
+    version: U64,
+    levels_count: U64,
+    total_links_bytes: U64,
+    total_offset_count: U64,
+    m: U64,
+    m0: U64,
+    zero_padding: [u8; 8],
+}
+
+const HEADER_VERSION_COMPRESSED: u64 = 0xFFFF_FFFF_FFFF_FF01;
+
 impl GraphLinksFileInfo {
-    pub fn load(data: &[u8]) -> Option<GraphLinksFileInfo> {
-        let (header, _) = GraphLinksFileHeader::ref_from_prefix(data).ok()?;
-        let compressed = header.offsets_padding == u64::MAX;
+    pub fn load(data: &[u8]) -> OperationResult<GraphLinksFileInfo> {
+        let levels_count_or_version = data
+            .get(size_of::<u64>()..)
+            .and_then(|x| U64::ref_from_prefix(x).ok())
+            .ok_or_else(Self::error_unsufficent_size)?
+            .0
+            .get();
 
-        let reindex_start = HEADER_SIZE + header.levels_count as usize * size_of::<u64>();
-        let links_start =
-            reindex_start + header.point_count as usize * size_of::<PointOffsetType>();
-        let offsets_start = if compressed {
-            (links_start + header.total_links_len as usize).next_multiple_of(8)
-        } else {
-            links_start
-                + header.total_links_len as usize * size_of::<PointOffsetType>()
-                + header.offsets_padding as usize
-        };
-        let offsets_end = offsets_start + header.total_offsets_len as usize * size_of::<u64>();
+        // Header for the plain format lacks the version field, but we can be
+        // sure that it contains no more than 2^32 levels.
+        let is_plain = u64::from_le(levels_count_or_version) <= 1 << 32;
 
-        Some(GraphLinksFileInfo {
-            compressed,
-            point_count: header.point_count as usize,
-            reindex_start,
-            links_start,
-            offsets_start,
-            offsets_end,
-            m: header.m as usize,
-            m0: header.m0 as usize,
-            bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
-                u32::try_from(header.point_count).ok()?.saturating_sub(1),
+        match levels_count_or_version {
+            _ if is_plain => {
+                let (header, _) = HeaderPlain::ref_from_prefix(data)
+                    .map_err(|_| Self::error_unsufficent_size())?;
+                let reindex_start = HEADER_SIZE + header.levels_count as usize * size_of::<u64>();
+                let links_start =
+                    reindex_start + header.point_count as usize * size_of::<PointOffsetType>();
+                let offsets_start = links_start
+                    + header.total_links_count as usize * size_of::<PointOffsetType>()
+                    + header.offsets_padding_bytes as usize;
+                Ok(GraphLinksFileInfo {
+                    point_count: header.point_count as usize,
+                    reindex_start,
+                    links_start,
+                    offsets_start,
+                    offsets_end: offsets_start
+                        + header.total_offset_count as usize * size_of::<u64>(),
+                    compression: None,
+                })
+            }
+            HEADER_VERSION_COMPRESSED => {
+                let (header, _) = HeaderCompressed::ref_from_prefix(data)
+                    .map_err(|_| Self::error_unsufficent_size())?;
+                debug_assert_eq!(header.version.get(), HEADER_VERSION_COMPRESSED);
+                let point_count = header.point_count.get() as usize;
+                let reindex_start =
+                    HEADER_SIZE + header.levels_count.get() as usize * size_of::<u64>();
+                let links_start = reindex_start
+                    + header.point_count.get() as usize * size_of::<PointOffsetType>();
+                let offsets_start = (links_start + header.total_links_bytes.get() as usize)
+                    .next_multiple_of(size_of::<u64>());
+                Ok(GraphLinksFileInfo {
+                    point_count,
+                    reindex_start,
+                    links_start,
+                    offsets_start,
+                    offsets_end: offsets_start
+                        + header.total_offset_count.get() as usize * size_of::<u64>(),
+                    compression: Some(CompressionInfo {
+                        m: header.m.get() as usize,
+                        m0: header.m0.get() as usize,
+                        bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
+                            u32::try_from(point_count.saturating_sub(1)).map_err(|_| {
+                                OperationError::service_error("Too many points in GraphLinks file")
+                            })?,
+                        )),
+                    }),
+                })
+            }
+            _ => Err(OperationError::service_error(
+                "Unsupported version of GraphLinks file",
             )),
-        })
+        }
+    }
+
+    fn error_unsufficent_size() -> OperationError {
+        OperationError::service_error("Unsufficent file size for GraphLinks file")
     }
 
     pub fn level_offsets(&self) -> Range<usize> {
@@ -242,27 +308,30 @@ impl GraphLinksConverter {
     }
 
     fn serialize_to_writer(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        let header = GraphLinksFileHeader {
-            point_count: self.reindex.len() as u64,
-            levels_count: self.level_offsets.len() as u64,
-            total_links_len: if self.compressed {
-                self.links.len() as u64
-            } else {
-                self.links.len() as u64 / size_of::<PointOffsetType>() as u64
-            },
-            total_offsets_len: self.offsets.len() as u64,
-            offsets_padding: if self.compressed {
-                u64::MAX
-            } else {
-                self.offsets_padding as u64
-            },
-            m: if self.compressed { self.m as u16 } else { 0 },
-            m0: if self.compressed { self.m0 as u16 } else { 0 },
-            padding: [0; 4],
-        };
+        if self.compressed {
+            let header = HeaderCompressed {
+                version: HEADER_VERSION_COMPRESSED.into(),
+                point_count: U64::new(self.reindex.len() as u64),
+                total_links_bytes: U64::new(self.links.len() as u64),
+                total_offset_count: U64::new(self.offsets.len() as u64),
+                levels_count: U64::new(self.level_offsets.len() as u64),
+                m: U64::new(self.m as u64),
+                m0: U64::new(self.m0 as u64),
+                zero_padding: [0; 8],
+            };
+            writer.write_all(header.as_bytes())?;
+        } else {
+            let header = HeaderPlain {
+                point_count: self.reindex.len() as u64,
+                levels_count: self.level_offsets.len() as u64,
+                total_links_count: self.links.len() as u64 / size_of::<PointOffsetType>() as u64,
+                total_offset_count: self.offsets.len() as u64,
+                offsets_padding_bytes: self.offsets_padding as u64,
+                zero_padding: [0; 24],
+            };
+            writer.write_all(header.as_bytes())?;
+        }
 
-        writer.write_all(header.as_bytes())?;
-        writer.write_zeros(HEADER_SIZE - size_of::<GraphLinksFileHeader>())?;
         writer.write_all(self.level_offsets.as_bytes())?;
         writer.write_all(self.reindex.as_bytes())?;
         writer.write_all(&self.links)?;
@@ -288,7 +357,7 @@ pub fn convert_to_compressed(path: &Path, m: usize, m0: usize) -> OperationResul
     let start = std::time::Instant::now();
 
     let links = GraphLinksMmap::load_from_file(path)?;
-    if links.info.compressed {
+    if links.info.compression.is_some() {
         return Ok(());
     }
 
@@ -307,7 +376,7 @@ pub fn convert_to_compressed(path: &Path, m: usize, m0: usize) -> OperationResul
     converter.save_as(path)?;
     let new_size = path.metadata()?.len();
 
-    log::info!(
+    log::debug!(
         "Compressed HNSW graph links in {:.1?}: {:.1}MB -> {:.1}MB ({:.1}%)",
         start.elapsed(),
         original_size as f64 / 1024.0 / 1024.0,
@@ -503,14 +572,14 @@ impl GraphLinksView<'_> {
 
         let links_range = (offset0 as usize)..(offset1 as usize);
 
-        if self.info.compressed {
+        if let Some(compression) = &self.info.compression {
             for_each_packed_link(
                 &all_links[links_range],
-                self.info.bits_per_unsorted,
+                compression.bits_per_unsorted,
                 if level == 0 {
-                    self.info.m0
+                    compression.m0
                 } else {
-                    self.info.m
+                    compression.m
                 },
                 f,
             );
