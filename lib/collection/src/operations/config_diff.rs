@@ -416,7 +416,7 @@ mod tests {
     #[case::number(r#"{ "max_optimization_threads": 5 }"#, Some(5))]
     #[case::auto(r#"{ "max_optimization_threads": "auto" }"#, None)]
     #[case::null(r#"{ "max_optimization_threads": null }"#, Some(1))] // no effect
-    #[case::nothing(r#"{  }"#, Some(1))] // no effect
+    #[case::nothing("{  }", Some(1))] // no effect
     #[should_panic]
     #[case::other(r#"{ "max_optimization_threads": "other" }"#, Some(1))]
     fn test_set_optimizer_threads(#[case] json_diff: &str, #[case] expected: Option<usize>) {
