@@ -559,7 +559,7 @@ ACTION_ACCESS = {
     "readyz": EndpointAccess(True, True, True, "GET /readyz", "grpc.health.v1.Health/Check"),
     "healthz": EndpointAccess(True, True, True, "GET /healthz", "grpc.health.v1.Health/Check"),
     "livez": EndpointAccess(True, True, True, "GET /livez", "grpc.health.v1.Health/Check"),
-    "telemetry": EndpointAccess(True, False, True, "GET /telemetry", coll_r=False),
+    "telemetry": EndpointAccess(True, True, True, "GET /telemetry"),
     "metrics": EndpointAccess(True, False, True, "GET /metrics", coll_r=False),
     "post_locks": EndpointAccess(False, False, True, "POST /locks"),
     "get_locks": EndpointAccess(True, False, True, "GET /locks", coll_r=False),
