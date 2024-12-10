@@ -45,7 +45,6 @@ mod tests {
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -79,7 +78,6 @@ mod tests {
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -113,7 +111,6 @@ mod tests {
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -147,7 +144,6 @@ mod tests {
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -181,7 +177,6 @@ mod tests {
             let orginal_score = -l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -215,7 +210,6 @@ mod tests {
             let orginal_score = -l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -247,7 +241,6 @@ mod tests {
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -279,7 +272,6 @@ mod tests {
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < ERROR);
         }
-        counter.discard_results();
     }
 
     // ignore this test because it requires long time

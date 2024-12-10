@@ -109,8 +109,6 @@ fn binary_bench(c: &mut Criterion) {
             }
         });
     });
-
-    hardware_counter.discard_results();
 }
 
 criterion_group! {

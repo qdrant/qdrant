@@ -175,7 +175,7 @@ impl ShardOperation for LocalShard {
         request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter()?;
@@ -188,7 +188,7 @@ impl ShardOperation for LocalShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        _hw_measurement_acc: &HwMeasurementAcc, // TODO: measure hardware when counting
+        _hw_measurement_acc: HwMeasurementAcc, // TODO: measure hardware when counting
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter()?;
@@ -247,7 +247,7 @@ impl ShardOperation for LocalShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter()?;

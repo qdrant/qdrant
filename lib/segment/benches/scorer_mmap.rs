@@ -12,7 +12,7 @@ use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
 use segment::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
-use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
+use segment::vector_storage::{new_raw_scorer_for_test, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 #[cfg(not(target_os = "windows"))]
@@ -62,7 +62,7 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
         b.iter_batched(
             || QueryVector::from(random_vector(DIM)),
             |vector| {
-                new_raw_scorer(
+                new_raw_scorer_for_test(
                     vector,
                     &storage,
                     borrowed_id_tracker.deleted_point_bitslice(),

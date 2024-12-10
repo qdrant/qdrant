@@ -26,7 +26,6 @@ pub struct CustomQueryScorer<
     _input_query: PhantomData<TInputQuery>,
     _element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
-    dim: usize,
 }
 
 impl<
@@ -38,7 +37,11 @@ impl<
         TStoredQuery: Query<TypedDenseVector<TElement>>,
     > CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
 {
-    pub fn new(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(
+        query: TInputQuery,
+        vector_storage: &'a TVectorStorage,
+        mut hardware_counter: HardwareCounterCell,
+    ) -> Self {
         let mut dim = 0;
         let query = query
             .transform(|vector| {
@@ -50,35 +53,16 @@ impl<
             })
             .unwrap();
 
+        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+
         Self {
             query,
             vector_storage,
             metric: PhantomData,
             _input_query: PhantomData,
             _element: PhantomData,
-            hardware_counter: HardwareCounterCell::new(),
-            dim,
+            hardware_counter,
         }
-    }
-}
-
-impl<
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: DenseVectorStorage<TElement>,
-        TInputQuery: Query<DenseVector>,
-        TStoredQuery: Query<TypedDenseVector<TElement>>,
-    > CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
-{
-    fn hardware_counter_finalized(&self) -> HardwareCounterCell {
-        let mut counter = self.hardware_counter.take();
-
-        // Calculate the dimension multiplier here to improve performance of measuring.
-        counter
-            .cpu_counter_mut()
-            .multiplied_mut(self.dim * size_of::<TElement>());
-
-        counter
     }
 }
 
@@ -123,9 +107,5 @@ impl<
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
-    }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter_finalized()
     }
 }

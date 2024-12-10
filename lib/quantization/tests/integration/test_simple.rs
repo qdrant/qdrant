@@ -265,7 +265,6 @@ mod tests {
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
-        counter.discard_results();
     }
 
     #[test]
@@ -302,7 +301,6 @@ mod tests {
             let orginal_score = -dot_similarity(&vector_data[0], &vector_data[i]);
             assert!((score - orginal_score).abs() < error);
         }
-        counter.discard_results();
     }
 
     #[test]

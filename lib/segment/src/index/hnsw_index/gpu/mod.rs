@@ -177,7 +177,6 @@ mod tests {
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers_builder.link_new_point(idx, scorer);
-            raw_scorer.take_hardware_counter().discard_results();
         }
 
         let search_vectors = (0..search_counts)
@@ -243,7 +242,6 @@ mod tests {
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let search_result_gpu = graph.search(top, ef, scorer, None);
-            raw_scorer.take_hardware_counter().discard_results();
 
             let fake_filter_context = FakeFilterContext {};
             let raw_scorer = test
@@ -253,7 +251,6 @@ mod tests {
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let search_result_cpu = ref_graph.search(top, ef, scorer, None);
-            raw_scorer.take_hardware_counter().discard_results();
 
             let mut gpu_set = HashSet::default();
             let mut cpu_set = HashSet::default();
