@@ -289,6 +289,7 @@ tar = { git = "https://github.com/qdrant/tar-rs", branch = "main" }
 [package.metadata.deb]
 maintainer = "Qdrant Team <team@qdrant.com>"
 depends = "$auto"
+default-features = true
 features = ["deb"]
 license-file = "LICENSE"
 section = "database"
@@ -299,6 +300,6 @@ Qdrant is a high-performance vector search engine. It is designed to index and s
 assets = [
     ["target/release/qdrant", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/qdrant/README", "644"],
-    ["static/*/*", "/etc/qdrant/static", "644"],
+    ["static/*/*", "etc/qdrant/static", "644"],
     ["config/deb.yaml", "etc/qdrant/config.yaml", "644"],
 ]
