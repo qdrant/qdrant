@@ -12,6 +12,7 @@ use crate::index::posting_list::{PostingList, PostingListIterator};
 
 /// A wrapper around [`InvertedIndexRam`].
 /// Will be replaced with the new compressed implementation eventually.
+// TODO: Remove this inverted index implementation, it is no longer used
 #[derive(Debug, Clone, PartialEq)]
 pub struct InvertedIndexImmutableRam {
     inner: InvertedIndexRam,
@@ -27,6 +28,8 @@ impl InvertedIndex for InvertedIndexImmutableRam {
         let mut inverted_index = InvertedIndexRam {
             postings: Default::default(),
             vector_count: mmap_inverted_index.file_header.vector_count,
+            // Calculated after reading mmap
+            total_sparse_size: 0,
         };
 
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
@@ -40,6 +43,8 @@ impl InvertedIndex for InvertedIndexImmutableRam {
                 elements: posting_list.to_owned(),
             });
         }
+
+        inverted_index.total_sparse_size = inverted_index.total_posting_elements_size();
 
         Ok(InvertedIndexImmutableRam {
             inner: inverted_index,
@@ -91,6 +96,10 @@ impl InvertedIndex for InvertedIndexImmutableRam {
 
     fn vector_count(&self) -> usize {
         self.inner.vector_count()
+    }
+
+    fn total_sparse_vectors_size(&self) -> usize {
+        self.inner.total_sparse_vectors_size()
     }
 
     fn max_index(&self) -> Option<DimOffset> {
