@@ -13,8 +13,8 @@ use api::grpc::qdrant::update_collection_cluster_setup_request::{
 };
 use api::grpc::qdrant::{CreateShardKey, Vectors};
 use api::rest::schema::ShardKeySelector;
-use api::rest::BaseGroupRequest;
-use common::types::{MaxOptimizationThreads, ScoreType};
+use api::rest::{BaseGroupRequest, MaxOptimizationThreads};
+use common::types::ScoreType;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{

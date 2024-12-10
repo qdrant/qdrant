@@ -5,7 +5,6 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::MaxOptimizationThreadsSetting;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -1608,7 +1607,7 @@ impl From<segment::data_types::order_by::StartFrom> for StartFrom {
     }
 }
 
-impl TryFrom<MaxOptimizationThreads> for common::types::MaxOptimizationThreads {
+impl TryFrom<MaxOptimizationThreads> for rest::MaxOptimizationThreads {
     type Error = Status;
 
     fn try_from(value: MaxOptimizationThreads) -> Result<Self, Self::Error> {
@@ -1627,7 +1626,7 @@ impl TryFrom<MaxOptimizationThreads> for common::types::MaxOptimizationThreads {
                 })?;
 
                 match setting {
-                    Setting::Auto => Self::Setting(MaxOptimizationThreadsSetting::Auto),
+                    Setting::Auto => Self::Setting(rest::MaxOptimizationThreadsSetting::Auto),
                 }
             }
             Variant::Value(num_threads) => Self::Threads(num_threads as usize),

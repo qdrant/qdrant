@@ -1,7 +1,7 @@
 use std::hash::Hash;
 use std::num::NonZeroU32;
 
-use common::types::MaxOptimizationThreads;
+use api::rest::MaxOptimizationThreads;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::{

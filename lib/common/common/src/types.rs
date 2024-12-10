@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 
 use ordered_float::OrderedFloat;
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 
 /// Type of vector matching score
 pub type ScoreType = f32;
@@ -57,35 +55,6 @@ impl From<usize> for DetailsLevel {
             0 => DetailsLevel::Level0,
             1 => DetailsLevel::Level1,
             _ => DetailsLevel::Level2,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, Default, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MaxOptimizationThreadsSetting {
-    #[default]
-    Auto,
-}
-
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, JsonSchema)]
-#[serde(untagged)]
-pub enum MaxOptimizationThreads {
-    Setting(MaxOptimizationThreadsSetting),
-    Threads(usize),
-}
-
-impl Default for MaxOptimizationThreads {
-    fn default() -> Self {
-        MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto)
-    }
-}
-
-impl MaxOptimizationThreads {
-    pub fn value(&self) -> Option<usize> {
-        match self {
-            MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto) => None,
-            MaxOptimizationThreads::Threads(value) => Some(*value),
         }
     }
 }
