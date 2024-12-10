@@ -91,6 +91,9 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
             .map(|i| i as usize),
         read_rate_limit: value.write_rate_limit.map(|i| i as usize),
         write_rate_limit: value.write_rate_limit.map(|i| i as usize),
+        max_collection_payload_size_bytes: value
+            .max_collection_payload_size_bytes
+            .map(|i| i as usize),
     }
 }
 

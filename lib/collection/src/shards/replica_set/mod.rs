@@ -1031,14 +1031,17 @@ impl ShardReplicaSet {
             .map(|i| match i {
                 Shard::Local(local) => {
                     let mut total_vector_size = 0;
+                    let mut total_payload_size = 0;
 
                     for segment in local.segments.read().iter() {
                         let size_info = segment.1.get().read().size_info();
                         total_vector_size += size_info.vectors_size_bytes;
+                        total_payload_size += size_info.payloads_size_bytes;
                     }
 
                     LocalDataStats {
                         vector_storage_size: total_vector_size,
+                        payload_storage_size: total_payload_size,
                     }
                 }
                 Shard::Proxy(_)

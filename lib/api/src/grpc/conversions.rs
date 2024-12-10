@@ -1636,6 +1636,9 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
                 .map(|i| i as usize),
             read_rate_limit: value.read_rate_limit.map(|i| i as usize),
             write_rate_limit: value.read_rate_limit.map(|i| i as usize),
+            max_collection_payload_size_bytes: value
+                .max_collection_payload_size_bytes
+                .map(|i| i as usize),
         }
     }
 }
@@ -1657,6 +1660,9 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
                 .map(|i| i as u64),
             read_rate_limit: value.read_rate_limit.map(|i| i as u32),
             write_rate_limit: value.write_rate_limit.map(|i| i as u32),
+            max_collection_payload_size_bytes: value
+                .max_collection_payload_size_bytes
+                .map(|i| i as u64),
         }
     }
 }

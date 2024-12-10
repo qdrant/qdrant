@@ -7312,6 +7312,13 @@
             "format": "uint",
             "minimum": 1,
             "nullable": true
+          },
+          "max_collection_payload_size_bytes": {
+            "description": "Max size of a collections payload storage in bytes",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
