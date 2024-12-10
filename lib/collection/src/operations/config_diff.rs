@@ -334,7 +334,6 @@ impl Validate for QuantizationConfigDiff {
 
 #[cfg(test)]
 mod tests {
-    use common::types::MaxOptimizationThreads;
     use segment::types::{Distance, HnswConfig};
 
     use super::*;
@@ -382,7 +381,7 @@ mod tests {
             memmap_threshold: None,
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: MaxOptimizationThreads::Threads(1),
+            max_optimization_threads: Some(1),
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "indexing_threshold": 10000 }"#).unwrap();
@@ -400,27 +399,21 @@ mod tests {
             memmap_threshold: None,
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: MaxOptimizationThreads::Auto,
+            max_optimization_threads: None,
         };
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "max_optimization_threads": 1 }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
 
-        assert_eq!(
-            new_config.max_optimization_threads,
-            MaxOptimizationThreads::Threads(1)
-        );
-        assert_eq!(new_config.max_optimization_threads.value(), Some(1));
+        assert_eq!(new_config.max_optimization_threads, Some(1));
+        assert_eq!(new_config.max_optimization_threads, Some(1));
 
         let update: OptimizersConfigDiff =
             serde_json::from_str(r#"{ "max_optimization_threads": null }"#).unwrap();
         let new_config = update.update(&base_config).unwrap();
 
-        assert_eq!(
-            new_config.max_optimization_threads,
-            MaxOptimizationThreads::Auto
-        );
-        assert_eq!(new_config.max_optimization_threads.value(), None);
+        assert_eq!(new_config.max_optimization_threads, None);
+        assert_eq!(new_config.max_optimization_threads, None);
     }
 
     #[test]

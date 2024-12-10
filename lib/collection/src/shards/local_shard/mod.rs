@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use arc_swap::ArcSwap;
 use common::cpu::CpuBudget;
 use common::rate_limiting::RateLimiter;
-use common::types::{MaxOptimizationThreads, TelemetryDetail};
+use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
@@ -174,11 +174,6 @@ impl LocalShard {
         )
         .await;
 
-        let max_optimization_threads = match config.optimizer_config.max_optimization_threads {
-            MaxOptimizationThreads::Auto => None,
-            MaxOptimizationThreads::Threads(n) => Some(n),
-        };
-
         let mut update_handler = UpdateHandler::new(
             shared_storage_config.clone(),
             payload_index_schema.clone(),
@@ -190,7 +185,7 @@ impl LocalShard {
             segment_holder.clone(),
             locked_wal.clone(),
             config.optimizer_config.flush_interval_sec,
-            max_optimization_threads,
+            config.optimizer_config.max_optimization_threads,
             clocks.clone(),
             shard_path.into(),
         );
@@ -752,11 +747,7 @@ impl LocalShard {
         );
         update_handler.optimizers = new_optimizers;
         update_handler.flush_interval_sec = config.optimizer_config.flush_interval_sec;
-        update_handler.max_optimization_threads =
-            match config.optimizer_config.max_optimization_threads {
-                MaxOptimizationThreads::Auto => None,
-                MaxOptimizationThreads::Threads(n) => Some(n),
-            };
+        update_handler.max_optimization_threads = config.optimizer_config.max_optimization_threads;
         update_handler.run_workers(update_receiver);
 
         self.update_sender.load().send(UpdateSignal::Nop).await?;

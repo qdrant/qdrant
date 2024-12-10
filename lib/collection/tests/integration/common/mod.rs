@@ -12,7 +12,6 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
 use collection::shards::CollectionId;
 use common::cpu::CpuBudget;
-use common::types::MaxOptimizationThreads;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.
@@ -30,7 +29,7 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     memmap_threshold: None,
     indexing_threshold: Some(50_000),
     flush_interval_sec: 30,
-    max_optimization_threads: MaxOptimizationThreads::Threads(2),
+    max_optimization_threads: Some(2),
 };
 
 #[cfg(test)]

@@ -14,7 +14,6 @@ use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
-use common::types::MaxOptimizationThreads;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::thread_rng;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
@@ -78,7 +77,7 @@ fn batch_search_bench(c: &mut Criterion) {
             memmap_threshold: Some(100_000),
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: MaxOptimizationThreads::Threads(2),
+            max_optimization_threads: Some(2),
         },
         wal_config,
         hnsw_config: Default::default(),

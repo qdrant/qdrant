@@ -5,6 +5,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::MaxOptimizationThreadsSetting;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -1626,7 +1627,7 @@ impl TryFrom<MaxOptimizationThreads> for common::types::MaxOptimizationThreads {
                 })?;
 
                 match setting {
-                    Setting::Auto => Self::Auto,
+                    Setting::Auto => Self::Setting(MaxOptimizationThreadsSetting::Auto),
                 }
             }
             Variant::Value(num_threads) => Self::Threads(num_threads as usize),
@@ -1635,15 +1636,40 @@ impl TryFrom<MaxOptimizationThreads> for common::types::MaxOptimizationThreads {
     }
 }
 
-impl From<common::types::MaxOptimizationThreads> for MaxOptimizationThreads {
-    fn from(value: common::types::MaxOptimizationThreads) -> Self {
+impl TryFrom<MaxOptimizationThreads> for Option<usize> {
+    type Error = Status;
+
+    fn try_from(value: MaxOptimizationThreads) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::max_optimization_threads::{Setting, Variant};
+
+        let variant = value
+            .variant
+            .ok_or_else(|| Status::invalid_argument("Malformed MaxOptimizationThreads"))?;
+
+        Ok(match variant {
+            Variant::Setting(setting_int) => {
+                let setting = Setting::try_from(setting_int).map_err(|err| {
+                    Status::invalid_argument(format!(
+                        "Invalid MaxOptimizationThreads setting: {err}"
+                    ))
+                })?;
+
+                match setting {
+                    Setting::Auto => None,
+                }
+            }
+            Variant::Value(num_threads) => Some(num_threads as usize),
+        })
+    }
+}
+
+impl From<Option<usize>> for MaxOptimizationThreads {
+    fn from(value: Option<usize>) -> Self {
         use crate::grpc::qdrant::max_optimization_threads::{Setting, Variant};
 
         let variant = match value {
-            common::types::MaxOptimizationThreads::Auto => Variant::Setting(Setting::Auto as i32),
-            common::types::MaxOptimizationThreads::Threads(num_threads) => {
-                Variant::Value(num_threads as u64)
-            }
+            None => Variant::Setting(Setting::Auto.into()),
+            Some(n) => Variant::Value(n as u64),
         };
 
         Self {

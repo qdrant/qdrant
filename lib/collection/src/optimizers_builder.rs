@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use common::types::MaxOptimizationThreads;
 use schemars::JsonSchema;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, QuantizationConfig};
@@ -77,7 +76,7 @@ pub struct OptimizersConfig {
     /// If null - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
     #[serde(default)]
-    pub max_optimization_threads: MaxOptimizationThreads,
+    pub max_optimization_threads: Option<usize>,
 }
 
 impl OptimizersConfig {
@@ -91,7 +90,7 @@ impl OptimizersConfig {
             memmap_threshold: None,
             indexing_threshold: Some(100_000),
             flush_interval_sec: 60,
-            max_optimization_threads: MaxOptimizationThreads::Threads(0),
+            max_optimization_threads: Some(0),
         }
     }
 

@@ -435,13 +435,10 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         .indexing_threshold
                         .map(|x| x as u64),
                     flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    deprecated_max_optimization_threads: match config
+                    deprecated_max_optimization_threads: config
                         .optimizer_config
                         .max_optimization_threads
-                    {
-                        MaxOptimizationThreads::Auto => None,
-                        MaxOptimizationThreads::Threads(n) => Some(n as u64),
-                    },
+                        .map(|x| x as u64),
                     max_optimization_threads: Some(From::from(
                         config.optimizer_config.max_optimization_threads,
                     )),

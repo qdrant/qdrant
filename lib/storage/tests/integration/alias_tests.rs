@@ -6,7 +6,6 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::cpu::CpuBudget;
-use common::types::MaxOptimizationThreads;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -48,7 +47,7 @@ fn test_alias_operation() {
             memmap_threshold: Some(100),
             indexing_threshold: Some(100),
             flush_interval_sec: 2,
-            max_optimization_threads: MaxOptimizationThreads::Threads(2),
+            max_optimization_threads: Some(2),
         },
         optimizers_overwrite: None,
         wal: Default::default(),
