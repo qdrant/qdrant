@@ -1,6 +1,5 @@
 import logging
 import pathlib
-import time
 
 from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, drop_collection
 from .utils import *
@@ -12,6 +11,33 @@ N_PEERS = 2
 N_SHARDS = 1
 N_REPLICAS = 1
 COLLECTION_NAME = "test_collection_strict_mode"
+
+
+def test_strict_mode_upsert(tmp_path: pathlib.Path):
+    peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, 4)
+
+    strict_mode = {
+        "enabled": True,
+        "max_collection_vector_size_bytes": 11600,
+    }
+    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=4, replication_factor=N_REPLICAS, strict_mode=strict_mode)
+
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
+
+    # Insert points into leader
+    for i in range(10):
+        upsert_random_points(peer_urls[0], 100, collection_name=COLLECTION_NAME, offset=i*100)
+
+    # Check that each node blocks new points now
+    for peer_url in peer_urls:
+        for _ in range(32):
+            point = {"id": 1001, "payload": {}, "vector": random_dense_vector()}
+            res = upsert_points(peer_url, [point], collection_name=COLLECTION_NAME)
+            if not res.ok:
+                assert "Max vector storage size" in res.json()['status']['error']
+                return
+
+    assert False, "Should have blocked upsert but didn't"
 
 
 def test_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
