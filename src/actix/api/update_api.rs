@@ -17,6 +17,7 @@ use validator::Validate;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::common::inference::InferenceToken;
 use crate::common::points::{
     do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
     do_delete_points, do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors,
@@ -42,6 +43,7 @@ async fn upsert_points(
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let pass =
         match check_strict_mode(&operation.0, None, &collection.name, &dispatcher, &access).await {
@@ -62,6 +64,7 @@ async fn upsert_points(
         wait,
         ordering,
         access,
+        inference_token,
     ))
     .await
 }
@@ -73,6 +76,7 @@ async fn delete_points(
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
     let pass =
@@ -93,6 +97,7 @@ async fn delete_points(
         wait,
         ordering,
         access,
+        inference_token,
     ))
     .await
 }
@@ -104,6 +109,7 @@ async fn update_vectors(
     operation: Json<UpdateVectors>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
     let wait = params.wait.unwrap_or(false);
@@ -124,6 +130,7 @@ async fn update_vectors(
         wait,
         ordering,
         access,
+        inference_token,
     ))
     .await
 }
@@ -292,6 +299,7 @@ async fn update_batch(
     operations: Json<UpdateOperations>,
     params: Query<UpdateParam>,
     ActixAccess(access): ActixAccess,
+    inference_token: InferenceToken,
 ) -> impl Responder {
     let timing = Instant::now();
     let operations = operations.into_inner();
@@ -324,6 +332,7 @@ async fn update_batch(
         wait,
         ordering,
         access,
+        inference_token,
     )
     .await;
     process_response(response, timing, None)
