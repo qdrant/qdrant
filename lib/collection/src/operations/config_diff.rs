@@ -201,7 +201,29 @@ impl DiffConfig<HnswConfig> for HnswConfigDiff {}
 
 impl DiffConfig<HnswConfigDiff> for HnswConfigDiff {}
 
-impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {}
+impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
+    fn update(self, config: &OptimizersConfig) -> CollectionResult<OptimizersConfig>
+    where
+        Self: Sized + Serialize + DeserializeOwned + Merge,
+    {
+        Ok(OptimizersConfig {
+            deleted_threshold: self.deleted_threshold.unwrap_or(config.deleted_threshold),
+            vacuum_min_vector_number: self
+                .vacuum_min_vector_number
+                .unwrap_or(config.vacuum_min_vector_number),
+            default_segment_number: self
+                .default_segment_number
+                .unwrap_or(config.default_segment_number),
+            max_segment_size: self.max_segment_size.or(config.max_segment_size),
+            memmap_threshold: self.memmap_threshold.or(config.memmap_threshold),
+            indexing_threshold: self.indexing_threshold.or(config.indexing_threshold),
+            flush_interval_sec: self.flush_interval_sec.unwrap_or(config.flush_interval_sec),
+            max_optimization_threads: self
+                .max_optimization_threads
+                .map_or(config.max_optimization_threads, From::from),
+        })
+    }
+}
 
 impl DiffConfig<WalConfig> for WalConfigDiff {}
 
@@ -334,6 +356,7 @@ impl Validate for QuantizationConfigDiff {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use segment::types::{Distance, HnswConfig};
 
     use super::*;
@@ -389,8 +412,14 @@ mod tests {
         assert_eq!(new_config.indexing_threshold, Some(10000))
     }
 
-    #[test]
-    fn test_optimizer_threads_multi_update() {
+    #[rstest]
+    #[case::number(r#"{ "max_optimization_threads": 5 }"#, Some(5))]
+    #[case::auto(r#"{ "max_optimization_threads": "auto" }"#, None)]
+    #[case::null(r#"{ "max_optimization_threads": null }"#, Some(1))] // no effect
+    #[case::nothing(r#"{  }"#, Some(1))] // no effect
+    #[should_panic]
+    #[case::other(r#"{ "max_optimization_threads": "other" }"#, Some(1))]
+    fn test_set_optimizer_threads(#[case] json_diff: &str, #[case] expected: Option<usize>) {
         let base_config = OptimizersConfig {
             deleted_threshold: 0.9,
             vacuum_min_vector_number: 1000,
@@ -399,21 +428,13 @@ mod tests {
             memmap_threshold: None,
             indexing_threshold: Some(50_000),
             flush_interval_sec: 30,
-            max_optimization_threads: None,
+            max_optimization_threads: Some(1),
         };
-        let update: OptimizersConfigDiff =
-            serde_json::from_str(r#"{ "max_optimization_threads": 1 }"#).unwrap();
+
+        let update: OptimizersConfigDiff = serde_json::from_str(json_diff).unwrap();
         let new_config = update.update(&base_config).unwrap();
 
-        assert_eq!(new_config.max_optimization_threads, Some(1));
-        assert_eq!(new_config.max_optimization_threads, Some(1));
-
-        let update: OptimizersConfigDiff =
-            serde_json::from_str(r#"{ "max_optimization_threads": null }"#).unwrap();
-        let new_config = update.update(&base_config).unwrap();
-
-        assert_eq!(new_config.max_optimization_threads, None);
-        assert_eq!(new_config.max_optimization_threads, None);
+        assert_eq!(new_config.max_optimization_threads, expected);
     }
 
     #[test]

@@ -1070,3 +1070,12 @@ impl Default for MaxOptimizationThreads {
         MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto)
     }
 }
+
+impl From<MaxOptimizationThreads> for Option<usize> {
+    fn from(value: MaxOptimizationThreads) -> Self {
+        match value {
+            MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto) => None,
+            MaxOptimizationThreads::Threads(threads) => Some(threads),
+        }
+    }
+}
