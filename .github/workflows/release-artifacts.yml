@@ -50,6 +50,7 @@ jobs:
       - name: Build Debian Package
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
+          bash -x tools/sync-web-ui.sh
           cargo install cargo-deb
           cargo deb --no-strip --target ${{ matrix.target }}
       - name: Upload Debian package
