@@ -63,10 +63,10 @@ impl BatchAccumInferred {
     pub async fn from_batch_accum(
         batch: BatchAccum,
         inference_type: InferenceType,
-        inference_token: InferenceToken,
+        inference_token: &InferenceToken,
     ) -> Result<Self, StorageError> {
         let BatchAccum { objects } = batch;
-        Self::from_objects(objects, inference_type, inference_token).await
+        Self::from_objects(objects, inference_type, inference_token.clone()).await
     }
 
     pub fn get_vector(&self, data: &InferenceData) -> Option<&VectorPersisted> {

@@ -36,7 +36,8 @@ pub async fn convert_query_groups_request_from_rest(
     } = request;
 
     let inferred =
-        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, inference_token).await?;
+        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, &inference_token)
+            .await?;
     let query = query
         .map(|q| convert_query_with_inferred(q, &inferred))
         .transpose()?;
@@ -74,7 +75,7 @@ pub async fn convert_query_groups_request_from_rest(
 
 pub async fn convert_query_request_from_rest(
     request: rest::QueryRequestInternal,
-    inference_token: InferenceToken,
+    inference_token: &InferenceToken,
 ) -> Result<CollectionQueryRequest, StorageError> {
     let batch = collect_query_request(&request);
     let inferred =

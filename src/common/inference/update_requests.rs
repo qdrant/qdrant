@@ -43,7 +43,7 @@ pub async fn convert_point_struct(
 
     let inferred = if !batch_accum.objects.is_empty() {
         Some(
-            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, inference_token)
+            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
                 .await?,
         )
     } else {
@@ -220,7 +220,7 @@ pub async fn convert_point_vectors(
 
     let inferred = if !batch_accum.objects.is_empty() {
         Some(
-            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, inference_token)
+            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
                 .await?,
         )
     } else {
@@ -370,7 +370,7 @@ pub async fn convert_vectors(
 
     let inferred = if !batch_accum.objects.is_empty() {
         Some(
-            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, inference_token)
+            BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
                 .await?,
         )
     } else {
