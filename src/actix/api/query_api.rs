@@ -209,8 +209,7 @@ async fn query_points_groups(
             Some(shard_keys) => shard_keys.into(),
         };
         let query_group_request =
-            convert_query_groups_request_from_rest(search_group_request, inference_token.clone())
-                .await?;
+            convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
 
         do_query_point_groups(
             dispatcher.toc(&access, &pass),
