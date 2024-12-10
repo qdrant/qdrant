@@ -92,11 +92,19 @@ def create_payload_indexes(name: str, on_disk_payload_index: bool):
         )
         assert response.ok
 
-    response = requests.put(
-        f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "boolean_field", "field_type": "bool"},
-    )
-    assert response.ok
+    if on_disk_payload_index:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "boolean_field", "field_schema": {"type": "bool", "on_disk": True }},
+        )
+        assert response.ok
+    else:
+        response = requests.put(
+            f"http://{QDRANT_HOST}/collections/{name}/index",
+            json={"field_name": "boolean_field", "field_type": "bool"},
+        )
+        assert response.ok
+        
 
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",

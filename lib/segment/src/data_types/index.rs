@@ -185,7 +185,6 @@ pub struct BoolIndexParams {
 
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg(any())]
     pub on_disk: Option<bool>,
 }
 

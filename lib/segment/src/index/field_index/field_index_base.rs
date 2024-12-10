@@ -4,7 +4,9 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
 use super::bool_index::simple_bool_index::BoolIndexBuilder;
+use super::bool_index::BoolIndex;
 use super::facet_index::FacetIndex;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
@@ -16,7 +18,6 @@ use super::numeric_index::{
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::data_types::order_by::OrderValue;
-use crate::index::field_index::bool_index::simple_bool_index::BoolIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
@@ -146,7 +147,7 @@ impl FieldIndex {
     /// Returns `None` if there is no special logic for the given index
     /// returns `Some(true)` if condition is satisfied
     /// returns `Some(false)` if condition is not satisfied
-    pub fn check_condition(
+    pub fn special_check_condition(
         &self,
         condition: &FieldCondition,
         payload_value: &Value,
@@ -425,6 +426,7 @@ pub enum FieldIndexBuilder {
     FullTextIndex(FullTextIndexBuilder),
     FullTextMmapIndex(FullTextMmapIndexBuilder),
     BoolIndex(BoolIndexBuilder),
+    BoolMmapIndex(MmapBoolIndexBuilder),
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
 }
@@ -447,6 +449,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => index.init(),
             Self::GeoMmapIndex(index) => index.init(),
             Self::BoolIndex(index) => index.init(),
+            Self::BoolMmapIndex(index) => index.init(),
             Self::FullTextIndex(index) => index.init(),
             Self::FullTextMmapIndex(builder) => builder.init(),
             Self::UuidIndex(index) => index.init(),
@@ -469,6 +472,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => index.add_point(id, payload),
             Self::GeoMmapIndex(index) => index.add_point(id, payload),
             Self::BoolIndex(index) => index.add_point(id, payload),
+            Self::BoolMmapIndex(index) => index.add_point(id, payload),
             Self::FullTextIndex(index) => index.add_point(id, payload),
             Self::FullTextMmapIndex(builder) => {
                 FieldIndexBuilderTrait::add_point(builder, id, payload)
@@ -493,6 +497,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::GeoIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::GeoMmapIndex(index) => FieldIndex::GeoIndex(index.finalize()?),
             Self::BoolIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
+            Self::BoolMmapIndex(index) => FieldIndex::BoolIndex(index.finalize()?),
             Self::FullTextIndex(index) => FieldIndex::FullTextIndex(index.finalize()?),
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),

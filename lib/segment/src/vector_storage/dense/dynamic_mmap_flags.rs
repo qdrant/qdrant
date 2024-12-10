@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
+use common::types::PointOffsetType;
 use memmap2::MmapMut;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
@@ -129,6 +130,7 @@ impl DynamicMmapFlags {
 
         let flags_mmap = unsafe { MmapMut::map_mut(&file)? };
         drop(file);
+
         flags_mmap.madvise(madvise::get_global())?;
 
         #[cfg(unix)]
@@ -232,6 +234,11 @@ impl DynamicMmapFlags {
             status_file(&self.directory),
             self.directory.join(FLAGS_FILE),
         ]
+    }
+
+    /// Iterate over all "true" flags
+    pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
+        self.flags.iter_ones().map(|x| x as PointOffsetType)
     }
 }
 

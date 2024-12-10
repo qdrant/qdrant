@@ -1,5 +1,169 @@
+use common::types::PointOffsetType;
+use mmap_bool_index::MmapBoolIndex;
+use simple_bool_index::SimpleBoolIndex;
+
+use super::map_index::IdIter;
+use super::{PayloadFieldIndex, ValueIndexer};
+use crate::telemetry::PayloadIndexTelemetry;
+
 pub mod mmap_bool_index;
 pub mod simple_bool_index;
+
+pub enum BoolIndex {
+    Simple(SimpleBoolIndex),
+    Mmap(MmapBoolIndex),
+}
+
+impl BoolIndex {
+    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (bool, IdIter<'_>)> + '_> {
+        match self {
+            BoolIndex::Simple(index) => Box::new(index.iter_values_map()),
+            BoolIndex::Mmap(index) => Box::new(index.iter_values_map()),
+        }
+    }
+
+    pub fn iter_values(&self) -> Box<dyn Iterator<Item = bool> + '_> {
+        match self {
+            BoolIndex::Simple(index) => Box::new(index.iter_values()),
+            BoolIndex::Mmap(index) => Box::new(index.iter_values()),
+        }
+    }
+
+    pub fn iter_counts_per_value(&self) -> Box<dyn Iterator<Item = (bool, usize)> + '_> {
+        match self {
+            BoolIndex::Simple(index) => Box::new(index.iter_counts_per_value()),
+            BoolIndex::Mmap(index) => Box::new(index.iter_counts_per_value()),
+        }
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        match self {
+            BoolIndex::Simple(index) => index.get_telemetry_data(),
+            BoolIndex::Mmap(index) => index.get_telemetry_data(),
+        }
+    }
+
+    pub fn values_count(&self, point_id: PointOffsetType) -> usize {
+        match self {
+            BoolIndex::Simple(index) => index.values_count(point_id),
+            BoolIndex::Mmap(index) => index.values_count(point_id),
+        }
+    }
+
+    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
+        match self {
+            BoolIndex::Simple(index) => index.check_values_any(point_id, is_true),
+            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true),
+        }
+    }
+
+    pub fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
+        match self {
+            BoolIndex::Simple(index) => index.values_is_empty(point_id),
+            BoolIndex::Mmap(index) => index.values_is_empty(point_id),
+        }
+    }
+}
+
+impl PayloadFieldIndex for BoolIndex {
+    fn count_indexed_points(&self) -> usize {
+        match self {
+            BoolIndex::Simple(index) => index.count_indexed_points(),
+            BoolIndex::Mmap(index) => index.count_indexed_points(),
+        }
+    }
+
+    fn load(&mut self) -> crate::common::operation_error::OperationResult<bool> {
+        match self {
+            BoolIndex::Simple(index) => index.load(),
+            BoolIndex::Mmap(index) => index.load(),
+        }
+    }
+
+    fn cleanup(self) -> crate::common::operation_error::OperationResult<()> {
+        match self {
+            BoolIndex::Simple(index) => index.cleanup(),
+            BoolIndex::Mmap(index) => index.cleanup(),
+        }
+    }
+
+    fn flusher(&self) -> crate::common::Flusher {
+        match self {
+            BoolIndex::Simple(index) => index.flusher(),
+            BoolIndex::Mmap(index) => index.flusher(),
+        }
+    }
+
+    fn files(&self) -> Vec<std::path::PathBuf> {
+        match self {
+            BoolIndex::Simple(index) => index.files(),
+            BoolIndex::Mmap(index) => index.files(),
+        }
+    }
+
+    fn filter<'a>(
+        &'a self,
+        condition: &'a crate::types::FieldCondition,
+    ) -> Option<Box<dyn Iterator<Item = common::types::PointOffsetType> + 'a>> {
+        match self {
+            BoolIndex::Simple(index) => index.filter(condition),
+            BoolIndex::Mmap(index) => index.filter(condition),
+        }
+    }
+
+    fn estimate_cardinality(
+        &self,
+        condition: &crate::types::FieldCondition,
+    ) -> Option<super::CardinalityEstimation> {
+        match self {
+            BoolIndex::Simple(index) => index.estimate_cardinality(condition),
+            BoolIndex::Mmap(index) => index.estimate_cardinality(condition),
+        }
+    }
+
+    fn payload_blocks(
+        &self,
+        threshold: usize,
+        key: crate::types::PayloadKeyType,
+    ) -> Box<dyn Iterator<Item = super::PayloadBlockCondition> + '_> {
+        match self {
+            BoolIndex::Simple(index) => index.payload_blocks(threshold, key),
+            BoolIndex::Mmap(index) => index.payload_blocks(threshold, key),
+        }
+    }
+}
+
+impl ValueIndexer for BoolIndex {
+    type ValueType = bool;
+
+    fn add_many(
+        &mut self,
+        id: common::types::PointOffsetType,
+        values: Vec<Self::ValueType>,
+    ) -> crate::common::operation_error::OperationResult<()> {
+        match self {
+            BoolIndex::Simple(index) => index.add_many(id, values),
+            BoolIndex::Mmap(index) => index.add_many(id, values),
+        }
+    }
+
+    fn get_value(value: &serde_json::Value) -> Option<Self::ValueType> {
+        match value {
+            serde_json::Value::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn remove_point(
+        &mut self,
+        id: common::types::PointOffsetType,
+    ) -> crate::common::operation_error::OperationResult<()> {
+        match self {
+            BoolIndex::Simple(index) => index.remove_point(id),
+            BoolIndex::Mmap(index) => index.remove_point(id),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -11,7 +175,8 @@ mod tests {
     use tempfile::Builder;
 
     use super::mmap_bool_index::MmapBoolIndex;
-    use super::simple_bool_index::BoolIndex;
+    use super::simple_bool_index::SimpleBoolIndex;
+    use super::BoolIndex;
     use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
     use crate::index::field_index::{FieldIndexBuilderTrait as _, PayloadFieldIndex, ValueIndexer};
     use crate::json_path::JsonPath;
@@ -20,27 +185,29 @@ mod tests {
     const DB_NAME: &str = "test_db";
 
     trait OpenIndex {
-        fn open_at(path: &Path) -> impl PayloadFieldIndex + ValueIndexer<ValueType = bool>;
+        fn open_at(path: &Path) -> BoolIndex;
     }
 
-    impl OpenIndex for BoolIndex {
-        fn open_at(path: &Path) -> impl PayloadFieldIndex + ValueIndexer<ValueType = bool> {
+    impl OpenIndex for SimpleBoolIndex {
+        fn open_at(path: &Path) -> BoolIndex {
             let db = open_db_with_existing_cf(path).unwrap();
-            let mut index = BoolIndex::new(db.clone(), FIELD_NAME);
+            let mut index = SimpleBoolIndex::new(db.clone(), FIELD_NAME);
             // Try to load if it exists
             if index.load().unwrap() {
-                return index;
+                return BoolIndex::Simple(index);
             }
             drop(index);
 
             // Otherwise create a new one
-            BoolIndex::builder(db, FIELD_NAME).make_empty().unwrap()
+            SimpleBoolIndex::builder(db, FIELD_NAME)
+                .make_empty()
+                .unwrap()
         }
     }
 
     impl OpenIndex for MmapBoolIndex {
-        fn open_at(path: &Path) -> impl PayloadFieldIndex + ValueIndexer<ValueType = bool> {
-            MmapBoolIndex::open_or_create(path, FIELD_NAME.to_string()).unwrap()
+        fn open_at(path: &Path) -> BoolIndex {
+            MmapBoolIndex::builder(path).unwrap().make_empty().unwrap()
         }
     }
 
@@ -91,7 +258,7 @@ mod tests {
     #[case(json!([false, false]), 0)]
     #[case(json!([true, true]), 1)]
     fn test_filter_true(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        filter::<BoolIndex>(given.clone(), true, expected_count);
+        filter::<SimpleBoolIndex>(given.clone(), true, expected_count);
         filter::<MmapBoolIndex>(given, true, expected_count);
     }
 
@@ -105,13 +272,13 @@ mod tests {
     #[case(json!([false, false]), 1)]
     #[case(json!([true, true]), 0)]
     fn test_filter_false(#[case] given: serde_json::Value, #[case] expected_count: usize) {
-        filter::<BoolIndex>(given.clone(), false, expected_count);
+        filter::<SimpleBoolIndex>(given.clone(), false, expected_count);
         filter::<MmapBoolIndex>(given, false, expected_count);
     }
 
     #[test]
     fn test_load_from_disk() {
-        load_from_disk::<BoolIndex>();
+        load_from_disk::<SimpleBoolIndex>();
         load_from_disk::<MmapBoolIndex>();
     }
 
@@ -146,7 +313,7 @@ mod tests {
     #[case(json!(false), json!(true))]
     #[case(json!([false, true]), json!(true))]
     fn test_modify_value(#[case] before: serde_json::Value, #[case] after: serde_json::Value) {
-        modify_value::<BoolIndex>(before.clone(), after.clone());
+        modify_value::<SimpleBoolIndex>(before.clone(), after.clone());
         modify_value::<MmapBoolIndex>(before, after);
     }
 
@@ -171,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_indexed_count() {
-        indexed_count::<BoolIndex>();
+        indexed_count::<SimpleBoolIndex>();
         indexed_count::<MmapBoolIndex>();
     }
 
@@ -191,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_payload_blocks() {
-        payload_blocks::<BoolIndex>();
+        payload_blocks::<SimpleBoolIndex>();
         payload_blocks::<MmapBoolIndex>();
     }
 
@@ -216,7 +383,7 @@ mod tests {
 
     #[test]
     fn test_estimate_cardinality() {
-        estimate_cardinality::<BoolIndex>();
+        estimate_cardinality::<SimpleBoolIndex>();
         estimate_cardinality::<MmapBoolIndex>();
     }
 
