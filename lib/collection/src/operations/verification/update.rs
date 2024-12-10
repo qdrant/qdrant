@@ -3,7 +3,7 @@ use segment::types::{Filter, StrictModeConfig};
 
 use super::{check_limit_opt, StrictModeVerification};
 use crate::collection::Collection;
-use crate::common::local_data_stats::LocalDataAtomicStats;
+use crate::common::collection_size_stats::CollectionSizeAtomicStats;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};
 use crate::operations::point_ops::PointsSelector;
 use crate::operations::types::CollectionError;
@@ -64,8 +64,9 @@ impl StrictModeVerification for SetPayload {
     ) -> Result<(), CollectionError> {
         if let Some(payload_size_limit_bytes) = strict_mode_config.max_collection_payload_size_bytes
         {
-            let local_stats = collection.local_stats_estimations().await;
-            check_collection_payload_size_limit(payload_size_limit_bytes, local_stats)?;
+            if let Some(local_stats) = collection.estimated_collection_stats().await {
+                check_collection_payload_size_limit(payload_size_limit_bytes, local_stats)?;
+            }
         }
 
         Ok(())
@@ -203,7 +204,9 @@ async fn check_collection_size_limit(
         return Ok(());
     }
 
-    let stats = collection.local_stats_estimations().await;
+    let Some(stats) = collection.estimated_collection_stats().await else {
+        return Ok(());
+    };
 
     if let Some(vector_storage_size_limit_bytes) = vector_limit {
         check_collection_vector_size_limit(vector_storage_size_limit_bytes, stats)?;
@@ -219,7 +222,7 @@ async fn check_collection_size_limit(
 /// Check collections vector storage size limit.
 fn check_collection_vector_size_limit(
     max_vec_storage_size_bytes: usize,
-    stats: &LocalDataAtomicStats,
+    stats: &CollectionSizeAtomicStats,
 ) -> Result<(), CollectionError> {
     let vec_storage_size_bytes = stats.get_vector_storage_size();
 
@@ -236,7 +239,7 @@ fn check_collection_vector_size_limit(
 /// Check collections payload storage size limit.
 fn check_collection_payload_size_limit(
     max_payload_storage_size_bytes: usize,
-    stats: &LocalDataAtomicStats,
+    stats: &CollectionSizeAtomicStats,
 ) -> Result<(), CollectionError> {
     let payload_storage_size_bytes = stats.get_payload_storage_size();
 
