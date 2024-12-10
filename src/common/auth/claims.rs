@@ -6,6 +6,8 @@ use validator::{Validate, ValidationErrors};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
+    pub sub: Option<String>,
+
     /// Expiration time (seconds since UNIX epoch)
     pub exp: Option<u64>,
 

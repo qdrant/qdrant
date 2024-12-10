@@ -62,8 +62,7 @@ async fn query_points(
     };
     let hw_measurement_acc = request_hw_counter.get_counter();
     let result = async move {
-        let request =
-            convert_query_request_from_rest(query_request, inference_token.clone()).await?;
+        let request = convert_query_request_from_rest(query_request, inference_token).await?;
 
         let points = dispatcher
             .toc(&access, &pass)

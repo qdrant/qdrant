@@ -86,19 +86,20 @@ impl AuthKeys {
         if self.can_write(key) {
             return Ok((
                 Access::full("Read-write access by key"),
-                InferenceToken(Some(key.to_string())),
+                InferenceToken(None),
             ));
         }
 
         if self.can_read(key) {
             return Ok((
                 Access::full_ro("Read-only access by key"),
-                InferenceToken(Some(key.to_string())),
+                InferenceToken(None),
             ));
         }
 
         if let Some(claims) = self.jwt_parser.as_ref().and_then(|p| p.decode(key)) {
             let Claims {
+                sub,
                 exp: _, // already validated on decoding
                 access,
                 value_exists,
@@ -108,7 +109,7 @@ impl AuthKeys {
                 self.validate_value_exists(&value_exists).await?;
             }
 
-            return Ok((access, InferenceToken(Some(key.to_string()))));
+            return Ok((access, InferenceToken(sub)));
         }
 
         Err(AuthError::Unauthorized(

@@ -30,12 +30,14 @@ async fn check(auth_keys: Arc<AuthKeys>, mut req: Request) -> Result<Request, St
         })?;
 
     let previous = req.extensions_mut().insert::<Access>(access);
-    req.extensions_mut()
-        .insert(InferenceToken::new(api_key.to_string()));
+
     debug_assert!(
         previous.is_none(),
         "Previous access object should not exist in the request"
     );
+
+    req.extensions_mut()
+        .insert(InferenceToken::new(api_key.to_string()));
 
     Ok(req)
 }
