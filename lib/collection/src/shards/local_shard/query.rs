@@ -59,7 +59,7 @@ impl LocalShard {
         request: PlannedQuery,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_counter_acc: &HwMeasurementAcc,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let start_time = std::time::Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -70,7 +70,7 @@ impl LocalShard {
             }),
             search_runtime_handle,
             Some(timeout),
-            hw_counter_acc,
+            hw_counter_acc.clone(),
         );
 
         let scrolls_f =
@@ -90,7 +90,7 @@ impl LocalShard {
                 search_runtime_handle,
                 timeout,
                 0,
-                hw_counter_acc,
+                hw_counter_acc.clone(),
             )
         });
 
@@ -154,12 +154,11 @@ impl LocalShard {
         search_runtime_handle: &'shard Handle,
         timeout: Duration,
         depth: usize,
-        hw_counter_acc: &HwMeasurementAcc,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> BoxFuture<'query, CollectionResult<Vec<Vec<ScoredPoint>>>>
     where
         'shard: 'query,
     {
-        let hw_collector = hw_counter_acc.new_collector();
         async move {
             let start_time = std::time::Instant::now();
             let max_len = merge_plan.sources.len();
@@ -182,7 +181,7 @@ impl LocalShard {
                                 search_runtime_handle,
                                 timeout,
                                 depth + 1,
-                                &hw_collector,
+                                hw_counter_acc.clone(),
                             )
                             .await?
                             .into_iter();
@@ -202,7 +201,7 @@ impl LocalShard {
                         rescore_params,
                         search_runtime_handle,
                         timeout,
-                        &hw_collector,
+                        hw_counter_acc,
                     )
                     .await?;
 
@@ -224,7 +223,7 @@ impl LocalShard {
         rescore_params: RescoreParams,
         search_runtime_handle: &Handle,
         timeout: Duration,
-        hw_counter_acc: &HwMeasurementAcc,
+        hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let RescoreParams {
             rescore,

@@ -23,8 +23,9 @@ pub fn new<'a>(
     storage: &'a MemmapDenseVectorStorage<VectorElementType>,
     point_deleted: &'a BitSlice,
     is_stopped: &'a AtomicBool,
+    hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    AsyncRawScorerBuilder::new(query, storage, point_deleted)
+    AsyncRawScorerBuilder::new(query, storage, point_deleted, hardware_counter)
         .with_is_stopped(is_stopped)
         .build()
 }
@@ -202,10 +203,6 @@ where
 
         pq.into_vec()
     }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.query_scorer.take_hardware_counter()
-    }
 }
 
 struct AsyncRawScorerBuilder<'a> {
@@ -216,6 +213,7 @@ struct AsyncRawScorerBuilder<'a> {
     vec_deleted: &'a BitSlice,
     distance: Distance,
     is_stopped: Option<&'a AtomicBool>,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> AsyncRawScorerBuilder<'a> {
@@ -223,6 +221,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         query: QueryVector,
         storage: &'a MemmapDenseVectorStorage<VectorElementType>,
         point_deleted: &'a BitSlice,
+        hardware_counter: HardwareCounterCell,
     ) -> Self {
         let points_count = storage.total_vector_count() as _;
         let vec_deleted = storage.deleted_vector_bitslice();
@@ -237,6 +236,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             storage,
             distance,
             is_stopped: None,
+            hardware_counter,
         }
     }
 
@@ -265,6 +265,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             vec_deleted,
             distance: _,
             is_stopped,
+            hardware_counter,
         } = self;
 
         match query {
@@ -274,6 +275,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                         let query_scorer = MetricQueryScorer::<VectorElementType, TMetric, _>::new(
                             dense_vector,
                             storage,
+                            hardware_counter,
                         );
                         Ok(Box::new(AsyncRawScorerImpl::new(
                             points_count,
@@ -297,7 +299,9 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             QueryVector::Recommend(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
-                    reco_query, storage,
+                    reco_query,
+                    storage,
+                    hardware_counter,
                 );
                 Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
@@ -314,6 +318,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     discovery_query,
                     storage,
+                    hardware_counter,
                 );
                 Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,
@@ -329,6 +334,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                 let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
                     context_query,
                     storage,
+                    hardware_counter,
                 );
                 Ok(Box::new(AsyncRawScorerImpl::new(
                     points_count,

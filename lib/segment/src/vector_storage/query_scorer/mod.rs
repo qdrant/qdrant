@@ -1,4 +1,3 @@
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
@@ -24,8 +23,6 @@ pub trait QueryScorer<TVector: ?Sized> {
     fn score(&self, v2: &TVector) -> ScoreType;
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType;
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell;
 }
 
 /// Colbert MaxSim metric, metric for multi-dense vectors

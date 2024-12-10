@@ -28,7 +28,6 @@ pub struct MultiCustomQueryScorer<
     input_query: PhantomData<TInputQuery>,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
-    dimension: usize,
     hardware_counter: HardwareCounterCell,
 }
 
@@ -42,7 +41,11 @@ impl<
             + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
     > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
-    pub fn new(query: TInputQuery, vector_storage: &'a TVectorStorage) -> Self {
+    pub fn new(
+        query: TInputQuery,
+        vector_storage: &'a TVectorStorage,
+        mut hardware_counter: HardwareCounterCell,
+    ) -> Self {
         let mut dim = 0;
         let query = query
             .transform(|vector| {
@@ -59,14 +62,15 @@ impl<
             })
             .unwrap();
 
+        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+
         Self {
             query,
             vector_storage,
             input_query: PhantomData,
             metric: PhantomData,
             element: PhantomData,
-            dimension: dim,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter,
         }
     }
 }
@@ -79,17 +83,6 @@ impl<
         TInputQuery: Query<MultiDenseVectorInternal>,
     > MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
-    fn hardware_counter_finalized(&self) -> HardwareCounterCell {
-        let mut counter = self.hardware_counter.take();
-
-        // Calculate the dimension multiplier here to improve performance of measuring.
-        counter
-            .cpu_counter_mut()
-            .multiplied_mut(self.dimension * size_of::<TElement>());
-
-        counter
-    }
-
     #[inline]
     fn score_ref(&self, against: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
         let cpu_counter = self.hardware_counter.cpu_counter();
@@ -146,9 +139,5 @@ impl<
 
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer can compare against multiple vectors, not just one")
-    }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter_finalized()
     }
 }

@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -29,7 +30,7 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
     open_simple_multi_dense_vector_storage_half,
 };
-use crate::vector_storage::{new_raw_scorer, RawScorer};
+use crate::vector_storage::{new_raw_scorer_for_test, RawScorer};
 
 #[derive(Debug, Clone, Copy)]
 enum TestElementType {
@@ -538,6 +539,7 @@ fn create_vector_storage_u8_multi(
     vector_storage
 }
 
+#[cfg(test)]
 fn test_gpu_vector_storage_impl(
     storage_type: TestStorageType,
     num_vectors: usize,
@@ -660,12 +662,20 @@ fn test_gpu_vector_storage_impl(
     let stopped = false.into();
     let point_deleted = BitVec::repeat(false, num_vectors);
     let query = QueryVector::Nearest(storage.get_vector(test_point_id).to_owned());
+
+    let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {
         quantized_vectors
-            .raw_scorer(query, &point_deleted, &point_deleted, &stopped)
+            .raw_scorer(
+                query,
+                &point_deleted,
+                &point_deleted,
+                &stopped,
+                hardware_counter,
+            )
             .unwrap()
     } else {
-        new_raw_scorer(query, &storage, &point_deleted).unwrap()
+        new_raw_scorer_for_test(query, &storage, &point_deleted).unwrap()
     };
 
     for (point_id, gpu_score) in gpu_scores.iter().enumerate() {
@@ -675,6 +685,4 @@ fn test_gpu_vector_storage_impl(
         );
         assert!((score - gpu_score).abs() < precision);
     }
-
-    scorer.take_hardware_counter().discard_results();
 }

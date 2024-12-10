@@ -164,22 +164,22 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .unwrap();
 
+    let hw_acc = HwMeasurementAcc::new();
     let recovered_result = recovered_collection
         .search(
             full_search_request.into(),
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .unwrap();
-    hw_acc.discard();
 
     assert_eq!(reference_result.len(), recovered_result.len());
 

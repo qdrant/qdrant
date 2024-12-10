@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::EncodedVectors;
 
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
@@ -27,6 +28,7 @@ pub(super) struct QuantizedScorerBuilder<'a> {
     is_stopped: &'a AtomicBool,
     distance: &'a Distance,
     datatype: VectorStorageDatatype,
+    hardware_counter: HardwareCounterCell,
 }
 
 impl<'a> QuantizedScorerBuilder<'a> {
@@ -40,6 +42,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
         is_stopped: &'a AtomicBool,
         distance: &'a Distance,
         datatype: VectorStorageDatatype,
+        hardware_counter: HardwareCounterCell,
     ) -> Self {
         Self {
             quantized_storage,
@@ -50,6 +53,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             is_stopped,
             distance,
             datatype,
+            hardware_counter,
         }
     }
 
@@ -149,6 +153,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             is_stopped,
             distance: _,
             datatype: _,
+            hardware_counter,
         } = self;
 
         match query {
@@ -157,6 +162,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     DenseVector::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
+                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -166,6 +172,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     reco_query,
                     quantized_storage,
                     quantization_config,
+                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -176,6 +183,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     discovery_query,
                     quantized_storage,
                     quantization_config,
+                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -185,6 +193,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     context_query,
                     quantized_storage,
                     quantization_config,
+                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -209,6 +218,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
             is_stopped,
             distance: _,
             datatype: _,
+            hardware_counter,
         } = self;
 
         match query {
@@ -217,6 +227,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     &MultiDenseVectorInternal::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
+                    hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -228,6 +239,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         reco_query,
                         quantized_storage,
                         quantization_config,
+                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -239,6 +251,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         discovery_query,
                         quantized_storage,
                         quantization_config,
+                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
@@ -250,6 +263,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         context_query,
                         quantized_storage,
                         quantization_config,
+                        hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }

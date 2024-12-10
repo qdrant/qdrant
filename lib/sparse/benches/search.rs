@@ -3,6 +3,7 @@ use std::io;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::measurement::Measurement;
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -197,19 +198,44 @@ fn run_bench2(
     let stopped = AtomicBool::new(false);
 
     let mut it = query_vectors.iter().cycle();
+
+    let hardware_counter = HardwareCounterCell::new();
+
     group.bench_function("basic", |b| {
         b.iter_batched(
             || it.next().unwrap().clone().into_remapped(),
-            |vec| SearchContext::new(vec, TOP, index, pool.get(), &stopped).search(&|_| true),
+            |vec| {
+                SearchContext::new(
+                    vec,
+                    TOP,
+                    index,
+                    pool.get(),
+                    &stopped,
+                    hardware_counter.fork(),
+                )
+                .search(&|_| true)
+            },
             criterion::BatchSize::SmallInput,
         )
     });
+
+    let hardware_counter = HardwareCounterCell::new();
 
     let mut it = hottest_query_vectors.iter().cycle();
     group.bench_function("hottest", |b| {
         b.iter_batched(
             || it.next().unwrap().clone(),
-            |vec| SearchContext::new(vec, TOP, index, pool.get(), &stopped).search(&|_| true),
+            |vec| {
+                SearchContext::new(
+                    vec,
+                    TOP,
+                    index,
+                    pool.get(),
+                    &stopped,
+                    hardware_counter.fork(),
+                )
+                .search(&|_| true)
+            },
             criterion::BatchSize::SmallInput,
         )
     });

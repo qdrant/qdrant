@@ -25,14 +25,14 @@ pub const TEST_OPTIMIZERS_CONFIG: OptimizersConfig = OptimizersConfig {
     max_optimization_threads: Some(2),
 };
 
-pub fn create_collection_config() -> CollectionConfigInternal {
+pub fn create_collection_config_with_dim(dim: usize) -> CollectionConfigInternal {
     let wal_config = WalConfig {
         wal_capacity_mb: 1,
         wal_segments_ahead: 0,
     };
 
     let collection_params = CollectionParams {
-        vectors: VectorsConfig::Single(VectorParamsBuilder::new(4, Distance::Dot).build()),
+        vectors: VectorsConfig::Single(VectorParamsBuilder::new(dim as u64, Distance::Dot).build()),
         ..CollectionParams::empty()
     };
 
@@ -50,6 +50,10 @@ pub fn create_collection_config() -> CollectionConfigInternal {
         strict_mode_config: Default::default(),
         uuid: None,
     }
+}
+
+pub fn create_collection_config() -> CollectionConfigInternal {
+    create_collection_config_with_dim(4)
 }
 
 pub fn upsert_operation() -> CollectionUpdateOperations {

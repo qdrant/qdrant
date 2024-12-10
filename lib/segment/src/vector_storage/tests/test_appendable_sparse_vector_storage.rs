@@ -14,7 +14,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer_for_test, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
@@ -74,14 +74,13 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         negatives: vec![],
     });
     // Because nearest search for raw scorer is incorrect,
-    let scorer = new_raw_scorer(
+    let scorer = new_raw_scorer_for_test(
         query_vector,
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
-    scorer.take_hardware_counter().discard_results();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -167,14 +166,13 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         positives: vec![vector.into()],
         negatives: vec![],
     });
-    let scorer = new_raw_scorer(
+    let scorer = new_raw_scorer_for_test(
         query_vector,
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
     let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4, 5].iter().cloned(), 5);
-    scorer.take_hardware_counter().discard_results();
     drop(scorer);
 
     assert_eq!(

@@ -400,22 +400,29 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 check_process_stopped(stopped)?;
                 let vector = vector_storage.get_vector(vector_id);
                 let vector = vector.as_vec_ref().into();
+                // No need to accumulate hardware, since this is an internal operation
+                let internal_hardware_counter = HardwareCounterCell::disposable();
+
                 let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
                     quantized_storage.raw_scorer(
                         vector,
                         id_tracker.deleted_point_bitslice(),
                         vector_storage.deleted_vector_bitslice(),
                         stopped,
+                        internal_hardware_counter,
                     )
                 } else {
-                    new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice())
+                    new_raw_scorer(
+                        vector,
+                        vector_storage,
+                        id_tracker.deleted_point_bitslice(),
+                        stopped,
+                        internal_hardware_counter,
+                    )
                 }?;
                 let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
 
                 graph_layers_builder.link_new_point(vector_id, points_scorer);
-
-                // Ignore hardware counter, for internal operations
-                raw_scorer.take_hardware_counter().discard_results();
 
                 Ok::<_, OperationError>(())
             };
@@ -590,14 +597,25 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
             let vector = vector_storage.get_vector(block_point_id);
             let vector = vector.as_vec_ref().into();
+
+            // This hardware counter can be discarded, since it is only used for internal operations
+            let internal_hardware_counter = HardwareCounterCell::disposable();
+
             let raw_scorer = match quantized_vectors.as_ref() {
                 Some(quantized_storage) => quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     deleted_bitslice,
                     stopped,
+                    internal_hardware_counter,
                 ),
-                None => new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice()),
+                None => new_raw_scorer(
+                    vector,
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    stopped,
+                    internal_hardware_counter,
+                ),
             }?;
             let block_condition_checker = BuildConditionChecker {
                 filter_list: block_filter_list,
@@ -607,9 +625,6 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
 
             graph_layers_builder.link_new_point(block_point_id, points_scorer);
-
-            // Ignore hardware counter, for internal operations
-            raw_scorer.take_hardware_counter().discard_results();
 
             Ok::<_, OperationError>(())
         };
@@ -651,15 +666,23 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer_builder = |vector_id| {
             let vector = vector_storage.get_vector(vector_id);
             let vector = vector.as_vec_ref().into();
+            let hardware_counter = HardwareCounterCell::disposable();
             let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
                 quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
                     stopped,
+                    hardware_counter,
                 )
             } else {
-                new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice())
+                new_raw_scorer(
+                    vector,
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    stopped,
+                    hardware_counter,
+                )
             }?;
             Ok((raw_scorer, None))
         };
@@ -690,14 +713,22 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         let points_scorer_builder = |block_point_id| -> OperationResult<_> {
             let vector = vector_storage.get_vector(block_point_id);
             let vector = vector.as_vec_ref().into();
+            let hardware_counter = HardwareCounterCell::disposable();
             let raw_scorer = match quantized_vectors.as_ref() {
                 Some(quantized_storage) => quantized_storage.raw_scorer(
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     deleted_bitslice,
                     stopped,
+                    hardware_counter,
                 ),
-                None => new_raw_scorer(vector, vector_storage, id_tracker.deleted_point_bitslice()),
+                None => new_raw_scorer(
+                    vector,
+                    vector_storage,
+                    id_tracker.deleted_point_bitslice(),
+                    stopped,
+                    hardware_counter,
+                ),
             }?;
             let block_condition_checker: Box<dyn FilterContext> = Box::new(BuildConditionChecker {
                 filter_list: block_filter_list,
@@ -825,6 +856,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             deleted_points,
             params,
             &is_stopped,
+            vector_query_context.hardware_counter(),
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
@@ -835,18 +867,15 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             self.graph
                 .search(oversampled_top, ef, points_scorer, custom_entry_points);
 
-        let hw_counter = HardwareCounterCell::new();
         let res = self.postprocess_search_result(
             search_result,
             vector,
             params,
             top,
             &is_stopped,
-            &hw_counter,
+            vector_query_context.hardware_counter(),
         )?;
 
-        vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
-        vector_query_context.apply_hardware_counter(hw_counter);
         Ok(res)
     }
 
@@ -900,23 +929,20 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
             deleted_points,
             params,
             &is_stopped,
+            vector_query_context.hardware_counter(),
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
         let search_result = raw_scorer.peek_top_iter(points, oversampled_top);
 
-        vector_query_context.apply_hardware_counter(raw_scorer.take_hardware_counter());
-
-        let hw_counter = HardwareCounterCell::new();
         let res = self.postprocess_search_result(
             search_result,
             vector,
             params,
             top,
             &is_stopped,
-            &hw_counter,
+            vector_query_context.hardware_counter(),
         )?;
-        vector_query_context.apply_hardware_counter(hw_counter);
         Ok(res)
     }
 
@@ -1023,6 +1049,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         deleted_points: &'a BitSlice,
         params: Option<&SearchParams>,
         is_stopped: &'a AtomicBool,
+        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
         match quantized_storage {
@@ -1031,12 +1058,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 deleted_points,
                 vector_storage.deleted_vector_bitslice(),
                 is_stopped,
+                hardware_counter,
             ),
             _ => new_stoppable_raw_scorer(
                 vector.to_owned(),
                 vector_storage,
                 deleted_points,
                 is_stopped,
+                hardware_counter,
             ),
         }
     }
@@ -1068,7 +1097,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         params: Option<&SearchParams>,
         top: usize,
         is_stopped: &AtomicBool,
-        hardware_counter: &HardwareCounterCell,
+        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
@@ -1092,12 +1121,11 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 &vector_storage,
                 id_tracker.deleted_point_bitslice(),
                 is_stopped,
+                hardware_counter,
             )?;
 
             let mut ids_iterator = search_result.iter().map(|x| x.idx);
             let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
-
-            hardware_counter.apply_from(raw_scorer.take_hardware_counter());
 
             re_scored.sort_unstable();
             re_scored.reverse();

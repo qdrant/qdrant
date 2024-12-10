@@ -47,8 +47,6 @@ fn encode_bench(c: &mut Criterion) {
         });
     });
 
-    hardware_counter.discard_results();
-
     println!("total: {total}");
 }
 

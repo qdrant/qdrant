@@ -62,11 +62,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .unwrap();
-    hw_acc.discard();
 
     assert_eq!(reference_result.len(), 100);
     assert_eq!(reference_result[0].id, 999.into());
@@ -91,11 +90,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .unwrap();
-    hw_acc.discard();
 
     // Check that the first page is the same as the reference result
     assert_eq!(page_1_result.len(), 10);
@@ -121,11 +119,10 @@ async fn test_collection_paginated_search_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .unwrap();
-    hw_acc.discard();
 
     // Check that the 9th page is the same as the reference result
     assert_eq!(page_9_result.len(), 10);

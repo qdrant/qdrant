@@ -1,5 +1,6 @@
 mod fix_payload_indices;
 pub mod fixtures;
+mod hw_metrics;
 mod payload;
 mod points_dedup;
 mod sha_256_test;

@@ -27,7 +27,7 @@ use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::{get_num_cpus, CpuBudget};
 use common::types::TelemetryDetail;
 use dashmap::DashMap;
@@ -81,7 +81,7 @@ pub struct TableOfContent {
     /// Effectively, this lock ensures that `create_collection` is called sequentially.
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
-    collection_hw_metrics: DashMap<CollectionId, Arc<HwMeasurementAcc>>,
+    collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
 }
 
 impl TableOfContent {
@@ -654,16 +654,5 @@ impl TableOfContent {
             .iter()
             .map(|i| (i.key().to_string(), HardwareUsage { cpu: i.get_cpu() }))
             .collect()
-    }
-}
-
-impl Drop for TableOfContent {
-    fn drop(&mut self) {
-        // When dropping `TableOfContent` we also drop the collected hardware measurements which need to be discarded
-        // to prevent panicking in debug mode and tests.
-        #[cfg(any(debug_assertions, test))]
-        for metric in self.collection_hw_metrics.iter_mut() {
-            metric.discard();
-        }
     }
 }

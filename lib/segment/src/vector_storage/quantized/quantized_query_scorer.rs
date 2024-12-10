@@ -35,6 +35,7 @@ where
         raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
+        hardware_counter: HardwareCounterCell,
     ) -> Self {
         let raw_preprocessed_query = TMetric::preprocess(raw_query);
         let original_query = TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query));
@@ -50,7 +51,7 @@ where
             quantized_data,
             metric: PhantomData,
             element: PhantomData,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter,
         }
     }
 
@@ -58,6 +59,7 @@ where
         raw_query: &MultiDenseVectorInternal,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
+        hardware_counter: HardwareCounterCell,
     ) -> Self {
         let mut query = Vec::new();
         for inner_vector in raw_query.multi_vectors() {
@@ -78,7 +80,7 @@ where
             quantized_data,
             metric: PhantomData,
             element: PhantomData,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter,
         }
     }
 }
@@ -110,15 +112,5 @@ where
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.quantized_data
             .score_internal(point_a, point_b, &self.hardware_counter)
-    }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        let mut counter = self.hardware_counter.take();
-
-        counter
-            .cpu_counter_mut()
-            .multiplied_mut(size_of::<TElement>());
-
-        counter
     }
 }
