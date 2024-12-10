@@ -120,7 +120,7 @@ actix-web-extras = "0.1.0"
 [target.'cfg(target_os = "linux")'.dependencies]
 # Pyroscope integration
 pyroscope = "0.5.8"
-pyroscope_pprofrs = "0.2.7"
+pyroscope_pprofrs = "0.2.8"
 # Backtrace
 rstack-self = { version = "0.3.0", optional = true }
 
