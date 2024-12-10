@@ -261,12 +261,11 @@ async fn test_search_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            &hw_acc,
+            hw_acc,
         )
         .await
         .expect("failed to search");
     assert!(!points.is_empty(), "expected some points");
-    hw_acc.discard();
 
     let mut seen = HashSet::new();
     for point_id in points.iter().map(|point| point.id) {

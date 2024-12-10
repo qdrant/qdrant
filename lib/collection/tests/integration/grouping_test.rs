@@ -101,11 +101,10 @@ mod group_by {
             resources.request.clone(),
             &resources.collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -158,11 +157,10 @@ mod group_by {
             request.clone(),
             &resources.collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -223,11 +221,10 @@ mod group_by {
             group_by_request,
             &resources.collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -260,11 +257,10 @@ mod group_by {
             group_by_request.clone(),
             &resources.collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -303,11 +299,10 @@ mod group_by {
             group_by_request.clone(),
             &collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -344,11 +339,10 @@ mod group_by {
             group_by_request.clone(),
             &collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -381,11 +375,10 @@ mod group_by {
             group_by_request.clone(),
             &collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -418,11 +411,10 @@ mod group_by {
             group_by_request.clone(),
             &collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -459,11 +451,10 @@ mod group_by {
             group_by_request.clone(),
             &collection,
             |_| async { unreachable!() },
-            &hw_acc,
+            hw_acc,
         );
 
         let result = group_by.execute().await;
-        hw_acc.discard();
 
         assert!(result.is_ok());
 
@@ -603,12 +594,11 @@ mod group_by_builder {
         let collection_by_name = |_: String| async { unreachable!() };
 
         let hw_acc = HwMeasurementAcc::new();
-        let result = GroupBy::new(request.clone(), &collection, collection_by_name, &hw_acc)
+        let result = GroupBy::new(request.clone(), &collection, collection_by_name, hw_acc)
             .execute()
             .await;
 
         assert!(result.is_ok());
-        hw_acc.discard();
 
         let result = result.unwrap();
 
@@ -638,12 +628,11 @@ mod group_by_builder {
         let collection_by_name = |_: String| async { Some(lookup_collection.read().await) };
 
         let hw_acc = HwMeasurementAcc::new();
-        let result = GroupBy::new(request.clone(), &collection, collection_by_name, &hw_acc)
+        let result = GroupBy::new(request.clone(), &collection, collection_by_name, hw_acc)
             .execute()
             .await;
 
         assert!(result.is_ok());
-        hw_acc.discard();
 
         let result = result.unwrap();
 

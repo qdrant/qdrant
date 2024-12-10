@@ -21,7 +21,6 @@ pub struct MetricQueryScorer<
     query: TypedDenseVector<TElement>,
     metric: PhantomData<TMetric>,
     hardware_counter: HardwareCounterCell,
-    dim: usize,
 }
 
 impl<
@@ -34,29 +33,20 @@ impl<
     pub fn new(
         query: TypedDenseVector<VectorElementType>,
         vector_storage: &'a TVectorStorage,
+        mut hardware_counter: HardwareCounterCell,
     ) -> Self {
         let dim = query.len();
         let preprocessed_vector = TMetric::preprocess(query);
+
+        hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
         Self {
             query: TypedDenseVector::from(TElement::slice_from_float_cow(Cow::from(
                 preprocessed_vector,
             ))),
             vector_storage,
             metric: PhantomData,
-            hardware_counter: HardwareCounterCell::new(),
-            dim,
+            hardware_counter,
         }
-    }
-
-    fn hardware_counter_finalized(&self) -> HardwareCounterCell {
-        let mut counter = self.hardware_counter.take();
-
-        // Calculate the dimension multiplier here to improve performance of measuring.
-        counter
-            .cpu_counter_mut()
-            .multiplied_mut(self.dim * size_of::<TElement>());
-
-        counter
     }
 }
 
@@ -98,9 +88,5 @@ impl<
         let v1 = self.vector_storage.get_dense(point_a);
         let v2 = self.vector_storage.get_dense(point_b);
         TMetric::similarity(v1, v2)
-    }
-
-    fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter_finalized()
     }
 }

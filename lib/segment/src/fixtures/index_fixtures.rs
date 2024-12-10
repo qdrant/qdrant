@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 
@@ -146,6 +147,7 @@ where
             self,
             self.deleted_vector_bitslice(),
             &DEFAULT_STOPPED,
+            HardwareCounterCell::new(),
         )
     }
 }

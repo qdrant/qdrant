@@ -48,7 +48,6 @@ where
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);
-        raw_scorer.take_hardware_counter().discard_results();
     }
     (vector_holder, graph_layers_builder)
 }

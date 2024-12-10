@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
@@ -26,7 +27,7 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{new_raw_scorer, VectorStorageEnum};
+use crate::vector_storage::{new_raw_scorer_for_test, VectorStorageEnum};
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;
@@ -242,7 +243,7 @@ fn scoring_equivalency(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &mut sampler);
 
-        let raw_scorer = new_raw_scorer(
+        let raw_scorer = new_raw_scorer_for_test(
             query.clone(),
             &raw_storage,
             id_tracker.deleted_point_bitslice(),
@@ -258,9 +259,10 @@ fn scoring_equivalency(
                     id_tracker.deleted_point_bitslice(),
                     other_storage.deleted_vector_bitslice(),
                     &is_stopped,
+                    HardwareCounterCell::new(),
                 )
                 .unwrap(),
-            None => new_raw_scorer(
+            None => new_raw_scorer_for_test(
                 query.clone(),
                 &other_storage,
                 id_tracker.deleted_point_bitslice(),
@@ -313,9 +315,6 @@ fn scoring_equivalency(
                 only {intersection} of {top} top results are shared",
             );
         }
-
-        raw_scorer.take_hardware_counter().discard_results();
-        other_scorer.take_hardware_counter().discard_results();
     }
 
     Ok(())

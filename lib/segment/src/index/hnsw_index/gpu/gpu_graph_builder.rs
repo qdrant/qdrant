@@ -80,7 +80,6 @@ pub fn build_hnsw_on_gpu<'a>(
             let (raw_scorer, filter_context) = points_scorer_builder(point.point_id)?;
             let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
             graph_layers_builder.link_new_point(point.point_id, points_scorer);
-            raw_scorer.take_hardware_counter().discard_results();
             cpu_linked_points_count += 1;
             if cpu_linked_points_count >= cpu_linked_points {
                 break;

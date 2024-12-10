@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use sparse::common::types::{DimId, DimWeight};
 
@@ -26,15 +27,23 @@ pub struct QueryContext {
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
     idf: tiny_map::TinyMap<String, HashMap<DimId, usize>>,
+
+    /// Structure to accumulate and report hardware usage.
+    /// Holds reference to the shared drain, which is used to accumulate the values.
+    hardware_usage_accumulator: HwMeasurementAcc,
 }
 
 impl QueryContext {
-    pub fn new(search_optimized_threshold_kb: usize) -> Self {
+    pub fn new(
+        search_optimized_threshold_kb: usize,
+        hardware_usage_accumulator: HwMeasurementAcc,
+    ) -> Self {
         Self {
             available_point_count: 0,
             search_optimized_threshold_kb,
             is_stopped: Arc::new(AtomicBool::new(false)),
             idf: tiny_map::TinyMap::new(),
+            hardware_usage_accumulator,
         }
     }
 
@@ -83,14 +92,21 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter: HardwareCounterCell::new_with_accumulator(
+                self.hardware_usage_accumulator.clone(),
+            ),
         }
+    }
+
+    pub fn hardware_usage_accumulator(&self) -> &HwMeasurementAcc {
+        &self.hardware_usage_accumulator
     }
 }
 
+#[cfg(feature = "testing")]
 impl Default for QueryContext {
     fn default() -> Self {
-        Self::new(usize::MAX) // Search optimized threshold won't affect the search.
+        Self::new(usize::MAX, HwMeasurementAcc::new()) // Search optimized threshold won't affect the search.
     }
 }
 
@@ -114,7 +130,7 @@ impl<'a> SegmentQueryContext<'a> {
             is_stopped: Some(&self.query_context.is_stopped),
             idf: self.query_context.idf.get(vector_name),
             deleted_points: self.deleted_points,
-            hardware_counter: Some(&self.hardware_counter),
+            hardware_counter: self.hardware_counter.fork(),
         }
     }
 
@@ -123,21 +139,11 @@ impl<'a> SegmentQueryContext<'a> {
         self
     }
 
-    pub fn take_hardware_counter(&self) -> HardwareCounterCell {
-        self.hardware_counter.take()
-    }
-
-    pub fn merge_hardware_counter(&self, other: HardwareCounterCell) {
-        self.hardware_counter.apply_from(other);
-    }
-
-    /// Clone the context without the hardware counters.
-    /// This is useful to avoid double counting the hardware counters.
-    pub fn clone_no_counters(&self) -> Self {
-        SegmentQueryContext {
+    pub fn fork(&self) -> Self {
+        Self {
             query_context: self.query_context,
             deleted_points: self.deleted_points,
-            hardware_counter: HardwareCounterCell::new(),
+            hardware_counter: self.hardware_counter.fork(),
         }
     }
 }
@@ -158,7 +164,7 @@ pub struct VectorQueryContext<'a> {
 
     deleted_points: Option<&'a BitSlice>,
 
-    hardware_counter: Option<&'a HardwareCounterCell>,
+    hardware_counter: HardwareCounterCell,
 }
 
 pub enum SimpleCow<'a, T> {
@@ -178,18 +184,8 @@ impl<T> Deref for SimpleCow<'_, T> {
 }
 
 impl VectorQueryContext<'_> {
-    pub fn hardware_counter(&self) -> Option<&HardwareCounterCell> {
-        self.hardware_counter
-    }
-
-    pub fn apply_hardware_counter(&self, other: HardwareCounterCell) {
-        if let Some(hardware_counter) = self.hardware_counter {
-            hardware_counter.apply_from(other);
-        } else {
-            // If we don't specify a hardware counter reference when initiating a new VectorQueryContext,
-            // we don't want its result and need to discard the results here in order to not panic in tests/debug mode.
-            other.discard_results();
-        }
+    pub fn hardware_counter(&self) -> HardwareCounterCell {
+        self.hardware_counter.fork()
     }
 
     pub fn available_point_count(&self) -> usize {
@@ -237,6 +233,7 @@ impl VectorQueryContext<'_> {
     }
 }
 
+#[cfg(feature = "testing")]
 impl Default for VectorQueryContext<'_> {
     fn default() -> Self {
         VectorQueryContext {
@@ -245,7 +242,7 @@ impl Default for VectorQueryContext<'_> {
             is_stopped: None,
             idf: None,
             deleted_points: None,
-            hardware_counter: None,
+            hardware_counter: HardwareCounterCell::new(),
         }
     }
 }

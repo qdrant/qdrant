@@ -13,7 +13,7 @@ use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-use segment::vector_storage::{new_raw_scorer, VectorStorage, VectorStorageEnum};
+use segment::vector_storage::{new_raw_scorer_for_test, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100000;
@@ -61,7 +61,7 @@ fn benchmark_naive(c: &mut Criterion) {
         b.iter(|| {
             let vector = random_vector(DIM);
             let vector = vector.as_slice().into();
-            new_raw_scorer(
+            new_raw_scorer_for_test(
                 vector,
                 &storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
@@ -84,7 +84,7 @@ fn random_access_benchmark(c: &mut Criterion) {
     let vector = random_vector(DIM);
     let vector = vector.as_slice().into();
 
-    let scorer = new_raw_scorer(
+    let scorer = new_raw_scorer_for_test(
         vector,
         &storage,
         borrowed_id_tracker.deleted_point_bitslice(),

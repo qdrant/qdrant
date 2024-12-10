@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -2151,12 +2150,5 @@ impl From<HwMeasurementAcc> for HardwareUsage {
         Self {
             cpu: value.get_cpu() as u64,
         }
-    }
-}
-
-impl From<HardwareUsage> for HardwareCounterCell {
-    fn from(value: HardwareUsage) -> Self {
-        let HardwareUsage { cpu } = value;
-        HardwareCounterCell::new_with(cpu as usize)
     }
 }

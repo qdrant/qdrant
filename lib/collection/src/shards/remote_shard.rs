@@ -10,11 +10,12 @@ use api::grpc::qdrant::shard_snapshot_location::Location;
 use api::grpc::qdrant::shard_snapshots_client::ShardSnapshotsClient;
 use api::grpc::qdrant::{
     CollectionOperationResponse, CoreSearchBatchPointsInternal, CountPoints, CountPointsInternal,
-    FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal, GetPoints,
-    GetPointsInternal, GetShardRecoveryPointRequest, HealthCheckRequest,
-    InitiateShardTransferRequest, QueryBatchPointsInternal, QueryShardPoints,
-    RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints, ScrollPointsInternal,
-    ShardSnapshotLocation, UpdateShardCutoffPointRequest, WaitForShardStateRequest,
+    CountResponse, FacetCountsInternal, GetCollectionInfoRequest, GetCollectionInfoRequestInternal,
+    GetPoints, GetPointsInternal, GetShardRecoveryPointRequest, HealthCheckRequest,
+    InitiateShardTransferRequest, QueryBatchPointsInternal, QueryBatchResponseInternal,
+    QueryShardPoints, RecoverShardSnapshotRequest, RecoverSnapshotResponse, ScrollPoints,
+    ScrollPointsInternal, SearchBatchResponse, ShardSnapshotLocation,
+    UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
 use async_trait::async_trait;
@@ -748,7 +749,7 @@ impl ShardOperation for RemoteShard {
         batch_request: Arc<CoreSearchRequestBatch>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let processed_timeout = Self::process_read_timeout(timeout, "search")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -779,10 +780,17 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        hw_measurement_acc.merge_from_cell(search_batch_response.usage);
+        let SearchBatchResponse {
+            result,
+            time: _,
+            usage,
+        } = search_batch_response;
 
-        let result: Result<Vec<Vec<ScoredPoint>>, Status> = search_batch_response
-            .result
+        if let Some(usage) = usage {
+            hw_measurement_acc.accumulate_request(usage.cpu as usize);
+        }
+
+        let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
             .into_iter()
             .zip(batch_request.searches.iter())
             .map(|(batch_result, request)| {
@@ -810,7 +818,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<CountRequestInternal>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         let processed_timeout = Self::process_read_timeout(timeout, "count")?;
         let count_points = CountPoints {
@@ -837,9 +845,17 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        hw_measurement_acc.merge_from_cell(count_response.usage);
+        let CountResponse {
+            result,
+            time: _,
+            usage,
+        } = count_response;
 
-        count_response.result.map_or_else(
+        if let Some(usage) = usage {
+            hw_measurement_acc.accumulate_request(usage.cpu as usize);
+        }
+
+        result.map_or_else(
             || {
                 Err(CollectionError::service_error(
                     "Unexpected empty CountResult".to_string(),
@@ -897,7 +913,7 @@ impl ShardOperation for RemoteShard {
         requests: Arc<Vec<ShardQueryRequest>>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        hw_measurement_acc: &HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let processed_timeout = Self::process_read_timeout(timeout, "query_batch")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -930,10 +946,17 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        hw_measurement_acc.merge_from_cell(batch_response.usage);
+        let QueryBatchResponseInternal {
+            results,
+            time: _,
+            usage,
+        } = batch_response;
 
-        let result = batch_response
-            .results
+        if let Some(usage) = usage {
+            hw_measurement_acc.accumulate_request(usage.cpu as usize);
+        }
+
+        let result = results
             .into_iter()
             .zip(requests.iter())
             .map(|(query_result, request)| {
