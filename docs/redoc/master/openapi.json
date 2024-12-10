@@ -10839,10 +10839,8 @@
         "type": "object",
         "required": [
           "app",
-          "cluster",
           "collections",
-          "id",
-          "requests"
+          "id"
         ],
         "properties": {
           "id": {
@@ -10855,10 +10853,24 @@
             "$ref": "#/components/schemas/CollectionsTelemetry"
           },
           "cluster": {
-            "$ref": "#/components/schemas/ClusterTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClusterTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "requests": {
-            "$ref": "#/components/schemas/RequestsTelemetry"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestsTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           },
           "memory": {
             "anyOf": [

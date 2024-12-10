@@ -6,6 +6,7 @@ use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 use storage::dispatcher::Dispatcher;
+use storage::rbac::{Access, AccessRequirements};
 use storage::types::{ClusterStatus, ConsensusThreadStatus, PeerInfo, StateRole};
 
 use crate::settings::Settings;
@@ -72,11 +73,17 @@ pub struct ClusterTelemetry {
 
 impl ClusterTelemetry {
     pub fn collect(
+        access: &Access,
         detail: TelemetryDetail,
         dispatcher: &Dispatcher,
         settings: &Settings,
-    ) -> ClusterTelemetry {
-        ClusterTelemetry {
+    ) -> Option<ClusterTelemetry> {
+        let global_access = AccessRequirements::new().whole();
+        if access.check_global_access(global_access).is_err() {
+            return None;
+        }
+
+        Some(ClusterTelemetry {
             enabled: settings.cluster.enabled,
             status: (detail.level >= DetailsLevel::Level1)
                 .then(|| match dispatcher.cluster_status() {
@@ -109,7 +116,7 @@ impl ClusterTelemetry {
                         .filter(|metadata| !metadata.is_empty())
                 })
                 .flatten(),
-        }
+        })
     }
 }
 

@@ -110,8 +110,12 @@ impl MetricsProvider for TelemetryData {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         self.app.add_metrics(metrics);
         self.collections.add_metrics(metrics);
-        self.cluster.add_metrics(metrics);
-        self.requests.add_metrics(metrics);
+        if let Some(cluster) = &self.cluster {
+            cluster.add_metrics(metrics);
+        }
+        if let Some(requests) = &self.requests {
+            requests.add_metrics(metrics);
+        }
         if let Some(hardware) = &self.hardware {
             hardware.add_metrics(metrics);
         }

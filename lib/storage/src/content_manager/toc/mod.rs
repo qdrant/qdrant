@@ -216,13 +216,30 @@ impl TableOfContent {
 
     /// List of all collections to which the user has access
     pub async fn all_collections(&self, access: &Access) -> Vec<CollectionPass<'static>> {
+        self.all_collections_with_access_requirements(access, AccessRequirements::new())
+            .await
+    }
+
+    pub async fn all_collections_whole_access(
+        &self,
+        access: &Access,
+    ) -> Vec<CollectionPass<'static>> {
+        self.all_collections_with_access_requirements(access, AccessRequirements::new().whole())
+            .await
+    }
+
+    async fn all_collections_with_access_requirements(
+        &self,
+        access: &Access,
+        access_requirements: AccessRequirements,
+    ) -> Vec<CollectionPass<'static>> {
         self.collections
             .read()
             .await
             .keys()
             .filter_map(|name| {
                 access
-                    .check_collection_access(name, AccessRequirements::new())
+                    .check_collection_access(name, access_requirements)
                     .ok()
                     .map(|pass| pass.into_static())
             })
@@ -451,7 +468,7 @@ impl TableOfContent {
         access: &Access,
     ) -> Vec<CollectionTelemetry> {
         let mut result = Vec::new();
-        let all_collections = self.all_collections(access).await;
+        let all_collections = self.all_collections_whole_access(access).await;
         for collection_pass in &all_collections {
             if let Ok(collection) = self.get_collection(collection_pass).await {
                 result.push(collection.get_telemetry_data(detail).await);

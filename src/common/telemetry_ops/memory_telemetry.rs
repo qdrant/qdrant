@@ -1,6 +1,7 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
+use storage::rbac::{Access, AccessRequirements};
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -26,8 +27,9 @@ impl MemoryTelemetry {
         not(target_env = "msvc"),
         any(target_arch = "x86_64", target_arch = "aarch64")
     ))]
-    pub fn collect() -> Option<MemoryTelemetry> {
-        if epoch::advance().is_ok() {
+    pub fn collect(access: &Access) -> Option<MemoryTelemetry> {
+        let required_access = AccessRequirements::new().whole();
+        if epoch::advance().is_ok() && access.check_global_access(required_access).is_ok() {
             Some(MemoryTelemetry {
                 active_bytes: stats::active::read().unwrap_or_default(),
                 allocated_bytes: stats::allocated::read().unwrap_or_default(),
@@ -42,7 +44,7 @@ impl MemoryTelemetry {
     }
 
     #[cfg(target_env = "msvc")]
-    pub fn collect() -> Option<MemoryTelemetry> {
+    pub fn collect(_access: &Access) -> Option<MemoryTelemetry> {
         None
     }
 }
