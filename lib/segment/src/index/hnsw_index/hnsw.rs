@@ -102,6 +102,40 @@ pub struct HnswIndexOpenArgs<'a> {
     pub stopped: &'a AtomicBool,
 }
 
+struct LinkCompressionExperimentalSetting {
+    /// Whether newly created graphs should be written in the compressed format.
+    write_new: bool,
+    /// Whether to convert existing uncompressed graphs to the compressed format.
+    convert_existing: bool,
+}
+
+impl LinkCompressionExperimentalSetting {
+    /// Load the setting from an environment variable.
+    ///
+    /// This hidden setting exists for testing/benchmarking this particular
+    /// feature only. Later it could be removed and either made unconfigurable,
+    /// or moved to an appropriate place in the configuration.
+    fn from_env() -> Self {
+        let name = "__QDRANT_COMPRESSED_LINKS";
+        let (write_new, convert_existing) = match std::env::var(name).as_deref() {
+            Ok("0") | Err(std::env::VarError::NotPresent) => (false, false),
+            Ok("1") => (true, false),
+            Ok("2") => (true, true),
+            _ => {
+                log::warn!(
+                    "Unknown value for {name}={:?}, defaulting to 0",
+                    std::env::var_os(name),
+                );
+                (false, false)
+            }
+        };
+        Self {
+            write_new,
+            convert_existing,
+        }
+    }
+}
+
 impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     pub fn open(args: HnswIndexOpenArgs<'_>) -> OperationResult<Self> {
         let HnswIndexOpenArgs {
@@ -148,7 +182,14 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                 )
             };
 
-            (config, GraphLayers::load(&graph_path, &graph_links_path)?)
+            (
+                config,
+                GraphLayers::load(
+                    &graph_path,
+                    &graph_links_path,
+                    LinkCompressionExperimentalSetting::from_env().convert_existing,
+                )?,
+            )
         } else {
             let num_cpus = match permit {
                 Some(p) => p.num_cpus as usize,
@@ -467,8 +508,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         config.indexed_vector_count.replace(indexed_vectors);
 
         let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
-        let graph: GraphLayers<TGraphLinks> =
-            graph_layers_builder.into_graph_layers(Some(&graph_links_path))?;
+        let graph: GraphLayers<TGraphLinks> = graph_layers_builder.into_graph_layers(
+            Some(&graph_links_path),
+            LinkCompressionExperimentalSetting::from_env().write_new,
+        )?;
 
         #[cfg(debug_assertions)]
         {
