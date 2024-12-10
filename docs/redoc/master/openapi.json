@@ -7205,24 +7205,14 @@
             "minimum": 0
           },
           "max_optimization_threads": {
-            "$ref": "#/components/schemas/common::types::MaxOptimizationThreads"
-          }
-        }
-      },
-      "common::types::MaxOptimizationThreads": {
-        "anyOf": [
-          {
+            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
+            "default": null,
             "type": "integer",
             "format": "uint",
-            "minimum": 0
-          },
-          {
-            "type": "string",
-            "enum": [
-              "auto"
-            ]
+            "minimum": 0,
+            "nullable": true
           }
-        ]
+        }
       },
       "WalConfig": {
         "type": "object",
@@ -9447,10 +9437,10 @@
             "nullable": true
           },
           "max_optimization_threads": {
-            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If null - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
+            "description": "Max number of threads (jobs) for running optimizations per shard. Note: each optimization job will also use `max_indexing_threads` threads by itself for index building. If \"auto\" - have no limit and choose dynamically to saturate CPU. If 0 - no optimization threads, optimizations will be disabled.",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/common::types::MaxOptimizationThreads"
+                "$ref": "#/components/schemas/MaxOptimizationThreads"
               },
               {
                 "nullable": true
@@ -9458,6 +9448,24 @@
             ]
           }
         }
+      },
+      "MaxOptimizationThreads": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MaxOptimizationThreadsSetting"
+          },
+          {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        ]
+      },
+      "MaxOptimizationThreadsSetting": {
+        "type": "string",
+        "enum": [
+          "auto"
+        ]
       },
       "InitFrom": {
         "description": "Operation for creating new collection and (optionally) specify index params",

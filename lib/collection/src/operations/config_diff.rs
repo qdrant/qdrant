@@ -163,7 +163,7 @@ pub struct OptimizersConfigDiff {
     pub flush_interval_sec: Option<u64>,
     /// Max number of threads (jobs) for running optimizations per shard.
     /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If "auto" - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
     pub max_optimization_threads: Option<MaxOptimizationThreads>,
 }
