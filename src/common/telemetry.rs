@@ -35,8 +35,10 @@ pub struct TelemetryData {
     id: String,
     pub(crate) app: AppBuildTelemetry,
     pub(crate) collections: CollectionsTelemetry,
-    pub(crate) cluster: ClusterTelemetry,
-    pub(crate) requests: RequestsTelemetry,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cluster: Option<ClusterTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) requests: Option<RequestsTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) memory: Option<MemoryTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -92,17 +94,18 @@ impl TelemetryCollector {
             )
             .await,
             app: AppBuildTelemetry::collect(detail, &self.app_telemetry_collector, &self.settings),
-            cluster: ClusterTelemetry::collect(detail, &self.dispatcher, &self.settings),
+            cluster: ClusterTelemetry::collect(access, detail, &self.dispatcher, &self.settings),
             requests: RequestsTelemetry::collect(
+                access,
                 &self.actix_telemetry_collector.lock(),
                 &self.tonic_telemetry_collector.lock(),
                 detail,
             ),
             memory: (detail.level > DetailsLevel::Level0)
-                .then(MemoryTelemetry::collect)
+                .then(|| MemoryTelemetry::collect(access))
                 .flatten(),
             hardware: (detail.level > DetailsLevel::Level0)
-                .then(|| HardwareTelemetry::new(&self.dispatcher)),
+                .then(|| HardwareTelemetry::new(&self.dispatcher, access)),
         }
     }
 }
