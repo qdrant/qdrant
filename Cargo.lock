@@ -313,7 +313,7 @@ dependencies = [
  "serde_json",
  "serde_qs",
  "serde_urlencoded",
- "thiserror",
+ "thiserror 1.0.69",
  "validator",
 ]
 
@@ -495,7 +495,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sparse",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tonic 0.11.0",
  "tonic-build",
@@ -846,7 +846,7 @@ dependencies = [
  "io",
  "itertools 0.13.0",
  "lz4_flex",
- "memmap2 0.9.5",
+ "memmap2",
  "memory",
  "parking_lot",
  "proptest",
@@ -956,7 +956,7 @@ dependencies = [
 name = "cancel"
 version = "0.0.0"
 dependencies = [
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-util",
 ]
@@ -1018,7 +1018,7 @@ dependencies = [
  "log",
  "nix 0.25.1",
  "regex",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -1201,7 +1201,7 @@ dependencies = [
  "object_store",
  "ordered-float 4.5.0",
  "parking_lot",
- "pprof 0.14.0",
+ "pprof",
  "proptest",
  "rand 0.8.5",
  "ringbuffer",
@@ -1220,7 +1220,7 @@ dependencies = [
  "strum",
  "tar",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tinyvec",
  "tokio",
  "tokio-util",
@@ -1256,7 +1256,7 @@ dependencies = [
  "criterion",
  "lazy_static",
  "log",
- "memmap2 0.9.5",
+ "memmap2",
  "num_cpus",
  "ordered-float 4.5.0",
  "ph",
@@ -1266,7 +1266,7 @@ dependencies = [
  "tap",
  "tar",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "thread-priority",
  "tokio",
  "validator",
@@ -2383,7 +2383,7 @@ dependencies = [
  "ash",
  "log",
  "presser",
- "thiserror",
+ "thiserror 1.0.69",
  "windows 0.57.0",
 ]
 
@@ -3036,7 +3036,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3344,7 +3344,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "unicode-blocks",
  "unicode-normalization",
  "unicode-segmentation",
@@ -3414,7 +3414,7 @@ dependencies = [
  "log",
  "once_cell",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "yada",
 ]
 
@@ -3761,15 +3761,6 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "memmap2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83faa42c0a078c393f6b29d5db232d8be22776a891f8f56e5284faee4a20b327"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "memmap2"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
@@ -3792,12 +3783,12 @@ version = "0.0.0"
 dependencies = [
  "bitvec",
  "log",
- "memmap2 0.9.5",
+ "memmap2",
  "parking_lot",
  "rand 0.8.5",
  "serde",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -3929,6 +3920,17 @@ dependencies = [
  "cfg-if",
  "libc",
  "static_assertions",
+]
+
+[[package]]
+name = "nix"
+version = "0.27.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
+dependencies = [
+ "bitflags 2.4.1",
+ "cfg-if",
+ "libc",
 ]
 
 [[package]]
@@ -4101,9 +4103,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.19.0"
+version = "1.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fdb12b2476b595f9358c5161aa467c2438859caa136dec86c26fdd2efe17b92"
+checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "oorandom"
@@ -4227,7 +4229,7 @@ version = "2.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc8bed3549e0f9b0a2a78bf7c0018237a2cdf085eecbbc048e52612438e4e9d0"
 dependencies = [
- "thiserror",
+ "thiserror 1.0.69",
  "ucd-trie",
 ]
 
@@ -4407,26 +4409,6 @@ checksum = "dc59d1bcc64fc5d021d67521f818db868368028108d37f0e98d74e33f68297b5"
 
 [[package]]
 name = "pprof"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "978385d59daf9269189d052ca8a84c1acfd0715c0599a5d5188d4acc078ca46a"
-dependencies = [
- "backtrace",
- "cfg-if",
- "findshlibs",
- "libc",
- "log",
- "nix 0.26.2",
- "once_cell",
- "parking_lot",
- "smallvec",
- "symbolic-demangle",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "pprof"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebbe2f8898beba44815fdc9e5a4ae9c929e21c5dc29b0c774a15555f7f58d6d0"
@@ -4448,7 +4430,27 @@ dependencies = [
  "smallvec",
  "symbolic-demangle",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "pprof2"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8961ed0a916b512e565f8070eb0dfa05773dd140160b45ac9a5ad339b557adeb"
+dependencies = [
+ "backtrace",
+ "cfg-if",
+ "findshlibs",
+ "libc",
+ "log",
+ "nix 0.27.1",
+ "once_cell",
+ "parking_lot",
+ "smallvec",
+ "symbolic-demangle",
+ "tempfile",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -4558,7 +4560,7 @@ dependencies = [
  "lazy_static",
  "memchr",
  "parking_lot",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -4820,21 +4822,21 @@ dependencies = [
  "prost 0.11.9",
  "reqwest",
  "serde_json",
- "thiserror",
+ "thiserror 1.0.69",
  "url",
  "winapi",
 ]
 
 [[package]]
 name = "pyroscope_pprofrs"
-version = "0.2.7"
+version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43f010b2a981a7f8449a650f25f309e520b5206ea2d89512dcb146aaa5518ff4"
+checksum = "614a25777053da6bdca9d84a67892490b5a57590248dbdee3d7bf0716252af70"
 dependencies = [
  "log",
- "pprof 0.12.1",
+ "pprof2",
  "pyroscope",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -4892,7 +4894,7 @@ dependencies = [
  "storage",
  "sys-info",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -4964,7 +4966,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 1.1.0",
  "rustls 0.23.19",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tracing",
 ]
@@ -4981,7 +4983,7 @@ dependencies = [
  "rustc-hash 2.0.0",
  "rustls 0.23.19",
  "slab",
- "thiserror",
+ "thiserror 1.0.69",
  "tinyvec",
  "tracing",
 ]
@@ -5026,7 +5028,7 @@ dependencies = [
  "raft-proto",
  "rand 0.8.5",
  "slog",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -5806,7 +5808,7 @@ dependencies = [
  "lazy_static",
  "log",
  "macro_rules_attribute",
- "memmap2 0.9.5",
+ "memmap2",
  "memory",
  "merge",
  "nom",
@@ -5815,7 +5817,7 @@ dependencies = [
  "num-traits",
  "ordered-float 4.5.0",
  "parking_lot",
- "pprof 0.14.0",
+ "pprof",
  "procfs",
  "proptest",
  "quantization",
@@ -5843,7 +5845,7 @@ dependencies = [
  "sysinfo",
  "tar",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tinyvec",
  "tracing",
  "uuid",
@@ -5955,7 +5957,7 @@ dependencies = [
  "futures",
  "percent-encoding",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -6086,7 +6088,7 @@ checksum = "adc4e5204eb1910f40f9cfa375f6f05b68c3abac4b6fd879c8ff5e7ae8a0a085"
 dependencies = [
  "num-bigint",
  "num-traits",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
 ]
 
@@ -6224,11 +6226,11 @@ dependencies = [
  "io",
  "itertools 0.13.0",
  "log",
- "memmap2 0.9.5",
+ "memmap2",
  "memory",
  "ordered-float 4.5.0",
  "parking_lot",
- "pprof 0.14.0",
+ "pprof",
  "rand 0.8.5",
  "schemars",
  "serde",
@@ -6293,7 +6295,7 @@ dependencies = [
  "tap",
  "tar",
  "tempfile",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tonic 0.11.0",
  "tracing",
@@ -6351,21 +6353,21 @@ checksum = "81cdd64d312baedb58e21336b31bc043b77e01cc99033ce76ef539f78e965ebc"
 
 [[package]]
 name = "symbolic-common"
-version = "12.2.0"
+version = "12.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38f7afd8bcd36190409e6b71d89928f7f09d918a7aa3460d847bc49a538d672e"
+checksum = "e5ba5365997a4e375660bed52f5b42766475d5bc8ceb1bb13fea09c469ea0f49"
 dependencies = [
  "debugid",
- "memmap2 0.5.10",
+ "memmap2",
  "stable_deref_trait",
  "uuid",
 ]
 
 [[package]]
 name = "symbolic-demangle"
-version = "12.2.0"
+version = "12.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec64922563a36e3fe686b6d99f06f25dacad2a202ac7502ed642930a188fb20a"
+checksum = "beff338b2788519120f38c59ff4bb15174f52a183e547bac3d6072c2c0aa48aa"
 dependencies = [
  "cpp_demangle",
  "rustc-demangle",
@@ -6498,7 +6500,16 @@ version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
+dependencies = [
+ "thiserror-impl 2.0.6",
 ]
 
 [[package]]
@@ -6506,6 +6517,17 @@ name = "thiserror-impl"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7282,7 +7304,7 @@ dependencies = [
  "env_logger",
  "fs4 0.11.1",
  "log",
- "memmap2 0.9.5",
+ "memmap2",
  "rand 0.8.5",
  "rand_distr",
  "rustix 0.38.40",
