@@ -13,7 +13,6 @@ use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
 
@@ -52,8 +51,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
         if graph_fname.exists() && links_fname.exists() {
             eprintln!("Loading cached links from {links_fname:?}");
-            graph_layers =
-                GraphLayers::<GraphLinksRam>::load(&graph_fname, &links_fname, false).unwrap();
+            graph_layers = GraphLayers::load(&graph_fname, &links_fname, false, false).unwrap();
         } else {
             let mut graph_layers_builder =
                 GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
@@ -78,7 +76,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 });
 
             graph_layers = graph_layers_builder
-                .into_graph_layers::<GraphLinksRam>(Some(&links_fname), false)
+                .into_graph_layers(&links_fname, false, false)
                 .unwrap();
             graph_layers.save(&graph_fname).unwrap();
         }
@@ -96,7 +94,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         })
     });
 
-    graph_layers.compress();
+    graph_layers.compress_ram();
     let mut rng = StdRng::seed_from_u64(42);
     group.bench_function("compressed", |b| {
         b.iter(|| {

@@ -14,7 +14,6 @@ use segment::data_types::vectors::{
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
-use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::VectorIndex;
 use segment::json_path::JsonPath;
@@ -142,7 +141,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index_dense = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+    let hnsw_index_dense = HNSWIndex::open(HnswIndexOpenArgs {
         path: hnsw_dir.path(),
         id_tracker: segment.id_tracker.clone(),
         vector_storage: vector_storage.clone(),
@@ -157,7 +156,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let multi_storage = Arc::new(AtomicRefCell::new(multi_storage));
 
-    let hnsw_index_multi = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+    let hnsw_index_multi = HNSWIndex::open(HnswIndexOpenArgs {
         path: hnsw_dir.path(),
         id_tracker: segment.id_tracker.clone(),
         vector_storage: multi_storage,
