@@ -1,10 +1,10 @@
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub type BitPackerImpl = bitpacking::BitPacker4x;
 
-#[derive(Clone, Debug, Default, AsBytes, FromBytes, FromZeroes)]
+#[derive(Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 pub struct CompressedPostingChunksIndex {
     /// First document ID value in the compressed chunk
