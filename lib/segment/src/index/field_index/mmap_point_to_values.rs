@@ -259,11 +259,11 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
     pub fn open(path: &Path) -> OperationResult<Self> {
         let file_name = path.join(POINT_TO_VALUES_PATH);
         let mmap = open_write_mmap(&file_name, AdviceSetting::Global, false)?;
-        let header = Header::read_from_prefix(mmap.as_ref())
-            .map_err(|_| OperationError::InconsistentStorage {
+        let (header, _) = Header::read_from_prefix(mmap.as_ref()).map_err(|_| {
+            OperationError::InconsistentStorage {
                 description: NOT_ENOUGHT_BYTES_ERROR_MESSAGE.to_owned(),
-            })?
-            .0;
+            }
+        })?;
 
         Ok(Self {
             file_name,

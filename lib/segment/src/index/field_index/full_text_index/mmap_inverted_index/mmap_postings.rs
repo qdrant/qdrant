@@ -193,14 +193,12 @@ impl MmapPostings {
         let path = path.into();
         let mmap = open_read_mmap(&path, AdviceSetting::Advice(Advice::Normal), populate)?;
 
-        let header = PostingsHeader::read_from_prefix(&mmap)
-            .map_err(|_| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Invalid header deserialization in {}", path.display()),
-                )
-            })?
-            .0;
+        let (header, _) = PostingsHeader::read_from_prefix(&mmap).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Invalid header deserialization in {}", path.display()),
+            )
+        })?;
 
         Ok(Self { path, mmap, header })
     }

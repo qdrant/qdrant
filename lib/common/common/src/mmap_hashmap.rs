@@ -191,9 +191,8 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
         // See https://docs.rs/memmap2/latest/memmap2/struct.Mmap.html#safety
         let mmap = unsafe { Mmap::map(&file)? };
 
-        let header = Header::read_from_prefix(mmap.as_ref())
-            .map_err(|_| io::ErrorKind::InvalidData)?
-            .0;
+        let (header, _) =
+            Header::read_from_prefix(mmap.as_ref()).map_err(|_| io::ErrorKind::InvalidData)?;
 
         if header.key_type != K::NAME {
             return Err(io::Error::new(

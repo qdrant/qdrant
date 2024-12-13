@@ -71,7 +71,7 @@ struct GraphLinksFileHeader {
 
 impl GraphLinksFileInfo {
     pub fn load(data: &[u8]) -> Option<GraphLinksFileInfo> {
-        let header = GraphLinksFileHeader::ref_from_prefix(data).ok()?.0;
+        let (header, _) = GraphLinksFileHeader::ref_from_prefix(data).ok()?;
 
         let reindex_start = HEADER_SIZE + header.levels_count as usize * size_of::<u64>();
         let links_start =
