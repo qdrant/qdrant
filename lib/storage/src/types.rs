@@ -101,6 +101,7 @@ pub struct StorageConfig {
     #[serde(default)]
     pub shard_transfer_method: Option<ShardTransferMethod>,
     /// Default values for collections.
+    #[validate(nested)]
     #[serde(default)]
     pub collection: Option<CollectionConfigDefaults>,
 }
