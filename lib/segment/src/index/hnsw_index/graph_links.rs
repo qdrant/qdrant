@@ -9,7 +9,7 @@ use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt as _;
 use memmap2::Mmap;
 use memory::{madvise, mmap_ops};
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
@@ -59,7 +59,7 @@ struct GraphLinksFileInfo {
     offsets_end: usize,
 }
 
-#[derive(AsBytes, FromBytes, FromZeroes)]
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct GraphLinksFileHeader {
     point_count: u64,
@@ -71,7 +71,7 @@ struct GraphLinksFileHeader {
 
 impl GraphLinksFileInfo {
     pub fn load(data: &[u8]) -> Option<GraphLinksFileInfo> {
-        let header = GraphLinksFileHeader::ref_from_prefix(data)?;
+        let (header, _) = GraphLinksFileHeader::ref_from_prefix(data).ok()?;
 
         let reindex_start = HEADER_SIZE + header.levels_count as usize * size_of::<u64>();
         let links_start =
@@ -95,7 +95,7 @@ impl GraphLinksFileInfo {
     }
 
     pub fn get_level_offsets<'a>(&self, data: &'a [u8]) -> &'a [u64] {
-        u64::slice_from(&data[self.level_offsets()]).unwrap()
+        <[u64]>::ref_from_bytes(&data[self.level_offsets()]).unwrap()
     }
 
     pub fn reindex_range(&self) -> Range<usize> {
@@ -493,18 +493,18 @@ impl<'a> GraphLinksView<'a> {
     }
 
     fn get_links_range(&self, idx: usize) -> Range<usize> {
-        let offsets = u64::slice_from(&self.data[self.info.offsets_range()]).unwrap();
+        let offsets = <[u64]>::ref_from_bytes(&self.data[self.info.offsets_range()]).unwrap();
         offsets[idx] as usize..offsets[idx + 1] as usize
     }
 
     fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType {
         let idx = &self.data[self.info.reindex_range()];
-        PointOffsetType::slice_from(idx).unwrap()[point_id as usize]
+        <[PointOffsetType]>::ref_from_bytes(idx).unwrap()[point_id as usize]
     }
 
     fn get_links(&self, range: Range<usize>) -> &'a [PointOffsetType] {
         let idx = &self.data[self.info.links_range()];
-        PointOffsetType::slice_from(idx)
+        <[PointOffsetType]>::ref_from_bytes(idx)
             .unwrap()
             .get(range)
             .unwrap()

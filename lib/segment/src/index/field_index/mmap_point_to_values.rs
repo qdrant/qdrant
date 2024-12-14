@@ -4,7 +4,7 @@ use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType, UuidIntType};
@@ -38,11 +38,11 @@ impl MmapValue for IntPayloadType {
     }
 
     fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>> {
-        Self::ref_from_prefix(bytes)
+        Some(Self::ref_from_prefix(bytes).ok()?.0)
     }
 
     fn write_to_mmap(value: Self::Referenced<'_>, bytes: &mut [u8]) -> Option<()> {
-        value.write_to_prefix(bytes)
+        value.write_to_prefix(bytes).ok()
     }
 
     fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
@@ -62,11 +62,11 @@ impl MmapValue for FloatPayloadType {
     }
 
     fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
-        Self::read_from_prefix(bytes)
+        Some(*Self::ref_from_prefix(bytes).ok()?.0)
     }
 
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
-        value.write_to_prefix(bytes)
+        value.write_to_prefix(bytes).ok()
     }
 
     fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
@@ -86,11 +86,11 @@ impl MmapValue for UuidIntType {
     }
 
     fn read_from_mmap(bytes: &[u8]) -> Option<Self::Referenced<'_>> {
-        Self::ref_from_prefix(bytes)
+        Some(Self::ref_from_prefix(bytes).ok()?.0)
     }
 
     fn write_to_mmap(value: Self::Referenced<'_>, bytes: &mut [u8]) -> Option<()> {
-        value.write_to_prefix(bytes)
+        value.write_to_prefix(bytes).ok()
     }
 
     fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
@@ -110,19 +110,16 @@ impl MmapValue for GeoPoint {
     }
 
     fn read_from_mmap(bytes: &[u8]) -> Option<Self> {
-        Some(Self {
-            lon: f64::read_from_prefix(bytes)?,
-            lat: bytes
-                .get(std::mem::size_of::<f64>()..)
-                .and_then(f64::read_from_prefix)?,
-        })
+        let (lon, bytes) = f64::read_from_prefix(bytes).ok()?;
+        let (lat, _) = f64::read_from_prefix(bytes).ok()?;
+        Some(Self { lon, lat })
     }
 
     fn write_to_mmap(value: Self, bytes: &mut [u8]) -> Option<()> {
-        value.lon.write_to_prefix(bytes)?;
+        value.lon.write_to_prefix(bytes).ok()?;
         bytes
             .get_mut(std::mem::size_of::<f64>()..)
-            .and_then(|bytes| value.lat.write_to_prefix(bytes))
+            .and_then(|bytes| value.lat.write_to_prefix(bytes).ok())
     }
 
     fn from_referenced<'a>(value: &'a Self::Referenced<'_>) -> &'a Self {
@@ -142,14 +139,13 @@ impl MmapValue for str {
     }
 
     fn read_from_mmap(bytes: &[u8]) -> Option<&str> {
-        let size = u32::read_from_prefix(bytes)? as usize;
-
-        let bytes = bytes.get(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + size)?;
+        let (size, bytes) = u32::read_from_prefix(bytes).ok()?;
+        let bytes = bytes.get(..size as usize)?;
         std::str::from_utf8(bytes).ok()
     }
 
     fn write_to_mmap(value: &str, bytes: &mut [u8]) -> Option<()> {
-        u32::write_to_prefix(&(value.len() as u32), bytes)?;
+        u32::write_to_prefix(&(value.len() as u32), bytes).ok()?;
         bytes
             .get_mut(std::mem::size_of::<u32>()..std::mem::size_of::<u32>() + value.len())?
             .copy_from_slice(value.as_bytes());
@@ -178,14 +174,14 @@ pub struct MmapPointToValues<T: MmapValue + ?Sized> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, AsBytes, FromBytes, FromZeroes)]
+#[derive(Copy, Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 struct MmapRange {
     start: u64,
     count: u64,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, AsBytes, FromBytes, FromZeroes)]
+#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 struct Header {
     ranges_start: u64,
     points_count: u64,
@@ -221,7 +217,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         };
         header
             .write_to_prefix(mmap.as_mut())
-            .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
+            .map_err(|_| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
 
         // counter for values offset
         let mut point_values_offset = header.ranges_start as usize + ranges_size;
@@ -247,7 +243,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                 header.ranges_start as usize
                     + point_id as usize * std::mem::size_of::<MmapRange>()..,
             )
-            .and_then(|bytes| range.write_to_prefix(bytes))
+            .and_then(|bytes| range.write_to_prefix(bytes).ok())
             .ok_or_else(|| OperationError::service_error(NOT_ENOUGHT_BYTES_ERROR_MESSAGE))?;
         }
 
@@ -263,7 +259,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
     pub fn open(path: &Path) -> OperationResult<Self> {
         let file_name = path.join(POINT_TO_VALUES_PATH);
         let mmap = open_write_mmap(&file_name, AdviceSetting::Global, false)?;
-        let header = Header::read_from_prefix(mmap.as_ref()).ok_or_else(|| {
+        let (header, _) = Header::read_from_prefix(mmap.as_ref()).map_err(|_| {
             OperationError::InconsistentStorage {
                 description: NOT_ENOUGHT_BYTES_ERROR_MESSAGE.to_owned(),
             }
@@ -351,9 +347,9 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         if point_id < self.header.points_count as PointOffsetType {
             let range_offset = (self.header.ranges_start as usize)
                 + (point_id as usize) * std::mem::size_of::<MmapRange>();
-            self.mmap
-                .get(range_offset..range_offset + std::mem::size_of::<MmapRange>())
-                .and_then(MmapRange::read_from)
+            MmapRange::read_from_prefix(self.mmap.get(range_offset..)?)
+                .ok()
+                .map(|(range, _)| range)
         } else {
             None
         }
