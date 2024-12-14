@@ -7,7 +7,7 @@ use common::zeros::WriteZerosExt;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::open_read_mmap;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::CompressedPostingChunksIndex;
@@ -16,7 +16,7 @@ use crate::index::field_index::full_text_index::inverted_index::TokenId;
 
 const ALIGNMENT: usize = 4;
 
-#[derive(Debug, Default, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct PostingsHeader {
     /// Number of posting lists. One posting list per term
@@ -26,7 +26,7 @@ struct PostingsHeader {
 
 /// This data structure should contain all the necessary information to
 /// construct `CompressedMmapPostingList` from the mmap file.
-#[derive(Debug, Default, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct PostingListHeader {
     /// Offset in bytes from the start of the mmap file
@@ -74,11 +74,10 @@ impl MmapPostings {
 
         let header_offset =
             size_of::<PostingsHeader>() + token_id as usize * size_of::<PostingListHeader>();
-        let header_bytes = self
-            .mmap
-            .get(header_offset..header_offset + size_of::<PostingListHeader>())?;
 
-        PostingListHeader::ref_from(header_bytes)
+        PostingListHeader::ref_from_prefix(self.mmap.get(header_offset..)?)
+            .ok()
+            .map(|(header, _)| header)
     }
 
     /// Create ChunkReader from the given header
@@ -92,36 +91,17 @@ impl MmapPostings {
     /// * `remainder_postings: &'a [PointOffsetType],`
     /// ```
     fn get_reader(&self, header: &PostingListHeader) -> Option<ChunkReader<'_>> {
-        let offset = header.offset as usize;
-        let chunks_len = header.chunks_count as usize;
-        let data_len = header.data_bytes_count as usize;
-        let alignment_len = header.alignment_bytes_count as usize;
-        let remainder_len = header.remainder_count as usize;
-
-        let last_doc_id_bytes = size_of::<PointOffsetType>();
-        let chunks_size_bytes = chunks_len * size_of::<CompressedPostingChunksIndex>();
-        let data_size_bytes = data_len;
-        let alignment_size_bytes = alignment_len;
-        let remainder_size_bytes = remainder_len * size_of::<PointOffsetType>();
-
-        let last_doc_id_offset = offset;
-        let chunks_offset = last_doc_id_offset + last_doc_id_bytes;
-        let data_offset = chunks_offset + chunks_size_bytes;
-        let alignment_offset = data_offset + data_size_bytes;
-        let remainder_offset = alignment_offset + alignment_size_bytes;
-
-        let last_doc_id_mem = self.mmap.get(last_doc_id_offset..chunks_offset)?;
-        let last_doc_id = u32::read_from(last_doc_id_mem)?;
-
-        let chunks_mem = self.mmap.get(chunks_offset..data_offset)?;
-        let chunks = CompressedPostingChunksIndex::slice_from(chunks_mem)?;
-
-        let data = self.mmap.get(data_offset..alignment_offset)?;
-
-        let remainder_mem = self
-            .mmap
-            .get(remainder_offset..remainder_offset + remainder_size_bytes)?;
-        let remainder_postings = u32::slice_from(remainder_mem)?;
+        let bytes = self.mmap.get(header.offset as usize..)?;
+        let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(bytes).ok()?;
+        let (chunks, bytes) = <[CompressedPostingChunksIndex]>::ref_from_prefix_with_elems(
+            bytes,
+            header.chunks_count as usize,
+        )
+        .ok()?;
+        let (data, bytes) = bytes.split_at(header.data_bytes_count as usize);
+        let bytes = bytes.get(header.alignment_bytes_count as usize..)?;
+        let (remainder_postings, _) =
+            <[u32]>::ref_from_prefix_with_elems(bytes, header.remainder_count as usize).ok()?;
 
         Some(ChunkReader::new(
             last_doc_id,
@@ -213,14 +193,7 @@ impl MmapPostings {
         let path = path.into();
         let mmap = open_read_mmap(&path, AdviceSetting::Advice(Advice::Normal), populate)?;
 
-        let header_bytes = mmap.get(0..size_of::<PostingsHeader>()).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Invalid header in {}", path.display()),
-            )
-        })?;
-
-        let header = PostingsHeader::read_from(header_bytes).ok_or_else(|| {
+        let (header, _) = PostingsHeader::read_from_prefix(&mmap).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("Invalid header deserialization in {}", path.display()),

@@ -14,7 +14,7 @@ use ph::fmph::Function;
 use rand::rngs::StdRng;
 #[cfg(any(test, feature = "testing"))]
 use rand::Rng as _;
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::zeros::WriteZerosExt as _;
 
@@ -39,7 +39,7 @@ type ValuesLen = u32;
 /// | key   | values_len | padding | values |
 /// |-------|------------|---------|--------|
 /// | `i64` | `u32`      | `u8[]`  | `V[]`  |
-pub struct MmapHashMap<K: ?Sized, V: Sized + AsBytes + FromBytes> {
+pub struct MmapHashMap<K: ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout> {
     mmap: Mmap,
     header: Header,
     phf: Function,
@@ -48,7 +48,7 @@ pub struct MmapHashMap<K: ?Sized, V: Sized + AsBytes + FromBytes> {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug, AsBytes, FromBytes, FromZeroes)]
+#[derive(Copy, Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 struct Header {
     key_type: [u8; 8],
     buckets_pos: u64,
@@ -59,7 +59,9 @@ const PADDING_SIZE: usize = 4096;
 
 type BucketOffset = u64;
 
-impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
+impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout>
+    MmapHashMap<K, V>
+{
     /// Save `map` contents to `path`.
     pub fn create<'a>(
         path: &Path,
@@ -141,7 +143,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
             bufw.write_all((values.len() as ValuesLen).as_bytes())?;
             bufw.write_zeros(Self::values_len_padding_bytes())?;
             for i in values {
-                bufw.write_all(AsBytes::as_bytes(&i))?;
+                bufw.write_all(i.as_bytes())?;
             }
         }
 
@@ -189,7 +191,8 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         // See https://docs.rs/memmap2/latest/memmap2/struct.Mmap.html#safety
         let mmap = unsafe { Mmap::map(&file)? };
 
-        let header = Header::read_from_prefix(mmap.as_ref()).ok_or(io::ErrorKind::InvalidData)?;
+        let (header, _) =
+            Header::read_from_prefix(mmap.as_ref()).map_err(|_| io::ErrorKind::InvalidData)?;
 
         if header.key_type != K::NAME {
             return Err(io::Error::new(
@@ -272,15 +275,15 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
             )
         })?;
 
-        let values_len = ValuesLen::read_from_prefix(entry).ok_or_else(|| {
+        let (values_len, _) = ValuesLen::read_from_prefix(entry).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Can't read values_len from mmap",
             )
-        })? as usize;
+        })?;
 
         let values_from = Self::values_len_size_with_padding();
-        let values_to = values_from + values_len * Self::VALUE_SIZE;
+        let values_to = values_from + values_len as usize * Self::VALUE_SIZE;
 
         let entry = entry.get(values_from..values_to).ok_or_else(|| {
             io::Error::new(
@@ -289,7 +292,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
             )
         })?;
 
-        let result = V::slice_from(entry).ok_or_else(|| {
+        let result = <[V]>::ref_from_bytes(entry).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Can't convert mmap range into slice",
@@ -307,7 +310,7 @@ impl<K: Key + ?Sized, V: Sized + AsBytes + FromBytes> MmapHashMap<K, V> {
         let bucket_val = self
             .mmap
             .get(bucket_from..bucket_to)
-            .and_then(BucketOffset::slice_from)
+            .and_then(|b| <[BucketOffset]>::ref_from_bytes(b).ok())
             .and_then(|buckets| buckets.get(index).copied())
             .ok_or_else(|| {
                 io::Error::new(
@@ -389,7 +392,8 @@ impl Key for str {
         //    with 0xFF will always result in an invalid UTF-8 string. Such string could not be
         //    added to the index since we are adding only valid UTF-8 strings as Rust enforces the
         //    validity of `str`/`String` types.
-        buf.get(..self.len()) == Some(AsBytes::as_bytes(self)) && buf.get(self.len()) == Some(&0xFF)
+        buf.get(..self.len()) == Some(IntoBytes::as_bytes(self))
+            && buf.get(self.len()) == Some(&0xFF)
     }
 
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
@@ -408,15 +412,15 @@ impl Key for i64 {
     }
 
     fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-        buf.write_all(AsBytes::as_bytes(self))
+        buf.write_all(self.as_bytes())
     }
 
     fn matches(&self, buf: &[u8]) -> bool {
-        buf.get(..size_of::<i64>()) == Some(AsBytes::as_bytes(self))
+        buf.get(..size_of::<i64>()) == Some(self.as_bytes())
     }
 
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        buf.get(..size_of::<i64>()).and_then(FromBytes::ref_from)
+        Some(i64::ref_from_prefix(buf).ok()?.0)
     }
 }
 
@@ -430,15 +434,15 @@ impl Key for u128 {
     }
 
     fn write(&self, buf: &mut impl Write) -> io::Result<()> {
-        buf.write_all(AsBytes::as_bytes(self))
+        buf.write_all(self.as_bytes())
     }
 
     fn matches(&self, buf: &[u8]) -> bool {
-        buf.get(..size_of::<u128>()) == Some(AsBytes::as_bytes(self))
+        buf.get(..size_of::<u128>()) == Some(self.as_bytes())
     }
 
     fn from_bytes(buf: &[u8]) -> Option<&Self> {
-        buf.get(..size_of::<u128>()).and_then(FromBytes::ref_from)
+        Some(u128::ref_from_prefix(buf).ok()?.0)
     }
 }
 
