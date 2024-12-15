@@ -267,6 +267,7 @@ fn create_vector_storage(
             vec_dim,
             Distance::Dot,
             MultiVectorConfig::default(),
+            false,
         )
         .unwrap(),
     }

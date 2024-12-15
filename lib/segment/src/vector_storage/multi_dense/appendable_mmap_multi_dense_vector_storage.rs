@@ -291,12 +291,14 @@ pub fn open_appendable_memmap_multi_vector_storage(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
     let storage = open_appendable_memmap_multi_vector_storage_impl::<VectorElementType>(
         path,
         dim,
         distance,
         multi_vector_config,
+        populate,
     )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmap(Box::new(
@@ -309,9 +311,15 @@ pub fn open_appendable_memmap_multi_vector_storage_byte(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+    let storage = open_appendable_memmap_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        populate,
+    )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapByte(Box::new(
         storage,
@@ -323,9 +331,15 @@ pub fn open_appendable_memmap_multi_vector_storage_half(
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<VectorStorageEnum> {
-    let storage =
-        open_appendable_memmap_multi_vector_storage_impl(path, dim, distance, multi_vector_config)?;
+    let storage = open_appendable_memmap_multi_vector_storage_impl(
+        path,
+        dim,
+        distance,
+        multi_vector_config,
+        populate,
+    )?;
 
     Ok(VectorStorageEnum::MultiDenseAppendableMemmapHalf(Box::new(
         storage,
@@ -337,6 +351,7 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
     dim: usize,
     distance: Distance,
     multi_vector_config: MultiVectorConfig,
+    populate: bool,
 ) -> OperationResult<
     AppendableMmapMultiDenseVectorStorage<
         T,
@@ -355,14 +370,14 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
         dim,
         Some(false),
         AdviceSetting::Global,
-        Some(false),
+        Some(populate),
     )?;
     let offsets = ChunkedMmapVectors::open(
         &offsets_path,
         1,
         Some(false),
         AdviceSetting::Global,
-        Some(false),
+        Some(populate),
     )?;
 
     let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
