@@ -101,13 +101,13 @@ pub(crate) fn open_vector_storage(
         // In memory
         VectorStorageType::Memory => {
             if let Some(multi_vec_config) = &vector_config.multivector_config {
-                // TODO: populat = true
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
                         vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
                         *multi_vec_config,
+                        true,
                     ),
                     VectorStorageDatatype::Uint8 => {
                         open_appendable_memmap_multi_vector_storage_byte(
@@ -115,6 +115,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            true,
                         )
                     }
                     VectorStorageDatatype::Float16 => {
@@ -123,6 +124,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            true,
                         )
                     }
                 }
@@ -164,6 +166,7 @@ pub(crate) fn open_vector_storage(
                         vector_config.size,
                         vector_config.distance,
                         *multi_vec_config,
+                        false,
                     ),
                     VectorStorageDatatype::Uint8 => {
                         open_appendable_memmap_multi_vector_storage_byte(
@@ -171,6 +174,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            false,
                         )
                     }
                     VectorStorageDatatype::Float16 => {
@@ -179,6 +183,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            false,
                         )
                     }
                 }
@@ -211,6 +216,7 @@ pub(crate) fn open_vector_storage(
                         vector_config.size,
                         vector_config.distance,
                         *multi_vec_config,
+                        false,
                     ),
                     VectorStorageDatatype::Uint8 => {
                         open_appendable_memmap_multi_vector_storage_byte(
@@ -218,6 +224,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            false,
                         )
                     }
                     VectorStorageDatatype::Float16 => {
@@ -226,6 +233,7 @@ pub(crate) fn open_vector_storage(
                             vector_config.size,
                             vector_config.distance,
                             *multi_vec_config,
+                            false,
                         )
                     }
                 }

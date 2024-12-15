@@ -75,6 +75,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         dim,
         distance,
         MultiVectorConfig::default(),
+        false,
     )
     .unwrap();
 
