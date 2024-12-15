@@ -6,7 +6,6 @@ use atomic_refcell::AtomicRefCell;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
-use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{
     only_default_vector, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
     VectorElementType, VectorRef, DEFAULT_VECTOR_NAME,
@@ -25,7 +24,7 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
     PayloadSchemaType, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+use segment::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use segment::vector_storage::VectorStorage;
 use serde_json::json;
 use tempfile::Builder;
@@ -71,14 +70,11 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         .unwrap();
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
-    let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
-    let mut multi_storage = open_simple_multi_dense_vector_storage(
-        db,
-        DB_VECTOR_CF,
+    let mut multi_storage = open_appendable_memmap_multi_vector_storage(
+        dir.path(),
         dim,
         distance,
         MultiVectorConfig::default(),
-        &AtomicBool::new(false),
     )
     .unwrap();
 

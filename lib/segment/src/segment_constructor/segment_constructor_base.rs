@@ -56,10 +56,6 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
     open_appendable_memmap_multi_vector_storage_byte,
     open_appendable_memmap_multi_vector_storage_half,
 };
-use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
-    open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
-    open_simple_multi_dense_vector_storage_half,
-};
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
@@ -104,36 +100,35 @@ pub(crate) fn open_vector_storage(
     match vector_config.storage_type {
         // In memory
         VectorStorageType::Memory => {
-            let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-
             if let Some(multi_vec_config) = &vector_config.multivector_config {
+                // TODO: populat = true
                 match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage(
-                        database.clone(),
-                        &db_column_name,
+                    VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage(
+                        vector_storage_path,
                         vector_config.size,
                         vector_config.distance,
                         *multi_vec_config,
-                        stopped,
                     ),
-                    VectorStorageDatatype::Uint8 => open_simple_multi_dense_vector_storage_byte(
-                        database.clone(),
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                        stopped,
-                    ),
-                    VectorStorageDatatype::Float16 => open_simple_multi_dense_vector_storage_half(
-                        database.clone(),
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        *multi_vec_config,
-                        stopped,
-                    ),
+                    VectorStorageDatatype::Uint8 => {
+                        open_appendable_memmap_multi_vector_storage_byte(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
+                    VectorStorageDatatype::Float16 => {
+                        open_appendable_memmap_multi_vector_storage_half(
+                            vector_storage_path,
+                            vector_config.size,
+                            vector_config.distance,
+                            *multi_vec_config,
+                        )
+                    }
                 }
             } else {
+                let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
+
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
                         database.clone(),
@@ -159,7 +154,7 @@ pub(crate) fn open_vector_storage(
                 }
             }
         }
-        // Mmap on disk, not appendable
+        // Mmap on disk, appendable
         VectorStorageType::Mmap => {
             if let Some(multi_vec_config) = &vector_config.multivector_config {
                 // there are no mmap multi vector storages, appendable only

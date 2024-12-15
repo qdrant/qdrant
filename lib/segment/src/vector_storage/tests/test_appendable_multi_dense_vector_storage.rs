@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
@@ -8,7 +7,6 @@ use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
 use rstest::rstest;
 use tempfile::Builder;
 
-use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use crate::data_types::vectors::{
     MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
@@ -17,14 +15,12 @@ use crate::id_tracker::IdTrackerSS;
 use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
-use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::{
     new_raw_scorer_for_test, MultiVectorStorage, VectorStorage, VectorStorageEnum,
 };
 
 #[derive(Clone, Copy)]
 enum MultiDenseStorageType {
-    SimpleRamFloat,
     AppendableMmapFloat,
 }
 
@@ -83,13 +79,6 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
             VectorStorageEnum::SparseSimple(_) => unreachable!(),
             VectorStorageEnum::SparseMmap(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseSimple(v) => {
-                for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
-                    assert_eq!(orig, vec);
-                }
-            }
-            VectorStorageEnum::MultiDenseSimpleByte(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseSimpleHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec);
@@ -184,16 +173,11 @@ fn do_test_update_from_delete_points(
 
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage2 = open_simple_multi_dense_vector_storage(
-            db,
-            DB_VECTOR_CF,
+        let mut storage2 = create_vector_storage(
+            MultiDenseStorageType::AppendableMmapFloat,
             vector_dim,
-            Distance::Dot,
-            MultiVectorConfig::default(),
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+            dir2.path(),
+        );
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
@@ -250,18 +234,6 @@ fn create_vector_storage(
     path: &Path,
 ) -> VectorStorageEnum {
     match storage_type {
-        MultiDenseStorageType::SimpleRamFloat => {
-            let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
-            open_simple_multi_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                vec_dim,
-                Distance::Dot,
-                MultiVectorConfig::default(),
-                &AtomicBool::new(false),
-            )
-            .unwrap()
-        }
         MultiDenseStorageType::AppendableMmapFloat => open_appendable_memmap_multi_vector_storage(
             path,
             vec_dim,
@@ -274,11 +246,7 @@ fn create_vector_storage(
 
 #[rstest]
 fn test_delete_points_in_multi_dense_vector_storage(
-    #[values(
-        MultiDenseStorageType::SimpleRamFloat,
-        MultiDenseStorageType::AppendableMmapFloat
-    )]
-    storage_type: MultiDenseStorageType,
+    #[values(MultiDenseStorageType::AppendableMmapFloat)] storage_type: MultiDenseStorageType,
 ) {
     let vec_dim = 1024;
     let vec_count = 5;
@@ -304,11 +272,7 @@ fn test_delete_points_in_multi_dense_vector_storage(
 
 #[rstest]
 fn test_update_from_delete_points_multi_dense_vector_storage(
-    #[values(
-        MultiDenseStorageType::SimpleRamFloat,
-        MultiDenseStorageType::AppendableMmapFloat
-    )]
-    storage_type: MultiDenseStorageType,
+    #[values(MultiDenseStorageType::AppendableMmapFloat)] storage_type: MultiDenseStorageType,
 ) {
     let vec_dim = 1024;
     let vec_count = 5;
@@ -334,11 +298,7 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
 
 #[rstest]
 fn test_large_multi_dense_vector_storage(
-    #[values(
-        MultiDenseStorageType::SimpleRamFloat,
-        MultiDenseStorageType::AppendableMmapFloat
-    )]
-    storage_type: MultiDenseStorageType,
+    #[values(MultiDenseStorageType::AppendableMmapFloat)] storage_type: MultiDenseStorageType,
 ) {
     assert!(MAX_MULTIVECTOR_FLATTENED_LEN * std::mem::size_of::<VectorElementType>() < CHUNK_SIZE);
 
