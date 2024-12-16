@@ -194,7 +194,7 @@ where
         for p in field_values {
             let mut index_checked = false;
             for index in field_indexes.as_ref() {
-                if let Some(index_check_res) = index.check_condition(field_condition, p) {
+                if let Some(index_check_res) = index.special_check_condition(field_condition, p) {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
                         return true;

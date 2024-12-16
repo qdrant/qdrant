@@ -19,7 +19,11 @@ pub struct SegmentTelemetry {
 #[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct PayloadIndexTelemetry {
     pub field_name: Option<String>,
+
+    /// The amount of values indexed for all points.
     pub points_values_count: usize,
+
+    /// The amount of points that have at least one value indexed.
     pub points_count: usize,
 
     #[serde(skip_serializing_if = "Option::is_none")]

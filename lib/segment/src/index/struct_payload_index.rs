@@ -404,7 +404,8 @@ impl StructPayloadIndex {
     }
 
     fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector {
-        if !self.is_appendable && payload_schema.is_on_disk() {
+        let is_immutable_segment = !self.is_appendable;
+        if payload_schema.is_on_disk() && (is_immutable_segment || payload_schema.is_mutable()) {
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir: &self.path })
         } else {
             IndexSelector::RocksDb(IndexSelectorRocksDb {
