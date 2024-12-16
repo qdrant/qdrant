@@ -173,14 +173,16 @@ impl InferenceService {
         inference_type: InferenceType,
         inference_token: InferenceToken,
     ) -> Result<Vec<VectorPersisted>, StorageError> {
-        let token = inference_token
-            .0
-            .unwrap_or_else(|| self.config.token.clone().unwrap_or_default());
+        // Assume that either:
+        // - User doesn't have access to generating random JWT tokens (like in serverless)
+        // - Inference server checks validity of the tokens.
+
+        let token = inference_token.0.or_else(|| self.config.token.clone());
 
         let request = InferenceRequest {
             inputs: inference_inputs,
             inference: Some(inference_type),
-            token: Some(token),
+            token,
         };
 
         let url = self.config.address.as_ref().ok_or_else(|| {
