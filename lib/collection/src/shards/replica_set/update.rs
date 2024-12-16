@@ -38,11 +38,13 @@ impl ShardReplicaSet {
 
         if let Some(local_shard) = local.deref() {
             match self.peer_state(self.this_peer_id()) {
+                Some(ReplicaState::Active) => {
+                    // Rate limit update operations on Active replica
+                    self.check_write_rate_limiter()?;
+                    Ok(Some(local_shard.get().update(operation, wait).await?))
+                }
                 Some(
-                    ReplicaState::Active
-                    | ReplicaState::Partial
-                    | ReplicaState::Initializing
-                    | ReplicaState::Resharding,
+                    ReplicaState::Partial | ReplicaState::Initializing | ReplicaState::Resharding,
                 ) => Ok(Some(local_shard.get().update(operation, wait).await?)),
                 Some(ReplicaState::Listener) => {
                     Ok(Some(local_shard.get().update(operation, false).await?))
@@ -250,6 +252,11 @@ impl ShardReplicaSet {
                 } else {
                     wait
                 };
+
+                if self.peer_is_active(this_peer_id) {
+                    // Check write rate limiter before proceeding if replica active
+                    self.check_write_rate_limiter()?;
+                }
 
                 let operation = operation.clone();
 

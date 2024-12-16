@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::cpu::CpuBudget;
+use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;
 use segment::types::{ExtendedPointId, Filter, ShardKey};
@@ -111,6 +112,7 @@ pub struct ShardReplicaSet {
     write_ordering_lock: Mutex<()>,
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
+    write_rate_limiter: parking_lot::Mutex<Option<RateLimiter>>,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
@@ -188,6 +190,16 @@ impl ShardReplicaSet {
         let replica_set_shard_config = ShardConfig::new_replica_set();
         replica_set_shard_config.save(&shard_path)?;
 
+        // Initialize the write rate limiter
+        let config = collection_config.read().await;
+        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .write_rate_limit
+                .map(RateLimiter::new_per_minute)
+        });
+        let write_rate_limiter = parking_lot::Mutex::new(write_rate_limiter);
+        drop(config);
+
         Ok(Self {
             shard_id,
             shard_key,
@@ -209,6 +221,7 @@ impl ShardReplicaSet {
             optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
+            write_rate_limiter,
         })
     }
 
@@ -307,6 +320,16 @@ impl ShardReplicaSet {
             None
         };
 
+        // Initialize the write rate limiter
+        let config = collection_config.read().await;
+        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .write_rate_limit
+                .map(RateLimiter::new_per_minute)
+        });
+        let write_rate_limiter = parking_lot::Mutex::new(write_rate_limiter);
+        drop(config);
+
         let replica_set = Self {
             shard_id,
             shard_key,
@@ -329,6 +352,7 @@ impl ShardReplicaSet {
             optimizer_cpu_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
+            write_rate_limiter,
         };
 
         if local_load_failure && replica_set.active_remote_shards().is_empty() {
@@ -734,10 +758,35 @@ impl ShardReplicaSet {
         }
     }
 
+    /// Apply shard's strict mode configuration update
+    /// - Update read and write rate limiters
     pub(crate) async fn on_strict_mode_config_update(&self) -> CollectionResult<()> {
         let read_local = self.local.read().await;
         if let Some(shard) = &*read_local {
             shard.on_strict_mode_config_update().await
+        }
+        let config = self.collection_config.read().await;
+        if let Some(strict_mode_config) = &config.strict_mode_config {
+            // update write rate limiter
+            if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit {
+                let mut write_rate_limiter_guard = self.write_rate_limiter.lock();
+                write_rate_limiter_guard
+                    .replace(RateLimiter::new_per_minute(write_rate_limit_per_sec));
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if the write rate limiter allows the operation to proceed
+    ///
+    /// Returns an error if the rate limit is exceeded.
+    fn check_write_rate_limiter(&self) -> CollectionResult<()> {
+        if let Some(rate_limiter) = self.write_rate_limiter.lock().as_mut() {
+            if !rate_limiter.check() {
+                return Err(CollectionError::RateLimitExceeded {
+                    description: "Write rate limit exceeded, retry later".to_string(),
+                });
+            }
         }
         Ok(())
     }

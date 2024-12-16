@@ -39,9 +39,6 @@ impl ShardOperation for LocalShard {
         mut operation: OperationWithClockTag,
         wait: bool,
     ) -> CollectionResult<UpdateResult> {
-        // Check write rate limiter before proceeding
-        self.check_write_rate_limiter()?;
-
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
 
