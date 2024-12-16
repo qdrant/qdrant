@@ -1301,7 +1301,18 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::FailedPrecondition => CollectionError::PreConditionFailed {
                 description: format!("{err}"),
             },
-            _other => CollectionError::ServiceError {
+            tonic::Code::ResourceExhausted => CollectionError::RateLimitExceeded {
+                description: format!("{err}"),
+            },
+            tonic::Code::Ok
+            | tonic::Code::Unknown
+            | tonic::Code::PermissionDenied
+            | tonic::Code::Aborted
+            | tonic::Code::OutOfRange
+            | tonic::Code::Unimplemented
+            | tonic::Code::Unavailable
+            | tonic::Code::DataLoss
+            | tonic::Code::Unauthenticated => CollectionError::ServiceError {
                 error: format!("Tonic status error: {err}"),
                 backtrace: Some(Backtrace::force_capture().to_string()),
             },
