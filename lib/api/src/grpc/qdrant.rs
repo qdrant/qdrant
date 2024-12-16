@@ -668,6 +668,7 @@ pub struct CollectionConfig {
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(serde::Serialize)]

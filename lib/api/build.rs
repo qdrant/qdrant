@@ -145,6 +145,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("CollectionConfig.hnsw_config", ""),
             ("CollectionConfig.optimizers_config", ""),
             ("CollectionConfig.quantization_config", ""),
+            ("CollectionConfig.strict_mode_config", ""),
             ("CollectionParams.vectors_config", ""),
             ("ChangeAliases.timeout", "range(min = 1)"),
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1, max = 255)"),
