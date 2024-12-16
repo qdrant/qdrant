@@ -39,7 +39,6 @@ fn telemetry(
     ActixAccess(access): ActixAccess,
 ) -> impl Future<Output = HttpResponse> {
     helpers::time(async move {
-        access.check_global_access(AccessRequirements::new())?;
         let anonymize = params.anonymize.unwrap_or(false);
         let details_level = params
             .details_level
