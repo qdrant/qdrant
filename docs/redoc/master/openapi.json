@@ -7561,6 +7561,11 @@
         "properties": {
           "type": {
             "$ref": "#/components/schemas/BoolIndexType"
+          },
+          "on_disk": {
+            "description": "If true, store the index on disk. Default: false.",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },
@@ -11823,11 +11828,13 @@
             "nullable": true
           },
           "points_values_count": {
+            "description": "The amount of values indexed for all points.",
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
           "points_count": {
+            "description": "The amount of points that have at least one value indexed.",
             "type": "integer",
             "format": "uint",
             "minimum": 0

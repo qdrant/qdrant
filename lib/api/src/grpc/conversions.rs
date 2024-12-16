@@ -199,9 +199,11 @@ impl From<segment::data_types::index::TextIndexParams> for PayloadIndexParams {
 }
 
 impl From<segment::data_types::index::BoolIndexParams> for PayloadIndexParams {
-    fn from(_params: segment::data_types::index::BoolIndexParams) -> Self {
+    fn from(params: segment::data_types::index::BoolIndexParams) -> Self {
         PayloadIndexParams {
-            index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams {})),
+            index_params: Some(IndexParams::BoolIndexParams(BoolIndexParams {
+                on_disk: params.on_disk,
+            })),
         }
     }
 }
@@ -361,9 +363,10 @@ impl TryFrom<TextIndexParams> for segment::data_types::index::TextIndexParams {
 
 impl TryFrom<BoolIndexParams> for segment::data_types::index::BoolIndexParams {
     type Error = Status;
-    fn try_from(_params: BoolIndexParams) -> Result<Self, Self::Error> {
+    fn try_from(params: BoolIndexParams) -> Result<Self, Self::Error> {
         Ok(segment::data_types::index::BoolIndexParams {
             r#type: BoolIndexType::Bool,
+            on_disk: params.on_disk,
         })
     }
 }
