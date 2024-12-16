@@ -226,7 +226,7 @@ pub struct HnswConfigDiff {
     pub m: ::core::option::Option<u64>,
     /// Number of neighbours to consider during the index building. Larger the value - more accurate the search, more time required to build the index.
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_4"))]
+    #[validate(range(min = 4))]
     pub ef_construct: ::core::option::Option<u64>,
     /// Minimal size (in KiloBytes) of vectors for additional payload-based indexing.
     /// If the payload chunk is smaller than `full_scan_threshold` additional indexing won't be used -
@@ -269,7 +269,7 @@ pub struct SparseIndexConfig {
 pub struct WalConfigDiff {
     /// Size of a single WAL block file
     #[prost(uint64, optional, tag = "1")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub wal_capacity_mb: ::core::option::Option<u64>,
     /// Number of segments to create in advance
     #[prost(uint64, optional, tag = "2")]
@@ -282,11 +282,11 @@ pub struct WalConfigDiff {
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag = "1")]
-    #[validate(custom(function = "crate::grpc::validate::validate_f64_range_1"))]
+    #[validate(range(min = 1.0))]
     pub deleted_threshold: ::core::option::Option<f64>,
     /// The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_100"))]
+    #[validate(range(min = 100))]
     pub vacuum_min_vector_number: ::core::option::Option<u64>,
     /// Target amount of segments the optimizer will try to keep.
     /// Real amount of segments may vary depending on multiple parameters:
@@ -347,9 +347,7 @@ pub struct ScalarQuantization {
     pub r#type: i32,
     /// Number of bits to use for quantization
     #[prost(float, optional, tag = "2")]
-    #[validate(
-        custom(function = "crate::grpc::validate::validate_f32_range_min_0_5_max_1")
-    )]
+    #[validate(range(min = 0.5, max = 1.0))]
     pub quantile: ::core::option::Option<f32>,
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "3")]
@@ -538,7 +536,7 @@ pub struct UpdateCollection {
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Wait timeout for operation commit in seconds if blocking, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "3")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// New configuration parameters for the collection
     #[prost(message, optional, tag = "4")]
@@ -574,7 +572,7 @@ pub struct DeleteCollection {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -855,7 +853,7 @@ pub struct ChangeAliases {
     pub actions: ::prost::alloc::vec::Vec<AliasOperations>,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "2")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -1164,7 +1162,7 @@ pub struct UpdateCollectionClusterSetupRequest {
     pub collection_name: ::prost::alloc::string::String,
     /// Wait timeout for operation commit in seconds, if not specified - default value will be supplied
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     #[prost(
         oneof = "update_collection_cluster_setup_request::Operation",
@@ -4099,6 +4097,7 @@ pub struct UpdatePointVectors {
     pub wait: ::core::option::Option<bool>,
     /// List of points and vectors to update
     #[prost(message, repeated, tag = "3")]
+    #[validate(nested)]
     pub points: ::prost::alloc::vec::Vec<PointVectors>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "4")]
@@ -4107,6 +4106,7 @@ pub struct UpdatePointVectors {
     #[prost(message, optional, tag = "5")]
     pub shard_key_selector: ::core::option::Option<ShardKeySelector>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -4116,6 +4116,7 @@ pub struct PointVectors {
     pub id: ::core::option::Option<PointId>,
     /// Named vectors to update, leave others intact
     #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
     pub vectors: ::core::option::Option<Vectors>,
 }
 #[derive(validator::Validate)]
@@ -4409,7 +4410,7 @@ pub struct QuantizationSearchParams {
     /// For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will be pre-selected using quantized index,
     /// and then top-100 will be returned after re-scoring.
     #[prost(double, optional, tag = "3")]
-    #[validate(custom(function = "crate::grpc::validate::validate_f64_range_min_1"))]
+    #[validate(range(min = 1.0))]
     pub oversampling: ::core::option::Option<f64>,
 }
 #[derive(validator::Validate)]
@@ -4478,7 +4479,7 @@ pub struct SearchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "13")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "14")]
@@ -4503,7 +4504,7 @@ pub struct SearchBatchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -4572,7 +4573,7 @@ pub struct SearchPointGroups {
     pub with_lookup: ::core::option::Option<WithLookup>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "14")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "15")]
@@ -4634,7 +4635,7 @@ pub struct ScrollPoints {
     pub offset: ::core::option::Option<PointId>,
     /// Max number of result
     #[prost(uint32, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u32_range_min_1"))]
+    #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u32>,
     /// Options for specifying which payload to include or not
     #[prost(message, optional, tag = "6")]
@@ -4728,7 +4729,7 @@ pub struct RecommendPoints {
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "19")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "20")]
@@ -4751,7 +4752,7 @@ pub struct RecommendBatchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -4823,7 +4824,7 @@ pub struct RecommendPointGroups {
     pub negative_vectors: ::prost::alloc::vec::Vec<Vector>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "20")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "21")]
@@ -4921,7 +4922,7 @@ pub struct DiscoverPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "13")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "14")]
@@ -4944,7 +4945,7 @@ pub struct DiscoverBatchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -5113,7 +5114,7 @@ pub struct QueryPoints {
     pub score_threshold: ::core::option::Option<f32>,
     /// Max number of points. Default is 10.
     #[prost(uint64, optional, tag = "8")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
     /// Offset of the result. Skip this many points. Default is 0.
     #[prost(uint64, optional, tag = "9")]
@@ -5135,7 +5136,7 @@ pub struct QueryPoints {
     pub lookup_from: ::core::option::Option<LookupLocation>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "15")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
@@ -5154,7 +5155,7 @@ pub struct QueryBatchPoints {
     pub read_consistency: ::core::option::Option<ReadConsistency>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -5238,7 +5239,7 @@ pub struct FacetCounts {
     pub exact: ::core::option::Option<bool>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "7")]
@@ -5297,18 +5298,18 @@ pub struct SearchMatrixPoints {
     pub filter: ::core::option::Option<Filter>,
     /// How many points to select and search within. Default is 10.
     #[prost(uint64, optional, tag = "3")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_2"))]
+    #[validate(range(min = 2))]
     pub sample: ::core::option::Option<u64>,
     /// How many neighbours per sample to find. Default is 3.
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
     /// Define which vector to use for querying. If missing, the default vector is is used.
     #[prost(string, optional, tag = "5")]
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "6")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "7")]
@@ -9409,7 +9410,7 @@ pub struct QueryBatchPointsInternal {
     #[prost(uint32, optional, tag = "3")]
     pub shard_id: ::core::option::Option<u32>,
     #[prost(uint64, optional, tag = "4")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -9457,7 +9458,7 @@ pub struct FacetCountsInternal {
     #[prost(uint32, tag = "6")]
     pub shard_id: u32,
     #[prost(uint64, optional, tag = "7")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u64_range_min_1"))]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
@@ -11565,7 +11566,7 @@ pub struct AddPeerToKnownMessage {
     #[validate(custom(function = "common::validation::validate_not_empty"))]
     pub uri: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(uint32, optional, tag = "2")]
-    #[validate(custom(function = "crate::grpc::validate::validate_u32_range_min_1"))]
+    #[validate(range(min = 1))]
     pub port: ::core::option::Option<u32>,
     #[prost(uint64, tag = "3")]
     pub id: u64,
