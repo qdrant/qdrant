@@ -76,6 +76,7 @@ mod tests {
             .expect("Time went backwards")
             .as_secs();
         let claims = Claims {
+            sub: None,
             exp: Some(exp),
             access: Access::Collection(CollectionAccessList(vec![CollectionAccess {
                 collection: "collection".to_string(),
@@ -113,6 +114,7 @@ mod tests {
             - 31; // 31 seconds in the past, bigger than the 30 seconds leeway
 
         let mut claims = Claims {
+            sub: None,
             exp: Some(exp),
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,
@@ -139,6 +141,7 @@ mod tests {
     #[test]
     fn test_invalid_token() {
         let claims = Claims {
+            sub: None,
             exp: None,
             access: Access::Global(GlobalAccessMode::Read),
             value_exists: None,

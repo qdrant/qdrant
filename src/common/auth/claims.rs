@@ -6,6 +6,9 @@ use validator::{Validate, ValidationErrors};
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Claims {
+    /// The subject ID; can be a subscription ID, cluster ID, or user ID
+    pub sub: Option<String>,
+
     /// Expiration time (seconds since UNIX epoch)
     pub exp: Option<u64>,
 
