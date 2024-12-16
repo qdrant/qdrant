@@ -10,6 +10,7 @@ use storage::rbac::Access;
 
 use super::helpers::HttpError;
 use crate::common::auth::{AuthError, AuthKeys};
+use crate::common::inference::InferenceToken;
 
 pub struct Auth {
     auth_keys: AuthKeys,
@@ -109,7 +110,6 @@ where
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let path = req.path();
-
         if self.is_path_whitelisted(path) {
             return Box::pin(self.service.call(req));
         }
@@ -121,8 +121,10 @@ where
                 .validate_request(|key| req.headers().get(key).and_then(|val| val.to_str().ok()))
                 .await
             {
-                Ok(access) => {
+                Ok((access, api_key)) => {
                     let previous = req.extensions_mut().insert::<Access>(access);
+                    req.extensions_mut()
+                        .insert(InferenceToken::new(api_key.to_string()));
                     debug_assert!(
                         previous.is_none(),
                         "Previous access object should not exist in the request"
