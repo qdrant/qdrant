@@ -47,6 +47,7 @@ pub struct OptimizersConfig {
     /// If not set, will be automatically selected considering the number of available CPUs.
     #[serde(alias = "max_segment_size_kb")]
     #[serde(default)]
+    #[validate(range(min = 1))]
     pub max_segment_size: Option<usize>,
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmapped file.

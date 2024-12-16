@@ -307,6 +307,7 @@ pub struct OptimizersConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     /// If not set, will be automatically selected considering the number of available CPUs.
     #[prost(uint64, optional, tag = "4")]
+    #[validate(range(min = 1))]
     pub max_segment_size: ::core::option::Option<u64>,
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmapped file.
@@ -522,6 +523,7 @@ pub struct CreateCollection {
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
     /// Configuration for strict mode
     #[prost(message, optional, tag = "17")]
+    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
@@ -562,6 +564,7 @@ pub struct UpdateCollection {
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
     /// New strict mode configuration
     #[prost(message, optional, tag = "9")]
+    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
