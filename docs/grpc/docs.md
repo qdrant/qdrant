@@ -1439,6 +1439,7 @@ Note: 1kB = 1 vector of size 256. |
 | max_collection_vector_size_bytes | [uint64](#uint64) | optional |  |
 | read_rate_limit | [uint32](#uint32) | optional | Max number of read operations per minute per replica |
 | write_rate_limit | [uint32](#uint32) | optional | Max number of write operations per minute per replica |
+| max_collection_payload_size_bytes | [uint64](#uint64) | optional |  |
 
 
 

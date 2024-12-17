@@ -324,6 +324,7 @@ message StrictModeConfig {
   optional uint64 max_collection_vector_size_bytes  = 10;
   optional uint32 read_rate_limit = 11; // Max number of read operations per minute per replica
   optional uint32 write_rate_limit = 12; // Max number of write operations per minute per replica
+  optional uint64 max_collection_payload_size_bytes = 13;
 }
 
 message CreateCollection {

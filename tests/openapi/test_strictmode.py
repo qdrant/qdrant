@@ -1,3 +1,5 @@
+import time
+
 import pytest
 import random
 
@@ -640,6 +642,134 @@ def test_strict_mode_read_rate_limiting(collection_name):
 
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
+
+
+def test_strict_mode_max_collection_payload_size_upsert(collection_name):
+    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
+    # For now were just asserting a very loose condition to ensure it works at all.
+    # Every required change for the mmap migration has been marked with a "TODO"
+
+    basic_collection_setup(collection_name=collection_name, on_disk_payload=True)  # Clear collection to not depend on other tests
+
+    def upsert_points(ids: list[int]):
+        length = len(ids)
+        payloads = [{"city": "Berlin"} for _ in range(length)]
+        vectors = [[1, 2, 3, 5] for _ in range(length)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'true'},
+            body={
+                "batch": {
+                    "ids": ids,
+                    "payloads": payloads,
+                    "vectors": vectors
+                }
+            }
+        )
+
+    # Overwriting the same points to trigger cache refreshing
+    for _ in range(32):
+        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
+
+    time.sleep(15)  # TODO: Remove
+
+    # TODO: Remove
+    # Check that we still can upsert (not needed for mmap)
+    for _ in range(32):
+        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
+    time.sleep(15)  # TODO: Remove
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        # "max_collection_payload_size_bytes": 45000,  # TODO: Uncomment and replace the line below
+        "max_collection_payload_size_bytes": 1,
+    })
+
+    # TODO: Uncomment
+    # for _ in range(32):
+    #     upsert_points([6, 7, 8, 9, 10]).raise_for_status()
+
+    # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
+    for i in range(32):
+        failed_upsert = upsert_points([12, 13, 14, 15, 16])
+        if failed_upsert.ok:
+            # TODO: Remove this if block
+            if i == 0:
+                time.sleep(15)
+            continue
+        assert "Max payload storage size" in failed_upsert.json()['status']['error']
+        assert not failed_upsert.ok
+        return
+
+    assert False, "Upserting should have failed but didn't"
+
+
+def test_strict_mode_max_collection_payload_size_upsert_batch(collection_name):
+    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
+    # For now were just asserting a very loose condition to ensure it works at all.
+    # Every required change for the mmap migration has been marked with a "TODO"
+
+    basic_collection_setup(collection_name=collection_name, on_disk_payload=True)  # Clear collection to not depend on other tests
+
+    def upsert_points(ids: list[int]):
+        length = len(ids)
+        payloads = [{"city": "Berlin"} for _ in range(length)]
+        vectors = [[1, 2, 3, 5] for _ in range(length)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points/batch',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "operations": [
+                    {
+                        "upsert": {
+                            "batch": {
+                                "ids": ids,
+                                "payloads": payloads,
+                                "vectors": vectors
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+    for _ in range(32):
+        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
+
+    time.sleep(15)  # TODO: Remove
+
+    # TODO: Remove
+    # Check that we still can upsert (not needed for mmap)
+    for _ in range(32):
+        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
+    time.sleep(15)  # TODO: Remove
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        # "max_collection_payload_size_bytes": 45000,  # TODO: Uncomment and replace the line below
+        "max_collection_payload_size_bytes": 1,
+    })
+
+    # TODO: Uncomment
+    # for i in range(32):
+    #     upsert_points([6, 7, 8, 9, 10]).raise_for_status()
+
+    # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
+    for i in range(32):
+        failed_upsert = upsert_points([12, 13, 14, 15, 16])
+        if failed_upsert.ok:
+            # TODO: Remove this if block
+            if i == 0:
+                time.sleep(15)
+            continue
+        assert "Max payload storage size" in failed_upsert.json()['status']['error']
+        assert not failed_upsert.ok
+        return
+
+    assert False, "Upserting should have failed but didn't"
 
 
 def test_strict_mode_write_rate_limiting(collection_name):
