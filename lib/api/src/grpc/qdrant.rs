@@ -460,6 +460,8 @@ pub struct StrictModeConfig {
     /// Max number of write operations per minute per replica
     #[prost(uint32, optional, tag = "12")]
     pub write_rate_limit: ::core::option::Option<u32>,
+    #[prost(uint64, optional, tag = "13")]
+    pub max_collection_payload_size_bytes: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
