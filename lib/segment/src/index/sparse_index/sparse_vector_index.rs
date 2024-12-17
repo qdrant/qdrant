@@ -565,8 +565,8 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         self.inverted_index.vector_count()
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> Option<usize> {
-        Some(self.inverted_index.total_sparse_vectors_size())
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.inverted_index.total_sparse_vectors_size()
     }
 
     fn update_vector(

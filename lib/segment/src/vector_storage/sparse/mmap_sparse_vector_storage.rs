@@ -149,11 +149,6 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.next_point_offset
     }
 
-    fn size_of_available_vectors_in_bytes(&self) -> Option<usize> {
-        // get from sparse index instead
-        None
-    }
-
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         let vector = self.get_vector_opt(key);
         vector.unwrap_or_else(CowVector::default_sparse)

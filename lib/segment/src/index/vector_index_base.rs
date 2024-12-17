@@ -39,8 +39,8 @@ pub trait VectorIndex {
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
 
-    /// Total size of all searchable vectors in bytes, if known.
-    fn size_of_searchable_vectors_in_bytes(&self) -> Option<usize>;
+    /// Total size of all searchable vectors in bytes.
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize;
 
     /// Update index for a single vector
     ///
@@ -216,7 +216,7 @@ impl VectorIndex for VectorIndexEnum {
         }
     }
 
-    fn size_of_searchable_vectors_in_bytes(&self) -> Option<usize> {
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
         match self {
             Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::HnswRam(index) => index.size_of_searchable_vectors_in_bytes(),

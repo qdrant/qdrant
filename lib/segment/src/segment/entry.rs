@@ -10,7 +10,7 @@ use common::types::TelemetryDetail;
 use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 
-use super::{Segment, VectorData};
+use super::Segment;
 use crate::common::operation_error::OperationError::TypeInferenceError;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
@@ -390,10 +390,10 @@ impl SegmentEntry for Segment {
     fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
-        let size = VectorData::size_of_available_vectors_in_bytes(
-            &vector_data.vector_storage.borrow(),
-            &vector_data.vector_index.borrow(),
-        );
+        let size = vector_data
+            .vector_index
+            .borrow()
+            .size_of_searchable_vectors_in_bytes();
         Ok(size)
     }
 
@@ -455,8 +455,7 @@ impl SegmentEntry for Segment {
                 let is_indexed = vector_index.is_index();
 
                 let average_vector_size_bytes = if num_vectors > 0 {
-                    VectorData::size_of_available_vectors_in_bytes(&vector_storage, &vector_index)
-                        / num_vectors
+                    vector_index.size_of_searchable_vectors_in_bytes() / num_vectors
                 } else {
                     0
                 };
