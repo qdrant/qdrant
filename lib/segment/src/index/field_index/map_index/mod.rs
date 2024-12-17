@@ -944,7 +944,7 @@ where
         &self,
         point_id: PointOffsetType,
     ) -> impl Iterator<Item = FacetValueRef> + '_ {
-        MapIndex::get_values(&self, point_id)
+        MapIndex::get_values(self, point_id)
             .into_iter()
             .flatten()
             .map(Into::into)
