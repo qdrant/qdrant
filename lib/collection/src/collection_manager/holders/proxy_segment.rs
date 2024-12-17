@@ -296,7 +296,7 @@ impl ProxySegment {
                         debug_assert!(
                             versions.operation_version
                                 >= wrapped_segment.point_version(*point_id).unwrap_or(0),
-                            "proxied point deletes should have newer version than segment",
+                            "proxied point deletes should have newer version than point in segment",
                         );
                         wrapped_segment.delete_point(versions.operation_version, *point_id)?;
                     }
