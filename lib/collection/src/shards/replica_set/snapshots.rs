@@ -141,6 +141,8 @@ impl ShardReplicaSet {
                 // TODO: Handle single-node mode!? (How!? 😰)
 
                 // Mark this peer as "locally disabled"...
+                //
+                // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
                 let has_other_active_peers = self.active_remote_shards().is_empty();
 
                 // ...if this peer is *not* the last active replica

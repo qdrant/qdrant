@@ -419,7 +419,9 @@ impl Collection {
         }
 
         // 3. Do not deactivate the last active replica
-        if state != ReplicaState::Active && replica_set.is_last_active_replica(peer_id) {
+        //
+        // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
+        if replica_set.is_last_active_replica(peer_id) && state != ReplicaState::Active {
             return Err(CollectionError::bad_input(format!(
                 "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
             )));
@@ -438,7 +440,12 @@ impl Collection {
         // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
         // then `Collection::abort_resharding` call should return an error, so no special handling
         // is needed.
-        if current_state == Some(ReplicaState::Resharding) && state == ReplicaState::Dead {
+        let is_resharding = matches!(
+            current_state,
+            Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
+        );
+
+        if is_resharding && state == ReplicaState::Dead {
             drop(shard_holder);
 
             let resharding_state = self
@@ -471,20 +478,27 @@ impl Collection {
             }
         }
 
+        // If not initialized yet, we need to check if it was initialized by this call
         if !self.is_initialized.check_ready() {
-            // If not initialized yet, we need to check if it was initialized by this call
             let state = self.state().await;
+
+            // TODO: Refactor into `all_replicas_active`!? 🤔
             let mut is_fully_active = true;
+
             for (_shard_id, shard_info) in state.shards {
-                if shard_info
-                    .replicas
-                    .into_iter()
-                    .any(|(_peer_id, state)| state != ReplicaState::Active)
-                {
+                let has_any_inactive_replicas =
+                    shard_info.replicas.into_iter().any(|(_peer_id, state)| {
+                        // We *could* count `Active` *and* `ReshardingScaleDown` replicas here,
+                        // but it seems a little bit safer to only count `Active` replicas...
+                        state != ReplicaState::Active
+                    });
+
+                if has_any_inactive_replicas {
                     is_fully_active = false;
                     break;
                 }
             }
+
             if is_fully_active {
                 self.is_initialized.make_ready();
             }
@@ -635,7 +649,6 @@ impl Collection {
 
             let peers = replica_set.peers();
             let this_peer_state = peers.get(&this_peer_id).copied();
-            let is_last_active = peers.values().filter(|state| **state == Active).count() == 1;
 
             if this_peer_state == Some(Initializing) {
                 // It is possible, that collection creation didn't report
@@ -645,6 +658,10 @@ impl Collection {
             }
 
             if self.shared_storage_config.node_type == NodeType::Listener {
+                // We probably should not switch node type during resharding, so we only check for `Active`,
+                // but not `ReshardingScaleDown` replica state here...
+                let is_last_active = peers.values().filter(|&&state| state == Active).count() == 1;
+
                 if this_peer_state == Some(Active) && !is_last_active {
                     // Convert active node from active to listener
                     on_convert_to_listener(this_peer_id, shard_id);
@@ -688,6 +705,8 @@ impl Collection {
                 });
 
             // Try to find a replica to transfer from
+            //
+            // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
             for replica_id in replica_set.active_remote_shards() {
                 let transfer = ShardTransfer {
                     from: replica_id,

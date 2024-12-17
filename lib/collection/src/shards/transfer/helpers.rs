@@ -111,7 +111,14 @@ pub fn validate_transfer(
         )));
     }
 
-    if shard_state.get(&transfer.from) != Some(&ReplicaState::Active) {
+    // We allow transfers *from* `ReshardingScaleDown` replicas, because they contain a *superset*
+    // of points in a regular replica
+    let is_active = matches!(
+        shard_state.get(&transfer.from),
+        Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown),
+    );
+
+    if !is_active {
         return Err(CollectionError::bad_request(format!(
             "Shard {} is not active on peer {}",
             transfer.shard_id, transfer.from,
@@ -126,6 +133,10 @@ pub fn validate_transfer(
     }
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
+        // TODO: `ReshardingStreamRecords` transfer can't recover replica in `Dead` state!
+        //
+        // It can only be allowed if destination replica is in `Active`/`Listener`/`Resharding`/`ReshardingScaleDown` state!
+
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(CollectionError::bad_request(
                 "Target shard is not set for resharding transfer",
@@ -177,9 +188,17 @@ pub fn suggest_transfer_source(
     shard_peers: &HashMap<PeerId, ReplicaState>,
 ) -> Option<PeerId> {
     let mut candidates = HashSet::new();
-    for (peer_id, state) in shard_peers {
-        if *state == ReplicaState::Active && *peer_id != target_peer {
-            candidates.insert(*peer_id);
+
+    for (&peer_id, &state) in shard_peers {
+        // We allow transfers *from* `ReshardingScaleDown` replicas, because they contain a *superset*
+        // of points in a regular replica
+        let is_active = matches!(
+            state,
+            ReplicaState::Active | ReplicaState::ReshardingScaleDown
+        );
+
+        if is_active && peer_id != target_peer {
+            candidates.insert(peer_id);
         }
     }
 
@@ -250,6 +269,7 @@ pub fn suggest_peer_to_remove_replica(
     shard_peers: HashMap<PeerId, ReplicaState>,
 ) -> Option<PeerId> {
     let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
+
     for (_, peers) in shard_distribution {
         for peer_id in peers {
             *peer_loads.entry(peer_id).or_insert(0_usize) += 1;
@@ -269,6 +289,12 @@ pub fn suggest_peer_to_remove_replica(
 
     candidates.sort_unstable_by(|(_, status1, count1), (_, status2, count2)| {
         match (status1, status2) {
+            // `ReshardingScaleDown` replicas should be the last to be removed
+            (ReplicaState::ReshardingScaleDown, ReplicaState::ReshardingScaleDown) => {
+                count2.cmp(count1)
+            }
+            (ReplicaState::ReshardingScaleDown, _) => Ordering::Less,
+            (_, ReplicaState::ReshardingScaleDown) => Ordering::Greater,
             (ReplicaState::Active, ReplicaState::Active) => count2.cmp(count1),
             (ReplicaState::Active, _) => Ordering::Less,
             (_, ReplicaState::Active) => Ordering::Greater,
