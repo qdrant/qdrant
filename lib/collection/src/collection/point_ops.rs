@@ -476,10 +476,12 @@ impl Collection {
     }
 
     pub async fn cleanup_local_shard(&self, shard_id: ShardId) -> CollectionResult<UpdateResult> {
-        self.shards_holder
-            .read()
-            .await
-            .cleanup_local_shard(shard_id)
-            .await
+        self.clean_local_shard(shard_id).await?;
+
+        Ok(UpdateResult {
+            operation_id: None,
+            status: UpdateStatus::Completed,
+            clock_tag: None,
+        })
     }
 }

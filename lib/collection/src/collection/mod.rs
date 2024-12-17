@@ -1,3 +1,4 @@
+mod clean;
 mod collection_ops;
 pub mod distance_matrix;
 mod facet;
@@ -17,13 +18,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use clean::ShardCleanStatus;
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
 use io::storage_version::StorageVersion;
+use parking_lot::RwLock as ParkingLotRwLock;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
+use tokio::sync::watch::Receiver;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
+use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -85,6 +90,8 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
+    shard_clean_tasks:
+        Arc<ParkingLotRwLock<HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>)>>>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -186,6 +193,7 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
             collection_stats_cache,
+            shard_clean_tasks: Default::default(),
         })
     }
 
@@ -300,6 +308,7 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
             collection_stats_cache,
+            shard_clean_tasks: Default::default(),
         }
     }
 
