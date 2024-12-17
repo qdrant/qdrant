@@ -495,7 +495,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sparse",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tokio",
  "tonic 0.11.0",
  "tonic-build",
@@ -956,7 +956,7 @@ dependencies = [
 name = "cancel"
 version = "0.0.0"
 dependencies = [
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tokio",
  "tokio-util",
 ]
@@ -1220,7 +1220,7 @@ dependencies = [
  "strum",
  "tar",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tinyvec",
  "tokio",
  "tokio-util",
@@ -1266,7 +1266,7 @@ dependencies = [
  "tap",
  "tar",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "thread-priority",
  "tokio",
  "validator",
@@ -3036,7 +3036,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -3788,7 +3788,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
 ]
 
 [[package]]
@@ -4894,7 +4894,7 @@ dependencies = [
  "storage",
  "sys-info",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -5845,7 +5845,7 @@ dependencies = [
  "sysinfo",
  "tar",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tinyvec",
  "tracing",
  "uuid",
@@ -6295,7 +6295,7 @@ dependencies = [
  "tap",
  "tar",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.6",
  "tokio",
  "tonic 0.11.0",
  "tracing",
