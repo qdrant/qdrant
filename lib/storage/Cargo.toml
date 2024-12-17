@@ -15,7 +15,7 @@ workspace = true
 tracing = ["dep:tracing", "api/tracing", "collection/tracing", "segment/tracing"]
 
 [dev-dependencies]
-proptest = "1.5.0"
+proptest = "1.6.0"
 env_logger = "0.11"
 
 [dependencies]
