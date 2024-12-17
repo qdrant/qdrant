@@ -177,3 +177,12 @@ def count_counts(peer_url, collection="test_collection"):
     )
     assert_http_ok(r_search)
     return r_search.json()["result"]["count"]
+
+
+def set_strict_mode(peer_id, collection_name, strict_mode_config):
+    requests.patch(
+        f"{peer_id}/collections/{collection_name}",
+        json={
+            "strict_mode_config": strict_mode_config,
+        },
+    ).raise_for_status()
