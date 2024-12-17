@@ -83,7 +83,7 @@ pub struct Collection {
     // Search runtime handle.
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,
-    // Cached statistics of collection size, may be outdatetd.
+    // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
 }
 
