@@ -663,8 +663,9 @@ pub trait SegmentOptimizer {
                 // Delete points here with their operation version, that'll bump the optimized
                 // segment version and will ensure we flush the new changes
                 debug_assert!(
-                    versions.operation_version >= old_optimized_segment_version,
-                    "proxied point deletes should have newer version than segment",
+                    versions.operation_version
+                        >= optimized_segment.point_version(point_id).unwrap_or(0),
+                    "proxied point deletes should have newer version than point in segment",
                 );
                 optimized_segment
                     .delete_point(versions.operation_version, point_id)

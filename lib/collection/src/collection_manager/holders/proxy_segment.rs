@@ -251,12 +251,12 @@ impl ProxySegment {
         // See: <https://github.com/qdrant/qdrant/pull/4206>
         let wrapped_segment = self.wrapped_segment.get();
         let mut wrapped_segment = wrapped_segment.upgradable_read();
-        let op_num = wrapped_segment.version();
 
         // Propagate index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
         // Lock ordering is important here and must match the flush function to prevent a deadlock
         {
+            let op_num = wrapped_segment.version();
             let changed_indexes = self.changed_indexes.upgradable_read();
             if !changed_indexes.is_empty() {
                 wrapped_segment.with_upgraded(|wrapped_segment| {
@@ -294,8 +294,9 @@ impl ProxySegment {
                         // Delete points here with their operation version, that'll bump the optimized
                         // segment version and will ensure we flush the new changes
                         debug_assert!(
-                            versions.operation_version >= op_num,
-                            "proxied point deletes should have newer version than segment",
+                            versions.operation_version
+                                >= wrapped_segment.point_version(*point_id).unwrap_or(0),
+                            "proxied point deletes should have newer version than point in segment",
                         );
                         wrapped_segment.delete_point(versions.operation_version, *point_id)?;
                     }
