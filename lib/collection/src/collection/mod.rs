@@ -88,14 +88,15 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached stats over all local shards used in strict mode, may be outdated
     local_stats_cache: LocalDataStatsCache,
-    shard_clean_tasks:
-        Arc<ParkingLotRwLock<HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>)>>>,
+    shard_clean_tasks: Arc<ParkingLotRwLock<ShardCleanTasks>>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
 pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
+
+type ShardCleanTasks = HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>)>;
 
 impl Collection {
     #[allow(clippy::too_many_arguments)]
