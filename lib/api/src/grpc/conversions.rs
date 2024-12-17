@@ -23,7 +23,7 @@ use super::qdrant::{
     DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
     FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
     HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
+    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, RaBitQ, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, VectorsOutput, WithLookup,
 };
@@ -891,6 +891,27 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     }
 }
 
+impl From<segment::types::RaBitQ> for RaBitQ {
+    fn from(value: segment::types::RaBitQ) -> Self {
+        let config = value.rabitq;
+        RaBitQ {
+            always_ram: config.always_ram,
+        }
+    }
+}
+
+impl TryFrom<RaBitQ> for segment::types::RaBitQ {
+    type Error = Status;
+
+    fn try_from(value: RaBitQ) -> Result<Self, Self::Error> {
+        Ok(segment::types::RaBitQ {
+            rabitq: segment::types::RaBitQConfig {
+                always_ram: value.always_ram,
+            },
+        })
+    }
+}
+
 impl From<segment::types::QuantizationConfig> for QuantizationConfig {
     fn from(value: segment::types::QuantizationConfig) -> Self {
         match value {
@@ -907,6 +928,11 @@ impl From<segment::types::QuantizationConfig> for QuantizationConfig {
             segment::types::QuantizationConfig::Binary(binary) => Self {
                 quantization: Some(super::qdrant::quantization_config::Quantization::Binary(
                     binary.into(),
+                )),
+            },
+            segment::types::QuantizationConfig::RaBitQ(rabitq) => Self {
+                quantization: Some(super::qdrant::quantization_config::Quantization::Rabitq(
+                    rabitq.into(),
                 )),
             },
         }
@@ -929,6 +955,9 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             ),
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
+            ),
+            super::qdrant::quantization_config::Quantization::Rabitq(config) => Ok(
+                segment::types::QuantizationConfig::RaBitQ(config.try_into()?),
             ),
         }
     }

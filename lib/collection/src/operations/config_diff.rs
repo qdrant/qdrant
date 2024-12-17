@@ -5,7 +5,8 @@ use api::rest::MaxOptimizationThreads;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::types::{
-    BinaryQuantization, HnswConfig, ProductQuantization, ScalarQuantization, StrictModeConfig,
+    BinaryQuantization, HnswConfig, ProductQuantization, RaBitQ, ScalarQuantization,
+    StrictModeConfig,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -335,6 +336,7 @@ pub enum QuantizationConfigDiff {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    RaBitQ(RaBitQ),
     Disabled(Disabled),
 }
 
@@ -350,6 +352,7 @@ impl Validate for QuantizationConfigDiff {
             QuantizationConfigDiff::Scalar(scalar) => scalar.validate(),
             QuantizationConfigDiff::Product(product) => product.validate(),
             QuantizationConfigDiff::Binary(binary) => binary.validate(),
+            QuantizationConfigDiff::RaBitQ(rabitq) => rabitq.validate(),
             QuantizationConfigDiff::Disabled(_) => Ok(()),
         }
     }

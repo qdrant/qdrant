@@ -154,6 +154,11 @@ impl Collection {
                         .quantization_config
                         .replace(QuantizationConfig::Binary(binary));
                 }
+                QuantizationConfigDiff::RaBitQ(rabitq) => {
+                    config
+                        .quantization_config
+                        .replace(QuantizationConfig::RaBitQ(rabitq));
+                }
                 QuantizationConfigDiff::Disabled(_) => {
                     config.quantization_config = None;
                 }

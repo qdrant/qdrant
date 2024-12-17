@@ -415,6 +415,9 @@ impl CollectionParams {
                     QuantizationConfigDiff::Binary(binary) => {
                         Some(QuantizationConfig::Binary(binary))
                     }
+                    QuantizationConfigDiff::RaBitQ(rabitq) => {
+                        Some(QuantizationConfig::RaBitQ(rabitq))
+                    }
                     QuantizationConfigDiff::Disabled(_) => None,
                 }
             }

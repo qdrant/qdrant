@@ -21,8 +21,8 @@ use segment::segment_constructor::build_segment;
 use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
     HnswConfig, Indexes, Payload, PayloadSchemaType, ProductQuantizationConfig,
-    QuantizationSearchParams, Range, ScalarQuantizationConfig, SearchParams, SegmentConfig,
-    SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    QuantizationSearchParams, RaBitQConfig, Range, ScalarQuantizationConfig, SearchParams,
+    SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
@@ -42,6 +42,7 @@ enum QuantizationVariant {
     Scalar,
     PQ,
     Binary,
+    Rabit,
 }
 
 fn random_vector<R>(rnd_gen: &mut R, dim: usize, data_type: VectorStorageDatatype) -> DenseVector
@@ -217,6 +218,15 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     32, // ef
     70., // min_acc out of 100
 )]
+#[case::nearest_binary_cosine(
+    QueryVariant::Nearest,
+    VectorStorageDatatype::Float16,
+    QuantizationVariant::Rabit,
+    Distance::Cosine,
+    128, // dim
+    32, // ef
+    25., // min_acc out of 100
+)]
 fn test_byte_storage_binary_quantization_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] storage_data_type: VectorStorageDatatype,
@@ -308,6 +318,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         }
         .into(),
         QuantizationVariant::Binary => BinaryQuantizationConfig { always_ram: None }.into(),
+        QuantizationVariant::Rabit => RaBitQConfig { always_ram: None }.into(),
     };
 
     segment_byte

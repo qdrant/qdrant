@@ -13,6 +13,8 @@ pub mod test_neon;
 #[cfg(test)]
 pub mod test_pq;
 #[cfg(test)]
+pub mod test_rq;
+#[cfg(test)]
 pub mod test_simple;
 #[cfg(test)]
 pub mod test_sse;

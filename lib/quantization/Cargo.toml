@@ -8,6 +8,9 @@ authors = [
 license = "Apache-2.0"
 edition = "2021"
 
+[features]
+testing = ["common/testing"]
+
 [lints]
 workspace = true
 
@@ -29,6 +32,7 @@ io = { path = "../common/io" }
 criterion = { workspace = true }
 num_threads = "0.1.6"
 tempfile = { workspace = true }
+quantization = { path = ".", features = ["testing"] }
 
 [[bench]]
 name = "encode"

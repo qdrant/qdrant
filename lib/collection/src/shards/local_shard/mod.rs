@@ -1018,6 +1018,7 @@ impl LocalShard {
                         CompressionRatio::X64 => vector_size / 16,
                     },
                     Some(QuantizationConfig::Binary(_)) => vector_size / 8,
+                    Some(QuantizationConfig::RaBitQ(_)) => vector_size / 8, // TODO(RQ)
                 };
 
                 vector_size * size_of::<VectorElementType>() + quantized_size_bytes

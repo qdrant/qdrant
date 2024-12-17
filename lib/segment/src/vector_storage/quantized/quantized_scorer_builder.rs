@@ -114,6 +114,12 @@ impl<'a> QuantizedScorerBuilder<'a> {
             QuantizedVectorStorage::BinaryMmap(storage) => {
                 self.new_quantized_scorer::<TElement, TMetric, _>(storage)
             }
+            QuantizedVectorStorage::RQRam(storage) => {
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+            }
+            QuantizedVectorStorage::RQMmap(storage) => {
+                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+            }
             QuantizedVectorStorage::ScalarRamMulti(storage) => {
                 self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
             }
@@ -130,6 +136,12 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
             }
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
+                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
+            }
+            QuantizedVectorStorage::RQRamMulti(storage) => {
+                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
+            }
+            QuantizedVectorStorage::RQMmapMulti(storage) => {
                 self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
             }
         }
