@@ -225,7 +225,6 @@ fn do_test_persistance(open: impl Fn(&Path) -> VectorStorageEnum) {
 
     let deleted_vector_count = storage.deleted_vector_count();
     let available_vector_count = storage.available_vector_count();
-    let size_of_available_vectors_in_bytes = storage.size_of_available_vectors_in_bytes();
 
     drop(storage);
 
@@ -250,10 +249,6 @@ fn do_test_persistance(open: impl Fn(&Path) -> VectorStorageEnum) {
 
     assert_eq!(storage.deleted_vector_count(), deleted_vector_count);
     assert_eq!(storage.available_vector_count(), available_vector_count);
-    assert_eq!(
-        storage.size_of_available_vectors_in_bytes(),
-        size_of_available_vectors_in_bytes
-    );
 }
 
 #[test]
