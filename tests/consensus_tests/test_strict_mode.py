@@ -1,5 +1,6 @@
 import logging
 import pathlib
+import time
 
 from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode
 from .utils import *
@@ -12,7 +13,7 @@ N_SHARDS = 1
 N_REPLICAS = 1
 COLLECTION_NAME = "test_collection_strict_mode"
 
-UPSERT_REQUEST_DELAY = 0.3
+UPSERT_REQUEST_DELAY = 0.7
 
 
 def test_strict_mode_upsert(tmp_path: pathlib.Path):
@@ -69,10 +70,14 @@ def test_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
         "max_collection_vector_size_bytes": 33,
     })
 
+    time.sleep(10)
+
     for _ in range(32):
         point = {"id": 2, "payload": {}, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
-        time.sleep(0.3)
+        time.sleep(UPSERT_REQUEST_DELAY)
+
+    time.sleep(10)
 
     for _ in range(32):
         point = {"id": 3, "payload": {}, "vector": random_dense_vector()}
