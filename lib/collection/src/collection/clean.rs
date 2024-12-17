@@ -1,11 +1,12 @@
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 
 use segment::types::{Condition, Filter};
 use tokio::sync::watch::{Receiver, Sender};
 
 use super::Collection;
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
@@ -20,14 +21,19 @@ pub(super) enum ShardCleanStatus {
 }
 
 impl Collection {
-    pub async fn clean_local_shard(&self, shard_id: ShardId) -> CollectionResult<()> {
+    pub async fn clean_local_shard(
+        &self,
+        shard_id: ShardId,
+        wait: bool,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<UpdateStatus> {
         let clean_tasks = self.shard_clean_tasks.upgradable_read();
 
         // Bind to existing task
         if let Some((_, receiver)) = clean_tasks.get(&shard_id) {
             let receiver = receiver.clone();
             drop(clean_tasks);
-            return self.await_clean_local_shard(receiver).await;
+            return self.await_clean_local_shard(receiver, wait, timeout).await;
         }
 
         // Create new task
@@ -36,13 +42,14 @@ impl Collection {
 
             let (sender, receiver) = tokio::sync::watch::channel(ShardCleanStatus::Started);
             let shard_holder = Arc::downgrade(&self.shards_holder);
-            let task = tokio::task::spawn(Self::clean_local_shard_task(sender, shard_holder, shard_id));
+            let task =
+                tokio::task::spawn(Self::clean_local_shard_task(sender, shard_holder, shard_id));
             clean_tasks.insert(shard_id, (task, receiver.clone()));
 
             receiver
         };
 
-        self.await_clean_local_shard(receiver).await
+        self.await_clean_local_shard(receiver, wait, timeout).await
     }
 
     async fn clean_local_shard_task(
@@ -94,11 +101,10 @@ impl Collection {
             let last_batch = offset.is_none();
 
             // Delete points from local shard
-            let delete_operation = OperationWithClockTag::from(
-                CollectionUpdateOperations::PointOperation(
+            let delete_operation =
+                OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
                     crate::operations::point_ops::PointOperations::DeletePoints { ids },
-                ),
-            );
+                ));
             if let Err(err) = shard.update_local(delete_operation, true).await {
                 break ShardCleanStatus::Failed(format!(
                     "Failed to delete points from shard: {err}"
@@ -117,11 +123,15 @@ impl Collection {
     async fn await_clean_local_shard(
         &self,
         mut receiver: Receiver<ShardCleanStatus>,
-    ) -> CollectionResult<()> {
+        wait: bool,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<UpdateStatus> {
+        let start = Instant::now();
+
         loop {
             match receiver.borrow_and_update().deref() {
                 ShardCleanStatus::Started => {}
-                ShardCleanStatus::Done => return Ok(()),
+                ShardCleanStatus::Done => return Ok(UpdateStatus::Completed),
                 ShardCleanStatus::Failed(err) => {
                     return Err(CollectionError::service_error(format!(
                         "failed to clean shard points: {err}"
@@ -129,7 +139,20 @@ impl Collection {
                 }
             }
 
-            if let Err(err) = receiver.changed().await {
+            if !wait {
+                return Ok(UpdateStatus::Acknowledged);
+            }
+
+            // Await receiver with or without timeout
+            let result = if let Some(timeout) = timeout {
+                match tokio::time::timeout(timeout - start.elapsed(), receiver.changed()).await {
+                    Ok(notified) => notified,
+                    Err(_elapsed) => return Ok(UpdateStatus::Acknowledged),
+                }
+            } else {
+                receiver.changed().await
+            };
+            if let Err(err) = result {
                 return Err(CollectionError::service_error(format!(
                     "failed to clean shard points, notification channel dropped: {err}"
                 )));

@@ -90,14 +90,15 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
-    shard_clean_tasks:
-        Arc<ParkingLotRwLock<HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>)>>>,
+    shard_clean_tasks: Arc<ParkingLotRwLock<ShardCleanTasks>>,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
 pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
+
+type ShardCleanTasks = HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>)>;
 
 impl Collection {
     #[allow(clippy::too_many_arguments)]
