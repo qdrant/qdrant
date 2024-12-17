@@ -11,7 +11,7 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
-use super::field_index::facet_index::FacetIndex;
+use super::field_index::facet_index::FacetIndexEnum;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
 };
@@ -415,7 +415,7 @@ impl StructPayloadIndex {
         }
     }
 
-    pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndex> {
+    pub fn get_facet_index(&self, key: &JsonPath) -> OperationResult<FacetIndexEnum> {
         self.field_indexes
             .get(key)
             .and_then(|index| index.iter().find_map(|index| index.as_facet_index()))

@@ -265,6 +265,11 @@ impl SimpleBoolIndex {
         ]
         .into_iter()
     }
+
+    pub(crate) fn get_point_values(&self, point_id: u32) -> Vec<bool> {
+        let boolean_item = self.memory.get(point_id);
+        vec![boolean_item.has_true(), boolean_item.has_false()]
+    }
 }
 
 pub struct BoolIndexBuilder(SimpleBoolIndex);

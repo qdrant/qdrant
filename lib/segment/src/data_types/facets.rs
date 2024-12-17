@@ -44,6 +44,24 @@ impl FacetValueRef<'_> {
     }
 }
 
+impl<'a> From<&'a str> for FacetValueRef<'a> {
+    fn from(s: &'a str) -> Self {
+        FacetValueRef::Keyword(s)
+    }
+}
+
+impl<'a> From<&'a IntPayloadType> for FacetValueRef<'a> {
+    fn from(i: &'a IntPayloadType) -> Self {
+        FacetValueRef::Int(i)
+    }
+}
+
+impl<'a> From<&'a UuidIntType> for FacetValueRef<'a> {
+    fn from(uuid: &'a UuidIntType) -> Self {
+        FacetValueRef::Uuid(uuid)
+    }
+}
+
 #[derive(PartialOrd, Ord, PartialEq, Eq, Hash, Clone, Debug)]
 pub enum FacetValue {
     Keyword(String),
