@@ -2,6 +2,7 @@ use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use cancel::CancellationToken;
 use segment::types::{Condition, Filter};
 use tokio::sync::watch::{Receiver, Sender};
 
@@ -18,17 +19,16 @@ pub(super) enum ShardCleanStatus {
     Started,
     Done,
     Failed(String),
+    Cancelled,
 }
 
 impl Collection {
     /// List shards that are currently undergoing cleaning.
-    pub fn list_clean_local_shards(
-        &self,
-    ) -> Vec<ShardId> {
+    pub fn list_clean_local_shards(&self) -> Vec<ShardId> {
         self.shard_clean_tasks
             .read()
             .iter()
-            .filter(|(_shard_id, (_task, receiver))| {
+            .filter(|(_shard_id, (_, receiver, _))| {
                 matches!(receiver.borrow().deref(), ShardCleanStatus::Started)
             })
             .map(|(shard_id, _)| *shard_id)
@@ -44,10 +44,13 @@ impl Collection {
         let clean_tasks = self.shard_clean_tasks.upgradable_read();
 
         // Bind to existing task
-        if let Some((_, receiver)) = clean_tasks.get(&shard_id) {
-            let receiver = receiver.clone();
-            drop(clean_tasks);
-            return self.await_clean_local_shard(receiver, wait, timeout).await;
+        if let Some((_, receiver, _)) = clean_tasks.get(&shard_id) {
+            let cancelled = matches!(receiver.borrow().deref(), ShardCleanStatus::Cancelled);
+            if !cancelled {
+                let receiver = receiver.clone();
+                drop(clean_tasks);
+                return self.await_clean_local_shard(receiver, wait, timeout).await;
+            }
         }
 
         // Create new task
@@ -56,24 +59,45 @@ impl Collection {
 
             let (sender, receiver) = tokio::sync::watch::channel(ShardCleanStatus::Started);
             let shard_holder = Arc::downgrade(&self.shards_holder);
-            let task =
-                tokio::task::spawn(Self::clean_local_shard_task(sender, shard_holder, shard_id));
-            clean_tasks.insert(shard_id, (task, receiver.clone()));
-
+            let cancel = CancellationToken::default();
+            let task = tokio::task::spawn(Self::clean_local_shard_task(
+                sender,
+                shard_holder,
+                shard_id,
+                cancel.clone(),
+            ));
+            clean_tasks.insert(shard_id, (task, receiver.clone(), cancel.drop_guard()));
             receiver
         };
 
         self.await_clean_local_shard(receiver, wait, timeout).await
     }
 
+    /// Cancel cleaning of a shard and mark it as dirty
+    pub(super) fn cancel_clean_local_shard(&self, shard_id: ShardId) {
+        let mut shard_clean_tasks = self.shard_clean_tasks.write();
+        let removed = shard_clean_tasks.remove(&shard_id);
+
+        // Explicitly cancel clean task
+        // We don't have to because the drop guard does it for us, but this makes it more explicit
+        if let Some((_, _, cancel_guard)) = removed {
+            cancel_guard.disarm().cancel();
+        }
+    }
+
     async fn clean_local_shard_task(
         sender: Sender<ShardCleanStatus>,
         shard_holder: Weak<LockedShardHolder>,
         shard_id: ShardId,
+        cancel: CancellationToken,
     ) {
         let mut offset = None;
 
         let status = loop {
+            if cancel.is_cancelled() {
+                break ShardCleanStatus::Cancelled;
+            }
+
             // Get shard
             let Some(shard_holder) = shard_holder.upgrade() else {
                 break ShardCleanStatus::Failed("Shard holder dropped".into());
@@ -109,6 +133,10 @@ impl Collection {
                     ));
                 }
             };
+
+            if cancel.is_cancelled() {
+                break ShardCleanStatus::Cancelled;
+            }
 
             // Update offset for next batch
             offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
@@ -150,6 +178,11 @@ impl Collection {
                     return Err(CollectionError::service_error(format!(
                         "failed to clean shard points: {err}"
                     )));
+                }
+                ShardCleanStatus::Cancelled => {
+                    return Err(CollectionError::service_error(
+                        "failed to clean shard points due to cancellation, please try again",
+                    ));
                 }
             }
 

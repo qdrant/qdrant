@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use cancel::DropGuard;
 use clean::ShardCleanStatus;
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
@@ -98,7 +99,7 @@ pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
 pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
 
-type ShardCleanTasks = HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>)>;
+type ShardCleanTasks = HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>, DropGuard)>;
 
 impl Collection {
     #[allow(clippy::too_many_arguments)]
