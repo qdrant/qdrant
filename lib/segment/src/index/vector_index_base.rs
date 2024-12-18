@@ -39,6 +39,9 @@ pub trait VectorIndex {
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
 
+    /// Total size of all searchable vectors in bytes.
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize;
+
     /// Update index for a single vector
     ///
     /// # Arguments
@@ -210,6 +213,29 @@ impl VectorIndex for VectorIndexEnum {
             Self::SparseCompressedMmapF32(index) => index.indexed_vector_count(),
             Self::SparseCompressedMmapF16(index) => index.indexed_vector_count(),
             Self::SparseCompressedMmapU8(index) => index.indexed_vector_count(),
+        }
+    }
+
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        match self {
+            Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::HnswRam(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::HnswMmap(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseImmutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseMmap(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.size_of_searchable_vectors_in_bytes()
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.size_of_searchable_vectors_in_bytes()
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.size_of_searchable_vectors_in_bytes()
+            }
+            Self::SparseCompressedMmapF32(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedMmapF16(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::SparseCompressedMmapU8(index) => index.size_of_searchable_vectors_in_bytes(),
         }
     }
 

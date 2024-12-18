@@ -135,6 +135,16 @@ impl<
     fn multi_vector_config(&self) -> &MultiVectorConfig {
         &self.multi_vector_config
     }
+
+    fn size_of_available_vectors_in_bytes(&self) -> usize {
+        if self.total_vector_count() > 0 {
+            let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
+            (total_size as u128 * self.available_vector_count() as u128
+                / self.total_vector_count() as u128) as usize
+        } else {
+            0
+        }
+    }
 }
 
 impl<
@@ -157,16 +167,6 @@ impl<
 
     fn total_vector_count(&self) -> usize {
         self.offsets.len()
-    }
-
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.total_vector_count() > 0 {
-            let total_size = self.vectors.len() * self.vector_dim() * std::mem::size_of::<T>();
-            (total_size as u128 * self.available_vector_count() as u128
-                / self.total_vector_count() as u128) as usize
-        } else {
-            0
-        }
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {

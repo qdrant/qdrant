@@ -10,7 +10,6 @@ use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
-use sparse::common::types::{DimId, DimWeight};
 
 use super::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -30,8 +29,6 @@ pub struct MmapSparseVectorStorage {
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
     next_point_offset: usize,
-    /// Total number of non-zero elements in all vectors. Used to estimate average vector size.
-    total_sparse_size: usize,
 }
 
 impl MmapSparseVectorStorage {
@@ -51,14 +48,11 @@ impl MmapSparseVectorStorage {
         let mut deleted = BitVec::new();
         let mut deleted_count = 0;
         let mut next_point_offset = 0;
-        let mut total_sparse_size = 0;
         const CHECK_STOP_INTERVAL: usize = 100;
 
         storage
             .for_each_unfiltered(|point_id, opt_vector| {
-                if let Some(vector) = opt_vector {
-                    total_sparse_size += vector.values.len();
-                } else {
+                if opt_vector.is_none() {
                     // Propagate deleted flag
                     bitvec_set_deleted(&mut deleted, point_id, true);
                     deleted_count += 1;
@@ -81,7 +75,6 @@ impl MmapSparseVectorStorage {
             deleted,
             deleted_count,
             next_point_offset,
-            total_sparse_size,
         })
     }
 
@@ -108,24 +101,12 @@ impl MmapSparseVectorStorage {
         let mut storage_guard = self.storage.write();
         if let Some(vector) = vector {
             // upsert vector
-            if let Some(old_vector) = storage_guard.get_value(key) {
-                // it is an update
-                self.total_sparse_size = self
-                    .total_sparse_size
-                    .saturating_sub(old_vector.values.len());
-            }
-
-            self.total_sparse_size += vector.values.len();
             storage_guard
                 .put_value(key, vector)
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
-            if let Some(old_vector) = storage_guard.delete_value(key) {
-                self.total_sparse_size = self
-                    .total_sparse_size
-                    .saturating_sub(old_vector.values.len());
-            }
+            storage_guard.delete_value(key);
         }
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);
@@ -166,16 +147,6 @@ impl VectorStorage for MmapSparseVectorStorage {
 
     fn total_vector_count(&self) -> usize {
         self.next_point_offset
-    }
-
-    fn size_of_available_vectors_in_bytes(&self) -> usize {
-        if self.next_point_offset == 0 {
-            return 0;
-        }
-        let available_fraction =
-            (self.next_point_offset - self.deleted_count) as f32 / self.next_point_offset as f32;
-        let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
-        available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
     }
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
