@@ -1254,6 +1254,7 @@ version = "0.0.0"
 dependencies = [
  "common",
  "criterion",
+ "itertools 0.13.0",
  "lazy_static",
  "log",
  "memmap2",
