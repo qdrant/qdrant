@@ -474,7 +474,7 @@ pub(crate) fn create_sparse_vector_storage(
             open_simple_sparse_vector_storage(database, &db_column_name, stopped)
         }
         SparseVectorStorageType::Mmap => {
-            let mmap_storage = MmapSparseVectorStorage::open_or_create(path, stopped)?;
+            let mmap_storage = MmapSparseVectorStorage::open_or_create(path)?;
             Ok(VectorStorageEnum::SparseMmap(mmap_storage))
         }
     }
