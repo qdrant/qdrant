@@ -106,6 +106,9 @@ impl Collection {
             let Some(shard) = shard_holder.get_shard(shard_id) else {
                 break ShardCleanStatus::Failed(format!("Shard {shard_id} not found"));
             };
+            if !shard.is_local().await {
+                break ShardCleanStatus::Failed(format!("Shard {shard_id} is not a local shard"));
+            }
 
             // Scroll batch of points with hash ring filter
             let filter = shard_holder
