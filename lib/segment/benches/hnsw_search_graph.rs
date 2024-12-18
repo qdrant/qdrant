@@ -1,18 +1,23 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use std::hint::black_box;
+use std::path::Path;
+
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
+use indicatif::{ParallelProgressIterator, ProgressStyle};
 use rand::rngs::StdRng;
-use rand::{thread_rng, SeedableRng};
+use rand::SeedableRng;
+use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
+use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
-use segment::vector_storage::chunked_vector_storage::VectorOffsetType;
 
-const NUM_VECTORS: usize = 100000;
+const NUM_VECTORS: usize = 1_000_000;
 const DIM: usize = 64;
 const M: usize = 16;
 const TOP: usize = 10;
@@ -20,41 +25,94 @@ const EF_CONSTRUCT: usize = 100;
 const EF: usize = 100;
 const USE_HEURISTIC: bool = true;
 
+type Metric = CosineMetric;
+
 fn hnsw_benchmark(c: &mut Criterion) {
-    let mut rng = StdRng::seed_from_u64(42);
-    let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
-    let mut group = c.benchmark_group("hnsw-index-search-group");
-    let mut rng = thread_rng();
+    let mut group = c.benchmark_group("hnsw-search-graph");
+
     let fake_filter_context = FakeFilterContext {};
 
-    let mut graph_layers_builder =
-        GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
-    for idx in 0..(NUM_VECTORS as PointOffsetType) {
-        let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-        let level = graph_layers_builder.get_random_layer(&mut rng);
-        graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
-    }
-    let graph_layers = graph_layers_builder
-        .into_graph_layers::<GraphLinksRam>(None, false)
-        .unwrap();
+    // Note: make sure that vector generation is deterministic.
+    let vector_holder =
+        TestRawScorerProducer::<Metric>::new(DIM, NUM_VECTORS, &mut StdRng::seed_from_u64(42));
 
-    group.bench_function("hnsw_search", |b| {
+    // Building HNSW index is expensive, so it's cached between runs.
+    let mut graph_layers;
+    {
+        let base_fname = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(env!("CARGO_PKG_NAME"))
+            .join(env!("CARGO_CRATE_NAME"))
+            .join(format!(
+                "{NUM_VECTORS}-{DIM}-{M}-{EF_CONSTRUCT}-{USE_HEURISTIC}-{:?}",
+                <Metric as segment::spaces::metric::Metric<f32>>::distance(),
+            ));
+        let graph_fname = base_fname.with_extension("graph");
+        let links_fname = base_fname.with_extension("links");
+        std::fs::create_dir_all(graph_fname.parent().unwrap()).unwrap();
+
+        if graph_fname.exists() && links_fname.exists() {
+            eprintln!("Loading cached links from {links_fname:?}");
+            graph_layers =
+                GraphLayers::<GraphLinksRam>::load(&graph_fname, &links_fname, false).unwrap();
+        } else {
+            let mut graph_layers_builder =
+                GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
+
+            let mut rng = StdRng::seed_from_u64(42);
+            for idx in 0..NUM_VECTORS {
+                let level = graph_layers_builder.get_random_layer(&mut rng);
+                graph_layers_builder.set_levels(idx as PointOffsetType, level);
+            }
+
+            (0..NUM_VECTORS)
+                .into_par_iter()
+                .progress_with_style(
+                    ProgressStyle::with_template("{percent:>3}% Buildng HNSW {wide_bar}").unwrap(),
+                )
+                .for_each(|idx| {
+                    let added_vector = vector_holder.vectors.get(idx).to_vec();
+                    let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
+                    let scorer =
+                        FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+                    graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
+                });
+
+            graph_layers = graph_layers_builder
+                .into_graph_layers::<GraphLinksRam>(Some(&links_fname), false)
+                .unwrap();
+            graph_layers.save(&graph_fname).unwrap();
+        }
+    }
+
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("uncompressed", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            graph_layers.search(TOP, EF, scorer, None);
+            black_box(graph_layers.search(TOP, EF, scorer, None));
+        })
+    });
+
+    graph_layers.compress();
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("compressed", |b| {
+        b.iter(|| {
+            let query = random_vector(&mut rng, DIM);
+
+            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
+            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+
+            black_box(graph_layers.search(TOP, EF, scorer, None));
         })
     });
 
     let mut plain_search_range: Vec<PointOffsetType> =
         (0..NUM_VECTORS as PointOffsetType).collect();
-    group.bench_function("plain_search", |b| {
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("plain", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
