@@ -17,6 +17,7 @@ use crate::index::posting_list_common::PostingListIter as _;
 pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
     pub(super) postings: Vec<CompressedPostingList<W>>,
     pub(super) vector_count: usize,
+    pub(super) total_sparse_size: usize,
 }
 
 impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
@@ -35,6 +36,7 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
         let mut inverted_index = InvertedIndexCompressedImmutableRam {
             postings: Vec::with_capacity(mmap_inverted_index.file_header.posting_count),
             vector_count: mmap_inverted_index.file_header.vector_count,
+            total_sparse_size: mmap_inverted_index.total_sparse_vectors_size(),
         };
 
         for i in 0..mmap_inverted_index.file_header.posting_count as DimId {
@@ -98,14 +100,22 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedImmutableRam<W> {
             }
             postings.push(new_posting_list.build());
         }
+
+        let total_sparse_size = postings.iter().map(|p| p.view().store_size().total).sum();
+
         Ok(InvertedIndexCompressedImmutableRam {
             postings,
             vector_count: ram_index.vector_count,
+            total_sparse_size,
         })
     }
 
     fn vector_count(&self) -> usize {
         self.vector_count
+    }
+
+    fn total_sparse_vectors_size(&self) -> usize {
+        self.total_sparse_size
     }
 
     fn max_index(&self) -> Option<DimOffset> {

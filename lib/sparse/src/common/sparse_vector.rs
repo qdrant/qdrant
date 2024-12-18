@@ -107,6 +107,15 @@ impl RemappedSparseVector {
         debug_assert!(other.is_sorted());
         score_vectors(&self.indices, &self.values, &other.indices, &other.values)
     }
+
+    /// Returns the number of elements in the vector.
+    pub fn len(&self) -> usize {
+        self.indices.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl SparseVector {

@@ -172,6 +172,12 @@ impl VectorIndex for PlainVectorIndex {
         0
     }
 
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.vector_storage
+            .borrow()
+            .size_of_available_vectors_in_bytes()
+    }
+
     fn update_vector(
         &mut self,
         id: PointOffsetType,

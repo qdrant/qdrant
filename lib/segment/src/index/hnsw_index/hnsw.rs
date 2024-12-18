@@ -1326,6 +1326,12 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
             .unwrap_or_else(|| self.graph.num_points())
     }
 
+    fn size_of_searchable_vectors_in_bytes(&self) -> usize {
+        self.vector_storage
+            .borrow()
+            .size_of_available_vectors_in_bytes()
+    }
+
     fn update_vector(
         &mut self,
         _id: PointOffsetType,
