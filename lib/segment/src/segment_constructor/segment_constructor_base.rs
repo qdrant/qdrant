@@ -22,7 +22,7 @@ use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use crate::index::plain_payload_index::PlainIndex;
+use crate::index::plain_vector_index::PlainVectorIndex;
 use crate::index::sparse_index::sparse_index_config::SparseIndexType;
 use crate::index::sparse_index::sparse_vector_index::{
     self, SparseVectorIndex, SparseVectorIndexOpenArgs,
@@ -376,9 +376,11 @@ pub(crate) fn create_vector_index(
     stopped: &AtomicBool,
 ) -> OperationResult<VectorIndexEnum> {
     let vector_index = match &vector_config.index {
-        Indexes::Plain {} => {
-            VectorIndexEnum::Plain(PlainIndex::new(id_tracker, vector_storage, payload_index))
-        }
+        Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
+            id_tracker,
+            vector_storage,
+            payload_index,
+        )),
         Indexes::Hnsw(vector_hnsw_config) => {
             let args = HnswIndexOpenArgs {
                 path: vector_index_path,

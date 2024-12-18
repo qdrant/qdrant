@@ -4,6 +4,7 @@ mod key_encoding;
 mod payload_config;
 mod payload_index_base;
 pub mod plain_payload_index;
+pub mod plain_vector_index;
 pub mod query_estimator;
 mod query_optimization;
 mod sample_estimation;
