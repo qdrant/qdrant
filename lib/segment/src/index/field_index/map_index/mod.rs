@@ -20,10 +20,12 @@ use uuid::Uuid;
 
 use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
+use super::facet_index::FacetIndex;
 use super::mmap_point_to_values::MmapValue;
 use super::FieldIndexBuilderTrait;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
     CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition, ValueIndexer,
@@ -929,6 +931,38 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                     cardinality: count,
                 }),
         )
+    }
+}
+
+impl<N> FacetIndex for MapIndex<N>
+where
+    N: MapIndexKey + ?Sized,
+    for<'a> N::Referenced<'a>: Into<FacetValueRef<'a>>,
+    for<'a> &'a N: Into<FacetValueRef<'a>>,
+{
+    fn get_point_values(
+        &self,
+        point_id: PointOffsetType,
+    ) -> impl Iterator<Item = FacetValueRef> + '_ {
+        MapIndex::get_values(self, point_id)
+            .into_iter()
+            .flatten()
+            .map(Into::into)
+    }
+
+    fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
+        self.iter_values().map(Into::into)
+    }
+
+    fn iter_values_map(&self) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
+        self.iter_values_map().map(|(k, iter)| (k.into(), iter))
+    }
+
+    fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
+        self.iter_counts_per_value().map(|(value, count)| FacetHit {
+            value: value.into(),
+            count,
+        })
     }
 }
 

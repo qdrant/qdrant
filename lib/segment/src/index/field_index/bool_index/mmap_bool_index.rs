@@ -217,6 +217,16 @@ impl MmapBoolIndex {
         ]
         .into_iter()
     }
+
+    pub(crate) fn get_point_values(&self, point_id: u32) -> Vec<bool> {
+        [
+            self.trues_slice.get(point_id as usize).then_some(true),
+            self.falses_slice.get(point_id as usize).then_some(false),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 /// Set or insert a flag in the given flags. Returns previous value.
