@@ -31,7 +31,6 @@ memmap2 = { workspace = true }
 semver = { workspace = true }
 zerocopy = { workspace = true }
 log = { workspace = true }
-schemars = { workspace = true }
 
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
