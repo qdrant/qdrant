@@ -172,6 +172,10 @@ impl Collection {
     }
 
     pub async fn commit_read_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        for shard_id in 0..resharding_key.shard_id {
+            self.cancel_clean_local_shard(shard_id);
+        }
+
         self.shards_holder
             .write()
             .await
@@ -179,6 +183,10 @@ impl Collection {
     }
 
     pub async fn commit_write_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
+        for shard_id in 0..resharding_key.shard_id {
+            self.cancel_clean_local_shard(shard_id);
+        }
+
         self.shards_holder
             .write()
             .await
@@ -243,6 +251,10 @@ impl Collection {
         }
 
         let _ = self.stop_resharding_task(&resharding_key).await;
+
+        for shard_id in 0..resharding_key.shard_id {
+            self.cancel_clean_local_shard(shard_id);
+        }
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
         if resharding_key.direction == ReshardingDirection::Up {

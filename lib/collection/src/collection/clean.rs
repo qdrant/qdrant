@@ -131,7 +131,7 @@ impl Collection {
         loop {
             match receiver.borrow_and_update().deref() {
                 ShardCleanStatus::Started => {}
-                ShardCleanStatus::Done => return Ok(()),
+                ShardCleanStatus::Done => return Ok(UpdateStatus::Completed),
                 ShardCleanStatus::Failed(err) => {
                     return Err(CollectionError::service_error(format!(
                         "failed to clean shard points: {err}"
