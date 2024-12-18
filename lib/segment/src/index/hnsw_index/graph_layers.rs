@@ -10,7 +10,9 @@ use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
-use super::graph_links::{convert_to_compressed, GraphLinks, GraphLinksMmap};
+use super::graph_links::{
+    convert_to_compressed, GraphLinks, GraphLinksConverter, GraphLinksMmap, GraphLinksRam,
+};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -293,6 +295,21 @@ where
             m0: self.m0,
             ef_construct: self.ef_construct,
             entry_points: Cow::Borrowed(&self.entry_points),
+        }
+    }
+}
+
+impl GraphLayers<GraphLinksRam> {
+    pub fn compress(&mut self) {
+        if !self.links.compressed() {
+            let dummy = GraphLinksRam::from_bytes(
+                GraphLinksConverter::new(Vec::new(), false, 0, 0).serialize_to_vec(),
+            );
+            let links = std::mem::replace(&mut self.links, dummy);
+            self.links = GraphLinksRam::from_bytes(
+                GraphLinksConverter::new(links.into_edges(), true, self.m, self.m0)
+                    .serialize_to_vec(),
+            )
         }
     }
 }
