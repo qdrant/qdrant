@@ -7,7 +7,7 @@ use segment::types::{Condition, Filter};
 use tokio::sync::watch::{Receiver, Sender};
 
 use super::Collection;
-use crate::operations::types::{CollectionError, CollectionResult, UpdateStatus};
+use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
@@ -23,19 +23,22 @@ pub(super) enum ShardCleanStatus {
 }
 
 impl Collection {
-    /// List shards that are currently undergoing cleaning.
-    pub fn list_clean_local_shards(&self) -> Vec<ShardId> {
-        self.shard_clean_tasks
-            .read()
-            .iter()
-            .filter(|(_shard_id, (_, receiver, _))| {
-                matches!(receiver.borrow().deref(), ShardCleanStatus::Started)
-            })
-            .map(|(shard_id, _)| *shard_id)
-            .collect()
+    pub async fn cleanup_local_shard(
+        &self,
+        shard_id: ShardId,
+        wait: bool,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<UpdateResult> {
+        let status = self.clean_local_shard(shard_id, wait, timeout).await?;
+
+        Ok(UpdateResult {
+            operation_id: None,
+            status,
+            clock_tag: None,
+        })
     }
 
-    pub async fn clean_local_shard(
+    async fn clean_local_shard(
         &self,
         shard_id: ShardId,
         wait: bool,
@@ -208,5 +211,29 @@ impl Collection {
                 )));
             }
         }
+    }
+
+    /// Cancel cleaning of a shard and mark it as dirty
+    pub(super) fn cancel_clean_local_shard(&self, shard_id: ShardId) {
+        let mut shard_clean_tasks = self.shard_clean_tasks.write();
+        let removed = shard_clean_tasks.remove(&shard_id);
+
+        // Explicitly cancel clean task
+        // We don't have to because the drop guard does it for us, but this makes it more explicit
+        if let Some((_, _, cancel_guard)) = removed {
+            cancel_guard.disarm().cancel();
+        }
+    }
+
+    /// List shards that are currently undergoing cleaning.
+    pub fn list_clean_local_shards(&self) -> Vec<ShardId> {
+        self.shard_clean_tasks
+            .read()
+            .iter()
+            .filter(|(_shard_id, (_, receiver, _))| {
+                matches!(receiver.borrow().deref(), ShardCleanStatus::Started)
+            })
+            .map(|(shard_id, _)| *shard_id)
+            .collect()
     }
 }
