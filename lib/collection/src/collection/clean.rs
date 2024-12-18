@@ -21,6 +21,20 @@ pub(super) enum ShardCleanStatus {
 }
 
 impl Collection {
+    /// List shards that are currently undergoing cleaning.
+    pub fn list_clean_local_shards(
+        &self,
+    ) -> Vec<ShardId> {
+        self.shard_clean_tasks
+            .read()
+            .iter()
+            .filter(|(_shard_id, (_task, receiver))| {
+                matches!(receiver.borrow().deref(), ShardCleanStatus::Started)
+            })
+            .map(|(shard_id, _)| *shard_id)
+            .collect()
+    }
+
     pub async fn clean_local_shard(
         &self,
         shard_id: ShardId,

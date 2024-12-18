@@ -771,6 +771,7 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
+            clean_local_shards: self.list_clean_local_shards(),
         }
     }
 

@@ -4,6 +4,7 @@ use serde::Serialize;
 
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{ReshardingInfo, ShardTransferInfo};
+use crate::shards::shard::ShardId;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -14,6 +15,8 @@ pub struct CollectionTelemetry {
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub clean_local_shards: Vec<ShardId>,
 }
 
 impl CollectionTelemetry {
@@ -36,6 +39,7 @@ impl Anonymize for CollectionTelemetry {
             shards: self.shards.anonymize(),
             transfers: vec![],
             resharding: vec![],
+            clean_local_shards: vec![],
         }
     }
 }
