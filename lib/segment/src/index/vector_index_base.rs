@@ -12,7 +12,7 @@ use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
 use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
-use super::plain_payload_index::PlainIndex;
+use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
@@ -57,7 +57,7 @@ pub trait VectorIndex {
 
 #[derive(Debug)]
 pub enum VectorIndexEnum {
-    Plain(PlainIndex),
+    Plain(PlainVectorIndex),
     HnswRam(HNSWIndex<GraphLinksRam>),
     HnswMmap(HNSWIndex<GraphLinksMmap>),
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
