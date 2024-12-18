@@ -210,6 +210,59 @@ pub struct ListCollectionsResponse {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaxOptimizationThreads {
+    #[prost(oneof = "max_optimization_threads::Variant", tags = "1, 2")]
+    pub variant: ::core::option::Option<max_optimization_threads::Variant>,
+}
+/// Nested message and enum types in `MaxOptimizationThreads`.
+pub mod max_optimization_threads {
+    #[derive(serde::Serialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Setting {
+        Auto = 0,
+    }
+    impl Setting {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Setting::Auto => "Auto",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "Auto" => Some(Self::Auto),
+                _ => None,
+            }
+        }
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(uint64, tag = "1")]
+        Value(u64),
+        #[prost(enumeration = "Setting", tag = "2")]
+        Setting(i32),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OptimizerStatus {
     #[prost(bool, tag = "1")]
     pub ok: bool,
@@ -330,12 +383,15 @@ pub struct OptimizersConfigDiff {
     /// Interval between forced flushes.
     #[prost(uint64, optional, tag = "7")]
     pub flush_interval_sec: ::core::option::Option<u64>,
+    /// Deprecated in favor of `max_optimization_threads`
+    #[prost(uint64, optional, tag = "8")]
+    pub deprecated_max_optimization_threads: ::core::option::Option<u64>,
     /// Max number of threads (jobs) for running optimizations per shard.
     /// Note: each optimization job will also use `max_indexing_threads` threads by itself for index building.
-    /// If null - have no limit and choose dynamically to saturate CPU.
+    /// If "auto" - have no limit and choose dynamically to saturate CPU.
     /// If 0 - no optimization threads, optimizations will be disabled.
-    #[prost(uint64, optional, tag = "8")]
-    pub max_optimization_threads: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "9")]
+    pub max_optimization_threads: ::core::option::Option<MaxOptimizationThreads>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

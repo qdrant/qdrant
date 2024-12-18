@@ -1050,3 +1050,32 @@ impl PointInsertOperations {
         self.len() == 0
     }
 }
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, Default, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MaxOptimizationThreadsSetting {
+    #[default]
+    Auto,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Hash, JsonSchema)]
+#[serde(untagged)]
+pub enum MaxOptimizationThreads {
+    Setting(MaxOptimizationThreadsSetting),
+    Threads(usize),
+}
+
+impl Default for MaxOptimizationThreads {
+    fn default() -> Self {
+        MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto)
+    }
+}
+
+impl From<MaxOptimizationThreads> for Option<usize> {
+    fn from(value: MaxOptimizationThreads) -> Self {
+        match value {
+            MaxOptimizationThreads::Setting(MaxOptimizationThreadsSetting::Auto) => None,
+            MaxOptimizationThreads::Threads(threads) => Some(threads),
+        }
+    }
+}
