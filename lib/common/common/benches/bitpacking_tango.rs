@@ -33,7 +33,7 @@ pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
                 let mut r = BitReader::new(data);
                 r.set_bits(bits);
                 for _ in 0..(data.len() * u8::BITS as usize / bits as usize) {
-                    black_box(r.read());
+                    black_box(r.read::<u32>());
                 }
             })
         }),

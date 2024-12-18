@@ -1276,6 +1276,7 @@ dependencies = [
  "lazy_static",
  "log",
  "memmap2",
+ "num-traits",
  "num_cpus",
  "ordered-float 4.5.0",
  "ph",
