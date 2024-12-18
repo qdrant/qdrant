@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
 use super::bool_index::simple_bool_index::BoolIndexBuilder;
 use super::bool_index::BoolIndex;
-use super::facet_index::FacetIndex;
+use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
@@ -369,12 +369,12 @@ impl FieldIndex {
         }
     }
 
-    pub fn as_facet_index(&self) -> Option<FacetIndex> {
+    pub fn as_facet_index(&self) -> Option<FacetIndexEnum> {
         match self {
-            FieldIndex::KeywordIndex(index) => Some(FacetIndex::Keyword(index)),
-            FieldIndex::IntMapIndex(index) => Some(FacetIndex::Int(index)),
-            FieldIndex::UuidMapIndex(index) => Some(FacetIndex::Uuid(index)),
-            FieldIndex::BoolIndex(index) => Some(FacetIndex::Bool(index)),
+            FieldIndex::KeywordIndex(index) => Some(FacetIndexEnum::Keyword(index)),
+            FieldIndex::IntMapIndex(index) => Some(FacetIndexEnum::Int(index)),
+            FieldIndex::UuidMapIndex(index) => Some(FacetIndexEnum::Uuid(index)),
+            FieldIndex::BoolIndex(index) => Some(FacetIndexEnum::Bool(index)),
             FieldIndex::UuidIndex(_)
             | FieldIndex::IntIndex(_)
             | FieldIndex::DatetimeIndex(_)

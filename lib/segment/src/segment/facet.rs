@@ -53,9 +53,12 @@ impl Segment {
                     .check_stop_every(STOP_CHECK_INTERVAL, || is_stopped.load(Ordering::Relaxed))
                     .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
-                        facet_index.get_values(point_id).unique().for_each(|value| {
-                            *map.entry(value).or_insert(0) += 1;
-                        });
+                        facet_index
+                            .get_point_values(point_id)
+                            .unique()
+                            .for_each(|value| {
+                                *map.entry(value).or_insert(0) += 1;
+                            });
                         map
                     })
                     .into_iter()
@@ -117,7 +120,7 @@ impl Segment {
                 .check_stop(|| is_stopped.load(Ordering::Relaxed))
                 .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(BTreeSet::new(), |mut set, point_id| {
-                    set.extend(facet_index.get_values(point_id));
+                    set.extend(facet_index.get_point_values(point_id));
                     set
                 })
                 .into_iter()

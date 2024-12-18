@@ -2,8 +2,10 @@ use common::types::PointOffsetType;
 use mmap_bool_index::MmapBoolIndex;
 use simple_bool_index::SimpleBoolIndex;
 
+use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
+use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::telemetry::PayloadIndexTelemetry;
 
 pub mod mmap_bool_index;
@@ -15,6 +17,13 @@ pub enum BoolIndex {
 }
 
 impl BoolIndex {
+    pub fn get_point_values(&self, point_id: PointOffsetType) -> Vec<bool> {
+        match self {
+            BoolIndex::Simple(index) => index.get_point_values(point_id),
+            BoolIndex::Mmap(index) => index.get_point_values(point_id),
+        }
+    }
+
     pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (bool, IdIter<'_>)> + '_> {
         match self {
             BoolIndex::Simple(index) => Box::new(index.iter_values_map()),
@@ -130,6 +139,33 @@ impl PayloadFieldIndex for BoolIndex {
             BoolIndex::Simple(index) => index.payload_blocks(threshold, key),
             BoolIndex::Mmap(index) => index.payload_blocks(threshold, key),
         }
+    }
+}
+
+impl FacetIndex for BoolIndex {
+    fn get_point_values(
+        &self,
+        point_id: PointOffsetType,
+    ) -> impl Iterator<Item = FacetValueRef> + '_ {
+        self.get_point_values(point_id)
+            .into_iter()
+            .map(FacetValueRef::Bool)
+    }
+
+    fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_ {
+        self.iter_values().map(FacetValueRef::Bool)
+    }
+
+    fn iter_values_map(&self) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
+        self.iter_values_map()
+            .map(|(value, iter)| (FacetValueRef::Bool(value), iter))
+    }
+
+    fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
+        self.iter_counts_per_value().map(|(value, count)| FacetHit {
+            value: FacetValueRef::Bool(value),
+            count,
+        })
     }
 }
 
