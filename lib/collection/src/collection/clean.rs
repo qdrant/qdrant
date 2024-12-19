@@ -14,16 +14,9 @@ use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, 
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
+use crate::telemetry::ShardCleanStatusTelemetry;
 
 const CLEAN_BATCH_SIZE: usize = 5_000;
-
-#[derive(Debug, Clone)]
-pub(super) enum ShardCleanStatus {
-    Started,
-    Done,
-    Failed(String),
-    Cancelled,
-}
 
 /// A collection of local shard clean tasks
 ///
@@ -138,12 +131,11 @@ impl ShardCleanTasks {
     }
 
     /// List shards that are currently undergoing cleaning
-    pub fn list_ongoing(&self) -> Vec<ShardId> {
+    pub fn statuses(&self) -> HashMap<ShardId, ShardCleanStatus> {
         self.tasks
             .read()
             .iter()
-            .filter(|(_, task)| task.is_ongoing())
-            .map(|(shard_id, _)| *shard_id)
+            .map(|(shard_id, task)| (*shard_id, task.status.borrow().clone()))
             .collect()
     }
 }
@@ -176,10 +168,6 @@ impl ShardCleanTask {
             status: receiver.clone(),
             cancel: cancel.drop_guard(),
         }
-    }
-
-    pub fn is_ongoing(&self) -> bool {
-        matches!(self.status.borrow().deref(), ShardCleanStatus::Started)
     }
 
     pub fn is_cancelled_or_failed(&self) -> bool {
@@ -301,7 +289,30 @@ impl Collection {
         self.shard_clean_tasks.invalidate(shard_id);
     }
 
-    pub fn list_clean_local_shards(&self) -> Vec<ShardId> {
-        self.shard_clean_tasks.list_ongoing()
+    pub fn clean_local_shards_statuses(&self) -> HashMap<ShardId, ShardCleanStatusTelemetry> {
+        self.shard_clean_tasks
+            .statuses()
+            .into_iter()
+            .map(|(shard_id, status)| (shard_id, status.into()))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum ShardCleanStatus {
+    Started,
+    Done,
+    Failed(String),
+    Cancelled,
+}
+
+impl From<ShardCleanStatus> for ShardCleanStatusTelemetry {
+    fn from(status: ShardCleanStatus) -> Self {
+        match status {
+            ShardCleanStatus::Started => ShardCleanStatusTelemetry::Started,
+            ShardCleanStatus::Done => ShardCleanStatusTelemetry::Done,
+            ShardCleanStatus::Failed(reason) => ShardCleanStatusTelemetry::Failed(reason),
+            ShardCleanStatus::Cancelled => ShardCleanStatusTelemetry::Cancelled,
+        }
     }
 }

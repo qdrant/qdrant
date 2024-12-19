@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
@@ -15,8 +17,8 @@ pub struct CollectionTelemetry {
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub clean_local_shards: Vec<ShardId>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub shard_clean_tasks: HashMap<ShardId, ShardCleanStatusTelemetry>,
 }
 
 impl CollectionTelemetry {
@@ -39,7 +41,7 @@ impl Anonymize for CollectionTelemetry {
             shards: self.shards.anonymize(),
             transfers: vec![],
             resharding: vec![],
-            clean_local_shards: vec![],
+            shard_clean_tasks: HashMap::new(),
         }
     }
 }
@@ -56,4 +58,13 @@ impl Anonymize for CollectionConfigInternal {
             uuid: None,
         }
     }
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardCleanStatusTelemetry {
+    Started,
+    Done,
+    Failed(String),
+    Cancelled,
 }

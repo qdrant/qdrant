@@ -87,6 +87,7 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
+    // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
 }
 
@@ -768,7 +769,7 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
-            clean_local_shards: self.list_clean_local_shards(),
+            shard_clean_tasks: self.clean_local_shards_statuses(),
         }
     }
 

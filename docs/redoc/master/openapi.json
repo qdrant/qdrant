@@ -11117,6 +11117,7 @@
           "id",
           "init_time_ms",
           "resharding",
+          "shard_clean_tasks",
           "shards",
           "transfers"
         ],
@@ -11148,6 +11149,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
+            }
+          },
+          "shard_clean_tasks": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ShardCleanStatusTelemetry"
             }
           }
         }
@@ -11999,6 +12006,30 @@
             "$ref": "#/components/schemas/OperationDurationStatistics"
           }
         }
+      },
+      "ShardCleanStatusTelemetry": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "started",
+              "done",
+              "cancelled"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "failed"
+            ],
+            "properties": {
+              "failed": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
       },
       "CollectionsAggregatedTelemetry": {
         "type": "object",
