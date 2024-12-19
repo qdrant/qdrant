@@ -13,8 +13,6 @@ N_SHARDS = 1
 N_REPLICAS = 1
 COLLECTION_NAME = "test_collection_strict_mode"
 
-UPSERT_REQUEST_DELAY = 0.7
-
 
 def test_strict_mode_upsert(tmp_path: pathlib.Path):
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, 4)
@@ -63,21 +61,15 @@ def test_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
     for _ in range(32):
         point = {"id": 1, "payload": {}, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
-        time.sleep(UPSERT_REQUEST_DELAY)  # Give qdrant some time to update shard statistics
 
     set_strict_mode(peer_urls[0], COLLECTION_NAME, {
         "enabled": True,
         "max_collection_vector_size_bytes": 33,
     })
 
-    time.sleep(10)
-
     for _ in range(32):
         point = {"id": 2, "payload": {}, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
-        time.sleep(UPSERT_REQUEST_DELAY)
-
-    time.sleep(10)
 
     for _ in range(32):
         point = {"id": 3, "payload": {}, "vector": random_dense_vector()}
@@ -86,7 +78,6 @@ def test_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
             assert "Max vector storage size" in res.json()['status']['error']
             assert not res.ok
             return
-        time.sleep(UPSERT_REQUEST_DELAY)
 
     assert False, "Should have blocked upsert but didn't"
 
@@ -101,7 +92,6 @@ def test_strict_mode_upsert_local_shard(tmp_path: pathlib.Path):
     for _ in range(32):
         point = {"id": 1, "payload": {}, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME).raise_for_status()
-        time.sleep(UPSERT_REQUEST_DELAY)  # Give qdrant some time to update shard statistics
 
     set_strict_mode(peer_urls[0], COLLECTION_NAME, {
         "enabled": True,
@@ -113,7 +103,6 @@ def test_strict_mode_upsert_local_shard(tmp_path: pathlib.Path):
     for _ in range(32):
         point = {"id": 2, "payload": {}, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME).raise_for_status()
-        time.sleep(UPSERT_REQUEST_DELAY)
 
     for _ in range(32):
         point = {"id": 3, "payload": {}, "vector": random_dense_vector()}
@@ -122,7 +111,6 @@ def test_strict_mode_upsert_local_shard(tmp_path: pathlib.Path):
             assert "Max vector storage size" in res.json()['status']['error']
             assert not res.ok
             return
-        time.sleep(UPSERT_REQUEST_DELAY)
 
     assert False, "Should have blocked upsert but didn't"
 
