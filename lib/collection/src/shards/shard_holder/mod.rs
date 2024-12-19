@@ -1125,6 +1125,7 @@ impl ShardHolder {
             // In distributed, we estimate the whole collection size by using a single local shard and multiply by amount of shards in the collection.
             for shard in self.shards.iter() {
                 if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await {
+                    // TODO(resharding) take into account the ongoing resharding and exclude shards that are being filled from multiplication.
                     // Project the single shards size to the full collection.
                     let collection_estimate = shard_stats.multiplied_with(self.shards.len());
                     return Some(collection_estimate);
