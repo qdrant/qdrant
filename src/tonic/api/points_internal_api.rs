@@ -35,7 +35,7 @@ use crate::tonic::api::points_common::{
     delete_payload, delete_vectors, get, overwrite_payload, recommend, set_payload, sync,
     update_vectors, upsert,
 };
-use crate::tonic::verification::UncheckedTocProvider;
+use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
 
 const FULL_ACCESS: Access = Access::full("Internal API");
 
@@ -195,7 +195,7 @@ impl PointsInternal for PointsInternalService {
             upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
 
         upsert(
-            UncheckedTocProvider::new_unchecked(&self.toc),
+            StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
             clock_tag.map(Into::into),
             shard_id,

@@ -26,7 +26,7 @@ use super::remote_shard::RemoteShard;
 use super::transfer::ShardTransfer;
 use super::CollectionId;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::common::local_data_stats::LocalDataStats;
+use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
 use crate::operations::point_ops::{self};
@@ -343,6 +343,10 @@ impl ShardReplicaSet {
 
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
+    }
+
+    pub async fn has_remote_shard(&self) -> bool {
+        !self.remotes.read().await.is_empty()
     }
 
     pub async fn has_local_shard(&self) -> bool {
@@ -1020,10 +1024,9 @@ impl ShardReplicaSet {
         true
     }
 
-    /// Returns the estimated size of all locally stored vectors in bytes.
-    /// Locks and iterates over all segments.
-    /// Cache this value in performance critical scenarios!
-    pub(crate) async fn calculate_local_shards_stats(&self) -> LocalDataStats {
+    /// Returns the estimated size of all local segments.
+    /// Since this locks all segments you should cache this value in performance critical scenarios!
+    pub(crate) async fn calculate_local_shard_stats(&self) -> Option<CollectionSizeStats> {
         self.local
             .read()
             .await
@@ -1039,15 +1042,15 @@ impl ShardReplicaSet {
                         total_payload_size += size_info.payloads_size_bytes;
                     }
 
-                    LocalDataStats {
+                    Some(CollectionSizeStats {
                         vector_storage_size: total_vector_size,
                         payload_storage_size: total_payload_size,
-                    }
+                    })
                 }
                 Shard::Proxy(_)
                 | Shard::ForwardProxy(_)
                 | Shard::QueueProxy(_)
-                | Shard::Dummy(_) => LocalDataStats::default(),
+                | Shard::Dummy(_) => None,
             })
             .unwrap_or_default()
     }
