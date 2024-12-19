@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use cancel::CancellationToken;
+use cancel::{CancellationToken, DropGuard};
+use parking_lot::RwLock;
 use segment::types::{Condition, Filter};
 use tokio::sync::watch::{Receiver, Sender};
+use tokio::task::JoinHandle;
 
 use super::Collection;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
@@ -12,7 +15,7 @@ use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 
-const CLEAN_BATCH_SIZE: usize = 10_000;
+const CLEAN_BATCH_SIZE: usize = 5_000;
 
 #[derive(Debug, Clone)]
 pub(super) enum ShardCleanStatus {
@@ -22,73 +25,177 @@ pub(super) enum ShardCleanStatus {
     Cancelled,
 }
 
-impl Collection {
-    pub async fn cleanup_local_shard(
-        &self,
-        shard_id: ShardId,
-        wait: bool,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<UpdateResult> {
-        let status = self.clean_local_shard(shard_id, wait, timeout).await?;
+/// A collection of local shard clean tasks
+///
+/// Manages tasks for shards and allows easily awaiting a completion state.
+///
+/// These tasks are not persisted in any way and are lost on restart. In case of resharding,
+/// cluster manager will take care of calling the task again and again until it eventually
+/// completes. Once it completes it does not have to be run again on restart.
+#[derive(Default)]
+pub(super) struct ShardCleanTasks {
+    tasks: Arc<RwLock<HashMap<ShardId, ShardCleanTask>>>,
+}
 
-        Ok(UpdateResult {
-            operation_id: None,
-            status,
-            clock_tag: None,
-        })
-    }
-
-    async fn clean_local_shard(
+impl ShardCleanTasks {
+    /// Clean a shard and await for the operation to finish
+    ///
+    /// Creates a new task if none is going, the task failed or if the task was invalidated. Joins
+    /// the existing task if one is currently ongoing or if it successfully finished.
+    ///
+    /// If `wait` is `false`, the function will return immediately after creating a new task with
+    /// the `Acknowledged` status. If `wait` is `true` this function will await at most `timeout`
+    /// for the task to finish. If the task is not completed within the timeout the `Acknowledged`
+    /// status is returned.
+    ///
+    /// To probe for completeness this function must be called again repeatedly until it returns
+    /// the `Completed` status.
+    async fn clean_and_await(
         &self,
+        shards_holder: &Arc<LockedShardHolder>,
         shard_id: ShardId,
         wait: bool,
         timeout: Option<Duration>,
     ) -> CollectionResult<UpdateStatus> {
-        let clean_tasks = self.shard_clean_tasks.upgradable_read();
+        let mut tasks = self.tasks.upgradable_read();
 
-        // Bind to existing task
-        if let Some((_, receiver, _)) = clean_tasks.get(&shard_id) {
-            let cancelled = matches!(receiver.borrow().deref(), ShardCleanStatus::Cancelled);
-            if !cancelled {
-                let receiver = receiver.clone();
-                drop(clean_tasks);
-                return self.await_clean_local_shard(receiver, wait, timeout).await;
-            }
+        // Await existing task if not cancelled or failed
+        if let Some(task) = tasks
+            .get(&shard_id)
+            .filter(|task| !task.is_cancelled_or_failed())
+        {
+            let receiver = task.status.clone();
+            drop(tasks);
+            return Self::await_task(receiver, wait, timeout).await;
         }
 
-        // Create new task
-        let receiver = {
-            let mut clean_tasks = parking_lot::RwLockUpgradableReadGuard::upgrade(clean_tasks);
-
-            let (sender, receiver) = tokio::sync::watch::channel(ShardCleanStatus::Started);
-            let shard_holder = Arc::downgrade(&self.shards_holder);
-            let cancel = CancellationToken::default();
-            let task = tokio::task::spawn(Self::clean_local_shard_task(
-                sender,
-                shard_holder,
-                shard_id,
-                cancel.clone(),
-            ));
-            clean_tasks.insert(shard_id, (task, receiver.clone(), cancel.drop_guard()));
+        // Create and await new task
+        let receiver = tasks.with_upgraded(|tasks| {
+            let task = ShardCleanTask::new(shards_holder, shard_id);
+            let receiver = task.status.clone();
+            tasks.insert(shard_id, task);
             receiver
-        };
+        });
+        drop(tasks);
 
-        self.await_clean_local_shard(receiver, wait, timeout).await
+        Self::await_task(receiver, wait, timeout).await
+    }
+
+    /// Await for an ongoing task to finish by its status receiver
+    async fn await_task(
+        mut receiver: Receiver<ShardCleanStatus>,
+        wait: bool,
+        timeout: Option<Duration>,
+    ) -> CollectionResult<UpdateStatus> {
+        let start = Instant::now();
+
+        loop {
+            match receiver.borrow_and_update().deref() {
+                ShardCleanStatus::Started => {}
+                ShardCleanStatus::Done => return Ok(UpdateStatus::Completed),
+                ShardCleanStatus::Failed(err) => {
+                    return Err(CollectionError::service_error(format!(
+                        "failed to clean shard points: {err}",
+                    )))
+                }
+                ShardCleanStatus::Cancelled => {
+                    return Err(CollectionError::service_error(
+                        "failed to clean shard points due to cancellation, please try again",
+                    ))
+                }
+            }
+
+            if !wait {
+                return Ok(UpdateStatus::Acknowledged);
+            }
+
+            let result = if let Some(timeout) = timeout {
+                tokio::time::timeout(timeout - start.elapsed(), receiver.changed()).await
+            } else {
+                Ok(receiver.changed().await)
+            };
+            match result {
+                // Status updated, loop again to check it another time
+                Ok(Ok(_)) => continue,
+                // Channel dropped, return error
+                Ok(Err(_)) => {
+                    return Err(CollectionError::service_error(
+                        "Failed to clean shard points, notification channel dropped",
+                    ))
+                }
+                // Timeout elapsed, acknowledge so the client can probe again later
+                Err(_) => return Ok(UpdateStatus::Acknowledged),
+            }
+        }
     }
 
     /// Cancel cleaning of a shard and mark it as dirty
-    pub(super) fn cancel_clean_local_shard(&self, shard_id: ShardId) {
-        let mut shard_clean_tasks = self.shard_clean_tasks.write();
-        let removed = shard_clean_tasks.remove(&shard_id);
-
-        // Explicitly cancel clean task
-        // We don't have to because the drop guard does it for us, but this makes it more explicit
-        if let Some((_, _, cancel_guard)) = removed {
-            cancel_guard.disarm().cancel();
+    pub(super) fn invalidate(&self, shard_id: ShardId) {
+        let removed = self.tasks.write().remove(&shard_id);
+        if let Some(task) = removed {
+            task.abort();
         }
     }
 
-    async fn clean_local_shard_task(
+    /// List shards that are currently undergoing cleaning
+    pub fn list_ongoing(&self) -> Vec<ShardId> {
+        self.tasks
+            .read()
+            .iter()
+            .filter(|(_, task)| task.is_ongoing())
+            .map(|(shard_id, _)| *shard_id)
+            .collect()
+    }
+}
+
+/// A background task for cleaning a shard
+///
+/// The task will delete points that don't belong in the shard according to the hash ring. This is
+/// used in context of resharding, where points are transferred to different shards.
+pub(super) struct ShardCleanTask {
+    /// Handle of the clean task
+    #[allow(dead_code)]
+    handle: JoinHandle<()>,
+    /// Watch channel with current status of the task
+    status: Receiver<ShardCleanStatus>,
+    /// Cancellation token drop guard, cancels the task if this is dropped
+    cancel: DropGuard,
+}
+
+impl ShardCleanTask {
+    /// Create a new shard clean task and immediately execute it
+    pub fn new(shards_holder: &Arc<LockedShardHolder>, shard_id: ShardId) -> Self {
+        let (sender, receiver) = tokio::sync::watch::channel(ShardCleanStatus::Started);
+        let shard_holder = Arc::downgrade(shards_holder);
+        let cancel = CancellationToken::default();
+
+        let task = tokio::task::spawn(Self::task(sender, shard_holder, shard_id, cancel.clone()));
+
+        ShardCleanTask {
+            handle: task,
+            status: receiver.clone(),
+            cancel: cancel.drop_guard(),
+        }
+    }
+
+    pub fn is_ongoing(&self) -> bool {
+        matches!(self.status.borrow().deref(), ShardCleanStatus::Started)
+    }
+
+    pub fn is_cancelled_or_failed(&self) -> bool {
+        matches!(
+            self.status.borrow().deref(),
+            ShardCleanStatus::Cancelled | ShardCleanStatus::Failed(_)
+        )
+    }
+
+    pub fn abort(self) {
+        // Explicitly cancel clean task
+        // We don't have to because the drop guard does it for us, but this makes it more explicit
+        self.cancel.disarm().cancel();
+    }
+
+    async fn task(
         sender: Sender<ShardCleanStatus>,
         shard_holder: Weak<LockedShardHolder>,
         shard_id: ShardId,
@@ -97,6 +204,7 @@ impl Collection {
         let mut offset = None;
 
         let status = loop {
+            // Check if cancelled
             if cancel.is_cancelled() {
                 break ShardCleanStatus::Cancelled;
             }
@@ -140,6 +248,7 @@ impl Collection {
                 }
             };
 
+            // Check if cancelled
             if cancel.is_cancelled() {
                 break ShardCleanStatus::Cancelled;
             }
@@ -167,73 +276,32 @@ impl Collection {
 
         let _ = sender.send(status);
     }
+}
 
-    async fn await_clean_local_shard(
+impl Collection {
+    pub async fn cleanup_local_shard(
         &self,
-        mut receiver: Receiver<ShardCleanStatus>,
+        shard_id: ShardId,
         wait: bool,
         timeout: Option<Duration>,
-    ) -> CollectionResult<UpdateStatus> {
-        let start = Instant::now();
+    ) -> CollectionResult<UpdateResult> {
+        let status = self
+            .shard_clean_tasks
+            .clean_and_await(&self.shards_holder, shard_id, wait, timeout)
+            .await?;
 
-        loop {
-            match receiver.borrow_and_update().deref() {
-                ShardCleanStatus::Started => {}
-                ShardCleanStatus::Done => return Ok(UpdateStatus::Completed),
-                ShardCleanStatus::Failed(err) => {
-                    return Err(CollectionError::service_error(format!(
-                        "failed to clean shard points: {err}"
-                    )));
-                }
-                ShardCleanStatus::Cancelled => {
-                    return Err(CollectionError::service_error(
-                        "failed to clean shard points due to cancellation, please try again",
-                    ));
-                }
-            }
-
-            if !wait {
-                return Ok(UpdateStatus::Acknowledged);
-            }
-
-            // Await receiver with or without timeout
-            let result = if let Some(timeout) = timeout {
-                match tokio::time::timeout(timeout - start.elapsed(), receiver.changed()).await {
-                    Ok(notified) => notified,
-                    Err(_elapsed) => return Ok(UpdateStatus::Acknowledged),
-                }
-            } else {
-                receiver.changed().await
-            };
-            if let Err(err) = result {
-                return Err(CollectionError::service_error(format!(
-                    "failed to clean shard points, notification channel dropped: {err}"
-                )));
-            }
-        }
+        Ok(UpdateResult {
+            operation_id: None,
+            status,
+            clock_tag: None,
+        })
     }
 
-    /// Cancel cleaning of a shard and mark it as dirty
-    pub(super) fn cancel_clean_local_shard(&self, shard_id: ShardId) {
-        let mut shard_clean_tasks = self.shard_clean_tasks.write();
-        let removed = shard_clean_tasks.remove(&shard_id);
-
-        // Explicitly cancel clean task
-        // We don't have to because the drop guard does it for us, but this makes it more explicit
-        if let Some((_, _, cancel_guard)) = removed {
-            cancel_guard.disarm().cancel();
-        }
+    pub(super) fn invalidate_clean_local_shard(&self, shard_id: ShardId) {
+        self.shard_clean_tasks.invalidate(shard_id);
     }
 
-    /// List shards that are currently undergoing cleaning.
     pub fn list_clean_local_shards(&self) -> Vec<ShardId> {
-        self.shard_clean_tasks
-            .read()
-            .iter()
-            .filter(|(_shard_id, (_, receiver, _))| {
-                matches!(receiver.borrow().deref(), ShardCleanStatus::Started)
-            })
-            .map(|(shard_id, _)| *shard_id)
-            .collect()
+        self.shard_clean_tasks.list_ongoing()
     }
 }
