@@ -34,20 +34,19 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
 ) -> ScoreType {
     debug_assert!(!multi_dense_a.is_empty());
     debug_assert!(!multi_dense_b.is_empty());
-    let mut sum = 0.0;
-    for dense_a in multi_dense_a.multi_vectors() {
-        let mut max_sim = ScoreType::NEG_INFINITY;
-        // manual `max_by` for performance
-        for dense_b in multi_dense_b.multi_vectors() {
-            let sim = TMetric::similarity(dense_a, dense_b);
-            if sim > max_sim {
-                max_sim = sim;
-            }
-        }
-        // sum of max similarity
-        sum += max_sim;
-    }
-    sum
+
+    multi_dense_a
+        .multi_vectors()
+        .map(|dense_a| {
+            // For each 'dense_a', compute the maximum similarity with vectors in 'multi_dense_b'
+            multi_dense_b
+                .multi_vectors()
+                .map(|dense_b| TMetric::similarity(dense_a, dense_b))
+                // Find the maximum similarity value for this 'dense_a'
+                .fold(ScoreType::NEG_INFINITY, |a, b| if a > b { a } else { b })
+        })
+        // Sum up the maximum similarities for all vectors in 'multi_dense_a'
+        .sum()
 }
 
 fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
