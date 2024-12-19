@@ -768,10 +768,10 @@ impl ShardReplicaSet {
         let config = self.collection_config.read().await;
         if let Some(strict_mode_config) = &config.strict_mode_config {
             // update write rate limiter
-            if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit {
+            if let Some(write_rate_limit_per_min) = strict_mode_config.write_rate_limit {
                 let mut write_rate_limiter_guard = self.write_rate_limiter.lock();
                 write_rate_limiter_guard
-                    .replace(RateLimiter::new_per_minute(write_rate_limit_per_sec));
+                    .replace(RateLimiter::new_per_minute(write_rate_limit_per_min));
             }
         }
         Ok(())
@@ -782,7 +782,7 @@ impl ShardReplicaSet {
     /// Returns an error if the rate limit is exceeded.
     fn check_write_rate_limiter(&self) -> CollectionResult<()> {
         if let Some(rate_limiter) = self.write_rate_limiter.lock().as_mut() {
-            if !rate_limiter.check() {
+            if !rate_limiter.check_and_update() {
                 return Err(CollectionError::RateLimitExceeded {
                     description: "Write rate limit exceeded, retry later".to_string(),
                 });

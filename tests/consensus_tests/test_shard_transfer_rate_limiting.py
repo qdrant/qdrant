@@ -1,6 +1,6 @@
 import pathlib
-from time import sleep
 
+from .fixtures import create_collection
 from .utils import *
 from .assertions import assert_http_ok
 
@@ -10,27 +10,7 @@ N_REPLICA = 1
 
 
 def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
-    assert_project_root()
-    peer_dirs = make_peer_folders(tmp_path, N_PEERS)
-
-    # Gathers REST API uris
-    peer_api_uris = []
-
-    # Start bootstrap
-    (bootstrap_api_uri, bootstrap_uri) = start_first_peer(
-        peer_dirs[0], "peer_0_0.log")
-    peer_api_uris.append(bootstrap_api_uri)
-
-    # Wait for leader
-    leader = wait_peer_added(bootstrap_api_uri)
-
-    # Start other peers
-    for i in range(1, len(peer_dirs)):
-        peer_api_uris.append(start_peer(
-            peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri))
-
-    # Wait for cluster
-    wait_for_uniform_cluster_status(peer_api_uris, leader)
+    peer_api_uris, peer_dirs, _ = start_cluster(tmp_path, N_PEERS)
 
     # Check that there are no collections on all peers
     for uri in peer_api_uris:
@@ -39,16 +19,7 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
         assert len(r.json()["result"]["collections"]) == 0
 
     # Create collection in first peer
-    r = requests.put(
-        f"{peer_api_uris[0]}/collections/test_collection", json={
-            "vectors": {
-                "size": 4,
-                "distance": "Dot"
-            },
-            "shard_number": N_SHARDS,
-            "replication_factor": N_REPLICA,
-        })
-    assert_http_ok(r)
+    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
 
     # Check that it exists on all peers
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
@@ -150,15 +121,7 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
     assert rate_limited, "Expected write rate limit to be reached"
 
     # Move shard `shard_id` to peer `target_peer_id` without write budget
-    r = requests.post(
-        f"{source_uri}/collections/test_collection/cluster", json={
-            "move_shard": {
-                "shard_id": shard_id,
-                "from_peer_id": source_peer_id,
-                "to_peer_id": target_peer_id
-            }
-        })
-    assert_http_ok(r)
+    move_shard(source_uri, "test_collection", shard_id, source_peer_id, target_peer_id)
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(source_uri, "test_collection", 0)
