@@ -439,6 +439,7 @@
 | local_shards | [LocalShardInfo](#qdrant-LocalShardInfo) | repeated | Local shards |
 | remote_shards | [RemoteShardInfo](#qdrant-RemoteShardInfo) | repeated | Remote shards |
 | shard_transfers | [ShardTransferInfo](#qdrant-ShardTransferInfo) | repeated | Shard transfers |
+| resharding_operations | [ReshardingInfo](#qdrant-ReshardingInfo) | repeated | Resharding operations |
 
 
 
