@@ -52,13 +52,15 @@ impl TableOfContent {
         collection_name: &str,
         shard_id: ShardId,
         access: Access,
+        wait: bool,
+        timeout: Option<Duration>,
     ) -> StorageResult<UpdateResult> {
         let collection_pass = access
             .check_collection_access(collection_name, AccessRequirements::new().write().whole())?;
 
         self.get_collection(&collection_pass)
             .await?
-            .cleanup_local_shard(shard_id)
+            .cleanup_local_shard(shard_id, wait, timeout)
             .await
             .map_err(Into::into)
     }
