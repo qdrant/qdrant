@@ -11,7 +11,6 @@ use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
-use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -134,7 +133,7 @@ fn test_gpu_filterable_hnsw() {
         Mutex::new(gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap());
     let locked_device = LockedGpuDevice::new(device.lock());
 
-    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
         path: hnsw_dir.path(),
         id_tracker: segment.id_tracker.clone(),
         vector_storage: vector_storage.clone(),

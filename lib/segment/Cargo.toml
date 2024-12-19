@@ -86,6 +86,7 @@ fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
 http = "1.0.0"
+self_cell = "1.1.0"
 sha2 = { workspace = true }
 smallvec = "1.13.2"
 is_sorted = "0.1.1"

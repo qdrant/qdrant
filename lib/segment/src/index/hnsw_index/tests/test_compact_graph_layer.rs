@@ -9,7 +9,6 @@ use rstest::rstest;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::graph_links::GraphLinksRam;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
 use crate::spaces::simple::CosineMetric;
@@ -69,9 +68,7 @@ fn test_compact_graph_layers(#[case] compressed: bool) {
         })
         .collect_vec();
 
-    let graph_layers = graph_layers_builder
-        .into_graph_layers::<GraphLinksRam>(None, compressed)
-        .unwrap();
+    let graph_layers = graph_layers_builder.into_graph_layers_ram(compressed);
 
     let results = queries
         .iter()

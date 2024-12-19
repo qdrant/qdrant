@@ -393,11 +393,7 @@ pub(crate) fn create_vector_index(
                 gpu_device,
                 stopped,
             };
-            if vector_hnsw_config.on_disk == Some(true) {
-                VectorIndexEnum::HnswMmap(HNSWIndex::open(args)?)
-            } else {
-                VectorIndexEnum::HnswRam(HNSWIndex::open(args)?)
-            }
+            VectorIndexEnum::Hnsw(HNSWIndex::open(args)?)
         }
     };
 

@@ -22,7 +22,6 @@ use rayon::ThreadPool;
 
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
-use super::graph_links::{GraphLinks, GraphLinksMmap};
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -68,14 +67,14 @@ const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
 #[derive(Debug)]
-pub struct HNSWIndex<TGraphLinks: GraphLinks> {
+pub struct HNSWIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
     quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     config: HnswGraphConfig,
     path: PathBuf,
-    graph: GraphLayers<TGraphLinks>,
+    graph: GraphLayers,
     searches_telemetry: HNSWSearchesTelemetry,
 }
 
@@ -136,7 +135,7 @@ impl LinkCompressionExperimentalSetting {
     }
 }
 
-impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
+impl HNSWIndex {
     pub fn open(args: HnswIndexOpenArgs<'_>) -> OperationResult<Self> {
         let HnswIndexOpenArgs {
             path,
@@ -153,8 +152,8 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         create_dir_all(path)?;
 
         let config_path = HnswGraphConfig::get_config_path(path);
-        let graph_path = GraphLayers::<TGraphLinks>::get_path(path);
-        let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
+        let graph_path = GraphLayers::get_path(path);
+        let graph_links_path = GraphLayers::get_links_path(path);
         let (config, graph) = if graph_path.exists() {
             let config = if config_path.exists() {
                 HnswGraphConfig::load(&config_path)?
@@ -188,6 +187,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
                     &graph_path,
                     &graph_links_path,
                     LinkCompressionExperimentalSetting::from_env().convert_existing,
+                    !hnsw_config.on_disk.unwrap_or(false),
                 )?,
             )
         } else {
@@ -243,7 +243,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
     }
 
     #[cfg(test)]
-    pub(super) fn graph(&self) -> &GraphLayers<TGraphLinks> {
+    pub(super) fn graph(&self) -> &GraphLayers {
         &self.graph
     }
 
@@ -262,7 +262,7 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         num_cpus: usize,
         #[allow(unused_variables)] gpu_device: Option<&LockedGpuDevice>,
         stopped: &AtomicBool,
-    ) -> OperationResult<(HnswGraphConfig, GraphLayers<TGraphLinks>)> {
+    ) -> OperationResult<(HnswGraphConfig, GraphLayers)> {
         let total_vector_count = vector_storage.total_vector_count();
 
         let full_scan_threshold = vector_storage
@@ -514,10 +514,10 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
 
         config.indexed_vector_count.replace(indexed_vectors);
 
-        let graph_links_path = GraphLayers::<TGraphLinks>::get_links_path(path);
-        let graph: GraphLayers<TGraphLinks> = graph_layers_builder.into_graph_layers(
-            Some(&graph_links_path),
+        let graph: GraphLayers = graph_layers_builder.into_graph_layers(
+            &GraphLayers::get_links_path(path),
             LinkCompressionExperimentalSetting::from_env().write_new,
+            hnsw_config.on_disk.unwrap_or(false),
         )?;
 
         #[cfg(debug_assertions)]
@@ -1136,15 +1136,13 @@ impl<TGraphLinks: GraphLinks> HNSWIndex<TGraphLinks> {
         postprocess_result.truncate(top);
         Ok(postprocess_result)
     }
-}
 
-impl HNSWIndex<GraphLinksMmap> {
-    pub fn prefault_mmap_pages(&self) -> mmap_ops::PrefaultMmapPages {
+    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
         self.graph.prefault_mmap_pages(&self.path)
     }
 }
 
-impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
+impl VectorIndex for HNSWIndex {
     fn search(
         &self,
         vectors: &[&QueryVector],
@@ -1310,8 +1308,8 @@ impl<TGraphLinks: GraphLinks> VectorIndex for HNSWIndex<TGraphLinks> {
 
     fn files(&self) -> Vec<PathBuf> {
         [
-            GraphLayers::<TGraphLinks>::get_path(&self.path),
-            GraphLayers::<TGraphLinks>::get_links_path(&self.path),
+            GraphLayers::get_path(&self.path),
+            GraphLayers::get_links_path(&self.path),
             HnswGraphConfig::get_config_path(&self.path),
         ]
         .into_iter()
