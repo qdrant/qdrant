@@ -85,6 +85,7 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached stats over all local shards used in strict mode, may be outdated
     local_stats_cache: LocalDataStatsCache,
+    // Background tasks to clean shards
     shard_clean_tasks: ShardCleanTasks,
 }
 
@@ -766,7 +767,7 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
-            clean_local_shards: self.list_clean_local_shards(),
+            shard_clean_tasks: self.clean_local_shards_statuses(),
         }
     }
 
