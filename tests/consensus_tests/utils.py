@@ -481,6 +481,13 @@ def check_collection_cluster(peer_url, collection_name):
     return res.json()["result"]['local_shards'][0]
 
 
+def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
+    collection_info = get_collection_info(peer_api_uri, collection_name)
+    print(collection_info)
+    strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
+    return strict_mode_enabled == True
+
+
 def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> str:
     wait_for(check_cluster_size, peer_api_uri, expected_size, headers=headers)
     wait_for(leader_is_defined, peer_api_uri, headers=headers)
@@ -594,6 +601,14 @@ def wait_for_collection_resharding_operation_stage(peer_api_uri: str, collection
 def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: str, expected_local_shard_count: int):
     try:
         wait_for(check_collection_local_shards_count, peer_api_uri, collection_name, expected_local_shard_count)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
+def wait_for_strict_mode_enabled(peer_api_uri: str, collection_name: str):
+    try:
+        wait_for(check_strict_mode_enabled, peer_api_uri, collection_name)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e
