@@ -27,8 +27,10 @@ use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
+use crate::common::collection_size_stats::{
+    CollectionSizeAtomicStats, CollectionSizeStats, CollectionSizeStatsCache,
+};
 use crate::common::is_ready::IsReady;
-use crate::common::local_data_stats::{LocalDataAtomicStats, LocalDataStats, LocalDataStatsCache};
 use crate::config::CollectionConfigInternal;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
@@ -81,8 +83,8 @@ pub struct Collection {
     // Search runtime handle.
     search_runtime: Handle,
     optimizer_cpu_budget: CpuBudget,
-    // Cached stats over all local shards used in strict mode, may be outdated
-    local_stats_cache: LocalDataStatsCache,
+    // Cached statistics of collection size, may be outdated.
+    collection_stats_cache: CollectionSizeStatsCache,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -153,8 +155,8 @@ impl Collection {
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
-        let local_stats_cache = LocalDataStatsCache::new_with_values(
-            Self::calculate_local_shards_stats(&locked_shard_holder).await,
+        let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
+            Self::estimate_collection_size_stats(&locked_shard_holder).await,
         );
 
         // Once the config is persisted - the collection is considered to be successfully created.
@@ -183,7 +185,7 @@ impl Collection {
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
-            local_stats_cache,
+            collection_stats_cache,
         })
     }
 
@@ -271,8 +273,8 @@ impl Collection {
 
         let locked_shard_holder = Arc::new(LockedShardHolder::new(shard_holder));
 
-        let local_stats_cache = LocalDataStatsCache::new_with_values(
-            Self::calculate_local_shards_stats(&locked_shard_holder).await,
+        let collection_stats_cache = CollectionSizeStatsCache::new_with_values(
+            Self::estimate_collection_size_stats(&locked_shard_holder).await,
         );
 
         Self {
@@ -297,7 +299,7 @@ impl Collection {
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
-            local_stats_cache,
+            collection_stats_cache,
         }
     }
 
@@ -798,18 +800,18 @@ impl Collection {
         self.shards_holder.read().await.trigger_optimizers().await;
     }
 
-    async fn calculate_local_shards_stats(
+    async fn estimate_collection_size_stats(
         shards_holder: &Arc<RwLock<ShardHolder>>,
-    ) -> LocalDataStats {
+    ) -> Option<CollectionSizeStats> {
         let shard_lock = shards_holder.read().await;
-        shard_lock.calculate_local_shards_stats().await
+        shard_lock.estimate_collection_size_stats().await
     }
 
-    /// Returns estimations of local shards statistics. This values are cached and might be not 100% up to date.
+    /// Returns estimations of collection sizes. This values are cached and might be not 100% up to date.
     /// The cache gets updated every 32 calls.
-    pub async fn local_stats_estimations(&self) -> &LocalDataAtomicStats {
-        self.local_stats_cache
-            .get_or_update_cache(|| Self::calculate_local_shards_stats(&self.shards_holder))
+    pub(crate) async fn estimated_collection_stats(&self) -> Option<&CollectionSizeAtomicStats> {
+        self.collection_stats_cache
+            .get_or_update_cache(|| Self::estimate_collection_size_stats(&self.shards_holder))
             .await
     }
 }

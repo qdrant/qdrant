@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use common::cpu::CpuBudget;
 use common::tar_ext::BuilderExt;
-use futures::{Future, TryStreamExt as _};
+use futures::{stream, Future, StreamExt, TryStreamExt as _};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
@@ -23,7 +23,7 @@ use super::resharding::tasks_pool::ReshardTasksPool;
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
-use crate::common::local_data_stats::LocalDataStats;
+use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshot_stream::SnapshotStream;
 use crate::config::{CollectionConfigInternal, ShardingMethod};
 use crate::hash_ring::HashRingRouter;
@@ -1119,13 +1119,38 @@ impl ShardHolder {
         Ok(())
     }
 
-    /// Queries and accumulates the statistics for local data, uncached.
-    pub async fn calculate_local_shards_stats(&self) -> LocalDataStats {
-        let mut stats = LocalDataStats::default();
-        for shard in self.shards.iter() {
-            stats.accumulate_from(&shard.1.calculate_local_shards_stats().await)
+    /// Estimates the collections size based on local shard data. Returns `None` if no shard for the collection was found locally.
+    pub async fn estimate_collection_size_stats(&self) -> Option<CollectionSizeStats> {
+        if self.is_distributed().await {
+            // In distributed, we estimate the whole collection size by using a single local shard and multiply by amount of shards in the collection.
+            for shard in self.shards.iter() {
+                if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await {
+                    // TODO(resharding) take into account the ongoing resharding and exclude shards that are being filled from multiplication.
+                    // Project the single shards size to the full collection.
+                    let collection_estimate = shard_stats.multiplied_with(self.shards.len());
+                    return Some(collection_estimate);
+                }
+            }
+
+            return None;
         }
-        stats
+
+        // Local mode: return collection size estimations using all shards.
+        let mut stats = CollectionSizeStats::default();
+        for shard in self.shards.iter() {
+            if let Some(shard_stats) = shard.1.calculate_local_shard_stats().await {
+                stats.accumulate_metrics_from(&shard_stats);
+            }
+        }
+
+        Some(stats)
+    }
+
+    /// Returns `true` if the collection is distributed across multiple nodes.
+    async fn is_distributed(&self) -> bool {
+        stream::iter(self.shards.iter())
+            .any(|i| async { i.1.has_remote_shard().await })
+            .await
     }
 }
 

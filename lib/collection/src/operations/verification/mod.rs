@@ -17,7 +17,7 @@ use crate::collection::Collection;
 
 // Creates a new `VerificationPass` without actually verifying anything.
 // This is useful in situations where we don't need to check for strict mode, but still
-// want to be able to access `TableOfContents` using `.toc()`.
+// want to be able to access `TableOfContent` using `.toc()`.
 // If you're not implementing a new point-api endpoint for which a strict mode check
 // is required, this is safe to use.
 pub fn new_unchecked_verification_pass() -> VerificationPass {

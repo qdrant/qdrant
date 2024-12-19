@@ -28,6 +28,24 @@ def random_sparse_vector():
     return {"indices": indices, "values": values}
 
 
+def upsert_points(
+        peer_url,
+        points,
+        collection_name="test_collection",
+        wait="true",
+        ordering="weak",
+        shard_key=None,
+        headers={},
+) -> requests.Response:
+    return requests.put(
+        f"{peer_url}/collections/{collection_name}/points?wait={wait}&ordering={ordering}",
+        json={
+            "points": points,
+            "shard_key": shard_key,
+        },
+        headers=headers,
+    )
+
 def upsert_random_points(
     peer_url,
     num,
@@ -87,6 +105,7 @@ def create_collection(
     sharding_method=None,
     indexing_threshold=20000,
     headers={},
+    strict_mode=None,
 ):
     # Create collection in peer_url
     r_batch = requests.put(
@@ -101,6 +120,7 @@ def create_collection(
             "optimizers_config": {
                 "indexing_threshold": indexing_threshold,
             },
+            "strict_mode_config": strict_mode,
         },
         headers=headers,
     )
@@ -157,3 +177,12 @@ def count_counts(peer_url, collection="test_collection"):
     )
     assert_http_ok(r_search)
     return r_search.json()["result"]["count"]
+
+
+def set_strict_mode(peer_id, collection_name, strict_mode_config):
+    requests.patch(
+        f"{peer_id}/collections/{collection_name}",
+        json={
+            "strict_mode_config": strict_mode_config,
+        },
+    ).raise_for_status()
