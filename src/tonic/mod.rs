@@ -282,7 +282,8 @@ pub fn init_internal(
                 QdrantInternalService::new(settings, consensus_state.clone());
             let collections_internal_service = CollectionsInternalService::new(toc.clone());
             let shard_snapshots_service = ShardSnapshotsService::new(toc.clone(), http_client);
-            let raft_service = RaftService::new(to_consensus, consensus_state);
+            let raft_service =
+                RaftService::new(to_consensus, consensus_state, tls_config.is_some());
 
             log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
 
