@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -6,6 +7,7 @@ use parking_lot::Mutex;
 
 use super::Collection;
 use crate::config::ShardingMethod;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
@@ -172,10 +174,33 @@ impl Collection {
     }
 
     pub async fn commit_read_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        self.shards_holder
-            .write()
-            .await
-            .commit_read_hashring(resharding_key)
+        let mut shards_holder = self.shards_holder.write().await;
+
+        shards_holder.commit_read_hashring(resharding_key)?;
+
+        // Invalidate clean state for shards we copied points out of
+        // These shards must be cleaned or dropped to ensure they don't contain irrelevant points
+        let dirty_shard_ids = match resharding_key.direction {
+            // On resharding up: related shards below new shard key are affected
+            ReshardingDirection::Up => match shards_holder.rings.get(&resharding_key.shard_key) {
+                Some(HashRingRouter::Resharding { old, new: _ }) => old.nodes().clone(),
+                Some(HashRingRouter::Single(ring)) => {
+                    debug_assert!(false, "must have resharding hash ring during resharding");
+                    ring.nodes().clone()
+                }
+                None => {
+                    debug_assert!(false, "must have hash ring for resharding key");
+                    HashSet::new()
+                }
+            },
+            // On resharding down: shard we're about to remove is affected
+            ReshardingDirection::Down => HashSet::from([resharding_key.shard_id]),
+        };
+        for shard_id in dirty_shard_ids {
+            self.invalidate_clean_local_shard(shard_id);
+        }
+
+        Ok(())
     }
 
     pub async fn commit_write_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
@@ -243,6 +268,28 @@ impl Collection {
         }
 
         let _ = self.stop_resharding_task(&resharding_key).await;
+
+        // Invalidate clean state for shards we copied new points into
+        // These shards must be cleaned or dropped to ensure they don't contain irrelevant points
+        let dirty_shard_ids = match resharding_key.direction {
+            // On resharding up: new shard now has invalid points, shard will likely be dropped
+            ReshardingDirection::Up => HashSet::from([resharding_key.shard_id]),
+            // On resharding down: existing shards may have new points moved into them
+            ReshardingDirection::Down => match shard_holder.rings.get(&resharding_key.shard_key) {
+                Some(HashRingRouter::Resharding { old: _, new }) => new.nodes().clone(),
+                Some(HashRingRouter::Single(ring)) => {
+                    debug_assert!(false, "must have resharding hash ring during resharding");
+                    ring.nodes().clone()
+                }
+                None => {
+                    debug_assert!(false, "must have hash ring for resharding key");
+                    HashSet::new()
+                }
+            },
+        };
+        for shard_id in dirty_shard_ids {
+            self.invalidate_clean_local_shard(shard_id);
+        }
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
         if resharding_key.direction == ReshardingDirection::Up {
