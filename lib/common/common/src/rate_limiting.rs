@@ -29,7 +29,7 @@ impl RateLimiter {
     }
 
     /// Attempt to consume a token. Returns `true` if allowed, `false` otherwise.
-    pub fn check(&mut self) -> bool {
+    pub fn check_and_update(&mut self) -> bool {
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_check);
         self.last_check = now;
@@ -67,11 +67,11 @@ mod tests {
         assert_eq_floats(limiter.tokens_per_sec, 0.016, 0.001);
         assert_eq!(limiter.tokens, 1.0);
 
-        assert!(limiter.check());
+        assert!(limiter.check_and_update());
         assert_eq!(limiter.tokens, 0.0);
 
         // rate limit reached
-        assert!(!limiter.check());
+        assert!(!limiter.check_and_update());
     }
 
     #[test]
@@ -81,7 +81,7 @@ mod tests {
         assert_eq!(limiter.tokens_per_sec, 10.0);
         assert_eq!(limiter.tokens, 600.0);
 
-        assert!(limiter.check());
+        assert!(limiter.check_and_update());
         assert_eq!(limiter.tokens, 599.0);
     }
 }

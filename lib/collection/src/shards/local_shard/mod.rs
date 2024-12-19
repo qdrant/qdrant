@@ -101,7 +101,6 @@ pub struct LocalShard {
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
     read_rate_limiter: ParkingMutex<Option<RateLimiter>>,
-    write_rate_limiter: ParkingMutex<Option<RateLimiter>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -206,13 +205,6 @@ impl LocalShard {
             .and_then(|strict_mode| strict_mode.read_rate_limit.map(RateLimiter::new_per_minute));
         let read_rate_limiter = ParkingMutex::new(read_rate_limiter);
 
-        let write_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
-            strict_mode
-                .write_rate_limit
-                .map(RateLimiter::new_per_minute)
-        });
-        let write_rate_limiter = ParkingMutex::new(write_rate_limiter);
-
         drop(config); // release `shared_config` from borrow checker
 
         Self {
@@ -232,7 +224,6 @@ impl LocalShard {
             total_optimized_points,
             disk_usage_watcher,
             read_rate_limiter,
-            write_rate_limiter,
         }
     }
 
@@ -770,13 +761,6 @@ impl LocalShard {
                 read_rate_limiter_guard
                     .replace(RateLimiter::new_per_minute(read_rate_limit_per_sec));
             }
-
-            // update write rate limiter
-            if let Some(write_rate_limit_per_sec) = strict_mode_config.write_rate_limit {
-                let mut write_rate_limiter_guard = self.write_rate_limiter.lock();
-                write_rate_limiter_guard
-                    .replace(RateLimiter::new_per_minute(write_rate_limit_per_sec));
-            }
         }
     }
 
@@ -1142,26 +1126,12 @@ impl LocalShard {
         self.wal.update_cutoff(cutoff).await
     }
 
-    /// Check if the write rate limiter allows the operation to proceed
-    ///
-    /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter(&self) -> CollectionResult<()> {
-        if let Some(rate_limiter) = self.write_rate_limiter.lock().as_mut() {
-            if !rate_limiter.check() {
-                return Err(CollectionError::RateLimitExceeded {
-                    description: "Write rate limit exceeded, retry later".to_string(),
-                });
-            }
-        }
-        Ok(())
-    }
-
     /// Check if the read rate limiter allows the operation to proceed
     ///
     /// Returns an error if the rate limit is exceeded.
     fn check_read_rate_limiter(&self) -> CollectionResult<()> {
         if let Some(rate_limiter) = self.read_rate_limiter.lock().as_mut() {
-            if !rate_limiter.check() {
+            if !rate_limiter.check_and_update() {
                 return Err(CollectionError::RateLimitExceeded {
                     description: "Read rate limit exceeded, retry later".to_string(),
                 });
