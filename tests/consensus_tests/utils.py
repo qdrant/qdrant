@@ -481,6 +481,12 @@ def check_collection_cluster(peer_url, collection_name):
     return res.json()["result"]['local_shards'][0]
 
 
+def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
+    collection_info = get_collection_info(peer_api_uri, collection_name)
+    strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
+    return strict_mode_enabled == True
+
+
 def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> str:
     wait_for(check_cluster_size, peer_api_uri, expected_size, headers=headers)
     wait_for(leader_is_defined, peer_api_uri, headers=headers)
@@ -599,6 +605,14 @@ def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: s
         raise e
 
 
+def wait_for_strict_mode_enabled(peer_api_uri: str, collection_name: str):
+    try:
+        wait_for(check_strict_mode_enabled, peer_api_uri, collection_name)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+
 def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_SEC, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
     start = time.time()
     while not condition(*args, **kwargs):
@@ -670,3 +684,14 @@ def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_ap
     for peer_uri in peer_api_uris:
         # Collection is active on all peers
         wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri, headers=headers)
+
+
+def create_shard_key(shard_key, peer_url, collection="test_collection", placement=None):
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection}/shards",
+        json={
+            "shard_key": shard_key,
+            "placement": placement,
+        },
+    )
+    assert_http_ok(r_batch)
