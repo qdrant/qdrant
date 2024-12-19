@@ -483,7 +483,6 @@ def check_collection_cluster(peer_url, collection_name):
 
 def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
     collection_info = get_collection_info(peer_api_uri, collection_name)
-    print(collection_info)
     strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
     return strict_mode_enabled == True
 

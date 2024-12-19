@@ -67,6 +67,8 @@ def test_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
         "max_collection_vector_size_bytes": 33,
     })
 
+    wait_for_strict_mode_enabled(peer_urls[1], COLLECTION_NAME)
+
     for _ in range(32):
         point = {"id": 2, "payload": {}, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
