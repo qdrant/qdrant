@@ -16,13 +16,19 @@ use crate::consensus;
 pub struct RaftService {
     message_sender: Sender<consensus::Message>,
     consensus_state: ConsensusStateRef,
+    use_tls: bool,
 }
 
 impl RaftService {
-    pub fn new(sender: Sender<consensus::Message>, consensus_state: ConsensusStateRef) -> Self {
+    pub fn new(
+        sender: Sender<consensus::Message>,
+        consensus_state: ConsensusStateRef,
+        use_tls: bool,
+    ) -> Self {
         Self {
             message_sender: sender,
             consensus_state,
+            use_tls,
         }
     }
 }
@@ -73,7 +79,11 @@ impl Raft for RaftService {
             let port = peer
                 .port
                 .ok_or_else(|| Status::invalid_argument("URI or port should be supplied"))?;
-            format!("http://{ip}:{port}")
+            if self.use_tls {
+                format!("https://{ip}:{port}")
+            } else {
+                format!("http://{ip}:{port}")
+            }
         };
         let uri: Uri = uri_string
             .parse()
