@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -6,6 +7,7 @@ use parking_lot::Mutex;
 
 use super::Collection;
 use crate::config::ShardingMethod;
+use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
@@ -172,21 +174,36 @@ impl Collection {
     }
 
     pub async fn commit_read_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        for shard_id in 0..resharding_key.shard_id {
+        let mut shards_holder = self.shards_holder.write().await;
+
+        shards_holder.commit_read_hashring(resharding_key)?;
+
+        // Invalidate clean state for shards we copied points out of
+        // These shards must either be cleaned or dropped
+        let affected_shard_ids = match resharding_key.direction {
+            // On resharding up: related shards below new shard key are affected
+            ReshardingDirection::Up => match shards_holder.rings.get(&resharding_key.shard_key) {
+                Some(HashRingRouter::Resharding { old, new: _ }) => old.nodes().clone(),
+                Some(HashRingRouter::Single(ring)) => {
+                    debug_assert!(false, "must have resharding hash ring during resharding");
+                    ring.nodes().clone()
+                }
+                None => {
+                    debug_assert!(false, "must have hash ring for resharding key");
+                    HashSet::new()
+                }
+            },
+            // On resharding down: shard we're about to remove is affected
+            ReshardingDirection::Down => HashSet::from([resharding_key.shard_id]),
+        };
+        for shard_id in affected_shard_ids {
             self.invalidate_clean_local_shard(shard_id);
         }
 
-        self.shards_holder
-            .write()
-            .await
-            .commit_read_hashring(resharding_key)
+        Ok(())
     }
 
     pub async fn commit_write_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
-        for shard_id in 0..resharding_key.shard_id {
-            self.invalidate_clean_local_shard(shard_id);
-        }
-
         self.shards_holder
             .write()
             .await
