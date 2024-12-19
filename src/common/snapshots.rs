@@ -237,6 +237,7 @@ pub async fn recover_shard_snapshot_impl(
         .replicas
         .iter()
         .map(|(&peer, &state)| (peer, state))
+        // TODO: Handle `ReplicaState::ReshardingScaleDown`!?
         .filter(|&(peer, state)| peer != toc.this_peer_id && state == ReplicaState::Active)
         .collect();
 

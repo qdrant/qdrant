@@ -7,6 +7,7 @@ use common::defaults;
 use parking_lot::Mutex;
 
 use super::Collection;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
@@ -80,10 +81,21 @@ impl Collection {
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
+
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
                     ReplicaState::Recovery
                 }
-                ShardTransferMethod::ReshardingStreamRecords => ReplicaState::Resharding,
+
+                ShardTransferMethod::ReshardingStreamRecords => {
+                    let resharding_direction =
+                        self.resharding_state().await.map(|state| state.direction);
+
+                    match resharding_direction {
+                        Some(ReshardingDirection::Up) => ReplicaState::Resharding,
+                        Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
+                        None => todo!(),
+                    }
+                }
             };
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
@@ -218,7 +230,14 @@ impl Collection {
                 //     *explicitly* when all transfers are finished
 
                 let state = if is_resharding_transfer {
-                    ReplicaState::Resharding
+                    let resharding_direction =
+                        self.resharding_state().await.map(|state| state.direction);
+
+                    match resharding_direction {
+                        Some(ReshardingDirection::Up) => ReplicaState::Resharding,
+                        Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
+                        None => todo!(),
+                    }
                 } else {
                     ReplicaState::Active
                 };
