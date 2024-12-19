@@ -94,7 +94,7 @@ impl fmt::Debug for VectorData {
 impl VectorData {
     pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
         let index_task = match &*self.vector_index.borrow() {
-            VectorIndexEnum::HnswMmap(index) => Some(index.prefault_mmap_pages()),
+            VectorIndexEnum::Hnsw(index) => index.prefault_mmap_pages(),
             _ => None,
         };
 

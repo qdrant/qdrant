@@ -1,12 +1,9 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
 
-use std::path::Path;
-
 use common::types::PointOffsetType;
 use rand::Rng;
 
-use super::graph_links::GraphLinksRam;
 use crate::data_types::vectors::VectorElementType;
 use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -59,8 +56,7 @@ pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
     compressed: bool,
     use_heuristic: bool,
     rng: &mut R,
-    links_path: Option<&Path>,
-) -> (TestRawScorerProducer<TMetric>, GraphLayers<GraphLinksRam>)
+) -> (TestRawScorerProducer<TMetric>, GraphLayers)
 where
     R: Rng + ?Sized,
 {
@@ -69,8 +65,6 @@ where
 
     (
         vector_holder,
-        graph_layers_builder
-            .into_graph_layers(links_path, compressed)
-            .unwrap(),
+        graph_layers_builder.into_graph_layers_ram(compressed),
     )
 }

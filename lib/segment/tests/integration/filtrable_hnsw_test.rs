@@ -11,7 +11,6 @@ use rstest::rstest;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
-use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -192,7 +191,7 @@ fn _test_filterable_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
         path: hnsw_dir.path(),
         id_tracker: segment.id_tracker.clone(),
         vector_storage: vector_storage.clone(),

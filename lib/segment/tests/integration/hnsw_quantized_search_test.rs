@@ -11,7 +11,6 @@ use rand::SeedableRng;
 use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_vector, STR_KEY};
-use segment::index::hnsw_index::graph_links::GraphLinksRam;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
@@ -129,7 +128,7 @@ fn hnsw_quantized_search_test(
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
-    let hnsw_index = HNSWIndex::<GraphLinksRam>::open(HnswIndexOpenArgs {
+    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
         path: hnsw_dir.path(),
         id_tracker: segment.id_tracker.clone(),
         vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
@@ -188,7 +187,7 @@ fn hnsw_quantized_search_test(
 fn check_matches(
     query_vectors: &[QueryVector],
     segment: &Segment,
-    hnsw_index: &HNSWIndex<GraphLinksRam>,
+    hnsw_index: &HNSWIndex,
     filter: Option<&Filter>,
     ef: usize,
     top: usize,
@@ -228,7 +227,7 @@ fn check_matches(
 
 fn check_oversampling(
     query_vectors: &[QueryVector],
-    hnsw_index: &HNSWIndex<GraphLinksRam>,
+    hnsw_index: &HNSWIndex,
     filter: Option<&Filter>,
     ef: usize,
     top: usize,
@@ -287,7 +286,7 @@ fn check_oversampling(
 
 fn check_rescoring(
     query_vectors: &[QueryVector],
-    hnsw_index: &HNSWIndex<GraphLinksRam>,
+    hnsw_index: &HNSWIndex,
     filter: Option<&Filter>,
     ef: usize,
     top: usize,
@@ -441,7 +440,7 @@ fn test_build_hnsw_using_quantization() {
         .vector_index
         .borrow();
     match borrowed_index.deref() {
-        VectorIndexEnum::HnswRam(hnsw_index) => {
+        VectorIndexEnum::Hnsw(hnsw_index) => {
             assert!(hnsw_index.get_quantized_vectors().borrow().is_some())
         }
         _ => panic!("unexpected vector index type"),
