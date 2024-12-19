@@ -18,18 +18,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use cancel::DropGuard;
-use clean::ShardCleanStatus;
+use clean::ShardCleanTasks;
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
 use io::storage_version::StorageVersion;
-use parking_lot::RwLock as ParkingLotRwLock;
 use segment::types::ShardKey;
 use semver::Version;
 use tokio::runtime::Handle;
-use tokio::sync::watch::Receiver;
 use tokio::sync::{Mutex, RwLock, RwLockWriteGuard};
-use tokio::task::JoinHandle;
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -89,15 +85,13 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached stats over all local shards used in strict mode, may be outdated
     local_stats_cache: LocalDataStatsCache,
-    shard_clean_tasks: Arc<ParkingLotRwLock<ShardCleanTasks>>,
+    shard_clean_tasks: ShardCleanTasks,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
 
 pub type OnTransferFailure = Arc<dyn Fn(ShardTransfer, CollectionId, &str) + Send + Sync>;
 pub type OnTransferSuccess = Arc<dyn Fn(ShardTransfer, CollectionId) + Send + Sync>;
-
-type ShardCleanTasks = HashMap<ShardId, (JoinHandle<()>, Receiver<ShardCleanStatus>, DropGuard)>;
 
 impl Collection {
     #[allow(clippy::too_many_arguments)]

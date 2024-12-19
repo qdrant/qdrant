@@ -474,19 +474,4 @@ impl Collection {
 
         Ok(points)
     }
-
-    pub async fn cleanup_local_shard(
-        &self,
-        shard_id: ShardId,
-        wait: bool,
-        timeout: Option<Duration>,
-    ) -> CollectionResult<UpdateResult> {
-        let status = self.clean_local_shard(shard_id, wait, timeout).await?;
-
-        Ok(UpdateResult {
-            operation_id: None,
-            status,
-            clock_tag: None,
-        })
-    }
 }
