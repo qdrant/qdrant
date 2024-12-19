@@ -11,7 +11,7 @@ use super::*;
 #[serde(rename_all = "lowercase")]
 pub enum LogFormat {
     #[default]
-    Default,
+    Text,
     Json,
 }
 
@@ -49,7 +49,7 @@ where
 {
     let layer: Box<dyn Layer<S> + Send + Sync> = match config.log_format {
         Some(LogFormat::Json) => Box::new(new_layer_with_json(config)),
-        _ => Box::new(new_layer(config)),
+        Some(LogFormat::Text) | None => Box::new(new_layer(config)),
     };
     let filter = new_filter(config);
     Some(layer).with_filter(filter)
