@@ -86,7 +86,7 @@ impl TableOfContent {
                     debug_assert_eq!(
                         shard_number as usize,
                         collection_shard_distribution.shard_count(),
-                        "If shard number was supplied then this exact number should be used in a distribution"
+                        "If shard number was supplied then this exact number should be used in a distribution",
                     );
                     shard_number
                 } else {
@@ -96,7 +96,7 @@ impl TableOfContent {
             ShardingMethod::Custom => {
                 if init_from.is_some() {
                     return Err(StorageError::bad_input(
-                        "Can't initialize collection from another collection with custom sharding method"
+                        "Can't initialize collection from another collection with custom sharding method",
                     ));
                 }
                 if let Some(shard_number) = shard_number {
