@@ -715,6 +715,11 @@ pub async fn do_update_collection_cluster(
                 }
             };
 
+            let from_state = match state.direction {
+                ReshardingDirection::Up => replica_set::ReplicaState::Resharding,
+                ReshardingDirection::Down => replica_set::ReplicaState::ReshardingScaleDown,
+            };
+
             dispatcher
                 .submit_collection_meta_op(
                     CollectionMetaOperations::SetShardReplicaState(SetShardReplicaState {
@@ -722,7 +727,7 @@ pub async fn do_update_collection_cluster(
                         shard_id,
                         peer_id,
                         state: replica_set::ReplicaState::Active,
-                        from_state: Some(replica_set::ReplicaState::Resharding),
+                        from_state: Some(from_state),
                     }),
                     access,
                     wait_timeout,

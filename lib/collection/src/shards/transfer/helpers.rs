@@ -111,6 +111,7 @@ pub fn validate_transfer(
         )));
     }
 
+    // TODO: Handle `ReplicaState::ReshardingScaleDown`!?
     if shard_state.get(&transfer.from) != Some(&ReplicaState::Active) {
         return Err(CollectionError::bad_request(format!(
             "Shard {} is not active on peer {}",
@@ -178,6 +179,7 @@ pub fn suggest_transfer_source(
 ) -> Option<PeerId> {
     let mut candidates = HashSet::new();
     for (peer_id, state) in shard_peers {
+        // TODO: Handle `ReplicaState::ReshardingScaleDown`!?
         if *state == ReplicaState::Active && *peer_id != target_peer {
             candidates.insert(*peer_id);
         }
@@ -268,6 +270,7 @@ pub fn suggest_peer_to_remove_replica(
         .collect();
 
     candidates.sort_unstable_by(|(_, status1, count1), (_, status2, count2)| {
+        // TODO: Handle `ReplicaState::ReshardingScaleDown`!?
         match (status1, status2) {
             (ReplicaState::Active, ReplicaState::Active) => count2.cmp(count1),
             (ReplicaState::Active, _) => Ordering::Less,

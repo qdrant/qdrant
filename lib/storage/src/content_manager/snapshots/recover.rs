@@ -242,6 +242,7 @@ async fn _do_recover_from_snapshot(
                 .replicas
                 .iter()
                 .filter(|(peer_id, state)| {
+                    // TODO: Handle `ReplicaState::ReshardingScaleDown`!?
                     *state == &ReplicaState::Active && **peer_id != this_peer_id
                 })
                 .collect();

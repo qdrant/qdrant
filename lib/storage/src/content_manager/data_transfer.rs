@@ -38,6 +38,7 @@ async fn get_local_source_shards(
         let responsible_shard_opt = shard_info
             .replicas
             .iter()
+            // TODO: Handle `ReplicaState::ReshardingScaleDown`!?
             .filter(|(_, replica_state)| **replica_state == ReplicaState::Active)
             .max_by_key(|(peer_id, _)| *peer_id)
             .map(|(peer_id, _)| *peer_id);
