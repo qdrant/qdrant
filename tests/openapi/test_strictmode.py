@@ -643,7 +643,7 @@ def test_strict_mode_read_rate_limiting(collection_name):
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
 
-    # TODO(ratelimite) test read limit can be disabled
+    # TODO(ratelimiting) test read limit can be disabled
     # set_strict_mode(collection_name, {
     #     "enabled": False,
     # })
