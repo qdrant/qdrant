@@ -342,6 +342,21 @@ impl Collection {
         wait: bool,
         timeout: Option<Duration>,
     ) -> CollectionResult<UpdateResult> {
+        // Ensure we have this local shard
+        {
+            let shard_holder = self.shards_holder.read().await;
+            let Some(shard) = shard_holder.get_shard(shard_id) else {
+                return Err(CollectionError::not_found(format!(
+                    "Shard {shard_id} not found",
+                )));
+            };
+            if !shard.is_local().await {
+                return Err(CollectionError::not_found(format!(
+                    "Shard {shard_id} is not a local shard",
+                )));
+            }
+        }
+
         let status = self
             .shard_clean_tasks
             .clean_and_await(&self.shards_holder, shard_id, wait, timeout)
