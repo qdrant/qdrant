@@ -127,13 +127,25 @@ impl ShardCleanTasks {
         }
     }
 
-    /// Invalidate shard cleaning operation for the given shard, marking it as dirty
+    /// Invalidate shard cleaning operations for the given shards, marking them as dirty
     ///
-    /// Aborts any ongoing cleaning task and waits until the task is stopped.
-    pub(super) async fn invalidate(&self, shard_id: ShardId) {
-        let removed = self.tasks.write().remove(&shard_id);
-        if let Some(task) = removed {
-            task.abort_and_join().await;
+    /// Aborts any ongoing cleaning tasks and waits until all tasks are stopped.
+    pub(super) async fn invalidate(&self, shard_ids: impl IntoIterator<Item = ShardId>) {
+        // Take relevant tasks out of task list, abort and take handles
+        let handles = {
+            let mut tasks = self.tasks.write();
+            shard_ids
+                .into_iter()
+                .filter_map(|shard_id| tasks.remove(&shard_id))
+                .map(ShardCleanTask::abort)
+                .collect::<Vec<_>>()
+        };
+
+        // Await all tasks to finish
+        for handle in handles {
+            if let Err(err) = handle.await {
+                log::error!("Failed to join shard clean task: {err}");
+            }
         }
     }
 
@@ -184,14 +196,10 @@ impl ShardCleanTask {
         )
     }
 
-    pub async fn abort_and_join(self) {
+    fn abort(self) -> JoinHandle<()> {
         // Explicitly cancel clean task
         self.cancel.disarm().cancel();
-
-        // Await task to finish
-        if let Err(err) = self.handle.await {
-            log::error!("Failed to join shard clean task: {err}");
-        }
+        self.handle
     }
 
     async fn task(
@@ -212,7 +220,7 @@ impl ShardCleanTask {
             }
         };
 
-        // We can ignore the error if the channel is dropped, then there's no receiver listening anyway
+        // Ignore channel dropped error, then there's no one listening anyway
         let _ = sender.send(status);
     }
 }
@@ -321,11 +329,14 @@ impl Collection {
         })
     }
 
-    /// Invalidate shard cleaning operation for the given shard
+    /// Invalidate shard cleaning operations for the given shards
     ///
-    /// Aborts any ongoing cleaning task and waits until the task is stopped.
-    pub(super) async fn invalidate_clean_local_shard(&self, shard_id: ShardId) {
-        self.shard_clean_tasks.invalidate(shard_id).await;
+    /// Aborts any ongoing cleaning tasks and waits until all tasks are stopped.
+    pub(super) async fn invalidate_clean_local_shards(
+        &self,
+        shard_ids: impl IntoIterator<Item = ShardId>,
+    ) {
+        self.shard_clean_tasks.invalidate(shard_ids).await;
     }
 
     pub fn clean_local_shards_statuses(&self) -> HashMap<ShardId, ShardCleanStatusTelemetry> {
