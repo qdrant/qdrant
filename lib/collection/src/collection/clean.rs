@@ -228,17 +228,21 @@ impl ShardCleanTask {
         sender: Sender<ShardCleanStatus>,
         cancel: CancellationToken,
     ) {
-        let result = clean_task(shard_holder, shard_id, sender.clone(), cancel).await;
-        let status = match result {
-            Ok(status) => {
-                log::trace!("Background task to clean shard {shard_id} reached status {status:?}");
-                status
+        let task = clean_task(shard_holder, shard_id, sender.clone());
+        let status = match cancel.run_until_cancelled(task).await {
+            Some(Ok(())) => {
+                log::trace!("Background task to clean shard {shard_id} is completed");
+                ShardCleanStatus::Done
             }
-            Err(err) => {
+            Some(Err(err)) => {
                 log::error!("Background task to clean shard {shard_id} failed: {err}");
                 ShardCleanStatus::Failed {
                     reason: err.to_string(),
                 }
+            }
+            None => {
+                log::trace!("Background task to clean shard {shard_id} is cancelled");
+                ShardCleanStatus::Cancelled
             }
         };
 
@@ -251,17 +255,11 @@ async fn clean_task(
     shard_holder: Weak<LockedShardHolder>,
     shard_id: ShardId,
     sender: Sender<ShardCleanStatus>,
-    cancel: CancellationToken,
-) -> Result<ShardCleanStatus, CollectionError> {
+) -> Result<(), CollectionError> {
     let mut offset = None;
     let mut deleted_points = 0;
 
     loop {
-        // Check if cancelled
-        if cancel.is_cancelled() {
-            return Ok(ShardCleanStatus::Cancelled);
-        }
-
         // Get shard
         let Some(shard_holder) = shard_holder.upgrade() else {
             return Err(CollectionError::not_found("Shard holder dropped"));
@@ -306,11 +304,6 @@ async fn clean_task(
             }
         };
 
-        // Check if cancelled
-        if cancel.is_cancelled() {
-            return Ok(ShardCleanStatus::Cancelled);
-        }
-
         // Update offset for next batch
         offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
         deleted_points += ids.len();
@@ -332,7 +325,7 @@ async fn clean_task(
 
         // Finish if this was the last batch
         if last_batch {
-            return Ok(ShardCleanStatus::Done);
+            return Ok(());
         }
     }
 }
