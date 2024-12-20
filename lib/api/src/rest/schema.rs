@@ -1046,6 +1046,31 @@ impl PointInsertOperations {
         }
     }
 
+    pub fn payload_size(&self) -> usize {
+        match self {
+            PointInsertOperations::PointsBatch(batch) => batch
+                .batch
+                .payloads
+                .as_ref()
+                .map(|i| {
+                    i.iter()
+                        .map(|i| i.as_ref().map(|i| i.size_bytes()).unwrap_or_default())
+                        .sum::<usize>()
+                })
+                .unwrap_or_default(),
+            PointInsertOperations::PointsList(list) => list
+                .points
+                .iter()
+                .map(|i| {
+                    i.payload
+                        .as_ref()
+                        .map(|i| i.size_bytes())
+                        .unwrap_or_default()
+                })
+                .sum(),
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }

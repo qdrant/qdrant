@@ -725,6 +725,9 @@ pub struct StrictModeConfig {
     /// Max size of a collections payload storage in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_payload_size_bytes: Option<usize>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upsert_max_payload_size: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -746,22 +749,21 @@ impl Hash for StrictModeConfig {
             read_rate_limit,
             write_rate_limit,
             max_collection_payload_size_bytes,
+            upsert_max_payload_size: max_upload_payload_size,
         } = self;
-        (
-            enabled,
-            max_query_limit,
-            max_timeout,
-            unindexed_filtering_retrieve,
-            unindexed_filtering_update,
-            search_max_hnsw_ef,
-            search_allow_exact,
-            upsert_max_batchsize,
-            max_collection_vector_size_bytes,
-            read_rate_limit,
-            write_rate_limit,
-            max_collection_payload_size_bytes,
-        )
-            .hash(state);
+        enabled.hash(state);
+        max_query_limit.hash(state);
+        max_timeout.hash(state);
+        unindexed_filtering_retrieve.hash(state);
+        unindexed_filtering_update.hash(state);
+        search_max_hnsw_ef.hash(state);
+        search_allow_exact.hash(state);
+        upsert_max_batchsize.hash(state);
+        max_collection_vector_size_bytes.hash(state);
+        read_rate_limit.hash(state);
+        write_rate_limit.hash(state);
+        max_collection_payload_size_bytes.hash(state);
+        max_upload_payload_size.hash(state);
     }
 }
 
@@ -1131,6 +1133,27 @@ impl Payload {
 
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        let mut size = 0;
+        for (k, v) in &self.0 {
+            size += k.len();
+            size += value_size(v);
+        }
+
+        size
+    }
+}
+
+fn value_size(value: &Value) -> usize {
+    match value {
+        Value::Null => 0,
+        Value::Bool(_) => 1,
+        Value::Number(_) => 8,
+        Value::String(s) => s.len(),
+        Value::Array(array) => array.iter().map(|i| value_size(i)).sum(),
+        Value::Object(map) => map.values().into_iter().map(|i| value_size(i)).sum(),
     }
 }
 

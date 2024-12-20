@@ -46,6 +46,43 @@ def strict_mode_enabled(collection_name) -> bool:
     return strict_mode is not None and strict_mode['enabled']
 
 
+def test_strict_mode_update_vectors_max_batch_size(collection_name):
+    def upsert_request(payload):
+        return request_with_validation(
+            api='/collections/{collection_name}/points/vectors',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            body={
+                "points": [
+                    {
+                        "id": 1,
+                        "vector": [1, 2, 3, 5],
+                        "payload": payload,
+                    }
+                ]
+            }
+        )
+
+    upsert_request({"key": "a"}).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_payload_size": 2,
+    })
+
+    upsert_request({"key": "a"}).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "upsert_max_payload_size": 3,
+    })
+
+    search_fail = upsert_request({"key": "abc"})
+
+    assert "payload limit" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+
 def test_patch_collection_full(collection_name):
     assert not strict_mode_enabled(collection_name)
 
