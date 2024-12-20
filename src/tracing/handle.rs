@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use default::LogFormat;
 use tokio::sync::RwLock;
-use tracing_subscriber::{layer, reload, Registry};
+use tracing_subscriber::{layer, reload, Layer, Registry};
 
 use super::*;
 
@@ -78,11 +79,15 @@ impl LoggerHandle {
         }
 
         if merged_config.default != config.default {
-            let new_layer = default::new_layer(&merged_config.default);
-            let new_filter = default::new_filter(&merged_config.default);
+            self.default.modify(|logger| {
+                let new_layer = if merged_config.default.log_format == Some(LogFormat::Json) {
+                    default::new_layer_with_json(&merged_config.default)
+                } else {
+                    default::new_layer(&merged_config.default)
+                };
+                let new_filter = default::new_filter(&merged_config.default);
 
-            self.default.modify(move |logger| {
-                *logger.inner_mut() = Some(new_layer);
+                *logger.inner_mut() = Some(Box::new(new_layer) as Box<dyn Layer<_> + Send + Sync>);
                 *logger.filter_mut() = new_filter;
             })?;
 
