@@ -520,7 +520,7 @@ impl GraphLinks {
     /// Convert the graph links to a vector of edges, suitable for passing into
     /// [`GraphLinksConverter::new`] or using in tests.
     pub fn into_edges(self) -> Vec<Vec<Vec<PointOffsetType>>> {
-        let mut edges = Vec::new();
+        let mut edges = Vec::with_capacity(self.num_points());
         for point_id in 0..self.num_points() {
             let num_levels = self.point_level(point_id as PointOffsetType) + 1;
             let mut levels = Vec::with_capacity(num_levels);
