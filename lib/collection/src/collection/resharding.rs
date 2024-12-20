@@ -197,7 +197,7 @@ impl Collection {
             ReshardingDirection::Down => HashSet::from([resharding_key.shard_id]),
         };
         for shard_id in dirty_shard_ids {
-            self.invalidate_clean_local_shard(shard_id);
+            self.invalidate_clean_local_shard(shard_id).await;
         }
 
         Ok(())
@@ -288,7 +288,7 @@ impl Collection {
             },
         };
         for shard_id in dirty_shard_ids {
-            self.invalidate_clean_local_shard(shard_id);
+            self.invalidate_clean_local_shard(shard_id).await;
         }
 
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart

@@ -127,11 +127,13 @@ impl ShardCleanTasks {
         }
     }
 
-    /// Cancel cleaning of a shard and mark it as dirty
-    pub(super) fn invalidate(&self, shard_id: ShardId) {
+    /// Invalidate shard cleaning operation for the given shard, marking it as dirty
+    ///
+    /// Aborts any ongoing cleaning task and waits until the task is stopped.
+    pub(super) async fn invalidate(&self, shard_id: ShardId) {
         let removed = self.tasks.write().remove(&shard_id);
         if let Some(task) = removed {
-            task.abort();
+            task.abort_and_join().await;
         }
     }
 
@@ -182,10 +184,14 @@ impl ShardCleanTask {
         )
     }
 
-    pub fn abort(self) {
+    pub async fn abort_and_join(self) {
         // Explicitly cancel clean task
-        // We don't have to because the drop guard does it for us, but this makes it more explicit
         self.cancel.disarm().cancel();
+
+        // Await task to finish
+        if let Err(err) = self.handle.await {
+            log::error!("Failed to join shard clean task: {err}");
+        }
     }
 
     async fn task(
@@ -315,8 +321,11 @@ impl Collection {
         })
     }
 
-    pub(super) fn invalidate_clean_local_shard(&self, shard_id: ShardId) {
-        self.shard_clean_tasks.invalidate(shard_id);
+    /// Invalidate shard cleaning operation for the given shard
+    ///
+    /// Aborts any ongoing cleaning task and waits until the task is stopped.
+    pub(super) async fn invalidate_clean_local_shard(&self, shard_id: ShardId) {
+        self.shard_clean_tasks.invalidate(shard_id).await;
     }
 
     pub fn clean_local_shards_statuses(&self) -> HashMap<ShardId, ShardCleanStatusTelemetry> {
