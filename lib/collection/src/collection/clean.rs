@@ -16,6 +16,11 @@ use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 use crate::telemetry::ShardCleanStatusTelemetry;
 
+/// Number of points the delete background task will delete in each iteration.
+///
+/// This number is arbitrary and seemed 'good enough' in local testing. It is not too low to
+/// prevent having a huge amount of iterations, nor is it too large causing latency spikes in user
+/// operations.
 const CLEAN_BATCH_SIZE: usize = 5_000;
 
 /// A collection of local shard clean tasks
@@ -215,6 +220,7 @@ impl ShardCleanTask {
                 .expect("hash ring filter");
             let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
             let mut ids = match shard
+                // TODO(ratelimiter): do not rate limit or bill this scroll, part of internals
                 .scroll_by(
                     offset,
                     CLEAN_BATCH_SIZE + 1,
@@ -246,6 +252,7 @@ impl ShardCleanTask {
             let last_batch = offset.is_none();
 
             // Delete points from local shard
+            // TODO(ratelimiter): do not rate limit or bill this delete, part of internals
             let delete_operation =
                 OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
                     crate::operations::point_ops::PointOperations::DeletePoints { ids },
