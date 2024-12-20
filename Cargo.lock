@@ -5832,6 +5832,7 @@ dependencies = [
  "schemars",
  "seahash",
  "segment",
+ "self_cell",
  "semver",
  "serde",
  "serde-untagged",
@@ -5855,6 +5856,12 @@ dependencies = [
  "walkdir",
  "zerocopy 0.8.13",
 ]
+
+[[package]]
+name = "self_cell"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2fdfc24bc566f839a2da4c4295b82db7d25a24253867d5c64355abb5799bdbe"
 
 [[package]]
 name = "semver"

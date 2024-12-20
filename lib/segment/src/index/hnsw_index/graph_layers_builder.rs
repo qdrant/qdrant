@@ -75,24 +75,22 @@ impl GraphLayersBuilder {
         self.entry_points.lock()
     }
 
-    pub fn into_graph_layers<TGraphLinks: GraphLinks>(
+    pub fn into_graph_layers(
         self,
-        path: Option<&Path>,
+        path: &Path,
         compressed: bool,
-    ) -> OperationResult<GraphLayers<TGraphLinks>> {
-        let unlocker_links_layers = self
-            .links_layers
-            .into_iter()
-            .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
-            .collect();
+        on_disk: bool,
+    ) -> OperationResult<GraphLayers> {
+        let links_converter =
+            Self::links_layers_to_converter(self.links_layers, compressed, self.m, self.m0);
+        links_converter.save_as(path)?;
 
-        let mut links_converter =
-            GraphLinksConverter::new(unlocker_links_layers, compressed, self.m, self.m0);
-        if let Some(path) = path {
-            links_converter.save_as(path)?;
-        }
+        let links = if on_disk {
+            GraphLinks::load_from_file(path, true)?
+        } else {
+            links_converter.to_graph_links_ram()
+        };
 
-        let links = TGraphLinks::from_converter(links_converter)?;
         Ok(GraphLayers {
             m: self.m,
             m0: self.m0,
@@ -101,6 +99,32 @@ impl GraphLayersBuilder {
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         })
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn into_graph_layers_ram(self, compressed: bool) -> GraphLayers {
+        GraphLayers {
+            m: self.m,
+            m0: self.m0,
+            ef_construct: self.ef_construct,
+            links: Self::links_layers_to_converter(self.links_layers, compressed, self.m, self.m0)
+                .to_graph_links_ram(),
+            entry_points: self.entry_points.into_inner(),
+            visited_pool: self.visited_pool,
+        }
+    }
+
+    fn links_layers_to_converter(
+        link_layers: Vec<LockedLayersContainer>,
+        compressed: bool,
+        m: usize,
+        m0: usize,
+    ) -> GraphLinksConverter {
+        let edges = link_layers
+            .into_iter()
+            .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
+            .collect();
+        GraphLinksConverter::new(edges, compressed, m, m0)
     }
 
     #[cfg(feature = "gpu")]
@@ -520,7 +544,7 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
-    use crate::index::hnsw_index::graph_links::{normalize_links, GraphLinksRam};
+    use crate::index::hnsw_index::graph_links::normalize_links;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
@@ -677,9 +701,7 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder
-            .into_graph_layers::<GraphLinksRam>(None, compressed)
-            .unwrap();
+        let graph = graph_layers_builder.into_graph_layers_ram(compressed);
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
@@ -705,15 +727,8 @@ mod tests {
         let (vector_holder, graph_layers_builder) =
             create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
-        let (_vector_holder_orig, graph_layers_orig) = create_graph_layer_fixture::<M, _>(
-            num_vectors,
-            M,
-            dim,
-            compressed,
-            false,
-            &mut rng2,
-            None,
-        );
+        let (_vector_holder_orig, graph_layers_orig) =
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, compressed, false, &mut rng2);
 
         // check is graph_layers_builder links are equal to graph_layers_orig
         let orig_len = graph_layers_orig.links.num_points();
@@ -773,9 +788,7 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder
-            .into_graph_layers::<GraphLinksRam>(None, compressed)
-            .unwrap();
+        let graph = graph_layers_builder.into_graph_layers_ram(compressed);
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
@@ -809,9 +822,7 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder
-            .into_graph_layers::<GraphLinksRam>(None, compressed)
-            .unwrap();
+        let graph_layers = graph_layers_builder.into_graph_layers_ram(compressed);
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {num_points:#?}");

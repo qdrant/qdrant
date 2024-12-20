@@ -10,9 +10,7 @@ use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
-use super::graph_links::{
-    convert_to_compressed, GraphLinks, GraphLinksConverter, GraphLinksMmap, GraphLinksRam,
-};
+use super::graph_links::{convert_to_compressed, GraphLinks};
 use crate::common::operation_error::OperationResult;
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -36,11 +34,11 @@ struct GraphLayerData<'a> {
 }
 
 #[derive(Debug)]
-pub struct GraphLayers<TGraphLinks: GraphLinks> {
+pub struct GraphLayers {
     pub(super) m: usize,
     pub(super) m0: usize,
     pub(super) ef_construct: usize,
-    pub(super) links: TGraphLinks,
+    pub(super) links: GraphLinks,
     pub(super) entry_points: EntryPoints,
     pub(super) visited_pool: VisitedPool,
 }
@@ -176,7 +174,7 @@ pub trait GraphLayersBase {
     }
 }
 
-impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
+impl GraphLayersBase for GraphLayers {
     fn get_visited_list_from_pool(&self) -> VisitedListHandle {
         self.visited_pool.get(self.links.num_points())
     }
@@ -200,7 +198,7 @@ impl<TGraphLinks: GraphLinks> GraphLayersBase for GraphLayers<TGraphLinks> {
 /// Object contains links between nodes for HNSW search
 ///
 /// Assume all scores are similarities. Larger score = closer points
-impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
+impl GraphLayers {
     /// Returns the highest level this point is included in
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
         self.links.point_level(point_id)
@@ -264,11 +262,13 @@ impl<TGraphLinks: GraphLinks> GraphLayers<TGraphLinks> {
     }
 }
 
-impl<TGraphLinks> GraphLayers<TGraphLinks>
-where
-    TGraphLinks: GraphLinks,
-{
-    pub fn load(graph_path: &Path, links_path: &Path, convert: bool) -> OperationResult<Self> {
+impl GraphLayers {
+    pub fn load(
+        graph_path: &Path,
+        links_path: &Path,
+        convert: bool,
+        on_disk: bool,
+    ) -> OperationResult<Self> {
         let graph_data: GraphLayerData = read_bin(graph_path)?;
 
         if convert {
@@ -279,7 +279,7 @@ where
             m: graph_data.m,
             m0: graph_data.m0,
             ef_construct: graph_data.ef_construct,
-            links: TGraphLinks::load_from_file(links_path)?,
+            links: GraphLinks::load_from_file(links_path, on_disk)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
@@ -297,25 +297,18 @@ where
             entry_points: Cow::Borrowed(&self.entry_points),
         }
     }
-}
 
-impl GraphLayers<GraphLinksRam> {
-    pub fn compress(&mut self) {
-        if !self.links.compressed() {
-            let dummy = GraphLinksRam::from_bytes(
-                GraphLinksConverter::new(Vec::new(), false, 0, 0).serialize_to_vec(),
-            );
-            let links = std::mem::replace(&mut self.links, dummy);
-            self.links = GraphLinksRam::from_bytes(
-                GraphLinksConverter::new(links.into_edges(), true, self.m, self.m0)
-                    .serialize_to_vec(),
-            )
-        }
+    #[cfg(feature = "testing")]
+    pub fn compress_ram(&mut self) {
+        use crate::index::hnsw_index::graph_links::GraphLinksConverter;
+        assert!(!self.links.compressed() && !self.links.on_disk());
+        let dummy = GraphLinksConverter::new(Vec::new(), false, 0, 0).to_graph_links_ram();
+        let links = std::mem::replace(&mut self.links, dummy);
+        self.links = GraphLinksConverter::new(links.into_edges(), true, self.m, self.m0)
+            .to_graph_links_ram();
     }
-}
 
-impl GraphLayers<GraphLinksMmap> {
-    pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
+    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
         self.links.prefault_mmap_pages(path)
     }
 }
@@ -336,17 +329,19 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
-    use crate::index::hnsw_index::graph_links::{GraphLinksConverter, GraphLinksRam};
-    use crate::index::hnsw_index::tests::create_graph_layer_fixture;
+    use crate::index::hnsw_index::graph_links::GraphLinksConverter;
+    use crate::index::hnsw_index::tests::{
+        create_graph_layer_builder_fixture, create_graph_layer_fixture,
+    };
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
-    fn search_in_graph<TGraphLinks: GraphLinks>(
+    fn search_in_graph(
         query: &[VectorElementType],
         top: usize,
         vector_storage: &TestRawScorerProducer<CosineMetric>,
-        graph: &GraphLayers<TGraphLinks>,
+        graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_storage.get_raw_scorer(query.to_owned()).unwrap();
@@ -380,13 +375,8 @@ mod tests {
             m,
             m0: 2 * m,
             ef_construct,
-            links: GraphLinksRam::from_converter(GraphLinksConverter::new(
-                graph_links.clone(),
-                compressed,
-                m,
-                2 * m,
-            ))
-            .unwrap(),
+            links: GraphLinksConverter::new(graph_links.clone(), compressed, m, 2 * m)
+                .to_graph_links_ram(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
         };
@@ -434,25 +424,21 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
-        let links_path = GraphLayers::<GraphLinksRam>::get_links_path(dir.path());
-        let (vector_holder, graph_layers) = create_graph_layer_fixture::<CosineMetric, _>(
-            num_vectors,
-            M,
-            dim,
-            compressed,
-            false,
-            &mut rng,
-            Some(&links_path),
-        );
+        let links_path = GraphLayers::get_links_path(dir.path());
+        let (vector_holder, graph_layers_builder) =
+            create_graph_layer_builder_fixture(num_vectors, M, dim, false, &mut rng);
+        let graph_layers = graph_layers_builder
+            .into_graph_layers(&links_path, compressed, true)
+            .unwrap();
 
         let query = random_vector(&mut rng, dim);
 
         let res1 = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
-        let path = GraphLayers::<GraphLinksRam>::get_path(dir.path());
+        let path = GraphLayers::get_path(dir.path());
         graph_layers.save(&path).unwrap();
 
-        let graph2 = GraphLayers::<GraphLinksRam>::load(&path, &links_path, converted).unwrap();
+        let graph2 = GraphLayers::load(&path, &links_path, converted, false).unwrap();
 
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 
@@ -470,15 +456,8 @@ mod tests {
 
         type M = CosineMetric;
 
-        let (vector_holder, graph_layers) = create_graph_layer_fixture::<M, _>(
-            num_vectors,
-            M,
-            dim,
-            compressed,
-            false,
-            &mut rng,
-            None,
-        );
+        let (vector_holder, graph_layers) =
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, compressed, false, &mut rng);
 
         let main_entry = graph_layers
             .entry_points
@@ -534,7 +513,6 @@ mod tests {
             true,
             true,
             &mut rng,
-            None,
         );
 
         let graph_json = serde_json::to_string_pretty(&graph_layers.data()).unwrap();
