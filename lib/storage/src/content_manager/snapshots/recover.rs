@@ -241,8 +241,16 @@ async fn _do_recover_from_snapshot(
             let other_active_replicas: Vec<_> = shard_info
                 .replicas
                 .iter()
-                .filter(|(peer_id, state)| {
-                    *state == &ReplicaState::Active && **peer_id != this_peer_id
+                .filter(|&(&peer_id, &state)| {
+                    // Check if there are *other* active replicas, after recovering collection snapshot.
+                    // This should include `ReshardingScaleDown` replicas.
+
+                    let is_active = matches!(
+                        state,
+                        ReplicaState::Active | ReplicaState::ReshardingScaleDown
+                    );
+
+                    peer_id != this_peer_id && is_active
                 })
                 .collect();
 

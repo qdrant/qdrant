@@ -373,6 +373,7 @@ impl ShardReplicaSet {
     }
 
     pub fn is_last_active_replica(&self, peer_id: PeerId) -> bool {
+        // TODO: Should `active_peers` include `ReshardingScaleDown` replicas?
         let active_peers = self.replica_state.read().active_peers();
         active_peers.len() == 1 && active_peers.contains(&peer_id)
     }
@@ -692,6 +693,7 @@ impl ShardReplicaSet {
                     self.optimizers_config.clone(),
                 )
                 .await?;
+
                 match state {
                     ReplicaState::Active | ReplicaState::Listener => {
                         // No way we can provide up-to-date replica right away at this point,
@@ -708,7 +710,12 @@ impl ShardReplicaSet {
                     | ReplicaState::Resharding => {
                         self.set_local(local_shard, Some(state)).await?;
                     }
+
+                    ReplicaState::ReshardingScaleDown => {
+                        todo!(); // TODO!
+                    }
                 }
+
                 continue;
             }
 
@@ -897,13 +904,22 @@ impl ShardReplicaSet {
     /// Check whether a peer is registered as `active`.
     /// Unknown peers are not active.
     fn peer_is_active(&self, peer_id: PeerId) -> bool {
-        self.peer_state(peer_id) == Some(ReplicaState::Active) && !self.is_locally_disabled(peer_id)
+        // This is used *exclusively* during `execute_*_read_operation`, and so it *should* consider
+        // `ReshardingScaleDown` replicas
+        let is_active = matches!(
+            self.peer_state(peer_id),
+            Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown)
+        );
+
+        is_active && !self.is_locally_disabled(peer_id)
     }
 
     fn peer_is_active_or_resharding(&self, peer_id: PeerId) -> bool {
         let is_active_or_resharding = matches!(
             self.peer_state(peer_id),
-            Some(ReplicaState::Active | ReplicaState::Resharding)
+            Some(
+                ReplicaState::Active | ReplicaState::Resharding | ReplicaState::ReshardingScaleDown
+            )
         );
 
         let is_locally_disabled = self.is_locally_disabled(peer_id);
@@ -1085,6 +1101,9 @@ impl ReplicaSetState {
         self.peers
             .iter()
             .filter_map(|(peer_id, state)| {
+                // TODO: Should `active_peers` include `ReshardingScaleDown` replicas?
+                //
+                // This is used in a few different places and very hard to analyze... 😭
                 matches!(state, ReplicaState::Active).then_some(*peer_id)
             })
             .collect()
@@ -1092,7 +1111,11 @@ impl ReplicaSetState {
 
     pub fn active_or_resharding_peers(&self) -> impl Iterator<Item = PeerId> + '_ {
         self.peers.iter().filter_map(|(peer_id, state)| {
-            matches!(state, ReplicaState::Active | ReplicaState::Resharding).then_some(*peer_id)
+            matches!(
+                state,
+                ReplicaState::Active | ReplicaState::Resharding | ReplicaState::ReshardingScaleDown
+            )
+            .then_some(*peer_id)
         })
     }
 
@@ -1128,13 +1151,19 @@ pub enum ReplicaState {
     // Points are being migrated to this shard as part of resharding
     #[schemars(skip)]
     Resharding,
+    // TODO
+    #[schemars(skip)]
+    ReshardingScaleDown,
 }
 
 impl ReplicaState {
     /// Check whether the replica state is active or listener or resharding.
     pub fn is_active_or_listener_or_resharding(self) -> bool {
         match self {
-            ReplicaState::Active | ReplicaState::Listener | ReplicaState::Resharding => true,
+            ReplicaState::Active
+            | ReplicaState::Listener
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown => true,
 
             ReplicaState::Dead
             | ReplicaState::Initializing
@@ -1152,7 +1181,8 @@ impl ReplicaState {
             ReplicaState::Partial
             | ReplicaState::PartialSnapshot
             | ReplicaState::Recovery
-            | ReplicaState::Resharding => true,
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown => true,
 
             ReplicaState::Active
             | ReplicaState::Dead

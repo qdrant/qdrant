@@ -419,6 +419,7 @@ impl Collection {
         }
 
         // 3. Do not deactivate the last active replica
+        // TODO: Should we consider `ReshardingScaleDown` to be `Active`, when deactivating last `Active` replica?
         if state != ReplicaState::Active && replica_set.is_last_active_replica(peer_id) {
             return Err(CollectionError::bad_input(format!(
                 "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
@@ -438,7 +439,12 @@ impl Collection {
         // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
         // then `Collection::abort_resharding` call should return an error, so no special handling
         // is needed.
-        if current_state == Some(ReplicaState::Resharding) && state == ReplicaState::Dead {
+        let is_resharding = matches!(
+            current_state,
+            Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
+        );
+
+        if is_resharding && state == ReplicaState::Dead {
             drop(shard_holder);
 
             let resharding_state = self
@@ -479,6 +485,7 @@ impl Collection {
                 if shard_info
                     .replicas
                     .into_iter()
+                    // TODO: Should we consider `ReshardingScaleDown` to be `Active`, when probing `/readyz`?
                     .any(|(_peer_id, state)| state != ReplicaState::Active)
                 {
                     is_fully_active = false;
@@ -635,7 +642,6 @@ impl Collection {
 
             let peers = replica_set.peers();
             let this_peer_state = peers.get(&this_peer_id).copied();
-            let is_last_active = peers.values().filter(|state| **state == Active).count() == 1;
 
             if this_peer_state == Some(Initializing) {
                 // It is possible, that collection creation didn't report
@@ -644,7 +650,12 @@ impl Collection {
                 continue;
             }
 
+            // TODO: Is it safe to change node type during resharding!?
             if self.shared_storage_config.node_type == NodeType::Listener {
+                // TODO: We could relax this check to also count `ReshardingScaleDown` replicas...
+                let is_last_active = peers.values().filter(|&&state| state == Active).count() == 1;
+
+                // TODO: ...but this check should stay `Active`-only
                 if this_peer_state == Some(Active) && !is_last_active {
                     // Convert active node from active to listener
                     on_convert_to_listener(this_peer_id, shard_id);
