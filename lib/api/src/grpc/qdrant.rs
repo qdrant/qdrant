@@ -519,6 +519,8 @@ pub struct StrictModeConfig {
     pub write_rate_limit: ::core::option::Option<u32>,
     #[prost(uint64, optional, tag = "13")]
     pub max_collection_payload_size_bytes: ::core::option::Option<u64>,
+    #[prost(uint64, optional, tag = "14")]
+    pub upsert_max_payload_size: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

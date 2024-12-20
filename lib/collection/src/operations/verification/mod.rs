@@ -412,6 +412,7 @@ mod test {
             read_rate_limit: None,
             write_rate_limit: None,
             max_collection_payload_size_bytes: None,
+            upsert_max_payload_size: None,
         };
 
         fixture_collection(&strict_mode_config).await

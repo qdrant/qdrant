@@ -1712,6 +1712,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             max_collection_payload_size_bytes: value
                 .max_collection_payload_size_bytes
                 .map(|i| i as usize),
+            upsert_max_payload_size: value.upsert_max_payload_size.map(|i| i as usize),
         }
     }
 }
@@ -1736,6 +1737,7 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
             max_collection_payload_size_bytes: value
                 .max_collection_payload_size_bytes
                 .map(|i| i as u64),
+            upsert_max_payload_size: value.upsert_max_payload_size.map(|i| i as u64),
         }
     }
 }

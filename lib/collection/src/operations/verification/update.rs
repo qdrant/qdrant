@@ -1,5 +1,5 @@
 use api::rest::{PointInsertOperations, UpdateVectors};
-use segment::types::{Filter, StrictModeConfig};
+use segment::types::{Filter, Payload, StrictModeConfig};
 
 use super::{check_limit_opt, StrictModeVerification};
 use crate::collection::Collection;
@@ -69,6 +69,8 @@ impl StrictModeVerification for SetPayload {
             }
         }
 
+        check_max_request_payload_size(strict_mode_config, &self.payload)?;
+
         Ok(())
     }
 
@@ -128,6 +130,14 @@ impl StrictModeVerification for PointInsertOperations {
         )?;
 
         check_collection_size_limit(collection, strict_mode_config).await?;
+
+        if let Some(max_payload_size_config) = strict_mode_config.upsert_max_payload_size {
+            check_limit_opt(
+                Some(self.payload_size()),
+                Some(max_payload_size_config),
+                "Payload size",
+            )?;
+        }
 
         Ok(())
     }
@@ -251,4 +261,15 @@ fn check_collection_payload_size_limit(
     }
 
     Ok(())
+}
+
+fn check_max_request_payload_size(
+    strict_mode_config: &StrictModeConfig,
+    payload: &Payload,
+) -> Result<(), CollectionError> {
+    check_limit_opt(
+        Some(payload.size_bytes()),
+        strict_mode_config.upsert_max_payload_size,
+        "Payload size",
+    )
 }
