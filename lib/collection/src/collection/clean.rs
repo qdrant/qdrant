@@ -48,6 +48,11 @@ impl ShardCleanTasks {
     ///
     /// To probe for completeness this function must be called again repeatedly until it returns
     /// the `Completed` status.
+    ///
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe. It either will or will not spawn a task if cancelled, and
+    /// will not abort any ongoing task.
     async fn clean_and_await(
         &self,
         shards_holder: &Arc<LockedShardHolder>,
@@ -80,6 +85,10 @@ impl ShardCleanTasks {
     }
 
     /// Await for an ongoing task to finish by its status receiver
+    ///
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe.
     async fn await_task(
         mut receiver: Receiver<ShardCleanStatus>,
         wait: bool,
@@ -131,6 +140,11 @@ impl ShardCleanTasks {
     /// Invalidate shard cleaning operations for the given shards, marking them as dirty
     ///
     /// Aborts any ongoing cleaning tasks and waits until all tasks are stopped.
+    ///
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe. If cancelled, we may not actually await on all tasks to
+    /// finish but they will always still abort in the background.
     pub(super) async fn invalidate(&self, shard_ids: impl IntoIterator<Item = ShardId>) {
         // Take relevant tasks out of task list, abort and take handles
         let handles = {
@@ -340,6 +354,11 @@ impl Collection {
     /// Invalidate shard cleaning operations for the given shards
     ///
     /// Aborts any ongoing cleaning tasks and waits until all tasks are stopped.
+    ///
+    /// # Cancel safety
+    ///
+    /// This function is cancel safe. If cancelled, we may not actually await on all tasks to
+    /// finish but they will always still abort in the background.
     pub(super) async fn invalidate_clean_local_shards(
         &self,
         shard_ids: impl IntoIterator<Item = ShardId>,
