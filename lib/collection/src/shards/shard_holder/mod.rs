@@ -289,6 +289,10 @@ impl ShardHolder {
         self.shards.values()
     }
 
+    pub fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardReplicaSet> {
+        self.shards.values_mut()
+    }
+
     pub fn split_by_shard<O: SplitByShard + Clone>(
         &self,
         operation: O,

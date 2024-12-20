@@ -62,6 +62,7 @@ pub(super) async fn drive(
             })?;
 
             // Take batch of points, if full, pop the last entry as next batch offset
+            // TODO(ratelimits) this scroll should *not* be rate limited
             let mut points = replica_set
                 .scroll_by(
                     offset,

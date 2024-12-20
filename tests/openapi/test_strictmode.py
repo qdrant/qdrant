@@ -643,6 +643,23 @@ def test_strict_mode_read_rate_limiting(collection_name):
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
 
+    # TODO(ratelimiting) test read limit can be disabled
+    # set_strict_mode(collection_name, {
+    #     "enabled": False,
+    # })
+    #
+    # for _ in range(10):
+    #     response = request_with_validation(
+    #         api='/collections/{collection_name}/points/search',
+    #         method="POST",
+    #         path_params={'collection_name': collection_name},
+    #         body={
+    #             "vector": [0.2, 0.1, 0.9, 0.7],
+    #             "limit": 4
+    #         }
+    #     )
+    #     assert response.ok, "Rate limiting should be disabled now"
+
 
 def test_strict_mode_max_collection_payload_size_upsert(collection_name):
     # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
@@ -814,3 +831,26 @@ def test_strict_mode_write_rate_limiting(collection_name):
 
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
+
+    # Disable rate limiting
+    set_strict_mode(collection_name, {
+        "enabled": False,
+    })
+
+    for _ in range(10):
+        response = request_with_validation(
+            api='/collections/{collection_name}/points',
+            method="PUT",
+            path_params={'collection_name': collection_name},
+            query_params={'wait': 'true'},
+            body={
+                "points": [
+                    {
+                        "id": 1,
+                        "vector": [0.05, 0.61, 0.76, 0.74],
+                    },
+                ]
+            }
+        )
+
+        assert response.ok, "Rate limiting should be disabled now"
