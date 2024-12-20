@@ -11117,6 +11117,7 @@
           "id",
           "init_time_ms",
           "resharding",
+          "shard_clean_tasks",
           "shards",
           "transfers"
         ],
@@ -11148,6 +11149,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
+            }
+          },
+          "shard_clean_tasks": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ShardCleanStatusTelemetry"
             }
           }
         }
@@ -11997,6 +12004,66 @@
           },
           "updates": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          }
+        }
+      },
+      "ShardCleanStatusTelemetry": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "started",
+              "done",
+              "cancelled"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "progress"
+            ],
+            "properties": {
+              "progress": {
+                "$ref": "#/components/schemas/ShardCleanStatusProgressTelemetry"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "failed"
+            ],
+            "properties": {
+              "failed": {
+                "$ref": "#/components/schemas/ShardCleanStatusFailedTelemetry"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "ShardCleanStatusProgressTelemetry": {
+        "type": "object",
+        "required": [
+          "deleted_points"
+        ],
+        "properties": {
+          "deleted_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "ShardCleanStatusFailedTelemetry": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
           }
         }
       },

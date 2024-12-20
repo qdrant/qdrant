@@ -250,6 +250,8 @@ impl Collection {
                 // we *remove* source replica
 
                 if transfer.from == self.this_peer_id {
+                    self.invalidate_clean_local_shards([transfer.shard_id])
+                        .await;
                     replica_set.remove_local().await?;
                 } else {
                     replica_set.remove_remote(transfer.from).await?;
@@ -318,6 +320,10 @@ impl Collection {
                 } else if transfer.sync {
                     replica_set.set_replica_state(transfer.to, ReplicaState::Dead)?;
                 } else {
+                    self.invalidate_clean_local_shards([transfer
+                        .to_shard_id
+                        .unwrap_or(transfer.shard_id)])
+                        .await;
                     replica_set.remove_peer(transfer.to).await?;
                 }
             }

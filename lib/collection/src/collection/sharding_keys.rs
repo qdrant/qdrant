@@ -160,6 +160,19 @@ impl Collection {
             }
         }
 
+        // Invalidate local shard cleaning tasks
+        match self
+            .shards_holder
+            .read()
+            .await
+            .get_shard_ids_by_key(&shard_key)
+        {
+            Ok(shard_ids) => self.invalidate_clean_local_shards(shard_ids).await,
+            Err(err) => {
+                log::warn!("Failed to invalidate local shard cleaning task, ignoring: {err}");
+            }
+        }
+
         self.shards_holder
             .write()
             .await
