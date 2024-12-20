@@ -258,7 +258,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
 
         update_vectors(
-            UncheckedTocProvider::new_unchecked(&self.toc),
+            StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
@@ -309,7 +309,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
         set_payload(
-            UncheckedTocProvider::new_unchecked(&self.toc),
+            StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
@@ -334,7 +334,7 @@ impl PointsInternal for PointsInternalService {
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
         overwrite_payload(
-            UncheckedTocProvider::new_unchecked(&self.toc),
+            StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,

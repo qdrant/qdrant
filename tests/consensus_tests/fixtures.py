@@ -46,6 +46,7 @@ def upsert_points(
         headers=headers,
     )
 
+
 def upsert_random_points(
     peer_url,
     num,
