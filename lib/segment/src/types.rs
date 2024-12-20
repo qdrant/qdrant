@@ -726,6 +726,7 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_payload_size_bytes: Option<usize>,
 
+    /// Max payload size per request in bytes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upsert_max_payload_size: Option<usize>,
 }
@@ -1152,8 +1153,8 @@ fn value_size(value: &Value) -> usize {
         Value::Bool(_) => 1,
         Value::Number(_) => 8,
         Value::String(s) => s.len(),
-        Value::Array(array) => array.iter().map(|i| value_size(i)).sum(),
-        Value::Object(map) => map.values().into_iter().map(|i| value_size(i)).sum(),
+        Value::Array(array) => array.iter().map(value_size).sum(),
+        Value::Object(map) => map.values().map(value_size).sum(),
     }
 }
 
