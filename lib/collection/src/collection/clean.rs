@@ -373,6 +373,8 @@ impl Collection {
     ///
     /// Aborts any ongoing cleaning tasks and waits until all tasks are stopped.
     ///
+    /// This does nothing if the given shards have no known status or do not exist.
+    ///
     /// # Cancel safety
     ///
     /// This function is cancel safe. If cancelled, we may not actually await on all tasks to
