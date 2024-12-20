@@ -124,6 +124,10 @@ impl QueueProxyShard {
         self.inner.as_ref().expect("Queue proxy has been finalized")
     }
 
+    fn inner_mut_unchecked(&mut self) -> &mut Inner {
+        self.inner.as_mut().expect("Queue proxy has been finalized")
+    }
+
     pub async fn create_snapshot(
         &self,
         temp_path: &Path,
@@ -159,8 +163,8 @@ impl QueueProxyShard {
             .await
     }
 
-    pub async fn on_strict_mode_config_update(&self) {
-        self.inner_unchecked()
+    pub async fn on_strict_mode_config_update(&mut self) {
+        self.inner_mut_unchecked()
             .wrapped_shard
             .on_strict_mode_config_update()
             .await

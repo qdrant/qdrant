@@ -100,7 +100,7 @@ pub struct LocalShard {
     update_runtime: Handle,
     pub(super) search_runtime: Handle,
     disk_usage_watcher: DiskUsageWatcher,
-    read_rate_limiter: ParkingMutex<Option<RateLimiter>>,
+    read_rate_limiter: Option<ParkingMutex<RateLimiter>>,
 }
 
 /// Shard holds information about segments and WAL.
@@ -199,11 +199,12 @@ impl LocalShard {
 
         let update_tracker = segment_holder.read().update_tracker();
 
-        let read_rate_limiter = config
-            .strict_mode_config
-            .as_ref()
-            .and_then(|strict_mode| strict_mode.read_rate_limit.map(RateLimiter::new_per_minute));
-        let read_rate_limiter = ParkingMutex::new(read_rate_limiter);
+        let read_rate_limiter = config.strict_mode_config.as_ref().and_then(|strict_mode| {
+            strict_mode
+                .read_rate_limit
+                .map(RateLimiter::new_per_minute)
+                .map(ParkingMutex::new)
+        });
 
         drop(config); // release `shared_config` from borrow checker
 
@@ -750,18 +751,24 @@ impl LocalShard {
     }
 
     /// Apply shard's strict mode configuration update
-    /// - Update read and write rate limiters
-    pub async fn on_strict_mode_config_update(&self) {
+    /// - Update read rate limiter
+    pub async fn on_strict_mode_config_update(&mut self) {
         let config = self.collection_config.read().await;
 
         if let Some(strict_mode_config) = &config.strict_mode_config {
-            // Update read rate limiter
-            if let Some(read_rate_limit_per_sec) = strict_mode_config.read_rate_limit {
-                let mut read_rate_limiter_guard = self.read_rate_limiter.lock();
-                read_rate_limiter_guard
-                    .replace(RateLimiter::new_per_minute(read_rate_limit_per_sec));
+            if strict_mode_config.enabled == Some(true) {
+                // update read rate limiter
+                if let Some(read_rate_limit_per_min) = strict_mode_config.read_rate_limit {
+                    let new_read_rate_limiter =
+                        RateLimiter::new_per_minute(read_rate_limit_per_min);
+                    self.read_rate_limiter
+                        .replace(parking_lot::Mutex::new(new_read_rate_limiter));
+                    return;
+                }
             }
         }
+        // remove read rate limiter for all other situations
+        self.read_rate_limiter.take();
     }
 
     pub fn trigger_optimizers(&self) {
@@ -1130,8 +1137,8 @@ impl LocalShard {
     ///
     /// Returns an error if the rate limit is exceeded.
     fn check_read_rate_limiter(&self) -> CollectionResult<()> {
-        if let Some(rate_limiter) = self.read_rate_limiter.lock().as_mut() {
-            if !rate_limiter.check_and_update() {
+        if let Some(rate_limiter) = &self.read_rate_limiter {
+            if !rate_limiter.lock().check_and_update() {
                 return Err(CollectionError::RateLimitExceeded {
                     description: "Read rate limit exceeded, retry later".to_string(),
                 });

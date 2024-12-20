@@ -761,11 +761,11 @@ impl ShardReplicaSet {
     /// Apply shard's strict mode configuration update
     /// - Update read and write rate limiters
     pub(crate) async fn on_strict_mode_config_update(&mut self) -> CollectionResult<()> {
-        let read_local = self.local.read().await;
-        if let Some(shard) = &*read_local {
-            // TODO(ratelimiting) take &mut self and use Option<Mutex> for read_rate_limiter
+        let mut read_local = self.local.write().await;
+        if let Some(shard) = read_local.as_mut() {
             shard.on_strict_mode_config_update().await
         }
+        drop(read_local);
         let config = self.collection_config.read().await;
         if let Some(strict_mode_config) = &config.strict_mode_config {
             if strict_mode_config.enabled == Some(true) {

@@ -207,7 +207,7 @@ impl ForwardProxyShard {
         self.wrapped_shard.on_optimizer_config_update().await
     }
 
-    pub async fn on_strict_mode_config_update(&self) {
+    pub async fn on_strict_mode_config_update(&mut self) {
         self.wrapped_shard.on_strict_mode_config_update().await
     }
 
