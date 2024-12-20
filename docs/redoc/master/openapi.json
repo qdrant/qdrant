@@ -7319,6 +7319,13 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "upsert_max_payload_size": {
+            "description": "Max payload size per request in bytes.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },
