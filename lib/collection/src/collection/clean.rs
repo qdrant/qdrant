@@ -164,7 +164,10 @@ impl ShardCleanTasks {
         }
     }
 
-    /// List shards that are currently undergoing cleaning
+    /// List all shards we have any status for
+    ///
+    /// Only includes shards we've triggered cleaning for. On restart, or when invalidating shards,
+    /// items are removed from the list.
     pub fn statuses(&self) -> HashMap<ShardId, ShardCleanStatus> {
         self.tasks
             .read()
