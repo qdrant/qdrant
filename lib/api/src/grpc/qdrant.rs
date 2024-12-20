@@ -360,6 +360,7 @@ pub struct OptimizersConfigDiff {
     /// Note: 1Kb = 1 vector of size 256
     /// If not set, will be automatically selected considering the number of available CPUs.
     #[prost(uint64, optional, tag = "4")]
+    #[validate(range(min = 1))]
     pub max_segment_size: ::core::option::Option<u64>,
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmapped file.
@@ -545,6 +546,7 @@ pub struct CreateCollection {
     pub optimizers_config: ::core::option::Option<OptimizersConfigDiff>,
     /// Number of shards in the collection, default is 1 for standalone, otherwise equal to the number of nodes. Minimum is 1
     #[prost(uint32, optional, tag = "7")]
+    #[validate(range(min = 1))]
     pub shard_number: ::core::option::Option<u32>,
     /// If true - point's payload will not be stored in memory
     #[prost(bool, optional, tag = "8")]
@@ -558,9 +560,11 @@ pub struct CreateCollection {
     pub vectors_config: ::core::option::Option<VectorsConfig>,
     /// Number of replicas of each shard that network tries to maintain, default = 1
     #[prost(uint32, optional, tag = "11")]
+    #[validate(range(min = 1))]
     pub replication_factor: ::core::option::Option<u32>,
     /// How many replicas should apply the operation for us to consider it successful, default = 1
     #[prost(uint32, optional, tag = "12")]
+    #[validate(range(min = 1))]
     pub write_consistency_factor: ::core::option::Option<u32>,
     /// Specify name of the other collection to copy data from
     #[prost(string, optional, tag = "13")]
@@ -577,6 +581,7 @@ pub struct CreateCollection {
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
     /// Configuration for strict mode
     #[prost(message, optional, tag = "17")]
+    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
@@ -617,6 +622,7 @@ pub struct UpdateCollection {
     pub sparse_vectors_config: ::core::option::Option<SparseVectorConfig>,
     /// New strict mode configuration
     #[prost(message, optional, tag = "9")]
+    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(validator::Validate)]
@@ -682,9 +688,11 @@ pub struct CollectionParams {
 pub struct CollectionParamsDiff {
     /// Number of replicas of each shard that network tries to maintain
     #[prost(uint32, optional, tag = "1")]
+    #[validate(range(min = 1))]
     pub replication_factor: ::core::option::Option<u32>,
     /// How many replicas should apply the operation for us to consider it successful
     #[prost(uint32, optional, tag = "2")]
+    #[validate(range(min = 1))]
     pub write_consistency_factor: ::core::option::Option<u32>,
     /// If true - point's payload will not be stored in memory
     #[prost(bool, optional, tag = "3")]
@@ -718,6 +726,7 @@ pub struct CollectionConfig {
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(serde::Serialize)]
