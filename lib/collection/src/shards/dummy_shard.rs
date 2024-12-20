@@ -49,7 +49,7 @@ impl DummyShard {
         self.dummy()
     }
 
-    pub async fn on_strict_mode_config_update(&self) {}
+    pub async fn on_strict_mode_config_update(&mut self) {}
 
     pub fn get_telemetry_data(&self) -> LocalShardTelemetry {
         LocalShardTelemetry {
