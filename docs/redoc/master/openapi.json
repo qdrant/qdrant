@@ -12024,17 +12024,7 @@
             ],
             "properties": {
               "progress": {
-                "type": "object",
-                "required": [
-                  "deleted_points"
-                ],
-                "properties": {
-                  "deleted_points": {
-                    "type": "integer",
-                    "format": "uint",
-                    "minimum": 0
-                  }
-                }
+                "$ref": "#/components/schemas/ShardCleanStatusProgressTelemetry"
               }
             },
             "additionalProperties": false
@@ -12046,20 +12036,36 @@
             ],
             "properties": {
               "failed": {
-                "type": "object",
-                "required": [
-                  "reason"
-                ],
-                "properties": {
-                  "reason": {
-                    "type": "string"
-                  }
-                }
+                "$ref": "#/components/schemas/ShardCleanStatusFailedTelemetry"
               }
             },
             "additionalProperties": false
           }
         ]
+      },
+      "ShardCleanStatusProgressTelemetry": {
+        "type": "object",
+        "required": [
+          "deleted_points"
+        ],
+        "properties": {
+          "deleted_points": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        }
+      },
+      "ShardCleanStatusFailedTelemetry": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        }
       },
       "CollectionsAggregatedTelemetry": {
         "type": "object",

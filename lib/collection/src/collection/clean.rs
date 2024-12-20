@@ -14,7 +14,9 @@ use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, 
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::telemetry::ShardCleanStatusTelemetry;
+use crate::telemetry::{
+    ShardCleanStatusFailedTelemetry, ShardCleanStatusProgressTelemetry, ShardCleanStatusTelemetry,
+};
 
 /// Number of points the delete background task will delete in each iteration.
 ///
@@ -409,10 +411,14 @@ impl From<ShardCleanStatus> for ShardCleanStatusTelemetry {
         match status {
             ShardCleanStatus::Started => ShardCleanStatusTelemetry::Started,
             ShardCleanStatus::Progress { deleted_points } => {
-                ShardCleanStatusTelemetry::Progress { deleted_points }
+                ShardCleanStatusTelemetry::Progress(ShardCleanStatusProgressTelemetry {
+                    deleted_points,
+                })
             }
             ShardCleanStatus::Done => ShardCleanStatusTelemetry::Done,
-            ShardCleanStatus::Failed { reason } => ShardCleanStatusTelemetry::Failed { reason },
+            ShardCleanStatus::Failed { reason } => {
+                ShardCleanStatusTelemetry::Failed(ShardCleanStatusFailedTelemetry { reason })
+            }
             ShardCleanStatus::Cancelled => ShardCleanStatusTelemetry::Cancelled,
         }
     }

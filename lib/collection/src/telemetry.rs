@@ -64,8 +64,18 @@ impl Anonymize for CollectionConfigInternal {
 #[serde(rename_all = "snake_case")]
 pub enum ShardCleanStatusTelemetry {
     Started,
-    Progress { deleted_points: usize },
+    Progress(ShardCleanStatusProgressTelemetry),
     Done,
-    Failed { reason: String },
+    Failed(ShardCleanStatusFailedTelemetry),
     Cancelled,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct ShardCleanStatusProgressTelemetry {
+    pub deleted_points: usize,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct ShardCleanStatusFailedTelemetry {
+    pub reason: String,
 }
