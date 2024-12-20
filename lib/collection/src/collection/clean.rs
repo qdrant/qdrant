@@ -194,82 +194,105 @@ impl ShardCleanTask {
         shard_id: ShardId,
         cancel: CancellationToken,
     ) {
-        let mut offset = None;
-
-        let status = loop {
-            // Check if cancelled
-            if cancel.is_cancelled() {
-                break ShardCleanStatus::Cancelled;
+        let result = clean_task(shard_holder, shard_id, cancel).await;
+        let status = match result {
+            Ok(status) => {
+                log::trace!("Background task to clean shard {shard_id} reached status {status:?}");
+                status
             }
-
-            // Get shard
-            let Some(shard_holder) = shard_holder.upgrade() else {
-                break ShardCleanStatus::Failed("Shard holder dropped".into());
-            };
-            let shard_holder = shard_holder.read().await;
-            let Some(shard) = shard_holder.get_shard(shard_id) else {
-                break ShardCleanStatus::Failed(format!("Shard {shard_id} not found"));
-            };
-            if !shard.is_local().await {
-                break ShardCleanStatus::Failed(format!("Shard {shard_id} is not a local shard"));
-            }
-
-            // Scroll batch of points with hash ring filter
-            let filter = shard_holder
-                .hash_ring_filter(shard_id)
-                .expect("hash ring filter");
-            let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
-            let mut ids = match shard
-                // TODO(ratelimiter): do not rate limit or bill this scroll, part of internals
-                .scroll_by(
-                    offset,
-                    CLEAN_BATCH_SIZE + 1,
-                    &false.into(),
-                    &false.into(),
-                    Some(&filter),
-                    None,
-                    true,
-                    None,
-                    None,
-                )
-                .await
-            {
-                Ok(batch) => batch.into_iter().map(|entry| entry.id).collect::<Vec<_>>(),
-                Err(err) => {
-                    break ShardCleanStatus::Failed(format!(
-                        "Failed to read points to delete from shard: {err}"
-                    ));
-                }
-            };
-
-            // Check if cancelled
-            if cancel.is_cancelled() {
-                break ShardCleanStatus::Cancelled;
-            }
-
-            // Update offset for next batch
-            offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
-            let last_batch = offset.is_none();
-
-            // Delete points from local shard
-            // TODO(ratelimiter): do not rate limit or bill this delete, part of internals
-            let delete_operation =
-                OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
-                    crate::operations::point_ops::PointOperations::DeletePoints { ids },
-                ));
-            if let Err(err) = shard.update_local(delete_operation, true).await {
-                break ShardCleanStatus::Failed(format!(
-                    "Failed to delete points from shard: {err}"
-                ));
-            }
-
-            // Finish if this was the last batch
-            if last_batch {
-                break ShardCleanStatus::Done;
+            Err(err) => {
+                log::error!("Background task to clean shard {shard_id} failed: {err}");
+                ShardCleanStatus::Failed(err.to_string())
             }
         };
 
+        // We can ignore the error if the channel is dropped, then there's no receiver listening anyway
         let _ = sender.send(status);
+    }
+}
+
+async fn clean_task(
+    shard_holder: Weak<LockedShardHolder>,
+    shard_id: ShardId,
+    cancel: CancellationToken,
+) -> Result<ShardCleanStatus, CollectionError> {
+    let mut offset = None;
+
+    loop {
+        // Check if cancelled
+        if cancel.is_cancelled() {
+            return Ok(ShardCleanStatus::Cancelled);
+        }
+
+        // Get shard
+        let Some(shard_holder) = shard_holder.upgrade() else {
+            return Err(CollectionError::not_found("Shard holder dropped"));
+        };
+        let shard_holder = shard_holder.read().await;
+        let Some(shard) = shard_holder.get_shard(shard_id) else {
+            return Err(CollectionError::not_found(format!(
+                "Shard {shard_id} not found",
+            )));
+        };
+        if !shard.is_local().await {
+            return Err(CollectionError::not_found(format!(
+                "Shard {shard_id} is not a local shard",
+            )));
+        }
+
+        // Scroll batch of points with hash ring filter
+        let filter = shard_holder
+            .hash_ring_filter(shard_id)
+            .expect("hash ring filter");
+        let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
+        let mut ids = match shard
+            // TODO(ratelimiter): do not rate limit or bill this scroll, part of internals
+            .scroll_by(
+                offset,
+                CLEAN_BATCH_SIZE + 1,
+                &false.into(),
+                &false.into(),
+                Some(&filter),
+                None,
+                true,
+                None,
+                None,
+            )
+            .await
+        {
+            Ok(batch) => batch.into_iter().map(|entry| entry.id).collect::<Vec<_>>(),
+            Err(err) => {
+                return Err(CollectionError::service_error(format!(
+                    "Failed to read points to delete from shard: {err}",
+                )));
+            }
+        };
+
+        // Check if cancelled
+        if cancel.is_cancelled() {
+            return Ok(ShardCleanStatus::Cancelled);
+        }
+
+        // Update offset for next batch
+        offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
+        let last_batch = offset.is_none();
+
+        // Delete points from local shard
+        // TODO(ratelimiter): do not rate limit or bill this delete, part of internals
+        let delete_operation =
+            OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
+                crate::operations::point_ops::PointOperations::DeletePoints { ids },
+            ));
+        if let Err(err) = shard.update_local(delete_operation, true).await {
+            return Err(CollectionError::service_error(format!(
+                "Failed to delete points from shard: {err}",
+            )));
+        }
+
+        // Finish if this was the last batch
+        if last_batch {
+            return Ok(ShardCleanStatus::Done);
+        }
     }
 }
 
