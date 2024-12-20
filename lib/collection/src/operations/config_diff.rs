@@ -139,6 +139,7 @@ pub struct OptimizersConfigDiff {
     /// If search speed is more important - make this parameter higher.
     /// Note: 1Kb = 1 vector of size 256
     #[serde(alias = "max_segment_size_kb")]
+    #[validate(range(min = 1))]
     pub max_segment_size: Option<usize>,
     /// Maximum size (in kilobytes) of vectors to store in-memory per segment.
     /// Segments larger than this threshold will be stored as read-only memmapped file.
