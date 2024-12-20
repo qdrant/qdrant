@@ -64,7 +64,8 @@ impl Anonymize for CollectionConfigInternal {
 #[serde(rename_all = "snake_case")]
 pub enum ShardCleanStatusTelemetry {
     Started,
+    Progress { deleted_points: usize },
     Done,
-    Failed(String),
+    Failed { reason: String },
     Cancelled,
 }

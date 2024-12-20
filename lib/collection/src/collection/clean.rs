@@ -90,15 +90,16 @@ impl ShardCleanTasks {
         loop {
             match receiver.borrow_and_update().deref() {
                 ShardCleanStatus::Started => {}
+                ShardCleanStatus::Progress { .. } => {}
                 ShardCleanStatus::Done => return Ok(UpdateStatus::Completed),
-                ShardCleanStatus::Failed(err) => {
+                ShardCleanStatus::Failed { reason } => {
                     return Err(CollectionError::service_error(format!(
-                        "failed to clean shard points: {err}",
+                        "Failed to clean shard points: {reason}",
                     )))
                 }
                 ShardCleanStatus::Cancelled => {
                     return Err(CollectionError::service_error(
-                        "failed to clean shard points due to cancellation, please try again",
+                        "Failed to clean shard points due to cancellation, please try again",
                     ))
                 }
             }
@@ -180,7 +181,7 @@ impl ShardCleanTask {
         let shard_holder = Arc::downgrade(shards_holder);
         let cancel = CancellationToken::default();
 
-        let task = tokio::task::spawn(Self::task(sender, shard_holder, shard_id, cancel.clone()));
+        let task = tokio::task::spawn(Self::task(shard_holder, shard_id, sender, cancel.clone()));
 
         ShardCleanTask {
             handle: task,
@@ -192,7 +193,7 @@ impl ShardCleanTask {
     pub fn is_cancelled_or_failed(&self) -> bool {
         matches!(
             self.status.borrow().deref(),
-            ShardCleanStatus::Cancelled | ShardCleanStatus::Failed(_)
+            ShardCleanStatus::Cancelled | ShardCleanStatus::Failed { .. }
         )
     }
 
@@ -203,12 +204,12 @@ impl ShardCleanTask {
     }
 
     async fn task(
-        sender: Sender<ShardCleanStatus>,
         shard_holder: Weak<LockedShardHolder>,
         shard_id: ShardId,
+        sender: Sender<ShardCleanStatus>,
         cancel: CancellationToken,
     ) {
-        let result = clean_task(shard_holder, shard_id, cancel).await;
+        let result = clean_task(shard_holder, shard_id, sender.clone(), cancel).await;
         let status = match result {
             Ok(status) => {
                 log::trace!("Background task to clean shard {shard_id} reached status {status:?}");
@@ -216,7 +217,9 @@ impl ShardCleanTask {
             }
             Err(err) => {
                 log::error!("Background task to clean shard {shard_id} failed: {err}");
-                ShardCleanStatus::Failed(err.to_string())
+                ShardCleanStatus::Failed {
+                    reason: err.to_string(),
+                }
             }
         };
 
@@ -228,9 +231,11 @@ impl ShardCleanTask {
 async fn clean_task(
     shard_holder: Weak<LockedShardHolder>,
     shard_id: ShardId,
+    sender: Sender<ShardCleanStatus>,
     cancel: CancellationToken,
 ) -> Result<ShardCleanStatus, CollectionError> {
     let mut offset = None;
+    let mut deleted_points = 0;
 
     loop {
         // Check if cancelled
@@ -289,6 +294,7 @@ async fn clean_task(
 
         // Update offset for next batch
         offset = (ids.len() > CLEAN_BATCH_SIZE).then(|| ids.pop().unwrap());
+        deleted_points += ids.len();
         let last_batch = offset.is_none();
 
         // Delete points from local shard
@@ -302,6 +308,8 @@ async fn clean_task(
                 "Failed to delete points from shard: {err}",
             )));
         }
+
+        let _ = sender.send(ShardCleanStatus::Progress { deleted_points });
 
         // Finish if this was the last batch
         if last_batch {
@@ -351,8 +359,9 @@ impl Collection {
 #[derive(Debug, Clone)]
 pub(super) enum ShardCleanStatus {
     Started,
+    Progress { deleted_points: usize },
     Done,
-    Failed(String),
+    Failed { reason: String },
     Cancelled,
 }
 
@@ -360,8 +369,11 @@ impl From<ShardCleanStatus> for ShardCleanStatusTelemetry {
     fn from(status: ShardCleanStatus) -> Self {
         match status {
             ShardCleanStatus::Started => ShardCleanStatusTelemetry::Started,
+            ShardCleanStatus::Progress { deleted_points } => {
+                ShardCleanStatusTelemetry::Progress { deleted_points }
+            }
             ShardCleanStatus::Done => ShardCleanStatusTelemetry::Done,
-            ShardCleanStatus::Failed(reason) => ShardCleanStatusTelemetry::Failed(reason),
+            ShardCleanStatus::Failed { reason } => ShardCleanStatusTelemetry::Failed { reason },
             ShardCleanStatus::Cancelled => ShardCleanStatusTelemetry::Cancelled,
         }
     }

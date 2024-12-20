@@ -12020,11 +12020,41 @@
           {
             "type": "object",
             "required": [
+              "progress"
+            ],
+            "properties": {
+              "progress": {
+                "type": "object",
+                "required": [
+                  "deleted_points"
+                ],
+                "properties": {
+                  "deleted_points": {
+                    "type": "integer",
+                    "format": "uint",
+                    "minimum": 0
+                  }
+                }
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
               "failed"
             ],
             "properties": {
               "failed": {
-                "type": "string"
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
               }
             },
             "additionalProperties": false
