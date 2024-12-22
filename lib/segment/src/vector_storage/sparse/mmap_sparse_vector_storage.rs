@@ -16,6 +16,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
 use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 
 const DELETED_DIRNAME: &str = "deleted";
@@ -27,7 +28,7 @@ const BITSLICE_GROWTH_SLACK: usize = 1024;
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
-    storage: Arc<RwLock<BlobStore<SparseVector>>>,
+    storage: Arc<RwLock<BlobStore<StoredSparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
     deleted: DynamicMmapFlags,
     /// Current number of deleted vectors.
@@ -141,7 +142,7 @@ impl MmapSparseVectorStorage {
         if let Some(vector) = vector {
             // upsert vector
             storage_guard
-                .put_value(key, vector)
+                .put_value(key, &StoredSparseVector::from(vector))
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
@@ -167,7 +168,11 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
         &self,
         key: PointOffsetType,
     ) -> crate::common::operation_error::OperationResult<Option<SparseVector>> {
-        Ok(self.storage.read().get_value(key))
+        self.storage
+            .read()
+            .get_value(key)
+            .map(SparseVector::try_from)
+            .transpose()
     }
 }
 
