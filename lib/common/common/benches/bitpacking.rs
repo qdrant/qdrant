@@ -2,10 +2,12 @@ use std::hint::black_box;
 
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::{for_each_packed_link, pack_links};
+use common::bitpacking_ordered;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{Rng as _, SeedableRng as _};
+use zerocopy::IntoBytes;
 
 pub fn bench_bitpacking(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitpacking");
@@ -101,10 +103,68 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
     });
 }
 
+pub fn bench_bitpacking_ordered(c: &mut Criterion) {
+    let mut group = c.benchmark_group("bitpacking_ordered");
+
+    let values = bitpacking_ordered::gen_test_sequence(&mut StdRng::seed_from_u64(42), 32, 1 << 22);
+
+    group.sample_size(10);
+    group.bench_function("compress", |b| {
+        b.iter(|| bitpacking_ordered::compress(&values))
+    });
+    // Recreate the group to reset the sample size.
+    drop(group);
+    let mut group = c.benchmark_group("bitpacking_ordered");
+
+    let (compressed, parameters) = bitpacking_ordered::compress(&values);
+    let (decompressor, _) = bitpacking_ordered::Reader::new(parameters, &compressed).unwrap();
+    println!(
+        "Original size: {:.1} MB, compressed size: {:.1} MB, {:?}",
+        values.as_bytes().len() as f64 / 1e6,
+        compressed.len() as f64 / 1e6,
+        decompressor.parameters(),
+    );
+
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("get_raw", |b| {
+        b.iter_batched(
+            || rng.gen_range(0..values.len()),
+            |i| {
+                black_box(compressed[i]);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("get", |b| {
+        b.iter_batched(
+            || rng.gen_range(0..values.len()),
+            |i| {
+                black_box(decompressor.get(i));
+            },
+            BatchSize::SmallInput,
+        )
+    });
+
+    let mut rng = StdRng::seed_from_u64(42);
+    group.bench_function("get2", |b| {
+        b.iter_batched(
+            || rng.gen_range(0..values.len() - 1),
+            |i| {
+                let a = decompressor.get(i);
+                let b = decompressor.get(i + 1);
+                black_box((a, b));
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default();
-    targets = bench_bitpacking, bench_bitpacking_links,
+    targets = bench_bitpacking, bench_bitpacking_links, bench_bitpacking_ordered,
 }
 
 criterion_main!(benches);
