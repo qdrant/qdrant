@@ -785,14 +785,23 @@ impl ShardReplicaSet {
     }
 
     /// Check if the write rate limiter allows the operation to proceed
+    /// - cost: the cost of the operation
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter(&self) -> CollectionResult<()> {
+    fn check_write_rate_limiter(&self, cost: usize) -> CollectionResult<()> {
         if let Some(rate_limiter) = &self.write_rate_limiter {
-            if !rate_limiter.lock().check_and_update() {
-                return Err(CollectionError::RateLimitExceeded {
-                    description: "Write rate limit exceeded, retry later".to_string(),
-                });
+            match rate_limiter.lock().try_consume(cost as f64) {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Err(CollectionError::rate_limit_exceeded(
+                        "Write rate limit exceeded, retry later",
+                    ));
+                }
+                Err(msg) => {
+                    return Err(CollectionError::rate_limit_exceeded(format!(
+                        "Write rate limit exceeded, {msg}",
+                    )));
+                }
             }
         }
         Ok(())

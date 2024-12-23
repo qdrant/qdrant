@@ -28,8 +28,20 @@ impl RateLimiter {
         }
     }
 
-    /// Attempt to consume a token. Returns `true` if allowed, `false` otherwise.
-    pub fn check_and_update(&mut self) -> bool {
+    /// Attempt to consume a given number of tokens.
+    ///
+    /// Returns:
+    /// - `Some(true)` if allowed and consumes the tokens.
+    /// - `Some(false)` if denied because tokens are exhausted, the user can try again later.
+    /// - `Err(_)` if denied because requested more tokens than max capacity, request will never go through.
+    pub fn try_consume(&mut self, tokens: f64) -> Result<bool, &'static str> {
+        // Consumer wants more than maximum capacity, that's impossible
+        if tokens > self.capacity_per_minute as f64 {
+            return Err(
+                "request larger than than rate limiter capacity, please try to split your request",
+            );
+        }
+
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_check);
         self.last_check = now;
@@ -40,11 +52,11 @@ impl RateLimiter {
             self.tokens = self.capacity_per_minute as f64;
         }
 
-        if self.tokens >= 1.0 {
-            self.tokens -= 1.0; // Consume one token.
-            true // Request allowed.
+        if self.tokens >= tokens {
+            self.tokens -= tokens; // Consume `cost` tokens.
+            Ok(true) // Request allowed.
         } else {
-            false // Request denied.
+            Ok(false) // Request denied.
         }
     }
 }
@@ -67,11 +79,11 @@ mod tests {
         assert_eq_floats(limiter.tokens_per_sec, 0.016, 0.001);
         assert_eq!(limiter.tokens, 1.0);
 
-        assert!(limiter.check_and_update());
+        assert_eq!(limiter.try_consume(1.0), Ok(true));
         assert_eq!(limiter.tokens, 0.0);
 
         // rate limit reached
-        assert!(!limiter.check_and_update());
+        assert_eq!(limiter.try_consume(1.0), Ok(false));
     }
 
     #[test]
@@ -81,7 +93,18 @@ mod tests {
         assert_eq!(limiter.tokens_per_sec, 10.0);
         assert_eq!(limiter.tokens, 600.0);
 
-        assert!(limiter.check_and_update());
+        assert_eq!(limiter.try_consume(1.0), Ok(true));
         assert_eq!(limiter.tokens, 599.0);
+
+        assert_eq!(limiter.try_consume(10.0), Ok(true));
+        assert_eq_floats(limiter.tokens, 589.0, 0.001);
+    }
+
+    #[test]
+    fn test_rate_huge_request() {
+        let mut limiter = RateLimiter::new_per_minute(100);
+
+        // request too large to ever pass the rate limiter
+        assert!(limiter.try_consume(99999.0).is_err());
     }
 }
