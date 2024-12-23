@@ -973,14 +973,18 @@ impl From<MultiVectorComparator> for segment::types::MultiVectorComparator {
 fn conditions_helper_from_grpc(
     conditions: Vec<Condition>,
 ) -> Result<Option<Vec<segment::types::Condition>>, tonic::Status> {
-    if conditions.is_empty() {
+    // Convert gRPC into internal conditions, filter out empty conditions
+    let mut converted = Vec::with_capacity(conditions.len());
+    for condition in conditions {
+        if let Some(condition) = grpc_condition_into_condition(condition)? {
+            converted.push(condition);
+        }
+    }
+
+    if converted.is_empty() {
         Ok(None)
     } else {
-        let vec = conditions
-            .into_iter()
-            .map(|c| c.try_into())
-            .collect::<Result<_, _>>()?;
-        Ok(Some(vec))
+        Ok(Some(converted))
     }
 }
 
@@ -1050,39 +1054,39 @@ impl From<segment::types::Filter> for Filter {
     }
 }
 
-impl TryFrom<Condition> for segment::types::Condition {
-    type Error = Status;
+/// Convert a gRPC into an internal condition
+///
+/// Returns `Ok(None)` if the condition is empty.
+fn grpc_condition_into_condition(
+    value: Condition,
+) -> Result<Option<segment::types::Condition>, Status> {
+    let Some(condition) = value.condition_one_of else {
+        return Ok(None);
+    };
 
-    fn try_from(value: Condition) -> Result<Self, Self::Error> {
-        if let Some(condition) = value.condition_one_of {
-            return match condition {
-                ConditionOneOf::Field(field) => {
-                    Ok(segment::types::Condition::Field(field.try_into()?))
-                }
-                ConditionOneOf::HasId(has_id) => {
-                    Ok(segment::types::Condition::HasId(has_id.try_into()?))
-                }
-                ConditionOneOf::Filter(filter) => {
-                    Ok(segment::types::Condition::Filter(filter.try_into()?))
-                }
-                ConditionOneOf::IsEmpty(is_empty) => {
-                    Ok(segment::types::Condition::IsEmpty(is_empty.try_into()?))
-                }
-                ConditionOneOf::IsNull(is_null) => {
-                    Ok(segment::types::Condition::IsNull(is_null.try_into()?))
-                }
-                ConditionOneOf::Nested(nested) => Ok(segment::types::Condition::Nested(
-                    segment::types::NestedCondition::new(nested.try_into()?),
-                )),
-                ConditionOneOf::HasVector(has_vector) => Ok(segment::types::Condition::HasVector(
-                    segment::types::HasVectorCondition {
-                        has_vector: has_vector.has_vector,
-                    },
-                )),
-            };
+    let condition = match condition {
+        ConditionOneOf::Field(field) => Some(segment::types::Condition::Field(field.try_into()?)),
+        ConditionOneOf::HasId(has_id) => Some(segment::types::Condition::HasId(has_id.try_into()?)),
+        ConditionOneOf::Filter(filter) => {
+            Some(segment::types::Condition::Filter(filter.try_into()?))
         }
-        Err(Status::invalid_argument("Malformed Condition type"))
-    }
+        ConditionOneOf::IsEmpty(is_empty) => {
+            Some(segment::types::Condition::IsEmpty(is_empty.try_into()?))
+        }
+        ConditionOneOf::IsNull(is_null) => {
+            Some(segment::types::Condition::IsNull(is_null.try_into()?))
+        }
+        ConditionOneOf::Nested(nested) => Some(segment::types::Condition::Nested(
+            segment::types::NestedCondition::new(nested.try_into()?),
+        )),
+        ConditionOneOf::HasVector(has_vector) => Some(segment::types::Condition::HasVector(
+            segment::types::HasVectorCondition {
+                has_vector: has_vector.has_vector,
+            },
+        )),
+    };
+
+    Ok(condition)
 }
 
 impl From<segment::types::Condition> for Condition {
