@@ -205,7 +205,7 @@ pub fn suggest_transfer_source(
     let currently_transferring = current_transfers
         .iter()
         .filter(|transfer| transfer.shard_id == shard_id)
-        .map(|transfer| transfer.from)
+        .flat_map(|transfer| [transfer.from, transfer.to])
         .collect::<HashSet<PeerId>>();
 
     candidates = candidates
