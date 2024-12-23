@@ -793,14 +793,14 @@ impl ShardReplicaSet {
             match rate_limiter.lock().try_consume(cost as f64) {
                 Ok(true) => {}
                 Ok(false) => {
-                    return Err(CollectionError::RateLimitExceeded {
-                        description: "Write rate limit exceeded, retry later".to_string(),
-                    });
+                    return Err(CollectionError::rate_limit_exceeded(
+                        "Write rate limit exceeded, retry later",
+                    ));
                 }
-                Err(err) => {
-                    return Err(CollectionError::RateLimitExceeded {
-                        description: err.to_string(),
-                    });
+                Err(msg) => {
+                    return Err(CollectionError::rate_limit_exceeded(format!(
+                        "Write rate limit exceeded, {msg}",
+                    )));
                 }
             }
         }

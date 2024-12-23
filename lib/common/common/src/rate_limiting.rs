@@ -37,7 +37,9 @@ impl RateLimiter {
     pub fn try_consume(&mut self, tokens: f64) -> Result<bool, &'static str> {
         // Consumer wants more than maximum capacity, that's impossible
         if tokens > self.capacity_per_minute as f64 {
-            return Err("Request too big for rate limiter, please try to split your request");
+            return Err(
+                "request larger than than rate limiter capacity, please try to split your request",
+            );
         }
 
         let now = Instant::now();

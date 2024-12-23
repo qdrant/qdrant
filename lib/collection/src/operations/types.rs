@@ -1021,8 +1021,8 @@ pub enum CollectionError {
 }
 
 impl CollectionError {
-    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> CollectionError {
-        CollectionError::Timeout {
+    pub fn timeout(timeout_sec: usize, operation: impl Into<String>) -> Self {
+        Self::Timeout {
             description: format!(
                 "Operation '{}' timed out after {timeout_sec} seconds",
                 operation.into()
@@ -1030,35 +1030,35 @@ impl CollectionError {
         }
     }
 
-    pub fn service_error(error: impl Into<String>) -> CollectionError {
-        CollectionError::ServiceError {
+    pub fn service_error(error: impl Into<String>) -> Self {
+        Self::ServiceError {
             error: error.into(),
             backtrace: Some(Backtrace::force_capture().to_string()),
         }
     }
 
-    pub fn bad_input(description: impl Into<String>) -> CollectionError {
-        CollectionError::BadInput {
+    pub fn bad_input(description: impl Into<String>) -> Self {
+        Self::BadInput {
             description: description.into(),
         }
     }
 
-    pub fn not_found(what: impl Into<String>) -> CollectionError {
-        CollectionError::NotFound { what: what.into() }
+    pub fn not_found(what: impl Into<String>) -> Self {
+        Self::NotFound { what: what.into() }
     }
 
-    pub fn bad_request(description: impl Into<String>) -> CollectionError {
-        CollectionError::BadRequest {
+    pub fn bad_request(description: impl Into<String>) -> Self {
+        Self::BadRequest {
             description: description.into(),
         }
     }
 
-    pub fn bad_shard_selection(description: String) -> CollectionError {
-        CollectionError::BadShardSelection { description }
+    pub fn bad_shard_selection(description: String) -> Self {
+        Self::BadShardSelection { description }
     }
 
-    pub fn object_storage_error(what: impl Into<String>) -> CollectionError {
-        CollectionError::ObjectStoreError { what: what.into() }
+    pub fn object_storage_error(what: impl Into<String>) -> Self {
+        Self::ObjectStoreError { what: what.into() }
     }
 
     pub fn forward_proxy_error(peer_id: PeerId, error: impl Into<Self>) -> Self {
@@ -1075,19 +1075,19 @@ impl CollectionError {
         }
     }
 
-    pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> CollectionError {
+    pub fn shard_key_not_found(shard_key: &Option<ShardKey>) -> Self {
         match shard_key {
-            Some(shard_key) => CollectionError::NotFound {
+            Some(shard_key) => Self::NotFound {
                 what: format!("Shard key {shard_key} not found"),
             },
-            None => CollectionError::NotFound {
+            None => Self::NotFound {
                 what: "Shard expected, but not provided".to_string(),
             },
         }
     }
 
-    pub fn pre_condition_failed(description: impl Into<String>) -> CollectionError {
-        CollectionError::PreConditionFailed {
+    pub fn pre_condition_failed(description: impl Into<String>) -> Self {
+        Self::PreConditionFailed {
             description: description.into(),
         }
     }
@@ -1095,6 +1095,12 @@ impl CollectionError {
     pub fn strict_mode(error: impl Into<String>, solution: impl Into<String>) -> Self {
         let description = format!("{}. Help: {}", error.into(), solution.into());
         Self::StrictMode { description }
+    }
+
+    pub fn rate_limit_exceeded(description: impl Into<String>) -> Self {
+        Self::RateLimitExceeded {
+            description: description.into(),
+        }
     }
 
     /// Returns true if the error is transient and the operation can be retried.
@@ -1128,8 +1134,8 @@ impl CollectionError {
 
     pub fn is_missing_point(&self) -> bool {
         match self {
-            CollectionError::NotFound { what } => what.contains("No point with id"),
-            CollectionError::PointNotFound { .. } => true,
+            Self::NotFound { what } => what.contains("No point with id"),
+            Self::PointNotFound { .. } => true,
             _ => false,
         }
     }
