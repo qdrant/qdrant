@@ -1,4 +1,6 @@
+use std::num::NonZeroU64;
 use std::sync::Arc;
+use std::time::Duration;
 
 use actix_web::{post, web, Responder};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -8,6 +10,7 @@ use collection::operations::types::{
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
 use segment::types::{Condition, Filter};
+use serde::Deserialize;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::dispatcher::Dispatcher;
@@ -186,20 +189,31 @@ async fn count_points(
     helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+pub struct CleanParams {
+    /// Wait until cleanup is finished, or just acknowledge and return right away
+    #[serde(default)]
+    pub wait: bool,
+    /// Maximum time to wait, otherwise return acknowledged status
+    pub timeout: Option<NonZeroU64>,
+}
+
 #[post("/collections/{collection}/shards/{shard}/cleanup")]
 async fn cleanup_shard(
     dispatcher: web::Data<Dispatcher>,
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
+    params: web::Query<CleanParams>,
 ) -> impl Responder {
     // Nothing to verify here.
     let pass = new_unchecked_verification_pass();
 
     helpers::time(async move {
         let path = path.into_inner();
+        let timeout = params.timeout.map(|sec| Duration::from_secs(sec.get()));
         dispatcher
             .toc(&access, &pass)
-            .cleanup_local_shard(&path.collection, path.shard, access)
+            .cleanup_local_shard(&path.collection, path.shard, access, params.wait, timeout)
             .await
     })
     .await

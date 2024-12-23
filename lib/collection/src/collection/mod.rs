@@ -1,3 +1,4 @@
+mod clean;
 mod collection_ops;
 pub mod distance_matrix;
 mod facet;
@@ -17,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use clean::ShardCleanTasks;
 use common::cpu::CpuBudget;
 use common::types::TelemetryDetail;
 use io::storage_version::StorageVersion;
@@ -85,6 +87,8 @@ pub struct Collection {
     optimizer_cpu_budget: CpuBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
+    // Background tasks to clean shards
+    shard_clean_tasks: ShardCleanTasks,
 }
 
 pub type RequestShardTransfer = Arc<dyn Fn(ShardTransfer) + Send + Sync>;
@@ -186,6 +190,7 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
             collection_stats_cache,
+            shard_clean_tasks: Default::default(),
         })
     }
 
@@ -300,6 +305,7 @@ impl Collection {
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
             optimizer_cpu_budget,
             collection_stats_cache,
+            shard_clean_tasks: Default::default(),
         }
     }
 
@@ -763,6 +769,7 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
+            shard_clean_tasks: self.clean_local_shards_statuses(),
         }
     }
 
