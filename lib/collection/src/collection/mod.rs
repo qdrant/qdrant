@@ -482,24 +482,23 @@ impl Collection {
         if !self.is_initialized.check_ready() {
             let state = self.state().await;
 
-            // TODO: Refactor into `all_replicas_active`!? 🤔
-            let mut is_fully_active = true;
+            let mut is_ready = true;
 
             for (_shard_id, shard_info) in state.shards {
-                let has_any_inactive_replicas =
-                    shard_info.replicas.into_iter().any(|(_peer_id, state)| {
-                        // We *could* count `Active` *and* `ReshardingScaleDown` replicas here,
-                        // but it seems a little bit safer to only count `Active` replicas...
-                        state != ReplicaState::Active
-                    });
+                let all_replicas_active = shard_info.replicas.into_iter().all(|(_, state)| {
+                    matches!(
+                        state,
+                        ReplicaState::Active | ReplicaState::ReshardingScaleDown
+                    )
+                });
 
-                if has_any_inactive_replicas {
-                    is_fully_active = false;
+                if !all_replicas_active {
+                    is_ready = false;
                     break;
                 }
             }
 
-            if is_fully_active {
+            if is_ready {
                 self.is_initialized.make_ready();
             }
         }
