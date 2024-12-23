@@ -1243,6 +1243,8 @@ impl ReplicaState {
     /// Check whether the replica state is partial or partial-like.
     ///
     /// In other words: is the state related to shard transfers?
+    //
+    // TODO(resharding): What's the best way to handle `ReshardingScaleDown` properly!?
     pub fn is_partial_or_recovery(self) -> bool {
         match self {
             ReplicaState::Partial
