@@ -10,7 +10,6 @@ use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexIm
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 
-use super::hnsw_index::graph_links::{GraphLinksMmap, GraphLinksRam};
 use super::hnsw_index::hnsw::HNSWIndex;
 use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
@@ -61,8 +60,7 @@ pub trait VectorIndex {
 #[derive(Debug)]
 pub enum VectorIndexEnum {
     Plain(PlainVectorIndex),
-    HnswRam(HNSWIndex<GraphLinksRam>),
-    HnswMmap(HNSWIndex<GraphLinksMmap>),
+    Hnsw(HNSWIndex),
     SparseRam(SparseVectorIndex<InvertedIndexRam>),
     SparseImmutableRam(SparseVectorIndex<InvertedIndexImmutableRam>),
     SparseMmap(SparseVectorIndex<InvertedIndexMmap>),
@@ -80,8 +78,7 @@ impl VectorIndexEnum {
     pub fn is_index(&self) -> bool {
         match self {
             Self::Plain(_) => false,
-            Self::HnswRam(_) => true,
-            Self::HnswMmap(_) => true,
+            Self::Hnsw(_) => true,
             Self::SparseRam(_) => true,
             Self::SparseImmutableRam(_) => true,
             Self::SparseMmap(_) => true,
@@ -96,7 +93,7 @@ impl VectorIndexEnum {
 
     pub fn fill_idf_statistics(&self, idf: &mut HashMap<DimId, usize>) {
         match self {
-            Self::Plain(_) | Self::HnswRam(_) | Self::HnswMmap(_) => (),
+            Self::Plain(_) | Self::Hnsw(_) => (),
             Self::SparseRam(index) => index.fill_idf_statistics(idf),
             Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf),
             Self::SparseMmap(index) => index.fill_idf_statistics(idf),
@@ -123,10 +120,7 @@ impl VectorIndex for VectorIndexEnum {
             VectorIndexEnum::Plain(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
-            VectorIndexEnum::HnswRam(index) => {
-                index.search(vectors, filter, top, params, query_context)
-            }
-            VectorIndexEnum::HnswMmap(index) => {
+            VectorIndexEnum::Hnsw(index) => {
                 index.search(vectors, filter, top, params, query_context)
             }
             VectorIndexEnum::SparseRam(index) => {
@@ -162,8 +156,7 @@ impl VectorIndex for VectorIndexEnum {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry {
         match self {
             VectorIndexEnum::Plain(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::HnswRam(index) => index.get_telemetry_data(detail),
-            VectorIndexEnum::HnswMmap(index) => index.get_telemetry_data(detail),
+            VectorIndexEnum::Hnsw(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseRam(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseImmutableRam(index) => index.get_telemetry_data(detail),
             VectorIndexEnum::SparseMmap(index) => index.get_telemetry_data(detail),
@@ -185,8 +178,7 @@ impl VectorIndex for VectorIndexEnum {
     fn files(&self) -> Vec<PathBuf> {
         match self {
             VectorIndexEnum::Plain(index) => index.files(),
-            VectorIndexEnum::HnswRam(index) => index.files(),
-            VectorIndexEnum::HnswMmap(index) => index.files(),
+            VectorIndexEnum::Hnsw(index) => index.files(),
             VectorIndexEnum::SparseRam(index) => index.files(),
             VectorIndexEnum::SparseImmutableRam(index) => index.files(),
             VectorIndexEnum::SparseMmap(index) => index.files(),
@@ -202,8 +194,7 @@ impl VectorIndex for VectorIndexEnum {
     fn indexed_vector_count(&self) -> usize {
         match self {
             Self::Plain(index) => index.indexed_vector_count(),
-            Self::HnswRam(index) => index.indexed_vector_count(),
-            Self::HnswMmap(index) => index.indexed_vector_count(),
+            Self::Hnsw(index) => index.indexed_vector_count(),
             Self::SparseRam(index) => index.indexed_vector_count(),
             Self::SparseImmutableRam(index) => index.indexed_vector_count(),
             Self::SparseMmap(index) => index.indexed_vector_count(),
@@ -219,8 +210,7 @@ impl VectorIndex for VectorIndexEnum {
     fn size_of_searchable_vectors_in_bytes(&self) -> usize {
         match self {
             Self::Plain(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::HnswRam(index) => index.size_of_searchable_vectors_in_bytes(),
-            Self::HnswMmap(index) => index.size_of_searchable_vectors_in_bytes(),
+            Self::Hnsw(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseRam(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseImmutableRam(index) => index.size_of_searchable_vectors_in_bytes(),
             Self::SparseMmap(index) => index.size_of_searchable_vectors_in_bytes(),
@@ -246,8 +236,7 @@ impl VectorIndex for VectorIndexEnum {
     ) -> OperationResult<()> {
         match self {
             Self::Plain(index) => index.update_vector(id, vector),
-            Self::HnswRam(index) => index.update_vector(id, vector),
-            Self::HnswMmap(index) => index.update_vector(id, vector),
+            Self::Hnsw(index) => index.update_vector(id, vector),
             Self::SparseRam(index) => index.update_vector(id, vector),
             Self::SparseImmutableRam(index) => index.update_vector(id, vector),
             Self::SparseMmap(index) => index.update_vector(id, vector),
