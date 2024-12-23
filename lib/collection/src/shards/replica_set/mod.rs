@@ -411,7 +411,7 @@ impl ShardReplicaSet {
     pub fn active_shards(&self) -> Vec<PeerId> {
         let replica_state = self.replica_state.read();
         replica_state
-            // This is a part of deprecated built-in resharding implementaiton, so we don't care
+            // This is a part of deprecated built-in resharding implementation, so we don't care
             .active_peers()
             .into_iter()
             .filter(|&peer_id| !self.is_locally_disabled(peer_id))
