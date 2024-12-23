@@ -31,7 +31,13 @@ async fn get_local_source_shards(
 ) -> CollectionResult<Vec<ShardId>> {
     let collection_state = source.state().await;
 
-    // TODO: Check that resharding is *not* in progress for `source` collection?
+    if source.resharding_state().await.is_some() {
+        return Err(CollectionError::bad_input(format!(
+            "can't initialize new collection from collection {source}, \
+             because resharding is in progress for collection {source}",
+            source = source.name(),
+        )));
+    }
 
     let mut local_responsible_shards = Vec::new();
 
