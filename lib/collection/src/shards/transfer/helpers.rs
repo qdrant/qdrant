@@ -85,11 +85,12 @@ where
 pub fn validate_transfer(
     transfer: &ShardTransfer,
     all_peers: &HashSet<PeerId>,
-    shard_state: Option<&HashMap<PeerId, ReplicaState>>,
+    source_replicas: Option<&HashMap<PeerId, ReplicaState>>,
+    destination_replicas: Option<&HashMap<PeerId, ReplicaState>>,
     current_transfers: &HashSet<ShardTransfer>,
     shards_key_mapping: &ShardKeyMapping,
 ) -> CollectionResult<()> {
-    let Some(shard_state) = shard_state else {
+    let Some(source_replicas) = source_replicas else {
         return Err(CollectionError::service_error(format!(
             "Shard {} does not exist",
             transfer.shard_id,
@@ -113,7 +114,7 @@ pub fn validate_transfer(
     // We allow transfers *from* `ReshardingScaleDown` replicas, because they contain a *superset*
     // of points in a regular replica
     let is_active = matches!(
-        shard_state.get(&transfer.from),
+        source_replicas.get(&transfer.from),
         Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown),
     );
 
@@ -132,9 +133,12 @@ pub fn validate_transfer(
     }
 
     if transfer.method == Some(ShardTransferMethod::ReshardingStreamRecords) {
-        // TODO: `ReshardingStreamRecords` transfer can't recover replica in `Dead` state!
-        //
-        // It can only be allowed if destination replica is in `Active`/`Listener`/`Resharding`/`ReshardingScaleDown` state!
+        let Some(destination_replicas) = destination_replicas else {
+            return Err(CollectionError::service_error(format!(
+                "Destination shard {} does not exist",
+                transfer.shard_id,
+            )));
+        };
 
         let Some(to_shard_id) = transfer.to_shard_id else {
             return Err(CollectionError::bad_request(
@@ -145,6 +149,14 @@ pub fn validate_transfer(
         if transfer.shard_id == to_shard_id {
             return Err(CollectionError::bad_request(format!(
                 "Source and target shard must be different for resharding transfer, both are {to_shard_id}",
+            )));
+        }
+
+        if let Some(ReplicaState::Dead) = destination_replicas.get(&transfer.to) {
+            return Err(CollectionError::bad_request(format!(
+                "Resharding shard transfer can't be started, \
+                 because destination shard {}/{to_shard_id} is dead",
+                transfer.to,
             )));
         }
 
