@@ -488,7 +488,7 @@ impl ShardHolder {
         })
     }
 
-    fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
+    pub fn get_shard_ids_by_key(&self, shard_key: &ShardKey) -> CollectionResult<HashSet<ShardId>> {
         match self.key_mapping.read().get(shard_key).cloned() {
             None => Err(CollectionError::bad_request(format!(
                 "Shard key {shard_key} not found"

@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
 
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{ReshardingInfo, ShardTransferInfo};
+use crate::shards::shard::ShardId;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -14,6 +17,8 @@ pub struct CollectionTelemetry {
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub shard_clean_tasks: HashMap<ShardId, ShardCleanStatusTelemetry>,
 }
 
 impl CollectionTelemetry {
@@ -36,6 +41,7 @@ impl Anonymize for CollectionTelemetry {
             shards: self.shards.anonymize(),
             transfers: vec![],
             resharding: vec![],
+            shard_clean_tasks: HashMap::new(),
         }
     }
 }
@@ -52,4 +58,24 @@ impl Anonymize for CollectionConfigInternal {
             uuid: None,
         }
     }
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShardCleanStatusTelemetry {
+    Started,
+    Progress(ShardCleanStatusProgressTelemetry),
+    Done,
+    Failed(ShardCleanStatusFailedTelemetry),
+    Cancelled,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct ShardCleanStatusProgressTelemetry {
+    pub deleted_points: usize,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema)]
+pub struct ShardCleanStatusFailedTelemetry {
+    pub reason: String,
 }

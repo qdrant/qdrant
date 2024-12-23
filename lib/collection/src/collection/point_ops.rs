@@ -474,12 +474,4 @@ impl Collection {
 
         Ok(points)
     }
-
-    pub async fn cleanup_local_shard(&self, shard_id: ShardId) -> CollectionResult<UpdateResult> {
-        self.shards_holder
-            .read()
-            .await
-            .cleanup_local_shard(shard_id)
-            .await
-    }
 }
