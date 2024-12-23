@@ -40,7 +40,8 @@ impl ShardReplicaSet {
             match self.peer_state(self.this_peer_id()) {
                 Some(ReplicaState::Active) => {
                     // Rate limit update operations on Active replica
-                    self.check_write_rate_limiter()?;
+                    // TODO(ratelimits) determine cost of update based on operation
+                    self.check_write_rate_limiter(1)?;
                     Ok(Some(local_shard.get().update(operation, wait).await?))
                 }
                 Some(
@@ -255,7 +256,8 @@ impl ShardReplicaSet {
 
                 if self.peer_is_active(this_peer_id) {
                     // Check write rate limiter before proceeding if replica active
-                    self.check_write_rate_limiter()?;
+                    // TODO(ratelimits) determine cost of update based on operation
+                    self.check_write_rate_limiter(1)?;
                 }
 
                 let operation = operation.clone();
