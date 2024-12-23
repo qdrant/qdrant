@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
@@ -228,79 +227,4 @@ pub fn suggest_transfer_source(
     candidates.sort_unstable_by_key(|(_, count)| **count);
 
     candidates.first().map(|(peer_id, _)| *peer_id)
-}
-
-/// Selects the best peer to add a replica to.
-///
-/// Requirements:
-/// 1. Peer should not have an active replica of the shard
-/// 2. Peer should have minimal number of active transfers
-pub fn suggest_peer_to_add_replica(
-    shard_id: ShardId,
-    shard_distribution: &HashMap<ShardId, HashSet<PeerId>>,
-) -> Option<PeerId> {
-    let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
-    for peers in shard_distribution.values() {
-        for peer_id in peers {
-            *peer_loads.entry(*peer_id).or_insert(0_usize) += 1;
-        }
-    }
-    let peers_with_shard = shard_distribution
-        .get(&shard_id)
-        .cloned()
-        .unwrap_or_default();
-    for peer_with_shard in peers_with_shard {
-        peer_loads.remove(&peer_with_shard);
-    }
-
-    let mut candidates = peer_loads.into_iter().collect::<Vec<(PeerId, usize)>>();
-    candidates.sort_unstable_by_key(|(_, count)| *count);
-    candidates.first().map(|(peer_id, _)| *peer_id)
-}
-
-/// Selects the best peer to remove a replica from.
-///
-/// Requirements:
-/// 1. Peer should have a replica of the shard
-/// 2. Peer should maximal number of active shards
-/// 3. Shard replica should preferably be non-active
-pub fn suggest_peer_to_remove_replica(
-    shard_distribution: HashMap<ShardId, HashSet<PeerId>>,
-    shard_peers: HashMap<PeerId, ReplicaState>,
-) -> Option<PeerId> {
-    let mut peer_loads: HashMap<PeerId, usize> = HashMap::new();
-
-    for (_, peers) in shard_distribution {
-        for peer_id in peers {
-            *peer_loads.entry(peer_id).or_insert(0_usize) += 1;
-        }
-    }
-
-    let mut candidates: Vec<_> = shard_peers
-        .into_iter()
-        .map(|(peer_id, status)| {
-            (
-                peer_id,
-                status,
-                peer_loads.get(&peer_id).copied().unwrap_or(0),
-            )
-        })
-        .collect();
-
-    candidates.sort_unstable_by(|(_, status1, count1), (_, status2, count2)| {
-        match (status1, status2) {
-            // `ReshardingScaleDown` replicas should be the last to be removed
-            (ReplicaState::ReshardingScaleDown, ReplicaState::ReshardingScaleDown) => {
-                count2.cmp(count1)
-            }
-            (ReplicaState::ReshardingScaleDown, _) => Ordering::Less,
-            (_, ReplicaState::ReshardingScaleDown) => Ordering::Greater,
-            (ReplicaState::Active, ReplicaState::Active) => count2.cmp(count1),
-            (ReplicaState::Active, _) => Ordering::Less,
-            (_, ReplicaState::Active) => Ordering::Greater,
-            (_, _) => count2.cmp(count1),
-        }
-    });
-
-    candidates.first().map(|(peer_id, _, _)| *peer_id)
 }
