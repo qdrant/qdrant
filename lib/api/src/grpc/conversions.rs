@@ -974,6 +974,7 @@ fn conditions_helper_from_grpc(
     conditions: Vec<Condition>,
 ) -> Result<Option<Vec<segment::types::Condition>>, tonic::Status> {
     // Convert gRPC into internal conditions, filter out empty conditions
+    // See: <https://github.com/qdrant/qdrant/pull/5690>
     let mut converted = Vec::with_capacity(conditions.len());
     for condition in conditions {
         if let Some(condition) = grpc_condition_into_condition(condition)? {
