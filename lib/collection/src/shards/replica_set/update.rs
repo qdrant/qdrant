@@ -45,17 +45,16 @@ impl ShardReplicaSet {
         };
 
         let result = match state {
-            ReplicaState::Active => {
+            ReplicaState::Active | ReplicaState::ReshardingScaleDown => {
                 // Rate limit update operations on Active replica
                 // TODO(ratelimits) determine cost of update based on operation
                 self.check_write_rate_limiter(1)?;
                 local.get().update(operation, wait).await
             }
 
-            ReplicaState::Partial
-            | ReplicaState::Initializing
-            | ReplicaState::Resharding
-            | ReplicaState::ReshardingScaleDown => local.get().update(operation, wait).await,
+            ReplicaState::Partial | ReplicaState::Initializing | ReplicaState::Resharding => {
+                local.get().update(operation, wait).await
+            }
 
             ReplicaState::Listener => local.get().update(operation, false).await,
 
