@@ -1224,6 +1224,22 @@ pub enum ReplicaState {
 }
 
 impl ReplicaState {
+    /// Check if replica state is active
+    pub fn is_active(self) -> bool {
+        match self {
+            ReplicaState::Active => true,
+            ReplicaState::ReshardingScaleDown => true,
+
+            ReplicaState::Dead => false,
+            ReplicaState::Partial => false,
+            ReplicaState::Initializing => false,
+            ReplicaState::Listener => false,
+            ReplicaState::PartialSnapshot => false,
+            ReplicaState::Recovery => false,
+            ReplicaState::Resharding => false,
+        }
+    }
+
     /// Check whether the replica state is active or listener or resharding.
     pub fn is_active_or_listener_or_resharding(self) -> bool {
         match self {

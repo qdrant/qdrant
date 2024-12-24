@@ -375,7 +375,7 @@ impl Collection {
         &self,
         shard_id: ShardId,
         peer_id: PeerId,
-        state: ReplicaState,
+        new_state: ReplicaState,
         from_state: Option<ReplicaState>,
     ) -> CollectionResult<()> {
         let shard_holder = self.shards_holder.read().await;
@@ -384,7 +384,7 @@ impl Collection {
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         log::debug!(
-            "Changing shard {}:{shard_id} replica state from {:?} to {state:?}",
+            "Changing shard {}:{shard_id} replica state from {:?} to {new_state:?}",
             self.id,
             replica_set.peer_state(peer_id),
         );
@@ -405,7 +405,7 @@ impl Collection {
 
         if !peer_exists && !replica_exists {
             return Err(CollectionError::bad_input(format!(
-                "Can't set replica {peer_id}:{shard_id} state to {state:?}, \
+                "Can't set replica {peer_id}:{shard_id} state to {new_state:?}, \
                  because replica {peer_id}:{shard_id} does not exist \
                  and peer {peer_id} is not part of the cluster"
             )));
@@ -421,7 +421,7 @@ impl Collection {
         // 3. Do not deactivate the last active replica
         //
         // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
-        if replica_set.is_last_active_replica(peer_id) && state != ReplicaState::Active {
+        if replica_set.is_last_active_replica(peer_id) && new_state.is_active() {
             return Err(CollectionError::bad_input(format!(
                 "Cannot deactivate the last active replica {peer_id} of shard {shard_id}"
             )));
@@ -445,7 +445,7 @@ impl Collection {
             Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
         );
 
-        if is_resharding && state == ReplicaState::Dead {
+        if is_resharding && new_state == ReplicaState::Dead {
             drop(shard_holder);
 
             let resharding_state = self
@@ -461,10 +461,10 @@ impl Collection {
         }
 
         replica_set
-            .ensure_replica_with_state(peer_id, state)
+            .ensure_replica_with_state(peer_id, new_state)
             .await?;
 
-        if state == ReplicaState::Dead {
+        if new_state == ReplicaState::Dead {
             // TODO(resharding): Abort all resharding transfers!?
 
             // Terminate transfer if source or target replicas are now dead
