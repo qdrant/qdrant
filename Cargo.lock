@@ -504,7 +504,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sparse",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "tokio",
  "tonic 0.11.0",
  "tonic-build",
@@ -965,7 +965,7 @@ dependencies = [
 name = "cancel"
 version = "0.0.0"
 dependencies = [
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "tokio",
  "tokio-util",
 ]
@@ -1229,7 +1229,7 @@ dependencies = [
  "strum",
  "tar",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "tinyvec",
  "tokio",
  "tokio-util",
@@ -1287,7 +1287,7 @@ dependencies = [
  "tap",
  "tar",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "thread-priority",
  "tokio",
  "validator",
@@ -3075,7 +3075,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -3833,7 +3833,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -4501,7 +4501,7 @@ dependencies = [
  "smallvec",
  "symbolic-demangle",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -4945,7 +4945,7 @@ dependencies = [
  "storage",
  "sys-info",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
  "tokio",
@@ -5917,7 +5917,7 @@ dependencies = [
  "sysinfo",
  "tar",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "tinyvec",
  "tracing",
  "uuid",
@@ -6373,7 +6373,7 @@ dependencies = [
  "tap",
  "tar",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.9",
  "tokio",
  "tonic 0.11.0",
  "tracing",
@@ -6613,11 +6613,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.6"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
+checksum = "f072643fd0190df67a8bab670c20ef5d8737177d6ac6b2e9a236cb096206b2cc"
 dependencies = [
- "thiserror-impl 2.0.6",
+ "thiserror-impl 2.0.9",
 ]
 
 [[package]]
@@ -6633,9 +6633,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.6"
+version = "2.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
+checksum = "7b50fa271071aae2e6ee85f842e2e28ba8cd2c5fb67f11fcb1fd70b276f9e7d4"
 dependencies = [
  "proc-macro2",
  "quote",
