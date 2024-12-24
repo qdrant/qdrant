@@ -108,3 +108,10 @@ fn filter(user_filters: &str) -> filter::EnvFilter {
         .with_regex(false)
         .parse_lossy(filter)
 }
+
+#[rustfmt::skip] // `rustfmt` formats this into unreadable single line
+type Logger<S> = filter::Filtered<
+    Option<Box<dyn tracing_subscriber::Layer<S> + Send + Sync>>,
+    filter::EnvFilter,
+    S,
+>;

@@ -28,8 +28,8 @@ fn deserialize_logger_config() {
                 config::SpanEvent::New,
                 config::SpanEvent::Close,
             ])),
+            format: None,
             color: Some(config::Color::Explicit(true)),
-            log_format: None,
         },
 
         on_disk: on_disk::Config {
@@ -40,6 +40,7 @@ fn deserialize_logger_config() {
                 config::SpanEvent::New,
                 config::SpanEvent::Close,
             ])),
+            format: None,
         },
     };
 
@@ -51,14 +52,15 @@ fn deserialize_json_logger_config() {
     let json = json!({
         "log_level": "debug",
         "span_events": ["new", "close"],
+        "format": "json",
         "color": true,
-        "log_format": "json",
 
         "on_disk": {
             "enabled": true,
             "log_file": "/logs/qdrant",
             "log_level": "tracing",
             "span_events": ["new", "close"],
+            "format": "text",
         }
     });
 
@@ -71,8 +73,8 @@ fn deserialize_json_logger_config() {
                 config::SpanEvent::New,
                 config::SpanEvent::Close,
             ])),
+            format: Some(config::LogFormat::Json),
             color: Some(config::Color::Explicit(true)),
-            log_format: Some(default::LogFormat::Json),
         },
 
         on_disk: on_disk::Config {
@@ -83,6 +85,7 @@ fn deserialize_json_logger_config() {
                 config::SpanEvent::New,
                 config::SpanEvent::Close,
             ])),
+            format: Some(config::LogFormat::Text),
         },
     };
 
@@ -106,14 +109,15 @@ fn deseriailze_config_with_explicit_nulls() {
     let json = json!({
         "log_level": null,
         "span_events": null,
+        "format": null,
         "color": null,
-        "log_format": null,
 
         "on_disk": {
             "enabled": null,
             "log_file": null,
             "log_level": null,
             "span_events": null,
+            "format": null,
         }
     });
 
