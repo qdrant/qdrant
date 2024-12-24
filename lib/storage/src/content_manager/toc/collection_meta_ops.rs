@@ -470,7 +470,13 @@ impl TableOfContent {
                     .keys()
                     .cloned()
                     .collect();
-                let shard_state = shards.get(&transfer.shard_id).map(|info| &info.replicas);
+
+                let source_replicas = shards.get(&transfer.shard_id).map(|info| &info.replicas);
+
+                let destination_replicas = transfer
+                    .to_shard_id
+                    .and_then(|to_shard_id| shards.get(&to_shard_id))
+                    .map(|info| &info.replicas);
 
                 // Valid transfer:
                 // All peers: 123, 321, 111, 222, 333
@@ -485,7 +491,8 @@ impl TableOfContent {
                 transfer::helpers::validate_transfer(
                     &transfer,
                     &all_peers,
-                    shard_state,
+                    source_replicas,
+                    destination_replicas,
                     &transfers,
                     &shards_key_mapping,
                 )?;

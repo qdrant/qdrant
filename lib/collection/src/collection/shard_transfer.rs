@@ -7,6 +7,7 @@ use common::defaults;
 use parking_lot::Mutex;
 
 use super::Collection;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
@@ -80,10 +81,21 @@ impl Collection {
 
             let initial_state = match shard_transfer.method.unwrap_or_default() {
                 ShardTransferMethod::StreamRecords => ReplicaState::Partial,
+
                 ShardTransferMethod::Snapshot | ShardTransferMethod::WalDelta => {
                     ReplicaState::Recovery
                 }
-                ShardTransferMethod::ReshardingStreamRecords => ReplicaState::Resharding,
+
+                ShardTransferMethod::ReshardingStreamRecords => {
+                    let resharding_direction =
+                        self.resharding_state().await.map(|state| state.direction);
+
+                    match resharding_direction {
+                        Some(ReshardingDirection::Up) => ReplicaState::Resharding,
+                        Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
+                        None => return Err(CollectionError::bad_input("can't start resharding transfer, because resharding is not in progress")),
+                    }
+                }
             };
 
             // Create local shard if it does not exist on receiver, or simply set replica state otherwise
@@ -217,8 +229,26 @@ impl Collection {
                 //   - resharding requires multiple transfers, so destination shard is promoted
                 //     *explicitly* when all transfers are finished
 
+                // TODO(resharding): Do not change replica state at all, when finishing resharding transfer?
+                //
+                // We switch replica into correct state when *starting* resharding transfer, and
+                // we want to *keep* it in the same state *after* resharding transfer is finished...
                 let state = if is_resharding_transfer {
-                    ReplicaState::Resharding
+                    let resharding_direction =
+                        self.resharding_state().await.map(|state| state.direction);
+
+                    match resharding_direction {
+                        Some(ReshardingDirection::Up) => ReplicaState::Resharding,
+                        Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
+                        None => {
+                            log::error!(
+                                "Can't finish resharding shard transfer correctly, \
+                                 because resharding is not in progress anymore!",
+                            );
+
+                            ReplicaState::Dead
+                        }
+                    }
                 } else {
                     ReplicaState::Active
                 };

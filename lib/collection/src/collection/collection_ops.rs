@@ -219,7 +219,9 @@ impl Collection {
                 });
             }
 
-            // Check that we are not removing the
+            // Check that we are not removing the last active replica
+            //
+            // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
             if replica_set.is_last_active_replica(peer_id) {
                 return Err(CollectionError::BadRequest {
                     description: format!("Shard {shard_id} must have at least one active replica after removing {peer_id}"),
