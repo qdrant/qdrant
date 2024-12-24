@@ -265,6 +265,12 @@ impl ShardReplicaSet {
                     wait
                 };
 
+                if self.peer_is_active(this_peer_id) {
+                    // Check write rate limiter before proceeding if replica active
+                    // TODO(ratelimits) determine cost of update based on operation
+                    self.check_write_rate_limiter(1)?;
+                }
+
                 let operation = operation.clone();
 
                 let local_update = async move {
