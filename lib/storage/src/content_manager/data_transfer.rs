@@ -31,6 +31,14 @@ async fn get_local_source_shards(
 ) -> CollectionResult<Vec<ShardId>> {
     let collection_state = source.state().await;
 
+    if source.resharding_state().await.is_some() {
+        return Err(CollectionError::bad_input(format!(
+            "can't initialize new collection from collection {source}, \
+             because resharding is in progress for collection {source}",
+            source = source.name(),
+        )));
+    }
+
     let mut local_responsible_shards = Vec::new();
 
     // Find max replica peer id for each shard
@@ -38,17 +46,18 @@ async fn get_local_source_shards(
         let responsible_shard_opt = shard_info
             .replicas
             .iter()
-            .filter(|(_, replica_state)| **replica_state == ReplicaState::Active)
+            .filter(|&(_, &replica_state)| {
+                // It's much easier to only select among `Active` (but not `ReshardingScaleDown`) shards here.
+                // Also, don't initialize-from during resharding... 🙄
+                replica_state == ReplicaState::Active
+            })
             .max_by_key(|(peer_id, _)| *peer_id)
             .map(|(peer_id, _)| *peer_id);
 
-        let responsible_shard = match responsible_shard_opt {
-            None => {
-                return Err(CollectionError::service_error(format!(
-                    "No active replica for shard {shard_id}, collection initialization is cancelled"
-                )));
-            }
-            Some(responsible_shard) => responsible_shard,
+        let Some(responsible_shard) = responsible_shard_opt else {
+            return Err(CollectionError::service_error(format!(
+                "No active replica for shard {shard_id}, collection initialization is cancelled"
+            )));
         };
 
         if responsible_shard == this_peer_id {

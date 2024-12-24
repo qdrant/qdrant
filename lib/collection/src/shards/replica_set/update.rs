@@ -36,42 +36,53 @@ impl ShardReplicaSet {
 
         let local = self.local.read().await;
 
-        if let Some(local_shard) = local.deref() {
-            match self.peer_state(self.this_peer_id()) {
-                Some(ReplicaState::Active) => {
-                    // Rate limit update operations on Active replica
-                    // TODO(ratelimits) determine cost of update based on operation
-                    self.check_write_rate_limiter(1)?;
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
-                Some(
-                    ReplicaState::Partial | ReplicaState::Initializing | ReplicaState::Resharding,
-                ) => Ok(Some(local_shard.get().update(operation, wait).await?)),
-                Some(ReplicaState::Listener) => {
-                    Ok(Some(local_shard.get().update(operation, false).await?))
-                }
-                // In recovery state, only allow operations with force flag
-                Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery)
-                    if operation.clock_tag.is_some_and(|tag| tag.force) =>
-                {
-                    Ok(Some(local_shard.get().update(operation, wait).await?))
-                }
-                // In recovery state, log rejected operations without clock tag
-                Some(ReplicaState::PartialSnapshot | ReplicaState::Recovery) => {
-                    if log::log_enabled!(log::Level::Debug) {
-                        if let Some(ids) = operation.operation.point_ids() {
-                            log::debug!("Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state");
-                        } else {
-                            log::debug!("Operation {operation:?} rejected on this peer, force flag required in recovery state");
-                        }
-                    }
-                    Ok(None)
-                }
-                Some(ReplicaState::Dead) | None => Ok(None),
+        let Some(local) = local.deref() else {
+            return Ok(None);
+        };
+
+        let Some(state) = self.peer_state(self.this_peer_id()) else {
+            return Ok(None);
+        };
+
+        let result = match state {
+            ReplicaState::Active => {
+                // Rate limit update operations on Active replica
+                // TODO(ratelimits) determine cost of update based on operation
+                self.check_write_rate_limiter(1)?;
+                local.get().update(operation, wait).await
             }
-        } else {
-            Ok(None)
-        }
+
+            ReplicaState::Partial
+            | ReplicaState::Initializing
+            | ReplicaState::Resharding
+            | ReplicaState::ReshardingScaleDown => local.get().update(operation, wait).await,
+
+            ReplicaState::Listener => local.get().update(operation, false).await,
+
+            ReplicaState::PartialSnapshot | ReplicaState::Recovery
+                if operation.clock_tag.is_some_and(|tag| tag.force) =>
+            {
+                local.get().update(operation, wait).await
+            }
+
+            ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
+                if log::log_enabled!(log::Level::Debug) {
+                    if let Some(ids) = operation.operation.point_ids() {
+                        log::debug!("Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state");
+                    } else {
+                        log::debug!("Operation {operation:?} rejected on this peer, force flag required in recovery state");
+                    }
+                }
+
+                return Ok(None);
+            }
+
+            ReplicaState::Dead => {
+                return Ok(None);
+            }
+        };
+
+        result.map(Some)
     }
 
     /// # Cancel safety
@@ -416,7 +427,18 @@ impl ShardReplicaSet {
                             |state| {
                                 peer_ids.iter().all(|peer_id| {
                                     // Not found means that peer is dead
-                                    state.peers.get(peer_id) != Some(&ReplicaState::Active)
+
+                                    // Wait for replica deactivation.
+                                    let is_active = matches!(
+                                        state.peers.get(peer_id),
+                                        Some(
+                                            ReplicaState::Active
+                                                | ReplicaState::Resharding
+                                                | ReplicaState::ReshardingScaleDown
+                                        )
+                                    );
+
+                                    !is_active
                                 })
                             },
                             timeout,
@@ -480,23 +502,30 @@ impl ShardReplicaSet {
     ///
     /// A peer in dead state, or a locally disabled peer, will not accept updates.
     fn is_peer_updatable(&self, peer_id: PeerId) -> bool {
-        let res = match self.peer_state(peer_id) {
-            Some(ReplicaState::Active) => true,
-            Some(ReplicaState::Partial) => true,
-            Some(ReplicaState::Initializing) => true,
-            Some(ReplicaState::Listener) => true,
-            // We must not send updates to replicas in recovery state.
-            // If we do we might create gaps in WAL clock tags.
-            Some(ReplicaState::Recovery | ReplicaState::PartialSnapshot) => false,
-            Some(ReplicaState::Resharding) => true,
-            Some(ReplicaState::Dead) | None => false,
+        let Some(state) = self.peer_state(peer_id) else {
+            return false;
         };
+
+        let res = match state {
+            ReplicaState::Active => true,
+            ReplicaState::Partial => true,
+            ReplicaState::Initializing => true,
+            ReplicaState::Listener => true,
+            ReplicaState::Recovery | ReplicaState::PartialSnapshot => false,
+            ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
+            ReplicaState::Dead => false,
+        };
+
         res && !self.is_locally_disabled(peer_id)
     }
 
     fn peer_is_resharding(&self, peer_id: PeerId) -> bool {
-        self.peer_state(peer_id) == Some(ReplicaState::Resharding)
-            && !self.is_locally_disabled(peer_id)
+        let is_resharding = matches!(
+            self.peer_state(peer_id),
+            Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
+        );
+
+        is_resharding && !self.is_locally_disabled(peer_id)
     }
 
     fn handle_failed_replicas<'a>(
@@ -520,7 +549,8 @@ impl ShardReplicaSet {
                 | ReplicaState::Partial
                 | ReplicaState::Recovery
                 | ReplicaState::PartialSnapshot
-                | ReplicaState::Resharding => (),
+                | ReplicaState::Resharding
+                | ReplicaState::ReshardingScaleDown => (),
             }
 
             // Handle a special case where transfer receiver is not in the expected replica state yet.

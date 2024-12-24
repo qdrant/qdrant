@@ -138,6 +138,7 @@ async fn drive_up(
                         ))
                     })?;
 
+                    // This is a part of deprecated built-in resharding implementation, so we don't care
                     let active_peer_ids = replica_set.active_shards();
                     if active_peer_ids.is_empty() {
                         return Err(CollectionError::service_error(format!(
