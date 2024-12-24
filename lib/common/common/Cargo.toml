@@ -16,6 +16,7 @@ workspace = true
 testing = []
 
 [dependencies]
+num-traits = { workspace = true }
 num_cpus = "1.16"
 ordered-float = { workspace = true }
 ph = { workspace = true }
@@ -36,6 +37,7 @@ log = { workspace = true }
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 itertools = { workspace = true }
+tango-bench = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 thiserror = { workspace = true }
@@ -43,6 +45,10 @@ thread-priority = "1.2"
 
 [[bench]]
 name = "bitpacking"
+harness = false
+
+[[bench]]
+name = "bitpacking_tango"
 harness = false
 
 [[bench]]

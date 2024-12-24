@@ -77,7 +77,7 @@ pub fn for_each_packed_link(
     if sorted_count != 0 {
         // 1. Header.
         r.set_bits(HEADER_BITS);
-        let bits_per_sorted = r.read() as u8 + MIN_BITS_PER_VALUE;
+        let bits_per_sorted = r.read::<u8>() + MIN_BITS_PER_VALUE;
         remaining_bits -= HEADER_BITS as usize;
 
         // 2. First `sorted_count` values, sorted and delta-encoded.
@@ -87,7 +87,7 @@ pub fn for_each_packed_link(
                 * bits_per_sorted as usize;
         let mut value = 0;
         while remaining_bits > remaining_bits_target {
-            value += r.read();
+            value += r.read::<u32>();
             f(value);
             remaining_bits -= bits_per_sorted as usize;
         }
