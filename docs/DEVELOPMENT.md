@@ -153,6 +153,37 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 
 ![call-graph example](./imgs/call-graph-profile.png)
 
+### Tango.rs-based benchmarks
+
+Some benchmarks are implemented using the [Tango.rs](https://github.com/bazhenov/tango) framework.
+It enables more precise comparisons between two revisions of the code by running them simultaneously.
+Basic usage:
+
+1. Compile and run the baseline version in the `solo` mode:
+   ```console
+   $ cargo bench -p common --bench bitpacking_tango -- solo
+       Finished `bench` profile [optimized + debuginfo] target(s) in 0.22s
+        Running benches/bitpacking_tango.rs (target/release/deps/bitpacking_tango-9713980dd08cde85)
+   bitpacking/read                                     [  30.8 ns ...  43.9 ns ... 125.3 ns ]  stddev:   6.7 ns
+   bitpacking/write                                    [  32.4 ns ...  50.1 ns ...  91.1 ns ]  stddev:   7.3 ns
+   bitpacking_links/read                               [ 343.3 ns ... 378.3 ns ... 419.4 ns ]  stddev:  16.5 ns
+   ```
+
+2. Note the binary name in the output above. Copy it to compare against, or use the `cargo-export` tool to automate this step.
+   ```console
+   $ cp target/release/deps/bitpacking_tango-9713980dd08cde85 ./baseline
+   ```
+
+3. Change the code and run the benchmark in the `compare` mode to compare the performance against the baseline.
+   ```console
+   $ cargo bench -p common --bench bitpacking_tango -- compare ./baseline
+       Finished `bench` profile [optimized + debuginfo] target(s) in 0.14s
+        Running benches/bitpacking_tango.rs (target/release/deps/bitpacking_tango-9713980dd08cde85)
+   bitpacking/read                                    [  41.8 ns ...  41.9 ns ]      +0.08%
+   bitpacking/write                                   [  45.7 ns ...  45.5 ns ]      -0.46%
+   bitpacking_links/read                              [ 369.4 ns ... 368.4 ns ]      -0.27%
+   ```
+
 ### Real-time profiling
 
 Qdrant have basic [`tracing`] support with [`Tracy`] profiler and [`tokio-console`] integrations
