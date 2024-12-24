@@ -38,8 +38,16 @@ impl LoggerConfig {
     }
 }
 
+#[derive(Default, Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogFormat {
+    #[default]
+    Text,
+    Json,
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum SpanEvent {
     New,
     Enter,
@@ -73,7 +81,7 @@ impl From<SpanEvent> for fmt::format::FmtSpan {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Color {
     #[default]
     Auto,
