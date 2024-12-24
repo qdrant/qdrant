@@ -229,6 +229,10 @@ impl Collection {
                 //   - resharding requires multiple transfers, so destination shard is promoted
                 //     *explicitly* when all transfers are finished
 
+                // TODO(resharding): Do not change replica state at all, when finishing resharding transfer?
+                //
+                // We switch replica into correct state when *starting* resharding transfer, and
+                // we want to *keep* it in the same state *after* resharding transfer is finished...
                 let state = if is_resharding_transfer {
                     let resharding_direction =
                         self.resharding_state().await.map(|state| state.direction);
