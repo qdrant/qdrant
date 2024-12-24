@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use bitvec::slice::BitSlice;
+use blob_store::config::{Compression, StorageOptions};
 use blob_store::BlobStore;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
@@ -84,7 +85,13 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         std::fs::create_dir_all(&storage_dir)?;
-        let storage = BlobStore::new(storage_dir, Default::default()).map_err(|err| {
+        let storage_config = StorageOptions {
+            // Don't use built-in compression, as we will use bitpacking instead
+            compression: Some(Compression::None),
+            ..Default::default()
+        };
+
+        let storage = BlobStore::new(storage_dir, storage_config).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))

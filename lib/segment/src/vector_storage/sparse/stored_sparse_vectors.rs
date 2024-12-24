@@ -1,23 +1,45 @@
 use blob_store::Blob;
+use common::delta_pack::{delta_pack, delta_unpack};
 use serde::{Deserialize, Serialize};
-use sparse::common::sparse_vector::SparseVector;
+use sparse::common::sparse_vector::{double_sort, SparseVector};
 use sparse::common::types::{DimId, DimId64, DimWeight};
 
 use crate::common::operation_error::OperationError;
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct StoredSparseVector {
-    /// Indices must be unique, explicitly use 64-bit integers for further interface extension
-    pub indices: Vec<DimId64>,
+    /// Compressed u64 indices
+    pub indices: Vec<u8>,
     /// Values and indices must be the same length
     pub values: Vec<DimWeight>,
 }
 
+impl StoredSparseVector {
+    /// Convert indices into a byte array
+    /// Use bitpacking and delta-encoding for additional compression
+    fn serialize_indices(indices: &[DimId64]) -> Vec<u8> {
+        delta_pack(indices)
+    }
+
+    /// Recover indices from a byte array
+    fn deserialize_indices(data: &[u8]) -> Vec<DimId64> {
+        delta_unpack(data)
+    }
+}
+
 impl From<&SparseVector> for StoredSparseVector {
     fn from(vector: &SparseVector) -> Self {
+        let mut stored_indices: Vec<_> =
+            vector.indices.iter().copied().map(DimId64::from).collect();
+        let mut stored_values = vector.values.clone();
+
+        double_sort(&mut stored_indices, &mut stored_values);
+
+        let compressed_indices = StoredSparseVector::serialize_indices(&stored_indices);
+
         Self {
-            indices: vector.indices.iter().copied().map(DimId64::from).collect(),
-            values: vector.values.clone(),
+            indices: compressed_indices,
+            values: stored_values,
         }
     }
 }
@@ -26,9 +48,10 @@ impl TryFrom<StoredSparseVector> for SparseVector {
     type Error = OperationError;
 
     fn try_from(value: StoredSparseVector) -> Result<Self, Self::Error> {
+        let decompressed_indices = StoredSparseVector::deserialize_indices(&value.indices);
+
         Ok(SparseVector {
-            indices: value
-                .indices
+            indices: decompressed_indices
                 .into_iter()
                 .map(DimId::try_from)
                 .collect::<Result<_, _>>()
