@@ -12,6 +12,8 @@ use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt as _;
 use itertools::{Either, Itertools as _};
 use memmap2::Mmap;
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops::open_read_mmap;
 use memory::{madvise, mmap_ops};
 use zerocopy::little_endian::U64 as LittleU64;
 use zerocopy::native_endian::U64 as NativeU64;
@@ -510,22 +512,9 @@ impl GraphLinksEnum {
 
 impl GraphLinks {
     pub fn load_from_file(path: &Path, on_disk: bool) -> OperationResult<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(path)?;
-        if on_disk {
-            let len = file.metadata()?.len();
-            let mut data = Vec::new();
-            data.try_set_capacity_exact(len as usize)?;
-            file.take(len).read_to_end(&mut data)?;
-            Self::try_new(GraphLinksEnum::Ram(data), |x| x.load_view())
-        } else {
-            let mmap = unsafe { Mmap::map(&file)? };
-            madvise::madvise(&mmap, madvise::get_global())?;
-            Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| x.load_view())
-        }
+        let populate = !on_disk;
+        let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
+        Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| x.load_view())
     }
 
     fn view(&self) -> &GraphLinksView {
