@@ -23,6 +23,7 @@ pub type LayersContainer = Vec<LinkContainer>;
 
 pub const HNSW_GRAPH_FILE: &str = "graph.bin";
 pub const HNSW_LINKS_FILE: &str = "links.bin";
+pub const COMPRESSED_HNSW_LINKS_FILE: &str = "links_compressed.bin";
 
 /// Contents of the `graph.bin` file.
 #[derive(Deserialize, Serialize, Debug)]
@@ -257,6 +258,10 @@ impl GraphLayers {
         path.join(HNSW_LINKS_FILE)
     }
 
+    pub fn get_compressed_links_path(path: &Path) -> PathBuf {
+        path.join(COMPRESSED_HNSW_LINKS_FILE)
+    }
+
     pub fn num_points(&self) -> usize {
         self.links.num_points()
     }
@@ -266,12 +271,13 @@ impl GraphLayers {
     pub fn load(
         graph_path: &Path,
         links_path: &Path,
-        convert: bool,
+        do_compress: bool,
         on_disk: bool,
+        compressed: bool,
     ) -> OperationResult<Self> {
         let graph_data: GraphLayerData = read_bin(graph_path)?;
 
-        if convert {
+        if do_compress && !compressed {
             convert_to_compressed(links_path, graph_data.m, graph_data.m0)?;
         }
 
@@ -279,7 +285,7 @@ impl GraphLayers {
             m: graph_data.m,
             m0: graph_data.m0,
             ef_construct: graph_data.ef_construct,
-            links: GraphLinks::load_from_file(links_path, on_disk)?,
+            links: GraphLinks::load_from_file(links_path, on_disk, compressed)?,
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
@@ -424,7 +430,11 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
-        let links_path = GraphLayers::get_links_path(dir.path());
+        let links_path = if compressed {
+            GraphLayers::get_compressed_links_path(dir.path())
+        } else {
+            GraphLayers::get_links_path(dir.path())
+        };
         let (vector_holder, graph_layers_builder) =
             create_graph_layer_builder_fixture(num_vectors, M, dim, false, &mut rng);
         let graph_layers = graph_layers_builder
@@ -438,7 +448,7 @@ mod tests {
         let path = GraphLayers::get_path(dir.path());
         graph_layers.save(&path).unwrap();
 
-        let graph2 = GraphLayers::load(&path, &links_path, converted, false).unwrap();
+        let graph2 = GraphLayers::load(&path, &links_path, converted, false, compressed).unwrap();
 
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 

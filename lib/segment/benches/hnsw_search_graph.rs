@@ -51,7 +51,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
 
         if graph_fname.exists() && links_fname.exists() {
             eprintln!("Loading cached links from {links_fname:?}");
-            graph_layers = GraphLayers::load(&graph_fname, &links_fname, false, false).unwrap();
+            graph_layers =
+                GraphLayers::load(&graph_fname, &links_fname, false, false, false).unwrap();
         } else {
             let mut graph_layers_builder =
                 GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);

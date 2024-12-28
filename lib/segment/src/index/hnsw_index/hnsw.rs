@@ -153,7 +153,15 @@ impl HNSWIndex {
 
         let config_path = HnswGraphConfig::get_config_path(path);
         let graph_path = GraphLayers::get_path(path);
-        let graph_links_path = GraphLayers::get_links_path(path);
+        let (graph_links_path, is_links_compressed) = {
+            let regular_links = GraphLayers::get_links_path(path);
+            let compressed_links = GraphLayers::get_compressed_links_path(path);
+            if compressed_links.exists() {
+                (compressed_links, true)
+            } else {
+                (regular_links, false)
+            }
+        };
         let (config, graph) = if graph_path.exists() {
             let config = if config_path.exists() {
                 HnswGraphConfig::load(&config_path)?
@@ -188,6 +196,7 @@ impl HNSWIndex {
                     &graph_links_path,
                     LinkCompressionExperimentalSetting::from_env().convert_existing,
                     !hnsw_config.on_disk.unwrap_or(false),
+                    is_links_compressed,
                 )?,
             )
         } else {
@@ -514,9 +523,16 @@ impl HNSWIndex {
 
         config.indexed_vector_count.replace(indexed_vectors);
 
+        let do_compression = LinkCompressionExperimentalSetting::from_env().write_new;
+        let links_path = if do_compression {
+            GraphLayers::get_compressed_links_path(path)
+        } else {
+            GraphLayers::get_links_path(path)
+        };
+
         let graph: GraphLayers = graph_layers_builder.into_graph_layers(
-            &GraphLayers::get_links_path(path),
-            LinkCompressionExperimentalSetting::from_env().write_new,
+            &links_path,
+            do_compression,
             hnsw_config.on_disk.unwrap_or(false),
         )?;
 
@@ -1310,6 +1326,7 @@ impl VectorIndex for HNSWIndex {
         [
             GraphLayers::get_path(&self.path),
             GraphLayers::get_links_path(&self.path),
+            GraphLayers::get_compressed_links_path(&self.path),
             HnswGraphConfig::get_config_path(&self.path),
         ]
         .into_iter()

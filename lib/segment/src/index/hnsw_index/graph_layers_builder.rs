@@ -86,7 +86,7 @@ impl GraphLayersBuilder {
         links_converter.save_as(path)?;
 
         let links = if on_disk {
-            GraphLinks::load_from_file(path, true)?
+            GraphLinks::load_from_file(path, true, compressed)?
         } else {
             links_converter.to_graph_links_ram()
         };

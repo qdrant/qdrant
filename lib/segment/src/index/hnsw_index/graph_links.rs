@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
-use std::fs::{File, OpenOptions};
-use std::io::{Read as _, Write};
+use std::fs::File;
+use std::io::Write;
 use std::mem::take;
 use std::path::Path;
 use std::sync::Arc;
@@ -13,14 +13,13 @@ use common::zeros::WriteZerosExt as _;
 use itertools::{Either, Itertools as _};
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops;
 use memory::mmap_ops::open_read_mmap;
-use memory::{madvise, mmap_ops};
 use zerocopy::little_endian::U64 as LittleU64;
 use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::vector_utils::TrySetCapacityExact;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 
@@ -117,22 +116,11 @@ struct HeaderCompressed {
 const HEADER_VERSION_COMPRESSED: u64 = 0xFFFF_FFFF_FFFF_FF01;
 
 impl GraphLinksView<'_> {
-    fn load(data: &[u8]) -> OperationResult<GraphLinksView> {
-        let levels_count_or_version = data
-            .get(size_of::<u64>()..)
-            .and_then(|x| LittleU64::ref_from_prefix(x).ok())
-            .ok_or_else(Self::error_unsufficent_size)?
-            .0
-            .get();
-
-        match levels_count_or_version {
-            // Header for the plain format lacks the version field, but we can
-            // be sure that it contains no more than 2^32 levels.
-            _ if u64::from_le(levels_count_or_version) <= 1 << 32 => Self::load_plain(data),
-            HEADER_VERSION_COMPRESSED => Self::load_compressed(data),
-            _ => Err(OperationError::service_error(
-                "Unsupported version of GraphLinks file",
-            )),
+    fn load(data: &[u8], compressed: bool) -> OperationResult<GraphLinksView> {
+        if compressed {
+            Self::load_compressed(data)
+        } else {
+            Self::load_plain(data)
         }
     }
 
@@ -371,6 +359,8 @@ impl GraphLinksConverter {
     }
 
     pub fn to_graph_links_ram(&self) -> GraphLinks {
+        let is_compressed = matches!(self.kind, GraphLinksConverterKind::Compressed { .. });
+
         let size = self.level_offsets.as_bytes().len()
             + self.reindex.as_bytes().len()
             + self.links.len()
@@ -390,7 +380,7 @@ impl GraphLinksConverter {
         self.serialize_to_writer(&mut data).unwrap();
         debug_assert_eq!(data.len(), size);
         // Unwrap should be safe as we just created the data.
-        GraphLinks::try_new(GraphLinksEnum::Ram(data), |x| x.load_view()).unwrap()
+        GraphLinks::try_new(GraphLinksEnum::Ram(data), |x| x.load_view(is_compressed)).unwrap()
     }
 
     fn serialize_to_writer(&self, writer: &mut impl Write) -> std::io::Result<()> {
@@ -464,10 +454,9 @@ impl GraphLinksConverter {
 pub fn convert_to_compressed(path: &Path, m: usize, m0: usize) -> OperationResult<()> {
     let start = std::time::Instant::now();
 
-    let links = GraphLinks::load_from_file(path, true)?;
-    if links.compressed() {
-        return Ok(());
-    }
+    let links = GraphLinks::load_from_file(path, true, false)?;
+
+    debug_assert!(!links.compressed());
 
     let original_size = path.metadata()?.len();
     GraphLinksConverter::new(links.into_edges(), true, m, m0).save_as(path)?;
@@ -501,20 +490,22 @@ enum GraphLinksEnum {
 }
 
 impl GraphLinksEnum {
-    fn load_view(&self) -> OperationResult<GraphLinksView> {
+    fn load_view(&self, compressed: bool) -> OperationResult<GraphLinksView> {
         let data = match self {
             GraphLinksEnum::Ram(data) => data.as_slice(),
             GraphLinksEnum::Mmap(mmap) => &mmap[..],
         };
-        GraphLinksView::load(data)
+        GraphLinksView::load(data, compressed)
     }
 }
 
 impl GraphLinks {
-    pub fn load_from_file(path: &Path, on_disk: bool) -> OperationResult<Self> {
+    pub fn load_from_file(path: &Path, on_disk: bool, compressed: bool) -> OperationResult<Self> {
         let populate = !on_disk;
         let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
-        Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| x.load_view())
+        Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
+            x.load_view(compressed)
+        })
     }
 
     fn view(&self) -> &GraphLinksView {
@@ -665,7 +656,7 @@ mod tests {
         GraphLinksConverter::new(links.clone(), compressed, m, m0)
             .save_as(&links_file)
             .unwrap();
-        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk)
+        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, compressed)
             .unwrap()
             .into_edges();
         compare_links(links, cmp_links, compressed, m, m0);
