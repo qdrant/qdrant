@@ -277,9 +277,12 @@ impl GraphLayers {
     ) -> OperationResult<Self> {
         let graph_data: GraphLayerData = read_bin(graph_path)?;
 
-        if do_compress && !compressed {
+        let compressed = if do_compress && !compressed {
             convert_to_compressed(links_path, graph_data.m, graph_data.m0)?;
-        }
+            true
+        } else {
+            compressed
+        };
 
         Ok(Self {
             m: graph_data.m,
