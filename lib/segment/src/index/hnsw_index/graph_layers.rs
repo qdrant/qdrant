@@ -271,18 +271,10 @@ impl GraphLayers {
     pub fn load(
         graph_path: &Path,
         links_path: &Path,
-        do_compress: bool,
         on_disk: bool,
         compressed: bool,
     ) -> OperationResult<Self> {
         let graph_data: GraphLayerData = read_bin(graph_path)?;
-
-        let compressed = if do_compress && !compressed {
-            convert_to_compressed(links_path, graph_data.m, graph_data.m0)?;
-            true
-        } else {
-            compressed
-        };
 
         Ok(Self {
             m: graph_data.m,
@@ -292,6 +284,21 @@ impl GraphLayers {
             entry_points: graph_data.entry_points.into_owned(),
             visited_pool: VisitedPool::new(),
         })
+    }
+
+    pub fn convert_to_compressed(
+        graph_path: &Path,
+        links_path: &Path,
+        compressed_links_path: &Path,
+    ) -> OperationResult<()> {
+        let graph_data: GraphLayerData = read_bin(graph_path)?;
+        convert_to_compressed(
+            links_path,
+            compressed_links_path,
+            graph_data.m,
+            graph_data.m0,
+        )?;
+        Ok(())
     }
 
     pub fn save(&self, path: &Path) -> OperationResult<()> {
@@ -433,15 +440,18 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         let dir = Builder::new().prefix("graph_dir").tempdir().unwrap();
+
+        let regular_links_path = GraphLayers::get_links_path(dir.path());
+        let compressed_links_path = GraphLayers::get_compressed_links_path(dir.path());
         let links_path = if compressed {
-            GraphLayers::get_compressed_links_path(dir.path())
+            compressed_links_path.as_path()
         } else {
-            GraphLayers::get_links_path(dir.path())
+            regular_links_path.as_path()
         };
         let (vector_holder, graph_layers_builder) =
             create_graph_layer_builder_fixture(num_vectors, M, dim, false, &mut rng);
         let graph_layers = graph_layers_builder
-            .into_graph_layers(&links_path, compressed, true)
+            .into_graph_layers(links_path, compressed, true)
             .unwrap();
 
         let query = random_vector(&mut rng, dim);
@@ -451,7 +461,15 @@ mod tests {
         let path = GraphLayers::get_path(dir.path());
         graph_layers.save(&path).unwrap();
 
-        let graph2 = GraphLayers::load(&path, &links_path, converted, false, compressed).unwrap();
+        let load_links_path = if !compressed && converted {
+            GraphLayers::convert_to_compressed(&path, &regular_links_path, &compressed_links_path)
+                .unwrap();
+            compressed_links_path.as_path()
+        } else {
+            links_path
+        };
+
+        let graph2 = GraphLayers::load(&path, load_links_path, false, compressed).unwrap();
 
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 

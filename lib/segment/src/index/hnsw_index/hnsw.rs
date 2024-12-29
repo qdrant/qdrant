@@ -153,13 +153,13 @@ impl HNSWIndex {
 
         let config_path = HnswGraphConfig::get_config_path(path);
         let graph_path = GraphLayers::get_path(path);
+        let regular_links = GraphLayers::get_links_path(path);
+        let compressed_links = GraphLayers::get_compressed_links_path(path);
         let (graph_links_path, is_links_compressed) = {
-            let regular_links = GraphLayers::get_links_path(path);
-            let compressed_links = GraphLayers::get_compressed_links_path(path);
             if compressed_links.exists() {
-                (compressed_links, true)
+                (compressed_links.as_path(), true)
             } else {
-                (regular_links, false)
+                (regular_links.as_path(), false)
             }
         };
         let (config, graph) = if graph_path.exists() {
@@ -189,12 +189,24 @@ impl HNSWIndex {
                 )
             };
 
+            let graph_links_path = if !is_links_compressed
+                && LinkCompressionExperimentalSetting::from_env().convert_existing
+            {
+                GraphLayers::convert_to_compressed(
+                    graph_links_path,
+                    &regular_links,
+                    &compressed_links,
+                )?;
+                compressed_links.as_path()
+            } else {
+                graph_links_path
+            };
+
             (
                 config,
                 GraphLayers::load(
                     &graph_path,
-                    &graph_links_path,
-                    LinkCompressionExperimentalSetting::from_env().convert_existing,
+                    graph_links_path,
                     !hnsw_config.on_disk.unwrap_or(false),
                     is_links_compressed,
                 )?,

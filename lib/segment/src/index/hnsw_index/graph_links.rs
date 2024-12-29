@@ -451,16 +451,26 @@ impl GraphLinksConverter {
     }
 }
 
-pub fn convert_to_compressed(path: &Path, m: usize, m0: usize) -> OperationResult<()> {
+pub fn convert_to_compressed(
+    from_path: &Path,
+    to_path: &Path,
+    m: usize,
+    m0: usize,
+) -> OperationResult<()> {
     let start = std::time::Instant::now();
 
-    let links = GraphLinks::load_from_file(path, true, false)?;
+    let links = GraphLinks::load_from_file(from_path, true, false)?;
 
     debug_assert!(!links.compressed());
 
-    let original_size = path.metadata()?.len();
-    GraphLinksConverter::new(links.into_edges(), true, m, m0).save_as(path)?;
-    let new_size = path.metadata()?.len();
+    debug_assert!(!to_path.exists());
+
+    let original_size = from_path.metadata()?.len();
+    GraphLinksConverter::new(links.into_edges(), true, m, m0).save_as(to_path)?;
+    let new_size = to_path.metadata()?.len();
+
+    // Remove the original file
+    std::fs::remove_file(from_path)?;
 
     log::debug!(
         "Compressed HNSW graph links in {:.1?}: {:.1}MB -> {:.1}MB ({:.1}%)",
