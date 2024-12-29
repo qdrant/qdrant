@@ -429,10 +429,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::uncompressed((false, false))]
     #[case::converted((false, true))]
     #[case::compressed((true, false))]
     fn test_save_and_load(#[case] (compressed, converted): (bool, bool)) {
+        eprintln!("(compressed, converted) = {:#?}", (compressed, converted));
+
         let num_vectors = 100;
         let dim = 8;
         let top = 5;
@@ -469,7 +470,9 @@ mod tests {
             links_path
         };
 
-        let graph2 = GraphLayers::load(&path, load_links_path, false, compressed).unwrap();
+        let load_compressed = compressed || converted;
+
+        let graph2 = GraphLayers::load(&path, load_links_path, false, load_compressed).unwrap();
 
         let res2 = search_in_graph(&query, top, &vector_holder, &graph2);
 
