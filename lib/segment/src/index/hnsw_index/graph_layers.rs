@@ -432,8 +432,6 @@ mod tests {
     #[case::converted((false, true))]
     #[case::compressed((true, false))]
     fn test_save_and_load(#[case] (compressed, converted): (bool, bool)) {
-        eprintln!("(compressed, converted) = {:#?}", (compressed, converted));
-
         let num_vectors = 100;
         let dim = 8;
         let top = 5;
@@ -461,6 +459,8 @@ mod tests {
 
         let path = GraphLayers::get_path(dir.path());
         graph_layers.save(&path).unwrap();
+
+        drop(graph_layers);
 
         let load_links_path = if !compressed && converted {
             GraphLayers::convert_to_compressed(&path, &regular_links_path, &compressed_links_path)
