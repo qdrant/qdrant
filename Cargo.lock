@@ -1281,6 +1281,7 @@ dependencies = [
  "ordered-float 4.6.0",
  "ph",
  "rand 0.8.5",
+ "self_cell",
  "semver",
  "serde",
  "tango-bench",

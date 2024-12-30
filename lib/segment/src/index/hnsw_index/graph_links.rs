@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use common::bitpacking::packed_bits;
 use common::bitpacking_links::{for_each_packed_link, pack_links, MIN_BITS_PER_VALUE};
+use common::bitpacking_ordered;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt as _;
 use itertools::{Either, Itertools as _};
@@ -52,10 +53,9 @@ for lvl > 0:
 links offset = level_offsets[level] + offsets[reindex[point_id]]
 */
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct GraphLinksView<'a> {
     reindex: &'a [PointOffsetType],
-    offsets: &'a [u64],
     compression: CompressionInfo<'a>,
     /// Level offsets, copied into RAM for faster access.
     /// Has at least two elements:
@@ -64,13 +64,15 @@ struct GraphLinksView<'a> {
     level_offsets: Vec<u64>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 enum CompressionInfo<'a> {
     Uncompressed {
         links: &'a [u32],
+        offsets: &'a [u64],
     },
     Compressed {
         compressed_links: &'a [u8],
+        offsets: bitpacking_ordered::Reader<'a>,
         m: usize,
         m0: usize,
         bits_per_unsorted: u8,
@@ -92,7 +94,7 @@ struct HeaderPlain {
 
 /// File header for the compressed format.
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
-#[repr(C)]
+#[repr(C, align(8))]
 struct HeaderCompressed {
     point_count: U64,
     /// Should be [`HEADER_VERSION_COMPRESSED`].
@@ -103,10 +105,10 @@ struct HeaderCompressed {
     version: U64,
     levels_count: U64,
     total_links_bytes: U64,
-    total_offset_count: U64,
+    offsets_parameters: bitpacking_ordered::Parameters,
     m: U64,
     m0: U64,
-    zero_padding: [u8; 8],
+    zero_padding: [u8; 5],
 }
 
 const HEADER_VERSION_COMPRESSED: u64 = 0xFFFF_FFFF_FFFF_FF01;
@@ -142,8 +144,7 @@ impl GraphLinksView<'_> {
         let (offsets, _bytes) = Self::get_slice::<u64>(data, header.total_offset_count)?;
         Ok(GraphLinksView {
             reindex,
-            offsets,
-            compression: CompressionInfo::Uncompressed { links },
+            compression: CompressionInfo::Uncompressed { links, offsets },
             level_offsets,
         })
     }
@@ -155,21 +156,19 @@ impl GraphLinksView<'_> {
         let (level_offsets, data) = Self::read_level_offsets(
             data,
             header.levels_count.get(),
-            header.total_offset_count.get(),
+            header.offsets_parameters.length.get(),
         )?;
         let (reindex, data) = Self::get_slice::<PointOffsetType>(data, header.point_count.get())?;
         let (compressed_links, data) = Self::get_slice::<u8>(data, header.total_links_bytes.get())?;
-        let offsets_padding = {
-            let len = compressed_links.len() + reindex.as_bytes().len();
-            len.next_multiple_of(size_of::<u64>()) - len
-        };
-        let (_, data) = Self::get_slice::<u8>(data, offsets_padding as u64)?;
-        let (offsets, _bytes) = Self::get_slice::<u64>(data, header.total_offset_count.get())?;
+        let (offsets, _bytes) = bitpacking_ordered::Reader::new(header.offsets_parameters, data)
+            .map_err(|e| {
+                OperationError::service_error(format!("Can't create decompressor: {e}"))
+            })?;
         Ok(GraphLinksView {
             reindex,
-            offsets,
             compression: CompressionInfo::Compressed {
                 compressed_links,
+                offsets,
                 m: header.m.get() as usize,
                 m0: header.m0.get() as usize,
                 bits_per_unsorted: MIN_BITS_PER_VALUE.max(packed_bits(
@@ -221,18 +220,21 @@ impl GraphLinksView<'_> {
         } else {
             self.level_offsets[level] as usize + self.reindex[point_id as usize] as usize
         };
-        let links_range = self.offsets[idx] as usize..self.offsets[idx + 1] as usize;
 
         match self.compression {
-            CompressionInfo::Uncompressed { links } => {
+            CompressionInfo::Uncompressed { links, offsets } => {
+                let links_range = offsets[idx] as usize..offsets[idx + 1] as usize;
                 links[links_range].iter().copied().for_each(f)
             }
             CompressionInfo::Compressed {
                 compressed_links,
+                ref offsets,
                 m,
                 m0,
                 bits_per_unsorted,
             } => {
+                let links_range =
+                    offsets.get(idx).unwrap() as usize..offsets.get(idx + 1).unwrap() as usize;
                 for_each_packed_link(
                     &compressed_links[links_range],
                     bits_per_unsorted,
@@ -262,14 +264,23 @@ impl GraphLinksView<'_> {
 }
 
 pub struct GraphLinksConverter {
-    compressed: bool,
     m: usize,
     m0: usize,
     links: Vec<u8>,
-    offsets: Vec<u64>,
+    kind: GraphLinksConverterKind,
     reindex: Vec<PointOffsetType>,
     level_offsets: Vec<u64>,
-    offsets_padding: usize,
+}
+
+enum GraphLinksConverterKind {
+    Uncompressed {
+        offsets_padding: usize,
+        offsets: Vec<u64>,
+    },
+    Compressed {
+        compressed_offsets: Vec<u8>,
+        offsets_parameters: bitpacking_ordered::Parameters,
+    },
 }
 
 impl GraphLinksConverter {
@@ -332,33 +343,44 @@ impl GraphLinksConverter {
             });
         }
 
-        let offsets_padding = {
+        let kind = if compressed {
+            let (compressed_offsets, offsets_parameters) = bitpacking_ordered::compress(&offsets);
+            GraphLinksConverterKind::Compressed {
+                compressed_offsets,
+                offsets_parameters,
+            }
+        } else {
             let len = links.len() + reindex.as_bytes().len();
-            len.next_multiple_of(size_of::<u64>()) - len
+            GraphLinksConverterKind::Uncompressed {
+                offsets_padding: len.next_multiple_of(size_of::<u64>()) - len,
+                offsets,
+            }
         };
 
         Self {
-            compressed,
             m,
             m0,
             links,
-            offsets,
+            kind,
             reindex,
             level_offsets,
-            offsets_padding,
         }
     }
 
     pub fn to_graph_links_ram(&self) -> GraphLinks {
-        let size = if self.compressed {
-            size_of::<HeaderCompressed>()
-        } else {
-            size_of::<HeaderPlain>()
-        } + self.level_offsets.as_bytes().len()
+        let size = self.level_offsets.as_bytes().len()
             + self.reindex.as_bytes().len()
             + self.links.len()
-            + self.offsets_padding
-            + self.offsets.as_bytes().len();
+            + (match &self.kind {
+                GraphLinksConverterKind::Uncompressed {
+                    offsets_padding: padding,
+                    offsets,
+                } => size_of::<HeaderPlain>() + padding + offsets.as_bytes().len(),
+                GraphLinksConverterKind::Compressed {
+                    compressed_offsets,
+                    offsets_parameters: _,
+                } => size_of::<HeaderCompressed>() + compressed_offsets.len(),
+            });
 
         let mut data = Vec::with_capacity(size);
         // Unwrap should be the safe as `impl Write` for `Vec` never fails.
@@ -369,35 +391,58 @@ impl GraphLinksConverter {
     }
 
     fn serialize_to_writer(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        if self.compressed {
-            let header = HeaderCompressed {
-                version: HEADER_VERSION_COMPRESSED.into(),
-                point_count: U64::new(self.reindex.len() as u64),
-                total_links_bytes: U64::new(self.links.len() as u64),
-                total_offset_count: U64::new(self.offsets.len() as u64),
-                levels_count: U64::new(self.level_offsets.len() as u64),
-                m: U64::new(self.m as u64),
-                m0: U64::new(self.m0 as u64),
-                zero_padding: [0; 8],
-            };
-            writer.write_all(header.as_bytes())?;
-        } else {
-            let header = HeaderPlain {
-                point_count: self.reindex.len() as u64,
-                levels_count: self.level_offsets.len() as u64,
-                total_links_count: self.links.len() as u64 / size_of::<PointOffsetType>() as u64,
-                total_offset_count: self.offsets.len() as u64,
-                offsets_padding_bytes: self.offsets_padding as u64,
-                zero_padding: [0; 24],
-            };
-            writer.write_all(header.as_bytes())?;
+        match &self.kind {
+            GraphLinksConverterKind::Uncompressed {
+                offsets_padding,
+                offsets,
+            } => {
+                let header = HeaderPlain {
+                    point_count: self.reindex.len() as u64,
+                    levels_count: self.level_offsets.len() as u64,
+                    total_links_count: self.links.len() as u64
+                        / size_of::<PointOffsetType>() as u64,
+                    total_offset_count: offsets.len() as u64,
+                    offsets_padding_bytes: *offsets_padding as u64,
+                    zero_padding: [0; 24],
+                };
+                writer.write_all(header.as_bytes())?;
+            }
+            GraphLinksConverterKind::Compressed {
+                compressed_offsets: _,
+                offsets_parameters,
+            } => {
+                let header = HeaderCompressed {
+                    version: HEADER_VERSION_COMPRESSED.into(),
+                    point_count: U64::new(self.reindex.len() as u64),
+                    total_links_bytes: U64::new(self.links.len() as u64),
+                    offsets_parameters: *offsets_parameters,
+                    levels_count: U64::new(self.level_offsets.len() as u64),
+                    m: U64::new(self.m as u64),
+                    m0: U64::new(self.m0 as u64),
+                    zero_padding: [0; 5],
+                };
+                writer.write_all(header.as_bytes())?;
+            }
         }
 
         writer.write_all(self.level_offsets.as_bytes())?;
         writer.write_all(self.reindex.as_bytes())?;
         writer.write_all(&self.links)?;
-        writer.write_zeros(self.offsets_padding)?;
-        writer.write_all(self.offsets.as_bytes())?;
+        match &self.kind {
+            GraphLinksConverterKind::Uncompressed {
+                offsets_padding: padding,
+                offsets,
+            } => {
+                writer.write_zeros(*padding)?;
+                writer.write_all(offsets.as_bytes())?;
+            }
+            GraphLinksConverterKind::Compressed {
+                compressed_offsets,
+                offsets_parameters: _,
+            } => {
+                writer.write_all(compressed_offsets)?;
+            }
+        }
 
         Ok(())
     }
