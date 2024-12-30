@@ -4,12 +4,14 @@ use std::rc::Rc;
 
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::for_each_packed_link;
+use common::bitpacking_ordered;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{Rng as _, SeedableRng as _};
 use tango_bench::{
     benchmark_fn, tango_benchmarks, tango_main, Bencher, Benchmark, ErasedSampler, IntoBenchmarks,
 };
+use zerocopy::IntoBytes;
 
 pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
     let data8 = StateBencher::new(move || {
@@ -122,6 +124,69 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
     })]
 }
 
+fn benchmarks_ordered() -> impl IntoBenchmarks {
+    struct StateOwner {
+        values: Vec<u64>,
+        compressed: Vec<u8>,
+    }
+
+    struct StateDependent<'a> {
+        decompressor: bitpacking_ordered::Reader<'a>,
+    }
+
+    self_cell::self_cell! {
+        struct State {
+            owner: StateOwner,
+            #[covariant]
+            dependent: StateDependent,
+        }
+    }
+
+    let b = StateBencher::new(move || {
+        let values =
+            bitpacking_ordered::gen_test_sequence(&mut StdRng::seed_from_u64(42), 32, 1 << 22);
+
+        let (compressed, parameters) = bitpacking_ordered::compress(&values);
+
+        State::new(StateOwner { values, compressed }, |owner| {
+            let (decompressor, _) =
+                bitpacking_ordered::Reader::new(parameters, &owner.compressed).unwrap();
+            println!(
+                "Original size: {:.1} MB, compressed size: {:.1} MB, {:?}",
+                owner.values.as_bytes().len() as f64 / 1e6,
+                owner.compressed.len() as f64 / 1e6,
+                decompressor.parameters(),
+            );
+            StateDependent { decompressor }
+        })
+    });
+
+    [
+        b.benchmark_fn("ordered/get", {
+            move |b, state| {
+                let mut rng = rand::thread_rng();
+                let len = state.borrow_owner().values.len() - 1;
+                b.iter(move || {
+                    let i = rng.gen_range(0..len);
+                    black_box(state.borrow_dependent().decompressor.get(i));
+                })
+            }
+        }),
+        b.benchmark_fn("ordered/get2", {
+            move |b, state| {
+                let mut rng = rand::thread_rng();
+                let len = state.borrow_owner().values.len() - 1;
+                b.iter(move || {
+                    let i = rng.gen_range(0..len);
+                    let a = state.borrow_dependent().decompressor.get(i);
+                    let b = state.borrow_dependent().decompressor.get(i + 1);
+                    black_box((a, b));
+                })
+            }
+        }),
+    ]
+}
+
 #[expect(clippy::type_complexity)]
 struct StateBencher<T>(Rc<LazyCell<Rc<T>, Box<dyn FnOnce() -> Rc<T>>>>);
 
@@ -143,5 +208,9 @@ impl<T: 'static> StateBencher<T> {
     }
 }
 
-tango_benchmarks!(benchmarks_bitpacking(), benchmarks_bitpacking_links());
+tango_benchmarks!(
+    benchmarks_bitpacking(),
+    benchmarks_bitpacking_links(),
+    benchmarks_ordered()
+);
 tango_main!();

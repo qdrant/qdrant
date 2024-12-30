@@ -30,6 +30,7 @@ validator = { workspace = true }
 lazy_static = "1.5.0"
 memmap2 = { workspace = true }
 semver = { workspace = true }
+thiserror = { workspace = true }
 zerocopy = { workspace = true }
 log = { workspace = true }
 
@@ -37,10 +38,10 @@ log = { workspace = true }
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 itertools = { workspace = true }
+self_cell = "1.1.0"
 tango-bench = "0.6.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-thiserror = { workspace = true }
 thread-priority = "1.2"
 
 [[bench]]
