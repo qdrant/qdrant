@@ -9,6 +9,8 @@ log_level: INFO
 #     log_file: path/to/log/file.log
 #     log_level: INFO
 
+init_file_path: .qdrant-initialized
+
 storage:
   # Where to store all the data
   storage_path: ./storage

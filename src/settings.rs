@@ -14,6 +14,7 @@ use crate::common::inference::config::InferenceConfig;
 use crate::tracing;
 
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
+const DEFAULT_INIT_FILE_PATH: &str = ".qdrant-initialized";
 
 #[derive(Debug, Deserialize, Validate, Clone)]
 #[allow(dead_code)] // necessary because some field are only used in main.rs
@@ -186,9 +187,16 @@ pub struct GpuConfig {
     pub allow_emulated: bool,
 }
 
+fn get_default_init_file_path() -> String {
+    DEFAULT_INIT_FILE_PATH.to_string()
+}
+
 #[derive(Debug, Deserialize, Clone, Validate)]
 #[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct Settings {
+    #[serde(default = "get_default_init_file_path")]
+    #[validate(length(min = 1))]
+    pub init_file_path: String,
     #[serde(default)]
     pub log_level: Option<String>,
     #[serde(default)]
