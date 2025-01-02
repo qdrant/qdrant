@@ -234,6 +234,16 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "details_level",
+            "in": "query",
+            "description": "Level of details in telemetry data. Minimal level is 0, maximal is infinity",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         ],
         "responses": {
