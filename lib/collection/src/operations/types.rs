@@ -340,8 +340,10 @@ pub struct CollectionClusterInfo {
 pub struct ShardTransferInfo {
     pub shard_id: ShardId,
 
+    /// Target shard ID if different than source shard ID
+    ///
+    /// Used exclusively with `ReshardStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schemars(skip)] // TODO(resharding): expose once we release resharding
     pub to_shard_id: Option<ShardId>,
 
     /// Source peer id

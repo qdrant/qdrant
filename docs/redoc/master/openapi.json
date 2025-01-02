@@ -10711,7 +10711,9 @@
           "Initializing",
           "Listener",
           "PartialSnapshot",
-          "Recovery"
+          "Recovery",
+          "Resharding",
+          "ReshardingScaleDown"
         ]
       },
       "RemoteShardInfo": {
@@ -10763,6 +10765,13 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
+          },
+          "to_shard_id": {
+            "description": "Target shard ID if different than source shard ID\n\nUsed exclusively with `ReshardStreamRecords` transfer method.",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
           },
           "from": {
             "description": "Source peer id",
@@ -10819,6 +10828,13 @@
             "type": "string",
             "enum": [
               "wal_delta"
+            ]
+          },
+          {
+            "description": "Shard transfer for resharding: stream all records in batches until all points are transferred.",
+            "type": "string",
+            "enum": [
+              "resharding_stream_records"
             ]
           }
         ]
@@ -12394,6 +12410,24 @@
           },
           {
             "$ref": "#/components/schemas/RestartTransferOperation"
+          },
+          {
+            "$ref": "#/components/schemas/StartReshardingOperation"
+          },
+          {
+            "$ref": "#/components/schemas/FinishMigratingPointsOperation"
+          },
+          {
+            "$ref": "#/components/schemas/CommitReadHashRingOperation"
+          },
+          {
+            "$ref": "#/components/schemas/CommitWriteHashRingOperation"
+          },
+          {
+            "$ref": "#/components/schemas/FinishReshardingOperation"
+          },
+          {
+            "$ref": "#/components/schemas/AbortReshardingOperation"
           }
         ]
       },
@@ -12420,6 +12454,12 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
+          },
+          "to_shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
           },
           "to_peer_id": {
             "type": "integer",
@@ -12468,6 +12508,12 @@
             "format": "uint32",
             "minimum": 0
           },
+          "to_shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
           "to_peer_id": {
             "type": "integer",
             "format": "uint64",
@@ -12514,6 +12560,12 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
+          },
+          "to_shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
           },
           "to_peer_id": {
             "type": "integer",
@@ -12650,6 +12702,12 @@
             "format": "uint32",
             "minimum": 0
           },
+          "to_shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
           "from_peer_id": {
             "type": "integer",
             "format": "uint64",
@@ -12664,6 +12722,128 @@
             "$ref": "#/components/schemas/ShardTransferMethod"
           }
         }
+      },
+      "StartReshardingOperation": {
+        "type": "object",
+        "required": [
+          "start_resharding"
+        ],
+        "properties": {
+          "start_resharding": {
+            "$ref": "#/components/schemas/StartResharding"
+          }
+        }
+      },
+      "StartResharding": {
+        "type": "object",
+        "required": [
+          "direction"
+        ],
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/ReshardingDirection"
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "shard_key": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ShardKey"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "FinishMigratingPointsOperation": {
+        "type": "object",
+        "required": [
+          "finish_migrating_points"
+        ],
+        "properties": {
+          "finish_migrating_points": {
+            "$ref": "#/components/schemas/FinishMigratingPoints"
+          }
+        }
+      },
+      "FinishMigratingPoints": {
+        "type": "object",
+        "properties": {
+          "shard_id": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true
+          },
+          "peer_id": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "CommitReadHashRingOperation": {
+        "type": "object",
+        "required": [
+          "commit_read_hash_ring"
+        ],
+        "properties": {
+          "commit_read_hash_ring": {
+            "$ref": "#/components/schemas/CommitReadHashRing"
+          }
+        }
+      },
+      "CommitReadHashRing": {
+        "type": "object"
+      },
+      "CommitWriteHashRingOperation": {
+        "type": "object",
+        "required": [
+          "commit_write_hash_ring"
+        ],
+        "properties": {
+          "commit_write_hash_ring": {
+            "$ref": "#/components/schemas/CommitWriteHashRing"
+          }
+        }
+      },
+      "CommitWriteHashRing": {
+        "type": "object"
+      },
+      "FinishReshardingOperation": {
+        "type": "object",
+        "required": [
+          "finish_resharding"
+        ],
+        "properties": {
+          "finish_resharding": {
+            "$ref": "#/components/schemas/FinishResharding"
+          }
+        }
+      },
+      "FinishResharding": {
+        "type": "object"
+      },
+      "AbortReshardingOperation": {
+        "type": "object",
+        "required": [
+          "abort_resharding"
+        ],
+        "properties": {
+          "abort_resharding": {
+            "$ref": "#/components/schemas/AbortResharding"
+          }
+        }
+      },
+      "AbortResharding": {
+        "type": "object"
       },
       "SearchRequestBatch": {
         "type": "object",
