@@ -3,12 +3,12 @@
 set -ex
 
 # Default to local unless specified otherwise
-STORAGE_METHOD=${1:-local}
+STORAGE_METHOD=${1:-Local}
 
 CONFIG_FILE="../../config/config.yaml"
 
 # Check and set the storage method
-if [ "$STORAGE_METHOD" = "s3" ]; then
+if [ "$STORAGE_METHOD" = "S3" ]; then
     echo "Using S3 storage"
     
     yq eval -i '.storage.snapshots_config += {"s3_config": {}}' $CONFIG_FILE
