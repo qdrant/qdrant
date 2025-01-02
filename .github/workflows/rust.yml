@@ -27,6 +27,8 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install nextest
       uses: taiki-e/install-action@nextest
+    - name: Install dependencies
+      run: sudo apt-get install llvm libclang-dev
     - name: Build
       run: cargo build --tests --workspace
     - name: Run tests
