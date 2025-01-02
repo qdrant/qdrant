@@ -18,7 +18,7 @@ storage:
 
   snapshots_config:
     # "local" or "s3" - where to store snapshots
-    snapshots_storage: local
+    snapshots_storage: Local
     # s3_config:
     #   bucket: ""
     #   region: ""
