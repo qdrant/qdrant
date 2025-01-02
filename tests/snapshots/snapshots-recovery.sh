@@ -14,7 +14,7 @@ if [ "$STORAGE_METHOD" = "s3" ]; then
     yq eval -i '.storage.snapshots_config += {"s3_config": {}}' $CONFIG_FILE
 
     # Set to S3 with dynamic or fixed credentials
-    yq eval -i '.storage.snapshots_config.snapshots_storage = "s3"' $CONFIG_FILE
+    yq eval -i '.storage.snapshots_config.snapshots_storage = "S3"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.bucket = "test-bucket"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.region = "us-east-1"' $CONFIG_FILE
     yq eval -i '.storage.snapshots_config.s3_config.access_key = "minioadmin"' $CONFIG_FILE
