@@ -1210,7 +1210,6 @@ pub enum ReplicaState {
     //
     // Snapshot shard transfer is in progress, updates aren't sent to the shard
     // Normally rejects updates. Since 1.8 it allows updates if force is true.
-    #[schemars(skip)]
     PartialSnapshot,
     // Shard is undergoing recovery by an external node
     // Normally rejects updates, accepts updates if force is true

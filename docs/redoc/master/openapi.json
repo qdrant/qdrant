@@ -10700,6 +10700,7 @@
           "Partial",
           "Initializing",
           "Listener",
+          "PartialSnapshot",
           "Recovery"
         ]
       },
