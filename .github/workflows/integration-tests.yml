@@ -272,11 +272,11 @@ jobs:
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
-        run: ./snapshots-recovery.sh local
+        run: ./snapshots-recovery.sh Local
       - name: Run test snapshot operations on different storage filesystems
         working-directory: ./tests/snapshots
         shell: bash
-        run: ./snapshots-recovery.sh s3
+        run: ./snapshots-recovery.sh S3
 
   test-shard-snapshot-api-s3-minio:
     runs-on: ubuntu-latest
