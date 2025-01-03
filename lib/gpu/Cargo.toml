@@ -20,6 +20,5 @@ gpu-allocator = { version = "0.27.0", optional = true }
 shaderc = { version = "0.8.3", optional = true, features = ["build-from-source"]}
 
 log = "0.4"
-rand = "0.8.5"
 parking_lot = { workspace = true }
 memory = { path = "../common/memory" }
