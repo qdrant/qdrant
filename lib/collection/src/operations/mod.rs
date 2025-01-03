@@ -21,7 +21,7 @@ pub mod verification;
 use std::collections::HashMap;
 
 use segment::json_path::JsonPath;
-use segment::types::{ExtendedPointId, PayloadFieldSchema, PointIdType};
+use segment::types::{ExtendedPointId, Filter, PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 
@@ -178,6 +178,40 @@ impl CollectionUpdateOperations {
             Self::VectorOperation(op) => op.retain_point_ids(filter),
             Self::PayloadOperation(op) => op.retain_point_ids(filter),
             Self::FieldIndexOperation(_) => (),
+        }
+    }
+
+    pub fn filter(&self) -> Option<&Filter> {
+        match self {
+            CollectionUpdateOperations::PointOperation(point_operations) => {
+                match point_operations {
+                    point_ops::PointOperations::UpsertPoints(_) => None,
+                    point_ops::PointOperations::DeletePoints { ids: _ } => None,
+                    point_ops::PointOperations::DeletePointsByFilter(filter) => Some(filter),
+                    point_ops::PointOperations::SyncPoints(_) => None,
+                }
+            }
+            CollectionUpdateOperations::VectorOperation(vector_operations) => {
+                match vector_operations {
+                    vector_ops::VectorOperations::UpdateVectors(_) => None,
+                    vector_ops::VectorOperations::DeleteVectors(_, _) => None,
+                    vector_ops::VectorOperations::DeleteVectorsByFilter(filter, _) => Some(filter),
+                }
+            }
+            CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
+                payload_ops::PayloadOps::SetPayload(set_payload_op) => {
+                    set_payload_op.filter.as_ref()
+                }
+                payload_ops::PayloadOps::DeletePayload(delete_payload_op) => {
+                    delete_payload_op.filter.as_ref()
+                }
+                payload_ops::PayloadOps::ClearPayload { points: _ } => None,
+                payload_ops::PayloadOps::ClearPayloadByFilter(filter) => Some(filter),
+                payload_ops::PayloadOps::OverwritePayload(set_payload_op) => {
+                    set_payload_op.filter.as_ref()
+                }
+            },
+            CollectionUpdateOperations::FieldIndexOperation(_) => None,
         }
     }
 }

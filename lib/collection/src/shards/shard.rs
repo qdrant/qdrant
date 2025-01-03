@@ -4,7 +4,8 @@ use std::path::Path;
 
 use common::tar_ext;
 use common::types::TelemetryDetail;
-use segment::types::SnapshotFormat;
+use segment::index::field_index::CardinalityEstimation;
+use segment::types::{Filter, SnapshotFormat};
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -259,6 +260,21 @@ impl Shard {
                     self.variant_name(),
                 )))
             }
+        }
+    }
+
+    pub fn estimate_cardinality(
+        &self,
+        filter: Option<&Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
+        match self {
+            Shard::Local(local_shard) => local_shard.estimate_cardinality(filter),
+            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter),
+            Shard::ForwardProxy(forward_proxy_shard) => {
+                forward_proxy_shard.estimate_cardinality(filter)
+            }
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.estimate_cardinality(filter),
+            Shard::Dummy(dummy_shard) => dummy_shard.estimate_cardinality(filter),
         }
     }
 }

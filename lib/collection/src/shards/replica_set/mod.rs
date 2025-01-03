@@ -814,6 +814,20 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Check if the write rate limiter allows the operation to proceed
+    /// - cost_fn: the cost function of the operation, evaluated lazily
+    ///
+    /// Returns an error if the rate limit is exceeded.
+    fn check_write_rate_limiter_lazy<F>(&self, cost_fn: F) -> CollectionResult<()>
+    where
+        F: Fn() -> usize,
+    {
+        if self.write_rate_limiter.is_some() {
+            self.check_write_rate_limiter(cost_fn())?;
+        };
+        Ok(())
+    }
+
     /// Check if there are any locally disabled peers
     /// And if so, report them to the consensus
     pub fn sync_local_state<F>(&self, get_shard_transfers: F) -> CollectionResult<()>
