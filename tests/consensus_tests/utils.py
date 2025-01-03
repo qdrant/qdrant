@@ -513,7 +513,7 @@ def wait_for_all_replicas_active(peer_api_uri: str, collection_name: str, header
     try:
         wait_for(check_all_replicas_active, peer_api_uri, collection_name, headers=headers)
     except Exception as e:
-        print_clusters_info([peer_api_uri], headers=headers)
+        print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
         raise e
 
 
