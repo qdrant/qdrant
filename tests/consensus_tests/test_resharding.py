@@ -479,7 +479,7 @@ def migrate_points(
     migration_successful = False
 
     for replica in all_replicas(info):
-        if replica["shard_id"] == to_shard_id and replica["peer_id"] == to_peer_id and replica["state"] == "Resharding":
+        if replica["shard_id"] == to_shard_id and replica["peer_id"] == to_peer_id and replica["state"] in ("Resharding", "ReshardingScaleDown"):
             migration_successful = True
             break
 
