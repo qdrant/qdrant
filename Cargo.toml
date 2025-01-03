@@ -183,6 +183,7 @@ rayon = "1.10.0"
 parking_lot = { version = "0.12.3", features = ["deadlock_detection", "serde"] }
 ph = "0.8.5"
 pprof = { version = "0.14.0", features = ["flamegraph", "prost-codec"] }
+proptest = { version = "1.6.0", default-features = false, features = ["std"] }
 prost = "0.12.6"
 prost-build = { version = "0.12.6", features = ["cleanup-markdown"] }
 prost-wkt-types = "0.5"
