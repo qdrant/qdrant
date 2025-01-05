@@ -15,8 +15,8 @@ workspace = true
 [dependencies]
 chrono = { workspace = true }
 dashmap = { workspace = true }
-http = "1.0.0"
-http-serde = "2.0.0"
+http = { workspace = true }
+http-serde = "2.1.1"
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -29,7 +29,7 @@ schemars = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 tonic = { workspace = true }
-http = "0.2"
+http = "0.2.9" # version of http used by tonic 0.11.x
 parking_lot = { workspace = true }
 strum = { workspace = true }
 tap = { workspace = true }
