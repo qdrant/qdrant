@@ -73,7 +73,7 @@ def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, peer_idx=-1)
 
-    # Remove target peer
+    # Remove collection
     resp = requests.delete(f"{peer_uris[0]}/collections/{COLLECTION_NAME}")
     assert_http_ok(resp)
 
