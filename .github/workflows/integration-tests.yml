@@ -29,7 +29,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get install clang
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 - --version 1.8.5
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
@@ -59,7 +59,7 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 - --version 1.8.5
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
@@ -90,7 +90,7 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
+          curl -sSL https://install.python-poetry.org | python3 - --version 1.8.5
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
