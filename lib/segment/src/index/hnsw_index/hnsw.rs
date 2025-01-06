@@ -192,11 +192,7 @@ impl HNSWIndex {
             let do_convert = LinkCompressionExperimentalSetting::from_env().convert_existing;
 
             let graph_links_path = if !is_links_compressed && do_convert {
-                GraphLayers::convert_to_compressed(
-                    graph_links_path,
-                    &regular_links,
-                    &compressed_links,
-                )?;
+                GraphLayers::convert_to_compressed(&graph_path, &regular_links, &compressed_links)?;
                 compressed_links.as_path()
             } else {
                 graph_links_path

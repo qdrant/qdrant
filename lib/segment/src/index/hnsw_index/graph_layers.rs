@@ -317,7 +317,7 @@ impl GraphLayers {
     #[cfg(feature = "testing")]
     pub fn compress_ram(&mut self) {
         use crate::index::hnsw_index::graph_links::GraphLinksConverter;
-        assert!(!self.links.compressed() && !self.links.on_disk());
+        assert!(!self.links.compressed());
         let dummy = GraphLinksConverter::new(Vec::new(), false, 0, 0).to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);
         self.links = GraphLinksConverter::new(links.into_edges(), true, self.m, self.m0)
@@ -429,6 +429,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case::uncompressed((false, false))]
     #[case::converted((false, true))]
     #[case::compressed((true, false))]
     fn test_save_and_load(#[case] (compressed, converted): (bool, bool)) {
