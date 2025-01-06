@@ -13,7 +13,8 @@ use common::zeros::WriteZerosExt as _;
 use itertools::{Either, Itertools as _};
 use memmap2::Mmap;
 use memory::{madvise, mmap_ops};
-use zerocopy::little_endian::U64;
+use zerocopy::little_endian::U64 as LittleU64;
+use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -68,7 +69,7 @@ struct GraphLinksView<'a> {
 enum CompressionInfo<'a> {
     Uncompressed {
         links: &'a [u32],
-        offsets: &'a [u64],
+        offsets: &'a [NativeU64],
     },
     Compressed {
         compressed_links: &'a [u8],
@@ -96,18 +97,18 @@ struct HeaderPlain {
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C, align(8))]
 struct HeaderCompressed {
-    point_count: U64,
+    point_count: LittleU64,
     /// Should be [`HEADER_VERSION_COMPRESSED`].
     ///
     /// Deliberately placed at the same offset as [`HeaderPlain::levels_count`]
     /// and set to an impossibly large number to make old Qdrant versions fail
     /// fast when trying to read the new format.
-    version: U64,
-    levels_count: U64,
-    total_links_bytes: U64,
+    version: LittleU64,
+    levels_count: LittleU64,
+    total_links_bytes: LittleU64,
     offsets_parameters: bitpacking_ordered::Parameters,
-    m: U64,
-    m0: U64,
+    m: LittleU64,
+    m0: LittleU64,
     zero_padding: [u8; 5],
 }
 
@@ -117,7 +118,7 @@ impl GraphLinksView<'_> {
     fn load(data: &[u8]) -> OperationResult<GraphLinksView> {
         let levels_count_or_version = data
             .get(size_of::<u64>()..)
-            .and_then(|x| U64::ref_from_prefix(x).ok())
+            .and_then(|x| LittleU64::ref_from_prefix(x).ok())
             .ok_or_else(Self::error_unsufficent_size)?
             .0
             .get();
@@ -141,7 +142,7 @@ impl GraphLinksView<'_> {
         let (reindex, data) = Self::get_slice::<PointOffsetType>(data, header.point_count)?;
         let (links, data) = Self::get_slice::<u32>(data, header.total_links_count)?;
         let (_, data) = Self::get_slice::<u8>(data, header.offsets_padding_bytes)?;
-        let (offsets, _bytes) = Self::get_slice::<u64>(data, header.total_offset_count)?;
+        let (offsets, _bytes) = Self::get_slice::<NativeU64>(data, header.total_offset_count)?;
         Ok(GraphLinksView {
             reindex,
             compression: CompressionInfo::Uncompressed { links, offsets },
@@ -223,7 +224,7 @@ impl GraphLinksView<'_> {
 
         match self.compression {
             CompressionInfo::Uncompressed { links, offsets } => {
-                let links_range = offsets[idx] as usize..offsets[idx + 1] as usize;
+                let links_range = offsets[idx].get() as usize..offsets[idx + 1].get() as usize;
                 links[links_range].iter().copied().for_each(f)
             }
             CompressionInfo::Compressed {
@@ -413,12 +414,12 @@ impl GraphLinksConverter {
             } => {
                 let header = HeaderCompressed {
                     version: HEADER_VERSION_COMPRESSED.into(),
-                    point_count: U64::new(self.reindex.len() as u64),
-                    total_links_bytes: U64::new(self.links.len() as u64),
+                    point_count: LittleU64::new(self.reindex.len() as u64),
+                    total_links_bytes: LittleU64::new(self.links.len() as u64),
                     offsets_parameters: *offsets_parameters,
-                    levels_count: U64::new(self.level_offsets.len() as u64),
-                    m: U64::new(self.m as u64),
-                    m0: U64::new(self.m0 as u64),
+                    levels_count: LittleU64::new(self.level_offsets.len() as u64),
+                    m: LittleU64::new(self.m as u64),
+                    m0: LittleU64::new(self.m0 as u64),
                     zero_padding: [0; 5],
                 };
                 writer.write_all(header.as_bytes())?;
