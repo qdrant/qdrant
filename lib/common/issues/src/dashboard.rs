@@ -71,7 +71,7 @@ impl Dashboard {
                 kv.value()
                     .related_collection
                     .as_ref()
-                    .map_or(false, |c| c == collection_name)
+                    .is_some_and(|c| c == collection_name)
             })
             .map(|kv| kv.value().clone())
             .collect()
