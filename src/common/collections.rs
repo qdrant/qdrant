@@ -32,6 +32,7 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
+use uuid::Uuid;
 
 pub async fn do_collection_exists(
     toc: &TableOfContent,
@@ -530,11 +531,14 @@ pub async fn do_update_collection_cluster(
         }
         ClusterOperations::StartResharding(op) => {
             let StartResharding {
-                uuid,
+                mut uuid,
                 direction,
                 peer_id,
                 shard_key,
             } = op.start_resharding;
+
+            // Assign random UUID if not specified by user before processing operation on all peers
+            uuid.get_or_insert_with(Uuid::new_v4);
 
             let collection_state = collection.state().await;
 
