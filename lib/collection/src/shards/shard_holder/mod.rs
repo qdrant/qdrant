@@ -471,6 +471,7 @@ impl ShardHolder {
 
         let status = tasks_pool.get_task_status(&resharding_state.key());
         resharding_operations.push(ReshardingInfo {
+            uuid: resharding_state.uuid,
             shard_id: resharding_state.shard_id,
             peer_id: resharding_state.peer_id,
             direction: resharding_state.direction,

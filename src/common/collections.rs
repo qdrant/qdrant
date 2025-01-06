@@ -530,6 +530,7 @@ pub async fn do_update_collection_cluster(
         }
         ClusterOperations::StartResharding(op) => {
             let StartResharding {
+                uuid,
                 direction,
                 peer_id,
                 shard_key,
@@ -627,6 +628,7 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::Start(ReshardKey {
+                            uuid,
                             direction,
                             peer_id,
                             shard_id,
@@ -652,6 +654,7 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::Abort(ReshardKey {
+                            uuid: state.uuid,
                             direction: state.direction,
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
@@ -751,6 +754,7 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::CommitRead(ReshardKey {
+                            uuid: state.uuid,
                             direction: state.direction,
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
@@ -779,6 +783,7 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::Resharding(
                         collection_name.clone(),
                         ReshardingOperation::CommitWrite(ReshardKey {
+                            uuid: state.uuid,
                             direction: state.direction,
                             peer_id: state.peer_id,
                             shard_id: state.shard_id,
