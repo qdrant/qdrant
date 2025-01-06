@@ -9,6 +9,7 @@ use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt as _;
 use memmap2::Mmap;
 use memory::{madvise, mmap_ops};
+use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -487,8 +488,9 @@ impl<'a> GraphLinksView<'a> {
     }
 
     fn get_links_range(&self, idx: usize) -> Range<usize> {
-        let offsets = u64::slice_from(&self.data[self.info.offsets_range()]).unwrap();
-        offsets[idx] as usize..offsets[idx + 1] as usize
+        // Offsets created before v1.8.2 (#3806) can be unaligned.
+        let offsets = NativeU64::slice_from(&self.data[self.info.offsets_range()]).unwrap();
+        offsets[idx].get() as usize..offsets[idx + 1].get() as usize
     }
 
     fn reindex(&self, point_id: PointOffsetType) -> PointOffsetType {
