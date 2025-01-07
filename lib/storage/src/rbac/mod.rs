@@ -174,6 +174,20 @@ impl CollectionAccessView<'_> {
             whole,
             extras,
         } = requirements;
+
+        if extras {
+            match self.access {
+                CollectionAccessMode::Read => {}      // Ok
+                CollectionAccessMode::ReadWrite => {} // Ok
+                CollectionAccessMode::PointsReadWrite => {
+                    return Err(StorageError::forbidden(format!(
+                        "Only points access is allowed for collection {}",
+                        self.collection,
+                    )))
+                }
+            }
+        }
+
         if write {
             match self.access {
                 CollectionAccessMode::Read => {
@@ -184,13 +198,7 @@ impl CollectionAccessView<'_> {
                 }
                 CollectionAccessMode::ReadWrite => (),
                 CollectionAccessMode::PointsReadWrite => {
-                    // If we need access beyond points, we have to do additional checks.
-                    if extras {
-                        return Err(StorageError::forbidden(format!(
-                            "Only points access is allowed for collection {}",
-                            self.collection,
-                        )));
-                    }
+                    // Extras are checked above.
                 }
             }
         }

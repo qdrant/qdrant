@@ -19,7 +19,7 @@ from .utils import (
     REST_URI,
     SECRET,
     encode_jwt,
-    random_str,
+    random_str, decode_jwt,
 )
 
 COLL_NAME = "jwt_test_collection"
@@ -690,9 +690,10 @@ def check_rest_access(
                 res.status_code < 500 and res.status_code != 403
             ), f"{method} {path} failed with {res.status_code}: {res.text}"
         else:
+            jtw = decode_jwt(token, SECRET)
             assert (
                 res.status_code == 403
-            ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`"
+            ), f"{method} {path} should've gotten `403` status code, but got `{res.status_code}: {res.text}`, key: {jtw}"
 
     except requests.exceptions.ConnectionError as e:
         # File upload requests might hang if we get an early response (like 401 or 403),
