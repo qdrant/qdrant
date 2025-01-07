@@ -531,14 +531,14 @@ pub async fn do_update_collection_cluster(
         }
         ClusterOperations::StartResharding(op) => {
             let StartResharding {
-                mut uuid,
+                uuid,
                 direction,
                 peer_id,
                 shard_key,
             } = op.start_resharding;
 
             // Assign random UUID if not specified by user before processing operation on all peers
-            uuid.get_or_insert_with(Uuid::new_v4);
+            let uuid = uuid.unwrap_or_else(Uuid::new_v4);
 
             let collection_state = collection.state().await;
 
