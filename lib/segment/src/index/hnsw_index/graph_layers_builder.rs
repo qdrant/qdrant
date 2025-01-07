@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::collections::BinaryHeap;
 use std::path::Path;
@@ -6,11 +7,13 @@ use std::sync::atomic::AtomicUsize;
 use bitvec::prelude::BitVec;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use io::file_operations::atomic_save_bin;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::distributions::Uniform;
 use rand::Rng;
 
-use super::graph_links::GraphLinks;
+use super::graph_layers::GraphLayerData;
+use super::graph_links::{GraphLinks, GraphLinksFormat};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
@@ -78,36 +81,46 @@ impl GraphLayersBuilder {
     pub fn into_graph_layers(
         self,
         path: &Path,
-        compressed: bool,
+        format: GraphLinksFormat,
         on_disk: bool,
     ) -> OperationResult<GraphLayers> {
+        let links_path = GraphLayers::get_links_path(path, format);
+
         let links_converter =
-            Self::links_layers_to_converter(self.links_layers, compressed, self.m, self.m0);
-        links_converter.save_as(path)?;
+            Self::links_layers_to_converter(self.links_layers, format, self.m, self.m0);
+        links_converter.save_as(&links_path)?;
 
         let links = if on_disk {
-            GraphLinks::load_from_file(path, true)?
+            GraphLinks::load_from_file(&links_path, true, format)?
         } else {
             links_converter.to_graph_links_ram()
         };
 
-        Ok(GraphLayers {
+        let entry_points = self.entry_points.into_inner();
+
+        let data = GraphLayerData {
             m: self.m,
             m0: self.m0,
             ef_construct: self.ef_construct,
+            entry_points: Cow::Borrowed(&entry_points),
+        };
+        atomic_save_bin(&GraphLayers::get_path(path), &data)?;
+
+        Ok(GraphLayers {
+            m: self.m,
+            m0: self.m0,
             links,
-            entry_points: self.entry_points.into_inner(),
+            entry_points,
             visited_pool: self.visited_pool,
         })
     }
 
     #[cfg(feature = "testing")]
-    pub fn into_graph_layers_ram(self, compressed: bool) -> GraphLayers {
+    pub fn into_graph_layers_ram(self, format: GraphLinksFormat) -> GraphLayers {
         GraphLayers {
             m: self.m,
             m0: self.m0,
-            ef_construct: self.ef_construct,
-            links: Self::links_layers_to_converter(self.links_layers, compressed, self.m, self.m0)
+            links: Self::links_layers_to_converter(self.links_layers, format, self.m, self.m0)
                 .to_graph_links_ram(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
@@ -116,7 +129,7 @@ impl GraphLayersBuilder {
 
     fn links_layers_to_converter(
         link_layers: Vec<LockedLayersContainer>,
-        compressed: bool,
+        format: GraphLinksFormat,
         m: usize,
         m0: usize,
     ) -> GraphLinksConverter {
@@ -124,7 +137,7 @@ impl GraphLayersBuilder {
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
             .collect();
-        GraphLinksConverter::new(edges, compressed, m, m0)
+        GraphLinksConverter::new(edges, format, m, m0)
     }
 
     #[cfg(feature = "gpu")]
@@ -645,9 +658,9 @@ mod tests {
 
     #[cfg(not(windows))] // https://github.com/qdrant/qdrant/issues/1452
     #[rstest]
-    #[case::uncompressed(false)]
-    #[case::compressed(true)]
-    fn test_parallel_graph_build(#[case] compressed: bool) {
+    #[case::uncompressed(GraphLinksFormat::Plain)]
+    #[case::compressed(GraphLinksFormat::Compressed)]
+    fn test_parallel_graph_build(#[case] format: GraphLinksFormat) {
         let num_vectors = 1000;
         let dim = 8;
 
@@ -701,7 +714,7 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers_ram(compressed);
+        let graph = graph_layers_builder.into_graph_layers_ram(format);
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
@@ -713,9 +726,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::uncompressed(false)]
-    #[case::compressed(true)]
-    fn test_add_points(#[case] compressed: bool) {
+    #[case::uncompressed(GraphLinksFormat::Plain)]
+    #[case::compressed(GraphLinksFormat::Compressed)]
+    fn test_add_points(#[case] format: GraphLinksFormat) {
         let num_vectors = 1000;
         let dim = 8;
 
@@ -728,7 +741,7 @@ mod tests {
             create_graph_layer::<M, _>(num_vectors, dim, false, &mut rng);
 
         let (_vector_holder_orig, graph_layers_orig) =
-            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, compressed, false, &mut rng2);
+            create_graph_layer_fixture::<M, _>(num_vectors, M, dim, format, false, &mut rng2);
 
         // check is graph_layers_builder links are equal to graph_layers_orig
         let orig_len = graph_layers_orig.links.num_points();
@@ -740,7 +753,10 @@ mod tests {
             let links_orig = &graph_layers_orig.links.links_vec(idx as PointOffsetType, 0);
             let links_builder = graph_layers_builder.links_layers[idx][0].read();
             let link_container_from_builder = links_builder.iter().copied().collect::<Vec<_>>();
-            let m = if compressed { M * 2 } else { 0 };
+            let m = match format {
+                GraphLinksFormat::Plain => 0,
+                GraphLinksFormat::Compressed => M * 2,
+            };
             assert_eq!(
                 normalize_links(m, links_orig.clone()),
                 normalize_links(m, link_container_from_builder),
@@ -788,7 +804,7 @@ mod tests {
             });
         }
 
-        let graph = graph_layers_builder.into_graph_layers_ram(compressed);
+        let graph = graph_layers_builder.into_graph_layers_ram(format);
 
         let fake_filter_context = FakeFilterContext {};
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
@@ -799,9 +815,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case::uncompressed(false)]
-    #[case::compressed(true)]
-    fn test_hnsw_graph_properties(#[case] compressed: bool) {
+    #[case::uncompressed(GraphLinksFormat::Plain)]
+    #[case::compressed(GraphLinksFormat::Compressed)]
+    fn test_hnsw_graph_properties(#[case] format: GraphLinksFormat) {
         const NUM_VECTORS: usize = 5_000;
         const DIM: usize = 16;
         const M: usize = 16;
@@ -822,7 +838,7 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
             graph_layers_builder.link_new_point(idx, scorer);
         }
-        let graph_layers = graph_layers_builder.into_graph_layers_ram(compressed);
+        let graph_layers = graph_layers_builder.into_graph_layers_ram(format);
 
         let num_points = graph_layers.links.num_points();
         eprintln!("number_points = {num_points:#?}");

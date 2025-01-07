@@ -1,6 +1,6 @@
 use std::cmp::Reverse;
-use std::fs::{File, OpenOptions};
-use std::io::{Read as _, Write};
+use std::fs::File;
+use std::io::Write;
 use std::mem::take;
 use std::path::Path;
 use std::sync::Arc;
@@ -12,13 +12,14 @@ use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt as _;
 use itertools::{Either, Itertools as _};
 use memmap2::Mmap;
-use memory::{madvise, mmap_ops};
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops;
+use memory::mmap_ops::open_read_mmap;
 use zerocopy::little_endian::U64 as LittleU64;
 use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::vector_utils::TrySetCapacityExact;
 
 pub const MMAP_PANIC_MESSAGE: &str = "Mmap links are not loaded";
 
@@ -80,6 +81,12 @@ enum CompressionInfo<'a> {
     },
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum GraphLinksFormat {
+    Plain,
+    Compressed,
+}
+
 /// File header for the plain format.
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
@@ -115,22 +122,10 @@ struct HeaderCompressed {
 const HEADER_VERSION_COMPRESSED: u64 = 0xFFFF_FFFF_FFFF_FF01;
 
 impl GraphLinksView<'_> {
-    fn load(data: &[u8]) -> OperationResult<GraphLinksView> {
-        let levels_count_or_version = data
-            .get(size_of::<u64>()..)
-            .and_then(|x| LittleU64::ref_from_prefix(x).ok())
-            .ok_or_else(Self::error_unsufficent_size)?
-            .0
-            .get();
-
-        match levels_count_or_version {
-            // Header for the plain format lacks the version field, but we can
-            // be sure that it contains no more than 2^32 levels.
-            _ if u64::from_le(levels_count_or_version) <= 1 << 32 => Self::load_plain(data),
-            HEADER_VERSION_COMPRESSED => Self::load_compressed(data),
-            _ => Err(OperationError::service_error(
-                "Unsupported version of GraphLinks file",
-            )),
+    fn load(data: &[u8], format: GraphLinksFormat) -> OperationResult<GraphLinksView> {
+        match format {
+            GraphLinksFormat::Compressed => Self::load_compressed(data),
+            GraphLinksFormat::Plain => Self::load_plain(data),
         }
     }
 
@@ -287,7 +282,7 @@ enum GraphLinksConverterKind {
 impl GraphLinksConverter {
     pub fn new(
         mut edges: Vec<Vec<Vec<PointOffsetType>>>,
-        compressed: bool,
+        format: GraphLinksFormat,
         m: usize,
         m0: usize,
     ) -> Self {
@@ -334,27 +329,34 @@ impl GraphLinksConverter {
             };
             iter.for_each(|id| {
                 let raw_links = take(&mut edges[id][level]);
-                if compressed {
-                    pack_links(&mut links, raw_links, bits_per_unsorted, sorted_count);
-                    offsets.push(links.len() as u64);
-                } else {
-                    links.extend_from_slice(raw_links.as_bytes());
-                    offsets.push((links.len() as u64) / size_of::<PointOffsetType>() as u64);
+                match format {
+                    GraphLinksFormat::Compressed => {
+                        pack_links(&mut links, raw_links, bits_per_unsorted, sorted_count);
+                        offsets.push(links.len() as u64);
+                    }
+                    GraphLinksFormat::Plain => {
+                        links.extend_from_slice(raw_links.as_bytes());
+                        offsets.push((links.len() as u64) / size_of::<PointOffsetType>() as u64);
+                    }
                 }
             });
         }
 
-        let kind = if compressed {
-            let (compressed_offsets, offsets_parameters) = bitpacking_ordered::compress(&offsets);
-            GraphLinksConverterKind::Compressed {
-                compressed_offsets,
-                offsets_parameters,
+        let kind = match format {
+            GraphLinksFormat::Compressed => {
+                let (compressed_offsets, offsets_parameters) =
+                    bitpacking_ordered::compress(&offsets);
+                GraphLinksConverterKind::Compressed {
+                    compressed_offsets,
+                    offsets_parameters,
+                }
             }
-        } else {
-            let len = links.len() + reindex.as_bytes().len();
-            GraphLinksConverterKind::Uncompressed {
-                offsets_padding: len.next_multiple_of(size_of::<u64>()) - len,
-                offsets,
+            GraphLinksFormat::Plain => {
+                let len = links.len() + reindex.as_bytes().len();
+                GraphLinksConverterKind::Uncompressed {
+                    offsets_padding: len.next_multiple_of(size_of::<u64>()) - len,
+                    offsets,
+                }
             }
         };
 
@@ -369,6 +371,11 @@ impl GraphLinksConverter {
     }
 
     pub fn to_graph_links_ram(&self) -> GraphLinks {
+        let format = match &self.kind {
+            GraphLinksConverterKind::Uncompressed { .. } => GraphLinksFormat::Plain,
+            GraphLinksConverterKind::Compressed { .. } => GraphLinksFormat::Compressed,
+        };
+
         let size = self.level_offsets.as_bytes().len()
             + self.reindex.as_bytes().len()
             + self.links.len()
@@ -388,7 +395,7 @@ impl GraphLinksConverter {
         self.serialize_to_writer(&mut data).unwrap();
         debug_assert_eq!(data.len(), size);
         // Unwrap should be safe as we just created the data.
-        GraphLinks::try_new(GraphLinksEnum::Ram(data), |x| x.load_view()).unwrap()
+        GraphLinks::try_new(GraphLinksEnum::Ram(data), |x| x.load_view(format)).unwrap()
     }
 
     fn serialize_to_writer(&self, writer: &mut impl Write) -> std::io::Result<()> {
@@ -459,29 +466,6 @@ impl GraphLinksConverter {
     }
 }
 
-pub fn convert_to_compressed(path: &Path, m: usize, m0: usize) -> OperationResult<()> {
-    let start = std::time::Instant::now();
-
-    let links = GraphLinks::load_from_file(path, true)?;
-    if links.compressed() {
-        return Ok(());
-    }
-
-    let original_size = path.metadata()?.len();
-    GraphLinksConverter::new(links.into_edges(), true, m, m0).save_as(path)?;
-    let new_size = path.metadata()?.len();
-
-    log::debug!(
-        "Compressed HNSW graph links in {:.1?}: {:.1}MB -> {:.1}MB ({:.1}%)",
-        start.elapsed(),
-        original_size as f64 / 1024.0 / 1024.0,
-        new_size as f64 / 1024.0 / 1024.0,
-        new_size as f64 / original_size as f64 * 100.0,
-    );
-
-    Ok(())
-}
-
 self_cell::self_cell! {
     pub struct GraphLinks {
         owner: GraphLinksEnum,
@@ -499,41 +483,37 @@ enum GraphLinksEnum {
 }
 
 impl GraphLinksEnum {
-    fn load_view(&self) -> OperationResult<GraphLinksView> {
+    fn load_view(&self, format: GraphLinksFormat) -> OperationResult<GraphLinksView> {
         let data = match self {
             GraphLinksEnum::Ram(data) => data.as_slice(),
             GraphLinksEnum::Mmap(mmap) => &mmap[..],
         };
-        GraphLinksView::load(data)
+        GraphLinksView::load(data, format)
     }
 }
 
 impl GraphLinks {
-    pub fn load_from_file(path: &Path, on_disk: bool) -> OperationResult<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(path)?;
-        if on_disk {
-            let len = file.metadata()?.len();
-            let mut data = Vec::new();
-            data.try_set_capacity_exact(len as usize)?;
-            file.take(len).read_to_end(&mut data)?;
-            Self::try_new(GraphLinksEnum::Ram(data), |x| x.load_view())
-        } else {
-            let mmap = unsafe { Mmap::map(&file)? };
-            madvise::madvise(&mmap, madvise::get_global())?;
-            Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| x.load_view())
-        }
+    pub fn load_from_file(
+        path: &Path,
+        on_disk: bool,
+        format: GraphLinksFormat,
+    ) -> OperationResult<Self> {
+        let populate = !on_disk;
+        let mmap = open_read_mmap(path, AdviceSetting::Advice(Advice::Random), populate)?;
+        Self::try_new(GraphLinksEnum::Mmap(Arc::new(mmap)), |x| {
+            x.load_view(format)
+        })
     }
 
     fn view(&self) -> &GraphLinksView {
         self.borrow_dependent()
     }
 
-    pub fn compressed(&self) -> bool {
-        matches!(self.view().compression, CompressionInfo::Compressed { .. })
+    pub fn format(&self) -> GraphLinksFormat {
+        match self.view().compression {
+            CompressionInfo::Uncompressed { .. } => GraphLinksFormat::Plain,
+            CompressionInfo::Compressed { .. } => GraphLinksFormat::Compressed,
+        }
     }
 
     pub fn on_disk(&self) -> bool {
@@ -633,7 +613,7 @@ mod tests {
     fn compare_links(
         mut left: Vec<Vec<Vec<PointOffsetType>>>,
         mut right: Vec<Vec<Vec<PointOffsetType>>>,
-        compressed: bool,
+        format: GraphLinksFormat,
         m: usize,
         m0: usize,
     ) {
@@ -644,14 +624,15 @@ mod tests {
                     .enumerate()
                     .for_each(|(level_idx, links)| {
                         *links = normalize_links(
-                            if compressed {
-                                if level_idx == 0 {
-                                    m0
-                                } else {
-                                    m
+                            match format {
+                                GraphLinksFormat::Compressed => {
+                                    if level_idx == 0 {
+                                        m0
+                                    } else {
+                                        m
+                                    }
                                 }
-                            } else {
-                                0
+                                GraphLinksFormat::Plain => 0,
                             },
                             std::mem::take(links),
                         );
@@ -666,26 +647,26 @@ mod tests {
         points_count: usize,
         max_levels_count: usize,
         on_disk: bool,
-        compressed: bool,
+        format: GraphLinksFormat,
         m: usize,
         m0: usize,
     ) {
         let path = Builder::new().prefix("graph_dir").tempdir().unwrap();
         let links_file = path.path().join("links.bin");
         let links = random_links(points_count, max_levels_count, m, m0);
-        GraphLinksConverter::new(links.clone(), compressed, m, m0)
+        GraphLinksConverter::new(links.clone(), format, m, m0)
             .save_as(&links_file)
             .unwrap();
-        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk)
+        let cmp_links = GraphLinks::load_from_file(&links_file, on_disk, format)
             .unwrap()
             .into_edges();
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
     }
 
     #[rstest]
-    #[case::uncompressed(false)]
-    #[case::compressed(true)]
-    fn test_graph_links_construction(#[case] compressed: bool) {
+    #[case::uncompressed(GraphLinksFormat::Plain)]
+    #[case::compressed(GraphLinksFormat::Compressed)]
+    fn test_graph_links_construction(#[case] format: GraphLinksFormat) {
         let m = 2;
         let m0 = m * 2;
 
@@ -693,7 +674,7 @@ mod tests {
                               m: usize,
                               m0: usize|
          -> Vec<Vec<Vec<PointOffsetType>>> {
-            GraphLinksConverter::new(links, compressed, m, m0)
+            GraphLinksConverter::new(links, format, m, m0)
                 .to_graph_links_ram()
                 .into_edges()
         };
@@ -701,17 +682,17 @@ mod tests {
         // no points
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![];
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
 
         // 2 points without any links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![]], vec![vec![]]];
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
 
         // one link at level 0
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![vec![vec![1]], vec![vec![0]]];
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
 
         // 3 levels with no links at second level
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -720,7 +701,7 @@ mod tests {
             vec![vec![0, 1], vec![], vec![1]],
         ];
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
 
         // 3 levels with no links at last level
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -729,7 +710,7 @@ mod tests {
             vec![vec![0, 1]],
         ];
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
 
         // 4 levels with random nonexistent links
         let links: Vec<Vec<Vec<PointOffsetType>>> = vec![
@@ -740,23 +721,23 @@ mod tests {
             vec![vec![0, 1, 9, 18], vec![1, 5, 6], vec![5], vec![9]],
         ];
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
 
         // fully random links
         let m = 8;
         let m0 = m * 2;
         let links = random_links(100, 10, m, m0);
         let cmp_links = make_cmp_links(links.clone(), m, m0);
-        compare_links(links, cmp_links, compressed, m, m0);
+        compare_links(links, cmp_links, format, m, m0);
     }
 
     #[test]
     fn test_graph_links_mmap_ram_compatibility() {
         let m = 8;
         let m0 = m * 2;
-        test_save_load(1000, 10, true, true, m, m0);
-        test_save_load(1000, 10, false, true, m, m0);
-        test_save_load(1000, 10, true, false, m, m0);
-        test_save_load(1000, 10, false, false, m, m0);
+        test_save_load(1000, 10, true, GraphLinksFormat::Compressed, m, m0);
+        test_save_load(1000, 10, false, GraphLinksFormat::Compressed, m, m0);
+        test_save_load(1000, 10, true, GraphLinksFormat::Plain, m, m0);
+        test_save_load(1000, 10, false, GraphLinksFormat::Plain, m, m0);
     }
 }

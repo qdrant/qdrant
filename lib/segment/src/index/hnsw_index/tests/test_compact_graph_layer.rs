@@ -9,6 +9,7 @@ use rstest::rstest;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use crate::index::hnsw_index::graph_links::GraphLinksFormat;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
 use crate::spaces::simple::CosineMetric;
@@ -40,9 +41,9 @@ fn search_in_builder(
 
 /// Check that HNSW index with raw and compacted links gives the same results
 #[rstest]
-#[case::uncompressed(false)]
-#[case::compressed(true)]
-fn test_compact_graph_layers(#[case] compressed: bool) {
+#[case::uncompressed(GraphLinksFormat::Plain)]
+#[case::compressed(GraphLinksFormat::Compressed)]
+fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
     let num_vectors = 1000;
     let num_queries = 100;
     let m = 16;
@@ -68,7 +69,7 @@ fn test_compact_graph_layers(#[case] compressed: bool) {
         })
         .collect_vec();
 
-    let graph_layers = graph_layers_builder.into_graph_layers_ram(compressed);
+    let graph_layers = graph_layers_builder.into_graph_layers_ram(format);
 
     let results = queries
         .iter()

@@ -22,6 +22,7 @@ use rayon::ThreadPool;
 
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
+use super::graph_links::GraphLinksFormat;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -102,8 +103,8 @@ pub struct HnswIndexOpenArgs<'a> {
 }
 
 struct LinkCompressionExperimentalSetting {
-    /// Whether newly created graphs should be written in the compressed format.
-    write_new: bool,
+    /// Preferable format for newly created graphs.
+    format: GraphLinksFormat,
     /// Whether to convert existing uncompressed graphs to the compressed format.
     convert_existing: bool,
 }
@@ -116,20 +117,20 @@ impl LinkCompressionExperimentalSetting {
     /// or moved to an appropriate place in the configuration.
     fn from_env() -> Self {
         let name = "__QDRANT_COMPRESSED_LINKS";
-        let (write_new, convert_existing) = match std::env::var(name).as_deref() {
-            Ok("0") | Err(std::env::VarError::NotPresent) => (false, false),
-            Ok("1") => (true, false),
-            Ok("2") => (true, true),
+        let (format, convert_existing) = match std::env::var(name).as_deref() {
+            Ok("0") | Err(std::env::VarError::NotPresent) => (GraphLinksFormat::Plain, false),
+            Ok("1") => (GraphLinksFormat::Compressed, false),
+            Ok("2") => (GraphLinksFormat::Compressed, true),
             _ => {
                 log::warn!(
                     "Unknown value for {name}={:?}, defaulting to 0",
                     std::env::var_os(name),
                 );
-                (false, false)
+                (GraphLinksFormat::Plain, false)
             }
         };
         Self {
-            write_new,
+            format,
             convert_existing,
         }
     }
@@ -153,7 +154,6 @@ impl HNSWIndex {
 
         let config_path = HnswGraphConfig::get_config_path(path);
         let graph_path = GraphLayers::get_path(path);
-        let graph_links_path = GraphLayers::get_links_path(path);
         let (config, graph) = if graph_path.exists() {
             let config = if config_path.exists() {
                 HnswGraphConfig::load(&config_path)?
@@ -181,14 +181,11 @@ impl HNSWIndex {
                 )
             };
 
+            let do_convert = LinkCompressionExperimentalSetting::from_env().convert_existing;
+
             (
                 config,
-                GraphLayers::load(
-                    &graph_path,
-                    &graph_links_path,
-                    LinkCompressionExperimentalSetting::from_env().convert_existing,
-                    !hnsw_config.on_disk.unwrap_or(false),
-                )?,
+                GraphLayers::load(path, !hnsw_config.on_disk.unwrap_or(false), do_convert)?,
             )
         } else {
             let num_cpus = match permit {
@@ -217,7 +214,6 @@ impl HNSWIndex {
             )?;
 
             config.save(&config_path)?;
-            graph.save(&graph_path)?;
 
             (config, graph)
         };
@@ -515,8 +511,8 @@ impl HNSWIndex {
         config.indexed_vector_count.replace(indexed_vectors);
 
         let graph: GraphLayers = graph_layers_builder.into_graph_layers(
-            &GraphLayers::get_links_path(path),
-            LinkCompressionExperimentalSetting::from_env().write_new,
+            path,
+            LinkCompressionExperimentalSetting::from_env().format,
             hnsw_config.on_disk.unwrap_or(false),
         )?;
 
@@ -1307,14 +1303,12 @@ impl VectorIndex for HNSWIndex {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        [
-            GraphLayers::get_path(&self.path),
-            GraphLayers::get_links_path(&self.path),
-            HnswGraphConfig::get_config_path(&self.path),
-        ]
-        .into_iter()
-        .filter(|p| p.exists())
-        .collect()
+        let mut files = self.graph.files(&self.path);
+        let config_path = HnswGraphConfig::get_config_path(&self.path);
+        if config_path.exists() {
+            files.push(config_path);
+        }
+        files
     }
 
     fn indexed_vector_count(&self) -> usize {
