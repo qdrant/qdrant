@@ -4,6 +4,7 @@ mod test_graph_connectivity;
 use common::types::PointOffsetType;
 use rand::Rng;
 
+use super::graph_links::GraphLinksFormat;
 use crate::data_types::vectors::VectorElementType;
 use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -53,7 +54,7 @@ pub(crate) fn create_graph_layer_fixture<TMetric: Metric<VectorElementType>, R>(
     num_vectors: usize,
     m: usize,
     dim: usize,
-    compressed: bool,
+    format: GraphLinksFormat,
     use_heuristic: bool,
     rng: &mut R,
 ) -> (TestRawScorerProducer<TMetric>, GraphLayers)
@@ -65,6 +66,6 @@ where
 
     (
         vector_holder,
-        graph_layers_builder.into_graph_layers_ram(compressed),
+        graph_layers_builder.into_graph_layers_ram(format),
     )
 }

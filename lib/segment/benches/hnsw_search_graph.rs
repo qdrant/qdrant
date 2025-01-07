@@ -13,6 +13,7 @@ use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_links::GraphLinksFormat;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
 
@@ -38,20 +39,17 @@ fn hnsw_benchmark(c: &mut Criterion) {
     // Building HNSW index is expensive, so it's cached between runs.
     let mut graph_layers;
     {
-        let base_fname = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(env!("CARGO_PKG_NAME"))
             .join(env!("CARGO_CRATE_NAME"))
             .join(format!(
                 "{NUM_VECTORS}-{DIM}-{M}-{EF_CONSTRUCT}-{USE_HEURISTIC}-{:?}",
                 <Metric as segment::spaces::metric::Metric<f32>>::distance(),
             ));
-        let graph_fname = base_fname.with_extension("graph");
-        let links_fname = base_fname.with_extension("links");
-        std::fs::create_dir_all(graph_fname.parent().unwrap()).unwrap();
 
-        if graph_fname.exists() && links_fname.exists() {
-            eprintln!("Loading cached links from {links_fname:?}");
-            graph_layers = GraphLayers::load(&graph_fname, &links_fname, false, false).unwrap();
+        if GraphLayers::get_path(&path).exists() {
+            eprintln!("Loading cached links from {path:?}");
+            graph_layers = GraphLayers::load(&path, false, false).unwrap();
         } else {
             let mut graph_layers_builder =
                 GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
@@ -75,10 +73,10 @@ fn hnsw_benchmark(c: &mut Criterion) {
                     graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
                 });
 
+            std::fs::create_dir_all(&path).unwrap();
             graph_layers = graph_layers_builder
-                .into_graph_layers(&links_fname, false, false)
+                .into_graph_layers(&path, GraphLinksFormat::Plain, false)
                 .unwrap();
-            graph_layers.save(&graph_fname).unwrap();
         }
     }
 
