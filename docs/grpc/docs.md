@@ -71,6 +71,9 @@
     - [SparseVectorConfig.MapEntry](#qdrant-SparseVectorConfig-MapEntry)
     - [SparseVectorParams](#qdrant-SparseVectorParams)
     - [StrictModeConfig](#qdrant-StrictModeConfig)
+    - [StrictModeMultivector](#qdrant-StrictModeMultivector)
+    - [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig)
+    - [StrictModeMultivectorConfig.MultivectorConfigEntry](#qdrant-StrictModeMultivectorConfig-MultivectorConfigEntry)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
@@ -1460,6 +1463,53 @@ Note: 1kB = 1 vector of size 256. |
 | read_rate_limit | [uint32](#uint32) | optional | Max number of read operations per minute per replica |
 | write_rate_limit | [uint32](#uint32) | optional | Max number of write operations per minute per replica |
 | max_collection_payload_size_bytes | [uint64](#uint64) | optional |  |
+| multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional |  |
+
+
+
+
+
+
+<a name="qdrant-StrictModeMultivector"></a>
+
+### StrictModeMultivector
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| max_vectors | [uint64](#uint64) | optional |  |
+
+
+
+
+
+
+<a name="qdrant-StrictModeMultivectorConfig"></a>
+
+### StrictModeMultivectorConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| multivector_config | [StrictModeMultivectorConfig.MultivectorConfigEntry](#qdrant-StrictModeMultivectorConfig-MultivectorConfigEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-StrictModeMultivectorConfig-MultivectorConfigEntry"></a>
+
+### StrictModeMultivectorConfig.MultivectorConfigEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [StrictModeMultivector](#qdrant-StrictModeMultivector) |  |  |
 
 
 

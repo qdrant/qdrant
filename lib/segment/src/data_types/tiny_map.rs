@@ -156,7 +156,7 @@ where
     }
 }
 
-impl<K, V> iter::FromIterator<(K, V)> for TinyMap<K, V>
+impl<K, V> FromIterator<(K, V)> for TinyMap<K, V>
 where
     K: Default,
     V: Default,
