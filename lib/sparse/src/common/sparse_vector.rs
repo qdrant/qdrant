@@ -31,7 +31,7 @@ pub struct RemappedSparseVector {
 }
 
 /// Sort two arrays by the first array.
-fn double_sort<T: Ord + Copy, V: Copy>(indices: &mut [T], values: &mut [V]) {
+pub fn double_sort<T: Ord + Copy, V: Copy>(indices: &mut [T], values: &mut [V]) {
     // Check if the indices are already sorted
     if indices.windows(2).all(|w| w[0] < w[1]) {
         return;

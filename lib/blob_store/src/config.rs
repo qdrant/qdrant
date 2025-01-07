@@ -9,6 +9,15 @@ pub const DEFAULT_PAGE_SIZE_BYTES: usize = 32 * 1024 * 1024; // 32MB
 
 pub const DEFAULT_REGION_SIZE_BLOCKS: usize = 8_192;
 
+pub const DEFAULT_USE_COMPRESSION: bool = true;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum Compression {
+    None,
+    #[default]
+    LZ4,
+}
+
 /// Configuration options for the storage
 #[derive(Debug, Default)]
 pub struct StorageOptions {
@@ -26,6 +35,11 @@ pub struct StorageOptions {
     ///
     /// Default is 8192 blocks
     pub region_size_blocks: Option<u16>,
+
+    /// Use compression
+    ///
+    /// Default is LZ4
+    pub compression: Option<Compression>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +58,12 @@ pub(crate) struct StorageConfig {
     ///
     /// Default is 8192 blocks
     pub region_size_blocks: usize,
+
+    /// Use compression
+    ///
+    /// Default is true
+    #[serde(default)]
+    pub compression: Compression,
 }
 
 impl TryFrom<StorageOptions> for StorageConfig {
@@ -83,6 +103,7 @@ impl TryFrom<StorageOptions> for StorageConfig {
             page_size_bytes,
             block_size_bytes,
             region_size_blocks,
+            compression: options.compression.unwrap_or_default(),
         })
     }
 }

@@ -5,6 +5,7 @@ use itertools::{Itertools, MinMaxResult};
 
 pub type DimOffset = u32;
 pub type DimId = u32;
+pub type DimId64 = u64;
 pub type DimWeight = f32;
 
 pub trait Weight: PartialEq + Copy + Debug + 'static {
