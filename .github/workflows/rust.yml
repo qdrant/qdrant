@@ -40,6 +40,7 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         files: lcov.info
+        token: ${{ secrets.CODECOV_TOKEN }}
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
