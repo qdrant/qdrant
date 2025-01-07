@@ -92,7 +92,7 @@ mod tests {
         assert_eq!(limiter.tokens, 0.0);
 
         // rate limit reached
-        assert_eq!(limiter.try_consume(1.0), Ok(()));
+        assert!(limiter.try_consume(1.0).is_err());
     }
 
     #[test]
