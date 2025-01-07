@@ -111,6 +111,7 @@ mod tests {
     use crate::fixtures::payload_fixtures::random_vector;
     use crate::index::hnsw_index::graph_layers::GraphLayers;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+    use crate::index::hnsw_index::graph_links::GraphLinksFormat;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
@@ -224,8 +225,10 @@ mod tests {
         ef: usize,
         accuracy: f32,
     ) {
-        let graph: GraphLayers = graph.into_graph_layers_ram(false);
-        let ref_graph: GraphLayers = test.graph_layers_builder.into_graph_layers_ram(false);
+        let graph: GraphLayers = graph.into_graph_layers_ram(GraphLinksFormat::Plain);
+        let ref_graph: GraphLayers = test
+            .graph_layers_builder
+            .into_graph_layers_ram(GraphLinksFormat::Plain);
 
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();

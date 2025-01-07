@@ -9,6 +9,7 @@ use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+use segment::index::hnsw_index::graph_links::GraphLinksFormat;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
@@ -41,7 +42,7 @@ fn build_index<TMetric: Metric<VectorElementType>>(
     }
     (
         vector_holder,
-        graph_layers_builder.into_graph_layers_ram(false),
+        graph_layers_builder.into_graph_layers_ram(GraphLinksFormat::Plain),
     )
 }
 
