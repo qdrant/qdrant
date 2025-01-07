@@ -54,7 +54,7 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                 OperationEffectArea::Points(Cow::Borrowed(ids))
             }
             point_ops::PointOperations::DeletePointsByFilter(filter) => {
-                OperationEffectArea::Filter(&filter)
+                OperationEffectArea::Filter(filter)
             }
             point_ops::PointOperations::SyncPoints(sync_op) => {
                 debug_assert!(
@@ -80,7 +80,7 @@ impl EstimateOperationEffectArea for vector_ops::VectorOperations {
                 OperationEffectArea::Points(Cow::Borrowed(&ids.points))
             }
             vector_ops::VectorOperations::DeleteVectorsByFilter(filter, _) => {
-                OperationEffectArea::Filter(&filter)
+                OperationEffectArea::Filter(filter)
             }
         }
     }
@@ -106,7 +106,7 @@ impl EstimateOperationEffectArea for PayloadOps {
                 if let Some(points) = &set_payload.points {
                     OperationEffectArea::Points(Cow::Borrowed(points))
                 } else if let Some(filter) = &set_payload.filter {
-                    OperationEffectArea::Filter(&filter)
+                    OperationEffectArea::Filter(filter)
                 } else {
                     OperationEffectArea::Empty
                 }
@@ -115,7 +115,7 @@ impl EstimateOperationEffectArea for PayloadOps {
                 if let Some(points) = &delete_payload.points {
                     OperationEffectArea::Points(Cow::Borrowed(points))
                 } else if let Some(filter) = &delete_payload.filter {
-                    OperationEffectArea::Filter(&filter)
+                    OperationEffectArea::Filter(filter)
                 } else {
                     OperationEffectArea::Empty
                 }
@@ -123,12 +123,12 @@ impl EstimateOperationEffectArea for PayloadOps {
             PayloadOps::ClearPayload { points } => {
                 OperationEffectArea::Points(Cow::Borrowed(points))
             }
-            PayloadOps::ClearPayloadByFilter(filter) => OperationEffectArea::Filter(&filter),
+            PayloadOps::ClearPayloadByFilter(filter) => OperationEffectArea::Filter(filter),
             PayloadOps::OverwritePayload(set_payload) => {
                 if let Some(points) = &set_payload.points {
                     OperationEffectArea::Points(Cow::Borrowed(points))
                 } else if let Some(filter) = &set_payload.filter {
-                    OperationEffectArea::Filter(&filter)
+                    OperationEffectArea::Filter(filter)
                 } else {
                     OperationEffectArea::Empty
                 }

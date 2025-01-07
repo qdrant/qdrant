@@ -171,14 +171,14 @@ impl ShardOperation for ProxyShard {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
             OperationEffectArea::Points(points) => PointsOperationEffect::Some(Vec::from(points)),
             OperationEffectArea::Filter(filter) => {
-                let cardinality = local_shard.estimate_cardinality(Some(&filter))?;
+                let cardinality = local_shard.estimate_cardinality(Some(filter))?;
                 // validate the size of the change set before retrieving it
                 if cardinality.max > MAX_CHANGES_TRACKED_COUNT {
                     PointsOperationEffect::Many
                 } else {
                     let runtime_handle = self.wrapped_shard.search_runtime.clone();
                     let points = local_shard
-                        .read_filtered(Some(&filter), &runtime_handle)
+                        .read_filtered(Some(filter), &runtime_handle)
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
