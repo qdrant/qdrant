@@ -3,7 +3,7 @@ use collection::operations::config_diff::{
 };
 use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
-use segment::types::StrictModeConfig;
+use segment::types::{StrictModeConfig, StrictModeMultivectorConfig};
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -97,6 +97,9 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
             .map(|i| i as usize),
         filter_max_conditions: value.filter_max_conditions.map(|i| i as usize),
         condition_max_size: value.condition_max_size.map(|i| i as usize),
+        multivector_config: value
+            .multivector_config
+            .map(StrictModeMultivectorConfig::from),
     }
 }
 

@@ -29,7 +29,7 @@ pub type MultiDenseVector = Vec<DenseVector>;
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
     Dense(DenseVector),
-    Sparse(sparse::common::sparse_vector::SparseVector),
+    Sparse(SparseVector),
     MultiDense(MultiDenseVector),
     Document(Document),
     Image(Image),
@@ -41,7 +41,7 @@ pub enum Vector {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorOutput {
     Dense(DenseVector),
-    Sparse(sparse::common::sparse_vector::SparseVector),
+    Sparse(SparseVector),
     MultiDense(MultiDenseVector),
 }
 
@@ -1022,7 +1022,7 @@ impl<'de> serde::Deserialize<'de> for PointInsertOperations {
 #[derive(Debug, Serialize, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum PointInsertOperations {
-    /// Inset points from a batch.
+    /// Insert points from a batch.
     PointsBatch(PointsBatch),
     /// Insert points from a list
     PointsList(PointsList),

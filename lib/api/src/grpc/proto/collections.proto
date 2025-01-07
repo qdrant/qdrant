@@ -342,6 +342,15 @@ message StrictModeConfig {
   optional uint64 max_collection_payload_size_bytes = 13;
   optional uint64 filter_max_conditions = 14;
   optional uint64 condition_max_size = 15;
+  optional StrictModeMultivectorConfig multivector_config = 16;
+}
+
+message StrictModeMultivectorConfig {
+  map<string, StrictModeMultivector> multivector_config = 1;
+}
+
+message StrictModeMultivector {
+  optional uint64 max_vectors  = 1;
 }
 
 message CreateCollection {
