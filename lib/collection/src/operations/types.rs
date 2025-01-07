@@ -363,8 +363,8 @@ pub struct ShardTransferInfo {
 
 #[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct ReshardingInfo {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub uuid: Option<Uuid>,
+    #[schemars(skip)]
+    pub uuid: Uuid,
 
     pub direction: ReshardingDirection,
 
