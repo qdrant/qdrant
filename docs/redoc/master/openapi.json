@@ -10831,6 +10831,11 @@
           "shard_id"
         ],
         "properties": {
+          "uuid": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
           "direction": {
             "$ref": "#/components/schemas/ReshardingDirection"
           },
