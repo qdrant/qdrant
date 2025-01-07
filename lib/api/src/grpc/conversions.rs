@@ -1717,6 +1717,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             max_collection_payload_size_bytes: value
                 .max_collection_payload_size_bytes
                 .map(|i| i as usize),
+            multivector_config: None, // TODO: Implement
         }
     }
 }

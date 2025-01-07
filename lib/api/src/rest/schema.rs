@@ -29,7 +29,7 @@ pub type MultiDenseVector = Vec<DenseVector>;
 #[serde(untagged, rename_all = "snake_case")]
 pub enum Vector {
     Dense(DenseVector),
-    Sparse(sparse::common::sparse_vector::SparseVector),
+    Sparse(SparseVector),
     MultiDense(MultiDenseVector),
     Document(Document),
     Image(Image),
@@ -41,7 +41,7 @@ pub enum Vector {
 #[serde(untagged, rename_all = "snake_case")]
 pub enum VectorOutput {
     Dense(DenseVector),
-    Sparse(sparse::common::sparse_vector::SparseVector),
+    Sparse(SparseVector),
     MultiDense(MultiDenseVector),
 }
 

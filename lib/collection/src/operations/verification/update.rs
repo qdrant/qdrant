@@ -1,5 +1,10 @@
-use api::rest::{PointInsertOperations, UpdateVectors};
-use segment::types::{Filter, StrictModeConfig};
+use std::collections::HashMap;
+
+use api::rest::{
+    BatchVectorStruct, MultiDenseVector, PointInsertOperations, UpdateVectors, Vector, VectorStruct,
+};
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::types::{Filter, StrictModeConfig, StrictModeMultivectorConfig};
 
 use super::{check_limit_opt, StrictModeVerification};
 use crate::collection::Collection;
@@ -129,6 +134,10 @@ impl StrictModeVerification for PointInsertOperations {
 
         check_collection_size_limit(collection, strict_mode_config).await?;
 
+        if let Some(multivector_config) = &strict_mode_config.multivector_config {
+            check_multivectors_limits(self, collection, multivector_config).await?;
+        }
+
         Ok(())
     }
 
@@ -166,6 +175,13 @@ impl StrictModeVerification for UpdateVectors {
         )?;
 
         check_collection_size_limit(collection, strict_mode_config).await?;
+
+        // if let Some(multivector_config) = &strict_mode_config.multivector_config {
+        //     // TODO apply similar logic for update vectors
+        //     for point in &self.points {
+        //         check_multivectors_limits(point.vector, collection, multivector_config).await?;
+        //     }
+        // }
 
         Ok(())
     }
@@ -247,6 +263,138 @@ fn check_collection_payload_size_limit(
         let size_in_mb = max_payload_storage_size_bytes as f32 / (1024.0 * 1024.0);
         return Err(CollectionError::bad_request(format!(
             "Max payload storage size limit of {size_in_mb}MB reached!",
+        )));
+    }
+
+    Ok(())
+}
+
+async fn check_multivectors_limits(
+    point_insert: &PointInsertOperations,
+    collection: &Collection,
+    multivector_strict_config: &StrictModeMultivectorConfig,
+) -> Result<(), CollectionError> {
+    // If no multivectors strict mode no need to check anything.
+    if multivector_strict_config.config.is_empty() {
+        return Ok(());
+    }
+    let collection_guard = collection.collection_config.read().await;
+
+    let multivector_max_size_by_name: HashMap<String, usize> = collection_guard
+        .params
+        .vectors
+        .params_iter()
+        .filter_map(|(name, config)| config.multivector_config.map(|_strict_config| name)) // keep only configured multivectors
+        .filter_map(|multi_vector_name| {
+            multivector_strict_config
+                .config
+                .get(multi_vector_name)
+                .and_then(|config| config.max_vectors)
+                .map(|max_vectors| (multi_vector_name, max_vectors))
+        })
+        .map(|(name, max_vectors)| (name.to_string(), max_vectors))
+        .collect();
+    drop(collection_guard);
+
+    // If no multivectors are configured, no need to check anything.
+    if multivector_max_size_by_name.is_empty() {
+        return Ok(());
+    }
+
+    match point_insert {
+        PointInsertOperations::PointsBatch(batch) => match &batch.batch.vectors {
+            BatchVectorStruct::MultiDense(multis) => {
+                for multi in multis {
+                    check_named_multivector_limit(
+                        DEFAULT_VECTOR_NAME,
+                        multi,
+                        &multivector_max_size_by_name,
+                    )?;
+                }
+            }
+            BatchVectorStruct::Named(named_batch_vectors) => {
+                for (name, vectors) in named_batch_vectors {
+                    for vector in vectors {
+                        check_named_multivectors_vec_limit(
+                            name,
+                            vector,
+                            &multivector_max_size_by_name,
+                        )?;
+                    }
+                }
+            }
+            BatchVectorStruct::Single(_)
+            | BatchVectorStruct::Document(_)
+            | BatchVectorStruct::Image(_)
+            | BatchVectorStruct::Object(_) => {}
+        },
+        PointInsertOperations::PointsList(list) => {
+            for point_struct in &list.points {
+                match &point_struct.vector {
+                    VectorStruct::MultiDense(multi) => {
+                        check_named_multivector_limit(
+                            DEFAULT_VECTOR_NAME,
+                            multi,
+                            &multivector_max_size_by_name,
+                        )?;
+                    }
+                    VectorStruct::Named(named_vectors) => {
+                        for (name, vector) in named_vectors {
+                            check_named_multivectors_vec_limit(
+                                name,
+                                vector,
+                                &multivector_max_size_by_name,
+                            )?;
+                        }
+                    }
+                    VectorStruct::Single(_)
+                    | VectorStruct::Document(_)
+                    | VectorStruct::Image(_)
+                    | VectorStruct::Object(_) => {}
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn check_named_multivectors_vec_limit(
+    name: &str,
+    vector: &Vector,
+    multivector_max_size_by_name: &HashMap<String, usize>,
+) -> Result<(), CollectionError> {
+    match vector {
+        Vector::MultiDense(multi) => {
+            check_named_multivector_limit(name, multi, multivector_max_size_by_name)
+        }
+        Vector::Dense(_)
+        | Vector::Sparse(_)
+        | Vector::Document(_)
+        | Vector::Image(_)
+        | Vector::Object(_) => Ok(()),
+    }
+}
+
+fn check_named_multivector_limit(
+    name: &str,
+    multi: &MultiDenseVector,
+    multivector_max_size_by_name: &HashMap<String, usize>,
+) -> Result<(), CollectionError> {
+    if let Some(strict_multi_limit) = multivector_max_size_by_name.get(name) {
+        check_multivector_limit(multi, *strict_multi_limit)?
+    }
+    Ok(())
+}
+
+fn check_multivector_limit(
+    multi: &MultiDenseVector,
+    max_size: usize,
+) -> Result<(), CollectionError> {
+    let multi_len = multi.len();
+    if multi_len > max_size {
+        return Err(CollectionError::bad_request(format!(
+            "Multivector has a limit of {max_size} vectors, but {multi_len} were provided!",
         )));
     }
 
