@@ -1,12 +1,8 @@
-import multiprocessing
 import pathlib
-import random
 from time import sleep
 from typing import Any, Literal
 
-from .test_dummy_shard import assert_http_response
-
-from .fixtures import upsert_random_points, create_collection, random_dense_vector
+from .fixtures import upsert_random_points, create_collection
 from .utils import *
 
 
