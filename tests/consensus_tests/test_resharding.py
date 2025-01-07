@@ -14,6 +14,10 @@ COLLECTION_NAME = "test_collection"
 
 
 def test_resharding_state_transitions(tmp_path: pathlib.Path):
+    """
+    Tests allowed state transitions during resharding
+    """
+
     # Bootstrap resharding cluster
     peer_uris, _ = bootstrap_resharding(tmp_path)
 
@@ -59,6 +63,10 @@ def test_resharding_state_transitions(tmp_path: pathlib.Path):
     wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
 
 def test_resharding_abort(tmp_path: pathlib.Path):
+    """
+    Tests that resharding can be aborted
+    """
+
     # Bootstrap resharding cluster
     peer_uris, _ = bootstrap_resharding(tmp_path)
 
@@ -70,6 +78,10 @@ def test_resharding_abort(tmp_path: pathlib.Path):
     wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
 
 def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
+    """
+    Testa that resharding is automatically aborted, when collection is deleted
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, peer_idx=-1)
 
@@ -80,6 +92,10 @@ def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
     # TODO: Wait for/check... *what*? 🤔
 
 def test_resharding_abort_on_delete_shard_key(tmp_path: pathlib.Path):
+    """
+    Tests that resharding is automatically aborted, when custom shard key is deleted
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(
         tmp_path,
@@ -98,6 +114,10 @@ def test_resharding_abort_on_delete_shard_key(tmp_path: pathlib.Path):
     wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
 
 def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
+    """
+    Tests that resharding is automatically aborted, when we force-remove resharding peer
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, peer_idx=-1)
 
@@ -109,6 +129,10 @@ def test_resharding_abort_on_remove_peer(tmp_path: pathlib.Path):
     wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
 
 def test_resharding_try_remove_target_shard(tmp_path: pathlib.Path):
+    """
+    Tests that new shard can't be removed during resharding (until it has been replicated)
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path)
 
@@ -124,6 +148,10 @@ def test_resharding_try_remove_target_shard(tmp_path: pathlib.Path):
 
 @pytest.mark.parametrize("direction, peers", [("up", 3), ("down", 3)])
 def test_resharding_forward(tmp_path: pathlib.Path, direction: Literal["up", "down"], peers: int):
+    """
+    Tests that updates are forwarded to target replicas
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, direction=direction, peers=peers)
 
@@ -158,6 +186,10 @@ def test_resharding_forward(tmp_path: pathlib.Path, direction: Literal["up", "do
 
 @pytest.mark.parametrize("direction, peers", [("up", 3), ("down", 3)])
 def test_resharding_transfer(tmp_path: pathlib.Path, direction: Literal["up", "down"], peers: int):
+    """
+    Tests that resharding transfers migrate points to target replicas
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, upsert_points=1000, direction=direction, peers=peers)
 
@@ -192,6 +224,10 @@ def test_resharding_transfer(tmp_path: pathlib.Path, direction: Literal["up", "d
 
 @pytest.mark.parametrize("peers", [(3)])
 def test_resharding_down_abort_cleanup(tmp_path: pathlib.Path, peers: int):
+    """
+    Tests that migrated points are cleaned up from target replicas, when scale-down resharding is aborted
+    """
+
     # Bootstrap resharding cluster
     peer_uris, peer_ids = bootstrap_resharding(tmp_path, upsert_points=500, direction="down", peers=peers)
 
