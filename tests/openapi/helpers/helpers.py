@@ -43,6 +43,7 @@ def request_with_validation(
         query_params: dict = None,
         body: dict = None
 ) -> requests.Response:
+    print(body)
     operation: APIOperation = SCHEMA[api][method]
 
     assert isinstance(operation.schema, OpenApi30)

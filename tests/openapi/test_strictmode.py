@@ -45,7 +45,6 @@ def strict_mode_enabled(collection_name) -> bool:
     strict_mode = get_strict_mode(collection_name)
     return strict_mode is not None and strict_mode['enabled']
 
-
 def test_patch_collection_full(collection_name):
     assert not strict_mode_enabled(collection_name)
 
@@ -894,3 +893,80 @@ def test_strict_mode_write_rate_limiting_update_op(collection_name):
     )
     assert response.status_code == 429
     assert "Rate limiting exceeded: Write rate limit exceeded: Operation requires 5 tokens but only" in response.json()['status']['error']
+
+
+def test_filter_many_conditions(collection_name):
+    def search_request(condition_count: int):
+        conditions = []
+        for i in range(condition_count):
+            conditions.append({
+                "key": "price",
+                "match": {
+                    "value": i
+                }
+            })
+
+        return request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 4,
+                "filter": {
+                    "must": conditions
+                },
+            }
+        )
+
+    search_request(5).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "filter_max_conditions": 5,
+    })
+
+    search_request(5).raise_for_status()
+
+    search_fail = search_request(6)
+    assert "Filter" in search_fail.json()['status']['error']
+    assert "limit" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+
+def test_filter_large_condition(collection_name):
+    def search_request(condition_size: int):
+        conditions = [x for x in range(condition_size)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 4,
+                "filter": {
+                    "must": [
+                        {
+                            "key": "price",
+                            "match": {
+                                "any": conditions
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+    search_request(5).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "condition_max_size": 5,
+    })
+
+    search_request(5).raise_for_status()
+
+    search_fail = search_request(6)
+    assert "Condition" in search_fail.json()['status']['error']
+    assert "limit" in search_fail.json()['status']['error']
+    assert not search_fail.ok
