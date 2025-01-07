@@ -125,4 +125,4 @@ test_version $PREV_PATCH_QDRANT_VERSION
 test_version $PREV_MINOR_QDRANT_VERSION
 
 # Test that it can read both rocksdb and blob_store
-test_version 'v1.12.5-rocksdb+blob_store'
+test_version 'v1.12.6-rocksdb+blob_store-pre_release'

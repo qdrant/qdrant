@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use bitvec::slice::BitSlice;
+use blob_store::config::{Compression, StorageOptions};
 use blob_store::BlobStore;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
@@ -16,6 +17,7 @@ use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
+use crate::vector_storage::sparse::stored_sparse_vectors::StoredSparseVector;
 use crate::vector_storage::{SparseVectorStorage, VectorStorage};
 
 const DELETED_DIRNAME: &str = "deleted";
@@ -27,7 +29,7 @@ const BITSLICE_GROWTH_SLACK: usize = 1024;
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
-    storage: Arc<RwLock<BlobStore<SparseVector>>>,
+    storage: Arc<RwLock<BlobStore<StoredSparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
     deleted: DynamicMmapFlags,
     /// Current number of deleted vectors.
@@ -83,7 +85,13 @@ impl MmapSparseVectorStorage {
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
         std::fs::create_dir_all(&storage_dir)?;
-        let storage = BlobStore::new(storage_dir, Default::default()).map_err(|err| {
+        let storage_config = StorageOptions {
+            // Don't use built-in compression, as we will use bitpacking instead
+            compression: Some(Compression::None),
+            ..Default::default()
+        };
+
+        let storage = BlobStore::new(storage_dir, storage_config).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))
@@ -141,7 +149,7 @@ impl MmapSparseVectorStorage {
         if let Some(vector) = vector {
             // upsert vector
             storage_guard
-                .put_value(key, vector)
+                .put_value(key, &StoredSparseVector::from(vector))
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
@@ -155,19 +163,17 @@ impl MmapSparseVectorStorage {
 }
 
 impl SparseVectorStorage for MmapSparseVectorStorage {
-    fn get_sparse(
-        &self,
-        key: PointOffsetType,
-    ) -> crate::common::operation_error::OperationResult<SparseVector> {
+    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
         self.get_sparse_opt(key)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
     }
 
-    fn get_sparse_opt(
-        &self,
-        key: PointOffsetType,
-    ) -> crate::common::operation_error::OperationResult<Option<SparseVector>> {
-        Ok(self.storage.read().get_value(key))
+    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
+        self.storage
+            .read()
+            .get_value(key)
+            .map(SparseVector::try_from)
+            .transpose()
     }
 }
 

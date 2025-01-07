@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
-use crate::config::{StorageConfig, StorageOptions};
+use crate::config::{Compression, StorageConfig, StorageOptions};
 use crate::page::Page;
 use crate::tracker::{BlockOffset, PageId, PointOffset, Tracker, ValuePointer};
 
@@ -38,15 +38,31 @@ pub struct BlobStore<V> {
     _value_type: std::marker::PhantomData<V>,
 }
 
+#[inline]
+fn compress_lz4(value: &[u8]) -> Vec<u8> {
+    compress_prepend_size(value)
+}
+
+#[inline]
+fn decompress_lz4(value: &[u8]) -> Vec<u8> {
+    lz4_flex::decompress_size_prepended(value).unwrap()
+}
+
 impl<V: Blob> BlobStore<V> {
     /// LZ4 compression
-    fn compress(value: &[u8]) -> Vec<u8> {
-        compress_prepend_size(value)
+    fn compress(&self, value: Vec<u8>) -> Vec<u8> {
+        match self.config.compression {
+            Compression::None => value,
+            Compression::LZ4 => compress_lz4(&value),
+        }
     }
 
     /// LZ4 decompression
-    fn decompress(value: &[u8]) -> Vec<u8> {
-        lz4_flex::decompress_size_prepended(value).unwrap()
+    fn decompress(&self, value: Vec<u8>) -> Vec<u8> {
+        match self.config.compression {
+            Compression::None => value,
+            Compression::LZ4 => decompress_lz4(&value),
+        }
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
@@ -208,7 +224,7 @@ impl<V: Blob> BlobStore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages(page_id, block_offset, length);
-        let decompressed = Self::decompress(&raw);
+        let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
         Some(value)
@@ -348,7 +364,7 @@ impl<V: Blob> BlobStore<V> {
         // so will never reuse such space, but data will not be corrupted.
 
         let value_bytes = value.to_bytes();
-        let comp_value = Self::compress(&value_bytes);
+        let comp_value = self.compress(value_bytes);
         let value_size = comp_value.len();
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
@@ -387,7 +403,7 @@ impl<V: Blob> BlobStore<V> {
             length,
         } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages(page_id, block_offset, length);
-        let decompressed = Self::decompress(&raw);
+        let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 
         Some(value)
@@ -421,7 +437,7 @@ impl<V: Blob> BlobStore<V> {
             } = pointer;
 
             let raw = self.read_from_pages(page_id, block_offset, length);
-            let decompressed = Self::decompress(&raw);
+            let decompressed = self.decompress(raw);
             let value = V::from_bytes(&decompressed);
             if !callback(point_offset, &value)? {
                 return Ok(());
@@ -448,7 +464,7 @@ impl<V: Blob> BlobStore<V> {
                      length,
                  }| {
                     let raw = self.read_from_pages(page_id, block_offset, length);
-                    let decompressed = Self::decompress(&raw);
+                    let decompressed = self.decompress(raw);
                     V::from_bytes(&decompressed)
                 },
             );
@@ -1020,8 +1036,8 @@ mod tests {
     fn test_payload_compression() {
         let payload = random_payload(&mut rand::rngs::SmallRng::from_entropy(), 2);
         let payload_bytes = payload.to_bytes();
-        let compressed = BlobStore::<Payload>::compress(&payload_bytes);
-        let decompressed = BlobStore::<Payload>::decompress(&compressed);
+        let compressed = compress_lz4(&payload_bytes);
+        let decompressed = decompress_lz4(&compressed);
         let decompressed_payload = <Payload as Blob>::from_bytes(&decompressed);
         assert_eq!(payload, decompressed_payload);
     }
