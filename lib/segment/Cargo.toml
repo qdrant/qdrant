@@ -172,6 +172,10 @@ name = "sparse_index_build"
 harness = false
 
 [[bench]]
+name = "sparse_vector_storage"
+harness = false
+
+[[bench]]
 name = "multi_vector_search"
 harness = false
 
