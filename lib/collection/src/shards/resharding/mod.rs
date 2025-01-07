@@ -40,8 +40,7 @@ pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ReshardState {
-    #[serde(default)]
-    pub uuid: Option<Uuid>,
+    pub uuid: Uuid,
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
@@ -51,7 +50,7 @@ pub struct ReshardState {
 
 impl ReshardState {
     pub fn new(
-        uuid: Option<Uuid>,
+        uuid: Uuid,
         direction: ReshardingDirection,
         peer_id: PeerId,
         shard_id: ShardId,
@@ -68,7 +67,7 @@ impl ReshardState {
     }
 
     pub fn matches(&self, key: &ReshardKey) -> bool {
-        self.uuid.zip(key.uuid).is_none_or(|(a, b)| a == b)
+        self.uuid == key.uuid
             && self.direction == key.direction
             && self.peer_id == key.peer_id
             && self.shard_id == key.shard_id
@@ -103,8 +102,8 @@ pub enum ReshardStage {
 /// Unique identifier of a resharding task
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct ReshardKey {
-    #[serde(default)]
-    pub uuid: Option<Uuid>,
+    #[schemars(skip)]
+    pub uuid: Uuid,
     #[serde(default)]
     pub direction: ReshardingDirection,
     pub peer_id: PeerId,

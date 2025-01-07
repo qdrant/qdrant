@@ -265,6 +265,7 @@ pub struct AbortShardTransfer {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct StartResharding {
+    #[schemars(skip)]
     pub uuid: Option<Uuid>,
     pub direction: ReshardingDirection,
     pub peer_id: Option<PeerId>,
