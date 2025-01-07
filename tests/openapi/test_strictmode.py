@@ -893,4 +893,4 @@ def test_strict_mode_write_rate_limiting_update_op(collection_name):
         }
     )
     assert response.status_code == 429
-    assert "Rate limiting exceeded: Write rate limit exceeded, retry later" in response.json()['status']['error']
+    assert "Rate limiting exceeded: Write rate limit exceeded: Operation requires 5 tokens but only" in response.json()['status']['error']

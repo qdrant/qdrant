@@ -273,11 +273,9 @@ impl ShardReplicaSet {
                         let mut ratelimiter_cost = 1;
 
                         // Estimate the cost based on affected points if filter is available.
-                        if let Some(filter) = operation.operation.filter() {
-                            match local.estimate_cardinality(Some(filter)) {
-                                Ok(est) => ratelimiter_cost = 1.max(est.exp),
-                                Err(err) => log::error!("Estimating cardinality: {err:?}"),
-                            }
+                        match local.estimate_request_cardinality(&operation.operation) {
+                            Ok(est) => ratelimiter_cost = 1.max(est.exp),
+                            Err(err) => log::error!("Estimating cardinality: {err:?}"),
                         }
 
                         ratelimiter_cost

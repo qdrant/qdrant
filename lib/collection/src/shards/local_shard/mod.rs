@@ -1139,19 +1139,10 @@ impl LocalShard {
     /// Returns an error if the rate limit is exceeded.
     fn check_read_rate_limiter(&self, cost: usize) -> CollectionResult<()> {
         if let Some(rate_limiter) = &self.read_rate_limiter {
-            match rate_limiter.lock().try_consume(cost as f64) {
-                Ok(true) => {}
-                Ok(false) => {
-                    return Err(CollectionError::rate_limit_exceeded(
-                        "Read rate limit exceeded, retry later",
-                    ));
-                }
-                Err(msg) => {
-                    return Err(CollectionError::rate_limit_exceeded(format!(
-                        "Read rate limit exceeded, {msg}",
-                    )));
-                }
-            }
+            rate_limiter
+                .lock()
+                .try_consume(cost as f64)
+                .map_err(|err| CollectionError::rate_limit_error(err, Some(cost), false))?;
         }
         Ok(())
     }

@@ -169,7 +169,7 @@ impl ShardOperation for ProxyShard {
         let estimate_effect = operation.operation.estimate_effect_area();
         let points_operation_effect: PointsOperationEffect = match estimate_effect {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
-            OperationEffectArea::Points(points) => PointsOperationEffect::Some(points),
+            OperationEffectArea::Points(points) => PointsOperationEffect::Some(Vec::from(points)),
             OperationEffectArea::Filter(filter) => {
                 let cardinality = local_shard.estimate_cardinality(Some(&filter))?;
                 // validate the size of the change set before retrieving it

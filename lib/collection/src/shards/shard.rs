@@ -9,6 +9,7 @@ use segment::types::{Filter, SnapshotFormat};
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
+use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
@@ -275,6 +276,17 @@ impl Shard {
             }
             Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.estimate_cardinality(filter),
             Shard::Dummy(dummy_shard) => dummy_shard.estimate_cardinality(filter),
+        }
+    }
+
+    pub fn estimate_request_cardinality(
+        &self,
+        operation: &impl EstimateOperationEffectArea,
+    ) -> CollectionResult<CardinalityEstimation> {
+        match operation.estimate_effect_area() {
+            OperationEffectArea::Empty => Ok(CardinalityEstimation::exact(0)),
+            OperationEffectArea::Points(vec) => Ok(CardinalityEstimation::exact(vec.len())),
+            OperationEffectArea::Filter(filter) => self.estimate_cardinality(Some(filter)),
         }
     }
 }
