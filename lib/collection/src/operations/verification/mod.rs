@@ -128,7 +128,7 @@ pub trait StrictModeVerification {
                 }
             }
 
-            check_filter_limits(&filter, strict_mode_config)?;
+            check_filter_limits(filter, strict_mode_config)?;
 
             Ok(())
         };

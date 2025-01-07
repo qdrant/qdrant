@@ -1534,6 +1534,13 @@ impl AnyVariants {
             AnyVariants::Integers(index_set) => index_set.len(),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            AnyVariants::Strings(index_set) => index_set.is_empty(),
+            AnyVariants::Integers(index_set) => index_set.is_empty(),
+        }
+    }
 }
 
 /// Exact match of the given value
@@ -2634,7 +2641,7 @@ impl Filter {
             + count_all_conditions(self.must_not.as_ref())
     }
 
-    /// Returns the size of the largest codition.
+    /// Returns the size of the largest condition.
     pub fn max_condition_input_size(&self) -> usize {
         self.iter_conditions()
             .map(|i| i.size_estimation())
