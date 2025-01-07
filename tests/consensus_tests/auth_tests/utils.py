@@ -41,6 +41,8 @@ def start_jwt_protected_cluster(tmp_path, num_peers=1):
 def encode_jwt(claims: dict, secret: str) -> str:
     return jwt.encode(claims, secret, algorithm="HS256")
 
+def decode_jwt(token: str, secret: str) -> dict:
+    return jwt.decode(token, secret, algorithms=["HS256"])
 
 def random_str():
     return "".join(random.choices(string.ascii_lowercase, k=10))

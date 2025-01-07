@@ -65,13 +65,13 @@ impl Access {
             CollectionMetaOperations::CreatePayloadIndex(op) => {
                 self.check_collection_access(
                     &op.collection_name,
-                    AccessRequirements::new().write().whole(),
+                    AccessRequirements::new().write().whole().extras(),
                 )?;
             }
             CollectionMetaOperations::DropPayloadIndex(op) => {
                 self.check_collection_access(
                     &op.collection_name,
-                    AccessRequirements::new().write().whole(),
+                    AccessRequirements::new().write().whole().extras(),
                 )?;
             }
             CollectionMetaOperations::Nop { token: _ } => (),
@@ -167,6 +167,7 @@ impl CheckableCollectionOperation for RecommendRequestInternal {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -193,6 +194,7 @@ impl CheckableCollectionOperation for PointRequestInternal {
             write: false,
             manage: false,
             whole: true,
+            extras: false,
         }
     }
 
@@ -211,6 +213,7 @@ impl CheckableCollectionOperation for CoreSearchRequest {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -230,6 +233,7 @@ impl CheckableCollectionOperation for CountRequestInternal {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -249,6 +253,7 @@ impl CheckableCollectionOperation for GroupRequest {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -275,6 +280,7 @@ impl CheckableCollectionOperation for DiscoverRequestInternal {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -303,6 +309,7 @@ impl CheckableCollectionOperation for ScrollRequestInternal {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -322,6 +329,7 @@ impl CheckableCollectionOperation for CollectionQueryRequest {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -373,6 +381,7 @@ impl CheckableCollectionOperation for FacetParams {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -392,6 +401,7 @@ impl CheckableCollectionOperation for CollectionSearchMatrixRequest {
             write: false,
             manage: false,
             whole: false,
+            extras: false,
         }
     }
 
@@ -414,11 +424,13 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
                 write: true,
                 manage: false,
                 whole: false, // Checked in `check_access()`
+                extras: false,
             },
             CollectionUpdateOperations::FieldIndexOperation(_) => AccessRequirements {
                 write: true,
                 manage: true,
                 whole: true,
+                extras: true,
             },
         }
     }

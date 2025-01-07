@@ -72,6 +72,11 @@ pub enum CollectionAccessMode {
     /// Read and write access to a collection, with some restrictions.
     #[serde(rename = "rw")]
     ReadWrite,
+
+    /// Points read and write - access to update and modify points in the collection,
+    /// but not snapshots or payload indexes.
+    #[serde(rename = "prw")]
+    PointsReadWrite,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -167,7 +172,22 @@ impl CollectionAccessView<'_> {
             write,
             manage,
             whole,
+            extras,
         } = requirements;
+
+        if extras {
+            match self.access {
+                CollectionAccessMode::Read => {}      // Ok
+                CollectionAccessMode::ReadWrite => {} // Ok
+                CollectionAccessMode::PointsReadWrite => {
+                    return Err(StorageError::forbidden(format!(
+                        "Only points access is allowed for collection {}",
+                        self.collection,
+                    )))
+                }
+            }
+        }
+
         if write {
             match self.access {
                 CollectionAccessMode::Read => {
@@ -177,6 +197,9 @@ impl CollectionAccessView<'_> {
                     )))
                 }
                 CollectionAccessMode::ReadWrite => (),
+                CollectionAccessMode::PointsReadWrite => {
+                    // Extras are checked above.
+                }
             }
         }
         if manage {
@@ -230,6 +253,8 @@ pub struct AccessRequirements {
     pub manage: bool,
     /// If true, the access should be not limited by a payload restrictions.
     pub whole: bool,
+    /// Require access to collection extras, like snapshots, payload indexes, cluster info.
+    pub extras: bool,
 }
 
 impl AccessRequirements {
@@ -257,6 +282,13 @@ impl AccessRequirements {
             ..*self
         }
     }
+
+    pub fn extras(&self) -> Self {
+        Self {
+            extras: true,
+            ..*self
+        }
+    }
 }
 
 impl GlobalAccessMode {
@@ -265,6 +297,7 @@ impl GlobalAccessMode {
             write,
             manage,
             whole: _,
+            extras: _,
         } = requirements;
         if write || manage {
             match self {
