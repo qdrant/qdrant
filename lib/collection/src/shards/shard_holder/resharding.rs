@@ -21,6 +21,7 @@ impl ShardHolder {
 
     pub fn check_start_resharding(&mut self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let ReshardKey {
+            uuid: _,
             direction,
             peer_id: _,
             shard_id,
@@ -92,6 +93,7 @@ impl ShardHolder {
         new_shard: Option<ShardReplicaSet>,
     ) -> CollectionResult<()> {
         let ReshardKey {
+            uuid,
             direction,
             peer_id,
             shard_id,
@@ -115,7 +117,9 @@ impl ShardHolder {
                 "resharding is already in progress:\n{state:#?}",
             );
 
-            *state = Some(ReshardState::new(direction, peer_id, shard_id, shard_key));
+            *state = Some(ReshardState::new(
+                uuid, direction, peer_id, shard_id, shard_key,
+            ));
         })?;
 
         Ok(())
@@ -255,6 +259,7 @@ impl ShardHolder {
         force: bool,
     ) -> CollectionResult<()> {
         let ReshardKey {
+            uuid: _,
             direction,
             peer_id,
             shard_id,

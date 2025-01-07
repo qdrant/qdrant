@@ -4,6 +4,7 @@ use common::validation::validate_shard_different_peers;
 use schemars::JsonSchema;
 use segment::types::ShardKey;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 use validator::{Validate, ValidationErrors};
 
 use crate::shards::shard::{PeerId, ShardId};
@@ -264,6 +265,7 @@ pub struct AbortShardTransfer {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema, Validate)]
 pub struct StartResharding {
+    pub uuid: Option<Uuid>,
     pub direction: ReshardingDirection,
     pub peer_id: Option<PeerId>,
     pub shard_key: Option<ShardKey>,

@@ -42,6 +42,7 @@ use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::task::JoinError;
 use tonic::codegen::http::uri::InvalidUri;
+use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::config_diff::{self};
@@ -362,6 +363,9 @@ pub struct ShardTransferInfo {
 
 #[derive(Debug, Serialize, JsonSchema, Clone)]
 pub struct ReshardingInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uuid: Option<Uuid>,
+
     pub direction: ReshardingDirection,
 
     pub shard_id: ShardId,

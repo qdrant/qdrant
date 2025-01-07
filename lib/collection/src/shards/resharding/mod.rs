@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use tasks_pool::ReshardTaskProgress;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
+use uuid::Uuid;
 
 use super::shard::{PeerId, ShardId};
 use super::transfer::ShardTransferConsensus;
@@ -39,6 +40,8 @@ pub(crate) const MAX_RETRY_COUNT: usize = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ReshardState {
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
     pub peer_id: PeerId,
     pub shard_id: ShardId,
     pub shard_key: Option<ShardKey>,
@@ -48,12 +51,14 @@ pub struct ReshardState {
 
 impl ReshardState {
     pub fn new(
+        uuid: Option<Uuid>,
         direction: ReshardingDirection,
         peer_id: PeerId,
         shard_id: ShardId,
         shard_key: Option<ShardKey>,
     ) -> Self {
         Self {
+            uuid,
             direction,
             peer_id,
             shard_id,
@@ -63,7 +68,8 @@ impl ReshardState {
     }
 
     pub fn matches(&self, key: &ReshardKey) -> bool {
-        self.direction == key.direction
+        self.uuid.zip(key.uuid).is_none_or(|(a, b)| a == b)
+            && self.direction == key.direction
             && self.peer_id == key.peer_id
             && self.shard_id == key.shard_id
             && self.shard_key == key.shard_key
@@ -71,6 +77,7 @@ impl ReshardState {
 
     pub fn key(&self) -> ReshardKey {
         ReshardKey {
+            uuid: self.uuid,
             direction: self.direction,
             peer_id: self.peer_id,
             shard_id: self.shard_id,
@@ -96,6 +103,8 @@ pub enum ReshardStage {
 /// Unique identifier of a resharding task
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize, JsonSchema)]
 pub struct ReshardKey {
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
     #[serde(default)]
     pub direction: ReshardingDirection,
     pub peer_id: PeerId,
