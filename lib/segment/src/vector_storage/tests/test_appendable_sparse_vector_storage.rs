@@ -197,7 +197,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     );
 }
 
-fn do_test_persistance(open: impl Fn(&Path) -> VectorStorageEnum) {
+fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut storage = open(dir.path());
 
@@ -309,20 +309,20 @@ fn test_update_from_delete_points_mmap_sparse_vector_storage() {
 
     drop(storage);
 
-    let mut _storage =
+    let _storage =
         VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(dir.path()).unwrap());
 }
 
 #[test]
-fn test_persistance_in_mmap_sparse_vector_storage() {
-    do_test_persistance(|path| {
+fn test_persistence_in_mmap_sparse_vector_storage() {
+    do_test_persistence(|path| {
         VectorStorageEnum::SparseMmap(MmapSparseVectorStorage::open_or_create(path).unwrap())
     });
 }
 
 #[test]
-fn test_persistance_in_simple_sparse_vector_storage() {
-    do_test_persistance(|path| {
+fn test_persistence_in_simple_sparse_vector_storage() {
+    do_test_persistence(|path| {
         let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
         open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap()
     });

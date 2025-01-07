@@ -163,18 +163,12 @@ impl MmapSparseVectorStorage {
 }
 
 impl SparseVectorStorage for MmapSparseVectorStorage {
-    fn get_sparse(
-        &self,
-        key: PointOffsetType,
-    ) -> crate::common::operation_error::OperationResult<SparseVector> {
+    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
         self.get_sparse_opt(key)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
     }
 
-    fn get_sparse_opt(
-        &self,
-        key: PointOffsetType,
-    ) -> crate::common::operation_error::OperationResult<Option<SparseVector>> {
+    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
         self.storage
             .read()
             .get_value(key)
