@@ -147,3 +147,35 @@ EXPORT float impl_score_l1_sse(
 
     return (float) sum;
 }
+
+EXPORT float impl_and_popcnt_m128i_sse(
+    const uint8_t* query_ptr,
+    const uint8_t* vector_ptr,
+    uint32_t dim
+) {
+    const int32_t* v_ptr = (const int32_t*)vector_ptr;
+    const int32_t* q_ptr = (const int32_t*)query_ptr;
+
+    __m128i sum = _mm_set1_epi32(0xFFFF);
+    for (uint32_t _i = 0; _i < dim / 32; _i++) {
+        int32_t v = *v_ptr;
+        int32_t q_1 = *q_ptr;
+        int32_t q_2 = *(q_ptr + 1);
+        int32_t q_3 = *(q_ptr + 2);
+        int32_t q_4 = *(q_ptr + 3);
+        v_ptr++;
+        q_ptr += 4;
+
+        __m128i popcnt = _mm_set_epi32(
+            _mm_popcnt_u32(v & q_1),
+            _mm_popcnt_u32(v & q_2),
+            _mm_popcnt_u32(v & q_3),
+            _mm_popcnt_u32(v & q_4)
+        );
+        sum = _mm_add_epi32(sum, popcnt);
+    }
+    __m128i factor = _mm_set_epi32(1, 2, 4, 8);
+    __m128 result_mm128 = _mm_cvtepi32_ps(_mm_mullo_epi32(sum, factor));
+    HSUM128_PS(result_mm128, mul_scalar);
+    return (float)mul_scalar;
+}

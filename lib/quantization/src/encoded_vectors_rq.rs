@@ -115,7 +115,19 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
         }
     }
 
-    fn quantized_dot(mut vector: *const u32, mut query: *const u32, dim: usize) -> usize {
+    fn quantized_dot(mut vector: *const u32, mut query: *const u32, dim: usize) -> f32 {
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx512vpopcntdq") && is_x86_feature_detected!("avx512vl") {
+            return unsafe {
+                impl_and_popcnt_m128i_avx512(query.cast(), vector.cast(), dim as u32)
+            };
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("sse4.2") {
+            return unsafe { impl_and_popcnt_m128i_sse(query.cast(), vector.cast(), dim as u32) };
+        }
+
         let mut result = 0usize;
         for _ in 0..dim / u32::BITS as usize {
             let v = unsafe { *vector };
@@ -135,7 +147,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
 
             query = unsafe { query.add(4) };
         }
-        result
+        result as f32
     }
 }
 
@@ -209,7 +221,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryRQ> for EncodedVectors
             encoded,
         } = self.decompose_vector(i as usize);
         let d = Self::quantized_dot(encoded, query.encoded.as_ptr(), self.metadata.aligned_dim);
-        v_precomputed * (query.delta * d as f32 + query.min * bits_count + query.q_precomputed)
+        v_precomputed * (query.delta * d + query.min * bits_count + query.q_precomputed)
     }
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
@@ -240,4 +252,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryRQ> for EncodedVectors
         (zeros_count as f32 - xor_product as f32)
             / (self.metadata.vector_parameters.dim as f32).sqrt()
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    fn impl_and_popcnt_m128i_avx512(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
+    fn impl_and_popcnt_m128i_sse(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
 }
