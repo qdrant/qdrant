@@ -7,7 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::future::try_join_all;
 use futures::Future;
 use segment::data_types::vectors::{VectorInternal, VectorRef};
-use segment::types::{PointIdType, WithPayloadInterface, WithVector};
+use segment::types::{PointIdType, VectorName, VectorNameBuf, WithPayloadInterface, WithVector};
 use tokio::sync::RwLockReadGuard;
 
 use crate::collection::Collection;
@@ -26,7 +26,7 @@ use crate::operations::universal_query::collection_query::{
 pub async fn retrieve_points(
     collection: &Collection,
     ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
+    vector_names: Vec<VectorNameBuf>,
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
@@ -55,7 +55,7 @@ pub enum CollectionRefHolder<'a> {
 pub async fn retrieve_points_with_locked_collection(
     collection_holder: CollectionRefHolder<'_>,
     ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
+    vector_names: Vec<VectorNameBuf>,
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
@@ -162,7 +162,7 @@ impl ReferencedVectors {
     pub fn resolve_reference<'a>(
         &'a self,
         collection_name: Option<&'a String>,
-        vector_name: &str,
+        vector_name: &VectorName,
         vector_input: VectorInputInternal,
     ) -> Option<VectorInternal> {
         match vector_input {
@@ -178,7 +178,7 @@ impl ReferencedVectors {
 #[derive(Default, Debug)]
 pub struct ReferencedPoints<'coll_name> {
     ids_per_collection: HashMap<Option<&'coll_name String>, HashSet<PointIdType>>,
-    vector_names_per_collection: HashMap<Option<&'coll_name String>, HashSet<String>>,
+    vector_names_per_collection: HashMap<Option<&'coll_name String>, HashSet<VectorNameBuf>>,
 }
 
 impl<'coll_name> ReferencedPoints<'coll_name> {
@@ -189,7 +189,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
     pub fn add_from_iter(
         &mut self,
         point_ids: impl Iterator<Item = PointIdType>,
-        vector_name: String,
+        vector_name: VectorNameBuf,
         collection_name: Option<&'coll_name String>,
     ) {
         let reference_vectors_ids = self.ids_per_collection.entry(collection_name).or_default();
@@ -287,7 +287,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
 pub fn convert_to_vectors_owned(
     examples: Vec<RecommendExample>,
     all_vectors_records_map: &ReferencedVectors,
-    vector_name: &str,
+    vector_name: &VectorName,
     collection_name: Option<&String>,
 ) -> Vec<VectorInternal> {
     examples
@@ -306,7 +306,7 @@ pub fn convert_to_vectors_owned(
 pub fn convert_to_vectors<'a>(
     examples: impl Iterator<Item = &'a RecommendExample> + 'a,
     all_vectors_records_map: &'a ReferencedVectors,
-    vector_name: &'a str,
+    vector_name: &'a VectorName,
     collection_name: Option<&'a String>,
 ) -> impl Iterator<Item = VectorRef<'a>> + 'a {
     examples.filter_map(move |example| match example {

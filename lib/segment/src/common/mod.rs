@@ -19,13 +19,16 @@ use std::sync::atomic::AtomicBool;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig};
+use crate::types::{SegmentConfig, SparseVectorDataConfig, VectorDataConfig, VectorName};
 
 pub type Flusher = Box<dyn FnOnce() -> OperationResult<()> + Send>;
 /// Check that the given vector name is part of the segment config.
 ///
 /// Returns an error if incompatible.
-pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> OperationResult<()> {
+pub fn check_vector_name(
+    vector_name: &VectorName,
+    segment_config: &SegmentConfig,
+) -> OperationResult<()> {
     // TODO(sparse) it's a wrong error check. We use the fact,
     // that get_vector_config_or_error can return only one type of error - VectorNameNotExists
     if get_vector_config_or_error(vector_name, segment_config).is_err() {
@@ -38,7 +41,7 @@ pub fn check_vector_name(vector_name: &str, segment_config: &SegmentConfig) -> O
 ///
 /// Returns an error if incompatible.
 pub fn check_vector(
-    vector_name: &str,
+    vector_name: &VectorName,
     query_vector: &QueryVector,
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
@@ -107,7 +110,7 @@ fn check_query_sparse_vector(
 ///
 /// Returns an error if incompatible.
 pub fn check_query_vectors(
-    vector_name: &str,
+    vector_name: &VectorName,
     query_vectors: &[&QueryVector],
     segment_config: &SegmentConfig,
 ) -> OperationResult<()> {
@@ -142,14 +145,14 @@ pub fn check_named_vectors(
 ///
 /// Returns an error if incompatible.
 fn get_vector_config_or_error<'a>(
-    vector_name: &str,
+    vector_name: &VectorName,
     segment_config: &'a SegmentConfig,
 ) -> OperationResult<&'a VectorDataConfig> {
     segment_config
         .vector_data
         .get(vector_name)
         .ok_or_else(|| OperationError::VectorNameNotExists {
-            received_name: vector_name.into(),
+            received_name: vector_name.to_owned(),
         })
 }
 
@@ -157,14 +160,14 @@ fn get_vector_config_or_error<'a>(
 ///
 /// Returns an error if incompatible.
 fn get_sparse_vector_config_or_error<'a>(
-    vector_name: &str,
+    vector_name: &VectorName,
     segment_config: &'a SegmentConfig,
 ) -> OperationResult<&'a SparseVectorDataConfig> {
     segment_config
         .sparse_vector_data
         .get(vector_name)
         .ok_or_else(|| OperationError::VectorNameNotExists {
-            received_name: vector_name.into(),
+            received_name: vector_name.to_owned(),
         })
 }
 

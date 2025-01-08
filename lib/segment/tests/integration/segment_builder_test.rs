@@ -26,7 +26,7 @@ use tempfile::Builder;
 
 use crate::fixtures::segment::{
     build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2,
-    empty_segment, PAYLOAD_KEY,
+    empty_segment, PAYLOAD_KEY, SPARSE_VECTOR_NAME,
 };
 
 #[test]
@@ -248,7 +248,7 @@ fn test_building_new_sparse_segment() {
         .upsert_point(
             100,
             3.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec)),
             &hw_counter,
         )
         .unwrap();

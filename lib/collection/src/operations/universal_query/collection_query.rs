@@ -9,8 +9,8 @@ use segment::data_types::vectors::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams,
-    WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
+    VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 
@@ -28,7 +28,7 @@ use crate::recommendations::avg_vector_for_recommendation;
 pub struct CollectionQueryRequest {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
-    pub using: String,
+    pub using: VectorNameBuf,
     pub filter: Option<Filter>,
     pub score_threshold: Option<ScoreType>,
     pub limit: usize,
@@ -59,7 +59,7 @@ impl CollectionQueryRequest {
 pub struct CollectionQueryResolveRequest<'a> {
     pub vector_query: &'a VectorQuery<VectorInputInternal>,
     pub lookup_from: Option<LookupLocation>,
-    pub using: String,
+    pub using: VectorNameBuf,
 }
 
 /// Internal representation of a group query request, used to converge from REST and gRPC.
@@ -67,7 +67,7 @@ pub struct CollectionQueryResolveRequest<'a> {
 pub struct CollectionQueryGroupsRequest {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
-    pub using: String,
+    pub using: VectorNameBuf,
     pub filter: Option<Filter>,
     pub params: Option<SearchParams>,
     pub score_threshold: Option<ScoreType>,
@@ -99,9 +99,9 @@ impl Query {
     pub fn try_into_scoring_query(
         self,
         ids_to_vectors: &ReferencedVectors,
-        lookup_vector_name: &str,
+        lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
-        using: String,
+        using: VectorNameBuf,
     ) -> CollectionResult<ScoringQuery> {
         let scoring_query = match self {
             Query::Vector(vector_query) => {
@@ -164,7 +164,7 @@ impl VectorQuery<VectorInputInternal> {
     fn ids_into_vectors(
         self,
         ids_to_vectors: &ReferencedVectors,
-        lookup_vector_name: &str,
+        lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
     ) -> CollectionResult<VectorQuery<VectorInternal>> {
         match self {
@@ -259,7 +259,7 @@ impl VectorQuery<VectorInputInternal> {
     fn resolve_reco_reference(
         reco_query: RecoQuery<VectorInputInternal>,
         ids_to_vectors: &ReferencedVectors,
-        lookup_vector_name: &str,
+        lookup_vector_name: &VectorName,
         lookup_collection: Option<&String>,
     ) -> (Vec<VectorInternal>, Vec<VectorInternal>) {
         let positives = reco_query
@@ -288,12 +288,12 @@ impl VectorQuery<VectorInputInternal> {
     }
 }
 
-fn vector_not_found_error(vector_name: &str) -> CollectionError {
+fn vector_not_found_error(vector_name: &VectorName) -> CollectionError {
     CollectionError::not_found(format!("Vector with name {vector_name:?} for point"))
 }
 
 impl VectorQuery<VectorInternal> {
-    fn into_query_enum(self, using: String) -> CollectionResult<QueryEnum> {
+    fn into_query_enum(self, using: VectorNameBuf) -> CollectionResult<QueryEnum> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => {
                 QueryEnum::Nearest(NamedVectorStruct::new_from_vector(vector, using))
@@ -328,7 +328,7 @@ impl VectorQuery<VectorInternal> {
 pub struct CollectionPrefetch {
     pub prefetch: Vec<CollectionPrefetch>,
     pub query: Option<Query>,
-    pub using: String,
+    pub using: VectorNameBuf,
     pub filter: Option<Filter>,
     pub score_threshold: Option<ScoreType>,
     pub limit: usize,
@@ -354,7 +354,7 @@ impl CollectionPrefetch {
         self.lookup_from.as_ref().map(|x| &x.collection)
     }
 
-    fn get_lookup_vector_name(&self) -> String {
+    fn get_lookup_vector_name(&self) -> VectorNameBuf {
         self.lookup_from
             .as_ref()
             .and_then(|lookup_from| lookup_from.vector.as_ref())
@@ -456,7 +456,7 @@ impl CollectionQueryRequest {
         self.lookup_from.as_ref().map(|x| &x.collection)
     }
 
-    fn get_lookup_vector_name(&self) -> String {
+    fn get_lookup_vector_name(&self) -> VectorNameBuf {
         self.lookup_from
             .as_ref()
             .and_then(|lookup_from| lookup_from.vector.as_ref())
@@ -552,7 +552,7 @@ impl CollectionQueryRequest {
 
     pub fn validation(
         query: &Option<Query>,
-        using: &String,
+        using: &VectorNameBuf,
         prefetch: &[CollectionPrefetch],
         score_threshold: Option<ScoreType>,
     ) -> CollectionResult<()> {

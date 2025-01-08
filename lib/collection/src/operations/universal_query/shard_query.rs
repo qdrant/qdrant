@@ -5,7 +5,10 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     NamedQuery, NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME,
 };
-use segment::types::{Filter, Order, ScoredPoint, SearchParams, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, Order, ScoredPoint, SearchParams, VectorName, VectorNameBuf, WithPayloadInterface,
+    WithVector,
+};
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
@@ -86,7 +89,7 @@ impl ScoringQuery {
     }
 
     /// Get the vector name if it is scored against a vector
-    pub fn get_vector_name(&self) -> Option<&str> {
+    pub fn get_vector_name(&self) -> Option<&VectorName> {
         match self {
             Self::Vector(query) => Some(query.get_vector_name()),
             _ => None,
@@ -252,7 +255,7 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
 impl QueryEnum {
     fn try_from_grpc_raw_query(
         raw_query: grpc::RawQuery,
-        using: Option<String>,
+        using: Option<VectorNameBuf>,
     ) -> Result<Self, Status> {
         use grpc::raw_query::Variant;
 
@@ -274,7 +277,7 @@ impl QueryEnum {
                         | VectorInternal::Dense(_),
                     ) => name,
                     (None, VectorInternal::MultiDense(_) | VectorInternal::Dense(_)) => {
-                        DEFAULT_VECTOR_NAME.to_string()
+                        DEFAULT_VECTOR_NAME.to_owned()
                     }
                 };
                 let named_vector = NamedVectorStruct::new_from_vector(vector, name);
@@ -358,7 +361,7 @@ impl From<api::grpc::qdrant::Sample> for SampleInternal {
 impl ScoringQuery {
     fn try_from_grpc_query(
         query: grpc::query_shard_points::Query,
-        using: Option<String>,
+        using: Option<VectorNameBuf>,
     ) -> Result<Self, Status> {
         let score = query
             .score

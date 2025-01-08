@@ -16,7 +16,7 @@ use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorStructInternal};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
-    WithPayload, WithPayloadInterface, WithVector,
+    VectorName, WithPayload, WithPayloadInterface, WithVector,
 };
 use tinyvec::TinyVec;
 use tokio::runtime::Handle;
@@ -180,7 +180,7 @@ impl SegmentsSearcher {
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
 
         const DEFAULT_CAPACITY: usize = 3;
-        let mut idf_vectors: TinyVec<[&str; DEFAULT_CAPACITY]> = Default::default();
+        let mut idf_vectors: TinyVec<[&VectorName; DEFAULT_CAPACITY]> = Default::default();
 
         // check vector names existing
         for req in &batch_request.searches {
@@ -447,7 +447,7 @@ impl SegmentsSearcher {
                                     let mut selected_vectors = NamedVectors::default();
                                     for vector_name in vector_names {
                                         if let Some(vector) = segment.vector(vector_name, id)? {
-                                            selected_vectors.insert(vector_name.into(), vector);
+                                            selected_vectors.insert(vector_name.clone(), vector);
                                         }
                                     }
                                     Some(VectorStructInternal::from(selected_vectors))
@@ -515,7 +515,7 @@ impl From<&QueryEnum> for SearchType {
 #[derive(PartialEq, Default, Debug)]
 struct BatchSearchParams<'a> {
     pub search_type: SearchType,
-    pub vector_name: &'a str,
+    pub vector_name: &'a VectorName,
     pub filter: Option<&'a Filter>,
     pub with_payload: WithPayload,
     pub with_vector: WithVector,
@@ -688,7 +688,7 @@ fn execute_batch_search(
 /// Find the HNSW ef_construct for a named vector
 ///
 /// If the given named vector has no HNSW index, `None` is returned.
-fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &str) -> Option<usize> {
+fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Option<usize> {
     config
         .vector_data
         .get(vector_name)
@@ -705,6 +705,7 @@ mod tests {
 
     use api::rest::SearchRequestInternal;
     use parking_lot::RwLock;
+    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::VectorIndexEnum;
     use segment::types::{Condition, HasIdCondition};
@@ -722,7 +723,12 @@ mod tests {
 
         let segment1 = random_segment(dir.path(), 10, 200, 256);
 
-        let vector_index = segment1.vector_data.get("").unwrap().vector_index.clone();
+        let vector_index = segment1
+            .vector_data
+            .get(DEFAULT_VECTOR_NAME)
+            .unwrap()
+            .vector_index
+            .clone();
 
         let vector_index_borrow = vector_index.borrow();
 

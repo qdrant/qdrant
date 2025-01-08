@@ -52,9 +52,10 @@ pub type DateTimePayloadType = DateTimeWrapper;
 pub type UuidPayloadType = Uuid;
 /// Type of Uuid point payload key
 pub type UuidIntType = u128;
-
-/// Name of the vector field
-pub type VectorName = String;
+/// Name of a vector
+pub type VectorName = str;
+/// Name of a vector (owned variant)
+pub type VectorNameBuf = String;
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd)]
@@ -915,10 +916,10 @@ impl PayloadStorageType {
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     #[serde(default)]
-    pub vector_data: HashMap<String, VectorDataConfig>,
+    pub vector_data: HashMap<VectorNameBuf, VectorDataConfig>,
     #[serde(default)]
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub sparse_vector_data: HashMap<String, SparseVectorDataConfig>,
+    pub sparse_vector_data: HashMap<VectorNameBuf, SparseVectorDataConfig>,
     /// Defines payload storage type
     pub payload_storage_type: PayloadStorageType,
 }
@@ -929,7 +930,7 @@ impl SegmentConfig {
     /// This grabs the quantization config for the given vector name if it exists.
     ///
     /// If no quantization is configured, `None` is returned.
-    pub fn quantization_config(&self, vector_name: &str) -> Option<&QuantizationConfig> {
+    pub fn quantization_config(&self, vector_name: &VectorName) -> Option<&QuantizationConfig> {
         self.vector_data
             .get(vector_name)
             .and_then(|v| v.quantization_config.as_ref())
@@ -2251,11 +2252,11 @@ pub struct HasIdCondition {
 /// Filter points which have specific vector assigned
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasVectorCondition {
-    pub has_vector: String,
+    pub has_vector: VectorNameBuf,
 }
 
-impl From<String> for HasVectorCondition {
-    fn from(vector: String) -> Self {
+impl From<VectorNameBuf> for HasVectorCondition {
+    fn from(vector: VectorNameBuf) -> Self {
         HasVectorCondition { has_vector: vector }
     }
 }
@@ -2445,7 +2446,7 @@ pub enum WithVector {
     /// If `false` - do not return vector
     Bool(bool),
     /// Specify which vector to return
-    Selector(Vec<String>),
+    Selector(Vec<VectorNameBuf>),
 }
 
 impl WithVector {

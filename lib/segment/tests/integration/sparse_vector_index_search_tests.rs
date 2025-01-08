@@ -28,7 +28,7 @@ use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
     Condition, FieldCondition, Filter, Payload, ScoredPoint, SegmentConfig, SeqNumberType,
-    SparseVectorDataConfig, SparseVectorStorageType, VectorStorageDatatype,
+    SparseVectorDataConfig, SparseVectorStorageType, VectorName, VectorStorageDatatype,
     DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::VectorStorage;
@@ -56,7 +56,7 @@ const LOW_FULL_SCAN_THRESHOLD: usize = 1;
 /// Full scan threshold to force plain search
 const LARGE_FULL_SCAN_THRESHOLD: usize = 10 * NUM_VECTORS;
 
-const SPARSE_VECTOR_NAME: &str = "sparse_vector";
+const SPARSE_VECTOR_NAME: &VectorName = "sparse_vector";
 
 /// Expects the filter to match ALL points in order to compare the results with/without filter
 fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize) {

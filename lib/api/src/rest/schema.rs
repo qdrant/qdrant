@@ -8,8 +8,8 @@ use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Filter, IntPayloadType, Payload, PointIdType, SearchParams, ShardKey, WithPayloadInterface,
-    WithVector,
+    Filter, IntPayloadType, Payload, PointIdType, SearchParams, ShardKey, VectorNameBuf,
+    WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -70,10 +70,10 @@ fn multi_dense_vector_example() -> MultiDenseVector {
     ]
 }
 
-fn named_vector_example() -> HashMap<String, Vector> {
+fn named_vector_example() -> HashMap<VectorNameBuf, Vector> {
     let mut map = HashMap::new();
     map.insert(
-        "image-embeddings".to_string(),
+        "image-embeddings".into(),
         Vector::Dense(vec![0.873, 0.140625, 0.8976]),
     );
     map
@@ -88,7 +88,7 @@ pub enum VectorStruct {
     #[schemars(example = "multi_dense_vector_example")]
     MultiDense(MultiDenseVector),
     #[schemars(example = "named_vector_example")]
-    Named(HashMap<String, Vector>),
+    Named(HashMap<VectorNameBuf, Vector>),
     Document(Document),
     Image(Image),
     Object(InferenceObject),
@@ -103,7 +103,7 @@ pub enum VectorStructOutput {
     #[schemars(example = "multi_dense_vector_example")]
     MultiDense(MultiDenseVector),
     #[schemars(example = "named_vector_example")]
-    Named(HashMap<String, VectorOutput>),
+    Named(HashMap<VectorNameBuf, VectorOutput>),
 }
 
 impl VectorStruct {
@@ -222,7 +222,7 @@ pub struct InferenceObject {
 pub enum BatchVectorStruct {
     Single(Vec<DenseVector>),
     MultiDense(Vec<MultiDenseVector>),
-    Named(HashMap<String, Vec<Vector>>),
+    Named(HashMap<VectorNameBuf, Vec<Vector>>),
     Document(Vec<Document>),
     Image(Vec<Image>),
     Object(Vec<InferenceObject>),
@@ -384,7 +384,7 @@ pub struct QueryRequestInternal {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
-    pub using: Option<String>,
+    pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[validate(nested)]
@@ -524,7 +524,7 @@ pub struct Prefetch {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
-    pub using: Option<String>,
+    pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[validate(nested)]
@@ -667,7 +667,7 @@ pub struct LookupLocation {
     /// Optional name of the vector field within the collection.
     /// If not provided, the default vector field will be used.
     #[serde(default)]
-    pub vector: Option<String>,
+    pub vector: Option<VectorNameBuf>,
 
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -794,7 +794,7 @@ pub struct QueryGroupsRequestInternal {
     pub query: Option<QueryInterface>,
 
     /// Define which vector name to use for querying. If missing, the default vector is used.
-    pub using: Option<String>,
+    pub using: Option<VectorNameBuf>,
 
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[validate(nested)]
@@ -845,7 +845,7 @@ pub struct SearchMatrixRequestInternal {
     #[validate(range(min = 1))]
     pub limit: Option<usize>,
     /// Define which vector name to use for querying. If missing, the default vector is used.
-    pub using: Option<String>,
+    pub using: Option<VectorNameBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]

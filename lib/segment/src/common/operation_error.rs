@@ -9,7 +9,7 @@ use memory::mmap_type::Error as MmapError;
 use rayon::ThreadPoolBuildError;
 use thiserror::Error;
 
-use crate::types::{PayloadKeyType, PointIdType, SeqNumberType};
+use crate::types::{PayloadKeyType, PointIdType, SeqNumberType, VectorNameBuf};
 use crate::utils::mem::Mem;
 
 pub const PROCESS_CANCELLED_BY_SERVICE_MESSAGE: &str = "process cancelled by service";
@@ -23,7 +23,7 @@ pub enum OperationError {
         received_dim: usize,
     },
     #[error("Not existing vector name error: {received_name}")]
-    VectorNameNotExists { received_name: String },
+    VectorNameNotExists { received_name: VectorNameBuf },
     #[error("No point with id {missed_point_id}")]
     PointIdError { missed_point_id: PointIdType },
     #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]

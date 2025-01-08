@@ -55,7 +55,7 @@ pub async fn convert_query_groups_request_from_rest(
     Ok(CollectionQueryGroupsRequest {
         prefetch,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter,
         score_threshold,
         params,
@@ -111,7 +111,7 @@ pub async fn convert_query_request_from_rest(
     Ok(CollectionQueryRequest {
         prefetch,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter,
         score_threshold,
         limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
@@ -264,7 +264,7 @@ fn convert_prefetch_with_inferred(
     Ok(CollectionPrefetch {
         prefetch: nested_prefetches,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter,
         score_threshold,
         limit: limit.unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),

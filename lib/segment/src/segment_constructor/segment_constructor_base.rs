@@ -36,7 +36,8 @@ use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
 use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
-    SparseVectorStorageType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    SparseVectorStorageType, VectorDataConfig, VectorName, VectorStorageDatatype,
+    VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
     open_appendable_in_ram_vector_storage, open_appendable_in_ram_vector_storage_byte,
@@ -73,7 +74,7 @@ fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))
 }
 
-fn get_vector_name_with_prefix(prefix: &str, vector_name: &str) -> String {
+fn get_vector_name_with_prefix(prefix: &str, vector_name: &VectorName) -> String {
     if !vector_name.is_empty() {
         format!("{prefix}-{vector_name}")
     } else {
@@ -81,14 +82,14 @@ fn get_vector_name_with_prefix(prefix: &str, vector_name: &str) -> String {
     }
 }
 
-pub fn get_vector_storage_path(segment_path: &Path, vector_name: &str) -> PathBuf {
+pub fn get_vector_storage_path(segment_path: &Path, vector_name: &VectorName) -> PathBuf {
     segment_path.join(get_vector_name_with_prefix(
         VECTOR_STORAGE_PATH,
         vector_name,
     ))
 }
 
-pub fn get_vector_index_path(segment_path: &Path, vector_name: &str) -> PathBuf {
+pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> PathBuf {
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
@@ -97,7 +98,7 @@ pub(crate) fn open_vector_storage(
     vector_config: &VectorDataConfig,
     stopped: &AtomicBool,
     vector_storage_path: &Path,
-    vector_name: &str,
+    vector_name: &VectorName,
 ) -> OperationResult<VectorStorageEnum> {
     let storage_element_type = vector_config.datatype.unwrap_or_default();
 
@@ -497,7 +498,7 @@ pub(crate) fn create_sparse_vector_index(
 pub(crate) fn create_sparse_vector_storage(
     database: Arc<RwLock<DB>>,
     path: &Path,
-    vector_name: &str,
+    vector_name: &VectorName,
     storage_type: &SparseVectorStorageType,
     stopped: &AtomicBool,
 ) -> OperationResult<VectorStorageEnum> {

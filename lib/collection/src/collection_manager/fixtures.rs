@@ -12,7 +12,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
     build_multivec_segment, build_simple_segment,
 };
-use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
+use segment::types::{Distance, Payload, PointIdType, SeqNumberType, VectorName};
 use serde_json::json;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -22,6 +22,9 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+pub const VECTOR1_NAME: &VectorName = "vector1";
+pub const VECTOR2_NAME: &VectorName = "vector2";
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()
@@ -71,8 +74,8 @@ pub fn random_multi_vec_segment(
         let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let mut vectors = NamedVectors::default();
-        vectors.insert("vector1".to_owned(), random_vector1.into());
-        vectors.insert("vector2".to_owned(), random_vector2.into());
+        vectors.insert(VECTOR1_NAME.to_owned(), random_vector1.into());
+        vectors.insert(VECTOR2_NAME.to_owned(), random_vector2.into());
 
         let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.gen_range(1..1_000);

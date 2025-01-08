@@ -371,7 +371,7 @@ fn recommend_by_avg_vector(
     );
 
     let vector_name = match using {
-        None => DEFAULT_VECTOR_NAME.to_string(),
+        None => DEFAULT_VECTOR_NAME.to_owned(),
         Some(UsingVector::Name(name)) => name,
     };
 

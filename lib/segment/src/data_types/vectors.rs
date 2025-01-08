@@ -12,6 +12,7 @@ use super::named_vectors::NamedVectors;
 use super::primitive::PrimitiveVectorElement;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
+use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -185,7 +186,7 @@ pub type VectorElementTypeHalf = f16;
 
 pub type VectorElementTypeByte = u8;
 
-pub const DEFAULT_VECTOR_NAME: &str = "";
+pub const DEFAULT_VECTOR_NAME: &VectorName = "";
 
 pub type TypedDenseVector<T> = Vec<T>;
 
@@ -455,7 +456,7 @@ pub fn only_default_multi_vector(vec: &MultiDenseVectorInternal) -> NamedVectors
 pub enum VectorStructInternal {
     Single(DenseVector),
     MultiDense(MultiDenseVectorInternal),
-    Named(HashMap<String, VectorInternal>),
+    Named(HashMap<VectorNameBuf, VectorInternal>),
 }
 
 impl From<DenseVector> for VectorStructInternal {
@@ -495,7 +496,7 @@ impl From<NamedVectors<'_>> for VectorStructInternal {
 }
 
 impl VectorStructInternal {
-    pub fn get(&self, name: &str) -> Option<VectorRef> {
+    pub fn get(&self, name: &VectorName) -> Option<VectorRef> {
         match self {
             VectorStructInternal::Single(v) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(v))
@@ -513,7 +514,7 @@ impl VectorStructInternal {
 #[serde(rename_all = "snake_case")]
 pub struct NamedVector {
     /// Name of vector data
-    pub name: String,
+    pub name: VectorNameBuf,
     /// Vector data
     pub vector: DenseVector,
 }
@@ -522,7 +523,7 @@ pub struct NamedVector {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedMultiDenseVector {
     /// Name of vector data
-    pub name: String,
+    pub name: VectorNameBuf,
     /// Vector data
     pub vector: MultiDenseVectorInternal,
 }
@@ -532,7 +533,7 @@ pub struct NamedMultiDenseVector {
 #[serde(rename_all = "snake_case")]
 pub struct NamedSparseVector {
     /// Name of vector data
-    pub name: String,
+    pub name: VectorNameBuf,
     /// Vector data
     #[validate(nested)]
     pub vector: SparseVector,
@@ -571,11 +572,11 @@ impl From<NamedMultiDenseVector> for NamedVectorStruct {
 }
 
 pub trait Named {
-    fn get_name(&self) -> &str;
+    fn get_name(&self) -> &VectorName;
 }
 
 impl Named for NamedVectorStruct {
-    fn get_name(&self) -> &str {
+    fn get_name(&self) -> &VectorName {
         match self {
             NamedVectorStruct::Default(_) => DEFAULT_VECTOR_NAME,
             NamedVectorStruct::Dense(v) => &v.name,
@@ -586,7 +587,7 @@ impl Named for NamedVectorStruct {
 }
 
 impl NamedVectorStruct {
-    pub fn new_from_vector(vector: VectorInternal, name: impl Into<String>) -> Self {
+    pub fn new_from_vector(vector: VectorInternal, name: impl Into<VectorNameBuf>) -> Self {
         let name = name.into();
         match vector {
             VectorInternal::Dense(vector) => NamedVectorStruct::Dense(NamedVector { name, vector }),
@@ -622,7 +623,7 @@ impl NamedVectorStruct {
 pub enum BatchVectorStructInternal {
     Single(Vec<DenseVector>),
     MultiDense(Vec<MultiDenseVectorInternal>),
-    Named(HashMap<String, Vec<VectorInternal>>),
+    Named(HashMap<VectorNameBuf, Vec<VectorInternal>>),
 }
 
 impl From<Vec<DenseVector>> for BatchVectorStructInternal {
@@ -654,11 +655,11 @@ impl BatchVectorStructInternal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedQuery<TQuery> {
     pub query: TQuery,
-    pub using: Option<String>,
+    pub using: Option<VectorNameBuf>,
 }
 
 impl<T> Named for NamedQuery<T> {
-    fn get_name(&self) -> &str {
+    fn get_name(&self) -> &VectorName {
         self.using.as_deref().unwrap_or(DEFAULT_VECTOR_NAME)
     }
 }
@@ -670,7 +671,7 @@ impl<T: Validate> Validate for NamedQuery<T> {
 }
 
 impl NamedQuery<RecoQuery<VectorInternal>> {
-    pub fn new(query: RecoQuery<VectorInternal>, using: Option<String>) -> Self {
+    pub fn new(query: RecoQuery<VectorInternal>, using: Option<VectorNameBuf>) -> Self {
         // TODO: maybe validate there is no sparse vector without vector name
         NamedQuery { query, using }
     }
