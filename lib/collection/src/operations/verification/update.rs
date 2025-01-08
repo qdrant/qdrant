@@ -135,7 +135,7 @@ impl StrictModeVerification for PointInsertOperations {
         check_collection_size_limit(collection, strict_mode_config).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
-            check_multivectors_limits(self, collection, multivector_config).await?;
+            check_multivectors_limits_insert(self, collection, multivector_config).await?;
         }
 
         Ok(())
@@ -176,12 +176,9 @@ impl StrictModeVerification for UpdateVectors {
 
         check_collection_size_limit(collection, strict_mode_config).await?;
 
-        // if let Some(multivector_config) = &strict_mode_config.multivector_config {
-        //     // TODO apply similar logic for update vectors
-        //     for point in &self.points {
-        //         check_multivectors_limits(point.vector, collection, multivector_config).await?;
-        //     }
-        // }
+        if let Some(multivector_config) = &strict_mode_config.multivector_config {
+            check_multivectors_limits_update(self, collection, multivector_config).await?;
+        }
 
         Ok(())
     }
@@ -269,14 +266,16 @@ fn check_collection_payload_size_limit(
     Ok(())
 }
 
-async fn check_multivectors_limits(
-    point_insert: &PointInsertOperations,
+/// Compute a non-empty mapping of multivector limits by name.
+///
+/// Return None if no multivectors are configured with strict mode
+async fn multivector_limits_by_name(
     collection: &Collection,
     multivector_strict_config: &StrictModeMultivectorConfig,
-) -> Result<(), CollectionError> {
+) -> Option<HashMap<String, usize>> {
     // If no multivectors strict mode no need to check anything.
     if multivector_strict_config.config.is_empty() {
-        return Ok(());
+        return None;
     }
     let collection_guard = collection.collection_config.read().await;
 
@@ -298,8 +297,44 @@ async fn check_multivectors_limits(
 
     // If no multivectors are configured, no need to check anything.
     if multivector_max_size_by_name.is_empty() {
-        return Ok(());
+        None
+    } else {
+        Some(multivector_max_size_by_name)
     }
+}
+
+async fn check_multivectors_limits_update(
+    point_insert: &UpdateVectors,
+    collection: &Collection,
+    multivector_strict_config: &StrictModeMultivectorConfig,
+) -> Result<(), CollectionError> {
+    let Some(multivector_max_size_by_name) =
+        multivector_limits_by_name(collection, multivector_strict_config).await
+    else {
+        return Ok(());
+    };
+
+    for point in &point_insert.points {
+        check_named_multivectors_vecstruct_limit(
+            DEFAULT_VECTOR_NAME,
+            &point.vector,
+            &multivector_max_size_by_name,
+        )?;
+    }
+
+    Ok(())
+}
+
+async fn check_multivectors_limits_insert(
+    point_insert: &PointInsertOperations,
+    collection: &Collection,
+    multivector_strict_config: &StrictModeMultivectorConfig,
+) -> Result<(), CollectionError> {
+    let Some(multivector_max_size_by_name) =
+        multivector_limits_by_name(collection, multivector_strict_config).await
+    else {
+        return Ok(());
+    };
 
     match point_insert {
         PointInsertOperations::PointsBatch(batch) => match &batch.batch.vectors {
@@ -357,6 +392,28 @@ async fn check_multivectors_limits(
     }
 
     Ok(())
+}
+
+fn check_named_multivectors_vecstruct_limit(
+    name: &str,
+    vector: &VectorStruct,
+    multivector_max_size_by_name: &HashMap<String, usize>,
+) -> Result<(), CollectionError> {
+    match vector {
+        VectorStruct::MultiDense(multi) => {
+            check_named_multivector_limit(name, multi, multivector_max_size_by_name)
+        }
+        VectorStruct::Named(named) => {
+            for (name, vec) in named {
+                check_named_multivectors_vec_limit(name, vec, multivector_max_size_by_name)?;
+            }
+            Ok(())
+        }
+        VectorStruct::Single(_)
+        | VectorStruct::Document(_)
+        | VectorStruct::Image(_)
+        | VectorStruct::Object(_) => Ok(()),
+    }
 }
 
 fn check_named_multivectors_vec_limit(
