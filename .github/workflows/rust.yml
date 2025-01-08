@@ -31,8 +31,6 @@ jobs:
       uses: taiki-e/install-action@nextest
     - name: Install llvm-cov
       run: cargo install cargo-llvm-cov
-    - name: Build
-      run: cargo build --tests --workspace
     - name: Run tests with coverage
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo llvm-cov nextest run --workspace --profile ci
