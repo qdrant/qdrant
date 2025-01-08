@@ -36,6 +36,8 @@ jobs:
     - name: Run tests with coverage
       # Profile "ci" is configured in .config/nextest.toml
       run: cargo llvm-cov nextest run --workspace --profile ci
+    - name: Save code coverage report
+      run: cargo llvm-cov report --lcov --output-path lcov.info
     - name: Upload coverage data to Codecov
       uses: codecov/codecov-action@v3
       with:
