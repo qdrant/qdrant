@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  branch-build-and-push:
+  branch-gpu-build-and-push:
     runs-on: [self-hosted, linux, x64]
     steps:
         - uses: actions/checkout@v4
