@@ -20,7 +20,7 @@ EXPORT float impl_and_popcnt_m128i_avx512(
     const int32_t* v_ptr = (const int32_t*)vector_ptr;
     const __m128i* q_ptr = (const __m128i*)query_ptr;
 
-    __m128i sum = _mm_set1_epi32(0xFFFF);
+    __m128i sum = _mm_set1_epi32(0);
     for (uint32_t _i = 0; _i < dim / 32; _i++) {
         __m128i v = _mm_set1_epi32(*v_ptr);
         __m128i q = _mm_loadu_si128(q_ptr);
