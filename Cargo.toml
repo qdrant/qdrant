@@ -1,6 +1,6 @@
 [package]
 name = "qdrant"
-version = "1.12.5"
+version = "1.12.6"
 description = "Qdrant - Vector Search engine"
 authors = [
     "Andrey Vasnetsov <andrey@vasnetsov.com>",
