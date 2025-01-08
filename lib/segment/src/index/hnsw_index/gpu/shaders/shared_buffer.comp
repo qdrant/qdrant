@@ -58,7 +58,9 @@ void _bitonic_cmp(uint offset, uint count, uint b_i, uint b_j) {
     }
 }
 
+// Sort the shared buffer in place using bitonic sort
 void sort(uint offset, uint count) {
+    // To increase performance, sort blocks of size `SUBGROUP_SIZE` using bubble sort.
     for (uint group_offset = 0; group_offset < count; group_offset += SUBGROUP_SIZE) {
         ScoredPoint scored_point = ScoredPoint(0, negative_infinity);
         uint i = group_offset + gl_SubgroupInvocationID;
@@ -78,7 +80,8 @@ void sort(uint offset, uint count) {
     }
     subgroupMemoryBarrierShared();
 
-    for (uint k = 64; (k >> 1) < count; k <<= 1) {
+    // Start bitonic sort. Start from `k = 2 * SUBGROUP_SIZE` instead of `1` because we have already sorted blocks of size `SUBGROUP_SIZE`.
+    for (uint k = 2 * SUBGROUP_SIZE; (k >> 1) < count; k <<= 1) {
         for (uint i = gl_SubgroupInvocationID; i < count; i += SUBGROUP_SIZE) {
             _bitonic_cmp(offset, count, i, i ^ (k - 1));
         }
