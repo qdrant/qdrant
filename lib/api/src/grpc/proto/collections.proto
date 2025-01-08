@@ -340,6 +340,15 @@ message StrictModeConfig {
   optional uint32 read_rate_limit = 11; // Max number of read operations per minute per replica
   optional uint32 write_rate_limit = 12; // Max number of write operations per minute per replica
   optional uint64 max_collection_payload_size_bytes = 13;
+  optional StrictModeMultivectorConfig multivector_config = 14;
+}
+
+message StrictModeMultivectorConfig {
+  map<string, StrictModeMultivector> multivector_config = 1;
+}
+
+message StrictModeMultivector {
+  optional uint64 max_vectors  = 1;
 }
 
 message CreateCollection {

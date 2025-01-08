@@ -519,6 +519,25 @@ pub struct StrictModeConfig {
     pub write_rate_limit: ::core::option::Option<u32>,
     #[prost(uint64, optional, tag = "13")]
     pub max_collection_payload_size_bytes: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "14")]
+    pub multivector_config: ::core::option::Option<StrictModeMultivectorConfig>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeMultivectorConfig {
+    #[prost(map = "string, message", tag = "1")]
+    pub multivector_config: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        StrictModeMultivector,
+    >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeMultivector {
+    #[prost(uint64, optional, tag = "1")]
+    pub max_vectors: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]

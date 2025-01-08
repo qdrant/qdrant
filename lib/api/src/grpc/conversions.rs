@@ -25,7 +25,8 @@ use super::qdrant::{
     HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
     MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
-    ShardKeySelector, SparseIndices, StartFrom, UuidIndexParams, VectorsOutput, WithLookup,
+    ShardKeySelector, SparseIndices, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
+    UuidIndexParams, VectorsOutput, WithLookup,
 };
 use crate::conversions::json;
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1717,7 +1718,28 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             max_collection_payload_size_bytes: value
                 .max_collection_payload_size_bytes
                 .map(|i| i as usize),
-            multivector_config: None, // TODO: Implement
+            multivector_config: value
+                .multivector_config
+                .map(segment::types::StrictModeMultivectorConfig::from),
+        }
+    }
+}
+
+impl From<StrictModeMultivectorConfig> for segment::types::StrictModeMultivectorConfig {
+    fn from(value: StrictModeMultivectorConfig) -> Self {
+        Self {
+            config: value
+                .multivector_config
+                .iter()
+                .map(|(name, config)| {
+                    (
+                        name.clone(),
+                        segment::types::StrictModeMultivector {
+                            max_vectors: config.max_vectors.map(|i| i as usize),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
@@ -1742,6 +1764,28 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
             max_collection_payload_size_bytes: value
                 .max_collection_payload_size_bytes
                 .map(|i| i as u64),
+            multivector_config: value
+                .multivector_config
+                .map(StrictModeMultivectorConfig::from),
+        }
+    }
+}
+
+impl From<segment::types::StrictModeMultivectorConfig> for StrictModeMultivectorConfig {
+    fn from(value: segment::types::StrictModeMultivectorConfig) -> Self {
+        Self {
+            multivector_config: value
+                .config
+                .iter()
+                .map(|(name, config)| {
+                    (
+                        name.clone(),
+                        StrictModeMultivector {
+                            max_vectors: config.max_vectors.map(|i| i as u64),
+                        },
+                    )
+                })
+                .collect(),
         }
     }
 }
