@@ -153,16 +153,16 @@ EXPORT float impl_and_popcnt_m128i_sse(
     const uint8_t* vector_ptr,
     uint32_t dim
 ) {
-    const int32_t* v_ptr = (const int32_t*)vector_ptr;
-    const int32_t* q_ptr = (const int32_t*)query_ptr;
+    const uint32_t* v_ptr = (const uint32_t*)vector_ptr;
+    const uint32_t* q_ptr = (const uint32_t*)query_ptr;
 
-    __m128i sum = _mm_set1_epi32(0xFFFF);
+    __m128i sum = _mm_set1_epi32(0);
     for (uint32_t _i = 0; _i < dim / 32; _i++) {
-        int32_t v = *v_ptr;
-        int32_t q_1 = *q_ptr;
-        int32_t q_2 = *(q_ptr + 1);
-        int32_t q_3 = *(q_ptr + 2);
-        int32_t q_4 = *(q_ptr + 3);
+        uint32_t v = *v_ptr;
+        uint32_t q_1 = *q_ptr;
+        uint32_t q_2 = *(q_ptr + 1);
+        uint32_t q_3 = *(q_ptr + 2);
+        uint32_t q_4 = *(q_ptr + 3);
         v_ptr++;
         q_ptr += 4;
 
