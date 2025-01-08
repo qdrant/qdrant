@@ -678,6 +678,7 @@ pub struct StrictModeMultivector {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 pub struct StrictModeMultivectorConfig {
+    #[validate(nested)]
     #[serde(flatten)]
     pub config: BTreeMap<String, StrictModeMultivector>,
 }
@@ -753,6 +754,7 @@ pub struct StrictModeConfig {
 
     /// Multivector configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
     pub multivector_config: Option<StrictModeMultivectorConfig>,
 }
 

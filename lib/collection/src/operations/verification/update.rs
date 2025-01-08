@@ -439,19 +439,20 @@ fn check_named_multivector_limit(
     multivector_max_size_by_name: &HashMap<String, usize>,
 ) -> Result<(), CollectionError> {
     if let Some(strict_multi_limit) = multivector_max_size_by_name.get(name) {
-        check_multivector_limit(multi, *strict_multi_limit)?
+        check_multivector_limit(name, multi, *strict_multi_limit)?
     }
     Ok(())
 }
 
 fn check_multivector_limit(
+    name: &str,
     multi: &MultiDenseVector,
     max_size: usize,
 ) -> Result<(), CollectionError> {
     let multi_len = multi.len();
     if multi_len > max_size {
         return Err(CollectionError::bad_request(format!(
-            "Multivector has a limit of {max_size} vectors, but {multi_len} were provided!",
+            "Multivector '{name}' has a limit of {max_size} vectors, but {multi_len} were provided!",
         )));
     }
 

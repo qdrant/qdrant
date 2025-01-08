@@ -1,10 +1,9 @@
 import time
 
 import pytest
-import random
 
 from .conftest import collection_name
-from .helpers.collection_setup import basic_collection_setup, drop_collection, multivec_collection_setup
+from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import request_with_validation
 
 
@@ -688,7 +687,7 @@ def test_strict_mode_max_multivector_size_upsert_batch(collection_name):
         }
     )
     assert not failed_upsert.ok
-    assert "Multivector has a limit of 5 vectors, but 6 were provided!" in failed_upsert.json()['status']['error']
+    assert "Multivector 'dense-multi' has a limit of 5 vectors, but 6 were provided!" in failed_upsert.json()['status']['error']
 
 
 def test_strict_mode_read_rate_limiting(collection_name):
