@@ -1022,7 +1022,7 @@ impl<'de> serde::Deserialize<'de> for PointInsertOperations {
 #[derive(Debug, Serialize, Clone, JsonSchema)]
 #[serde(untagged)]
 pub enum PointInsertOperations {
-    /// Inset points from a batch.
+    /// Insert points from a batch.
     PointsBatch(PointsBatch),
     /// Insert points from a list
     PointsList(PointsList),
