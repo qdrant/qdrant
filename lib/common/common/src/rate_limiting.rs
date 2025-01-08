@@ -31,15 +31,14 @@ impl RateLimiter {
     /// Attempt to consume a given number of tokens.
     ///
     /// Returns:
-    /// - `Some(true)` if allowed and consumes the tokens.
-    /// - `Some(false)` if denied because tokens are exhausted, the user can try again later.
-    /// - `Err(_)` if denied because requested more tokens than max capacity, request will never go through.
-    pub fn try_consume(&mut self, tokens: f64) -> Result<bool, &'static str> {
+    /// - `Ok(())` if allowed and consumes the tokens.
+    /// - `Err(RateLimitError)` if denied with either an explanation or token that were left but didn't suffice.
+    pub fn try_consume(&mut self, tokens: f64) -> Result<(), RateLimitError> {
         // Consumer wants more than maximum capacity, that's impossible
         if tokens > self.capacity_per_minute as f64 {
-            return Err(
+            return Err(RateLimitError::Message(
                 "request larger than than rate limiter capacity, please try to split your request",
-            );
+            ));
         }
 
         let now = Instant::now();
@@ -54,11 +53,21 @@ impl RateLimiter {
 
         if self.tokens >= tokens {
             self.tokens -= tokens; // Consume `cost` tokens.
-            Ok(true) // Request allowed.
+            Ok(()) // Request allowed.
         } else {
-            Ok(false) // Request denied.
+            Err(RateLimitError::TokenLeft(self.tokens))
         }
     }
+}
+
+/// Error when too many tokens have been tried to consume from the rate limiter.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RateLimitError {
+    /// Detailed explanation of a failure.
+    Message(&'static str),
+
+    /// Token that were available at the time of the request but didn't suffice.
+    TokenLeft(f64),
 }
 
 #[cfg(test)]
@@ -79,11 +88,11 @@ mod tests {
         assert_eq_floats(limiter.tokens_per_sec, 0.016, 0.001);
         assert_eq!(limiter.tokens, 1.0);
 
-        assert_eq!(limiter.try_consume(1.0), Ok(true));
+        assert_eq!(limiter.try_consume(1.0), Ok(()));
         assert_eq!(limiter.tokens, 0.0);
 
         // rate limit reached
-        assert_eq!(limiter.try_consume(1.0), Ok(false));
+        assert!(limiter.try_consume(1.0).is_err());
     }
 
     #[test]
@@ -93,10 +102,10 @@ mod tests {
         assert_eq!(limiter.tokens_per_sec, 10.0);
         assert_eq!(limiter.tokens, 600.0);
 
-        assert_eq!(limiter.try_consume(1.0), Ok(true));
+        assert_eq!(limiter.try_consume(1.0), Ok(()));
         assert_eq!(limiter.tokens, 599.0);
 
-        assert_eq!(limiter.try_consume(10.0), Ok(true));
+        assert_eq!(limiter.try_consume(10.0), Ok(()));
         assert_eq_floats(limiter.tokens, 589.0, 0.001);
     }
 

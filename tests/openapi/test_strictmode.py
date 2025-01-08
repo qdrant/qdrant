@@ -853,3 +853,44 @@ def test_strict_mode_write_rate_limiting(collection_name):
         )
 
         assert response.ok, "Rate limiting should be disabled now"
+
+
+def test_strict_mode_write_rate_limiting_update_op(collection_name):
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "write_rate_limit": 7,
+    })
+
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "field_name": "city",
+            "field_schema": "keyword",
+        }
+    ).raise_for_status()
+
+    # This will pass as we still have tokens in the rate limiter. Those will be used by this call.
+    request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"City": "Not Berlin"},
+            "filter": {"must": [{"key": "City", "match": {"value": "Berlin"}}]}
+        }
+    ).raise_for_status()
+
+    # Not enough tokens left.
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/payload',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "payload": {"City": "Not London"},
+            "filter": {"must": [{"key": "City", "match": {"value": "London"}}]}
+        }
+    )
+    assert response.status_code == 429
+    assert "Rate limiting exceeded: Write rate limit exceeded: Operation requires 5 tokens but only" in response.json()['status']['error']

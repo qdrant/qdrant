@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use segment::types::{Filter, PointIdType};
 
 use super::vector_ops;
@@ -5,10 +7,10 @@ use crate::operations::payload_ops::PayloadOps;
 use crate::operations::{point_ops, CollectionUpdateOperations};
 
 /// Structure to define what part of the shard are affected by the operation
-pub enum OperationEffectArea {
+pub enum OperationEffectArea<'a> {
     Empty,
-    Points(Vec<PointIdType>),
-    Filter(Filter),
+    Points(Cow<'a, [PointIdType]>),
+    Filter(&'a Filter),
 }
 
 /// Estimate how many points will be affected by the operation
@@ -49,17 +51,19 @@ impl EstimateOperationEffectArea for point_ops::PointOperations {
                 insert_operations.estimate_effect_area()
             }
             point_ops::PointOperations::DeletePoints { ids } => {
-                OperationEffectArea::Points(ids.clone())
+                OperationEffectArea::Points(Cow::Borrowed(ids))
             }
             point_ops::PointOperations::DeletePointsByFilter(filter) => {
-                OperationEffectArea::Filter(filter.clone())
+                OperationEffectArea::Filter(filter)
             }
             point_ops::PointOperations::SyncPoints(sync_op) => {
                 debug_assert!(
                     false,
                     "SyncPoints operation should not be used during transfer"
                 );
-                OperationEffectArea::Points(sync_op.points.iter().map(|x| x.id).collect())
+                OperationEffectArea::Points(Cow::Owned(
+                    sync_op.points.iter().map(|x| x.id).collect(),
+                ))
             }
         }
     }
@@ -70,13 +74,13 @@ impl EstimateOperationEffectArea for vector_ops::VectorOperations {
         match self {
             vector_ops::VectorOperations::UpdateVectors(update_operation) => {
                 let ids = update_operation.points.iter().map(|p| p.id).collect();
-                OperationEffectArea::Points(ids)
+                OperationEffectArea::Points(Cow::Owned(ids))
             }
             vector_ops::VectorOperations::DeleteVectors(ids, _) => {
-                OperationEffectArea::Points(ids.points.clone())
+                OperationEffectArea::Points(Cow::Borrowed(&ids.points))
             }
             vector_ops::VectorOperations::DeleteVectorsByFilter(filter, _) => {
-                OperationEffectArea::Filter(filter.clone())
+                OperationEffectArea::Filter(filter)
             }
         }
     }
@@ -86,10 +90,10 @@ impl EstimateOperationEffectArea for point_ops::PointInsertOperationsInternal {
     fn estimate_effect_area(&self) -> OperationEffectArea {
         match self {
             point_ops::PointInsertOperationsInternal::PointsBatch(batch) => {
-                OperationEffectArea::Points(batch.ids.clone())
+                OperationEffectArea::Points(Cow::Borrowed(&batch.ids))
             }
             point_ops::PointInsertOperationsInternal::PointsList(list) => {
-                OperationEffectArea::Points(list.iter().map(|x| x.id).collect())
+                OperationEffectArea::Points(Cow::Owned(list.iter().map(|x| x.id).collect()))
             }
         }
     }
@@ -100,29 +104,31 @@ impl EstimateOperationEffectArea for PayloadOps {
         match self {
             PayloadOps::SetPayload(set_payload) => {
                 if let Some(points) = &set_payload.points {
-                    OperationEffectArea::Points(points.clone())
+                    OperationEffectArea::Points(Cow::Borrowed(points))
                 } else if let Some(filter) = &set_payload.filter {
-                    OperationEffectArea::Filter(filter.clone())
+                    OperationEffectArea::Filter(filter)
                 } else {
                     OperationEffectArea::Empty
                 }
             }
             PayloadOps::DeletePayload(delete_payload) => {
                 if let Some(points) = &delete_payload.points {
-                    OperationEffectArea::Points(points.clone())
+                    OperationEffectArea::Points(Cow::Borrowed(points))
                 } else if let Some(filter) = &delete_payload.filter {
-                    OperationEffectArea::Filter(filter.clone())
+                    OperationEffectArea::Filter(filter)
                 } else {
                     OperationEffectArea::Empty
                 }
             }
-            PayloadOps::ClearPayload { points } => OperationEffectArea::Points(points.clone()),
-            PayloadOps::ClearPayloadByFilter(filter) => OperationEffectArea::Filter(filter.clone()),
+            PayloadOps::ClearPayload { points } => {
+                OperationEffectArea::Points(Cow::Borrowed(points))
+            }
+            PayloadOps::ClearPayloadByFilter(filter) => OperationEffectArea::Filter(filter),
             PayloadOps::OverwritePayload(set_payload) => {
                 if let Some(points) = &set_payload.points {
-                    OperationEffectArea::Points(points.clone())
+                    OperationEffectArea::Points(Cow::Borrowed(points))
                 } else if let Some(filter) = &set_payload.filter {
-                    OperationEffectArea::Filter(filter.clone())
+                    OperationEffectArea::Filter(filter)
                 } else {
                     OperationEffectArea::Empty
                 }

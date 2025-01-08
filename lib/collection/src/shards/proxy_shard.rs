@@ -10,6 +10,7 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
+use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
@@ -140,6 +141,13 @@ impl ProxyShard {
     pub fn update_tracker(&self) -> &UpdateTracker {
         self.wrapped_shard.update_tracker()
     }
+
+    pub fn estimate_cardinality(
+        &self,
+        filter: Option<&Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
+        self.wrapped_shard.estimate_cardinality(filter)
+    }
 }
 
 #[async_trait]
@@ -161,16 +169,16 @@ impl ShardOperation for ProxyShard {
         let estimate_effect = operation.operation.estimate_effect_area();
         let points_operation_effect: PointsOperationEffect = match estimate_effect {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
-            OperationEffectArea::Points(points) => PointsOperationEffect::Some(points),
+            OperationEffectArea::Points(points) => PointsOperationEffect::Some(Vec::from(points)),
             OperationEffectArea::Filter(filter) => {
-                let cardinality = local_shard.estimate_cardinality(Some(&filter))?;
+                let cardinality = local_shard.estimate_cardinality(Some(filter))?;
                 // validate the size of the change set before retrieving it
                 if cardinality.max > MAX_CHANGES_TRACKED_COUNT {
                     PointsOperationEffect::Many
                 } else {
                     let runtime_handle = self.wrapped_shard.search_runtime.clone();
                     let points = local_shard
-                        .read_filtered(Some(&filter), &runtime_handle)
+                        .read_filtered(Some(filter), &runtime_handle)
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
