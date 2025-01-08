@@ -7,6 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::tar_ext;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
+use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
     WithVector,
@@ -60,6 +61,13 @@ impl DummyShard {
             optimizations: Default::default(),
             async_scorer: None,
         }
+    }
+
+    pub fn estimate_cardinality(
+        &self,
+        _: Option<&Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
+        self.dummy()
     }
 
     fn dummy<T>(&self) -> CollectionResult<T> {

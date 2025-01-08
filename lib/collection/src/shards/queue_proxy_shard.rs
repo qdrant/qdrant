@@ -10,6 +10,7 @@ use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
+use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
     WithVector,
@@ -211,6 +212,15 @@ impl QueueProxyShard {
         queue_proxy.set_wal_keep_from(None);
 
         (queue_proxy.wrapped_shard, queue_proxy.remote_shard)
+    }
+
+    pub fn estimate_cardinality(
+        &self,
+        filter: Option<&Filter>,
+    ) -> CollectionResult<CardinalityEstimation> {
+        self.inner_unchecked()
+            .wrapped_shard
+            .estimate_cardinality(filter)
     }
 }
 

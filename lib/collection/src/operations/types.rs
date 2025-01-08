@@ -13,6 +13,7 @@ use api::rest::{
 };
 use common::defaults;
 use common::ext::OptionExt;
+use common::rate_limiting::RateLimitError;
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
@@ -1105,6 +1106,27 @@ impl CollectionError {
         Self::RateLimitExceeded {
             description: description.into(),
         }
+    }
+
+    pub fn rate_limit_error(
+        rate_limit_error: RateLimitError,
+        cost: Option<usize>,
+        write_limit_type: bool, // false = read rate limit; true = write rate limit.
+    ) -> Self {
+        let rate_limiter_type = if write_limit_type { "Write" } else { "Read" };
+        let description = match rate_limit_error {
+            RateLimitError::Message(msg) => {
+                format!("{rate_limiter_type} rate limit exceeded, {msg}",)
+            }
+            RateLimitError::TokenLeft(token_available) => {
+                if cost.is_some() && cost.unwrap() > 1 {
+                    format!("{rate_limiter_type} rate limit exceeded: Operation requires {} tokens but only {token_available} were available. Retry later", cost.unwrap())
+                } else {
+                    format!("{rate_limiter_type} rate limit exceeded, retry later")
+                }
+            }
+        };
+        Self::RateLimitExceeded { description }
     }
 
     /// Returns true if the error is transient and the operation can be retried.
