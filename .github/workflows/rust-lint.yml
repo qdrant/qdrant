@@ -32,7 +32,7 @@ jobs:
       with:
         key: clippy
     - name: Install dependencies
-      run: sudo apt-get install clang libunwind-dev
+      run: sudo apt-get install clang libclang-dev llvm libunwind-dev
     - name: Check code formatting
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings
