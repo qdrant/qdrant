@@ -23,8 +23,8 @@ use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 
-pub const VECTOR1_NAME: &VectorName = "vector1";
-pub const VECTOR2_NAME: &VectorName = "vector2";
+pub const VECTOR1_NAME: &VectorName = VectorName::new("vector1");
+pub const VECTOR2_NAME: &VectorName = VectorName::new("vector2");
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()

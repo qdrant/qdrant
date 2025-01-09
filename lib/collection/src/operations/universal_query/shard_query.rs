@@ -200,7 +200,7 @@ impl TryFrom<grpc::QueryShardPoints> for ShardQueryRequest {
                 .map(ShardPrefetch::try_from)
                 .try_collect()?,
             query: query
-                .map(|query| ScoringQuery::try_from_grpc_query(query, using))
+                .map(|query| ScoringQuery::try_from_grpc_query(query, using.map(VectorNameBuf)))
                 .transpose()?,
             filter: filter.map(Filter::try_from).transpose()?,
             score_threshold,
@@ -240,7 +240,7 @@ impl TryFrom<grpc::query_shard_points::Prefetch> for ShardPrefetch {
                 .map(ShardPrefetch::try_from)
                 .try_collect()?,
             query: query
-                .map(|query| ScoringQuery::try_from_grpc_query(query, using))
+                .map(|query| ScoringQuery::try_from_grpc_query(query, using.map(VectorNameBuf)))
                 .transpose()?,
             limit: limit as usize,
             params: params.map(SearchParams::from),
@@ -443,7 +443,7 @@ impl From<ShardPrefetch> for grpc::query_shard_points::Prefetch {
             prefetch: prefetches.into_iter().map(Self::from).collect(),
             using: query
                 .as_ref()
-                .and_then(|query| query.get_vector_name().map(ToOwned::to_owned)),
+                .and_then(|query| query.get_vector_name().map(|n| n.0.to_owned())),
             query: query.map(From::from),
             filter: filter.map(grpc::Filter::from),
             params: params.map(grpc::SearchParams::from),
@@ -474,7 +474,7 @@ impl From<ShardQueryRequest> for grpc::QueryShardPoints {
                 .collect(),
             using: query
                 .as_ref()
-                .and_then(|query| query.get_vector_name().map(ToOwned::to_owned)),
+                .and_then(|query| query.get_vector_name().map(|n| n.0.to_owned())),
             query: query.map(From::from),
             filter: filter.map(grpc::Filter::from),
             params: params.map(grpc::SearchParams::from),

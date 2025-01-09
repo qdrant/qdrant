@@ -17,7 +17,7 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::segment_constructor::{build_segment, load_segment};
 use crate::types::{
     Distance, Filter, Indexes, Payload, SegmentConfig, SnapshotFormat, VectorDataConfig,
-    VectorStorageType, WithPayload, WithVector,
+    VectorName, VectorStorageType, WithPayload, WithVector,
 };
 
 #[test]
@@ -609,7 +609,7 @@ fn test_point_vector_count_multivec() {
 
     // Delete vector 'a' of point 6, vector count should decrease by 1
     segment
-        .delete_vector(106, 6.into(), "a", &hw_counter)
+        .delete_vector(106, 6.into(), VectorName::new("a"), &hw_counter)
         .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
@@ -617,7 +617,7 @@ fn test_point_vector_count_multivec() {
 
     // Deleting it again shouldn't chain anything
     segment
-        .delete_vector(107, 6.into(), "a", &hw_counter)
+        .delete_vector(107, 6.into(), VectorName::new("a"), &hw_counter)
         .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
@@ -703,24 +703,27 @@ fn test_vector_compatibility_checks() {
     // A set of broken vectors
     let wrong_vectors_single = vec![
         // Incorrect dimensionality
-        ("a", vec![]),
-        ("a", vec![0.0, 1.0, 0.0]),
-        ("a", vec![0.0, 1.0, 0.0, 1.0, 0.0]),
-        ("b", vec![]),
-        ("b", vec![0.5]),
-        ("b", vec![0.0, 0.1, 0.2, 0.3]),
+        (VectorName::new("a"), vec![]),
+        (VectorName::new("a"), vec![0.0, 1.0, 0.0]),
+        (VectorName::new("a"), vec![0.0, 1.0, 0.0, 1.0, 0.0]),
+        (VectorName::new("b"), vec![]),
+        (VectorName::new("b"), vec![0.5]),
+        (VectorName::new("b"), vec![0.0, 0.1, 0.2, 0.3]),
         // Incorrect names
-        ("aa", vec![0.0, 0.1, 0.2, 0.3]),
-        ("bb", vec![0.0, 0.1]),
+        (VectorName::new("aa"), vec![0.0, 0.1, 0.2, 0.3]),
+        (VectorName::new("bb"), vec![0.0, 0.1]),
     ];
     let wrong_vectors_multi = vec![
         // Incorrect dimensionality
-        NamedVectors::from_ref("a", [].as_slice().into()),
-        NamedVectors::from_ref("a", [0.0, 1.0, 0.0].as_slice().into()),
-        NamedVectors::from_ref("a", [0.0, 1.0, 0.0, 1.0, 0.0].as_slice().into()),
-        NamedVectors::from_ref("b", [].as_slice().into()),
-        NamedVectors::from_ref("b", [0.5].as_slice().into()),
-        NamedVectors::from_ref("b", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
+        NamedVectors::from_ref(VectorName::new("a"), [].as_slice().into()),
+        NamedVectors::from_ref(VectorName::new("a"), [0.0, 1.0, 0.0].as_slice().into()),
+        NamedVectors::from_ref(
+            VectorName::new("a"),
+            [0.0, 1.0, 0.0, 1.0, 0.0].as_slice().into(),
+        ),
+        NamedVectors::from_ref(VectorName::new("b"), [].as_slice().into()),
+        NamedVectors::from_ref(VectorName::new("b"), [0.5].as_slice().into()),
+        NamedVectors::from_ref(VectorName::new("b"), [0.0, 0.1, 0.2, 0.3].as_slice().into()),
         NamedVectors::from_pairs([
             ("a".into(), vec![0.1, 0.2, 0.3]),
             ("b".into(), vec![1.0, 0.9]),
@@ -730,8 +733,11 @@ fn test_vector_compatibility_checks() {
             ("b".into(), vec![1.0, 0.9, 0.0]),
         ]),
         // Incorrect names
-        NamedVectors::from_ref("aa", [0.0, 0.1, 0.2, 0.3].as_slice().into()),
-        NamedVectors::from_ref("bb", [0.0, 0.1].as_slice().into()),
+        NamedVectors::from_ref(
+            VectorName::new("aa"),
+            [0.0, 0.1, 0.2, 0.3].as_slice().into(),
+        ),
+        NamedVectors::from_ref(VectorName::new("bb"), [0.0, 0.1].as_slice().into()),
         NamedVectors::from_pairs([
             ("aa".into(), vec![0.1, 0.2, 0.3, 0.4]),
             ("b".into(), vec![1.0, 0.9]),
@@ -741,7 +747,11 @@ fn test_vector_compatibility_checks() {
             ("bb".into(), vec![1.0, 0.9]),
         ]),
     ];
-    let wrong_names = vec!["aa", "bb", ""];
+    let wrong_names = vec![
+        VectorName::new("aa"),
+        VectorName::new("bb"),
+        VectorName::new(""),
+    ];
 
     for (vector_name, vector) in wrong_vectors_single.iter() {
         let query_vector = vector.to_owned().into();

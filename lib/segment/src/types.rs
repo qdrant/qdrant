@@ -24,6 +24,7 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
+use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::index::{
@@ -52,10 +53,183 @@ pub type DateTimePayloadType = DateTimeWrapper;
 pub type UuidPayloadType = Uuid;
 /// Type of Uuid point payload key
 pub type UuidIntType = u128;
-/// Name of a vector
-pub type VectorName = str;
-/// Name of a vector (owned variant)
-pub type VectorNameBuf = String;
+
+#[derive(
+    Default, Clone, Hash, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, JsonSchema,
+)]
+#[repr(transparent)]
+pub struct VectorNameBuf(pub String);
+
+#[derive(Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[repr(transparent)]
+pub struct VectorName(pub str);
+
+// TODO: move to common
+
+impl<'a> From<&'a str> for &'a VectorName {
+    #[inline]
+    fn from(value: &'a str) -> &'a VectorName {
+        VectorName::new(value)
+    }
+}
+
+impl From<String> for VectorNameBuf {
+    #[inline]
+    fn from(value: String) -> Self {
+        VectorNameBuf(value)
+    }
+}
+
+impl<'a> From<&'a VectorName> for VectorNameBuf {
+    #[inline]
+    fn from(value: &'a VectorName) -> Self {
+        VectorNameBuf(value.0.to_owned())
+    }
+}
+
+impl Default for &VectorName {
+    #[inline]
+    fn default() -> Self {
+        VectorName::new("")
+    }
+}
+
+impl std::fmt::Debug for VectorName {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl std::fmt::Debug for VectorNameBuf {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+impl PartialEq<VectorName> for VectorNameBuf {
+    #[inline]
+    fn eq(&self, other: &VectorName) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<'a> PartialEq<&'a VectorName> for VectorNameBuf {
+    #[inline]
+    fn eq(&self, other: &&'a VectorName) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl ToOwned for VectorName {
+    type Owned = VectorNameBuf;
+
+    #[inline]
+    fn to_owned(&self) -> Self::Owned {
+        VectorNameBuf(self.0.to_owned())
+    }
+}
+
+impl VectorName {
+    #[inline]
+    pub const fn new(s: &str) -> &Self {
+        // https://stackoverflow.com/a/61445395
+        // https://github.com/rust-lang/rust/blob/1.84.0/library/std/src/path.rs#L2184
+        // https://github.com/vercel/turborepo/blob/v2.3.3/crates/turborepo-paths/src/relative_unix_path.rs#L29
+        unsafe { &*(s as *const str as *const Self) }
+    }
+}
+
+impl VectorName {
+    #[inline]
+    pub fn to_owned(&self) -> VectorNameBuf {
+        VectorNameBuf(self.0.to_owned())
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl Display for VectorNameBuf {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Display for VectorName {
+    #[inline]
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Deref for VectorNameBuf {
+    type Target = VectorName;
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        VectorName::new(&self.0)
+    }
+}
+
+impl Anonymize for VectorNameBuf {
+    #[inline]
+    fn anonymize(&self) -> Self {
+        VectorNameBuf(self.0.anonymize())
+    }
+}
+
+impl AsRef<VectorName> for VectorNameBuf {
+    #[inline]
+    fn as_ref(&self) -> &VectorName {
+        VectorName::new(&self.0)
+    }
+}
+
+impl std::borrow::Borrow<VectorName> for VectorNameBuf {
+    #[inline]
+    fn borrow(&self) -> &VectorName {
+        VectorName::new(&self.0)
+    }
+}
+
+impl From<&str> for VectorNameBuf {
+    #[inline]
+    fn from(value: &str) -> Self {
+        VectorNameBuf(value.to_owned())
+    }
+}
+
+impl<'a> From<&'a VectorName> for Cow<'a, VectorName> {
+    #[inline]
+    fn from(value: &'a VectorName) -> Self {
+        Cow::Borrowed(value)
+    }
+}
+
+impl<'a> From<Cow<'a, VectorName>> for VectorNameBuf {
+    #[inline]
+    fn from(value: Cow<'a, VectorName>) -> Self {
+        VectorNameBuf(value.into_owned().0)
+    }
+}
+
+impl From<VectorNameBuf> for Cow<'_, VectorName> {
+    #[inline]
+    fn from(value: VectorNameBuf) -> Self {
+        Cow::Owned(value)
+    }
+}
+
+impl<'a> From<&'a VectorNameBuf> for Cow<'a, VectorName> {
+    #[inline]
+    fn from(value: &'a VectorNameBuf) -> Self {
+        Cow::Borrowed(value.as_ref())
+    }
+}
 
 /// Wraps `DateTime<Utc>` to allow more flexible deserialization
 #[derive(Clone, Copy, Serialize, JsonSchema, Debug, PartialEq, PartialOrd)]

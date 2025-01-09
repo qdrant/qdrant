@@ -3,6 +3,7 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, NamedVectorStruct, VectorInternal, VectorStructInternal,
 };
+use segment::types::VectorNameBuf;
 use sparse::common::sparse_vector::SparseVector;
 use tonic::Status;
 
@@ -80,7 +81,7 @@ impl TryFrom<rest::VectorStructOutput> for grpc::VectorsOutput {
             crate::rest::schema::VectorStructOutput::Named(vectors) => {
                 let vectors: Result<_, _> = vectors
                     .into_iter()
-                    .map(|(name, vector)| grpc::VectorOutput::try_from(vector).map(|v| (name, v)))
+                    .map(|(name, vector)| grpc::VectorOutput::try_from(vector).map(|v| (name.0, v)))
                     .collect();
 
                 Self {
@@ -148,7 +149,7 @@ impl From<VectorStructInternal> for grpc::VectorsOutput {
                     grpc::NamedVectorsOutput {
                         vectors: vectors
                             .into_iter()
-                            .map(|(name, vector)| (name, grpc::VectorOutput::from(vector)))
+                            .map(|(name, vector)| (name.0, grpc::VectorOutput::from(vector)))
                             .collect(),
                     },
                 )),
@@ -220,7 +221,7 @@ impl TryFrom<grpc::Vectors> for rest::VectorStruct {
                     let named_vectors: Result<_, _> = vectors
                         .vectors
                         .into_iter()
-                        .map(|(k, v)| rest::Vector::try_from(v).map(|res| (k, res)))
+                        .map(|(k, v)| rest::Vector::try_from(v).map(|res| (k.into(), res)))
                         .collect();
 
                     rest::VectorStruct::Named(named_vectors?)
@@ -383,7 +384,9 @@ impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
                     let named_vectors: Result<_, _> = vectors
                         .vectors
                         .into_iter()
-                        .map(|(k, v)| VectorInternal::try_from(v).map(|res| (k, res)))
+                        .map(|(k, v)| {
+                            VectorInternal::try_from(v).map(|res| (VectorNameBuf(k), res))
+                        })
                         .collect();
 
                     VectorStructInternal::Named(named_vectors?)
@@ -449,7 +452,7 @@ impl From<VectorStructInternal> for grpc::Vectors {
                 vectors_options: Some(grpc::vectors::VectorsOptions::Vectors(grpc::NamedVectors {
                     vectors: vectors
                         .into_iter()
-                        .map(|(name, vector)| (name, grpc::Vector::from(vector)))
+                        .map(|(name, vector)| (name.0, grpc::Vector::from(vector)))
                         .collect(),
                 })),
             },

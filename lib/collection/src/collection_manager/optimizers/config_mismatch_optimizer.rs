@@ -277,8 +277,8 @@ mod tests {
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
 
-    const VECTOR1_NAME: &VectorName = "vector1";
-    const VECTOR2_NAME: &VectorName = "vector2";
+    const VECTOR1_NAME: &VectorName = VectorName::new("vector1");
+    const VECTOR2_NAME: &VectorName = VectorName::new("vector2");
 
     /// This test the config mismatch optimizer for a changed HNSW config
     ///

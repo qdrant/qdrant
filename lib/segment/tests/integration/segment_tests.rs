@@ -13,7 +13,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::segment_constructor::load_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::types::{Condition, Distance, Filter, SearchParams, WithPayload};
+use segment::types::{Condition, Distance, Filter, SearchParams, VectorName, WithPayload};
 use tempfile::Builder;
 
 use crate::fixtures::segment::{build_segment_1, build_segment_3};
@@ -83,7 +83,7 @@ fn test_named_vector_search() {
 
     let res = segment
         .search(
-            "vector1",
+            VectorName::new("vector1"),
             &query_vector,
             &WithPayload::default(),
             &false.into(),
@@ -107,7 +107,7 @@ fn test_named_vector_search() {
 
     let res = segment
         .search(
-            "vector1",
+            VectorName::new("vector1"),
             &query_vector,
             &WithPayload::default(),
             &false.into(),
@@ -183,7 +183,7 @@ fn test_vector_name_not_exists() {
     );
 
     if let Err(OperationError::VectorNameNotExists { received_name }) = result {
-        assert_eq!(received_name, "vector4");
+        assert_eq!(received_name, VectorName::new("vector4"));
     } else {
         panic!("wrong upsert result")
     }

@@ -46,6 +46,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
+    VectorNameBuf,
 };
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::content_manager::toc::TableOfContent;
@@ -337,7 +338,7 @@ pub async fn delete_vectors(
     let operation = DeleteVectors {
         points,
         filter,
-        vector: vector_names.into_iter().collect(),
+        vector: vector_names.into_iter().map(VectorNameBuf).collect(),
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
@@ -1324,7 +1325,7 @@ pub async fn recommend(
                 .unwrap_or_default(),
         ),
         score_threshold,
-        using: using.map(|u| u.into()),
+        using: using.map(|u| VectorNameBuf::from(u).into()),
         lookup_from: lookup_from.map(|l| l.into()),
     };
 
@@ -2039,7 +2040,9 @@ pub async fn search_points_matrix(
             .transpose()
             .map_err(|_| Status::invalid_argument("could not parse 'limit' param into usize"))?
             .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
+        using: using
+            .map(VectorNameBuf)
+            .unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
     };
 
     let toc = toc_provider

@@ -21,7 +21,7 @@ pub fn empty_segment(path: &Path) -> Segment {
 }
 
 pub const PAYLOAD_KEY: &str = "color";
-pub const SPARSE_VECTOR_NAME: &VectorName = "sparse";
+pub const SPARSE_VECTOR_NAME: &VectorName = VectorName::new("sparse");
 
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);

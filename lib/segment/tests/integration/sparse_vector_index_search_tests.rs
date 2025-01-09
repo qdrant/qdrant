@@ -56,7 +56,7 @@ const LOW_FULL_SCAN_THRESHOLD: usize = 1;
 /// Full scan threshold to force plain search
 const LARGE_FULL_SCAN_THRESHOLD: usize = 10 * NUM_VECTORS;
 
-const SPARSE_VECTOR_NAME: &VectorName = "sparse_vector";
+const SPARSE_VECTOR_NAME: &VectorName = VectorName::new("sparse_vector");
 
 /// Expects the filter to match ALL points in order to compare the results with/without filter
 fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize) {

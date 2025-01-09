@@ -1756,8 +1756,8 @@ fn incompatible_vectors_error<'a, 'b>(
     this: impl Iterator<Item = &'a VectorName>,
     other: impl Iterator<Item = &'b VectorName>,
 ) -> CollectionError {
-    let this_vectors = this.collect::<Vec<_>>().join(", ");
-    let other_vectors = other.collect::<Vec<_>>().join(", ");
+    let this_vectors = this.map(|name| &name.0).collect::<Vec<_>>().join(", ");
+    let other_vectors = other.map(|name| &name.0).collect::<Vec<_>>().join(", ");
 
     CollectionError::BadInput {
         description: format!(

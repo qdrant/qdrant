@@ -11,6 +11,7 @@ use collection::operations::universal_query::collection_query::{
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
+use segment::types::VectorNameBuf;
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
@@ -77,7 +78,9 @@ pub async fn convert_query_point_groups_from_grpc(
     let request = CollectionQueryGroupsRequest {
         prefetch,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
+        using: using
+            .map(VectorNameBuf)
+            .unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter: filter.map(TryFrom::try_from).transpose()?,
         score_threshold,
         with_vector: with_vectors
@@ -154,7 +157,9 @@ pub async fn convert_query_points_from_grpc(
     Ok(CollectionQueryRequest {
         prefetch,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
+        using: using
+            .map(VectorNameBuf)
+            .unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter: filter.map(TryFrom::try_from).transpose()?,
         score_threshold,
         limit: limit
@@ -202,7 +207,9 @@ fn convert_prefetch_with_inferred(
     Ok(CollectionPrefetch {
         prefetch: nested_prefetches,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
+        using: using
+            .map(VectorNameBuf)
+            .unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter: filter.map(TryFrom::try_from).transpose()?,
         score_threshold,
         limit: limit

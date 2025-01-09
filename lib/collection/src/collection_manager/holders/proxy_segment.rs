@@ -1966,7 +1966,7 @@ mod tests {
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
         proxy_segment
-            .delete_vector(106, 6.into(), "a", &hw_cell)
+            .delete_vector(106, 6.into(), "a".into(), &hw_cell)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -1974,7 +1974,7 @@ mod tests {
 
         // Deleting it again shouldn't chain anything
         proxy_segment
-            .delete_vector(107, 6.into(), "a", &hw_cell)
+            .delete_vector(107, 6.into(), "a".into(), &hw_cell)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);

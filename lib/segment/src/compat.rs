@@ -134,7 +134,7 @@ impl From<SegmentStateV5> for SegmentState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ScalarQuantization, ScalarQuantizationConfig};
+    use crate::types::{ScalarQuantization, ScalarQuantizationConfig, VectorName};
 
     #[test]
     fn convert_from_v5_to_newest() {
@@ -193,14 +193,24 @@ mod tests {
 
         eprintln!("new = {new_segment:#?}");
 
-        match &new_segment.vector_data.get("vec1").unwrap().index {
+        match &new_segment
+            .vector_data
+            .get(VectorName::new("vec1"))
+            .unwrap()
+            .index
+        {
             Indexes::Plain { .. } => panic!("expected HNSW index"),
             Indexes::Hnsw(hnsw) => {
                 assert_eq!(hnsw.m, 20);
             }
         }
 
-        match &new_segment.vector_data.get("vec2").unwrap().index {
+        match &new_segment
+            .vector_data
+            .get(VectorName::new("vec2"))
+            .unwrap()
+            .index
+        {
             Indexes::Plain { .. } => panic!("expected HNSW index"),
             Indexes::Hnsw(hnsw) => {
                 assert_eq!(hnsw.m, 25);
@@ -209,7 +219,7 @@ mod tests {
 
         if new_segment
             .vector_data
-            .get("vec1")
+            .get(VectorName::new("vec1"))
             .unwrap()
             .quantization_config
             .is_some()
@@ -276,7 +286,7 @@ mod tests {
 
         if new_segment
             .vector_data
-            .get("vec1")
+            .get(VectorName::new("vec1"))
             .unwrap()
             .quantization_config
             .is_some()
@@ -286,7 +296,7 @@ mod tests {
 
         match &new_segment
             .vector_data
-            .get("vec2")
+            .get(VectorName::new("vec2"))
             .unwrap()
             .quantization_config
         {

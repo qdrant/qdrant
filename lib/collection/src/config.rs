@@ -6,6 +6,7 @@ use std::path::Path;
 
 use atomicwrites::AtomicFile;
 use atomicwrites::OverwriteBehavior::AllowOverwrite;
+use itertools::Itertools;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
@@ -299,7 +300,11 @@ impl CollectionParams {
                 ),
             };
         } else {
-            let available_names = available_names.join(", ");
+            let available_names = Itertools::intersperse(
+                available_names.into_iter().map(|name| name.0),
+                String::from(", "),
+            )
+            .collect::<String>();
             if vector_name == DEFAULT_VECTOR_NAME {
                 return CollectionError::BadInput {
                     description: format!(

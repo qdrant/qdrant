@@ -24,8 +24,8 @@ use tempfile::Builder;
 
 use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
 
-const VECTOR1_NAME: &VectorName = "vec1";
-const VECTOR2_NAME: &VectorName = "vec2";
+const VECTOR1_NAME: &VectorName = VectorName::new("vec1");
+const VECTOR2_NAME: &VectorName = VectorName::new("vec2");
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multi_vec() {

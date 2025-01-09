@@ -186,7 +186,7 @@ pub type VectorElementTypeHalf = f16;
 
 pub type VectorElementTypeByte = u8;
 
-pub const DEFAULT_VECTOR_NAME: &VectorName = "";
+pub const DEFAULT_VECTOR_NAME: &VectorName = VectorName::new("");
 
 pub type TypedDenseVector<T> = Vec<T>;
 

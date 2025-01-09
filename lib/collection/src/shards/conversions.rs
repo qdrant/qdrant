@@ -179,7 +179,7 @@ pub fn internal_delete_vectors(
                 })),
             }),
             vectors: Some(VectorsSelector {
-                names: vector_names,
+                names: vector_names.into_iter().map(|name| name.0).collect(),
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
@@ -206,7 +206,7 @@ pub fn internal_delete_vectors_by_filter(
                 points_selector_one_of: Some(PointsSelectorOneOf::Filter(filter.into())),
             }),
             vectors: Some(VectorsSelector {
-                names: vector_names,
+                names: vector_names.into_iter().map(|name| name.0).collect(),
             }),
             ordering: ordering.map(write_ordering_to_proto),
             shard_key_selector: None,
