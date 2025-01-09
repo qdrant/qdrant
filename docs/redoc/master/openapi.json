@@ -7331,7 +7331,7 @@
             "nullable": true
           },
           "filter_max_conditions": {
-            "description": "Max conditions a filter can have at max.",
+            "description": "Max conditions a filter can have.",
             "type": "integer",
             "format": "uint",
             "minimum": 0,
