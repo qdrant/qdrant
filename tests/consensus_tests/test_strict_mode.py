@@ -176,7 +176,7 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
 
     set_strict_mode(peer_urls[0], COLLECTION_NAME, {
         "enabled": True,
-        "max_collection_payload_size_bytes": 14000,
+        "max_collection_payload_size_bytes": 15000,
     })
 
     wait_for_strict_mode_enabled(peer_urls[1], COLLECTION_NAME)
