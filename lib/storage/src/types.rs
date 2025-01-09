@@ -3,7 +3,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use collection::common::snapshots_manager::SnapShotsConfig;
+use collection::common::snapshots_manager::SnapshotsConfig;
 use collection::config::{default_on_disk_payload, WalConfig};
 use collection::operations::config_diff::OptimizersConfigDiff;
 use collection::operations::shared_storage_config::{
@@ -60,7 +60,7 @@ pub struct StorageConfig {
     #[validate(length(min = 1))]
     pub snapshots_path: String,
     #[serde(default)]
-    pub snapshots_config: SnapShotsConfig,
+    pub snapshots_config: SnapshotsConfig,
     #[validate(length(min = 1))]
     #[serde(default)]
     pub temp_path: Option<String>,
