@@ -1,7 +1,6 @@
 import time
 
 import pytest
-import random
 
 from .conftest import collection_name
 from .helpers.collection_setup import basic_collection_setup, drop_collection
@@ -44,6 +43,7 @@ def get_strict_mode(collection_name):
 def strict_mode_enabled(collection_name) -> bool:
     strict_mode = get_strict_mode(collection_name)
     return strict_mode is not None and strict_mode['enabled']
+
 
 def test_patch_collection_full(collection_name):
     assert not strict_mode_enabled(collection_name)
@@ -970,3 +970,77 @@ def test_filter_large_condition(collection_name):
     assert "Condition" in search_fail.json()['status']['error']
     assert "limit" in search_fail.json()['status']['error']
     assert not search_fail.ok
+
+
+def test_filter_nested_condition(collection_name):
+    def search_request(condition_size: int = 2):
+        conditions = [x for x in range(condition_size)]
+
+        return request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 4,
+                "filter": {
+                    "must": [
+                        {
+                            "nested": {
+                                "key": "city",
+                                "filter": {
+                                    "must": [
+                                        {
+                                            "key": "key",
+                                            "match": {
+                                                "any": conditions,
+                                            }
+                                        },
+                                        {
+                                            "key": "key2",
+                                            "match": {
+                                                "any": conditions,
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+    search_request(2).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "condition_max_size": 2,
+    })
+
+    search_request(2).raise_for_status()
+
+    search_fail = search_request(3)
+    assert "Condition" in search_fail.json()['status']['error']
+    assert "limit" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "condition_max_size": 1000000,  # Disabled
+        "filter_max_conditions": 3,
+    })
+
+    search_request().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "condition_max_size": 1000000,  # Disabled
+        "filter_max_conditions": 1,
+    })
+
+    search_fail = search_request()
+    assert "condition" in search_fail.json()['status']['error']
+    assert "limit" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+    

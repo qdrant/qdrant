@@ -726,7 +726,7 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_payload_size_bytes: Option<usize>,
 
-    /// Max conditions a filter can have at max.
+    /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_max_conditions: Option<usize>,
 
@@ -2099,7 +2099,8 @@ impl FieldCondition {
         match self.r#match.as_ref().unwrap() {
             Match::Any(match_any) => match_any.any.len(),
             Match::Except(match_except) => match_except.except.len(),
-            _ => 0,
+            Match::Value(_) => 0,
+            Match::Text(_) => 0,
         }
     }
 }
