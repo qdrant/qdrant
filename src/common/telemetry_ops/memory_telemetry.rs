@@ -1,7 +1,12 @@
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde::Serialize;
-use storage::rbac::{Access, AccessRequirements};
+use storage::rbac::Access;
+#[cfg(all(
+    not(target_env = "msvc"),
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
+use storage::rbac::AccessRequirements;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
