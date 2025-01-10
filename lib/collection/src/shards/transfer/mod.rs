@@ -28,7 +28,7 @@ const CONSENSUS_CONFIRM_RETRY_DELAY: Duration = Duration::from_secs(1);
 /// Time after which confirming a consensus operation times out.
 const CONSENSUS_CONFIRM_TIMEOUT: Duration = defaults::CONSENSUS_META_OP_WAIT;
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransfer {
     pub shard_id: ShardId,
     /// Target shard ID if different than source shard ID
@@ -57,7 +57,7 @@ impl ShardTransfer {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransferRestart {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -91,7 +91,7 @@ impl From<ShardTransfer> for ShardTransferRestart {
 }
 
 /// Unique identifier of a transfer, agnostic of transfer method
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShardTransferKey {
     pub shard_id: ShardId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
