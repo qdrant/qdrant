@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
 use api::rest::{
     BatchVectorStruct, MultiDenseVector, PointInsertOperations, UpdateVectors, Vector, VectorStruct,
 };
+use segment::data_types::tiny_map::TinyMap;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Filter, StrictModeConfig, StrictModeMultivectorConfig};
 
@@ -268,18 +267,20 @@ fn check_collection_payload_size_limit(
 
 /// Compute a non-empty mapping of multivector limits by name.
 ///
+/// Uses a tiny map as we expect a small number of multivectors to be configured per collection in strict mode.
+///
 /// Return None if no multivectors are configured with strict mode
 async fn multivector_limits_by_name(
     collection: &Collection,
     multivector_strict_config: &StrictModeMultivectorConfig,
-) -> Option<HashMap<String, usize>> {
+) -> Option<TinyMap<String, usize>> {
     // If no multivectors strict mode no need to check anything.
     if multivector_strict_config.config.is_empty() {
         return None;
     }
     let collection_guard = collection.collection_config.read().await;
 
-    let multivector_max_size_by_name: HashMap<String, usize> = collection_guard
+    let multivector_max_size_by_name: TinyMap<String, usize> = collection_guard
         .params
         .vectors
         .params_iter()
@@ -397,7 +398,7 @@ async fn check_multivectors_limits_insert(
 fn check_named_multivectors_vecstruct_limit(
     name: &str,
     vector: &VectorStruct,
-    multivector_max_size_by_name: &HashMap<String, usize>,
+    multivector_max_size_by_name: &TinyMap<String, usize>,
 ) -> Result<(), CollectionError> {
     match vector {
         VectorStruct::MultiDense(multi) => {
@@ -419,7 +420,7 @@ fn check_named_multivectors_vecstruct_limit(
 fn check_named_multivectors_vec_limit(
     name: &str,
     vector: &Vector,
-    multivector_max_size_by_name: &HashMap<String, usize>,
+    multivector_max_size_by_name: &TinyMap<String, usize>,
 ) -> Result<(), CollectionError> {
     match vector {
         Vector::MultiDense(multi) => {
@@ -436,7 +437,7 @@ fn check_named_multivectors_vec_limit(
 fn check_named_multivector_limit(
     name: &str,
     multi: &MultiDenseVector,
-    multivector_max_size_by_name: &HashMap<String, usize>,
+    multivector_max_size_by_name: &TinyMap<String, usize>,
 ) -> Result<(), CollectionError> {
     if let Some(strict_multi_limit) = multivector_max_size_by_name.get(name) {
         check_multivector_limit(name, multi, *strict_multi_limit)?
