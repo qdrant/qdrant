@@ -1220,45 +1220,6 @@ fn json_string_size(string: &str) -> usize {
     string.len() + COLLECTION_TYPE_OVERHEAD
 }
 
-#[cfg(test)]
-mod test {
-    use serde_json::{Map, Value};
-
-    use super::Payload;
-
-    fn payload_fixture(s: &str) -> Payload {
-        let val: Map<String, Value> =
-            serde_json::from_str(s).expect("Invalid fixture, must be a map!");
-        Payload::from(val)
-    }
-
-    #[test]
-    fn test_json_value_size() {
-        assert!(payload_fixture("{}").estimated_size_bytes() > 0);
-
-        assert!(payload_fixture(r#"{ "empty": {} }"#).estimated_size_bytes() > 0);
-        assert!(payload_fixture(r#"{ "": {} }"#).estimated_size_bytes() > 0);
-
-        assert!(payload_fixture(r#"{ "empty": [] }"#).estimated_size_bytes() > 0);
-        assert!(payload_fixture(r#"{ "": [] }"#).estimated_size_bytes() > 0);
-
-        assert!(
-            payload_fixture(r#"{ "": [[]] }"#).estimated_size_bytes()
-                > payload_fixture(r#"{ "": [] }"#).estimated_size_bytes()
-        );
-
-        assert!(
-            payload_fixture(r#"{ "": [[[]]] }"#).estimated_size_bytes()
-                > payload_fixture(r#"{ "": [[]] }"#).estimated_size_bytes()
-        );
-
-        assert!(
-            payload_fixture(r#"{ "": {"": {}} }"#).estimated_size_bytes()
-                > payload_fixture(r#"{ "": {} }"#).estimated_size_bytes()
-        );
-    }
-}
-
 #[derive(Clone)]
 pub enum OwnedPayloadRef<'a> {
     Ref(&'a Map<String, Value>),
@@ -3879,6 +3840,38 @@ mod tests {
             }
         });
         assert_eq!(payload, expected.into());
+    }
+
+    fn payload_fixture(s: &str) -> Payload {
+        let val: Map<String, Value> =
+            serde_json::from_str(s).expect("Invalid fixture, must be a map!");
+        Payload::from(val)
+    }
+
+    #[test]
+    fn test_json_value_size() {
+        assert!(payload_fixture("{}").estimated_size_bytes() > 0);
+
+        assert!(payload_fixture(r#"{ "empty": {} }"#).estimated_size_bytes() > 0);
+        assert!(payload_fixture(r#"{ "": {} }"#).estimated_size_bytes() > 0);
+
+        assert!(payload_fixture(r#"{ "empty": [] }"#).estimated_size_bytes() > 0);
+        assert!(payload_fixture(r#"{ "": [] }"#).estimated_size_bytes() > 0);
+
+        assert!(
+            payload_fixture(r#"{ "": [[]] }"#).estimated_size_bytes()
+                > payload_fixture(r#"{ "": [] }"#).estimated_size_bytes()
+        );
+
+        assert!(
+            payload_fixture(r#"{ "": [[[]]] }"#).estimated_size_bytes()
+                > payload_fixture(r#"{ "": [[]] }"#).estimated_size_bytes()
+        );
+
+        assert!(
+            payload_fixture(r#"{ "": {"": {}} }"#).estimated_size_bytes()
+                > payload_fixture(r#"{ "": {} }"#).estimated_size_bytes()
+        );
     }
 }
 
