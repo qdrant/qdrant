@@ -1427,7 +1427,8 @@ mod tests {
             storage_path,
         )
         .into();
-        let dispatcher = Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone());
+        let dispatcher =
+            Dispatcher::new(toc_arc.clone()).with_consensus(consensus_state.clone(), true);
         let slog_logger = slog::Logger::root(slog_stdlog::StdLog.fuse(), slog::o!());
         let (mut consensus, message_sender) = Consensus::new(
             &slog_logger,
