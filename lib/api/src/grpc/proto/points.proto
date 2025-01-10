@@ -1098,4 +1098,6 @@ message GeoPoint {
 
 message HardwareUsage {
   uint64 cpu = 1;
+  uint64 io_read = 2;
+  uint64 io_write = 3;
 }

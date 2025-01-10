@@ -667,7 +667,15 @@ impl TableOfContent {
     pub fn all_hw_metrics(&self) -> HashMap<String, HardwareUsage> {
         self.collection_hw_metrics
             .iter()
-            .map(|i| (i.key().to_string(), HardwareUsage { cpu: i.get_cpu() }))
+            .map(|i| {
+                let key = i.key().to_string();
+                let hw_usage = HardwareUsage {
+                    cpu: i.get_cpu(),
+                    io_read: i.get_io_read(),
+                    io_write: i.get_io_write(),
+                };
+                (key, hw_usage)
+            })
             .collect()
     }
 }

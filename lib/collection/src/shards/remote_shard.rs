@@ -787,7 +787,11 @@ impl ShardOperation for RemoteShard {
         } = search_batch_response;
 
         if let Some(usage) = usage {
-            hw_measurement_acc.accumulate_request(usage.cpu as usize);
+            hw_measurement_acc.accumulate_request(
+                usage.cpu as usize,
+                usage.io_read as usize,
+                usage.io_write as usize,
+            );
         }
 
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
@@ -852,7 +856,11 @@ impl ShardOperation for RemoteShard {
         } = count_response;
 
         if let Some(usage) = usage {
-            hw_measurement_acc.accumulate_request(usage.cpu as usize);
+            hw_measurement_acc.accumulate_request(
+                usage.cpu as usize,
+                usage.io_read as usize,
+                usage.io_write as usize,
+            );
         }
 
         result.map_or_else(
@@ -953,7 +961,11 @@ impl ShardOperation for RemoteShard {
         } = batch_response;
 
         if let Some(usage) = usage {
-            hw_measurement_acc.accumulate_request(usage.cpu as usize);
+            hw_measurement_acc.accumulate_request(
+                usage.cpu as usize,
+                usage.io_read as usize,
+                usage.io_write as usize,
+            );
         }
 
         let result = results

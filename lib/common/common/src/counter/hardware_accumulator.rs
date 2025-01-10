@@ -7,6 +7,8 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub struct HwSharedDrain {
     pub(crate) cpu_counter: Arc<AtomicUsize>,
+    pub(crate) io_read_counter: Arc<AtomicUsize>,
+    pub(crate) io_write_counter: Arc<AtomicUsize>,
 }
 
 impl HwSharedDrain {
@@ -14,20 +16,38 @@ impl HwSharedDrain {
         self.cpu_counter.load(Ordering::Relaxed)
     }
 
-    fn new(cpu: Arc<AtomicUsize>) -> Self {
-        Self { cpu_counter: cpu }
+    pub fn get_io_read(&self) -> usize {
+        self.io_read_counter.load(Ordering::Relaxed)
+    }
+
+    pub fn get_io_write(&self) -> usize {
+        self.io_write_counter.load(Ordering::Relaxed)
+    }
+
+    fn new(cpu: Arc<AtomicUsize>, io_read: Arc<AtomicUsize>, io_write: Arc<AtomicUsize>) -> Self {
+        Self {
+            cpu_counter: cpu,
+            io_read_counter: io_read,
+            io_write_counter: io_write,
+        }
     }
 }
 
 impl Clone for HwSharedDrain {
     fn clone(&self) -> Self {
-        Self::new(self.cpu_counter.clone())
+        Self::new(
+            self.cpu_counter.clone(),
+            self.io_read_counter.clone(),
+            self.io_write_counter.clone(),
+        )
     }
 }
 impl Default for HwSharedDrain {
     fn default() -> Self {
         Self {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
+            io_read_counter: Arc::new(AtomicUsize::new(0)),
+            io_write_counter: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -66,24 +86,50 @@ impl HwMeasurementAcc {
         }
     }
 
-    pub fn accumulate(&self, cpu: usize) {
-        let HwSharedDrain { cpu_counter } = &self.request_drain;
+    pub fn accumulate(&self, cpu: usize, io_read: usize, io_write: usize) {
+        let HwSharedDrain {
+            cpu_counter,
+            io_read_counter,
+            io_write_counter,
+        } = &self.request_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
+        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
+        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
 
-        let HwSharedDrain { cpu_counter } = &self.metrics_drain;
+        let HwSharedDrain {
+            cpu_counter,
+            io_read_counter,
+            io_write_counter,
+        } = &self.metrics_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
+        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
+        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
     }
 
     /// Accumulate usage values for request drain only
     /// This is useful if we want to report usage, which happened on another machine
     /// So we don't want to accumulate the same usage on the current machine second time
-    pub fn accumulate_request(&self, cpu: usize) {
-        let HwSharedDrain { cpu_counter } = &self.request_drain;
+    pub fn accumulate_request(&self, cpu: usize, io_read: usize, io_write: usize) {
+        let HwSharedDrain {
+            cpu_counter,
+            io_read_counter,
+            io_write_counter,
+        } = &self.request_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
+        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
+        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
     }
 
     pub fn get_cpu(&self) -> usize {
         self.request_drain.get_cpu()
+    }
+
+    pub fn get_io_read(&self) -> usize {
+        self.request_drain.get_io_read()
+    }
+
+    pub fn get_io_write(&self) -> usize {
+        self.request_drain.get_io_write()
     }
 }
 

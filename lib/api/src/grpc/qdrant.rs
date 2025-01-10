@@ -6288,6 +6288,10 @@ pub struct GeoPoint {
 pub struct HardwareUsage {
     #[prost(uint64, tag = "1")]
     pub cpu: u64,
+    #[prost(uint64, tag = "2")]
+    pub io_read: u64,
+    #[prost(uint64, tag = "3")]
+    pub io_write: u64,
 }
 #[derive(serde::Serialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
