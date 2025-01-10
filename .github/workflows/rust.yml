@@ -10,12 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
-
+  coverage:
+    runs-on: [self-hosted, linux, x64]
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
@@ -41,6 +37,27 @@ jobs:
       with:
         files: lcov.info
         token: ${{ secrets.CODECOV_TOKEN }}
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+
+    steps:
+    - name: Install minimal stable
+      uses: dtolnay/rust-toolchain@stable
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
+    - name: Run tests with coverage
+      # Profile "ci" is configured in .config/nextest.toml
+      run: cargo nextest run --workspace --profile ci
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
