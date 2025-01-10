@@ -2,7 +2,7 @@ use std::default;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use crate::common::snapshots_manager::SnapShotsConfig;
+use crate::common::snapshots_manager::SnapshotsConfig;
 use crate::operations::types::NodeType;
 use crate::shards::transfer::ShardTransferMethod;
 
@@ -30,7 +30,7 @@ pub struct SharedStorageConfig {
     pub incoming_shard_transfers_limit: Option<usize>,
     pub outgoing_shard_transfers_limit: Option<usize>,
     pub snapshots_path: String,
-    pub snapshots_config: SnapShotsConfig,
+    pub snapshots_config: SnapshotsConfig,
 }
 
 impl Default for SharedStorageConfig {
@@ -66,7 +66,7 @@ impl SharedStorageConfig {
         incoming_shard_transfers_limit: Option<usize>,
         outgoing_shard_transfers_limit: Option<usize>,
         snapshots_path: String,
-        snapshots_config: SnapShotsConfig,
+        snapshots_config: SnapshotsConfig,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
