@@ -49,6 +49,7 @@ parking_lot = { workspace = true }
 rayon = { workspace = true }
 itertools = { workspace = true }
 rocksdb = { version = "0.23.0", default-features = false, features = [
+    "bindgen-runtime",
     "snappy",
     "lz4",
 ] }
