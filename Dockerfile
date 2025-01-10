@@ -36,7 +36,7 @@ COPY --from=xx / /
 # so, please, don't reorder them without prior consideration. 🥲
 
 RUN apt-get update \
-    && apt-get install -y clang lld cmake protobuf-compiler jq \
+    && apt-get install -y clang libclang-dev llvm lld cmake protobuf-compiler jq \
     && rustup component add rustfmt
 
 # `ARG`/`ENV` pair is a workaround for `docker build` backward-compatibility.
