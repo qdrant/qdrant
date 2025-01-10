@@ -41,12 +41,12 @@ impl HardwareCounterCell {
     }
 
     #[cfg(feature = "testing")]
-    pub fn new_with(cpu: usize) -> Self {
+    pub fn new_with(cpu: usize, io_read: usize, io_write: usize) -> Self {
         Self {
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new_with(cpu),
-            io_read_counter: CounterCell::new(),
-            io_write_counter: CounterCell::new(),
+            io_read_counter: CounterCell::new_with(io_read),
+            io_write_counter: CounterCell::new_with(io_write),
             accumulator: HwMeasurementAcc::new(),
         }
     }
