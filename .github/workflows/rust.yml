@@ -47,8 +47,6 @@ jobs:
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
-      with:
-        components: llvm-tools-preview
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc
@@ -66,18 +64,9 @@ jobs:
       run: echo "DYLD_FALLBACK_LIBRARY_PATH=$(xcode-select --print-path)/Toolchains/XcodeDefault.xctoolchain/usr/lib/" >> $GITHUB_ENV
     - name: Install nextest
       uses: taiki-e/install-action@nextest
-    - name: Install llvm-cov
-      run: cargo install cargo-llvm-cov
-    - name: Run tests with coverage
+    - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo llvm-cov nextest --workspace --profile ci
-    - name: Save code coverage report
-      run: cargo llvm-cov report --lcov --output-path lcov.info
-    - name: Upload coverage data to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        files: lcov.info
-        token: ${{ secrets.CODECOV_TOKEN }}
+      run: cargo nextest --workspace --profile ci
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
