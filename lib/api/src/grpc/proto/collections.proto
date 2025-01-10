@@ -597,8 +597,7 @@ message CollectionClusterInfoResponse {
   repeated LocalShardInfo local_shards = 3; // Local shards
   repeated RemoteShardInfo remote_shards = 4; // Remote shards
   repeated ShardTransferInfo shard_transfers = 5; // Shard transfers
-  // TODO(resharding): enable on release:
-  // repeated ReshardingInfo resharding_operations = 6; // Resharding operations
+  repeated ReshardingInfo resharding_operations = 6; // Resharding operations
 }
 
 message MoveShard {
