@@ -336,7 +336,8 @@ fn main() -> anyhow::Result<()> {
         .into();
         let is_new_deployment = consensus_state.is_new_deployment();
 
-        dispatcher = dispatcher.with_consensus(consensus_state.clone());
+        dispatcher =
+            dispatcher.with_consensus(consensus_state.clone(), settings.cluster.resharding_enabled);
 
         let toc_dispatcher = TocDispatcher::new(Arc::downgrade(&toc_arc), consensus_state.clone());
         toc_arc.with_toc_dispatcher(toc_dispatcher);
