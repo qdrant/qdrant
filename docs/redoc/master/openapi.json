@@ -12415,18 +12415,6 @@
             "$ref": "#/components/schemas/StartReshardingOperation"
           },
           {
-            "$ref": "#/components/schemas/FinishMigratingPointsOperation"
-          },
-          {
-            "$ref": "#/components/schemas/CommitReadHashRingOperation"
-          },
-          {
-            "$ref": "#/components/schemas/CommitWriteHashRingOperation"
-          },
-          {
-            "$ref": "#/components/schemas/FinishReshardingOperation"
-          },
-          {
             "$ref": "#/components/schemas/AbortReshardingOperation"
           }
         ]
@@ -12454,12 +12442,6 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
-          },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
           },
           "to_peer_id": {
             "type": "integer",
@@ -12508,12 +12490,6 @@
             "format": "uint32",
             "minimum": 0
           },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
           "to_peer_id": {
             "type": "integer",
             "format": "uint64",
@@ -12560,12 +12536,6 @@
             "type": "integer",
             "format": "uint32",
             "minimum": 0
-          },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
           },
           "to_peer_id": {
             "type": "integer",
@@ -12702,12 +12672,6 @@
             "format": "uint32",
             "minimum": 0
           },
-          "to_shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
           "from_peer_id": {
             "type": "integer",
             "format": "uint64",
@@ -12760,76 +12724,6 @@
             ]
           }
         }
-      },
-      "FinishMigratingPointsOperation": {
-        "type": "object",
-        "required": [
-          "finish_migrating_points"
-        ],
-        "properties": {
-          "finish_migrating_points": {
-            "$ref": "#/components/schemas/FinishMigratingPoints"
-          }
-        }
-      },
-      "FinishMigratingPoints": {
-        "type": "object",
-        "properties": {
-          "shard_id": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0,
-            "nullable": true
-          },
-          "peer_id": {
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0,
-            "nullable": true
-          }
-        }
-      },
-      "CommitReadHashRingOperation": {
-        "type": "object",
-        "required": [
-          "commit_read_hash_ring"
-        ],
-        "properties": {
-          "commit_read_hash_ring": {
-            "$ref": "#/components/schemas/CommitReadHashRing"
-          }
-        }
-      },
-      "CommitReadHashRing": {
-        "type": "object"
-      },
-      "CommitWriteHashRingOperation": {
-        "type": "object",
-        "required": [
-          "commit_write_hash_ring"
-        ],
-        "properties": {
-          "commit_write_hash_ring": {
-            "$ref": "#/components/schemas/CommitWriteHashRing"
-          }
-        }
-      },
-      "CommitWriteHashRing": {
-        "type": "object"
-      },
-      "FinishReshardingOperation": {
-        "type": "object",
-        "required": [
-          "finish_resharding"
-        ],
-        "properties": {
-          "finish_resharding": {
-            "$ref": "#/components/schemas/FinishResharding"
-          }
-        }
-      },
-      "FinishResharding": {
-        "type": "object"
       },
       "AbortReshardingOperation": {
         "type": "object",
