@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 
-use atomic_refcell::AtomicRefCell;
+use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -13,6 +13,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use itertools::EitherOrBoth;
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
@@ -42,7 +43,7 @@ use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::index::{PayloadIndex, VectorIndex, VectorIndexEnum};
 #[cfg(feature = "gpu")]
 use crate::payload_storage::FilterContext;
 use crate::segment_constructor::VectorIndexBuildArgs;
@@ -205,10 +206,10 @@ impl HNSWIndex {
         } = open_args;
         let VectorIndexBuildArgs {
             permit,
-            old_indices: _,
+            old_indices,
             gpu_device,
             stopped,
-            feature_flags: _,
+            feature_flags,
         } = build_args;
 
         create_dir_all(path)?;
@@ -239,6 +240,19 @@ impl HNSWIndex {
             hnsw_config.payload_m,
             total_vector_count,
         );
+
+        let old_index = old_indices
+            .iter()
+            .filter_map(|old_index| {
+                feature_flags.incremental_hnsw_building.then_some(())?;
+                OldIndexCandidate::evaluate(
+                    old_index,
+                    &config,
+                    &vector_storage_ref,
+                    id_tracker_ref.deref(),
+                )
+            })
+            .max_by_key(|old_index| old_index.valid_points);
 
         // Build main index graph
         let mut rng = rand::rng();
@@ -301,12 +315,18 @@ impl HNSWIndex {
             })
             .build()?;
 
+        let old_index = old_index.map(|old_index| old_index.reuse(&config, total_vector_count));
+
         let mut indexed_vectors = 0;
         for vector_id in id_tracker_ref.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
-            let level = graph_layers_builder.get_random_layer(&mut rng);
-            graph_layers_builder.set_levels(vector_id, level);
             indexed_vectors += 1;
+
+            let level = old_index
+                .as_ref()
+                .and_then(|old_index| old_index.point_level(vector_id))
+                .unwrap_or_else(|| graph_layers_builder.get_random_layer(&mut rng));
+            graph_layers_builder.set_levels(vector_id, level);
         }
 
         #[allow(unused_mut)]
@@ -350,13 +370,23 @@ impl HNSWIndex {
         if build_main_graph {
             let timer = std::time::Instant::now();
 
-            let mut ids_iterator = id_tracker_ref.iter_ids_excluding(deleted_bitslice);
+            let mut ids = Vec::with_capacity(total_vector_count);
+            if let Some(old_index) = &old_index {
+                for vector_id in id_tracker_ref.iter_ids_excluding(deleted_bitslice) {
+                    if let Some(links) = old_index.get_links(vector_id) {
+                        graph_layers_builder.add_new_point(vector_id, links);
+                    } else {
+                        ids.push(vector_id);
+                    }
+                }
+            } else {
+                ids.extend(id_tracker_ref.iter_ids_excluding(deleted_bitslice));
+            }
 
-            let first_few_ids: Vec<_> = ids_iterator
-                .by_ref()
-                .take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD)
-                .collect();
-            let ids: Vec<_> = ids_iterator.collect();
+            let first_few_ids = ids.split_off(
+                ids.len()
+                    .saturating_sub(SINGLE_THREADED_HNSW_BUILD_THRESHOLD),
+            );
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
@@ -1326,5 +1356,156 @@ impl VectorIndex for HNSWIndex {
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
+    }
+}
+
+/// Contains enough information to decide which one old index to use.
+/// Once decided, it is converted to [`OldIndex`].
+struct OldIndexCandidate<'a> {
+    index: AtomicRef<'a, HNSWIndex>,
+    /// Mapping from old index to new index.
+    /// `old_to_new[old_idx] == Some(new_idx)`.
+    old_to_new: Vec<Option<PointOffsetType>>,
+    /// Count of successfully mapped points.
+    valid_points: usize,
+}
+
+struct OldIndex<'a> {
+    index: AtomicRef<'a, HNSWIndex>,
+    /// Mapping from old index to new index.
+    /// `old_to_new[old_idx] == Some(new_idx)`.
+    old_to_new: Vec<Option<PointOffsetType>>,
+    /// Mapping from new index to old index.
+    /// `new_to_old[new_idx] == Some(old_idx)`.
+    new_to_old: Vec<Option<PointOffsetType>>,
+    m: usize,
+    m0: usize,
+}
+
+impl<'a> OldIndexCandidate<'a> {
+    /// Evaluate whether we can use the old index.
+    fn evaluate(
+        old_index: &'a Arc<AtomicRefCell<VectorIndexEnum>>,
+        config: &HnswGraphConfig,
+        vector_storage: &VectorStorageEnum,
+        id_tracker: &IdTrackerSS,
+    ) -> Option<Self> {
+        let old_index = AtomicRef::filter_map(old_index.borrow(), |index| match index {
+            VectorIndexEnum::Hnsw(old_index) => Some(old_index),
+            _ => None,
+        })?;
+
+        let no_main_graph = config.m == 0;
+        let configuration_mismatch = config.m != old_index.config.m
+            || config.m0 != old_index.config.m0
+            || config.ef_construct != old_index.config.ef_construct;
+        if no_main_graph || configuration_mismatch {
+            return None;
+        }
+
+        let old_storage_ref = old_index.vector_storage.borrow();
+
+        let new_deleted = vector_storage.deleted_vector_bitslice();
+        let old_id_tracker = old_index.id_tracker.borrow();
+
+        // Build old_to_new mapping.
+        let mut valid_points = 0;
+        let mut old_to_new = vec![None; old_id_tracker.total_point_count()];
+        for item in itertools::merge_join_by(
+            id_tracker.iter_from(None),
+            old_id_tracker.iter_from(None),
+            |(new_external_id, _), (old_external_id, _)| new_external_id.cmp(old_external_id),
+        ) {
+            let (new_offset, old_offset): (Option<PointOffsetType>, Option<PointOffsetType>) =
+                match item {
+                    EitherOrBoth::Both((_, new_offset), (_, old_offset)) => {
+                        (Some(new_offset), Some(old_offset))
+                    }
+                    EitherOrBoth::Left((_, new_offset)) => (Some(new_offset), None),
+                    EitherOrBoth::Right((_, old_offset)) => (None, Some(old_offset)),
+                };
+
+            let new_offset =
+                new_offset.filter(|&id| !new_deleted.get_bit(id as usize).unwrap_or(false));
+
+            // Even if the old vector is marked as deleted, we still might want
+            // to reuse the graph built with this vector.
+            // Thus, instead of checking `deleted_vector_bitslice`, we check
+            // that the vector present in the graph, and it's value is the same.
+            let old_offset =
+                old_offset.filter(|&id| old_index.graph.links.links(id, 0).next().is_some());
+
+            match (new_offset, old_offset) {
+                (_, None) => (),
+                (None, Some(_)) => {
+                    // Vector was in the old index, but not in the new one.
+                    // Not supported yet.
+                    return None;
+                }
+                (Some(new_offset), Some(old_offset)) => {
+                    let new_vector = vector_storage.get_vector(new_offset);
+                    let old_vector = old_storage_ref.get_vector(old_offset);
+                    if old_vector == new_vector {
+                        old_to_new[old_offset as usize] = Some(new_offset);
+                        valid_points += 1;
+                    } else {
+                        // Vector is changed.
+                        // Not supported yet.
+                        return None;
+                    }
+                }
+            }
+        }
+
+        drop(old_id_tracker);
+        drop(old_storage_ref);
+
+        Some(OldIndexCandidate {
+            index: old_index,
+            old_to_new,
+            valid_points,
+        })
+    }
+
+    fn reuse(self, config: &HnswGraphConfig, total_vector_count: usize) -> OldIndex<'a> {
+        let mut new_to_old = vec![None; total_vector_count];
+        for (old_offset, new_offset) in self.old_to_new.iter().copied().enumerate() {
+            if let Some(new_offset) = new_offset {
+                new_to_old[new_offset as usize] = Some(old_offset as PointOffsetType);
+            }
+        }
+
+        log::debug!("Reusing {} points from the old index", self.valid_points);
+
+        OldIndex {
+            index: self.index,
+            old_to_new: self.old_to_new,
+            new_to_old,
+            m: config.m,
+            m0: config.m0,
+        }
+    }
+}
+
+impl OldIndex<'_> {
+    fn point_level(&self, new_id: PointOffsetType) -> Option<usize> {
+        let old_id = self.new_to_old[new_id as usize]?;
+        Some(self.index.graph.links.point_level(old_id))
+    }
+
+    fn get_links(&self, src_new: PointOffsetType) -> Option<Vec<Vec<PointOffsetType>>> {
+        let src_old = self.new_to_old[src_new as usize]?;
+
+        let links = &self.index.graph.links;
+        let point_level = links.point_level(src_old);
+
+        let links = (0..=point_level).map(|level| {
+            links
+                .links(src_old, level)
+                .take(if level == 0 { self.m0 } else { self.m })
+                .filter_map(|dst_old| self.old_to_new[dst_old as usize])
+                .collect()
+        });
+        Some(links.collect())
     }
 }

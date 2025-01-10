@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use rand::prelude::StdRng;
@@ -141,6 +142,7 @@ fn test_gpu_filterable_hnsw() {
             old_indices: &[],
             gpu_device: Some(&locked_device), // enable GPU
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();

@@ -5890,6 +5890,7 @@ dependencies = [
  "sparse",
  "strum",
  "sysinfo",
+ "tap",
  "tar",
  "tempfile",
  "thiserror 2.0.12",

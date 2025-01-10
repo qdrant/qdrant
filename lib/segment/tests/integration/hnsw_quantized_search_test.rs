@@ -33,7 +33,7 @@ use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
 
-fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
+pub fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
     a[0].iter()
         .map(|x| x.idx)
         .collect::<BTreeSet<_>>()
@@ -180,7 +180,7 @@ fn hnsw_quantized_search_test(
     check_rescoring(&query_vectors, &hnsw_index, Some(&filter), ef, top);
 }
 
-fn check_matches(
+pub fn check_matches(
     query_vectors: &[QueryVector],
     segment: &Segment,
     hnsw_index: &HNSWIndex,
