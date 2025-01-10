@@ -47,6 +47,8 @@ jobs:
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
     - uses: actions/checkout@v4
     - uses: Swatinem/rust-cache@v2
     - name: Install Protoc
@@ -55,9 +57,18 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install nextest
       uses: taiki-e/install-action@nextest
-    - name: Run tests
+    - name: Install llvm-cov
+      run: cargo install cargo-llvm-cov
+    - name: Run tests with coverage
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --profile ci
+      run: cargo llvm-cov nextest --workspace --profile ci
+    - name: Save code coverage report
+      run: cargo llvm-cov report --lcov --output-path lcov.info
+    - name: Upload coverage data to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: lcov.info
+        token: ${{ secrets.CODECOV_TOKEN }}
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
