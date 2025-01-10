@@ -10,6 +10,8 @@ use super::hardware_accumulator::HwMeasurementAcc;
 pub struct HardwareCounterCell {
     cpu_multiplier: usize,
     pub(super) cpu_counter: CounterCell,
+    pub(super) io_read_counter: CounterCell,
+    pub(super) io_write_counter: CounterCell,
     pub(super) accumulator: HwMeasurementAcc,
 }
 
@@ -19,6 +21,8 @@ impl HardwareCounterCell {
         Self {
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new(),
+            io_read_counter: CounterCell::new(),
+            io_write_counter: CounterCell::new(),
             accumulator: HwMeasurementAcc::new(),
         }
     }
@@ -30,15 +34,19 @@ impl HardwareCounterCell {
         Self {
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new(),
+            io_read_counter: CounterCell::new(),
+            io_write_counter: CounterCell::new(),
             accumulator: HwMeasurementAcc::disposable(),
         }
     }
 
     #[cfg(feature = "testing")]
-    pub fn new_with(cpu: usize) -> Self {
+    pub fn new_with(cpu: usize, io_read: usize, io_write: usize) -> Self {
         Self {
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new_with(cpu),
+            io_read_counter: CounterCell::new_with(io_read),
+            io_write_counter: CounterCell::new_with(io_write),
             accumulator: HwMeasurementAcc::new(),
         }
     }
@@ -47,6 +55,8 @@ impl HardwareCounterCell {
         Self {
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new(),
+            io_read_counter: CounterCell::new(),
+            io_write_counter: CounterCell::new(),
             accumulator,
         }
     }
@@ -58,6 +68,8 @@ impl HardwareCounterCell {
         Self {
             cpu_multiplier: self.cpu_multiplier,
             cpu_counter: CounterCell::new(),
+            io_read_counter: CounterCell::new(),
+            io_write_counter: CounterCell::new(),
             accumulator: self.accumulator.clone(),
         }
     }
@@ -76,9 +88,37 @@ impl HardwareCounterCell {
         &mut self.cpu_counter
     }
 
+    #[inline]
+    pub fn io_read_counter(&self) -> &CounterCell {
+        &self.io_read_counter
+    }
+
+    #[inline]
+    pub fn io_read_counter_mut(&mut self) -> &mut CounterCell {
+        &mut self.io_read_counter
+    }
+
+    #[inline]
+    pub fn io_write_counter(&self) -> &CounterCell {
+        &self.io_write_counter
+    }
+
+    #[inline]
+    pub fn io_write_mut(&mut self) -> &mut CounterCell {
+        &mut self.io_write_counter
+    }
+
     fn merge_to_accumulator(&self) {
-        let cpu_value = self.cpu_counter.get() * self.cpu_multiplier;
-        self.accumulator.accumulate(cpu_value);
+        let HardwareCounterCell {
+            cpu_multiplier,
+            cpu_counter,
+            io_read_counter,
+            io_write_counter,
+            accumulator,
+        } = self;
+
+        let cpu_value = cpu_counter.get() * cpu_multiplier;
+        accumulator.accumulate(cpu_value, io_read_counter.get(), io_write_counter.get());
     }
 }
 

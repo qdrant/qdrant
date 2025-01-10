@@ -34,6 +34,8 @@ impl RequestHwCounter {
         if self.report_to_api {
             Some(api::rest::models::HardwareUsage {
                 cpu: self.counter.get_cpu(),
+                io_read: self.counter.get_io_read(),
+                io_write: self.counter.get_io_write(),
             })
         } else {
             None
@@ -44,6 +46,8 @@ impl RequestHwCounter {
         if self.report_to_api {
             Some(api::grpc::qdrant::HardwareUsage {
                 cpu: self.counter.get_cpu() as u64,
+                io_read: self.counter.get_io_read() as u64,
+                io_write: self.counter.get_io_write() as u64,
             })
         } else {
             None
