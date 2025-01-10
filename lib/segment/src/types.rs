@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
+use std::mem::size_of;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -1132,6 +1133,11 @@ impl Payload {
     pub fn contains_key(&self, key: &str) -> bool {
         self.0.contains_key(key)
     }
+
+    /// Returns the estimated size of a payload in bytes. Don't use if you need accurate size info!
+    pub fn estimated_size_bytes(&self) -> usize {
+        payload_map_value_size(&self.0)
+    }
 }
 
 impl PayloadContainer for Map<String, Value> {
@@ -1179,6 +1185,77 @@ impl From<Value> for Payload {
 impl From<Map<String, Value>> for Payload {
     fn from(value: serde_json::Map<String, Value>) -> Self {
         Payload(value)
+    }
+}
+
+/// Overhead in bytes of collection like types eg. lists, maps, ...
+const COLLECTION_TYPE_OVERHEAD: usize = 2;
+
+/// Recursively calculates the size of a `serde_json::Value`. Also accounts for overhead of certain types.
+fn payload_value_size(value: &Value) -> usize {
+    match value {
+        Value::Null => size_of::<()>(),
+        Value::Bool(_) => size_of::<bool>(),
+        Value::Number(_) => size_of::<u64>(),
+        Value::String(s) => json_string_size(s),
+        Value::Array(array) => {
+            array.iter().map(payload_value_size).sum::<usize>() + COLLECTION_TYPE_OVERHEAD
+        }
+        Value::Object(map) => payload_map_value_size(map),
+    }
+}
+
+/// Recursively calculates the size of a `serde_json::map::Map` representing a json object. Also accounts for overhead of the map and sub-types.
+fn payload_map_value_size(map: &Map<String, Value>) -> usize {
+    // Account for keys, values and "overhead" of each object
+    map.iter()
+        .map(|(key, value)| {
+            payload_value_size(value) + COLLECTION_TYPE_OVERHEAD + json_string_size(key)
+        })
+        .sum::<usize>()
+        + COLLECTION_TYPE_OVERHEAD
+}
+
+fn json_string_size(string: &str) -> usize {
+    string.len() + COLLECTION_TYPE_OVERHEAD
+}
+
+#[cfg(test)]
+mod test {
+    use serde_json::{Map, Value};
+
+    use super::Payload;
+
+    fn payload_fixture(s: &str) -> Payload {
+        let val: Map<String, Value> =
+            serde_json::from_str(s).expect("Invalid fixture, must be a map!");
+        Payload::from(val)
+    }
+
+    #[test]
+    fn test_json_value_size() {
+        assert!(payload_fixture("{}").estimated_size_bytes() > 0);
+
+        assert!(payload_fixture(r#"{ "empty": {} }"#).estimated_size_bytes() > 0);
+        assert!(payload_fixture(r#"{ "": {} }"#).estimated_size_bytes() > 0);
+
+        assert!(payload_fixture(r#"{ "empty": [] }"#).estimated_size_bytes() > 0);
+        assert!(payload_fixture(r#"{ "": [] }"#).estimated_size_bytes() > 0);
+
+        assert!(
+            payload_fixture(r#"{ "": [[]] }"#).estimated_size_bytes()
+                > payload_fixture(r#"{ "": [] }"#).estimated_size_bytes()
+        );
+
+        assert!(
+            payload_fixture(r#"{ "": [[[]]] }"#).estimated_size_bytes()
+                > payload_fixture(r#"{ "": [[]] }"#).estimated_size_bytes()
+        );
+
+        assert!(
+            payload_fixture(r#"{ "": {"": {}} }"#).estimated_size_bytes()
+                > payload_fixture(r#"{ "": {} }"#).estimated_size_bytes()
+        );
     }
 }
 
