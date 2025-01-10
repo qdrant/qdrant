@@ -1125,6 +1125,9 @@ pub struct CollectionClusterInfoResponse {
     /// Shard transfers
     #[prost(message, repeated, tag = "5")]
     pub shard_transfers: ::prost::alloc::vec::Vec<ShardTransferInfo>,
+    /// Resharding operations
+    #[prost(message, repeated, tag = "6")]
+    pub resharding_operations: ::prost::alloc::vec::Vec<ReshardingInfo>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

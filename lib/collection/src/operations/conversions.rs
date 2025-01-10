@@ -1543,12 +1543,12 @@ impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoRes
                 .into_iter()
                 .map(|shard| shard.into())
                 .collect(),
-            // TODO(resharding): enable on release:
-            // resharding_operations: value
-            //     .resharding_operations
-            //     .into_iter()
-            //     .map(|info| info.into())
-            //     .collect(),
+            resharding_operations: value
+                .resharding_operations
+                .into_iter()
+                .flatten()
+                .map(|info| info.into())
+                .collect(),
         }
     }
 }
