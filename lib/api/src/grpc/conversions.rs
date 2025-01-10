@@ -2233,6 +2233,8 @@ impl From<HwMeasurementAcc> for HardwareUsage {
     fn from(value: HwMeasurementAcc) -> Self {
         Self {
             cpu: value.get_cpu() as u64,
+            io_read: value.get_io_read() as u64,
+            io_write: value.get_io_write() as u64,
         }
     }
 }

@@ -12362,10 +12362,22 @@
         "description": "Usage of the hardware resources, spent to process the request",
         "type": "object",
         "required": [
-          "cpu"
+          "cpu",
+          "io_read",
+          "io_write"
         ],
         "properties": {
           "cpu": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "io_read": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "io_write": {
             "type": "integer",
             "format": "uint",
             "minimum": 0

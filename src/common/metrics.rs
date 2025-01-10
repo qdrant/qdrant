@@ -327,13 +327,31 @@ impl MetricsProvider for MemoryTelemetry {
 impl MetricsProvider for HardwareTelemetry {
     fn add_metrics(&self, metrics: &mut Vec<MetricFamily>) {
         for (collection, hw_info) in self.collection_data.iter() {
-            let HardwareUsage { cpu } = hw_info;
+            let HardwareUsage {
+                cpu,
+                io_read,
+                io_write,
+            } = hw_info;
 
             metrics.push(metric_family(
                 "collection_hardware_metric_cpu",
                 "CPU measurements of a collection",
                 MetricType::GAUGE,
                 vec![gauge(*cpu as f64, &[("id", collection)])],
+            ));
+
+            metrics.push(metric_family(
+                "collection_hardware_metric_io_read",
+                "Total IO read metrics of a collection",
+                MetricType::GAUGE,
+                vec![gauge(*io_read as f64, &[("id", collection)])],
+            ));
+
+            metrics.push(metric_family(
+                "collection_hardware_metric_io_write",
+                "Total IO write metrics of a collection",
+                MetricType::GAUGE,
+                vec![gauge(*io_write as f64, &[("id", collection)])],
             ));
         }
     }
