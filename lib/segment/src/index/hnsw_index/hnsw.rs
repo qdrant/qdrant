@@ -205,6 +205,7 @@ impl HNSWIndex {
         } = open_args;
         let VectorIndexBuildArgs {
             permit,
+            old_indices: _,
             gpu_device,
             stopped,
         } = build_args;

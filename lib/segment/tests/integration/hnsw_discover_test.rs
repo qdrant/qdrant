@@ -128,6 +128,7 @@ fn hnsw_discover_precision() {
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },
@@ -263,6 +264,7 @@ fn filtered_hnsw_discover_precision() {
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },

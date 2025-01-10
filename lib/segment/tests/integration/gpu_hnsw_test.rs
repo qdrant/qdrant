@@ -152,6 +152,7 @@ fn test_gpu_filterable_hnsw() {
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: Some(&locked_device), // enable GPU
             stopped: &stopped,
         },

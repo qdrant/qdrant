@@ -374,6 +374,9 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
 
 pub struct VectorIndexBuildArgs<'a> {
     pub permit: Arc<CpuPermit>,
+    /// Vector indices from other segments, used to speed up index building.
+    /// May or may not contain the same vectors.
+    pub old_indices: &'a [Arc<AtomicRefCell<VectorIndexEnum>>],
     pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
     pub stopped: &'a AtomicBool,
 }

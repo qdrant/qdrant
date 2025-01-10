@@ -32,7 +32,7 @@ use crate::id_tracker::{for_each_unique_point, IdTracker, IdTrackerEnum};
 use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::PayloadIndex;
+use crate::index::{PayloadIndex, VectorIndexEnum};
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
@@ -51,7 +51,7 @@ pub struct SegmentBuilder {
     version: SeqNumberType,
     id_tracker: IdTrackerEnum,
     payload_storage: PayloadStorageEnum,
-    vector_storages: HashMap<VectorNameBuf, VectorStorageEnum>,
+    vector_data: HashMap<VectorNameBuf, VectorData>,
     segment_config: SegmentConfig,
 
     // The path, where fully created segment will be moved
@@ -62,6 +62,11 @@ pub struct SegmentBuilder {
 
     // Payload key to defragment data to
     defragment_keys: Vec<PayloadKeyType>,
+}
+
+struct VectorData {
+    vector_storage: VectorStorageEnum,
+    old_indices: Vec<Arc<AtomicRefCell<VectorIndexEnum>>>,
 }
 
 impl SegmentBuilder {
@@ -87,7 +92,7 @@ impl SegmentBuilder {
         let payload_storage =
             create_payload_storage(database.clone(), segment_config, temp_dir.path())?;
 
-        let mut vector_storages = HashMap::new();
+        let mut vector_data = HashMap::new();
 
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
@@ -99,7 +104,13 @@ impl SegmentBuilder {
                 vector_name,
             )?;
 
-            vector_storages.insert(vector_name.to_owned(), vector_storage);
+            vector_data.insert(
+                vector_name.to_owned(),
+                VectorData {
+                    vector_storage,
+                    old_indices: Vec::new(),
+                },
+            );
         }
 
         for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
@@ -113,7 +124,13 @@ impl SegmentBuilder {
                 &stopped,
             )?;
 
-            vector_storages.insert(vector_name.to_owned(), vector_storage);
+            vector_data.insert(
+                vector_name.to_owned(),
+                VectorData {
+                    vector_storage,
+                    old_indices: Vec::new(),
+                },
+            );
         }
 
         let destination_path = new_segment_path(segments_path);
@@ -122,7 +139,7 @@ impl SegmentBuilder {
             version: Default::default(), // default version is 0
             id_tracker,
             payload_storage,
-            vector_storages,
+            vector_data,
             segment_config: segment_config.clone(),
 
             destination_path,
@@ -297,19 +314,24 @@ impl SegmentBuilder {
         let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
         let mut new_internal_range = None;
-        for (vector_name, vector_storage) in &mut self.vector_storages {
+        for (vector_name, vector_data) in &mut self.vector_data {
             check_process_stopped(stopped)?;
 
             let other_vector_storages = vector_storages
                 .iter()
                 .map(|i| {
-                    let other_vector_storage = i.get(vector_name).ok_or_else(|| {
+                    let other_vector_data = i.get(vector_name).ok_or_else(|| {
                         OperationError::service_error(format!(
-                    "Cannot update from other segment because if missing vector name {vector_name}"
+                            "Cannot update from other segment because it is \
+                             missing vector name {vector_name}"
                         ))
                     })?;
 
-                    Ok(other_vector_storage.vector_storage.borrow())
+                    vector_data
+                        .old_indices
+                        .push(Arc::clone(&other_vector_data.vector_index));
+
+                    Ok(other_vector_data.vector_storage.borrow())
                 })
                 .collect::<Result<Vec<_>, OperationError>>()?;
 
@@ -321,7 +343,7 @@ impl SegmentBuilder {
                 (vec, vector_deleted)
             });
 
-            let internal_range = vector_storage.update_from(&mut iter, stopped)?;
+            let internal_range = vector_data.vector_storage.update_from(&mut iter, stopped)?;
 
             match &new_internal_range {
                 Some(new_internal_range) => {
@@ -382,8 +404,8 @@ impl SegmentBuilder {
                             // Mark newly added vector as removed
                             new_internal_id
                         };
-                        for vector_storage in self.vector_storages.values_mut() {
-                            vector_storage.delete_vector(remove_id)?;
+                        for vector_data in self.vector_data.values_mut() {
+                            vector_data.vector_storage.delete_vector(remove_id)?;
                         }
                     }
                     None => {
@@ -426,7 +448,7 @@ impl SegmentBuilder {
                 version,
                 id_tracker,
                 payload_storage,
-                mut vector_storages,
+                mut vector_data,
                 segment_config,
                 destination_path,
                 temp_dir,
@@ -458,38 +480,41 @@ impl SegmentBuilder {
 
             let mut quantized_vectors = Self::update_quantization(
                 &segment_config,
-                &vector_storages,
+                &vector_data,
                 temp_dir.path(),
                 &permit,
                 stopped,
             )?;
 
             let mut vector_storages_arc = HashMap::new();
+            let mut old_indices = HashMap::new();
 
             for vector_name in segment_config.vector_data.keys() {
-                let Some(vector_storage) = vector_storages.remove(vector_name) else {
+                let Some(vector_info) = vector_data.remove(vector_name) else {
                     return Err(OperationError::service_error(format!(
                         "Vector storage for vector name {vector_name} not found on segment build"
                     )));
                 };
 
-                vector_storage.flusher()()?;
+                vector_info.vector_storage.flusher()()?;
 
-                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_info.vector_storage));
+
+                old_indices.insert(vector_name, vector_info.old_indices);
 
                 vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
             }
 
             for vector_name in segment_config.sparse_vector_data.keys() {
-                let Some(vector_storage) = vector_storages.remove(vector_name) else {
+                let Some(vector_info) = vector_data.remove(vector_name) else {
                     return Err(OperationError::service_error(format!(
                         "Vector storage for vector name {vector_name} not found on sparse segment build"
                     )));
                 };
 
-                vector_storage.flusher()()?;
+                vector_info.vector_storage.flusher()()?;
 
-                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_storage));
+                let vector_storage_arc = Arc::new(AtomicRefCell::new(vector_info.vector_storage));
 
                 vector_storages_arc.insert(vector_name.to_owned(), vector_storage_arc);
             }
@@ -548,6 +573,7 @@ impl SegmentBuilder {
                     },
                     VectorIndexBuildArgs {
                         permit: permit.clone(),
+                        old_indices: &old_indices.remove(vector_name).unwrap(),
                         gpu_device: gpu_device.as_ref(),
                         stopped,
                     },
@@ -608,7 +634,7 @@ impl SegmentBuilder {
 
     fn update_quantization(
         segment_config: &SegmentConfig,
-        vector_storages: &HashMap<VectorNameBuf, VectorStorageEnum>,
+        vector_storages: &HashMap<VectorNameBuf, VectorData>,
         temp_path: &Path,
         permit: &CpuPermit,
         stopped: &AtomicBool,
@@ -617,7 +643,7 @@ impl SegmentBuilder {
 
         let mut quantized_vectors_map = HashMap::new();
 
-        for (vector_name, vector_storage) in vector_storages {
+        for (vector_name, vector_info) in vector_storages {
             let Some(vector_config) = config.vector_data.get(vector_name) else {
                 continue;
             };
@@ -639,7 +665,7 @@ impl SegmentBuilder {
                 let vector_storage_path = get_vector_storage_path(segment_path, vector_name);
 
                 let quantized_vectors = QuantizedVectors::create(
-                    vector_storage,
+                    &vector_info.vector_storage,
                     quantization,
                     &vector_storage_path,
                     max_threads,

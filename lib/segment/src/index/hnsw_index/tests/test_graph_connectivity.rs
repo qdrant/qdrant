@@ -96,6 +96,7 @@ fn test_graph_connectivity() {
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },

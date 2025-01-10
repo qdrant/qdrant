@@ -209,6 +209,7 @@ fn _test_filterable_hnsw(
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },

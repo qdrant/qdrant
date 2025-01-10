@@ -175,6 +175,7 @@ fn test_batch_and_single_request_equivalency() {
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },
