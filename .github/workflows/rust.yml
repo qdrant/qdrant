@@ -11,7 +11,7 @@ env:
 
 jobs:
   coverage:
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
