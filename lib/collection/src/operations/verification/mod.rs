@@ -167,24 +167,30 @@ fn check_filter_limits(
     filter: &Filter,
     strict_mode_config: &StrictModeConfig,
 ) -> Result<(), CollectionError> {
-    if !check_custom(
-        || Some(filter.total_conditions_count()),
-        strict_mode_config.filter_max_conditions,
-    ) {
-        return Err(CollectionError::strict_mode(
-            "Filter condition limit reached",
-            "Reduce the amount of conditions of your filter.",
-        ));
+    // Filter condition count limit
+    if let Some(filter_condition_limit) = strict_mode_config.filter_max_conditions {
+        let filter_conditions = filter.total_conditions_count();
+
+        if !check_custom(|| Some(filter_conditions), Some(filter_condition_limit)) {
+            return Err(CollectionError::strict_mode(
+                format!("Filter condition limit reached ({filter_conditions} > {filter_condition_limit})"),
+                "Reduce the amount of conditions of your filter.",
+            ));
+        }
     }
 
-    if !check_custom(
-        || Some(filter.max_condition_input_size()),
-        strict_mode_config.condition_max_size,
-    ) {
-        return Err(CollectionError::strict_mode(
-            "Condition size limit reached",
-            "Reduce the size of your condition.",
-        ));
+    // Filter condition size limit
+    if let Some(max_condition_size) = strict_mode_config.condition_max_size {
+        let input_condition_size = filter.max_condition_input_size();
+
+        if !check_custom(|| Some(input_condition_size), Some(max_condition_size)) {
+            return Err(CollectionError::strict_mode(
+                format!(
+                    "Condition size limit reached ({input_condition_size} > {max_condition_size})"
+                ),
+                "Reduce the size of your condition.",
+            ));
+        }
     }
 
     Ok(())
