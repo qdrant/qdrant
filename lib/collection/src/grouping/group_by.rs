@@ -88,6 +88,7 @@ impl GroupRequest {
         read_consistency: Option<ReadConsistency>,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<QueryGroupRequest>
     where
         F: Fn(String) -> Fut,
@@ -102,6 +103,7 @@ impl GroupRequest {
                     collection_by_name,
                     read_consistency,
                     timeout,
+                    hw_measurement_acc.clone(),
                 )
                 .await?;
 
@@ -119,6 +121,7 @@ impl GroupRequest {
                     collection_by_name,
                     read_consistency,
                     timeout,
+                    hw_measurement_acc.clone(),
                 )
                 .await?;
                 query_req.try_into_shard_request(&collection.id, &referenced_vectors)?
@@ -475,6 +478,7 @@ pub async fn group_by(
             read_consistency,
             &shard_selection,
             timeout,
+            hw_measurement_acc.clone(),
         )
         .await?
         .into_iter()

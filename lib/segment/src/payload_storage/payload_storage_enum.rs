@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -91,6 +92,20 @@ impl PayloadStorage for PayloadStorageEnum {
             PayloadStorageEnum::SimplePayloadStorage(s) => s.get(point_id),
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get(point_id),
             PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id),
+        }
+    }
+
+    fn get_measured(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_measured(point_id, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.get_measured(point_id, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_measured(point_id, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_measured(point_id, hw_counter),
         }
     }
 

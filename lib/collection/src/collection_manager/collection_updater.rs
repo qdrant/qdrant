@@ -68,6 +68,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
     use segment::data_types::vectors::{
@@ -168,6 +169,7 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -203,6 +205,7 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -242,6 +245,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -277,6 +281,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -293,6 +298,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -315,6 +321,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -381,6 +388,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -442,6 +450,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()

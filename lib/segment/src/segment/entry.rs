@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use io::storage_version::VERSION_FILE;
@@ -296,6 +297,15 @@ impl SegmentEntry for Segment {
     fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
         self.payload_by_offset(internal_id)
+    }
+
+    fn payload_measured(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        let internal_id = self.lookup_internal_id(point_id)?;
+        self.payload_by_offset_measured(internal_id, hw_counter)
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {

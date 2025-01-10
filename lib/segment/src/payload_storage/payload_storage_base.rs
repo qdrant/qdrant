@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -26,6 +27,12 @@ pub trait PayloadStorage {
 
     /// Get payload for point. If no payload found, return empty payload
     fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
+
+    fn get_measured(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
 
     /// Delete payload by point_id and key
     fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>>;

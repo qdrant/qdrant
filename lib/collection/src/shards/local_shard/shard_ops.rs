@@ -118,6 +118,7 @@ impl ShardOperation for LocalShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(1)?;
@@ -131,6 +132,7 @@ impl ShardOperation for LocalShard {
                     filter,
                     search_runtime_handle,
                     timeout,
+                    hw_measurement_acc,
                 )
                 .await
             }
@@ -144,6 +146,7 @@ impl ShardOperation for LocalShard {
                         search_runtime_handle,
                         order_by,
                         timeout,
+                        hw_measurement_acc,
                     )
                     .await?;
 
@@ -213,6 +216,7 @@ impl ShardOperation for LocalShard {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(1)?;
@@ -225,6 +229,7 @@ impl ShardOperation for LocalShard {
                 with_payload,
                 with_vector,
                 search_runtime_handle,
+                hw_measurement_acc,
             ),
         )
         .await

@@ -25,6 +25,7 @@ itertools = { workspace = true }
 io = { path = "../common/io" }
 memory = { path = "../common/memory" }
 dataset = { path = "../common/dataset" }
+common = { path = "../common/common" }
 
 # this is not on dev-dependencies because dev-dependencies cannot be optional :(
 rocksdb = { version = "0.23.0", optional = true }

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use schemars::_serde_json::Value;
 
@@ -174,6 +175,14 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn get_payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
+        unreachable!()
+    }
+
+    fn get_payload_measured(
+        &self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
         unreachable!()
     }
 

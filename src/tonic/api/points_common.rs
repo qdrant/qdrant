@@ -1584,6 +1584,7 @@ pub async fn scroll(
     scroll_points: ScrollPoints,
     shard_selection: Option<ShardId>,
     access: Access,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<ScrollResponse>, Status> {
     let ScrollPoints {
         collection_name,
@@ -1635,6 +1636,7 @@ pub async fn scroll(
         timeout,
         shard_selector,
         access,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
@@ -1650,6 +1652,7 @@ pub async fn scroll(
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
         result: points,
         time: timing.elapsed().as_secs_f64(),
+        // usage: request_hw_counter.to_grpc_api(), // TODO(io_measurement): add to API!
     };
 
     Ok(Response::new(response))
@@ -1718,6 +1721,7 @@ pub async fn get(
     get_points: GetPoints,
     shard_selection: Option<ShardId>,
     access: Access,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<GetResponse>, Status> {
     let GetPoints {
         collection_name,
@@ -1764,12 +1768,14 @@ pub async fn get(
         timeout,
         shard_selector,
         access,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),
         time: timing.elapsed().as_secs_f64(),
+        // usage: request_hw_counter.to_grpc_api(), // TODO(io_measurement): add to API!
     };
 
     Ok(Response::new(response))

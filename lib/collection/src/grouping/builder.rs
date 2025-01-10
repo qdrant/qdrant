@@ -94,6 +94,7 @@ where
                 self.read_consistency,
                 self.shard_selection.clone(),
                 self.timeout,
+                self.hw_measurement_acc.clone(),
             )
             .await?;
 
@@ -103,7 +104,7 @@ where
             self.read_consistency,
             self.shard_selection.clone(),
             self.timeout,
-            self.hw_measurement_acc,
+            self.hw_measurement_acc.clone(),
         )
         .await?;
 
@@ -126,6 +127,7 @@ where
                     self.read_consistency,
                     &self.shard_selection,
                     timeout,
+                    self.hw_measurement_acc.clone(),
                 )
                 .await?
             };

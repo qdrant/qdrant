@@ -92,6 +92,7 @@ impl ShardOperation for DummyShard {
         _: &Handle,
         _: Option<&OrderBy>,
         _: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }
@@ -127,6 +128,7 @@ impl ShardOperation for DummyShard {
         _: &WithVector,
         _: &Handle,
         _: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         self.dummy()
     }

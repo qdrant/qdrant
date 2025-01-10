@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
@@ -322,6 +323,7 @@ fn test_proxy_shared_updates() {
         &with_payload,
         &with_vector,
         &is_stopped,
+        HwMeasurementAcc::new(),
     )
     .unwrap();
 

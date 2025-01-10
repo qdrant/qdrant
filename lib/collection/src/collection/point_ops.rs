@@ -239,6 +239,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ScrollResult> {
         let default_request = ScrollRequestInternal::default();
 
@@ -290,6 +291,7 @@ impl Collection {
                         local_only,
                         order_by.as_ref(),
                         timeout,
+                        hw_measurement_acc.clone(),
                     )
                     .and_then(move |mut records| async move {
                         if shard_key.is_none() {
@@ -412,6 +414,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload_interface = request
             .with_payload
@@ -431,6 +434,8 @@ impl Collection {
                 let request = &request;
                 let with_payload = &with_payload;
 
+                let hw_acc = hw_measurement_acc.clone();
+
                 async move {
                     let mut records = shard
                         .retrieve(
@@ -440,6 +445,7 @@ impl Collection {
                             read_consistency,
                             timeout,
                             shard_selection.is_shard_id(),
+                            hw_acc,
                         )
                         .await?;
 

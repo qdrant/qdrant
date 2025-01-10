@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
@@ -653,6 +654,31 @@ impl SegmentEntry for ProxySegment {
                 }
             }
             self.wrapped_segment.get().read().payload(point_id)
+        };
+    }
+
+    fn payload_measured(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        return if self.deleted_points.read().contains_key(&point_id) {
+            self.write_segment
+                .get()
+                .read()
+                .payload_measured(point_id, hw_counter)
+        } else {
+            {
+                let write_segment = self.write_segment.get();
+                let segment_guard = write_segment.read();
+                if segment_guard.has_point(point_id) {
+                    return segment_guard.payload_measured(point_id, hw_counter);
+                }
+            }
+            self.wrapped_segment
+                .get()
+                .read()
+                .payload_measured(point_id, hw_counter)
         };
     }
 

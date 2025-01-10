@@ -196,6 +196,7 @@ impl TableOfContent {
     /// # Result
     ///
     /// List of points with specified information included
+    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve(
         &self,
         collection_name: &str,
@@ -204,12 +205,19 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<Vec<RecordInternal>> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
-            .retrieve(request, read_consistency, &shard_selection, timeout)
+            .retrieve(
+                request,
+                read_consistency,
+                &shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
             .map_err(|err| err.into())
     }
@@ -312,6 +320,7 @@ impl TableOfContent {
     /// # Result
     ///
     /// List of points with specified information included
+    #[allow(clippy::too_many_arguments)]
     pub async fn scroll(
         &self,
         collection_name: &str,
@@ -320,12 +329,19 @@ impl TableOfContent {
         timeout: Option<Duration>,
         shard_selection: ShardSelectorInternal,
         access: Access,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<ScrollResult> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
         collection
-            .scroll_by(request, read_consistency, &shard_selection, timeout)
+            .scroll_by(
+                request,
+                read_consistency,
+                &shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
             .map_err(|err| err.into())
     }

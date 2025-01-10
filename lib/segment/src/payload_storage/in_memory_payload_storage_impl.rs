@@ -51,6 +51,14 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
     }
 
+    fn get_measured(
+        &self,
+        point_id: PointOffsetType,
+        _: &common::counter::hardware_counter::HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.get(point_id)
+    }
+
     fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {

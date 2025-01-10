@@ -831,6 +831,7 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "bustle",
+ "common",
  "criterion",
  "csv",
  "dataset",

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
@@ -886,7 +887,11 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub async fn delete_local_points(&self, filter: Filter) -> CollectionResult<UpdateResult> {
+    pub async fn delete_local_points(
+        &self,
+        filter: Filter,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
         let local_shard_guard = self.local.read().await;
 
         let Some(local_shard) = local_shard_guard.deref() else {
@@ -912,6 +917,7 @@ impl ShardReplicaSet {
                     &self.search_runtime,
                     None,
                     None,
+                    hw_measurement_acc.clone(),
                 )
                 .await?;
 

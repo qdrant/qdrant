@@ -73,8 +73,12 @@ impl LocalShard {
             hw_counter_acc.clone(),
         );
 
-        let scrolls_f =
-            self.query_scroll_batch(Arc::new(request.scrolls), search_runtime_handle, timeout);
+        let scrolls_f = self.query_scroll_batch(
+            Arc::new(request.scrolls),
+            search_runtime_handle,
+            timeout,
+            hw_counter_acc.clone(),
+        );
 
         // execute both searches and scrolls concurrently
         let (search_results, scroll_results) = tokio::try_join!(searches_f, scrolls_f)?;
@@ -106,6 +110,7 @@ impl LocalShard {
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
         timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         if !with_payload.is_required() && !with_vector.is_enabled() {
             return Ok(query_response);
@@ -126,6 +131,7 @@ impl LocalShard {
                 &(&with_payload).into(),
                 &with_vector,
                 &self.search_runtime,
+                hw_measurement_acc,
             ),
         )
         .await
@@ -244,6 +250,7 @@ impl LocalShard {
                     with_payload,
                     with_vector,
                     timeout,
+                    hw_counter_acc.clone(),
                 )
                 .await
             }
@@ -265,6 +272,7 @@ impl LocalShard {
                     Arc::new(vec![scroll_request]),
                     search_runtime_handle,
                     timeout,
+                    hw_counter_acc.clone(),
                 )
                 .await?
                 .pop()
@@ -325,6 +333,7 @@ impl LocalShard {
                         Arc::new(vec![scroll_request]),
                         search_runtime_handle,
                         timeout,
+                        hw_counter_acc.clone(),
                     )
                     .await?
                     .pop()
@@ -348,6 +357,7 @@ impl LocalShard {
         with_payload: WithPayloadInterface,
         with_vector: WithVector,
         timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> Result<Vec<ScoredPoint>, CollectionError> {
         let fused = match fusion {
             FusionInternal::Rrf => rrf_scoring(sources),
@@ -365,7 +375,13 @@ impl LocalShard {
         };
 
         let filled_top_fused = self
-            .fill_with_payload_or_vectors(top_fused, with_payload, with_vector, timeout)
+            .fill_with_payload_or_vectors(
+                top_fused,
+                with_payload,
+                with_vector,
+                timeout,
+                hw_measurement_acc,
+            )
             .await?;
 
         Ok(filled_top_fused)

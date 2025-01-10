@@ -684,6 +684,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement) fill this with response data
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "scroll")?;
         let scroll_points = ScrollPoints {
@@ -880,6 +881,7 @@ impl ShardOperation for RemoteShard {
         with_vector: &WithVector,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement): uncomment below and use this parameter
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "retrieve")?;
         let get_points = GetPoints {
@@ -906,6 +908,15 @@ impl ShardOperation for RemoteShard {
             })
             .await?
             .into_inner();
+
+        // TODO(io_measurement) implement
+        // if let Some(usage) = usage {
+        //     hw_measurement_acc.accumulate_request(
+        //         usage.cpu as usize,
+        //         usage.io_read as usize,
+        //         usage.io_write as usize,
+        //     );
+        // }
 
         let result: Result<Vec<RecordInternal>, Status> = get_response
             .result

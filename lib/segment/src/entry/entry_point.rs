@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 
@@ -106,6 +107,14 @@ pub trait SegmentEntry {
     ) -> OperationResult<Option<VectorInternal>>;
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
+
+    /// Retrieve payload for the point
+    /// If not found, return empty payload
+    fn payload_measured(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload

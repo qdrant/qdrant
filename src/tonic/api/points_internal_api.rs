@@ -526,11 +526,16 @@ impl PointsInternal for PointsInternalService {
 
         scroll_points.read_consistency = None; // *Have* to be `None`!
 
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            scroll_points.collection_name.clone(),
+        );
+
         scroll(
             UncheckedTocProvider::new_unchecked(&self.toc),
             scroll_points,
             shard_id,
             FULL_ACCESS.clone(),
+            hw_data,
         )
         .await
     }
@@ -551,11 +556,16 @@ impl PointsInternal for PointsInternalService {
 
         get_points.read_consistency = None; // *Have* to be `None`!
 
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            get_points.collection_name.clone(),
+        );
+
         get(
             UncheckedTocProvider::new_unchecked(&self.toc),
             get_points,
             shard_id,
             FULL_ACCESS.clone(),
+            hw_data,
         )
         .await
     }

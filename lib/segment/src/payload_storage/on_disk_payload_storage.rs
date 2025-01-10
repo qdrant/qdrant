@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -53,6 +54,21 @@ impl OnDiskPayloadStorage {
             .transpose()
             .map_err(OperationError::from)
     }
+
+    pub fn read_payload_measured(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
+        let key = serde_cbor::to_vec(&point_id).unwrap();
+        self.db_wrapper
+            .get_pinned(&key, |raw| {
+                hw_counter.io_read_counter().incr_delta(raw.len());
+                serde_cbor::from_slice(raw)
+            })?
+            .transpose()
+            .map_err(OperationError::from)
+    }
 }
 
 impl PayloadStorage for OnDiskPayloadStorage {
@@ -94,6 +110,18 @@ impl PayloadStorage for OnDiskPayloadStorage {
 
     fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         let payload = self.read_payload(point_id)?;
+        match payload {
+            Some(payload) => Ok(payload),
+            None => Ok(Default::default()),
+        }
+    }
+
+    fn get_measured(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        let payload = self.read_payload_measured(point_id, hw_counter)?;
         match payload {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),

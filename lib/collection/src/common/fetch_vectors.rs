@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 use api::rest::ShardKeySelector;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::future::try_join_all;
 use futures::Future;
 use segment::data_types::vectors::{VectorInternal, VectorRef};
@@ -29,6 +30,7 @@ pub async fn retrieve_points(
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<RecordInternal>> {
     collection
         .retrieve(
@@ -40,6 +42,7 @@ pub async fn retrieve_points(
             read_consistency,
             shard_selector,
             timeout,
+            hw_measurement_acc,
         )
         .await
 }
@@ -56,6 +59,7 @@ pub async fn retrieve_points_with_locked_collection(
     read_consistency: Option<ReadConsistency>,
     shard_selector: &ShardSelectorInternal,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<Vec<RecordInternal>> {
     match collection_holder {
         CollectionRefHolder::Ref(collection) => {
@@ -66,6 +70,7 @@ pub async fn retrieve_points_with_locked_collection(
                 read_consistency,
                 shard_selector,
                 timeout,
+                hw_measurement_acc,
             )
             .await
         }
@@ -77,6 +82,7 @@ pub async fn retrieve_points_with_locked_collection(
                 read_consistency,
                 shard_selector,
                 timeout,
+                hw_measurement_acc,
             )
             .await
         }
@@ -207,6 +213,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
         collection_by_name: &F,
         shard_selector: ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<ReferencedVectors>
     where
         F: Fn(String) -> Fut,
@@ -233,6 +240,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                     read_consistency,
                     &shard_selector,
                     timeout,
+                    hw_measurement_acc.clone(),
                 )),
                 Some(name) => {
                     let other_collection = collection_by_name(name.to_string()).await;
@@ -245,6 +253,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                                 read_consistency,
                                 &shard_selector,
                                 timeout,
+                                hw_measurement_acc.clone(),
                             ))
                         }
                         None => {
@@ -316,6 +325,7 @@ pub async fn resolve_referenced_vectors_batch<'a, 'b, F, Fut, Req: RetrieveReque
     collection_by_name: F,
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<ReferencedVectors>
 where
     F: Fn(String) -> Fut,
@@ -355,6 +365,7 @@ where
                 &collection_by_name,
                 shard_selector,
                 timeout,
+                hw_measurement_acc.clone(),
             );
             requests.push(fetch);
             Ok(())

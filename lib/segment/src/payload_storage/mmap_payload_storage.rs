@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use blob_store::config::StorageOptions;
 use blob_store::{Blob, BlobStore};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use serde_json::Value;
@@ -114,6 +115,17 @@ impl PayloadStorage for MmapPayloadStorage {
 
     fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
         match self.storage.read().get_value(point_id) {
+            Some(payload) => Ok(payload),
+            None => Ok(Default::default()),
+        }
+    }
+
+    fn get_measured(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self.storage.read().get_value_measured(point_id, hw_counter) {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
         }
