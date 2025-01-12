@@ -19,6 +19,8 @@ use crate::operations::types::{CollectionError, CollectionResult};
 pub struct SnapshotsConfig {
     pub snapshots_storage: SnapshotsStorageConfig,
     pub s3_config: Option<S3Config>,
+    #[serde(default)]
+    pub snapshot_upload_concurrency: Option<usize>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
