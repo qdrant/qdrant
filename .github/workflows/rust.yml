@@ -25,6 +25,16 @@ jobs:
       uses: arduino/setup-protoc@v3
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - if: matrix.os == 'ubuntu-latest'
+      name: Install dependencies (ubuntu-latest)
+      run: |
+        sudo apt update
+        sudo apt-get install clang libclang-dev llvm
+
+    - if: matrix.os == 'macOS-latest'
+      name: Dynamic Link libclang (macOS-latest)
+      run: echo "DYLD_FALLBACK_LIBRARY_PATH=$(xcode-select --print-path)/Toolchains/XcodeDefault.xctoolchain/usr/lib/" >> $GITHUB_ENV
+
     - name: Install nextest
       uses: taiki-e/install-action@nextest
     - name: Build

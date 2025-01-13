@@ -29,7 +29,7 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          sudo apt-get install clang
+          sudo apt-get install clang libclang-dev llvm
           curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
 
           poetry -C tests check --lock
@@ -54,7 +54,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
-        run: sudo apt-get install clang
+        run: sudo apt-get install clang libclang-dev llvm
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -155,7 +155,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Install dependencies
-        run: sudo apt-get install -y clang jq
+        run: sudo apt-get install -y clang libclang-dev llvm jq
       - name: Docker build
         uses: docker/build-push-action@v6
         with:
@@ -183,7 +183,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang git-lfs jq
+        run: sudo apt-get install clang libclang-dev llvm git-lfs jq
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
@@ -243,7 +243,7 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
       - name: Install dependencies
-        run: sudo apt-get install clang jq
+        run: sudo apt-get install clang libclang-dev llvm jq
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
@@ -306,7 +306,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install dependencies
-        run: sudo apt-get install clang jq
+        run: sudo apt-get install clang libclang-dev llvm jq
       - name: Build
         run: cargo build --bin qdrant
       - name: Run Shard Snapshot API Tests (local)
