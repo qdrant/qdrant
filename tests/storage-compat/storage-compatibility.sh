@@ -7,8 +7,8 @@ echo $PWD
 cd "$(dirname "$0")/../../"
 
 QDRANT_HOST='localhost:6333'
-PREV_PATCH_QDRANT_VERSION='v1.9.2'
-PREV_MINOR_QDRANT_VERSION='v1.8.4'
+PREV_PATCH_QDRANT_VERSION='v1.12.6'
+PREV_MINOR_QDRANT_VERSION='v1.11.5'
 
 RETRY_LIMIT=30
 
@@ -124,5 +124,5 @@ test_version $PREV_PATCH_QDRANT_VERSION
 # Test previous minor version
 test_version $PREV_MINOR_QDRANT_VERSION
 
-# Test that it can read both rocksdb and blob_store
-test_version 'v1.12.6-rocksdb+blob_store-pre_release'
+# Test that it can read both rocksdb and blob_store (generated manually
+test_version 'v1.12.5-rocksdb+blob_store'
