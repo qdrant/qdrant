@@ -28,7 +28,7 @@ jobs:
       uses: taiki-e/install-action@nextest
     - name: Install Vulkan packages
       run: |
-        sudo apt-get install clang
+        sudo apt-get install clang libclang-dev llvm
         sudo apt-get install mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
         /usr/bin/vulkaninfo --summary
     - name: Build

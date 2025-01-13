@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
+          sudo apt-get install -y gcc-multilib clang libclang-dev llvm cmake protobuf-compiler
           rustup default stable
           rustup update
           rustup show
@@ -126,7 +126,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler libfuse2
+          sudo apt-get install -y gcc-multilib clang libclang-dev llvm cmake protobuf-compiler libfuse2
 
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
