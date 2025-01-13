@@ -1541,12 +1541,8 @@ pub struct SparseVectorParams {
 }
 
 impl SparseVectorParams {
-    pub fn storage_type(&self, use_new_storage: bool) -> SparseVectorStorageType {
-        if use_new_storage {
-            SparseVectorStorageType::Mmap
-        } else {
-            SparseVectorStorageType::default()
-        }
+    pub fn storage_type(&self) -> SparseVectorStorageType {
+        SparseVectorStorageType::default()
     }
 }
 
