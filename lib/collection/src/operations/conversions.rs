@@ -1809,7 +1809,6 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         .sharding_method
                         .map(sharding_method_from_proto)
                         .transpose()?,
-                    on_disk_payload_uses_mmap: false,
                 },
             },
             hnsw_config: match config.hnsw_config {

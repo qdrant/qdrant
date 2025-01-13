@@ -66,9 +66,6 @@ pub struct StorageConfig {
     pub temp_path: Option<String>,
     #[serde(default = "default_on_disk_payload")]
     pub on_disk_payload: bool,
-    // TODO: remove this field after integration is finished
-    #[serde(default)]
-    pub on_disk_payload_uses_mmap: bool,
     #[validate(nested)]
     pub optimizers: OptimizersConfig,
     #[validate(nested)]
