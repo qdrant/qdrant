@@ -40,7 +40,6 @@ jobs:
 
   coverage:
     runs-on: ubuntu-latest
-    needs: test
     steps:
     - name: Install minimal stable
       uses: dtolnay/rust-toolchain@stable
@@ -80,6 +79,7 @@ jobs:
   # Failure of updating an issue is ignored because it fails for external contributors.
   process-results:
     runs-on: ubuntu-latest
+    needs: test
     permissions:
       contents: read
       issues: write
