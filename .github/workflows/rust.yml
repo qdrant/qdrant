@@ -69,10 +69,10 @@ jobs:
         files: lcov.info
         token: ${{ secrets.CODECOV_TOKEN }}
     - name: Display resource log on error
-        if: failure()
-        run: |
-          echo "Job failed. Here is the resource usage log:"
-          cat resource_usage.log
+      if: failure()
+      run: |
+        echo "Job failed. Here is the resource usage log:"
+        cat resource_usage.log
 
 
   # After tests are run, this hacky script will process the JUnit output of nextest
