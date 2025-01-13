@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang libclang-dev llvm git-lfs
+        run: sudo apt-get install clang git-lfs
       - name: Setup git-lfs
         run: git lfs install
       - name: Install minimal stable
