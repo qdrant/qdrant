@@ -19,7 +19,6 @@ use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
-use super::resharding::tasks_pool::ReshardTasksPool;
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -457,10 +456,7 @@ impl ShardHolder {
         shard_transfers
     }
 
-    pub fn get_resharding_operations_info(
-        &self,
-        tasks_pool: &ReshardTasksPool,
-    ) -> Option<Vec<ReshardingInfo>> {
+    pub fn get_resharding_operations_info(&self) -> Option<Vec<ReshardingInfo>> {
         let mut resharding_operations = vec![];
 
         // We eventually expect to extend this to multiple concurrent operations, which is why
@@ -469,14 +465,12 @@ impl ShardHolder {
             return None;
         };
 
-        let status = tasks_pool.get_task_status(&resharding_state.key());
         resharding_operations.push(ReshardingInfo {
             uuid: resharding_state.uuid,
             shard_id: resharding_state.shard_id,
             peer_id: resharding_state.peer_id,
             direction: resharding_state.direction,
             shard_key: resharding_state.shard_key.clone(),
-            comment: status.map(|p| p.comment),
         });
 
         resharding_operations.sort_by_key(|k| k.shard_id);
