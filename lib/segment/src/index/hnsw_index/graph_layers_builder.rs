@@ -17,7 +17,7 @@ use super::graph_links::{GraphLinks, GraphLinksFormat};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase, LinkContainer};
-use crate::index::hnsw_index::graph_links::GraphLinksConverter;
+use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -86,14 +86,14 @@ impl GraphLayersBuilder {
     ) -> OperationResult<GraphLayers> {
         let links_path = GraphLayers::get_links_path(path, format);
 
-        let links_converter =
-            Self::links_layers_to_converter(self.links_layers, format, self.m, self.m0);
-        links_converter.save_as(&links_path)?;
+        let serializer =
+            Self::links_layers_to_serializer(self.links_layers, format, self.m, self.m0);
+        serializer.save_as(&links_path)?;
 
         let links = if on_disk {
             GraphLinks::load_from_file(&links_path, true, format)?
         } else {
-            links_converter.to_graph_links_ram()
+            serializer.to_graph_links_ram()
         };
 
         let entry_points = self.entry_points.into_inner();
@@ -120,24 +120,24 @@ impl GraphLayersBuilder {
         GraphLayers {
             m: self.m,
             m0: self.m0,
-            links: Self::links_layers_to_converter(self.links_layers, format, self.m, self.m0)
+            links: Self::links_layers_to_serializer(self.links_layers, format, self.m, self.m0)
                 .to_graph_links_ram(),
             entry_points: self.entry_points.into_inner(),
             visited_pool: self.visited_pool,
         }
     }
 
-    fn links_layers_to_converter(
+    fn links_layers_to_serializer(
         link_layers: Vec<LockedLayersContainer>,
         format: GraphLinksFormat,
         m: usize,
         m0: usize,
-    ) -> GraphLinksConverter {
+    ) -> GraphLinksSerializer {
         let edges = link_layers
             .into_iter()
             .map(|l| l.into_iter().map(|l| l.into_inner()).collect())
             .collect();
-        GraphLinksConverter::new(edges, format, m, m0)
+        GraphLinksSerializer::new(edges, format, m, m0)
     }
 
     #[cfg(feature = "gpu")]
