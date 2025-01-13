@@ -940,7 +940,7 @@ impl ShardReplicaSet {
             });
 
         // TODO(resharding): Assign clock tag to the operation!? 🤔
-        let result = self.update_local(op.into(), false).await?.ok_or_else(|| {
+        let result = self.update_local(op.into(), true).await?.ok_or_else(|| {
             CollectionError::bad_request(format!(
                 "local shard {}:{} does not exist or is unavailable",
                 self.collection_id, self.shard_id,

@@ -248,7 +248,7 @@ def test_resharding_down_abort_cleanup(tmp_path: pathlib.Path, peers: int):
         migrate_points(peer_uris[0], peer_id, shard_id, target_peer_id, target_shard_id, "down")
 
         # Assert that some points were forwarded and/or migrated to selected replica
-        resharding_points_count = count_local_points(peer_uri, shard_id, target_shard_id)
+        resharding_points_count = count_local_points(peer_uri, shard_id, target_shard_id, exact=True)
         assert resharding_points_count > 0
 
         # Append peer URI to the list of replica URIs
@@ -269,7 +269,7 @@ def test_resharding_down_abort_cleanup(tmp_path: pathlib.Path, peers: int):
 
     # Assert that forwarded and/or migrated points were deleted from non-target replicas
     for shard_id, peer_uri in enumerate(replica_uris):
-        resharding_points_count = count_local_points(peer_uri, shard_id, target_shard_id)
+        resharding_points_count = count_local_points(peer_uri, shard_id, target_shard_id, exact=True)
         assert resharding_points_count == 0
 
 
@@ -551,13 +551,13 @@ def assert_resharding_points_count(replica_uris: list[str]):
     target_shard_uri = replica_uris[-1]
 
     # Get points count in target replica
-    target_points_count = count_local_points(target_shard_uri, target_shard_id)
+    target_points_count = count_local_points(target_shard_uri, target_shard_id, exact=True)
 
     # Calculate total resharding points count in all other replicas
     total_resharding_points_count = 0
 
     for shard_id, shard_uri in enumerate(replica_uris[:-1]):
-        total_resharding_points_count += count_local_points(shard_uri, shard_id, target_shard_id)
+        total_resharding_points_count += count_local_points(shard_uri, shard_id, target_shard_id, exact=True)
 
     # Assert target replica points count matches total resharding points count
     assert target_points_count == total_resharding_points_count
