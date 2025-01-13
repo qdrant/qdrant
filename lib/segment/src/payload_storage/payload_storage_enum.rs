@@ -312,7 +312,7 @@ mod tests {
         // loose assertion because value not stable across different OS
         let storage_size = storage.get_storage_size_bytes().unwrap();
         assert!(
-            storage_size > 2000 && storage_size < 2400,
+            storage_size > 2000 && storage_size < 2300,
             "storage_size = {storage_size}"
         );
     }
