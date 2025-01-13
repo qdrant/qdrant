@@ -10,34 +10,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  coverage:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Install minimal stable
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: llvm-tools-preview
-    - uses: actions/checkout@v4
-    - uses: Swatinem/rust-cache@v2
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v3
-      with:
-        repo-token: ${{ secrets.GITHUB_TOKEN }}
-    - name: Install nextest
-      uses: taiki-e/install-action@nextest
-    - name: Install llvm-cov
-      run: cargo install cargo-llvm-cov
-    - name: Run tests with coverage
-      # Profile "ci" is configured in .config/nextest.toml
-      run: cargo llvm-cov nextest --workspace --profile ci
-    - name: Save code coverage report
-      run: cargo llvm-cov report --lcov --output-path lcov.info
-    - name: Upload coverage data to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        files: lcov.info
-        token: ${{ secrets.CODECOV_TOKEN }}
-
   test:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -65,6 +37,36 @@ jobs:
       with:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
+  
+  coverage:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - name: Install minimal stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: llvm-tools-preview
+    - uses: actions/checkout@v4
+    - uses: Swatinem/rust-cache@v2
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install nextest
+      uses: taiki-e/install-action@nextest
+    - name: Install llvm-cov
+      run: cargo install cargo-llvm-cov
+    - name: Run tests with coverage
+      # Profile "ci" is configured in .config/nextest.toml
+      run: cargo llvm-cov nextest --workspace --profile ci
+    - name: Save code coverage report
+      run: cargo llvm-cov report --lcov --output-path lcov.info
+    - name: Upload coverage data to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: lcov.info
+        token: ${{ secrets.CODECOV_TOKEN }}
+
 
   # After tests are run, this hacky script will process the JUnit output of nextest
   # and will create a GH Issue if there is a test marked as flaky,
