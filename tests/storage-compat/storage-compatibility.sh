@@ -124,5 +124,8 @@ test_version $PREV_PATCH_QDRANT_VERSION
 # Test previous minor version
 test_version $PREV_MINOR_QDRANT_VERSION
 
-# Test that it can read both rocksdb and blob_store (generated manually
-test_version 'v1.12.5-rocksdb+blob_store'
+# Test blob_store storage generated manually with
+# export QDRANT__STORAGE__ON_DISK_PAYLOAD_USES_MMAP=true
+# export QDRANT__STORAGE__ON_DISK_SPARSE_VECTORS_USES_MMAP=true
+# in the gen_storage_compat_data.sh script
+test_version 'v1.12.6-blob-store'
