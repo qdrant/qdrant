@@ -118,8 +118,6 @@ def test_vector_storage_strict_mode_upsert_local_shard(tmp_path: pathlib.Path):
 
 
 def test_payload_strict_mode_upsert(tmp_path: pathlib.Path):
-    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
-    # Every required change for the mmap migration has been marked with a "TODO"
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, 4)
 
     strict_mode = {
@@ -133,7 +131,6 @@ def test_payload_strict_mode_upsert(tmp_path: pathlib.Path):
     # Insert points into leader
     for i in range(10):
         upsert_random_points(peer_urls[0], 100, collection_name=COLLECTION_NAME, offset=i*100)
-        time.sleep(5)  # TODO: Remove
 
     # Check that each node blocks new points now
     for peer_url in peer_urls:
@@ -143,14 +140,11 @@ def test_payload_strict_mode_upsert(tmp_path: pathlib.Path):
             if not res.ok:
                 assert "Max payload storage size" in res.json()['status']['error']
                 return
-            time.sleep(1)  # TODO: Remove
 
     assert False, "Should have blocked upsert but didn't"
 
 
 def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
-    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
-    # Every required change for the mmap migration has been marked with a "TODO"
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=1, replication_factor=N_REPLICAS, sharding_method="custom")
@@ -172,11 +166,10 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
     for _ in range(32):
         point = {"id": 1, "payload": payload, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
-        time.sleep(1)  # TODO: Remove
 
     set_strict_mode(peer_urls[0], COLLECTION_NAME, {
         "enabled": True,
-        "max_collection_payload_size_bytes": 15000,
+        "max_collection_payload_size_bytes": 10_000,
     })
 
     wait_for_strict_mode_enabled(peer_urls[1], COLLECTION_NAME)
@@ -184,7 +177,6 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
     for _ in range(32):
         point = {"id": 2, "payload": payload, "vector": random_dense_vector()}
         upsert_points(peer_urls[0], [point], collection_name=COLLECTION_NAME, shard_key="non_leader").raise_for_status()
-        time.sleep(1)  # TODO: Remove
 
     for _ in range(32):
         point = {"id": 3, "payload": payload, "vector": random_dense_vector()}
@@ -193,7 +185,6 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
             assert "Max payload storage size" in res.json()['status']['error']
             assert not res.ok
             return
-        time.sleep(1)  # TODO: Remove
 
     assert False, "Should have blocked upsert but didn't"
 
