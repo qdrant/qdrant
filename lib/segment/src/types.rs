@@ -983,10 +983,10 @@ impl VectorDataConfig {
 pub enum SparseVectorStorageType {
     /// Storage on disk
     // (rocksdb storage)
-    #[default]
     OnDisk,
     /// Storage in memory maps
     // (blob_store storage)
+    #[default]
     Mmap,
 }
 
