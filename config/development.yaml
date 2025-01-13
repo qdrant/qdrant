@@ -12,7 +12,7 @@ service:
   #grpc_port: 6334
   #api_key: your_secret_api_key_here
 
-consensus:
+cluster:
   resharding_enabled: true
 
 storage:
