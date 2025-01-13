@@ -67,6 +67,9 @@ const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
 const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
+const LINK_COMPRESSION_FORMAT: GraphLinksFormat = GraphLinksFormat::Compressed;
+const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
+
 #[derive(Debug)]
 pub struct HNSWIndex {
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -100,40 +103,6 @@ pub struct HnswIndexOpenArgs<'a> {
     pub permit: Option<Arc<CpuPermit>>,
     pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
     pub stopped: &'a AtomicBool,
-}
-
-struct LinkCompressionExperimentalSetting {
-    /// Preferable format for newly created graphs.
-    format: GraphLinksFormat,
-    /// Whether to convert existing uncompressed graphs to the compressed format.
-    convert_existing: bool,
-}
-
-impl LinkCompressionExperimentalSetting {
-    /// Load the setting from an environment variable.
-    ///
-    /// This hidden setting exists for testing/benchmarking this particular
-    /// feature only. Later it could be removed and either made unconfigurable,
-    /// or moved to an appropriate place in the configuration.
-    fn from_env() -> Self {
-        let name = "__QDRANT_COMPRESSED_LINKS";
-        let (format, convert_existing) = match std::env::var(name).as_deref() {
-            Ok("0") | Err(std::env::VarError::NotPresent) => (GraphLinksFormat::Plain, false),
-            Ok("1") => (GraphLinksFormat::Compressed, false),
-            Ok("2") => (GraphLinksFormat::Compressed, true),
-            _ => {
-                log::warn!(
-                    "Unknown value for {name}={:?}, defaulting to 0",
-                    std::env::var_os(name),
-                );
-                (GraphLinksFormat::Plain, false)
-            }
-        };
-        Self {
-            format,
-            convert_existing,
-        }
-    }
 }
 
 impl HNSWIndex {
@@ -181,7 +150,7 @@ impl HNSWIndex {
                 )
             };
 
-            let do_convert = LinkCompressionExperimentalSetting::from_env().convert_existing;
+            let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
 
             (
                 config,
@@ -512,7 +481,7 @@ impl HNSWIndex {
 
         let graph: GraphLayers = graph_layers_builder.into_graph_layers(
             path,
-            LinkCompressionExperimentalSetting::from_env().format,
+            LINK_COMPRESSION_FORMAT,
             hnsw_config.on_disk.unwrap_or(false),
         )?;
 
