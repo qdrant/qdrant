@@ -10853,11 +10853,6 @@
                 "nullable": true
               }
             ]
-          },
-          "comment": {
-            "description": "A human-readable report of the operation progress. Available only on the source peer.",
-            "type": "string",
-            "nullable": true
           }
         }
       },
