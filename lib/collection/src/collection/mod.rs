@@ -46,7 +46,6 @@ use crate::shards::replica_set::ReplicaState::{Active, Dead, Initializing, Liste
 use crate::shards::replica_set::{
     ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
 };
-use crate::shards::resharding::tasks_pool::ReshardTasksPool;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
@@ -68,7 +67,6 @@ pub struct Collection {
     snapshots_path: PathBuf,
     channel_service: ChannelService,
     transfer_tasks: Mutex<TransferTasksPool>,
-    reshard_tasks: Mutex<ReshardTasksPool>,
     request_shard_transfer_cb: RequestShardTransfer,
     notify_peer_failure_cb: ChangePeerFromState,
     abort_shard_transfer_cb: replica_set::AbortShardTransfer,
@@ -179,7 +177,6 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::new(name.clone())),
-            reshard_tasks: Mutex::new(ReshardTasksPool::new(name)),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure.clone(),
             abort_shard_transfer_cb: abort_shard_transfer,
@@ -294,7 +291,6 @@ impl Collection {
             snapshots_path: snapshots_path.to_owned(),
             channel_service,
             transfer_tasks: Mutex::new(TransferTasksPool::new(collection_id.clone())),
-            reshard_tasks: Mutex::new(ReshardTasksPool::new(collection_id)),
             request_shard_transfer_cb: request_shard_transfer.clone(),
             notify_peer_failure_cb: on_replica_failure,
             abort_shard_transfer_cb: abort_shard_transfer,
@@ -775,7 +771,7 @@ impl Collection {
                 shards_telemetry,
                 shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await),
                 shards_holder
-                    .get_resharding_operations_info(&*self.reshard_tasks.lock().await)
+                    .get_resharding_operations_info()
                     .unwrap_or_default(),
             )
         };

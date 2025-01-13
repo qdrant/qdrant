@@ -1,8 +1,6 @@
 use std::num::NonZeroU32;
-use std::sync::Arc;
 
 use futures::Future;
-use parking_lot::Mutex;
 
 use super::Collection;
 use crate::config::ShardingMethod;
@@ -10,8 +8,7 @@ use crate::hash_ring::HashRingRouter;
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::CollectionResult;
 use crate::shards::replica_set::ReplicaState;
-use crate::shards::resharding::tasks_pool::{ReshardTaskItem, ReshardTaskProgress};
-use crate::shards::resharding::{self, ReshardKey, ReshardState};
+use crate::shards::resharding::{ReshardKey, ReshardState};
 use crate::shards::transfer::ShardTransferConsensus;
 
 impl Collection {
@@ -90,88 +87,6 @@ impl Collection {
         Ok(())
     }
 
-    /// Resume an existing resharding operation
-    ///
-    /// This method will check if a resharding operation is in progress according to our state, and
-    /// it will start and resume the driving task accordingly.
-    ///
-    /// This does not check whether the task is already active.
-    ///
-    /// If no resharding is active, this returns early without error.
-    pub async fn resume_resharding_unchecked<T, F>(
-        &self,
-        consensus: Box<dyn ShardTransferConsensus>,
-        on_finish: T,
-        on_error: F,
-    ) -> CollectionResult<()>
-    where
-        T: Future<Output = ()> + Send + 'static,
-        F: Future<Output = ()> + Send + 'static,
-    {
-        let Some(state) = self.resharding_state().await else {
-            return Ok(());
-        };
-
-        self.drive_resharding(state.key(), consensus, true, on_finish, on_error)
-            .await?;
-
-        Ok(())
-    }
-
-    async fn drive_resharding<T, F>(
-        &self,
-        resharding_key: ReshardKey,
-        consensus: Box<dyn ShardTransferConsensus>,
-        can_resume: bool,
-        on_finish: T,
-        on_error: F,
-    ) -> CollectionResult<()>
-    where
-        T: Future<Output = ()> + Send + 'static,
-        F: Future<Output = ()> + Send + 'static,
-    {
-        // Skip if this peer is not responsible for driving the resharding
-        if resharding_key.peer_id != self.this_peer_id {
-            return Ok(());
-        }
-
-        // Stop any already active resharding task to allow starting a new one
-        let mut active_reshard_tasks = self.reshard_tasks.lock().await;
-        let task_result = active_reshard_tasks.stop_task(&resharding_key).await;
-        debug_assert!(task_result.is_none(), "Reshard task already exists");
-
-        let shard_holder = self.shards_holder.clone();
-        let collection_id = self.id.clone();
-        let collection_config = Arc::clone(&self.collection_config);
-        let channel_service = self.channel_service.clone();
-        let progress = Arc::new(Mutex::new(ReshardTaskProgress::new()));
-        let spawned_task = resharding::spawn_resharding_task(
-            shard_holder,
-            progress.clone(),
-            resharding_key.clone(),
-            consensus,
-            collection_id,
-            self.path.clone(),
-            collection_config,
-            self.shared_storage_config.clone(),
-            channel_service,
-            can_resume,
-            on_finish,
-            on_error,
-        );
-
-        active_reshard_tasks.add_task(
-            resharding_key,
-            ReshardTaskItem {
-                task: spawned_task,
-                started_at: chrono::Utc::now(),
-                progress,
-            },
-        );
-
-        Ok(())
-    }
-
     pub async fn commit_read_hashring(&self, resharding_key: &ReshardKey) -> CollectionResult<()> {
         let mut shards_holder = self.shards_holder.write().await;
 
@@ -216,7 +131,6 @@ impl Collection {
         let mut shard_holder = self.shards_holder.write().await;
 
         shard_holder.check_finish_resharding(&resharding_key)?;
-        let _ = self.stop_resharding_task(&resharding_key).await;
         shard_holder.finish_resharding_unchecked(&resharding_key)?;
 
         if resharding_key.direction == ReshardingDirection::Down {
@@ -224,6 +138,7 @@ impl Collection {
             if let Some(shard_key) = &resharding_key.shard_key {
                 shard_holder.remove_shard_from_key_mapping(resharding_key.shard_id, shard_key)?;
             }
+
             shard_holder
                 .drop_and_remove_shard(resharding_key.shard_id)
                 .await?;
@@ -241,6 +156,7 @@ impl Collection {
                         config.params.shard_number =
                             NonZeroU32::new(config.params.shard_number.get() - 1)
                                 .expect("cannot have zero shards after finishing resharding");
+
                         if let Err(err) = config.save(&self.path) {
                             log::error!(
                                 "Failed to update and save collection config during resharding: {err}"
@@ -268,8 +184,6 @@ impl Collection {
         } else {
             log::warn!("Force-aborting resharding {resharding_key}");
         }
-
-        let _ = self.stop_resharding_task(&resharding_key).await;
 
         // Invalidate clean state for shards we copied new points into
         // These shards must be cleaned or dropped to ensure they don't contain irrelevant points
@@ -325,16 +239,5 @@ impl Collection {
         shard_holder.abort_resharding(resharding_key, force).await?;
 
         Ok(())
-    }
-
-    pub(super) async fn stop_resharding_task(
-        &self,
-        resharding_key: &ReshardKey,
-    ) -> Option<resharding::tasks_pool::TaskResult> {
-        self.reshard_tasks
-            .lock()
-            .await
-            .stop_task(resharding_key)
-            .await
     }
 }
