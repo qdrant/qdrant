@@ -344,10 +344,13 @@ impl ShardHolder {
         }
 
         // Remove new shard if resharding up
-        if direction == ReshardingDirection::Up {
+        if is_in_progress && direction == ReshardingDirection::Up {
             if let Some(shard) = self.get_shard(shard_id) {
                 match shard.peer_state(peer_id) {
-                    Some(ReplicaState::Resharding) => {
+                    // Valid replica states:
+                    // - in resharding state during migration transfer
+                    // - in active state after migration transfer
+                    Some(ReplicaState::Resharding | ReplicaState::Active) => {
                         log::debug!("removing peer {peer_id} from {shard_id} replica set");
                         shard.remove_peer(peer_id).await?;
                     }
