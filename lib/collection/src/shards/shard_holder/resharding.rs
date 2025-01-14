@@ -348,15 +348,16 @@ impl ShardHolder {
             if let Some(shard) = self.get_shard(shard_id) {
                 // Remove all replicas from shard
                 for (peer_id, replica_state) in shard.peers() {
-                    log::debug!("removing peer {peer_id} from {shard_id} replica set with state {replica_state:?}");
+                    log::debug!("removing peer {peer_id} with state {replica_state:?} from replica set {shard_id}");
                     shard.remove_peer(peer_id).await?;
                 }
+
                 debug_assert!(
                     shard.peers().is_empty(),
-                    "replica set from {shard_id} must be empty after dropping all peers",
+                    "replica set {shard_id} must be empty after removing all peers",
                 );
 
-                log::debug!("removing {shard_id} replica set, because replica set is empty");
+                log::debug!("removing replica set {shard_id}");
 
                 // Drop the shard
                 if let Some(shard_key) = shard_key {
