@@ -660,10 +660,6 @@ def test_strict_mode_read_rate_limiting(collection_name):
 
 
 def test_strict_mode_max_collection_payload_size_upsert(collection_name):
-    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
-    # For now were just asserting a very loose condition to ensure it works at all.
-    # Every required change for the mmap migration has been marked with a "TODO"
-
     basic_collection_setup(collection_name=collection_name, on_disk_payload=True)  # Clear collection to not depend on other tests
 
     def upsert_points(ids: list[int]):
@@ -688,31 +684,18 @@ def test_strict_mode_max_collection_payload_size_upsert(collection_name):
     for _ in range(32):
         upsert_points([1, 2, 3, 4, 5]).raise_for_status()
 
-    time.sleep(15)  # TODO: Remove
-
-    # TODO: Remove
-    # Check that we still can upsert (not needed for mmap)
-    for _ in range(32):
-        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
-    time.sleep(15)  # TODO: Remove
-
     set_strict_mode(collection_name, {
         "enabled": True,
-        # "max_collection_payload_size_bytes": 45000,  # TODO: Uncomment and replace the line below
-        "max_collection_payload_size_bytes": 1,
+        "max_collection_payload_size_bytes": 45000,
     })
 
-    # TODO: Uncomment
-    # for _ in range(32):
-    #     upsert_points([6, 7, 8, 9, 10]).raise_for_status()
+    for _ in range(32):
+        upsert_points([6, 7, 8, 9, 10]).raise_for_status()
 
     # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
     for i in range(32):
         failed_upsert = upsert_points([12, 13, 14, 15, 16])
         if failed_upsert.ok:
-            # TODO: Remove this if block
-            if i == 0:
-                time.sleep(15)
             continue
         assert "Max payload storage size" in failed_upsert.json()['status']['error']
         assert not failed_upsert.ok
@@ -722,10 +705,6 @@ def test_strict_mode_max_collection_payload_size_upsert(collection_name):
 
 
 def test_strict_mode_max_collection_payload_size_upsert_batch(collection_name):
-    # TODO: Update this test when payload rocksDB storage has been replaced by mmap payload storage!
-    # For now were just asserting a very loose condition to ensure it works at all.
-    # Every required change for the mmap migration has been marked with a "TODO"
-
     basic_collection_setup(collection_name=collection_name, on_disk_payload=True)  # Clear collection to not depend on other tests
 
     def upsert_points(ids: list[int]):
@@ -754,31 +733,18 @@ def test_strict_mode_max_collection_payload_size_upsert_batch(collection_name):
     for _ in range(32):
         upsert_points([1, 2, 3, 4, 5]).raise_for_status()
 
-    time.sleep(15)  # TODO: Remove
-
-    # TODO: Remove
-    # Check that we still can upsert (not needed for mmap)
-    for _ in range(32):
-        upsert_points([1, 2, 3, 4, 5]).raise_for_status()
-    time.sleep(15)  # TODO: Remove
-
     set_strict_mode(collection_name, {
         "enabled": True,
-        # "max_collection_payload_size_bytes": 45000,  # TODO: Uncomment and replace the line below
-        "max_collection_payload_size_bytes": 1,
+        "max_collection_payload_size_bytes": 45000,
     })
 
-    # TODO: Uncomment
-    # for i in range(32):
-    #     upsert_points([6, 7, 8, 9, 10]).raise_for_status()
+    for i in range(32):
+        upsert_points([6, 7, 8, 9, 10]).raise_for_status()
 
     # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
     for i in range(32):
         failed_upsert = upsert_points([12, 13, 14, 15, 16])
         if failed_upsert.ok:
-            # TODO: Remove this if block
-            if i == 0:
-                time.sleep(15)
             continue
         assert "Max payload storage size" in failed_upsert.json()['status']['error']
         assert not failed_upsert.ok
