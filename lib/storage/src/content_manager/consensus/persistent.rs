@@ -104,7 +104,7 @@ impl Persistent {
             Self::init(path_json.clone(), first_peer, None)?
         };
 
-        let state = if reinit {
+        let mut state = if reinit {
             if first_peer {
                 // Re-initialize consensus of the first peer is different from the rest
                 // Effectively, we should remove all other peers from voters and learners
@@ -126,8 +126,23 @@ impl Persistent {
             state
         };
 
+        if state.remove_unknown_peer_metadata() {
+            state.save()?;
+        }
+
         log::debug!("State: {:?}", state);
         Ok(state)
+    }
+
+    fn remove_unknown_peer_metadata(&mut self) -> bool {
+        let mut peer_metadata = self.peer_metadata_by_id.write();
+        let peer_metadata_len = peer_metadata.len();
+
+        let peer_address = self.peer_address_by_id.read();
+        peer_metadata.retain(|peer_id, _| peer_address.contains_key(peer_id));
+
+        let is_updated = peer_metadata_len != peer_metadata.len();
+        is_updated
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
