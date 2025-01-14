@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuBudget;
 use futures::future::join_all;
 use itertools::Itertools;
@@ -273,6 +274,8 @@ async fn test_new_segment_when_all_over_capacity() {
 
     assert_eq!(segments.read().len(), 6);
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert some points in the smallest segment to fill capacity
     {
         let segments_read = segments.read();
@@ -294,7 +297,12 @@ async fn test_new_segment_when_all_over_capacity() {
             segment
                 .get()
                 .write()
-                .upsert_point(101, point_id, only_default_vector(&random_vector))
+                .upsert_point(
+                    101,
+                    point_id,
+                    only_default_vector(&random_vector),
+                    &hw_counter,
+                )
                 .unwrap();
         }
     }

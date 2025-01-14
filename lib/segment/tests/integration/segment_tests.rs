@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
@@ -133,6 +134,8 @@ fn test_missed_vector_name() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_segment_3(dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     let exists = segment
         .upsert_point(
             7,
@@ -141,6 +144,7 @@ fn test_missed_vector_name() {
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
+            &hw_counter,
         )
         .unwrap();
     assert!(exists, "this partial vector should overwrite existing");
@@ -153,6 +157,7 @@ fn test_missed_vector_name() {
                 ("vector2".to_owned(), vec![10.]),
                 ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ]),
+            &hw_counter,
         )
         .unwrap();
     assert!(!exists, "this partial vector should not existing");
@@ -163,6 +168,8 @@ fn test_vector_name_not_exists() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_segment_3(dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     let result = segment.upsert_point(
         6,
         6.into(),
@@ -172,6 +179,7 @@ fn test_vector_name_not_exists() {
             ("vector3".to_owned(), vec![5., 6., 7., 8.]),
             ("vector4".to_owned(), vec![5., 6., 7., 8.]),
         ]),
+        &hw_counter,
     );
 
     if let Err(OperationError::VectorNameNotExists { received_name }) = result {
@@ -185,10 +193,12 @@ fn test_vector_name_not_exists() {
 fn ordered_deletion_test() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into()).unwrap();
-        segment.delete_point(6, 4.into()).unwrap();
+        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
+        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(true, false).unwrap();
         segment.current_path.clone()
     };
@@ -217,10 +227,12 @@ fn ordered_deletion_test() {
 fn skip_deleted_segment() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let path = {
         let mut segment = build_segment_1(dir.path());
-        segment.delete_point(6, 5.into()).unwrap();
-        segment.delete_point(6, 4.into()).unwrap();
+        segment.delete_point(6, 5.into(), &hw_counter).unwrap();
+        segment.delete_point(6, 4.into(), &hw_counter).unwrap();
         segment.flush(true, false).unwrap();
         segment.current_path.clone()
     };
@@ -243,13 +255,15 @@ fn test_update_named_vector() {
         .map(|_| random_vector(&mut rng, dim))
         .collect_vec();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .upsert_point(i, i.into(), only_default_vector(vec))
+            .upsert_point(i, i.into(), only_default_vector(vec), &hw_counter)
             .unwrap();
     }
 
@@ -294,7 +308,12 @@ fn test_update_named_vector() {
     for (i, vec) in vectors.iter().enumerate() {
         let i = i as u64;
         segment
-            .update_vectors(i + num_points as u64, i.into(), only_default_vector(vec))
+            .update_vectors(
+                i + num_points as u64,
+                i.into(),
+                only_default_vector(vec),
+                &hw_counter,
+            )
             .unwrap();
     }
 

@@ -226,6 +226,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     #[case] ef: usize,
     #[case] min_acc: f64, // out of 100
 ) {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
 
     let stopped = AtomicBool::new(false);
@@ -274,6 +275,8 @@ fn test_byte_storage_binary_quantization_hnsw(
         );
     }
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim, storage_data_type);
@@ -282,10 +285,15 @@ fn test_byte_storage_binary_quantization_hnsw(
         let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment_byte
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment_byte
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
     }
 

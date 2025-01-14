@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::{OperationError, SegmentFailedState};
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
@@ -14,11 +15,13 @@ fn test_insert_fail_recovery() {
 
     let mut segment = empty_segment(dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     segment
-        .upsert_point(1, 1.into(), only_default_vector(&vec1))
+        .upsert_point(1, 1.into(), only_default_vector(&vec1), &hw_counter)
         .unwrap();
     segment
-        .upsert_point(1, 2.into(), only_default_vector(&vec1))
+        .upsert_point(1, 2.into(), only_default_vector(&vec1), &hw_counter)
         .unwrap();
 
     segment.error_status = Some(SegmentFailedState {
@@ -33,6 +36,7 @@ fn test_insert_fail_recovery() {
         1.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
         &None,
+        &hw_counter,
     );
     assert!(fail_res.is_err());
 
@@ -42,6 +46,7 @@ fn test_insert_fail_recovery() {
         2.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
         &None,
+        &hw_counter,
     );
     assert!(fail_res.is_err());
 
@@ -51,6 +56,7 @@ fn test_insert_fail_recovery() {
         2.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
         &None,
+        &hw_counter,
     );
     assert!(ok_res.is_ok());
     assert!(segment.error_status.is_some());
@@ -61,6 +67,7 @@ fn test_insert_fail_recovery() {
         1.into(),
         &json!({ "color": vec!["red".to_string()] }).into(),
         &None,
+        &hw_counter,
     );
 
     assert!(recover_res.is_ok());

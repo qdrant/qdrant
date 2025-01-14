@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
@@ -50,12 +51,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     }
     let payload = Payload::from(payload);
 
+    let hw_counter = HardwareCounterCell::new();
+
     for id in 0..100000u64 {
         segment
-            .upsert_point(100, id.into(), only_default_vector(&vector))
+            .upsert_point(100, id.into(), only_default_vector(&vector), &hw_counter)
             .unwrap();
         segment
-            .set_payload(100, id.into(), &payload, &None)
+            .set_payload(100, id.into(), &payload, &None, &hw_counter)
             .unwrap();
     }
 

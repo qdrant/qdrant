@@ -101,6 +101,7 @@ fn test_multi_filterable_hnsw(
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
 
     let stopped = AtomicBool::new(false);
@@ -137,6 +138,8 @@ fn test_multi_filterable_hnsw(
 
     let int_key = "int";
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_points {
         let idx = n.into();
@@ -149,10 +152,10 @@ fn test_multi_filterable_hnsw(
 
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vectors)
+            .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
     }
     assert_eq!(

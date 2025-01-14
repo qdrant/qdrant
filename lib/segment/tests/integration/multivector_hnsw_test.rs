@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -81,6 +82,8 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     )
     .unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
@@ -104,10 +107,15 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
 
         let internal_id = segment.id_tracker.borrow().internal_id(idx).unwrap();

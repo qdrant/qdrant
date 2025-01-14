@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
@@ -78,12 +79,14 @@ fn hnsw_quantized_search_test(
         payload_storage_type: Default::default(),
     };
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
         segment
-            .upsert_point(op_num, idx, only_default_vector(&vector))
+            .upsert_point(op_num, idx, only_default_vector(&vector), &hw_counter)
             .unwrap();
         op_num += 1;
     }
@@ -100,7 +103,9 @@ fn hnsw_quantized_search_test(
             }
         )
         .into();
-        segment.set_full_payload(op_num, idx, &payload).unwrap();
+        segment
+            .set_full_payload(op_num, idx, &payload, &hw_counter)
+            .unwrap();
         op_num += 1;
     }
 
@@ -176,7 +181,7 @@ fn hnsw_quantized_search_test(
     for n in 0..num_vectors {
         let idx = n.into();
         segment
-            .upsert_point(op_num, idx, only_default_vector(&zero_vector))
+            .upsert_point(op_num, idx, only_default_vector(&zero_vector), &hw_counter)
             .unwrap();
         op_num += 1;
     }

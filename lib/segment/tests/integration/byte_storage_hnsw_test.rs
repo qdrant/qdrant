@@ -95,6 +95,7 @@ fn test_byte_storage_hnsw(
     #[case] ef: usize,
     #[case] max_failures: usize, // out of 100
 ) {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
     use segment::types::PayloadSchemaType;
@@ -174,17 +175,29 @@ fn test_byte_storage_hnsw(
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload: Payload = json!({int_key:int_payload,}).into();
 
+        let hw_counter = HardwareCounterCell::new();
+
         segment_float
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment_float
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
         segment_byte
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment_byte
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
     }
 

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs::remove_file;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, TelemetryDetail};
 use io::storage_version::VERSION_FILE;
 use itertools::Itertools;
@@ -587,13 +588,15 @@ fn sparse_vector_index_persistence_test() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let vector: VectorInternal = random_sparse_vector(&mut rnd, dim).into();
         let mut named_vector = NamedVectors::default();
         named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
         let idx = n.into();
         segment
-            .upsert_point(n as SeqNumberType, idx, named_vector)
+            .upsert_point(n as SeqNumberType, idx, named_vector, &hw_counter)
             .unwrap();
     }
     segment.flush(true, false).unwrap();
@@ -756,6 +759,8 @@ fn sparse_vector_test_large_index() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let vector: VectorInternal = SparseVector {
         indices: vec![DimId::MAX],
         values: vec![0.0],
@@ -765,7 +770,7 @@ fn sparse_vector_test_large_index() {
     named_vector.insert(SPARSE_VECTOR_NAME.to_owned(), vector);
     let idx = 0.into();
     segment
-        .upsert_point(0 as SeqNumberType, idx, named_vector)
+        .upsert_point(0 as SeqNumberType, idx, named_vector, &hw_counter)
         .unwrap();
 
     let borrowed_vector_index = segment.vector_data[SPARSE_VECTOR_NAME]

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -59,6 +60,8 @@ fn exact_search_test() {
 
     let int_key = "int";
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
@@ -68,10 +71,15 @@ fn exact_search_test() {
         let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
     }
     // let opnum = num_vectors + 1;
