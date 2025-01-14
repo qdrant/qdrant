@@ -591,6 +591,15 @@ message ReshardingInfo {
   uint32 shard_id = 1;
   uint64 peer_id = 2;
   optional ShardKey shard_key = 3;
+  ReshardingDirection direction = 4;
+}
+
+/*
+  Resharding direction, scale up or down in number of shards
+*/
+enum ReshardingDirection {
+  Up = 0; // Scale up, add a new shard
+  Down = 1; // Scale down, remove a shard
 }
 
 message CollectionClusterInfoResponse {

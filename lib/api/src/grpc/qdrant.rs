@@ -1109,6 +1109,8 @@ pub struct ReshardingInfo {
     pub peer_id: u64,
     #[prost(message, optional, tag = "3")]
     pub shard_key: ::core::option::Option<ShardKey>,
+    #[prost(enumeration = "ReshardingDirection", tag = "4")]
+    pub direction: i32,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -1712,6 +1714,36 @@ impl ReplicaState {
             "Recovery" => Some(Self::Recovery),
             "Resharding" => Some(Self::Resharding),
             "ReshardingScaleDown" => Some(Self::ReshardingScaleDown),
+            _ => None,
+        }
+    }
+}
+/// Resharding direction, scale up or down in number of shards
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReshardingDirection {
+    /// Scale up, add a new shard
+    Up = 0,
+    /// Scale down, remove a shard
+    Down = 1,
+}
+impl ReshardingDirection {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ReshardingDirection::Up => "Up",
+            ReshardingDirection::Down => "Down",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Up" => Some(Self::Up),
+            "Down" => Some(Self::Down),
             _ => None,
         }
     }
