@@ -346,28 +346,7 @@ impl ShardHolder {
         // Remove new shard if resharding up
         if is_in_progress && direction == ReshardingDirection::Up {
             if let Some(shard) = self.get_shard(shard_id) {
-                // Ensure all replicas are in expected state
-                for (peer_id, replica_state) in shard.peers() {
-                    match replica_state {
-                        // Valid replica states:
-                        // - in resharding state during migration transfer
-                        // - in active state after migration transfer
-                        // - in partial state during replication
-                        // - in dead state during errors
-                        ReplicaState::Resharding
-                        | ReplicaState::Active
-                        | ReplicaState::Partial
-                        | ReplicaState::Dead => {}
-
-                        state => {
-                            return Err(CollectionError::bad_request(format!(
-                                "peer {peer_id} is in {state:?} state"
-                            )));
-                        }
-                    }
-                }
-
-                // Remove all replicas
+                // Remove all replicas from shard
                 for (peer_id, replica_state) in shard.peers() {
                     log::debug!("removing peer {peer_id} from {shard_id} replica set with state {replica_state:?}");
                     shard.remove_peer(peer_id).await?;
@@ -379,6 +358,7 @@ impl ShardHolder {
 
                 log::debug!("removing {shard_id} replica set, because replica set is empty");
 
+                // Drop the shard
                 if let Some(shard_key) = shard_key {
                     self.key_mapping.write_optional(|key_mapping| {
                         if !key_mapping.contains_key(shard_key) {
@@ -390,7 +370,6 @@ impl ShardHolder {
                         Some(key_mapping)
                     })?;
                 }
-
                 self.drop_and_remove_shard(shard_id).await?;
                 self.shard_id_to_key_mapping.remove(&shard_id);
             } else {
