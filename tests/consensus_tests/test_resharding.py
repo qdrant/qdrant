@@ -88,9 +88,6 @@ def test_resharding_abort_with_replicas(tmp_path: pathlib.Path):
         upsert_points=1000,
     )
 
-    # Get collection cluster info
-    info = get_collection_cluster_info(peer_uris[0], COLLECTION_NAME)
-
     # Migrate resharding points from shard 0 into 1
     migrate_points(peer_uris[0], peer_ids[0], 0, peer_ids[0], 1, "up")
     activate_replica(peer_uris[0], peer_ids[0], 1)
