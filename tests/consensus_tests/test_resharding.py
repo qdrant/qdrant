@@ -73,6 +73,40 @@ def test_resharding_abort(tmp_path: pathlib.Path):
     # Wait for resharding to abort
     wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
 
+def test_resharding_abort_with_replicas(tmp_path: pathlib.Path):
+    """
+    Tests that resharding can be aborted after replication
+    Covers bug <https://github.com/qdrant/qdrant/pull/5792>.
+    """
+
+    # Bootstrap resharding cluster
+    peer_uris, peer_ids = bootstrap_resharding(
+        tmp_path,
+        shard_number=1,
+        replication_factor=3,
+        peers=3,
+        upsert_points=1000,
+    )
+
+    # Migrate resharding points from shard 0 into 1
+    migrate_points(peer_uris[0], peer_ids[0], 0, peer_ids[0], 1, "up")
+    activate_replica(peer_uris[0], peer_ids[0], 1)
+
+    # Replicate new shard twice to match replication factor
+    replicate_shard(peer_uris[0], peer_ids[0], peer_ids[1], 1)
+    replicate_shard(peer_uris[0], peer_ids[0], peer_ids[2], 1)
+
+    # Assert that resharding is still in progress
+    info = get_collection_cluster_info(peer_uris[0], COLLECTION_NAME)
+    assert "resharding_operations" in info and len(info["resharding_operations"]) == 1
+
+    # Abort resharding
+    resp = abort_resharding(peer_uris[0])
+    assert_http_ok(resp)
+
+    # Wait for resharding to abort
+    wait_for_collection_resharding_operations_count(peer_uris[0], COLLECTION_NAME, 0)
+
 def test_resharding_abort_on_delete_collection(tmp_path: pathlib.Path):
     """
     Testa that resharding is automatically aborted, when collection is deleted
@@ -519,6 +553,74 @@ def migrate_points(
 
     # Return replicas used for resharding transfer
     return (peer_id, target_peer_id)
+
+def activate_replica(
+    peer_uri: str,
+    peer_id: int,
+    shard_id: int,
+    collection: str = COLLECTION_NAME,
+):
+    """
+    Activate a resharding replica that as been migrated into.
+    """
+
+    # Activate migrated replica
+    resp = requests.post(f"{peer_uri}/collections/{collection}/cluster", json={
+        "finish_migrating_points": {
+            "peer_id": peer_id,
+            "shard_id": shard_id,
+        }
+    })
+
+    assert_http_ok(resp)
+
+    # Wait for replica activation
+    sleep(1)
+
+    # Assert that resharding transfer finished successfully
+    info = get_collection_cluster_info(peer_uri, collection)
+
+    # Assert that resharding is still in progress
+    assert "resharding_operations" in info and len(info["resharding_operations"]) > 0
+
+    # Assert that replica `to_shard_id`@`to_peer_id` is in `Active` state
+    migration_successful = False
+
+    for replica in all_replicas(info):
+        if replica["shard_id"] == shard_id and replica["peer_id"] == peer_id and replica["state"] in ("Active"):
+            migration_successful = True
+            break
+
+    assert migration_successful
+
+def replicate_shard(
+    peer_uri: str,
+    from_peer_id: int,
+    to_peer_id: int,
+    shard_id: int,
+    collection: str = COLLECTION_NAME,
+):
+    """
+    Replicate a shard from `from_peer_id` to `to_peer_id`
+    """
+
+    # Start resharding transfer
+    resp = requests.post(f"{peer_uri}/collections/{collection}/cluster", json={
+        "replicate_shard": {
+            "from_peer_id": from_peer_id,
+            "to_peer_id": to_peer_id,
+            "shard_id": shard_id,
+            "method": "stream_records",
+        }
+    })
+
+    assert_http_ok(resp)
+
+    # Wait for resharding transfer to start
+    sleep(1)
+
+    # Wait for resharding transfer to finish or abort
+    wait_for_collection_shard_transfers_count(peer_uri, collection, 0)
 
 def assert_resharding_points(peer_uri: str, shard_id: int, target_peer_uri: str, target_shard_id: int):
     """
