@@ -68,15 +68,19 @@ impl Persistent {
         &mut self,
         meta: &SnapshotMetadata,
         address_by_id: PeerAddressById,
-        metadata_by_id: PeerMetadataById,
+        mut metadata_by_id: PeerMetadataById,
     ) -> Result<(), StorageError> {
+        metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
+
         *self.peer_address_by_id.write() = address_by_id;
         *self.peer_metadata_by_id.write() = metadata_by_id;
+
         self.state.conf_state = meta.get_conf_state().clone();
         self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
         self.state.hard_state.commit = meta.index;
         self.apply_progress_queue.set_from_snapshot(meta.index);
         self.latest_snapshot_meta = meta.into();
+
         self.save()
     }
 
