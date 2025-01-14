@@ -16,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuBudget;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
@@ -615,7 +616,12 @@ impl LocalShard {
             }
 
             // Propagate `CollectionError::ServiceError`, but skip other error types.
-            match &CollectionUpdater::update(segments, op_num, update.operation) {
+            match &CollectionUpdater::update(
+                segments,
+                op_num,
+                update.operation,
+                &HardwareCounterCell::disposable(), // Internal operation, no measurement needed.
+            ) {
                 Err(err @ CollectionError::ServiceError { error, backtrace }) => {
                     let path = self.path.display();
 

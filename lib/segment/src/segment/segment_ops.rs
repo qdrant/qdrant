@@ -406,15 +406,6 @@ impl Segment {
 
     /// Retrieve payload by internal ID
     #[inline]
-    pub(super) fn payload_by_offset(
-        &self,
-        point_offset: PointOffsetType,
-    ) -> OperationResult<Payload> {
-        self.payload_index.borrow().get_payload(point_offset)
-    }
-
-    /// Retrieve payload by internal ID
-    #[inline]
     pub(super) fn payload_by_offset_measured(
         &self,
         point_offset: PointOffsetType,

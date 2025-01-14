@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
@@ -482,7 +483,11 @@ pub trait SegmentOptimizer {
             .collect::<Vec<_>>();
         for (point_id, versions) in deleted_points_snapshot {
             optimized_segment
-                .delete_point(versions.operation_version, point_id)
+                .delete_point(
+                    versions.operation_version,
+                    point_id,
+                    &HardwareCounterCell::disposable(), // Internal operation, no need for measurement.
+                )
                 .unwrap();
         }
 
@@ -668,7 +673,11 @@ pub trait SegmentOptimizer {
                     "proxied point deletes should have newer version than point in segment",
                 );
                 optimized_segment
-                    .delete_point(versions.operation_version, point_id)
+                    .delete_point(
+                        versions.operation_version,
+                        point_id,
+                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed!
+                    )
                     .unwrap();
             }
 
