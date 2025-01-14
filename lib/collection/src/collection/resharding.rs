@@ -210,6 +210,10 @@ impl Collection {
             },
         }
 
+        shard_holder
+            .abort_resharding(resharding_key.clone(), force)
+            .await?;
+
         // Decrease the persisted shard count, ensures we don't load dropped shard on restart
         if resharding_key.direction == ReshardingDirection::Up {
             let mut config = self.collection_config.write().await;
@@ -235,8 +239,6 @@ impl Collection {
                 ShardingMethod::Custom => {}
             }
         }
-
-        shard_holder.abort_resharding(resharding_key, force).await?;
 
         Ok(())
     }
