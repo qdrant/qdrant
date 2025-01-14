@@ -130,23 +130,29 @@ impl Persistent {
             state
         };
 
-        if state.remove_unknown_peer_metadata() {
-            state.save()?;
-        }
+        state.remove_unknown_peer_metadata()?;
 
         log::debug!("State: {:?}", state);
         Ok(state)
     }
 
-    fn remove_unknown_peer_metadata(&self) -> bool {
-        let mut peer_metadata = self.peer_metadata_by_id.write();
-        let peer_metadata_len = peer_metadata.len();
+    fn remove_unknown_peer_metadata(&self) -> Result<(), StorageError> {
+        let is_updated = {
+            let mut peer_metadata = self.peer_metadata_by_id.write();
+            let peer_metadata_len = peer_metadata.len();
 
-        let peer_address = self.peer_address_by_id.read();
-        peer_metadata.retain(|peer_id, _| peer_address.contains_key(peer_id));
+            let peer_address = self.peer_address_by_id.read();
+            peer_metadata.retain(|peer_id, _| peer_address.contains_key(peer_id));
 
-        // Return `true`, if `peer_metadata` was updated
-        peer_metadata_len != peer_metadata.len()
+            // Check, if peer metadata was updated
+            peer_metadata_len != peer_metadata.len()
+        };
+
+        if is_updated {
+            self.save()?;
+        }
+
+        Ok(())
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
