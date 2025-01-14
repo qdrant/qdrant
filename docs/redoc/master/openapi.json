@@ -7329,6 +7329,20 @@
             "format": "uint",
             "minimum": 0,
             "nullable": true
+          },
+          "filter_max_conditions": {
+            "description": "Max conditions a filter can have.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "condition_max_size": {
+            "description": "Max size of a condition, eg. items in `MatchAny`.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           }
         }
       },

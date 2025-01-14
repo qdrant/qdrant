@@ -108,22 +108,27 @@ pub trait StrictModeVerification {
         let check_filter = |filter: Option<&Filter>,
                             allow_unindexed_filter: Option<bool>|
          -> Result<(), CollectionError> {
-            if let Some(read_filter) = filter {
-                if allow_unindexed_filter == Some(false) {
-                    if let Some((key, schemas)) = collection.one_unindexed_key(read_filter) {
-                        let possible_schemas_str = schemas
-                            .iter()
-                            .map(|schema| schema.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ");
+            let Some(filter) = filter else {
+                return Ok(());
+            };
 
-                        return Err(CollectionError::strict_mode(
+            // Check for filter indices
+            if allow_unindexed_filter == Some(false) {
+                if let Some((key, schemas)) = collection.one_unindexed_key(filter) {
+                    let possible_schemas_str = schemas
+                        .iter()
+                        .map(|schema| schema.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    return Err(CollectionError::strict_mode(
                             format!("Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]"),
                             "Create an index for this key or use a different filter.",
                         ));
-                    }
                 }
             }
+
+            check_filter_limits(filter, strict_mode_config)?;
 
             Ok(())
         };
@@ -158,6 +163,39 @@ pub trait StrictModeVerification {
     }
 }
 
+fn check_filter_limits(
+    filter: &Filter,
+    strict_mode_config: &StrictModeConfig,
+) -> Result<(), CollectionError> {
+    // Filter condition count limit
+    if let Some(filter_condition_limit) = strict_mode_config.filter_max_conditions {
+        let filter_conditions = filter.total_conditions_count();
+
+        if !check_custom(|| Some(filter_conditions), Some(filter_condition_limit)) {
+            return Err(CollectionError::strict_mode(
+                format!("Filter condition limit reached ({filter_conditions} > {filter_condition_limit})"),
+                "Reduce the amount of conditions of your filter.",
+            ));
+        }
+    }
+
+    // Filter condition size limit
+    if let Some(max_condition_size) = strict_mode_config.condition_max_size {
+        let input_condition_size = filter.max_condition_input_size();
+
+        if !check_custom(|| Some(input_condition_size), Some(max_condition_size)) {
+            return Err(CollectionError::strict_mode(
+                format!(
+                    "Condition size limit reached ({input_condition_size} > {max_condition_size})"
+                ),
+                "Reduce the size of your condition.",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub fn check_timeout(
     timeout: usize,
     strict_mode_config: &StrictModeConfig,
@@ -189,6 +227,7 @@ pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
     let (Some(limit), Some(value)) = (limit, value) else {
         return Ok(());
     };
+
     if value > limit {
         return Err(CollectionError::strict_mode(
             format!("Limit exceeded {value} > {limit} for \"{name}\""),
@@ -197,6 +236,21 @@ pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
     }
 
     Ok(())
+}
+
+pub(crate) fn check_custom<T: PartialOrd>(
+    value_fn: impl FnOnce() -> Option<T>,
+    limit: Option<T>,
+) -> bool {
+    let Some(limit) = limit else {
+        return true;
+    };
+
+    let Some(value) = value_fn() else {
+        return true;
+    };
+
+    value <= limit
 }
 
 impl StrictModeVerification for SearchParams {
@@ -412,6 +466,7 @@ mod test {
             read_rate_limit: None,
             write_rate_limit: None,
             max_collection_payload_size_bytes: None,
+            ..Default::default()
         };
 
         fixture_collection(&strict_mode_config).await

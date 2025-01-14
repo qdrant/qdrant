@@ -725,6 +725,14 @@ pub struct StrictModeConfig {
     /// Max size of a collections payload storage in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_payload_size_bytes: Option<usize>,
+
+    /// Max conditions a filter can have.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_max_conditions: Option<usize>,
+
+    /// Max size of a condition, eg. items in `MatchAny`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition_max_size: Option<usize>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -746,6 +754,8 @@ impl Hash for StrictModeConfig {
             read_rate_limit,
             write_rate_limit,
             max_collection_payload_size_bytes,
+            filter_max_conditions,
+            condition_max_size,
         } = self;
         (
             enabled,
@@ -759,7 +769,11 @@ impl Hash for StrictModeConfig {
             max_collection_vector_size_bytes,
             read_rate_limit,
             write_rate_limit,
-            max_collection_payload_size_bytes,
+            (
+                max_collection_payload_size_bytes,
+                filter_max_conditions,
+                condition_max_size,
+            ),
         )
             .hash(state);
     }
@@ -1513,6 +1527,22 @@ pub enum AnyVariants {
     Integers(IndexSet<IntPayloadType, FnvBuildHasher>),
 }
 
+impl AnyVariants {
+    pub fn len(&self) -> usize {
+        match self {
+            AnyVariants::Strings(index_set) => index_set.len(),
+            AnyVariants::Integers(index_set) => index_set.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            AnyVariants::Strings(index_set) => index_set.is_empty(),
+            AnyVariants::Integers(index_set) => index_set.is_empty(),
+        }
+    }
+}
+
 /// Exact match of the given value
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -2060,6 +2090,19 @@ impl FieldCondition {
             }
         )
     }
+
+    fn input_size(&self) -> usize {
+        if self.r#match.is_none() {
+            return 0;
+        }
+
+        match self.r#match.as_ref().unwrap() {
+            Match::Any(match_any) => match_any.any.len(),
+            Match::Except(match_except) => match_except.except.len(),
+            Match::Value(_) => 0,
+            Match::Text(_) => 0,
+        }
+    }
 }
 
 pub fn validate_field_condition(field_condition: &FieldCondition) -> Result<(), ValidationError> {
@@ -2221,6 +2264,34 @@ impl Condition {
         Self::Nested(NestedCondition {
             nested: Nested { key, filter },
         })
+    }
+
+    pub fn size_estimation(&self) -> usize {
+        match self {
+            Condition::Field(field_condition) => field_condition.input_size(),
+            Condition::HasId(has_id_condition) => has_id_condition.has_id.len(),
+            Condition::Filter(filter) => filter.max_condition_input_size(),
+            Condition::Nested(nested) => nested.filter().max_condition_input_size(),
+            Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::HasVector(_)
+            | Condition::CustomIdChecker(_) => 0,
+        }
+    }
+
+    pub fn sub_conditions_count(&self) -> usize {
+        match self {
+            Condition::Nested(nested_condition) => {
+                nested_condition.filter().total_conditions_count()
+            }
+            Condition::Filter(filter) => filter.total_conditions_count(),
+            Condition::Field(_)
+            | Condition::IsEmpty(_)
+            | Condition::IsNull(_)
+            | Condition::CustomIdChecker(_)
+            | Condition::HasId(_)
+            | Condition::HasVector(_) => 0,
+        }
     }
 }
 
@@ -2555,6 +2626,28 @@ impl Filter {
             .chain(self.must_not.iter().flatten())
             .chain(self.should.iter().flatten())
             .chain(self.min_should.iter().flat_map(|i| &i.conditions))
+    }
+
+    /// Returns the total amount of conditions of the filter, including all nested filter.
+    pub fn total_conditions_count(&self) -> usize {
+        fn count_all_conditions(field: Option<&Vec<Condition>>) -> usize {
+            field
+                .map(|i| i.len() + i.iter().map(|j| j.sub_conditions_count()).sum::<usize>())
+                .unwrap_or(0)
+        }
+
+        count_all_conditions(self.should.as_ref())
+            + count_all_conditions(self.min_should.as_ref().map(|i| &i.conditions))
+            + count_all_conditions(self.must.as_ref())
+            + count_all_conditions(self.must_not.as_ref())
+    }
+
+    /// Returns the size of the largest condition.
+    pub fn max_condition_input_size(&self) -> usize {
+        self.iter_conditions()
+            .map(|i| i.size_estimation())
+            .max()
+            .unwrap_or(0)
     }
 }
 
