@@ -240,7 +240,7 @@ impl ShardHolder {
             )));
         }
 
-        // - it's safe to run, if write hash ring was not committed yet
+        // - it's safe to run, if read hash ring was not committed yet
         if state.stage < ReshardStage::ReadHashRingCommitted {
             return Ok(());
         }
@@ -368,9 +368,11 @@ impl ShardHolder {
 
                         let mut key_mapping = key_mapping.clone();
                         key_mapping.get_mut(shard_key).unwrap().remove(&shard_id);
+
                         Some(key_mapping)
                     })?;
                 }
+
                 self.drop_and_remove_shard(shard_id).await?;
                 self.shard_id_to_key_mapping.remove(&shard_id);
             } else {
