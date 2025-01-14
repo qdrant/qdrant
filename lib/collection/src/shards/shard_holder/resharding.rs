@@ -231,7 +231,7 @@ impl ShardHolder {
             )));
         };
 
-        // - do not abort if there is no active reshardinog operation with that key
+        // - do not abort if there is no active resharding operation with that key
         if !state.matches(resharding_key) {
             return Err(CollectionError::bad_request(format!(
                 "can't abort resharding {resharding_key}, \
