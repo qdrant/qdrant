@@ -261,7 +261,7 @@ impl ShardHolder {
         let ReshardKey {
             uuid: _,
             direction,
-            peer_id,
+            peer_id: _,
             shard_id,
             ref shard_key,
         } = resharding_key;
