@@ -449,7 +449,7 @@ pub(crate) fn sync_points(
                 Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
                 Err(e) => return Err(e),
             };
-            let payload = segment.payload_measured(id, hw_counter)?;
+            let payload = segment.payload(id, hw_counter)?;
             let point = id_to_point.get(&id).unwrap();
             if point.get_vectors() != all_vectors {
                 points_to_update.push(*point);

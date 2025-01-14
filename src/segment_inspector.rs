@@ -64,7 +64,7 @@ fn main() {
             if internal_id.is_some() {
                 let version = segment.point_version(point_id);
                 let payload = segment
-                    .payload_measured(point_id, &HardwareCounterCell::disposable())
+                    .payload(point_id, &HardwareCounterCell::disposable())
                     .unwrap();
                 // let vectors = segment.all_vectors(point_id).unwrap();
 

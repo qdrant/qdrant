@@ -365,9 +365,7 @@ mod tests {
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
-            let payload = segment_guard
-                .payload_measured(point_id, &hw_counter)
-                .unwrap();
+            let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
                 .into_iter()

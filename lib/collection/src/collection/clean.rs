@@ -294,7 +294,7 @@ async fn clean_task(
                 true,
                 None,
                 None,
-                HwMeasurementAcc::disposable(),
+                HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
             )
             .await
         {

@@ -654,8 +654,7 @@ impl<'s> SegmentHolder {
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
                             let mut all_vectors = write_segment.all_vectors(point_id)?;
-                            let mut payload =
-                                write_segment.payload_measured(point_id, hw_counter)?;
+                            let mut payload = write_segment.payload(point_id, hw_counter)?;
 
                             point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
@@ -1647,7 +1646,7 @@ mod tests {
             assert_ne!(vector, VectorInternal::Dense(vec![9.0; 4]));
             assert_eq!(
                 read_segment_2
-                    .payload_measured(123.into(), &hw_counter)
+                    .payload(123.into(), &hw_counter)
                     .unwrap()
                     .get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
                 &Value::from(42)
@@ -1675,9 +1674,7 @@ mod tests {
 
         let new_vector = read_segment_1.vector("", 123.into()).unwrap().unwrap();
         assert_eq!(new_vector, VectorInternal::Dense(vec![9.0; 4]));
-        let new_payload_value = read_segment_1
-            .payload_measured(123.into(), &hw_counter)
-            .unwrap();
+        let new_payload_value = read_segment_1.payload(123.into(), &hw_counter).unwrap();
         assert_eq!(
             new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
             &Value::from(2)

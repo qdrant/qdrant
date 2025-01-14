@@ -25,6 +25,7 @@ pub trait PayloadStorage {
         key: &JsonPath,
     ) -> OperationResult<()>;
 
+    // TODO(io_measurement): Replace with `get_measured`
     /// Get payload for point. If no payload found, return empty payload
     fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
 

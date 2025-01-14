@@ -229,8 +229,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         let restored_vectors = restored_segment.all_vectors(id).unwrap();
         assert_eq!(vectors, restored_vectors);
 
-        let payload = segment.payload_measured(id, &hw_counter).unwrap();
-        let restored_payload = restored_segment.payload_measured(id, &hw_counter).unwrap();
+        let payload = segment.payload(id, &hw_counter).unwrap();
+        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }

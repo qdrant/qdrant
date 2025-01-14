@@ -430,9 +430,9 @@ impl SegmentsSearcher {
                         id,
                         payload: if with_payload.enable {
                             if let Some(selector) = &with_payload.payload_selector {
-                                Some(selector.process(segment.payload_measured(id, &hw_counter)?))
+                                Some(selector.process(segment.payload(id, &hw_counter)?))
                             } else {
-                                Some(segment.payload_measured(id, &hw_counter)?)
+                                Some(segment.payload(id, &hw_counter)?)
                             }
                         } else {
                             None

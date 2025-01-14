@@ -216,19 +216,10 @@ impl<V: Blob> BlobStore<V> {
         raw_sections
     }
 
+    // TODO(io_measurement): Replace with `get_value_measured`
     /// Get the value for a given point offset
     pub fn get_value(&self, point_offset: PointOffset) -> Option<V> {
-        let ValuePointer {
-            page_id,
-            block_offset,
-            length,
-        } = self.get_pointer(point_offset)?;
-
-        let raw = self.read_from_pages(page_id, block_offset, length);
-        let decompressed = self.decompress(raw);
-        let value = V::from_bytes(&decompressed);
-
-        Some(value)
+        self.get_value_measured(point_offset, &HardwareCounterCell::disposable())
     }
 
     /// Get the value for a given point offset

@@ -118,7 +118,7 @@ pub trait SegmentEntry {
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
-    fn payload_measured(
+    fn payload(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,

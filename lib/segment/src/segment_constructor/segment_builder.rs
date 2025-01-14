@@ -8,6 +8,7 @@ use std::sync::Arc;
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
@@ -336,8 +337,8 @@ impl SegmentBuilder {
 
                 let old_internal_id = point_data.internal_id;
 
-                let other_payload =
-                    payloads[point_data.segment_index].get_payload(old_internal_id)?;
+                let other_payload = payloads[point_data.segment_index]
+                    .get_payload(old_internal_id, &HardwareCounterCell::disposable())?; // Internal operation, no measurement needed!
 
                 match self.id_tracker.internal_id(point_data.external_id) {
                     Some(existing_internal_id) => {

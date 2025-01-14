@@ -174,11 +174,7 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn get_payload(&self, _point_id: PointOffsetType) -> OperationResult<Payload> {
-        unreachable!()
-    }
-
-    fn get_payload_measured(
+    fn get_payload(
         &self,
         _point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell,

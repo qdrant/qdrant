@@ -572,7 +572,9 @@ impl PayloadIndex for StructPayloadIndex {
             self.payload.borrow_mut().set(point_id, payload)?;
         };
 
-        let updated_payload = self.get_payload(point_id)?;
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Implement!!
+
+        let updated_payload = self.get_payload(point_id, &hw_counter)?;
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;
@@ -591,11 +593,7 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn get_payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
-        self.payload.borrow().get(point_id)
-    }
-
-    fn get_payload_measured(
+    fn get_payload(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,

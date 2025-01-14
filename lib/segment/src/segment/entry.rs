@@ -304,18 +304,13 @@ impl SegmentEntry for Segment {
         Ok(result)
     }
 
-    // fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
-    //     let internal_id = self.lookup_internal_id(point_id)?;
-    //     self.payload_by_offset(internal_id)
-    // }
-
-    fn payload_measured(
+    fn payload(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_by_offset_measured(internal_id, hw_counter)
+        self.payload_by_offset(internal_id, hw_counter)
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {

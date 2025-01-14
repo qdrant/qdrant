@@ -177,7 +177,7 @@ impl ProxySegment {
 
             let (all_vectors, payload) = (
                 wrapped_segment_guard.all_vectors(point_id)?,
-                wrapped_segment_guard.payload_measured(point_id, hw_counter)?,
+                wrapped_segment_guard.payload(point_id, hw_counter)?,
             );
 
             {
@@ -657,7 +657,7 @@ impl SegmentEntry for ProxySegment {
         Ok(result)
     }
 
-    fn payload_measured(
+    fn payload(
         &self,
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
@@ -666,19 +666,19 @@ impl SegmentEntry for ProxySegment {
             self.write_segment
                 .get()
                 .read()
-                .payload_measured(point_id, hw_counter)
+                .payload(point_id, hw_counter)
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.payload_measured(point_id, hw_counter);
+                    return segment_guard.payload(point_id, hw_counter);
                 }
             }
             self.wrapped_segment
                 .get()
                 .read()
-                .payload_measured(point_id, hw_counter)
+                .payload(point_id, hw_counter)
         };
     }
 

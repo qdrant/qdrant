@@ -406,14 +406,14 @@ impl Segment {
 
     /// Retrieve payload by internal ID
     #[inline]
-    pub(super) fn payload_by_offset_measured(
+    pub(super) fn payload_by_offset(
         &self,
         point_offset: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         self.payload_index
             .borrow()
-            .get_payload_measured(point_offset, hw_counter)
+            .get_payload(point_offset, hw_counter)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {

@@ -100,9 +100,7 @@ pub trait PayloadIndex {
     ) -> OperationResult<()>;
 
     /// Get payload for point
-    fn get_payload(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
-
-    fn get_payload_measured(
+    fn get_payload(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
