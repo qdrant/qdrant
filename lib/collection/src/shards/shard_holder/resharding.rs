@@ -344,7 +344,7 @@ impl ShardHolder {
         }
 
         // Remove new shard if resharding up
-        if (is_in_progress || force) && direction == ReshardingDirection::Up {
+        if is_in_progress && direction == ReshardingDirection::Up {
             if let Some(shard) = self.get_shard(shard_id) {
                 // Ensure all replicas are in expected state
                 for (peer_id, replica_state) in shard.peers() {
