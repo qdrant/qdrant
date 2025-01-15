@@ -1647,9 +1647,9 @@ dependencies = [
 
 [[package]]
 name = "delegate"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc2323e10c92e1cf4d86e11538512e6dc03ceb586842970b6332af3d4046a046"
+checksum = "297806318ef30ad066b15792a8372858020ae3ca2e414ee6c2133b1eb9e9e945"
 dependencies = [
  "proc-macro2",
  "quote",
