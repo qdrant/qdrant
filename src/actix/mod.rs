@@ -1,9 +1,7 @@
-#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod actix_telemetry;
 pub mod api;
 mod auth;
 mod certificate_helpers;
-#[allow(dead_code)] // May contain functions used in different binaries. Not actually dead
 pub mod helpers;
 pub mod web_ui;
 
@@ -53,7 +51,6 @@ pub async fn index() -> impl Responder {
     HttpResponse::Ok().json(VersionInfo::default())
 }
 
-#[allow(dead_code)]
 pub fn init(
     dispatcher: Arc<Dispatcher>,
     telemetry_collector: Arc<tokio::sync::Mutex<TelemetryCollector>>,

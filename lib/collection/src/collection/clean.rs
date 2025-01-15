@@ -186,7 +186,6 @@ impl ShardCleanTasks {
 /// used in context of resharding, where points are transferred to different shards.
 pub(super) struct ShardCleanTask {
     /// Handle of the clean task
-    #[allow(dead_code)]
     handle: JoinHandle<()>,
     /// Watch channel with current status of the task
     status: Receiver<ShardCleanStatus>,

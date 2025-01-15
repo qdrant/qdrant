@@ -34,7 +34,7 @@ pub struct HealthChecker {
     // Signal to the health checker task, that the API was called.
     // Used to drive the health checker task and avoid constant polling.
     check_ready_signal: Arc<sync::Notify>,
-    cancel: cancel::DropGuard,
+    _cancel: cancel::DropGuard,
 }
 
 impl HealthChecker {
@@ -58,7 +58,7 @@ impl HealthChecker {
             is_ready: task.is_ready.clone(),
             is_ready_signal: task.is_ready_signal.clone(),
             check_ready_signal: task.check_ready_signal.clone(),
-            cancel: task.cancel.clone().drop_guard(),
+            _cancel: task.cancel.clone().drop_guard(),
         };
 
         let task = runtime.spawn(task.exec());

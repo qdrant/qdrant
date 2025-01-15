@@ -21,6 +21,7 @@ pub struct InvertedIndexCompressedImmutableRam<W: Weight> {
 }
 
 impl<W: Weight> InvertedIndexCompressedImmutableRam<W> {
+    #[allow(dead_code)]
     pub(super) fn into_postings(self) -> Vec<CompressedPostingList<W>> {
         self.postings
     }

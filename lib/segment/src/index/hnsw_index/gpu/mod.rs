@@ -119,9 +119,8 @@ mod tests {
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
     use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
-    #[allow(dead_code)]
     pub struct GpuGraphTestData {
-        pub dir: TempDir,
+        pub _temp_dir: TempDir,
         pub vector_storage: VectorStorageEnum,
         pub vector_holder: TestRawScorerProducer<CosineMetric>,
         pub graph_layers_builder: GraphLayersBuilder,
@@ -141,8 +140,8 @@ mod tests {
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
 
         // upload vectors to storage
-        let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let temp_dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
+        let db = open_db(temp_dir.path(), &[DB_VECTOR_CF]).unwrap();
         let mut storage = open_simple_dense_vector_storage(
             db,
             DB_VECTOR_CF,
@@ -184,7 +183,7 @@ mod tests {
             .collect();
 
         GpuGraphTestData {
-            dir,
+            _temp_dir: temp_dir,
             vector_storage: storage,
             vector_holder,
             graph_layers_builder,
