@@ -38,7 +38,7 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::CreateCollection) -> Result<Self, Self::Error> {
-        Ok(Self::CreateCollection(CreateCollectionOperation::new(
+        let op = CreateCollectionOperation::new(
             value.collection_name,
             CreateCollection {
                 vectors: match value.vectors_config.and_then(|config| config.config) {
@@ -71,7 +71,8 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
                 strict_mode_config: value.strict_mode_config.map(strict_mode_from_api),
                 uuid: None,
             },
-        )))
+        )?;
+        Ok(CollectionMetaOperations::CreateCollection(op))
     }
 }
 

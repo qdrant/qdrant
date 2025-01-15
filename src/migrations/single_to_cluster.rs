@@ -65,7 +65,8 @@ pub async fn handle_existing_collections(
                 strict_mode_config: collection_state.config.strict_mode_config,
                 uuid: collection_state.config.uuid,
             },
-        );
+        )
+        .expect("Failed to create collection operation");
 
         let mut consensus_operations = Vec::new();
 
