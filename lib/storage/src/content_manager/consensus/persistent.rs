@@ -68,15 +68,19 @@ impl Persistent {
         &mut self,
         meta: &SnapshotMetadata,
         address_by_id: PeerAddressById,
-        metadata_by_id: PeerMetadataById,
+        mut metadata_by_id: PeerMetadataById,
     ) -> Result<(), StorageError> {
+        metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
+
         *self.peer_address_by_id.write() = address_by_id;
         *self.peer_metadata_by_id.write() = metadata_by_id;
+
         self.state.conf_state = meta.get_conf_state().clone();
         self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
         self.state.hard_state.commit = meta.index;
         self.apply_progress_queue.set_from_snapshot(meta.index);
         self.latest_snapshot_meta = meta.into();
+
         self.save()
     }
 
@@ -126,8 +130,29 @@ impl Persistent {
             state
         };
 
+        state.remove_unknown_peer_metadata()?;
+
         log::debug!("State: {:?}", state);
         Ok(state)
+    }
+
+    fn remove_unknown_peer_metadata(&self) -> Result<(), StorageError> {
+        let is_updated = {
+            let mut peer_metadata = self.peer_metadata_by_id.write();
+            let peer_metadata_len = peer_metadata.len();
+
+            let peer_address = self.peer_address_by_id.read();
+            peer_metadata.retain(|peer_id, _| peer_address.contains_key(peer_id));
+
+            // Check, if peer metadata was updated
+            peer_metadata_len != peer_metadata.len()
+        };
+
+        if is_updated {
+            self.save()?;
+        }
+
+        Ok(())
     }
 
     pub fn unapplied_entities_count(&self) -> usize {
