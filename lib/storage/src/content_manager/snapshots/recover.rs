@@ -148,7 +148,7 @@ async fn _do_recover_from_snapshot(
                 CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
                     collection_pass.to_string(),
                     snapshot_config.clone().into(),
-                ));
+                )?);
             dispatcher
                 .submit_collection_meta_op(operation, access, None)
                 .await?;
