@@ -586,7 +586,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         // plus we need to make additional removing in the `channel_pool`.
         // So we handle `remove_peer` inside the `toc` and persist changes in the `persistent` after that.
         self.toc.remove_peer(peer_id)?;
-        self.persistent.read().save()
+
+        let persistent = self.persistent.read();
+        persistent.peer_metadata_by_id.write().remove(&peer_id);
+        persistent.save()
     }
 
     async fn await_receiver(
