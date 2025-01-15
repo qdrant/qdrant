@@ -27,19 +27,13 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install mold
       uses: rui314/setup-mold@v1
-    - name: Configure Rust for platform
+    - name: Enable mold on Linux
       run: |
-        mkdir .cargo
         if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          mkdir .cargo
           echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
           echo "linker = \"clang\"" >> .cargo/config.toml
           echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
-        elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-          echo "[target.x86_64-pc-windows-msvc]" >> .cargo/config.toml
-          echo "linker = \"link.exe\"" >> .cargo/config.toml
-        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-          echo "[target.x86_64-apple-darwin]" >> .cargo/config.toml
-          echo "linker = \"cc\"" >> .cargo/config.toml
         fi
       shell: bash
     - name: Install nextest

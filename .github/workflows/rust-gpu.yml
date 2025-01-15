@@ -24,6 +24,17 @@ jobs:
       uses: arduino/setup-protoc@v3
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install mold
+      uses: rui314/setup-mold@v1
+    - name: Enable mold on Linux
+      run: |
+        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
+          mkdir .cargo
+          echo "[target.x86_64-unknown-linux-gnu]" >> .cargo/config.toml
+          echo "linker = \"clang\"" >> .cargo/config.toml
+          echo "rustflags = [\"-C\", \"link-arg=-fuse-ld=/usr/local/bin/mold\"]" >> .cargo/config.toml
+        fi
+      shell: bash
     - name: Install nextest
       uses: taiki-e/install-action@nextest
     - name: Install Vulkan packages
