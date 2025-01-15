@@ -151,7 +151,7 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ListCollectionAliasesRequest.collection_name", "length(min = 1, max = 255)"),
             ("HnswConfigDiff.ef_construct", "range(min = 4)"),
             ("WalConfigDiff.wal_capacity_mb", "range(min = 1)"),
-            ("OptimizersConfigDiff.deleted_threshold", "range(min = 1.0)"),
+            ("OptimizersConfigDiff.deleted_threshold", "range(min = 0.0, max = 1.0)"),
             ("OptimizersConfigDiff.vacuum_min_vector_number", "range(min = 100)"),
             ("OptimizersConfigDiff.max_segment_size", "range(min = 1)"),
             ("VectorsConfig.config", ""),
