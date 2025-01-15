@@ -112,3 +112,20 @@ def test_sparse_dense_vector_naming_validations(collection_name):
     )
     assert not response.ok
     assert 'Dense and sparse vector names must be unique - duplicate found with `image`' in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "size": 2,
+                "distance": "Euclid"
+            },
+            "sparse_vectors": {
+                "": {}
+            }
+        }
+    )
+    assert not response.ok
+    assert 'Dense and sparse vector names must be unique - duplicate found with ``' in response.json()["status"]["error"]
