@@ -335,7 +335,7 @@ pub struct WalConfigDiff {
 pub struct OptimizersConfigDiff {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[prost(double, optional, tag = "1")]
-    #[validate(range(min = 1.0))]
+    #[validate(range(min = 0.0, max = 1.0))]
     pub deleted_threshold: ::core::option::Option<f64>,
     /// The minimal number of vectors in a segment, required to perform segment optimization
     #[prost(uint64, optional, tag = "2")]
