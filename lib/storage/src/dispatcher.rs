@@ -22,6 +22,7 @@ use crate::{
 pub struct Dispatcher {
     toc: Arc<TableOfContent>,
     consensus_state: Option<ConsensusStateRef>,
+    resharding_enabled: bool,
 }
 
 impl Dispatcher {
@@ -29,12 +30,14 @@ impl Dispatcher {
         Self {
             toc,
             consensus_state: None,
+            resharding_enabled: false,
         }
     }
 
-    pub fn with_consensus(self, state_ref: ConsensusStateRef) -> Self {
+    pub fn with_consensus(self, state_ref: ConsensusStateRef, resharding_enabled: bool) -> Self {
         Self {
             consensus_state: Some(state_ref),
+            resharding_enabled,
             ..self
         }
     }
@@ -52,6 +55,10 @@ impl Dispatcher {
 
     pub fn consensus_state(&self) -> Option<&ConsensusStateRef> {
         self.consensus_state.as_ref()
+    }
+
+    pub fn is_resharding_enabled(&self) -> bool {
+        self.resharding_enabled
     }
 
     /// If `wait_timeout` is not supplied - then default duration will be used.

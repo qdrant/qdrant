@@ -77,6 +77,9 @@ pub struct ClusterConfig {
     #[serde(default)]
     #[validate(nested)]
     pub consensus: ConsensusConfig,
+    #[allow(dead_code)] // `schema_generator` complains 🙄
+    #[serde(default)]
+    pub resharding_enabled: bool, // disabled by default
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
