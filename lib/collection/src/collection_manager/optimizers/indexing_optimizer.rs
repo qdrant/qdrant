@@ -293,12 +293,14 @@ mod tests {
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
-    use segment::types::{Distance, Payload, PayloadSchemaType};
+    use segment::types::{Distance, Payload, PayloadSchemaType, VectorNameBuf};
     use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
+    use crate::collection_manager::fixtures::{
+        random_multi_vec_segment, random_segment, VECTOR1_NAME, VECTOR2_NAME,
+    };
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
     use crate::collection_manager::segments_updater::{
@@ -338,12 +340,12 @@ mod tests {
 
         let large_segment_id = holder.add_new(large_segment);
 
-        let vectors_config: BTreeMap<String, VectorParams> = segment_config
+        let vectors_config: BTreeMap<VectorNameBuf, VectorParams> = segment_config
             .vector_data
             .iter()
             .map(|(name, params)| {
                 (
-                    name.to_string(),
+                    name.to_owned(),
                     VectorParamsBuilder::new(params.size as u64, params.distance).build(),
                 )
             })
@@ -413,8 +415,8 @@ mod tests {
 
         for config in configs {
             assert_eq!(config.vector_data.len(), 2);
-            assert_eq!(config.vector_data.get("vector1").unwrap().size, dim1);
-            assert_eq!(config.vector_data.get("vector2").unwrap().size, dim2);
+            assert_eq!(config.vector_data.get(VECTOR1_NAME).unwrap().size, dim1);
+            assert_eq!(config.vector_data.get(VECTOR2_NAME).unwrap().size, dim2);
         }
     }
 
@@ -907,7 +909,9 @@ mod tests {
                 .filter(|segment| segment.total_point_count() > 0)
                 .for_each(|segment| {
                     assert!(
-                        !segment.config().vector_data[""].storage_type.is_on_disk(),
+                        !segment.config().vector_data[DEFAULT_VECTOR_NAME]
+                            .storage_type
+                            .is_on_disk(),
                         "segment must not be on disk with mmap",
                     );
                 });
@@ -916,7 +920,7 @@ mod tests {
         // Remove explicit on_disk flag and go back to default
         collection_params
             .vectors
-            .get_params_mut("")
+            .get_params_mut(DEFAULT_VECTOR_NAME)
             .unwrap()
             .on_disk
             .take();
@@ -978,7 +982,9 @@ mod tests {
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert!(
-                    segment.config().vector_data[""].storage_type.is_on_disk(),
+                    segment.config().vector_data[DEFAULT_VECTOR_NAME]
+                        .storage_type
+                        .is_on_disk(),
                     "segment must be on disk with mmap",
                 );
             });

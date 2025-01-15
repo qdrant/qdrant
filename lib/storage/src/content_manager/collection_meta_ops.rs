@@ -16,6 +16,7 @@ use collection::shards::{replica_set, CollectionId};
 use schemars::JsonSchema;
 use segment::types::{
     PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
+    VectorNameBuf,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -171,7 +172,7 @@ pub struct CreateCollection {
     pub quantization_config: Option<QuantizationConfig>,
     /// Sparse vector data config.
     #[validate(nested)]
-    pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
+    pub sparse_vectors: Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
     /// Strict-mode config.
     #[validate(nested)]
     pub strict_mode_config: Option<StrictModeConfig>,

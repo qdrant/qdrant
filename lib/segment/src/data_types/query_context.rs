@@ -9,6 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
+use crate::types::{VectorName, VectorNameBuf};
 
 #[derive(Debug)]
 pub struct QueryContext {
@@ -26,7 +27,7 @@ pub struct QueryContext {
     /// Statistics of the element frequency,
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
-    idf: tiny_map::TinyMap<String, HashMap<DimId, usize>>,
+    idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
 
     /// Structure to accumulate and report hardware usage.
     /// Holds reference to the shared drain, which is used to accumulate the values.
@@ -70,12 +71,12 @@ impl QueryContext {
 
     /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
     /// with zeros, so the statistics can be collected.
-    pub fn init_idf(&mut self, vector_name: &str, indices: &[DimId]) {
+    pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId]) {
         // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
         let idf = if let Some(idf) = self.idf.get_mut(vector_name) {
             idf
         } else {
-            self.idf.insert(vector_name.to_string(), HashMap::default());
+            self.idf.insert(vector_name.to_owned(), HashMap::default());
             self.idf.get_mut(vector_name).unwrap()
         };
 
@@ -84,7 +85,7 @@ impl QueryContext {
         }
     }
 
-    pub fn mut_idf(&mut self) -> &mut tiny_map::TinyMap<String, HashMap<DimId, usize>> {
+    pub fn mut_idf(&mut self) -> &mut tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>> {
         &mut self.idf
     }
 
@@ -123,7 +124,7 @@ impl<'a> SegmentQueryContext<'a> {
         self.query_context.available_point_count()
     }
 
-    pub fn get_vector_context(&self, vector_name: &str) -> VectorQueryContext {
+    pub fn get_vector_context(&self, vector_name: &VectorName) -> VectorQueryContext {
         VectorQueryContext {
             available_point_count: self.query_context.available_point_count,
             search_optimized_threshold_kb: self.query_context.search_optimized_threshold_kb,

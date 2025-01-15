@@ -10,7 +10,7 @@ use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Distance, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
-    VectorDataConfig, VectorStorageType,
+    VectorDataConfig, VectorName, VectorStorageType,
 };
 use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
@@ -20,6 +20,7 @@ pub fn empty_segment(path: &Path) -> Segment {
 }
 
 pub const PAYLOAD_KEY: &str = "color";
+pub const SPARSE_VECTOR_NAME: &VectorName = "sparse";
 
 pub fn build_segment_1(path: &Path) -> Segment {
     let mut segment1 = empty_segment(path);
@@ -127,7 +128,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
         &SegmentConfig {
             vector_data: HashMap::from([
                 (
-                    "vector1".to_owned(),
+                    "vector1".into(),
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Dot,
@@ -139,7 +140,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     },
                 ),
                 (
-                    "vector2".to_owned(),
+                    "vector2".into(),
                     VectorDataConfig {
                         size: 1,
                         distance: Distance::Dot,
@@ -151,7 +152,7 @@ pub fn build_segment_3(path: &Path) -> Segment {
                     },
                 ),
                 (
-                    "vector3".to_owned(),
+                    "vector3".into(),
                     VectorDataConfig {
                         size: 4,
                         distance: Distance::Euclid,
@@ -172,9 +173,9 @@ pub fn build_segment_3(path: &Path) -> Segment {
 
     let collect_points_data = |vectors: &[DenseVector]| {
         NamedVectors::from_pairs([
-            ("vector1".to_owned(), vectors[0].clone()),
-            ("vector2".to_owned(), vectors[1].clone()),
-            ("vector3".to_owned(), vectors[2].clone()),
+            ("vector1".into(), vectors[0].clone()),
+            ("vector2".into(), vectors[1].clone()),
+            ("vector3".into(), vectors[2].clone()),
         ])
     };
 
@@ -251,7 +252,7 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
         &SegmentConfig {
             vector_data: Default::default(),
             sparse_vector_data: HashMap::from([(
-                "sparse".to_owned(),
+                SPARSE_VECTOR_NAME.to_owned(),
                 SparseVectorDataConfig {
                     index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
                     storage_type: SparseVectorStorageType::default(),
@@ -273,35 +274,35 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
         .upsert_point(
             1,
             1.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec1)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec1)),
         )
         .unwrap();
     segment1
         .upsert_point(
             2,
             2.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec2)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec2)),
         )
         .unwrap();
     segment1
         .upsert_point(
             3,
             3.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec3)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec3)),
         )
         .unwrap();
     segment1
         .upsert_point(
             4,
             4.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec4)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec4)),
         )
         .unwrap();
     segment1
         .upsert_point(
             5,
             5.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec5)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec5)),
         )
         .unwrap();
 
@@ -336,7 +337,7 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
         &SegmentConfig {
             vector_data: Default::default(),
             sparse_vector_data: HashMap::from([(
-                "sparse".to_owned(),
+                SPARSE_VECTOR_NAME.to_owned(),
                 SparseVectorDataConfig {
                     index: SparseIndexConfig::new(None, SparseIndexType::MutableRam, None),
                     storage_type: SparseVectorStorageType::default(),
@@ -358,35 +359,35 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
         .upsert_point(
             11,
             11.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec1)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec1)),
         )
         .unwrap();
     segment2
         .upsert_point(
             12,
             12.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec2)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec2)),
         )
         .unwrap();
     segment2
         .upsert_point(
             13,
             13.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec3)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec3)),
         )
         .unwrap();
     segment2
         .upsert_point(
             14,
             14.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec4)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec4)),
         )
         .unwrap();
     segment2
         .upsert_point(
             15,
             15.into(),
-            NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec5)),
+            NamedVectors::from_ref(SPARSE_VECTOR_NAME, VectorRef::Sparse(&vec5)),
         )
         .unwrap();
 

@@ -35,7 +35,8 @@ use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::load_segment;
 use crate::types::{
-    ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType,
+    ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SegmentState,
+    SeqNumberType, VectorNameBuf,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -45,7 +46,7 @@ pub struct SegmentBuilder {
     version: SeqNumberType,
     id_tracker: IdTrackerEnum,
     payload_storage: PayloadStorageEnum,
-    vector_storages: HashMap<String, VectorStorageEnum>,
+    vector_storages: HashMap<VectorNameBuf, VectorStorageEnum>,
     segment_config: SegmentConfig,
 
     // The path, where fully created segment will be moved
@@ -585,11 +586,11 @@ impl SegmentBuilder {
 
     fn update_quantization(
         segment_config: &SegmentConfig,
-        vector_storages: &HashMap<String, VectorStorageEnum>,
+        vector_storages: &HashMap<VectorNameBuf, VectorStorageEnum>,
         temp_path: &Path,
         permit: &CpuPermit,
         stopped: &AtomicBool,
-    ) -> OperationResult<HashMap<String, QuantizedVectors>> {
+    ) -> OperationResult<HashMap<VectorNameBuf, QuantizedVectors>> {
         let config = segment_config.clone();
 
         let mut quantized_vectors_map = HashMap::new();

@@ -78,7 +78,7 @@ pub fn build_multivec_segment(
 ) -> OperationResult<Segment> {
     let mut vectors_config = HashMap::new();
     vectors_config.insert(
-        "vector1".to_owned(),
+        "vector1".into(),
         VectorDataConfig {
             size: dim1,
             distance,
@@ -90,7 +90,7 @@ pub fn build_multivec_segment(
         },
     );
     vectors_config.insert(
-        "vector2".to_owned(),
+        "vector2".into(),
         VectorDataConfig {
             size: dim2,
             distance,

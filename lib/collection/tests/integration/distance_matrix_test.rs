@@ -7,6 +7,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::SmallRng;
 use rand::{Rng, SeedableRng};
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use tempfile::Builder;
 
 use crate::common::simple_collection_fixture;
@@ -27,7 +28,7 @@ async fn distance_matrix_empty() {
         sample_size,
         limit_per_sample,
         filter: None,
-        using: "".to_string(), // default vector name
+        using: DEFAULT_VECTOR_NAME.to_owned(),
     };
     let matrix = collection
         .search_points_matrix(request, ShardSelectorInternal::All, None, None, hw_acc)
@@ -77,7 +78,7 @@ async fn distance_matrix_anonymous_vector() {
         sample_size,
         limit_per_sample,
         filter: None,
-        using: "".to_string(), // default vector name
+        using: DEFAULT_VECTOR_NAME.to_owned(),
     };
     let matrix = collection
         .search_points_matrix(request, ShardSelectorInternal::All, None, None, hw_acc)

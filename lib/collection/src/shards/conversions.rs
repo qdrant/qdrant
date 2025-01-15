@@ -12,7 +12,7 @@ use api::grpc::qdrant::{
 };
 use segment::data_types::vectors::VectorStructInternal;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint};
+use segment::types::{Filter, PayloadFieldSchema, PointIdType, ScoredPoint, VectorNameBuf};
 use tonic::Status;
 
 use crate::operations::conversions::write_ordering_to_proto;
@@ -163,7 +163,7 @@ pub fn internal_delete_vectors(
     clock_tag: Option<ClockTag>,
     collection_name: String,
     ids: Vec<PointIdType>,
-    vector_names: Vec<String>,
+    vector_names: Vec<VectorNameBuf>,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeleteVectorsInternal {
@@ -192,7 +192,7 @@ pub fn internal_delete_vectors_by_filter(
     clock_tag: Option<ClockTag>,
     collection_name: String,
     filter: Filter,
-    vector_names: Vec<String>,
+    vector_names: Vec<VectorNameBuf>,
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> DeleteVectorsInternal {

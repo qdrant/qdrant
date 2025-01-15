@@ -12,7 +12,7 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    SeqNumberType,
+    SeqNumberType, VectorNameBuf,
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
@@ -86,7 +86,7 @@ pub(crate) fn update_vectors(
             },
             |id, owned_vectors, _| {
                 for (vector_name, vector_ref) in points_map[&id].iter() {
-                    owned_vectors.insert(vector_name.to_string(), vector_ref.to_owned());
+                    owned_vectors.insert(vector_name.to_owned(), vector_ref.to_owned());
                 }
             },
             |_| false,
@@ -105,7 +105,7 @@ pub(crate) fn delete_vectors(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     points: &[PointIdType],
-    vector_names: &[String],
+    vector_names: &[VectorNameBuf],
 ) -> CollectionResult<usize> {
     let mut total_deleted_points = 0;
 
@@ -133,7 +133,7 @@ pub(crate) fn delete_vectors_by_filter(
     segments: &SegmentHolder,
     op_num: SeqNumberType,
     filter: &Filter,
-    vector_names: &[String],
+    vector_names: &[VectorNameBuf],
 ) -> CollectionResult<usize> {
     let affected_points = points_by_filter(segments, filter)?;
     delete_vectors(segments, op_num, &affected_points, vector_names)
@@ -493,7 +493,7 @@ where
         |id, vectors, old_payload| {
             let point = points_map[&id];
             for (name, vec) in point.get_vectors() {
-                vectors.insert(name.to_string(), vec.to_owned());
+                vectors.insert(name.into(), vec.to_owned());
             }
             if let Some(payload) = &point.payload {
                 *old_payload = payload.clone();

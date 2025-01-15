@@ -1787,7 +1787,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                                     .map
                                     .into_iter()
                                     .map(|(k, v)| Ok((k, v.try_into()?)))
-                                    .collect::<Result<BTreeMap<String, VectorParams>, Status>>()?,
+                                    .collect::<Result<BTreeMap<_, _>, Status>>()?,
                             ),
                         },
                     },

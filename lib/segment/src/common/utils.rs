@@ -8,7 +8,7 @@ use smallvec::SmallVec;
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::vectors::VectorInternal;
 use crate::index::field_index::FieldIndex;
-use crate::types::PayloadKeyType;
+use crate::types::{PayloadKeyType, VectorNameBuf};
 
 pub type IndexesMap = HashMap<PayloadKeyType, Vec<FieldIndex>>;
 
@@ -48,7 +48,7 @@ pub fn merge_map(
 }
 
 pub fn transpose_map_into_named_vector<TVector: Into<VectorInternal>>(
-    map: HashMap<String, Vec<TVector>>,
+    map: HashMap<VectorNameBuf, Vec<TVector>>,
 ) -> Vec<NamedVectors<'static>> {
     let mut result = Vec::new();
     for (key, values) in map {

@@ -4,6 +4,7 @@ use api::rest::{
     BaseGroupRequest, Batch, BatchVectorStruct, PointStruct, PointVectors, PointsList,
     SearchGroupsRequestInternal, SearchRequestInternal, Vector, VectorStruct,
 };
+use segment::types::VectorNameBuf;
 use sparse::common::sparse_vector::SparseVector;
 use validator::Validate;
 
@@ -20,14 +21,14 @@ fn wrong_sparse_vector() -> SparseVector {
 
 fn wrong_named_vector_struct() -> api::rest::NamedVectorStruct {
     api::rest::NamedVectorStruct::Sparse(segment::data_types::vectors::NamedSparseVector {
-        name: "sparse".to_owned(),
+        name: "sparse".into(),
         vector: wrong_sparse_vector(),
     })
 }
 
 fn wrong_point_struct() -> PointStruct {
-    let vector_data: HashMap<String, _> =
-        HashMap::from([("sparse".to_owned(), Vector::Sparse(wrong_sparse_vector()))]);
+    let vector_data: HashMap<VectorNameBuf, _> =
+        HashMap::from([("sparse".into(), Vector::Sparse(wrong_sparse_vector()))]);
     PointStruct {
         id: 0.into(),
         vector: VectorStruct::Named(vector_data),
@@ -54,10 +55,8 @@ fn validate_error_sparse_vector_point_struct() {
 
 #[test]
 fn validate_error_sparse_vector_points_batch() {
-    let vector_data: HashMap<String, Vec<_>> = HashMap::from([(
-        "sparse".to_owned(),
-        vec![Vector::Sparse(wrong_sparse_vector())],
-    )]);
+    let vector_data: HashMap<VectorNameBuf, Vec<_>> =
+        HashMap::from([("sparse".into(), vec![Vector::Sparse(wrong_sparse_vector())])]);
     check_validation_error(Batch {
         ids: vec![1.into()],
         vectors: BatchVectorStruct::Named(vector_data),
@@ -157,8 +156,8 @@ fn validate_error_sparse_vector_discover_request_internal() {
 
 #[test]
 fn validate_error_sparse_vector_point_vectors() {
-    let vector_data: HashMap<String, _> =
-        HashMap::from([("sparse".to_owned(), Vector::Sparse(wrong_sparse_vector()))]);
+    let vector_data: HashMap<VectorNameBuf, _> =
+        HashMap::from([("sparse".into(), Vector::Sparse(wrong_sparse_vector()))]);
 
     let vector_struct = VectorStruct::Named(vector_data);
 

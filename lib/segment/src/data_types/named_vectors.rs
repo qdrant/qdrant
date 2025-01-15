@@ -12,9 +12,9 @@ use super::vectors::{
 use crate::common::operation_error::OperationError;
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::{Distance, VectorDataConfig, VectorStorageDatatype};
+use crate::types::{Distance, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype};
 
-type CowKey<'a> = Cow<'a, str>;
+type CowKey<'a> = Cow<'a, VectorName>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum CowMultiVector<'a, TElement: PrimitiveVectorElement> {
@@ -196,13 +196,13 @@ impl<'a> From<VectorRef<'a>> for CowVector<'a> {
 }
 
 impl<'a> NamedVectors<'a> {
-    pub fn from_ref(key: &'a str, value: VectorRef<'a>) -> Self {
+    pub fn from_ref(key: &'a VectorName, value: VectorRef<'a>) -> Self {
         let mut map = TinyMap::new();
         map.insert(Cow::Borrowed(key), CowVector::from(value));
         Self { map }
     }
 
-    pub fn from_pairs<const N: usize>(arr: [(String, DenseVector); N]) -> Self {
+    pub fn from_pairs<const N: usize>(arr: [(VectorNameBuf, DenseVector); N]) -> Self {
         NamedVectors {
             map: arr
                 .into_iter()
@@ -211,7 +211,7 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn from_map(map: HashMap<String, VectorInternal>) -> Self {
+    pub fn from_map(map: HashMap<VectorNameBuf, VectorInternal>) -> Self {
         Self {
             map: map
                 .into_iter()
@@ -220,7 +220,7 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn from_map_ref(map: &'a HashMap<String, DenseVector>) -> Self {
+    pub fn from_map_ref(map: &'a HashMap<VectorNameBuf, DenseVector>) -> Self {
         Self {
             map: map
                 .iter()
@@ -235,17 +235,17 @@ impl<'a> NamedVectors<'a> {
         }
     }
 
-    pub fn insert(&mut self, name: String, vector: VectorInternal) {
+    pub fn insert(&mut self, name: VectorNameBuf, vector: VectorInternal) {
         self.map
             .insert(CowKey::Owned(name), CowVector::from(vector));
     }
 
-    pub fn insert_ref(&mut self, name: &'a str, vector: VectorRef<'a>) {
+    pub fn insert_ref(&mut self, name: &'a VectorName, vector: VectorRef<'a>) {
         self.map
             .insert(CowKey::Borrowed(name), CowVector::from(vector));
     }
 
-    pub fn contains_key(&self, key: &str) -> bool {
+    pub fn contains_key(&self, key: &VectorName) -> bool {
         self.map.contains_key(key)
     }
 
@@ -257,26 +257,29 @@ impl<'a> NamedVectors<'a> {
         self.map.is_empty()
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = &str> {
+    pub fn keys(&self) -> impl Iterator<Item = &VectorName> {
         self.map.iter().map(|(k, _)| k.as_ref())
     }
 
-    pub fn into_owned_map(self) -> HashMap<String, VectorInternal> {
+    pub fn into_owned_map(self) -> HashMap<VectorNameBuf, VectorInternal> {
         self.map
             .into_iter()
             .map(|(k, v)| (k.into_owned(), v.to_owned()))
             .collect()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&str, VectorRef<'_>)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&VectorName, VectorRef<'_>)> {
         self.map.iter().map(|(k, v)| (k.as_ref(), v.as_vec_ref()))
     }
 
-    pub fn get(&self, key: &str) -> Option<VectorRef<'_>> {
+    pub fn get(&self, key: &VectorName) -> Option<VectorRef<'_>> {
         self.map.get(key).map(|v| v.as_vec_ref())
     }
 
-    pub fn preprocess<'b>(&mut self, get_vector_data: impl Fn(&str) -> &'b VectorDataConfig) {
+    pub fn preprocess<'b>(
+        &mut self,
+        get_vector_data: impl Fn(&VectorName) -> &'b VectorDataConfig,
+    ) {
         for (name, vector) in self.map.iter_mut() {
             match vector {
                 CowVector::Dense(v) => {

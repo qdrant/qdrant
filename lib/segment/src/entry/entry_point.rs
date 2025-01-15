@@ -17,7 +17,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
     ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    SnapshotFormat, WithPayload, WithVector,
+    SnapshotFormat, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
@@ -34,7 +34,7 @@ pub trait SegmentEntry {
     #[allow(clippy::too_many_arguments)]
     fn search_batch(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         query_vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
@@ -68,7 +68,7 @@ pub trait SegmentEntry {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector_name: &str,
+        vector_name: &VectorName,
     ) -> OperationResult<bool>;
 
     fn set_payload(
@@ -101,7 +101,7 @@ pub trait SegmentEntry {
 
     fn vector(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         point_id: PointIdType,
     ) -> OperationResult<Option<VectorInternal>>;
 
@@ -172,7 +172,7 @@ pub trait SegmentEntry {
     /// Estimate available point count in this segment for given filter.
     fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
 
-    fn vector_names(&self) -> HashSet<String>;
+    fn vector_names(&self) -> HashSet<VectorNameBuf>;
 
     /// Whether this segment is completely empty in terms of points
     ///
@@ -192,7 +192,7 @@ pub trait SegmentEntry {
     fn deleted_point_count(&self) -> usize;
 
     /// Size of all available vectors in storage
-    fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize>;
+    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize>;
 
     /// Max value from all `available_vectors_size_in_bytes`
     fn max_available_vectors_size_in_bytes(&self) -> OperationResult<usize> {

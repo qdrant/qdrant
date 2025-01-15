@@ -8,7 +8,8 @@ use api::rest::{
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vectors::{NamedVectorStruct, DEFAULT_VECTOR_NAME};
 use segment::types::{
-    Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, WithVector,
+    Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
+    WithVector,
 };
 
 use crate::collection::Collection;
@@ -31,7 +32,7 @@ pub struct CollectionSearchMatrixRequest {
     pub sample_size: usize,
     pub limit_per_sample: usize,
     pub filter: Option<Filter>,
-    pub using: String,
+    pub using: VectorNameBuf,
 }
 
 impl CollectionSearchMatrixRequest {
@@ -52,7 +53,7 @@ impl From<SearchMatrixRequestInternal> for CollectionSearchMatrixRequest {
             limit_per_sample: limit
                 .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
             filter,
-            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         }
     }
 }

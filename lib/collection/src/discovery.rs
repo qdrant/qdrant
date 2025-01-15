@@ -31,7 +31,7 @@ fn discovery_into_core_search(
 
     let lookup_vector_name = request.get_lookup_vector_name();
 
-    let using = request.using.as_ref().map(|using| using.as_string());
+    let using = request.using.as_ref().map(|using| using.as_name());
 
     // Check we actually fetched all referenced vectors in this request
     let referenced_ids = request.get_referenced_point_ids();
