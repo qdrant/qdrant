@@ -540,6 +540,12 @@ pub async fn do_update_collection_cluster(
                 shard_key,
             } = op.start_resharding;
 
+            if !dispatcher.is_resharding_enabled() {
+                return Err(StorageError::bad_request(
+                    "resharding is only supported in Qdrant Cloud",
+                ));
+            }
+
             // Assign random UUID if not specified by user before processing operation on all peers
             let uuid = uuid.unwrap_or_else(Uuid::new_v4);
 
