@@ -27,15 +27,13 @@ jobs:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Install mold
       uses: rui314/setup-mold@v1
-    - name: Setup cargo for mold
-      run: export RUSTFLAGS="$RUSTFLAGS -Clink-arg=-fuse-ld=mold"
     - name: Install nextest
       uses: taiki-e/install-action@nextest
     - name: Build
-      run: cargo build --tests --workspace
+      run: RUSTFLAGS="-C link-arg=-fuse-ld=mold" cargo build --tests --workspace
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --profile ci
+      run: RUSTFLAGS="-C link-arg=-fuse-ld=mold" cargo nextest run --workspace --profile ci
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:
