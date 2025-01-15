@@ -54,7 +54,7 @@ parking_lot = { workspace = true, optional = true }
 
 thiserror = { workspace = true }
 log = { workspace = true }
-colored = "2"
+colored = "3"
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
