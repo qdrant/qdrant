@@ -200,7 +200,7 @@ impl CreateCollectionOperation {
             if let Some(duplicate_name) = dense_names.find(|name| sparse_config.contains_key(*name))
             {
                 return Err(StorageError::bad_input(
-                    format!("Dense and sparse vector names must be unique - duplicate found with `{duplicate_name}`"),
+                    format!("Dense and sparse vector names must be unique - duplicate found with '{duplicate_name}'"),
                 ));
             }
         }
