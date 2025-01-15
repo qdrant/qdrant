@@ -113,15 +113,22 @@ async fn create_collection(
     Query(query): Query<WaitTimeout>,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
-    helpers::time(dispatcher.submit_collection_meta_op(
-        CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
-            collection.name.clone(),
-            operation.into_inner(),
-        )),
-        access,
-        query.timeout(),
-    ))
-    .await
+    let timing = Instant::now();
+    let create_collection_op =
+        CreateCollectionOperation::new(collection.name.clone(), operation.into_inner());
+
+    let Ok(create_collection_op) = create_collection_op else {
+        return process_response(create_collection_op, timing, None);
+    };
+
+    let response = dispatcher
+        .submit_collection_meta_op(
+            CollectionMetaOperations::CreateCollection(create_collection_op),
+            access,
+            query.timeout(),
+        )
+        .await;
+    process_response(response, timing, None)
 }
 
 #[patch("/collections/{name}")]

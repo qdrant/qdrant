@@ -1470,27 +1470,30 @@ mod tests {
         handle
             .block_on(
                 dispatcher.submit_collection_meta_op(
-                    CollectionMetaOperations::CreateCollection(CreateCollectionOperation::new(
-                        "test".to_string(),
-                        CreateCollection {
-                            vectors: VectorParamsBuilder::new(10, Distance::Cosine)
-                                .build()
-                                .into(),
-                            sparse_vectors: None,
-                            hnsw_config: None,
-                            wal_config: None,
-                            optimizers_config: None,
-                            shard_number: Some(2),
-                            on_disk_payload: None,
-                            replication_factor: None,
-                            write_consistency_factor: None,
-                            init_from: None,
-                            quantization_config: None,
-                            sharding_method: None,
-                            strict_mode_config: None,
-                            uuid: None,
-                        },
-                    )),
+                    CollectionMetaOperations::CreateCollection(
+                        CreateCollectionOperation::new(
+                            "test".to_string(),
+                            CreateCollection {
+                                vectors: VectorParamsBuilder::new(10, Distance::Cosine)
+                                    .build()
+                                    .into(),
+                                sparse_vectors: None,
+                                hnsw_config: None,
+                                wal_config: None,
+                                optimizers_config: None,
+                                shard_number: Some(2),
+                                on_disk_payload: None,
+                                replication_factor: None,
+                                write_consistency_factor: None,
+                                init_from: None,
+                                quantization_config: None,
+                                sharding_method: None,
+                                strict_mode_config: None,
+                                uuid: None,
+                            },
+                        )
+                        .unwrap(),
+                    ),
                     Access::full("For test"),
                     None,
                 ),

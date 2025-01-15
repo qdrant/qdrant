@@ -84,3 +84,48 @@ def test_sparse_vector_persisted_sorted(collection_name):
         assert results[i]['id'] == i + 1
         assert results[i]['vector']['text']['indices'] == [1, 2, 3]  # sorted by indices
         assert results[i]['vector']['text']['values'] == [0.1, 0.2, 0.3]  # aligned to respective indices
+
+
+def test_sparse_dense_vector_naming_validations(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "image": {
+                    "size": 2,
+                    "distance": "Euclid"
+                }
+            },
+            "sparse_vectors": {
+                "image": {}
+            }
+        }
+    )
+    assert not response.ok
+    assert 'Dense and sparse vector names must be unique - duplicate found with \'image\'' in response.json()["status"]["error"]
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "size": 2,
+                "distance": "Euclid"
+            },
+            "sparse_vectors": {
+                "": {}
+            }
+        }
+    )
+    assert not response.ok
+    assert 'Dense and sparse vector names must be unique - duplicate found with \'\'' in response.json()["status"]["error"]

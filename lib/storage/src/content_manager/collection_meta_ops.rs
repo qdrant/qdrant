@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::content_manager::errors::{StorageError, StorageResult};
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 
 // *Operation wrapper structure is only required for better OpenAPI generation
@@ -189,12 +190,26 @@ pub struct CreateCollectionOperation {
 }
 
 impl CreateCollectionOperation {
-    pub fn new(collection_name: String, create_collection: CreateCollection) -> Self {
-        Self {
+    pub fn new(
+        collection_name: String,
+        create_collection: CreateCollection,
+    ) -> StorageResult<Self> {
+        // validate vector names are unique between dense and sparse vectors
+        if let Some(sparse_config) = &create_collection.sparse_vectors {
+            let mut dense_names = create_collection.vectors.params_iter().map(|p| p.0);
+            if let Some(duplicate_name) = dense_names.find(|name| sparse_config.contains_key(*name))
+            {
+                return Err(StorageError::bad_input(
+                    format!("Dense and sparse vector names must be unique - duplicate found with '{duplicate_name}'"),
+                ));
+            }
+        }
+
+        Ok(Self {
             collection_name,
             create_collection,
             distribution: None,
-        }
+        })
     }
 
     pub fn is_distribution_set(&self) -> bool {
