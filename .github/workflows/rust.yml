@@ -25,6 +25,10 @@ jobs:
       uses: arduino/setup-protoc@v3
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Install mold
+      uses: rui314/setup-mold@v1
+    - name: Setup cargo for mold
+      run: export RUSTFLAGS="$RUSTFLAGS -Clink-arg=-fuse-ld=mold"
     - name: Install nextest
       uses: taiki-e/install-action@nextest
     - name: Build
