@@ -99,17 +99,17 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn get_measured(
+    fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_measured(point_id, hw_counter),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.get_measured(point_id, hw_counter),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_measured(point_id, hw_counter),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_measured(point_id, hw_counter),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.get(point_id, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get(point_id, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id, hw_counter),
         }
     }
 
@@ -214,12 +214,9 @@ mod tests {
         storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        assert!(!storage.get_measured(100, &hw_counter).unwrap().is_empty());
+        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(
-            storage.get_measured(100, &hw_counter).unwrap(),
-            Default::default()
-        );
+        assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 
     #[test]
@@ -256,7 +253,7 @@ mod tests {
                 .delete(100, &JsonPath::new("location.geo"), &hw_counter)
                 .unwrap();
 
-            let res = storage.get_measured(100, &hw_counter).unwrap();
+            let res = storage.get(100, &hw_counter).unwrap();
 
             assert!(res.0.contains_key("age"));
             assert!(res.0.contains_key("location"));
@@ -266,7 +263,7 @@ mod tests {
         {
             let mut storage: PayloadStorageEnum = OnDiskPayloadStorage::open(db).unwrap().into();
 
-            let res = storage.get_measured(100, &hw_counter).unwrap();
+            let res = storage.get(100, &hw_counter).unwrap();
 
             assert!(res.0.contains_key("age"));
             assert!(res.0.contains_key("location"));
@@ -285,7 +282,7 @@ mod tests {
                 .delete(100, &JsonPath::new("location"), &hw_counter)
                 .unwrap();
 
-            let res = storage.get_measured(100, &hw_counter).unwrap();
+            let res = storage.get(100, &hw_counter).unwrap();
 
             assert!(res.0.contains_key("age"));
             assert!(res.0.contains_key("hobby"));

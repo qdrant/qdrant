@@ -51,7 +51,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn get_measured(
+    fn get(
         &self,
         point_id: PointOffsetType,
         _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
@@ -198,7 +198,7 @@ mod tests {
         storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        assert!(!storage.get_measured(100, &hw_counter).unwrap().is_empty());
+        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
         storage.wipe().unwrap();
     }
 
@@ -231,7 +231,7 @@ mod tests {
         let payload: Payload = serde_json::from_str(data).unwrap();
         let mut storage = InMemoryPayloadStorage::default();
         storage.set(100, &payload, &hw_counter).unwrap();
-        let pload = storage.get_measured(100, &hw_counter).unwrap();
+        let pload = storage.get(100, &hw_counter).unwrap();
         assert_eq!(pload, payload);
     }
 }

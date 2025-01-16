@@ -599,7 +599,7 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload.borrow().get_measured(point_id, hw_counter)
+        self.payload.borrow().get(point_id, hw_counter)
     }
 
     fn delete_payload(

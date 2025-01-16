@@ -55,11 +55,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(())
     }
 
-    fn get_measured(
-        &self,
-        point_id: PointOffsetType,
-        _: &HardwareCounterCell,
-    ) -> OperationResult<Payload> {
+    fn get(&self, point_id: PointOffsetType, _: &HardwareCounterCell) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
             Some(payload) => Ok(payload.to_owned()),
             None => Ok(Default::default()),
@@ -141,12 +137,9 @@ mod tests {
         storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        assert!(!storage.get_measured(100, &hw_counter).unwrap().is_empty());
+        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(
-            storage.get_measured(100, &hw_counter).unwrap(),
-            Default::default()
-        );
+        assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 
     #[test]
@@ -179,7 +172,7 @@ mod tests {
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        let pload = storage.get_measured(100, &hw_counter).unwrap();
+        let pload = storage.get(100, &hw_counter).unwrap();
         assert_eq!(pload, payload);
     }
 }

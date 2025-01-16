@@ -119,7 +119,7 @@ impl PayloadStorage for MmapPayloadStorage {
         Ok(())
     }
 
-    fn get_measured(
+    fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,

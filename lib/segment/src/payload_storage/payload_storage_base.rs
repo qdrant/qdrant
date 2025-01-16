@@ -31,7 +31,7 @@ pub trait PayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    fn get_measured(
+    fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,

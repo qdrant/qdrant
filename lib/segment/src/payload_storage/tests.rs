@@ -25,7 +25,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
 
     // set
     storage.set(0, &payload, &hw_counter).unwrap();
-    assert_eq!(storage.get_measured(0, &hw_counter).unwrap(), payload);
+    assert_eq!(storage.get(0, &hw_counter).unwrap(), payload);
 
     // set on existing
     let payload_to_merge = json!({
@@ -35,7 +35,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
 
     storage.set(0, &payload_to_merge, &hw_counter).unwrap();
 
-    let stored = storage.get_measured(0, &hw_counter).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(
         stored,
         json!({
@@ -58,7 +58,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
             &hw_counter,
         )
         .unwrap();
-    let stored = storage.get_measured(0, &hw_counter).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
 
     assert_eq!(
         stored,
@@ -76,7 +76,7 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     storage
         .delete(0, &"layer1".try_into().unwrap(), &hw_counter)
         .unwrap();
-    let stored = storage.get_measured(0, &hw_counter).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(
         stored,
         json!({
@@ -93,14 +93,11 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     })
     .into();
     storage.overwrite(0, &new_payload).unwrap();
-    let stored = storage.get_measured(0, &hw_counter).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(stored, new_payload);
 
     storage.clear(0).unwrap();
-    assert_eq!(
-        storage.get_measured(0, &hw_counter).unwrap(),
-        json!({}).into()
-    );
+    assert_eq!(storage.get(0, &hw_counter).unwrap(), json!({}).into());
 
     for i in 1..10 {
         storage.set(i, &payload, &hw_counter).unwrap();
