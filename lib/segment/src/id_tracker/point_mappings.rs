@@ -1,11 +1,21 @@
+#[cfg(test)]
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::iter;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
+#[cfg(test)]
+use common::bitpacking::make_bitmask;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::distributions::Distribution;
+#[cfg(test)]
+use rand::rngs::StdRng;
+#[cfg(test)]
+use rand::seq::SliceRandom as _;
+#[cfg(test)]
+use rand::Rng as _;
 use uuid::Uuid;
 
 use crate::types::PointIdType;
@@ -231,5 +241,70 @@ impl PointMappings {
 
     pub(crate) fn total_point_count(&self) -> usize {
         self.internal_to_external.len()
+    }
+
+    /// Generate a random [`PointMappings`].
+    #[cfg(test)]
+    pub fn random(rand: &mut StdRng, total_size: u32) -> Self {
+        Self::random_with_params(rand, total_size, total_size, 128)
+    }
+
+    /// Generate a random [`PointMappings`] using the following parameters:
+    ///
+    /// - `total_size`: total number of points, including deleted ones.
+    /// - `preserved_size`: number of points that are not deleted.
+    /// - `bits_in_id`: number of bits in generated ids.
+    ///   Decrease this value to restrict the amount of unique ids across all
+    ///   multiple invocations of this function.
+    ///   E.g. if `bits_in_id` is 8, then only 512 unique ids will be generated.
+    ///   (256 uuids + 256 u64s)
+    #[cfg(test)]
+    pub fn random_with_params(
+        rand: &mut StdRng,
+        total_size: u32,
+        preserved_size: u32,
+        bits_in_id: u8,
+    ) -> Self {
+        let mask: u128 = make_bitmask(bits_in_id);
+        let mask_u64: u64 = mask as u64;
+
+        const UUID_LIKELYNESS: f64 = 0.5;
+
+        let mut external_to_internal_num = BTreeMap::new();
+        let mut external_to_internal_uuid = BTreeMap::new();
+
+        let mut internal_ids = (0..total_size).collect_vec();
+        internal_ids.shuffle(rand);
+        internal_ids.truncate(preserved_size as usize);
+
+        let mut deleted = BitVec::repeat(true, total_size as usize);
+        for id in &internal_ids {
+            deleted.set(*id as usize, false);
+        }
+
+        let internal_to_external = (0..total_size)
+            .map(|pos| loop {
+                if rand.gen_bool(UUID_LIKELYNESS) {
+                    let uuid = Uuid::from_u128(rand.gen_range(0..=mask));
+                    if let Entry::Vacant(e) = external_to_internal_uuid.entry(uuid) {
+                        e.insert(pos);
+                        return PointIdType::Uuid(uuid);
+                    }
+                } else {
+                    let num = rand.gen_range(0..=mask_u64);
+                    if let Entry::Vacant(e) = external_to_internal_num.entry(num) {
+                        e.insert(pos);
+                        return PointIdType::NumId(num);
+                    }
+                }
+            })
+            .collect();
+
+        Self {
+            deleted,
+            internal_to_external,
+            external_to_internal_num,
+            external_to_internal_uuid,
+        }
     }
 }

@@ -2,6 +2,10 @@ use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
+#[cfg(test)]
+use rand::rngs::StdRng;
+#[cfg(test)]
+use rand::Rng as _;
 
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
@@ -23,6 +27,15 @@ impl InMemoryIdTracker {
 
     pub fn into_internal(self) -> (Vec<SeqNumberType>, PointMappings) {
         (self.internal_to_version, self.mappings)
+    }
+
+    /// Generate a random [`InMemoryIdTracker`].
+    #[cfg(test)]
+    pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {
+        Self {
+            internal_to_version: vec![rand.gen(); size as usize],
+            mappings: PointMappings::random_with_params(rand, size, preserved_size, bits_in_id),
+        }
     }
 }
 
