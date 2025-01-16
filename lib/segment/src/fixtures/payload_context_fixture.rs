@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -189,10 +190,12 @@ pub fn create_payload_storage_fixture(num_points: usize, seed: u64) -> InMemoryP
     let mut payload_storage = InMemoryPayloadStorage::default();
     let mut rng = StdRng::seed_from_u64(seed);
 
+    let hw_counter = HardwareCounterCell::new();
+
     for id in 0..num_points {
         let payload = generate_diverse_payload(&mut rng);
         payload_storage
-            .set(id as PointOffsetType, &payload)
+            .set(id as PointOffsetType, &payload, &hw_counter)
             .unwrap();
     }
 

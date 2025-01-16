@@ -408,10 +408,11 @@ fn sparse_vector_index_ram_filtered_search() {
         field_name: field_value,
     })
     .into();
+    let hw_counter = HardwareCounterCell::new();
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..half_indexed_count {
         payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None)
+            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
             .unwrap();
     }
     drop(payload_index);
@@ -481,11 +482,13 @@ fn sparse_vector_index_plain_search() {
     })
     .into();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // add payload to all points
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None)
+            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
             .unwrap();
     }
     drop(payload_index);

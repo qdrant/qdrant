@@ -216,14 +216,8 @@ impl<V: Blob> BlobStore<V> {
         raw_sections
     }
 
-    // TODO(io_measurement): Replace with `get_value_measured`
     /// Get the value for a given point offset
-    pub fn get_value(&self, point_offset: PointOffset) -> Option<V> {
-        self.get_value_measured(point_offset, &HardwareCounterCell::disposable())
-    }
-
-    /// Get the value for a given point offset
-    pub fn get_value_measured(
+    pub fn get_value(
         &self,
         point_offset: PointOffset,
         hw_counter: &HardwareCounterCell,
@@ -551,8 +545,9 @@ mod tests {
 
     #[test]
     fn test_empty_payload_storage() {
+        let hw_counter = HardwareCounterCell::new();
         let (_dir, storage) = empty_storage();
-        let payload = storage.get_value(0);
+        let payload = storage.get_value(0, &hw_counter);
         assert!(payload.is_none());
         assert_eq!(storage.get_storage_size_bytes(), 0);
     }
@@ -567,7 +562,8 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
-        let stored_payload = storage.get_value(0);
+        let hw_counter = HardwareCounterCell::new();
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), Payload::default());
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -591,7 +587,8 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value(0);
+        let hw_counter = HardwareCounterCell::new();
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -640,10 +637,11 @@ mod tests {
             .map(|point_offset| (point_offset, random_payload(rng, 2)))
             .collect::<Vec<_>>();
 
+        let hw_counter = HardwareCounterCell::new();
         for (point_offset, payload) in payloads.iter() {
             storage.put_value(*point_offset, payload).unwrap();
 
-            let stored_payload = storage.get_value(*point_offset);
+            let stored_payload = storage.get_value(*point_offset, &hw_counter);
             assert!(stored_payload.is_some());
             assert_eq!(&stored_payload.unwrap(), payload);
         }
@@ -651,7 +649,7 @@ mod tests {
         // read randomly
         payloads.shuffle(rng);
         for (point_offset, payload) in payloads.iter() {
-            let stored_payload = storage.get_value(*point_offset);
+            let stored_payload = storage.get_value(*point_offset, &hw_counter);
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload.clone());
         }
@@ -674,7 +672,8 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value(0);
+        let hw_counter = HardwareCounterCell::new();
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert_eq!(stored_payload, Some(payload));
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
 
@@ -684,7 +683,7 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
 
         // get payload again
-        let stored_payload = storage.get_value(0);
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_none());
         storage.flush().unwrap();
         assert_eq!(storage.get_storage_size_bytes(), 0);
@@ -708,7 +707,8 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value(0);
+        let hw_counter = HardwareCounterCell::new();
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
 
@@ -723,7 +723,7 @@ mod tests {
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
-        let stored_payload = storage.get_value(0);
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), updated_payload);
     }
@@ -820,9 +820,11 @@ mod tests {
         // asset same length
         assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
 
+        let hw_counter = HardwareCounterCell::new();
+
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
-            let stored_payload = storage.get_value(point_offset);
+            let stored_payload = storage.get_value(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
             assert_eq!(stored_payload.as_ref(), model_payload);
         }
@@ -843,7 +845,7 @@ mod tests {
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
-            let stored_payload = storage.get_value(point_offset);
+            let stored_payload = storage.get_value(point_offset, &hw_counter);
             let model_payload = model_hashmap.get(&point_offset);
             assert_eq!(
                 stored_payload.as_ref(),
@@ -876,7 +878,8 @@ mod tests {
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let stored_payload = storage.get_value(0);
+        let hw_counter = HardwareCounterCell::new();
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
 
@@ -894,7 +897,7 @@ mod tests {
             assert!(deleted.is_some());
             assert_eq!(storage.pages.len(), 2);
 
-            assert!(storage.get_value(0).is_none());
+            assert!(storage.get_value(0, &hw_counter).is_none());
         }
     }
 
@@ -909,6 +912,7 @@ mod tests {
             serde_json::Value::String("value".to_string()),
         );
 
+        let hw_counter = HardwareCounterCell::new();
         {
             let mut storage = BlobStore::new(path.clone(), Default::default()).unwrap();
             storage.put_value(0, &payload).unwrap();
@@ -918,7 +922,7 @@ mod tests {
             assert_eq!(page_mapping.page_id, 0); // first page
             assert_eq!(page_mapping.block_offset, 0); // first cell
 
-            let stored_payload = storage.get_value(0);
+            let stored_payload = storage.get_value(0, &hw_counter);
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
 
@@ -930,7 +934,7 @@ mod tests {
         let storage = BlobStore::<Payload>::open(path.clone()).unwrap();
         assert_eq!(storage.pages.len(), 1);
 
-        let stored_payload = storage.get_value(0);
+        let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
     }
@@ -974,15 +978,16 @@ mod tests {
                 .expect("download should succeed");
 
             let csv_file = File::open(csv_path).expect("file should open");
+            let hw_counter = HardwareCounterCell::new();
 
             let mut rdr = csv::Reader::from_reader(csv_file);
             for (row_index, result) in rdr.records().enumerate() {
                 let record = result.unwrap();
                 // apply shift offset
                 let storage_index = row_index as u32 + right_shift_offset;
-                let first = storage.get_value(storage_index).unwrap();
+                let first = storage.get_value(storage_index, &hw_counter).unwrap();
                 let second = storage
-                    .get_value(storage_index + EXPECTED_LEN as u32)
+                    .get_value(storage_index + EXPECTED_LEN as u32, &hw_counter)
                     .unwrap();
                 // assert the two payloads are equal
                 assert_eq!(first, second);
@@ -1025,11 +1030,13 @@ mod tests {
         // assert storage is consistent after reopening
         storage_double_pass_is_consistent(&storage, 0);
 
+        let hw_counter = HardwareCounterCell::new();
+
         // update values shifting point offset by 1 to the right
         // loop from the end to the beginning to avoid overwriting
         let offset: u32 = 1;
         for i in (0..EXPECTED_LEN).rev() {
-            let payload = storage.get_value(i as u32).unwrap();
+            let payload = storage.get_value(i as u32, &hw_counter).unwrap();
             // move first write to the right
             storage.put_value(i as u32 + offset, &payload).unwrap();
             // move second write to the right

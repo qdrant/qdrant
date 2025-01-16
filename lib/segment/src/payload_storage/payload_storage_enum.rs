@@ -60,13 +60,18 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn set(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.set(point_id, payload),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set(point_id, payload),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set(point_id, payload, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.set(point_id, payload, hw_counter),
         }
     }
 
@@ -75,23 +80,22 @@ impl PayloadStorage for PayloadStorageEnum {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.set_by_key(point_id, payload, key),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.set_by_key(point_id, payload, key),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.set_by_key(point_id, payload, key),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.set_by_key(point_id, payload, key),
-        }
-    }
-
-    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get(point_id),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.get(point_id),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get(point_id),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.get(point_id),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
+            PayloadStorageEnum::SimplePayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => {
+                s.set_by_key(point_id, payload, key, hw_counter)
+            }
         }
     }
 
@@ -109,13 +113,18 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
+    fn delete(
+        &mut self,
+        point_id: PointOffsetType,
+        key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Value>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.delete(point_id, key),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.delete(point_id, key, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.delete(point_id, key, hw_counter),
         }
     }
 
@@ -196,22 +205,29 @@ mod tests {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
-        storage.set(100, &payload).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
-        storage.set(100, &payload).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
-        storage.set(100, &payload).unwrap();
-        assert!(!storage.get(100).unwrap().is_empty());
+        storage.set(100, &payload, &hw_counter).unwrap();
+        assert!(!storage.get_measured(100, &hw_counter).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.get(100).unwrap(), Default::default());
+        assert_eq!(
+            storage.get_measured(100, &hw_counter).unwrap(),
+            Default::default()
+        );
     }
 
     #[test]
     fn test_on_disk_storage() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
 
         {
             let mut storage: PayloadStorageEnum =
@@ -234,11 +250,13 @@ mod tests {
             storage.overwrite(100, &payload).unwrap();
 
             let partial_payload: Payload = serde_json::from_str(r#"{ "age": 53 }"#).unwrap();
-            storage.set(100, &partial_payload).unwrap();
+            storage.set(100, &partial_payload, &hw_counter).unwrap();
 
-            storage.delete(100, &JsonPath::new("location.geo")).unwrap();
+            storage
+                .delete(100, &JsonPath::new("location.geo"), &hw_counter)
+                .unwrap();
 
-            let res = storage.get(100).unwrap();
+            let res = storage.get_measured(100, &hw_counter).unwrap();
 
             assert!(res.0.contains_key("age"));
             assert!(res.0.contains_key("location"));
@@ -248,7 +266,7 @@ mod tests {
         {
             let mut storage: PayloadStorageEnum = OnDiskPayloadStorage::open(db).unwrap().into();
 
-            let res = storage.get(100).unwrap();
+            let res = storage.get_measured(100, &hw_counter).unwrap();
 
             assert!(res.0.contains_key("age"));
             assert!(res.0.contains_key("location"));
@@ -258,14 +276,16 @@ mod tests {
 
             let partial_payload: Payload =
                 serde_json::from_str(r#"{ "hobby": "vector search" }"#).unwrap();
-            storage.set(100, &partial_payload).unwrap();
+            storage.set(100, &partial_payload, &hw_counter).unwrap();
 
             storage
-                .delete(100, &JsonPath::new("location.city"))
+                .delete(100, &JsonPath::new("location.city"), &hw_counter)
                 .unwrap();
-            storage.delete(100, &JsonPath::new("location")).unwrap();
+            storage
+                .delete(100, &JsonPath::new("location"), &hw_counter)
+                .unwrap();
 
-            let res = storage.get(100).unwrap();
+            let res = storage.get_measured(100, &hw_counter).unwrap();
 
             assert!(res.0.contains_key("age"));
             assert!(res.0.contains_key("hobby"));
