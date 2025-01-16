@@ -6,7 +6,7 @@ use semver::Version;
 use crate::cpu;
 
 /// Current Qdrant version string
-pub const QDRANT_VERSION_STRING: &str = "1.12.7-dev";
+pub const QDRANT_VERSION_STRING: &str = "1.13.1-dev";
 
 lazy_static! {
     /// Current Qdrant semver version
