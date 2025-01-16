@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use clap::Parser;
+use common::counter::hardware_counter::HardwareCounterCell;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment_constructor::load_segment;
 use segment::types::PointIdType;
@@ -62,7 +63,9 @@ fn main() {
             let internal_id = segment.get_internal_id(point_id);
             if internal_id.is_some() {
                 let version = segment.point_version(point_id);
-                let payload = segment.payload(point_id).unwrap();
+                let payload = segment
+                    .payload(point_id, &HardwareCounterCell::disposable())
+                    .unwrap();
                 // let vectors = segment.all_vectors(point_id).unwrap();
 
                 println!("Internal ID: {internal_id:?}");

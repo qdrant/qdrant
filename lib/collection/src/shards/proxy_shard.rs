@@ -219,6 +219,7 @@ impl ShardOperation for ProxyShard {
         search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -231,6 +232,7 @@ impl ShardOperation for ProxyShard {
                 search_runtime_handle,
                 order_by,
                 timeout,
+                hw_measurement_acc,
             )
             .await
     }
@@ -277,6 +279,7 @@ impl ShardOperation for ProxyShard {
         with_vector: &WithVector,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let local_shard = &self.wrapped_shard;
         local_shard
@@ -286,6 +289,7 @@ impl ShardOperation for ProxyShard {
                 with_vector,
                 search_runtime_handle,
                 timeout,
+                hw_measurement_acc,
             )
             .await
     }

@@ -25,6 +25,7 @@ impl ShardReplicaSet {
         local_only: bool,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload_interface = Arc::new(with_payload_interface.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -39,6 +40,8 @@ impl ShardReplicaSet {
                 let search_runtime = self.search_runtime.clone();
                 let order_by = order_by.clone();
 
+                let hw_acc = hw_measurement_acc.clone();
+
                 async move {
                     shard
                         .scroll_by(
@@ -50,6 +53,7 @@ impl ShardReplicaSet {
                             &search_runtime,
                             order_by.as_deref(),
                             timeout,
+                            hw_acc,
                         )
                         .await
                 }
@@ -113,6 +117,7 @@ impl ShardReplicaSet {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve(
         &self,
         request: Arc<PointRequestInternal>,
@@ -121,6 +126,7 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
         local_only: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let with_payload = Arc::new(with_payload.clone());
         let with_vector = Arc::new(with_vector.clone());
@@ -132,6 +138,8 @@ impl ShardReplicaSet {
                 let with_vector = with_vector.clone();
                 let search_runtime = self.search_runtime.clone();
 
+                let hw_acc = hw_measurement_acc.clone();
+
                 async move {
                     shard
                         .retrieve(
@@ -140,6 +148,7 @@ impl ShardReplicaSet {
                             &with_vector,
                             &search_runtime,
                             timeout,
+                            hw_acc,
                         )
                         .await
                 }

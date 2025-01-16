@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
@@ -238,6 +239,8 @@ fn test_multivector_quantization_hnsw(
 
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
@@ -246,10 +249,15 @@ fn test_multivector_quantization_hnsw(
         let payload: Payload = json!({int_key:int_payload,}).into();
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_multi_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_multi_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
     }
 

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuBudget;
 use common::panic;
 use itertools::Itertools;
@@ -248,7 +249,12 @@ impl UpdateHandler {
             Some(first_failed_op) => {
                 let wal_lock = wal.lock();
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
-                    CollectionUpdater::update(&segments, op_num, operation.operation)?;
+                    CollectionUpdater::update(
+                        &segments,
+                        op_num,
+                        operation.operation,
+                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed
+                    )?;
                 }
             }
         };
@@ -675,8 +681,11 @@ impl UpdateHandler {
                         Ok(())
                     };
 
-                    let operation_result = flush_res
-                        .and_then(|_| CollectionUpdater::update(&segments, op_num, operation));
+                    let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): implement!!
+
+                    let operation_result = flush_res.and_then(|_| {
+                        CollectionUpdater::update(&segments, op_num, operation, &hw_counter)
+                    });
 
                     let res = match operation_result {
                         Ok(update_res) => optimize_sender

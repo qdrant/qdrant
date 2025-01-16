@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Either;
 use log::debug;
@@ -571,7 +572,9 @@ impl PayloadIndex for StructPayloadIndex {
             self.payload.borrow_mut().set(point_id, payload)?;
         };
 
-        let updated_payload = self.get_payload(point_id)?;
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Implement!!
+
+        let updated_payload = self.get_payload(point_id, &hw_counter)?;
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;
@@ -590,8 +593,12 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn get_payload(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
-        self.payload.borrow().get(point_id)
+    fn get_payload(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.payload.borrow().get_measured(point_id, hw_counter)
     }
 
     fn delete_payload(

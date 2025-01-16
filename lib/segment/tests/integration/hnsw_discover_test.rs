@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -84,12 +85,19 @@ fn hnsw_discover_precision() {
 
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
     }
 
@@ -175,6 +183,8 @@ fn filtered_hnsw_discover_precision() {
 
     let mut rnd = StdRng::seed_from_u64(42);
 
+    let hw_counter = HardwareCounterCell::new();
+
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
@@ -206,10 +216,15 @@ fn filtered_hnsw_discover_precision() {
         let payload: Payload = json!({keyword_key:keyword_payload,}).into();
 
         segment
-            .upsert_point(n as SeqNumberType, idx, only_default_vector(&vector))
+            .upsert_point(
+                n as SeqNumberType,
+                idx,
+                only_default_vector(&vector),
+                &hw_counter,
+            )
             .unwrap();
         segment
-            .set_full_payload(n as SeqNumberType, idx, &payload)
+            .set_full_payload(n as SeqNumberType, idx, &payload, &hw_counter)
             .unwrap();
     }
 

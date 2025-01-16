@@ -2,6 +2,8 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
@@ -62,6 +64,8 @@ fn test_update_proxy_segments() {
         only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
     ];
 
+    let hw_counter = HardwareCounterCell::new();
+
     for i in 1..10 {
         let points = vec![
             PointStructPersisted {
@@ -75,7 +79,7 @@ fn test_update_proxy_segments() {
                 payload: None,
             },
         ];
-        upsert_points(&segments.read(), 1000 + i, &points).unwrap();
+        upsert_points(&segments.read(), 1000 + i, &points, &hw_counter).unwrap();
     }
 
     let all_ids = segments
@@ -112,6 +116,8 @@ fn test_move_points_to_copy_on_write() {
 
     let proxy_id = wrap_proxy(segments.clone(), sid1, dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     let points = vec![
         PointStructPersisted {
             id: 1.into(),
@@ -125,7 +131,7 @@ fn test_move_points_to_copy_on_write() {
         },
     ];
 
-    upsert_points(&segments.read(), 1001, &points).unwrap();
+    upsert_points(&segments.read(), 1001, &points, &hw_counter).unwrap();
 
     let points = vec![
         PointStructPersisted {
@@ -140,7 +146,7 @@ fn test_move_points_to_copy_on_write() {
         },
     ];
 
-    upsert_points(&segments.read(), 1002, &points).unwrap();
+    upsert_points(&segments.read(), 1002, &points, &hw_counter).unwrap();
 
     let segments_write = segments.write();
 
@@ -188,6 +194,8 @@ fn test_upsert_points_in_smallest_segment() {
     let mut segment2 = build_segment_2(dir.path());
     let segment3 = empty_segment(dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Fill segment 1 and 2 to the capacity
     for point_id in 0..100 {
         segment1
@@ -195,6 +203,7 @@ fn test_upsert_points_in_smallest_segment() {
                 20,
                 point_id.into(),
                 only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+                &hw_counter,
             )
             .unwrap();
         segment2
@@ -202,6 +211,7 @@ fn test_upsert_points_in_smallest_segment() {
                 20,
                 (100 + point_id).into(),
                 only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+                &hw_counter,
             )
             .unwrap();
     }
@@ -223,7 +233,7 @@ fn test_upsert_points_in_smallest_segment() {
             payload: None,
         })
         .collect();
-    upsert_points(&segments.read(), 1000, &points).unwrap();
+    upsert_points(&segments.read(), 1000, &points, &hw_counter).unwrap();
 
     // Segment 1 and 2 are over capacity, we expect to have the new points in segment 3
     {
@@ -260,23 +270,33 @@ fn test_proxy_shared_updates() {
     let idx1 = PointIdType::from(1);
     let idx2 = PointIdType::from(2);
 
+    let hw_counter = HardwareCounterCell::new();
+
     segment1
-        .upsert_point(10, idx1, only_default_vector(&old_vec))
+        .upsert_point(10, idx1, only_default_vector(&old_vec), &hw_counter)
         .unwrap();
-    segment1.set_payload(10, idx1, &old_payload, &None).unwrap();
     segment1
-        .upsert_point(20, idx2, only_default_vector(&new_vec))
+        .set_payload(10, idx1, &old_payload, &None, &hw_counter)
         .unwrap();
-    segment1.set_payload(20, idx2, &new_payload, &None).unwrap();
+    segment1
+        .upsert_point(20, idx2, only_default_vector(&new_vec), &hw_counter)
+        .unwrap();
+    segment1
+        .set_payload(20, idx2, &new_payload, &None, &hw_counter)
+        .unwrap();
 
     segment2
-        .upsert_point(20, idx1, only_default_vector(&new_vec))
+        .upsert_point(20, idx1, only_default_vector(&new_vec), &hw_counter)
         .unwrap();
-    segment2.set_payload(20, idx1, &new_payload, &None).unwrap();
     segment2
-        .upsert_point(10, idx2, only_default_vector(&old_vec))
+        .set_payload(20, idx1, &new_payload, &None, &hw_counter)
         .unwrap();
-    segment2.set_payload(10, idx2, &old_payload, &None).unwrap();
+    segment2
+        .upsert_point(10, idx2, only_default_vector(&old_vec), &hw_counter)
+        .unwrap();
+    segment2
+        .set_payload(10, idx2, &old_payload, &None, &hw_counter)
+        .unwrap();
 
     let deleted_points = proxy_segment::LockedRmSet::default();
     let changed_indexes = proxy_segment::LockedIndexChanges::default();
@@ -307,7 +327,7 @@ fn test_proxy_shared_updates() {
 
     let ids = vec![idx1, idx2];
 
-    set_payload(&holder, 30, &payload, &ids, &None).unwrap();
+    set_payload(&holder, 30, &payload, &ids, &None, &hw_counter).unwrap();
 
     let locked_holder = Arc::new(RwLock::new(holder));
 
@@ -322,6 +342,7 @@ fn test_proxy_shared_updates() {
         &with_payload,
         &with_vector,
         &is_stopped,
+        HwMeasurementAcc::new(),
     )
     .unwrap();
 

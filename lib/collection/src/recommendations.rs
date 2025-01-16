@@ -284,6 +284,7 @@ where
         collection_by_name,
         read_consistency,
         timeout,
+        hw_measurement_acc.clone(),
     )
     .await?;
 

@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use segment::types::SeqNumberType;
 
@@ -39,18 +40,19 @@ impl CollectionUpdater {
         segments: &RwLock<SegmentHolder>,
         op_num: SeqNumberType,
         operation: CollectionUpdateOperations,
+        hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
         let operation_result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
-                process_point_operation(segments, op_num, point_operation)
+                process_point_operation(segments, op_num, point_operation, hw_counter)
             }
             CollectionUpdateOperations::VectorOperation(vector_operation) => {
-                process_vector_operation(segments, op_num, vector_operation)
+                process_vector_operation(segments, op_num, vector_operation, hw_counter)
             }
             CollectionUpdateOperations::PayloadOperation(payload_operation) => {
-                process_payload_operation(segments, op_num, payload_operation)
+                process_payload_operation(segments, op_num, payload_operation, hw_counter)
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
                 process_field_index_operation(segments, op_num, &index_operation)
@@ -68,6 +70,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
     use segment::data_types::vectors::{
@@ -130,8 +133,17 @@ mod tests {
             },
         ];
 
-        let (num_deleted, num_new, num_updated) =
-            sync_points(&segments.read(), 100, Some(10.into()), None, &points).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let (num_deleted, num_new, num_updated) = sync_points(
+            &segments.read(),
+            100,
+            Some(10.into()),
+            None,
+            &points,
+            &hw_counter,
+        )
+        .unwrap();
 
         assert_eq!(num_deleted, 1); // delete point 15
         assert_eq!(num_new, 1); // insert point 500
@@ -158,7 +170,9 @@ mod tests {
             },
         ];
 
-        let res = upsert_points(&segments.read(), 100, &points);
+        let hw_counter = HardwareCounterCell::new();
+
+        let res = upsert_points(&segments.read(), 100, &points, &hw_counter);
         assert!(matches!(res, Ok(1)));
 
         let segments = Arc::new(segments);
@@ -168,6 +182,7 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -194,6 +209,7 @@ mod tests {
             PointOperations::DeletePoints {
                 ids: vec![500.into()],
             },
+            &hw_counter,
         )
         .unwrap();
 
@@ -203,6 +219,7 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -223,6 +240,8 @@ mod tests {
 
         let points = vec![1.into(), 2.into(), 3.into()];
 
+        let hw_counter = HardwareCounterCell::new();
+
         process_payload_operation(
             &segments,
             100,
@@ -232,6 +251,7 @@ mod tests {
                 filter: None,
                 key: None,
             }),
+            &hw_counter,
         )
         .unwrap();
 
@@ -242,6 +262,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -268,6 +289,7 @@ mod tests {
                 keys: vec!["color".parse().unwrap(), "empty".parse().unwrap()],
                 filter: None,
             }),
+            &hw_counter,
         )
         .unwrap();
 
@@ -277,6 +299,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -293,6 +316,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -307,6 +331,7 @@ mod tests {
             PayloadOps::ClearPayload {
                 points: vec![2.into()],
             },
+            &hw_counter,
         )
         .unwrap();
         let res = SegmentsSearcher::retrieve_blocking(
@@ -315,6 +340,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -363,6 +389,8 @@ mod tests {
         // update points from segment 2
         let points = vec![11.into(), 12.into(), 13.into()];
 
+        let hw_counter = HardwareCounterCell::new();
+
         process_payload_operation(
             &segments,
             102,
@@ -372,6 +400,7 @@ mod tests {
                 filter: None,
                 key: Some(meta_key_path.clone()),
             }),
+            &hw_counter,
         )
         .unwrap();
 
@@ -381,6 +410,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()
@@ -433,6 +463,7 @@ mod tests {
                 filter: None,
                 key: Some(meta_key_path.clone()),
             }),
+            &hw_counter,
         )
         .unwrap();
 
@@ -442,6 +473,7 @@ mod tests {
             &WithPayload::from(true),
             &false.into(),
             &is_stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap()
         .into_values()

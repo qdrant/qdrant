@@ -5,6 +5,7 @@ use std::path::Path;
 use std::thread::{self, JoinHandle};
 
 use bitvec::prelude::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;
@@ -408,8 +409,11 @@ impl Segment {
     pub(super) fn payload_by_offset(
         &self,
         point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload_index.borrow().get_payload(point_offset)
+        self.payload_index
+            .borrow()
+            .get_payload(point_offset, hw_counter)
     }
 
     pub fn save_current_state(&self) -> OperationResult<()> {

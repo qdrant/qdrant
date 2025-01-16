@@ -9,6 +9,7 @@ use collection::operations::types::{
 };
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;
 use storage::content_manager::collection_verification::check_strict_mode;
@@ -51,6 +52,7 @@ async fn get_points(
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
             access,
+            HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
         )
         .await?;
 
@@ -113,6 +115,7 @@ async fn scroll_points(
                 params.timeout(),
                 ShardSelectorInternal::ShardId(path.shard),
                 access,
+                HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
             )
             .await
     })

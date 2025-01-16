@@ -284,6 +284,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::cpu::CpuPermit;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
@@ -634,10 +635,13 @@ mod tests {
             .unwrap()
             .num_vectors;
 
+        let hw_counter = HardwareCounterCell::new();
+
         process_point_operation(
             locked_holder.deref(),
             opnum.next().unwrap(),
             insert_point_ops,
+            &hw_counter,
         )
         .unwrap();
 
@@ -708,6 +712,7 @@ mod tests {
             locked_holder.deref(),
             opnum.next().unwrap(),
             insert_point_ops,
+            &hw_counter,
         )
         .unwrap();
     }

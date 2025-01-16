@@ -8,6 +8,7 @@ use collection::operations::point_ops::{
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
@@ -122,6 +123,7 @@ async fn happy_lookup_ids() {
         read_consistency,
         &shard_selection,
         None,
+        HwMeasurementAcc::new(),
     )
     .await;
 
@@ -211,6 +213,7 @@ async fn nonexistent_lookup_ids_are_ignored(#[case] value: impl Into<PseudoId>) 
         read_consistency,
         &shard_selection,
         None,
+        HwMeasurementAcc::new(),
     )
     .await;
 
@@ -244,6 +247,7 @@ async fn err_when_collection_by_name_returns_none() {
         read_consistency,
         &shard_selection,
         None,
+        HwMeasurementAcc::new(),
     )
     .await;
 

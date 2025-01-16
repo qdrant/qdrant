@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoreType;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
@@ -372,6 +373,7 @@ impl SegmentsSearcher {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         runtime_handle: &Handle,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<HashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
         runtime_handle
@@ -389,6 +391,7 @@ impl SegmentsSearcher {
                         &with_payload,
                         &with_vector,
                         &is_stopped,
+                        hw_measurement_acc,
                     )
                 }
             })
@@ -401,9 +404,12 @@ impl SegmentsSearcher {
         with_payload: &WithPayload,
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<HashMap<PointIdType, RecordInternal>> {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, RecordInternal> = Default::default();
+
+        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc);
 
         segments
             .read()
@@ -424,9 +430,9 @@ impl SegmentsSearcher {
                         id,
                         payload: if with_payload.enable {
                             if let Some(selector) = &with_payload.payload_selector {
-                                Some(selector.process(segment.payload(id)?))
+                                Some(selector.process(segment.payload(id, &hw_counter)?))
                             } else {
-                                Some(segment.payload(id)?)
+                                Some(segment.payload(id, &hw_counter)?)
                             }
                         } else {
                             None
@@ -885,6 +891,7 @@ mod tests {
             &WithPayload::from(true),
             &true.into(),
             &AtomicBool::new(false),
+            HwMeasurementAcc::new(),
         )
         .unwrap();
         assert_eq!(records.len(), 3);

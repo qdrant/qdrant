@@ -4,6 +4,7 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use cancel::{CancellationToken, DropGuard};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::RwLock;
 use segment::types::{Condition, Filter};
 use tokio::sync::watch::{Receiver, Sender};
@@ -293,6 +294,7 @@ async fn clean_task(
                 true,
                 None,
                 None,
+                HwMeasurementAcc::disposable(), // Internal operation, no measurement needed!
             )
             .await
         {

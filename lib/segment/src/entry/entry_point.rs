@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 
@@ -49,12 +50,14 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn update_vectors(
@@ -62,6 +65,7 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn delete_vector(
@@ -69,6 +73,7 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &str,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn set_payload(
@@ -77,6 +82,7 @@ pub trait SegmentEntry {
         point_id: PointIdType,
         payload: &Payload,
         key: &Option<JsonPath>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn set_full_payload(
@@ -84,6 +90,7 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn delete_payload(
@@ -91,12 +98,14 @@ pub trait SegmentEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn clear_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn vector(
@@ -109,7 +118,11 @@ pub trait SegmentEntry {
 
     /// Retrieve payload for the point
     /// If not found, return empty payload
-    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload>;
+    fn payload(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
 
     /// Iterator over all points in segment in ascending order.
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
@@ -280,6 +293,7 @@ pub trait SegmentEntry {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize>;
 
     /// Take a snapshot of the segment.

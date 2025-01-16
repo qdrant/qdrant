@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
 use rand::distributions::WeightedIndex;
@@ -29,10 +30,16 @@ impl LocalShard {
         batch: Arc<Vec<QueryScrollRequestInternal>>,
         search_runtime_handle: &Handle,
         timeout: Duration,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
-        let scrolls = batch
-            .iter()
-            .map(|request| self.query_scroll(request, search_runtime_handle, Some(timeout)));
+        let scrolls = batch.iter().map(|request| {
+            self.query_scroll(
+                request,
+                search_runtime_handle,
+                Some(timeout),
+                hw_measurement_acc.clone(),
+            )
+        });
 
         // execute all the scrolls concurrently
         let all_scroll_results = try_join_all(scrolls);
@@ -53,6 +60,7 @@ impl LocalShard {
         request: &QueryScrollRequestInternal,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         let QueryScrollRequestInternal {
             limit,
@@ -76,6 +84,7 @@ impl LocalShard {
                     filter.as_ref(),
                     search_runtime_handle,
                     timeout,
+                    hw_measurement_acc,
                 )
                 .await?
                 .into_iter()
@@ -99,6 +108,7 @@ impl LocalShard {
                         search_runtime_handle,
                         order_by,
                         timeout,
+                        hw_measurement_acc,
                     )
                     .await?;
 
@@ -125,6 +135,7 @@ impl LocalShard {
                         filter.as_ref(),
                         search_runtime_handle,
                         timeout,
+                        hw_measurement_acc,
                     )
                     .await?;
 
@@ -156,6 +167,7 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -210,6 +222,7 @@ impl LocalShard {
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
+                hw_measurement_acc,
             ),
         )
         .await
@@ -234,6 +247,7 @@ impl LocalShard {
         search_runtime_handle: &Handle,
         order_by: &OrderBy,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<(Vec<RecordInternal>, Vec<OrderValue>)> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -297,6 +311,7 @@ impl LocalShard {
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
+                hw_measurement_acc,
             ),
         )
         .await
@@ -310,6 +325,7 @@ impl LocalShard {
         Ok((ordered_records, values))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn scroll_randomly(
         &self,
         limit: usize,
@@ -318,6 +334,7 @@ impl LocalShard {
         filter: Option<&Filter>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -418,6 +435,7 @@ impl LocalShard {
                 &with_payload,
                 with_vector,
                 search_runtime_handle,
+                hw_measurement_acc,
             ),
         )
         .await

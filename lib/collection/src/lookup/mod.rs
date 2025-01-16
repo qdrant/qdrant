@@ -3,6 +3,7 @@ pub mod types;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
@@ -35,6 +36,7 @@ pub async fn lookup_ids<'a, F, Fut>(
     read_consistency: Option<ReadConsistency>,
     shard_selection: &ShardSelectorInternal,
     timeout: Option<Duration>,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<HashMap<PseudoId, RecordInternal>>
 where
     F: FnOnce(String) -> Fut,
@@ -62,7 +64,13 @@ where
     };
 
     let result = collection
-        .retrieve(point_request, read_consistency, shard_selection, timeout)
+        .retrieve(
+            point_request,
+            read_consistency,
+            shard_selection,
+            timeout,
+            hw_measurement_acc,
+        )
         .await?
         .into_iter()
         .map(|point| (PseudoId::from(point.id), point))

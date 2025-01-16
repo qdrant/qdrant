@@ -13,6 +13,7 @@ use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndex
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::CollectionId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{WithPayloadInterface, WithVector};
 use tokio::sync::RwLock;
 
@@ -107,6 +108,7 @@ async fn replicate_shard_data(
                 None,
                 &ShardSelectorInternal::ShardId(shard_id),
                 None,
+                HwMeasurementAcc::disposable(), // Internal operation, don't measure hardware here
             )
             .await?;
 

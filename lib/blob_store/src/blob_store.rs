@@ -1,6 +1,7 @@
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
@@ -215,8 +216,18 @@ impl<V: Blob> BlobStore<V> {
         raw_sections
     }
 
+    // TODO(io_measurement): Replace with `get_value_measured`
     /// Get the value for a given point offset
     pub fn get_value(&self, point_offset: PointOffset) -> Option<V> {
+        self.get_value_measured(point_offset, &HardwareCounterCell::disposable())
+    }
+
+    /// Get the value for a given point offset
+    pub fn get_value_measured(
+        &self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<V> {
         let ValuePointer {
             page_id,
             block_offset,
@@ -224,6 +235,9 @@ impl<V: Blob> BlobStore<V> {
         } = self.get_pointer(point_offset)?;
 
         let raw = self.read_from_pages(page_id, block_offset, length);
+
+        hw_counter.io_read_counter().incr_delta(raw.len());
+
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
 

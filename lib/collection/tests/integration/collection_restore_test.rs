@@ -5,6 +5,7 @@ use collection::operations::point_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::ScrollRequestInternal;
 use collection::operations::CollectionUpdateOperations;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadContainer, PayloadSelectorExclude, WithPayloadInterface};
@@ -113,6 +114,7 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -194,6 +196,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -230,6 +233,7 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();

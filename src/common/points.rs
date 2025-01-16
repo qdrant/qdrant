@@ -1079,6 +1079,7 @@ pub async fn do_count_points(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_get_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1087,6 +1088,7 @@ pub async fn do_get_points(
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<RecordInternal>, StorageError> {
     toc.retrieve(
         collection_name,
@@ -1095,10 +1097,12 @@ pub async fn do_get_points(
         timeout,
         shard_selection,
         access,
+        hw_measurement_acc,
     )
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn do_scroll_points(
     toc: &TableOfContent,
     collection_name: &str,
@@ -1107,6 +1111,7 @@ pub async fn do_scroll_points(
     timeout: Option<Duration>,
     shard_selection: ShardSelectorInternal,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<ScrollResult, StorageError> {
     toc.scroll(
         collection_name,
@@ -1115,6 +1120,7 @@ pub async fn do_scroll_points(
         timeout,
         shard_selection,
         access,
+        hw_measurement_acc,
     )
     .await
 }
