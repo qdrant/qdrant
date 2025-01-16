@@ -166,6 +166,7 @@ async fn test_scroll_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .expect("failed to search");
@@ -193,6 +194,7 @@ async fn test_scroll_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .expect("failed to search");
@@ -224,6 +226,7 @@ async fn test_retrieve_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .expect("failed to search");

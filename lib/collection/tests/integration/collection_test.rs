@@ -265,7 +265,13 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
         with_vector: true.into(),
     };
     let retrieved = loaded_collection
-        .retrieve(request, None, &ShardSelectorInternal::All, None)
+        .retrieve(
+            request,
+            None,
+            &ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::new(),
+        )
         .await
         .unwrap();
 
@@ -444,6 +450,7 @@ async fn test_read_api_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -573,6 +580,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
+                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -604,6 +612,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
+                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -644,6 +653,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
+                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -683,6 +693,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 None,
                 &ShardSelectorInternal::All,
                 None,
+                HwMeasurementAcc::new(),
             )
             .await
             .unwrap();
@@ -719,6 +730,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();
@@ -812,6 +824,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
             None,
             &ShardSelectorInternal::All,
             None,
+            HwMeasurementAcc::new(),
         )
         .await
         .unwrap();

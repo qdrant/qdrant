@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use rstest::rstest;
 use tempfile::Builder;
@@ -41,15 +42,17 @@ fn test_search_batch_equivalence_single() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
-        .upsert_point(100, 4.into(), only_default_vector(&vec4))
+        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter)
         .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
     segment
-        .upsert_point(101, 6.into(), only_default_vector(&vec6))
+        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
         .unwrap();
-    segment.delete_point(102, 1.into()).unwrap();
+    segment.delete_point(102, 1.into(), &hw_counter).unwrap();
 
     let query_vector = [1.0, 1.0, 1.0, 1.0].into();
     let search_result = segment
@@ -117,14 +120,18 @@ fn test_from_filter_attributes() {
         payload_storage_type: Default::default(),
     };
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
         .unwrap();
 
     let payload: Payload = serde_json::from_str(data).unwrap();
 
-    segment.set_full_payload(0, 0.into(), &payload).unwrap();
+    segment
+        .set_full_payload(0, 0.into(), &payload, &hw_counter)
+        .unwrap();
 
     let filter_valid_str = r#"
         {
@@ -213,14 +220,21 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         payload_storage_type: Default::default(),
     };
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
 
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
         .unwrap();
 
     segment
-        .set_full_payload(1, 0.into(), &serde_json::from_str(data).unwrap())
+        .set_full_payload(
+            1,
+            0.into(),
+            &serde_json::from_str(data).unwrap(),
+            &hw_counter,
+        )
         .unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
@@ -300,8 +314,8 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
         let restored_vectors = restored_segment.all_vectors(id).unwrap();
         assert_eq!(vectors, restored_vectors);
 
-        let payload = segment.payload(id).unwrap();
-        let restored_payload = restored_segment.payload(id).unwrap();
+        let payload = segment.payload(id, &hw_counter).unwrap();
+        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }
@@ -336,13 +350,17 @@ fn test_background_flush() {
         payload_storage_type: Default::default(),
     };
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(segment_base_dir.path(), &config, true).unwrap();
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
         .unwrap();
 
     let payload: Payload = serde_json::from_str(data).unwrap();
-    segment.set_full_payload(0, 0.into(), &payload).unwrap();
+    segment
+        .set_full_payload(0, 0.into(), &payload, &hw_counter)
+        .unwrap();
     segment.flush(false, false).unwrap();
 
     // call flush second time to check that background flush finished successful
@@ -371,13 +389,15 @@ fn test_check_consistency() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let vec4 = vec![1.1, 1.0, 0.0, 1.0];
     segment
-        .upsert_point(100, 4.into(), only_default_vector(&vec4))
+        .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter)
         .unwrap();
     let vec6 = vec![1.0, 1.0, 0.5, 1.0];
     segment
-        .upsert_point(101, 6.into(), only_default_vector(&vec6))
+        .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
         .unwrap();
 
     // first pass on consistent data
@@ -466,25 +486,27 @@ fn test_point_vector_count() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert point ID 4 and 6, assert counts
     segment
-        .upsert_point(100, 4.into(), only_default_vector(&[0.4]))
+        .upsert_point(100, 4.into(), only_default_vector(&[0.4]), &hw_counter)
         .unwrap();
     segment
-        .upsert_point(101, 6.into(), only_default_vector(&[0.6]))
+        .upsert_point(101, 6.into(), only_default_vector(&[0.6]), &hw_counter)
         .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete nonexistent point, counts should remain the same
-    segment.delete_point(102, 1.into()).unwrap();
+    segment.delete_point(102, 1.into(), &hw_counter).unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 2);
     assert_eq!(segment_info.num_vectors, 2);
 
     // Delete point 4, counts should decrease by 1
-    segment.delete_point(103, 4.into()).unwrap();
+    segment.delete_point(103, 4.into(), &hw_counter).unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 1);
     assert_eq!(segment_info.num_vectors, 2); // We don't propagate deletes to vectors at this time
@@ -534,12 +556,15 @@ fn test_point_vector_count_multivec() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert point ID 4 and 6 fully, 8 and 10 partially, assert counts
     segment
         .upsert_point(
             100,
             4.into(),
             NamedVectors::from_pairs([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+            &hw_counter,
         )
         .unwrap();
     segment
@@ -547,6 +572,7 @@ fn test_point_vector_count_multivec() {
             101,
             6.into(),
             NamedVectors::from_pairs([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+            &hw_counter,
         )
         .unwrap();
     segment
@@ -554,6 +580,7 @@ fn test_point_vector_count_multivec() {
             102,
             8.into(),
             NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+            &hw_counter,
         )
         .unwrap();
     segment
@@ -561,6 +588,7 @@ fn test_point_vector_count_multivec() {
             103,
             10.into(),
             NamedVectors::from_pairs([("b".into(), vec![1.0])]),
+            &hw_counter,
         )
         .unwrap();
     let segment_info = segment.info();
@@ -568,25 +596,29 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete nonexistent point, counts should remain the same
-    segment.delete_point(104, 1.into()).unwrap();
+    segment.delete_point(104, 1.into(), &hw_counter).unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 4);
     assert_eq!(segment_info.num_vectors, 6);
 
     // Delete point 4, counts should decrease by 1
-    segment.delete_point(105, 4.into()).unwrap();
+    segment.delete_point(105, 4.into(), &hw_counter).unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
     // Delete vector 'a' of point 6, vector count should decrease by 1
-    segment.delete_vector(106, 6.into(), "a").unwrap();
+    segment
+        .delete_vector(106, 6.into(), "a", &hw_counter)
+        .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Deleting it again shouldn't chain anything
-    segment.delete_vector(107, 6.into(), "a").unwrap();
+    segment
+        .delete_vector(107, 6.into(), "a", &hw_counter)
+        .unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
@@ -651,6 +683,8 @@ fn test_vector_compatibility_checks() {
     };
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert one point for a reference internal ID
     let point_id = 4.into();
     segment
@@ -661,6 +695,7 @@ fn test_vector_compatibility_checks() {
                 ("a".into(), vec![0.1, 0.2, 0.3, 0.4]),
                 ("b".into(), vec![1.0, 0.9]),
             ]),
+            &hw_counter,
         )
         .unwrap();
     let internal_id = segment.lookup_internal_id(point_id).unwrap();
@@ -751,7 +786,7 @@ fn test_vector_compatibility_checks() {
     for vectors in wrong_vectors_multi {
         check_named_vectors(&vectors, &config).err().unwrap();
         segment
-            .upsert_point(101, point_id, vectors.clone())
+            .upsert_point(101, point_id, vectors.clone(), &hw_counter)
             .err()
             .unwrap();
         segment
@@ -772,7 +807,7 @@ fn test_vector_compatibility_checks() {
         check_vector_name(wrong_name, &config).err().unwrap();
         segment.vector(wrong_name, point_id).err().unwrap();
         segment
-            .delete_vector(101, point_id, wrong_name)
+            .delete_vector(101, point_id, wrong_name, &hw_counter)
             .err()
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();
@@ -812,9 +847,17 @@ fn test_handle_point_version() {
         sparse_vector_data: Default::default(),
         payload_storage_type: Default::default(),
     };
+
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_segment(dir.path(), &config, true).unwrap();
     segment
-        .upsert_point(100, 1.into(), only_default_vector(&[1.1, 1.0, 0.0, 1.0]))
+        .upsert_point(
+            100,
+            1.into(),
+            only_default_vector(&[1.1, 1.0, 0.0, 1.0]),
+            &hw_counter,
+        )
         .unwrap();
 
     // Do not handle operation on existing point when providing an old version

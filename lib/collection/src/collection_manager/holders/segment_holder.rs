@@ -9,6 +9,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use ahash::AHashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::tar_ext;
 use futures::future::try_join_all;
@@ -621,6 +622,7 @@ impl<'s> SegmentHolder {
         mut point_operation: F,
         mut point_cow_operation: H,
         update_nonappendable: G,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
@@ -652,15 +654,20 @@ impl<'s> SegmentHolder {
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
                             let mut all_vectors = write_segment.all_vectors(point_id)?;
-                            let mut payload = write_segment.payload(point_id)?;
+                            let mut payload = write_segment.payload(point_id, hw_counter)?;
 
                             point_cow_operation(point_id, &mut all_vectors, &mut payload);
 
-                            appendable_write_segment.upsert_point(op_num, point_id, all_vectors)?;
+                            appendable_write_segment.upsert_point(
+                                op_num,
+                                point_id,
+                                all_vectors,
+                                hw_counter,
+                            )?;
                             appendable_write_segment
-                                .set_full_payload(op_num, point_id, &payload)?;
+                                .set_full_payload(op_num, point_id, &payload, hw_counter)?;
 
-                            write_segment.delete_point(op_num, point_id)?;
+                            write_segment.delete_point(op_num, point_id, hw_counter)?;
 
                             Ok(true)
                         },
@@ -1270,10 +1277,13 @@ impl<'s> SegmentHolder {
                     let mut removed_points = 0;
                     let segment_arc = locked_segment.get();
                     let mut write_segment = segment_arc.write();
+
+                    let disposable_hw_counter = HardwareCounterCell::disposable();
+
                     for &point_id in &points {
                         if let Some(point_version) = write_segment.point_version(point_id) {
                             removed_points += 1;
-                            write_segment.delete_point(point_version, point_id)?;
+                            write_segment.delete_point(point_version, point_id, &disposable_hw_counter)?; // Internal operation
                         }
                     }
 
@@ -1448,6 +1458,7 @@ mod tests {
                 },
                 |point_id, _, _| processed_points2.push(point_id),
                 |_| update_nonappendable,
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -1496,12 +1507,15 @@ mod tests {
         let mut segment1 = build_segment_1(dir.path());
         let mut segment2 = build_segment_2(dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Insert operation 100 with point 123 and 456 into segment 1, and 789 into segment 2
         segment1
             .upsert_point(
                 100,
                 123.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+                &hw_counter,
             )
             .unwrap();
         segment1
@@ -1509,6 +1523,7 @@ mod tests {
                 100,
                 456.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+                &hw_counter,
             )
             .unwrap();
         segment2
@@ -1516,6 +1531,7 @@ mod tests {
                 100,
                 789.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+                &hw_counter,
             )
             .unwrap();
 
@@ -1528,6 +1544,7 @@ mod tests {
                     99999,
                     99999.into(),
                     segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+                    &hw_counter,
                 )
                 .unwrap();
         }
@@ -1537,6 +1554,7 @@ mod tests {
                     99999,
                     99999.into(),
                     segment::data_types::vectors::only_default_vector(&[0.0, 0.0, 0.0, 0.0]),
+                    &hw_counter,
                 )
                 .unwrap();
         }
@@ -1563,6 +1581,7 @@ mod tests {
                 },
                 |point_id, _, _| processed_points2.push(point_id),
                 |_| false,
+                &hw_counter,
             )
             .unwrap();
         assert_eq!(3, processed_points.len() + processed_points2.len());
@@ -1594,17 +1613,20 @@ mod tests {
         let segment1 = build_segment_1(dir.path());
         let mut segment2 = build_segment_1(dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         segment2
             .upsert_point(
                 100,
                 123.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0, 1.0, 2.0, 3.0]),
+                &hw_counter,
             )
             .unwrap();
         let mut payload = Payload::default();
         payload.0.insert(PAYLOAD_KEY.to_string(), 42.into());
         segment2
-            .set_full_payload(100, 123.into(), &payload)
+            .set_full_payload(100, 123.into(), &payload, &hw_counter)
             .unwrap();
         segment2.appendable_flag = false;
 
@@ -1624,7 +1646,7 @@ mod tests {
             assert_ne!(vector, VectorInternal::Dense(vec![9.0; 4]));
             assert_eq!(
                 read_segment_2
-                    .payload(123.into())
+                    .payload(123.into(), &hw_counter)
                     .unwrap()
                     .get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
                 &Value::from(42)
@@ -1641,6 +1663,7 @@ mod tests {
                     payload.0.insert(PAYLOAD_KEY.to_string(), 2.into());
                 },
                 |_| false,
+                &hw_counter,
             )
             .unwrap();
 
@@ -1651,7 +1674,7 @@ mod tests {
 
         let new_vector = read_segment_1.vector("", 123.into()).unwrap().unwrap();
         assert_eq!(new_vector, VectorInternal::Dense(vec![9.0; 4]));
-        let new_payload_value = read_segment_1.payload(123.into()).unwrap();
+        let new_payload_value = read_segment_1.payload(123.into(), &hw_counter).unwrap();
         assert_eq!(
             new_payload_value.get_value(&JsonPath::from_str(PAYLOAD_KEY).unwrap())[0],
             &Value::from(2)
@@ -1665,18 +1688,20 @@ mod tests {
         let mut segment1 = build_segment_1(dir.path());
         let mut segment2 = build_segment_1(dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         segment1
-            .set_payload(100, 1.into(), &json!({}).into(), &None)
+            .set_payload(100, 1.into(), &json!({}).into(), &None, &hw_counter)
             .unwrap();
         segment1
-            .set_payload(100, 2.into(), &json!({}).into(), &None)
+            .set_payload(100, 2.into(), &json!({}).into(), &None, &hw_counter)
             .unwrap();
 
         segment2
-            .set_payload(200, 4.into(), &json!({}).into(), &None)
+            .set_payload(200, 4.into(), &json!({}).into(), &None, &hw_counter)
             .unwrap();
         segment2
-            .set_payload(200, 5.into(), &json!({}).into(), &None)
+            .set_payload(200, 5.into(), &json!({}).into(), &None, &hw_counter)
             .unwrap();
 
         let mut holder = SegmentHolder::default();
@@ -1709,11 +1734,14 @@ mod tests {
         let mut segment1 = empty_segment(dir.path());
         let mut segment2 = empty_segment(dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         segment1
             .upsert_point(
                 2,
                 10.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+                &hw_counter,
             )
             .unwrap();
         segment2
@@ -1721,6 +1749,7 @@ mod tests {
                 3,
                 10.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+                &hw_counter,
             )
             .unwrap();
 
@@ -1729,6 +1758,7 @@ mod tests {
                 1,
                 11.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+                &hw_counter,
             )
             .unwrap();
         segment2
@@ -1736,6 +1766,7 @@ mod tests {
                 2,
                 11.into(),
                 segment::data_types::vectors::only_default_vector(&[0.0; 4]),
+                &hw_counter,
             )
             .unwrap();
 
@@ -1788,6 +1819,8 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut segments = [
             empty_segment(dir.path()),
             empty_segment(dir.path()),
@@ -1805,7 +1838,7 @@ mod tests {
             for segment in &mut segments {
                 let version = rand.gen_range(1..10);
                 segment
-                    .upsert_point(version, point_id, vector.clone())
+                    .upsert_point(version, point_id, vector.clone(), &hw_counter)
                     .unwrap();
                 max_version = version.max(max_version);
             }

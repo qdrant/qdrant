@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
 
 use super::Segment;
@@ -21,6 +22,7 @@ impl Segment {
         internal_result: Vec<ScoredPointOffset>,
         with_payload: &WithPayload,
         with_vector: &WithVector,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let id_tracker = self.id_tracker.borrow();
         internal_result
@@ -47,7 +49,8 @@ impl Segment {
                     ))
                 })?;
                 let payload = if with_payload.enable {
-                    let initial_payload = self.payload_by_offset(point_offset)?;
+                    let initial_payload = self.payload_by_offset(point_offset, hw_counter)?;
+
                     let processed_payload = if let Some(i) = &with_payload.payload_selector {
                         i.process(initial_payload)
                     } else {

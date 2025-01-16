@@ -3,6 +3,7 @@ use std::fmt;
 use std::ops::Deref as _;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{Condition, CustomIdCheckerCondition as _, Filter, ShardKey};
 
 use super::ShardHolder;
@@ -329,7 +330,9 @@ impl ShardHolder {
                 // Remove any points that might have been transferred from target shard
                 let filter = self.hash_ring_filter(id).expect("hash ring filter");
                 let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
-                shard.delete_local_points(filter).await?;
+                shard
+                    .delete_local_points(filter, HwMeasurementAcc::disposable()) // Internal operation, no performance tracking needed
+                    .await?;
             }
         }
 

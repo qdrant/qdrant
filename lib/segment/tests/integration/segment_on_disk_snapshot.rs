@@ -24,6 +24,8 @@ use tempfile::Builder;
 #[case::regular(SnapshotFormat::Regular)]
 #[case::streamable(SnapshotFormat::Streamable)]
 fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
+    use common::counter::hardware_counter::HardwareCounterCell;
+
     let _ = env_logger::builder().is_test(true).try_init();
 
     let data = r#"
@@ -56,18 +58,30 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
 
     let mut segment = build_segment(segment_builder_dir.path(), &building_config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     segment
-        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]))
+        .upsert_point(0, 0.into(), only_default_vector(&[1.0, 1.0]), &hw_counter)
         .unwrap();
     segment
-        .upsert_point(1, 1.into(), only_default_vector(&[2.0, 2.0]))
+        .upsert_point(1, 1.into(), only_default_vector(&[2.0, 2.0]), &hw_counter)
         .unwrap();
 
     segment
-        .set_full_payload(2, 0.into(), &serde_json::from_str(data).unwrap())
+        .set_full_payload(
+            2,
+            0.into(),
+            &serde_json::from_str(data).unwrap(),
+            &hw_counter,
+        )
         .unwrap();
     segment
-        .set_full_payload(3, 0.into(), &serde_json::from_str(data).unwrap())
+        .set_full_payload(
+            3,
+            0.into(),
+            &serde_json::from_str(data).unwrap(),
+            &hw_counter,
+        )
         .unwrap();
 
     segment
@@ -208,13 +222,15 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         restored_segment.deleted_point_count(),
     );
 
+    let hw_counter = HardwareCounterCell::new();
+
     for id in segment.iter_points() {
         let vectors = segment.all_vectors(id).unwrap();
         let restored_vectors = restored_segment.all_vectors(id).unwrap();
         assert_eq!(vectors, restored_vectors);
 
-        let payload = segment.payload(id).unwrap();
-        let restored_payload = restored_segment.payload(id).unwrap();
+        let payload = segment.payload(id, &hw_counter).unwrap();
+        let restored_payload = restored_segment.payload(id, &hw_counter).unwrap();
         assert_eq!(payload, restored_payload);
     }
 }

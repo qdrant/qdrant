@@ -109,7 +109,7 @@ impl Collection {
                     read_consistency,
                     &shard_selection,
                     timeout,
-                    hw_measurement_acc,
+                    hw_measurement_acc.clone(),
                 )
                 .await?;
             // update timeout
@@ -125,6 +125,7 @@ impl Collection {
                         read_consistency,
                         &shard_selection,
                         timeout,
+                        hw_measurement_acc.clone(),
                     )
                 });
             future::try_join_all(filled_results).await
@@ -198,6 +199,7 @@ impl Collection {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn fill_search_result_with_payload(
         &self,
         search_result: Vec<ScoredPoint>,
@@ -206,6 +208,7 @@ impl Collection {
         read_consistency: Option<ReadConsistency>,
         shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ScoredPoint>> {
         // short-circuit if not needed
         if let (&Some(WithPayloadInterface::Bool(false)), &WithVector::Bool(false)) =
@@ -227,8 +230,15 @@ impl Collection {
             with_vector,
         };
         let retrieved_records = self
-            .retrieve(retrieve_request, read_consistency, shard_selection, timeout)
+            .retrieve(
+                retrieve_request,
+                read_consistency,
+                shard_selection,
+                timeout,
+                hw_measurement_acc,
+            )
             .await?;
+
         let mut records_map: HashMap<ExtendedPointId, RecordInternal> = retrieved_records
             .into_iter()
             .map(|rec| (rec.id, rec))

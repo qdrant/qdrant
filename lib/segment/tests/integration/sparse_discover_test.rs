@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -148,15 +149,17 @@ fn sparse_index_discover_test() {
     let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
     let mut dense_segment = build_segment(dir.path(), &dense_config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let (sparse_vector, dense_vector) = random_named_vector(&mut rnd, dim);
 
         let idx = n.into();
         sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector)
+            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
             .unwrap();
         dense_segment
-            .upsert_point(n as SeqNumberType, idx, dense_vector)
+            .upsert_point(n as SeqNumberType, idx, dense_vector, &hw_counter)
             .unwrap();
     }
 
@@ -269,12 +272,14 @@ fn sparse_index_hardware_measurement_test() {
 
     let mut sparse_segment = build_segment(dir.path(), &sparse_config, true).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for n in 0..num_vectors {
         let (sparse_vector, _) = random_named_vector(&mut rnd, dim);
 
         let idx = n.into();
         sparse_segment
-            .upsert_point(n as SeqNumberType, idx, sparse_vector)
+            .upsert_point(n as SeqNumberType, idx, sparse_vector, &hw_counter)
             .unwrap();
     }
     let payload_index_ptr = sparse_segment.payload_index.clone();

@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
@@ -41,9 +42,16 @@ fn test_building_new_segment() {
     let mut builder =
         SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Include overlapping with segment1 to check the
     segment2
-        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
+        .upsert_point(
+            100,
+            3.into(),
+            only_default_vector(&[0., 0., 0., 0.]),
+            &hw_counter,
+        )
         .unwrap();
 
     builder
@@ -109,9 +117,16 @@ fn test_building_new_defragmented_segment() {
     let mut builder =
         SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Include overlapping with segment1 to check the
     segment2
-        .upsert_point(100, 3.into(), only_default_vector(&[0., 0., 0., 0.]))
+        .upsert_point(
+            100,
+            3.into(),
+            only_default_vector(&[0., 0., 0., 0.]),
+            &hw_counter,
+        )
         .unwrap();
 
     builder.set_defragment_keys(vec![defragment_key.clone()]);
@@ -173,9 +188,11 @@ fn check_points_defragmented(
     // keeps track of groups/values that have already been seen while iterating
     let mut seen_values: Vec<Value> = vec![];
 
+    let hw_counter = HardwareCounterCell::new();
+
     for internal_id in id_tracker.iter_internal() {
         let external_id = id_tracker.external_id(internal_id).unwrap();
-        let payload = segment.payload(external_id).unwrap();
+        let payload = segment.payload(external_id, &hw_counter).unwrap();
         let values = payload.get_value(defragment_key);
 
         if values.is_empty() {
@@ -217,6 +234,8 @@ fn test_building_new_sparse_segment() {
 
     let stopped = AtomicBool::new(false);
 
+    let hw_counter = HardwareCounterCell::new();
+
     let segment1 = build_segment_sparse_1(dir.path());
     let mut segment2 = build_segment_sparse_2(dir.path());
 
@@ -230,6 +249,7 @@ fn test_building_new_sparse_segment() {
             100,
             3.into(),
             NamedVectors::from_ref("sparse", VectorRef::Sparse(&vec)),
+            &hw_counter,
         )
         .unwrap();
 
@@ -353,22 +373,24 @@ fn test_building_new_segment_bug_5614() {
     let vector_100_high = only_default_vector(&[3., 3., 0., 0.]);
     let vector_101_high = only_default_vector(&[4., 4., 0., 0.]);
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert point 100 and 101 in both segments
     // Do this in a specific order so that:
     // - the latter segment has a higher point version
     // - the internal point IDs don't match across segments
     segment1
-        .upsert_point(123, 100.into(), vector_100_low)
+        .upsert_point(123, 100.into(), vector_100_low, &hw_counter)
         .unwrap();
     segment1
-        .upsert_point(123, 101.into(), vector_101_low)
+        .upsert_point(123, 101.into(), vector_101_low, &hw_counter)
         .unwrap();
 
     segment2
-        .upsert_point(124, 101.into(), vector_101_high.clone())
+        .upsert_point(124, 101.into(), vector_101_high.clone(), &hw_counter)
         .unwrap();
     segment2
-        .upsert_point(124, 100.into(), vector_100_high.clone())
+        .upsert_point(124, 100.into(), vector_100_high.clone(), &hw_counter)
         .unwrap();
 
     builder.update(&[&segment1, &segment2], &stopped).unwrap();
@@ -407,15 +429,32 @@ fn test_building_cancellation() {
     let mut segment = empty_segment(dir.path());
     let mut segment_2 = empty_segment(dir_2.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     for idx in 0..2000 {
         baseline_segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(
+                1,
+                idx.into(),
+                only_default_vector(&[0., 0., 0., 0.]),
+                &hw_counter,
+            )
             .unwrap();
         segment
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(
+                1,
+                idx.into(),
+                only_default_vector(&[0., 0., 0., 0.]),
+                &hw_counter,
+            )
             .unwrap();
         segment_2
-            .upsert_point(1, idx.into(), only_default_vector(&[0., 0., 0., 0.]))
+            .upsert_point(
+                1,
+                idx.into(),
+                only_default_vector(&[0., 0., 0., 0.]),
+                &hw_counter,
+            )
             .unwrap();
     }
 
@@ -470,9 +509,16 @@ fn test_building_new_segment_with_mmap_payload() {
         PayloadStorageType::Mmap
     );
 
+    let hw_counter = HardwareCounterCell::new();
+
     // add one point
     segment1
-        .upsert_point(1, 1.into(), only_default_vector(&[1.0, 0.0, 1.0, 1.0]))
+        .upsert_point(
+            1,
+            1.into(),
+            only_default_vector(&[1.0, 0.0, 1.0, 1.0]),
+            &hw_counter,
+        )
         .unwrap();
 
     let builder = SegmentBuilder::new(

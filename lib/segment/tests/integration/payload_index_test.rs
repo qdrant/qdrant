@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
@@ -60,6 +61,8 @@ impl TestSegments {
     fn new() -> Self {
         let base_dir = Builder::new().prefix("test_segments").tempdir().unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut rnd = StdRng::seed_from_u64(42);
 
         let config = Self::make_simple_config(true);
@@ -85,16 +88,16 @@ impl TestSegments {
             let payload: Payload = generate_diverse_payload(&mut rnd);
 
             plain_segment
-                .upsert_point(opnum, idx, only_default_vector(&vector))
+                .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter)
                 .unwrap();
             struct_segment
-                .upsert_point(opnum, idx, only_default_vector(&vector))
+                .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter)
                 .unwrap();
             plain_segment
-                .set_full_payload(opnum, idx, &payload)
+                .set_full_payload(opnum, idx, &payload, &hw_counter)
                 .unwrap();
             struct_segment
-                .set_full_payload(opnum, idx, &payload)
+                .set_full_payload(opnum, idx, &payload, &hw_counter)
                 .unwrap();
 
             opnum += 1;
@@ -162,13 +165,13 @@ impl TestSegments {
             opnum += 1;
             let idx_to_remove = rnd.gen_range(0..num_points);
             plain_segment
-                .clear_payload(opnum, idx_to_remove.into())
+                .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
             struct_segment
-                .clear_payload(opnum, idx_to_remove.into())
+                .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
             mmap_segment
-                .clear_payload(opnum, idx_to_remove.into())
+                .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
         }
 
@@ -176,13 +179,13 @@ impl TestSegments {
             opnum += 1;
             let idx_to_remove = rnd.gen_range(0..num_points);
             plain_segment
-                .delete_point(opnum, idx_to_remove.into())
+                .delete_point(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
             struct_segment
-                .delete_point(opnum, idx_to_remove.into())
+                .delete_point(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
             mmap_segment
-                .delete_point(opnum, idx_to_remove.into())
+                .delete_point(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
         }
 
@@ -384,6 +387,8 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     eprintln!("{deep_nested_str_proj_key}");
 
+    let hw_counter = HardwareCounterCell::new();
+
     opnum += 1;
     for n in 0..num_points {
         let idx = n.into();
@@ -391,16 +396,16 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         let payload: Payload = generate_diverse_nested_payload(&mut rnd);
 
         plain_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter)
             .unwrap();
         struct_segment
-            .upsert_point(opnum, idx, only_default_vector(&vector))
+            .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter)
             .unwrap();
         plain_segment
-            .set_full_payload(opnum, idx, &payload)
+            .set_full_payload(opnum, idx, &payload, &hw_counter)
             .unwrap();
         struct_segment
-            .set_full_payload(opnum, idx, &payload)
+            .set_full_payload(opnum, idx, &payload, &hw_counter)
             .unwrap();
 
         opnum += 1;
@@ -410,10 +415,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         opnum += 1;
         let idx_to_remove = rnd.gen_range(0..num_points);
         plain_segment
-            .clear_payload(opnum, idx_to_remove.into())
+            .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
         struct_segment
-            .clear_payload(opnum, idx_to_remove.into())
+            .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
     }
 
@@ -421,10 +426,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         opnum += 1;
         let idx_to_remove = rnd.gen_range(0..num_points);
         plain_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .delete_point(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
         struct_segment
-            .delete_point(opnum, idx_to_remove.into())
+            .delete_point(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
     }
 

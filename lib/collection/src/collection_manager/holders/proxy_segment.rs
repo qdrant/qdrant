@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
@@ -133,6 +134,7 @@ impl ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let deleted_points_guard = self.deleted_points.upgradable_read();
 
@@ -175,16 +177,16 @@ impl ProxySegment {
 
             let (all_vectors, payload) = (
                 wrapped_segment_guard.all_vectors(point_id)?,
-                wrapped_segment_guard.payload(point_id)?,
+                wrapped_segment_guard.payload(point_id, hw_counter)?,
             );
 
             {
                 let segment_arc = self.write_segment.get();
                 let mut write_segment = segment_arc.write();
 
-                write_segment.upsert_point(op_num, point_id, all_vectors)?;
+                write_segment.upsert_point(op_num, point_id, all_vectors, hw_counter)?;
                 if !payload.is_empty() {
-                    write_segment.set_full_payload(op_num, point_id, &payload)?;
+                    write_segment.set_full_payload(op_num, point_id, &payload, hw_counter)?;
                 }
             }
 
@@ -298,7 +300,11 @@ impl ProxySegment {
                                 >= wrapped_segment.point_version(*point_id).unwrap_or(0),
                             "proxied point deletes should have newer version than point in segment",
                         );
-                        wrapped_segment.delete_point(versions.operation_version, *point_id)?;
+                        wrapped_segment.delete_point(
+                            versions.operation_version,
+                            *point_id,
+                            &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
+                        )?;
                     }
                     OperationResult::Ok(())
                 })?;
@@ -447,18 +453,20 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
+        self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
             .write()
-            .upsert_point(op_num, point_id, vectors)
+            .upsert_point(op_num, point_id, vectors, hw_counter)
     }
 
     fn delete_point(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let mut was_deleted = false;
 
@@ -504,7 +512,7 @@ impl SegmentEntry for ProxySegment {
             .write_segment
             .get()
             .write()
-            .delete_point(op_num, point_id)?;
+            .delete_point(op_num, point_id, hw_counter)?;
 
         Ok(was_deleted || was_deleted_in_writable)
     }
@@ -514,12 +522,13 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
+        self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
             .write()
-            .update_vectors(op_num, point_id, vectors)
+            .update_vectors(op_num, point_id, vectors, hw_counter)
     }
 
     fn delete_vector(
@@ -527,12 +536,13 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &str,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
+        self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
             .write()
-            .delete_vector(op_num, point_id, vector_name)
+            .delete_vector(op_num, point_id, vector_name, hw_counter)
     }
 
     fn set_full_payload(
@@ -540,12 +550,15 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
-        self.write_segment
-            .get()
-            .write()
-            .set_full_payload(op_num, point_id, full_payload)
+        self.move_if_exists(op_num, point_id, hw_counter)?;
+        self.write_segment.get().write().set_full_payload(
+            op_num,
+            point_id,
+            full_payload,
+            hw_counter,
+        )
     }
 
     fn set_payload(
@@ -554,12 +567,13 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         payload: &Payload,
         key: &Option<JsonPath>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
+        self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
             .write()
-            .set_payload(op_num, point_id, payload, key)
+            .set_payload(op_num, point_id, payload, key, hw_counter)
     }
 
     fn delete_payload(
@@ -567,24 +581,26 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
+        self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
             .write()
-            .delete_payload(op_num, point_id, key)
+            .delete_payload(op_num, point_id, key, hw_counter)
     }
 
     fn clear_payload(
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id)?;
+        self.move_if_exists(op_num, point_id, hw_counter)?;
         self.write_segment
             .get()
             .write()
-            .clear_payload(op_num, point_id)
+            .clear_payload(op_num, point_id, hw_counter)
     }
 
     fn vector(
@@ -641,18 +657,28 @@ impl SegmentEntry for ProxySegment {
         Ok(result)
     }
 
-    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
+    fn payload(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
         return if self.deleted_points.read().contains_key(&point_id) {
-            self.write_segment.get().read().payload(point_id)
+            self.write_segment
+                .get()
+                .read()
+                .payload(point_id, hw_counter)
         } else {
             {
                 let write_segment = self.write_segment.get();
                 let segment_guard = write_segment.read();
                 if segment_guard.has_point(point_id) {
-                    return segment_guard.payload(point_id);
+                    return segment_guard.payload(point_id, hw_counter);
                 }
             }
-            self.wrapped_segment.get().read().payload(point_id)
+            self.wrapped_segment
+                .get()
+                .read()
+                .payload(point_id, hw_counter)
         };
     }
 
@@ -1148,6 +1174,7 @@ impl SegmentEntry for ProxySegment {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         // we don’t want to cancel this filtered read
@@ -1190,7 +1217,7 @@ impl SegmentEntry for ProxySegment {
             .write_segment
             .get()
             .write()
-            .delete_filtered(op_num, filter)?;
+            .delete_filtered(op_num, filter, hw_counter)?;
 
         Ok(deleted_points)
     }
@@ -1338,15 +1365,19 @@ mod tests {
             LockedIndexChanges::default(),
         );
 
+        let hw_counter = HardwareCounterCell::new();
+
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter)
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
             .unwrap();
-        proxy_segment.delete_point(102, 1.into()).unwrap();
+        proxy_segment
+            .delete_point(102, 1.into(), &hw_counter)
+            .unwrap();
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
@@ -1379,7 +1410,7 @@ mod tests {
 
         let payload_key = "color".parse().unwrap();
         proxy_segment
-            .delete_payload(103, 2.into(), &payload_key)
+            .delete_payload(103, 2.into(), &payload_key, &hw_counter)
             .unwrap();
 
         assert!(proxy_segment.write_segment.get().read().has_point(2.into()))
@@ -1398,15 +1429,19 @@ mod tests {
             LockedIndexChanges::default(),
         );
 
+        let hw_counter = HardwareCounterCell::new();
+
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_counter)
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_counter)
             .unwrap();
-        proxy_segment.delete_point(102, 1.into()).unwrap();
+        proxy_segment
+            .delete_point(102, 1.into(), &hw_counter)
+            .unwrap();
 
         let query_vector = [1.0, 1.0, 1.0, 1.0].into();
         let search_result = proxy_segment
@@ -1593,7 +1628,11 @@ mod tests {
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
-        proxy_segment.delete_point(100, 2.into()).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        proxy_segment
+            .delete_point(100, 2.into(), &hw_counter)
+            .unwrap();
 
         let proxy_res = proxy_segment.read_filtered(None, Some(100), None, &is_stopped);
         let proxy_res_filtered =
@@ -1615,7 +1654,9 @@ mod tests {
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
 
-        proxy_segment.delete_point(100, 2.into()).unwrap();
+        let hw_cell = HardwareCounterCell::new();
+
+        proxy_segment.delete_point(100, 2.into(), &hw_cell).unwrap();
 
         proxy_segment
             .set_payload(
@@ -1623,6 +1664,7 @@ mod tests {
                 3.into(),
                 &json!({ "color": vec!["red".to_owned()] }).into(),
                 &None,
+                &hw_cell,
             )
             .unwrap();
         let proxy_res = proxy_segment.read_range(None, Some(10.into()));
@@ -1701,6 +1743,8 @@ mod tests {
         let deleted_points = LockedRmSet::default();
         let changed_indexes = LockedIndexChanges::default();
 
+        let hw_cell = HardwareCounterCell::new();
+
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment.clone(),
@@ -1717,16 +1761,16 @@ mod tests {
 
         let vec4 = vec![1.1, 1.0, 0.0, 1.0];
         proxy_segment
-            .upsert_point(100, 4.into(), only_default_vector(&vec4))
+            .upsert_point(100, 4.into(), only_default_vector(&vec4), &hw_cell)
             .unwrap();
         let vec6 = vec![1.0, 1.0, 0.5, 1.0];
         proxy_segment
-            .upsert_point(101, 6.into(), only_default_vector(&vec6))
+            .upsert_point(101, 6.into(), only_default_vector(&vec6), &hw_cell)
             .unwrap();
-        proxy_segment.delete_point(102, 1.into()).unwrap();
+        proxy_segment.delete_point(102, 1.into(), &hw_cell).unwrap();
 
         proxy_segment2
-            .upsert_point(201, 11.into(), only_default_vector(&vec6))
+            .upsert_point(201, 11.into(), only_default_vector(&vec6), &hw_cell)
             .unwrap();
 
         let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
@@ -1775,6 +1819,8 @@ mod tests {
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
         let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
+        let hw_cell = HardwareCounterCell::new();
+
         let mut proxy_segment = ProxySegment::new(
             original_segment,
             write_segment,
@@ -1788,20 +1834,22 @@ mod tests {
         assert_eq!(segment_info.num_vectors, 5);
 
         // Delete nonexistent point, counts should remain the same
-        proxy_segment.delete_point(101, 99999.into()).unwrap();
+        proxy_segment
+            .delete_point(101, 99999.into(), &hw_cell)
+            .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 5);
         assert_eq!(segment_info.num_vectors, 5);
 
         // Delete point 1, counts should decrease by 1
-        proxy_segment.delete_point(102, 4.into()).unwrap();
+        proxy_segment.delete_point(102, 4.into(), &hw_cell).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 4);
 
         // Delete vector of point 2, vector count should now be zero
         proxy_segment
-            .delete_vector(103, 2.into(), DEFAULT_VECTOR_NAME)
+            .delete_vector(103, 2.into(), DEFAULT_VECTOR_NAME, &hw_cell)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
@@ -1849,11 +1897,14 @@ mod tests {
         let mut original_segment = build_segment(dir.path(), &config, true).unwrap();
         let write_segment = build_segment(dir.path(), &config, true).unwrap();
 
+        let hw_cell = HardwareCounterCell::new();
+
         original_segment
             .upsert_point(
                 100,
                 4.into(),
                 NamedVectors::from_pairs([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                &hw_cell,
             )
             .unwrap();
         original_segment
@@ -1861,6 +1912,7 @@ mod tests {
                 101,
                 6.into(),
                 NamedVectors::from_pairs([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                &hw_cell,
             )
             .unwrap();
 
@@ -1885,6 +1937,7 @@ mod tests {
                 102,
                 8.into(),
                 NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+                &hw_cell,
             )
             .unwrap();
         proxy_segment
@@ -1892,6 +1945,7 @@ mod tests {
                 103,
                 10.into(),
                 NamedVectors::from_pairs([("b".into(), vec![1.0])]),
+                &hw_cell,
             )
             .unwrap();
         let segment_info = proxy_segment.info();
@@ -1899,25 +1953,29 @@ mod tests {
         assert_eq!(segment_info.num_vectors, 6);
 
         // Delete nonexistent point, counts should remain the same
-        proxy_segment.delete_point(104, 1.into()).unwrap();
+        proxy_segment.delete_point(104, 1.into(), &hw_cell).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
         assert_eq!(segment_info.num_vectors, 6);
 
         // Delete point 4, counts should decrease by 1
-        proxy_segment.delete_point(105, 4.into()).unwrap();
+        proxy_segment.delete_point(105, 4.into(), &hw_cell).unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 4);
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
-        proxy_segment.delete_vector(106, 6.into(), "a").unwrap();
+        proxy_segment
+            .delete_vector(106, 6.into(), "a", &hw_cell)
+            .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 3);
 
         // Deleting it again shouldn't chain anything
-        proxy_segment.delete_vector(107, 6.into(), "a").unwrap();
+        proxy_segment
+            .delete_vector(107, 6.into(), "a", &hw_cell)
+            .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
         assert_eq!(segment_info.num_vectors, 3);
@@ -1928,6 +1986,7 @@ mod tests {
                 108,
                 8.into(),
                 NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+                &hw_cell,
             )
             .unwrap();
         let segment_info = proxy_segment.info();
@@ -1940,6 +1999,7 @@ mod tests {
                 109,
                 8.into(),
                 NamedVectors::from_pairs([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
+                &hw_cell,
             )
             .unwrap();
         let segment_info = proxy_segment.info();
@@ -1994,12 +2054,15 @@ mod tests {
 
         let current_version = proxy_segment.version();
 
+        let hw_cell = HardwareCounterCell::new();
+
         wrapped_segment
             .write()
             .upsert_point(
                 current_version + 1,
                 42.into(),
                 only_default_vector(&[4.0, 2.0, 0.0, 0.0]),
+                &hw_cell,
             )
             .unwrap();
 
@@ -2008,6 +2071,7 @@ mod tests {
                 current_version + 2,
                 69.into(),
                 only_default_vector(&[6.0, 9.0, 0.0, 0.0]),
+                &hw_cell,
             )
             .unwrap();
 
@@ -2035,6 +2099,7 @@ mod tests {
                 current_version + 1,
                 666.into(),
                 only_default_vector(&[6.0, 6.0, 6.0, 0.0]),
+                &hw_cell,
             )
             .unwrap();
 
@@ -2043,6 +2108,7 @@ mod tests {
                 current_version + 2,
                 42.into(),
                 only_default_vector(&[0.0, 0.0, 4.0, 2.0]),
+                &hw_cell,
             )
             .unwrap();
 

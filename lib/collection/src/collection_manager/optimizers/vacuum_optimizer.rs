@@ -212,6 +212,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::cpu::CpuPermit;
     use itertools::Itertools;
     use parking_lot::RwLock;
@@ -237,6 +238,8 @@ mod tests {
 
         let segment = holder.get(segment_id).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let original_segment_path = match segment {
             LockedSegment::Original(s) => s.read().current_path.clone(),
             LockedSegment::Proxy(_) => panic!("Not expected"),
@@ -251,7 +254,11 @@ mod tests {
             .collect_vec();
 
         for &point_id in &segment_points_to_delete {
-            segment.get().write().delete_point(101, point_id).unwrap();
+            segment
+                .get()
+                .write()
+                .delete_point(101, point_id, &hw_counter)
+                .unwrap();
         }
 
         let segment_points_to_assign1 = segment
@@ -274,7 +281,13 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(102, point_id, &json!({ "color": "red" }).into(), &None)
+                .set_payload(
+                    102,
+                    point_id,
+                    &json!({ "color": "red" }).into(),
+                    &None,
+                    &hw_counter,
+                )
                 .unwrap();
         }
 
@@ -282,7 +295,13 @@ mod tests {
             segment
                 .get()
                 .write()
-                .set_payload(102, point_id, &json!({"size": 0.42}).into(), &None)
+                .set_payload(
+                    102,
+                    point_id,
+                    &json!({"size": 0.42}).into(),
+                    &None,
+                    &hw_counter,
+                )
                 .unwrap();
         }
 
@@ -346,7 +365,7 @@ mod tests {
         // Check payload is preserved in optimized segment
         for &point_id in &segment_points_to_assign1 {
             assert!(segment_guard.has_point(point_id));
-            let payload = segment_guard.payload(point_id).unwrap();
+            let payload = segment_guard.payload(point_id, &hw_counter).unwrap();
             let payload_color = payload
                 .get_value(&"color".parse().unwrap())
                 .into_iter()
@@ -493,6 +512,8 @@ mod tests {
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Delete some points and vectors
         {
             let holder = locked_holder.write();
@@ -509,7 +530,7 @@ mod tests {
                 .filter_map(|(i, point_id)| (i % 10 == 3).then_some(point_id))
                 .collect_vec();
             for &point_id in &segment_points_to_delete {
-                segment.delete_point(201, point_id).unwrap();
+                segment.delete_point(201, point_id, &hw_counter).unwrap();
             }
 
             // Delete 25% of vectors named vector1

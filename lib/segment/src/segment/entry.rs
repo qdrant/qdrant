@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use io::storage_version::VERSION_FILE;
@@ -74,10 +75,12 @@ impl SegmentEntry for Segment {
 
         check_stopped(&vector_query_context.is_stopped())?;
 
+        let hw_counter = vector_query_context.hardware_counter();
+
         internal_results
             .into_iter()
             .map(|internal_result| {
-                self.process_search_result(internal_result, with_payload, with_vector)
+                self.process_search_result(internal_result, with_payload, with_vector, &hw_counter)
             })
             .collect()
     }
@@ -87,6 +90,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set Values!
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
@@ -107,6 +111,7 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set Values!
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         match internal_id {
@@ -144,6 +149,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set Values!
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
@@ -166,6 +172,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &str,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
@@ -193,6 +200,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -215,6 +223,7 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         payload: &Payload,
         key: &Option<JsonPath>,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -236,6 +245,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -256,6 +266,7 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -293,9 +304,13 @@ impl SegmentEntry for Segment {
         Ok(result)
     }
 
-    fn payload(&self, point_id: PointIdType) -> OperationResult<Payload> {
+    fn payload(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
         let internal_id = self.lookup_internal_id(point_id)?;
-        self.payload_by_offset(internal_id)
+        self.payload_by_offset(internal_id, hw_counter)
     }
 
     fn iter_points(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
@@ -753,11 +768,12 @@ impl SegmentEntry for Segment {
         &'a mut self,
         op_num: SeqNumberType,
         filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         let is_stopped = AtomicBool::new(false);
         for point_id in self.read_filtered(None, None, Some(filter), &is_stopped) {
-            deleted_points += usize::from(self.delete_point(op_num, point_id)?);
+            deleted_points += usize::from(self.delete_point(op_num, point_id, hw_counter)?);
         }
 
         Ok(deleted_points)

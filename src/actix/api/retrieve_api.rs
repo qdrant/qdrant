@@ -7,6 +7,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     PointRequest, PointRequestInternal, RecordInternal, ScrollRequest,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::TryFutureExt;
 use itertools::Itertools;
 use segment::types::{PointIdType, WithPayloadInterface};
@@ -57,6 +58,7 @@ async fn do_get_point(
         timeout,
         shard_selection,
         access,
+        HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
     )
     .await
     .map(|points| points.into_iter().next())
@@ -146,6 +148,7 @@ async fn get_points(
             params.timeout(),
             shard_selection,
             access,
+            HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
         )
         .map_ok(|response| {
             response
@@ -195,6 +198,7 @@ async fn scroll_points(
         params.timeout(),
         shard_selection,
         access,
+        HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
     ))
     .await
 }

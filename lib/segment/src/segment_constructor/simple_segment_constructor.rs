@@ -115,6 +115,7 @@ pub fn build_multivec_segment(
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use serde_json::json;
     use tempfile::Builder;
 
@@ -143,26 +144,28 @@ mod tests {
         let vec4 = vec![1.0, 1.0, 0.0, 1.0];
         let vec5 = vec![1.0, 0.0, 0.0, 0.0];
 
-        match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec)) {
+        let hw_counter = HardwareCounterCell::new();
+
+        match segment.upsert_point(1, 120.into(), only_default_vector(&wrong_vec), &hw_counter) {
             Err(OperationError::WrongVectorDimension { .. }) => (),
             Err(_) => panic!("Wrong error"),
             Ok(_) => panic!("Operation with wrong vector should fail"),
         };
 
         segment
-            .upsert_point(2, 1.into(), only_default_vector(&vec1))
+            .upsert_point(2, 1.into(), only_default_vector(&vec1), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(2, 2.into(), only_default_vector(&vec2))
+            .upsert_point(2, 2.into(), only_default_vector(&vec2), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(2, 3.into(), only_default_vector(&vec3))
+            .upsert_point(2, 3.into(), only_default_vector(&vec3), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(2, 4.into(), only_default_vector(&vec4))
+            .upsert_point(2, 4.into(), only_default_vector(&vec4), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(2, 5.into(), only_default_vector(&vec5))
+            .upsert_point(2, 5.into(), only_default_vector(&vec5), &hw_counter)
             .unwrap();
 
         segment
@@ -171,6 +174,7 @@ mod tests {
                 1.into(),
                 &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
                 &None,
+                &hw_counter,
             )
             .unwrap();
 
@@ -180,6 +184,7 @@ mod tests {
                 2.into(),
                 &json!({ "color": vec!["red".to_owned(), "blue".to_owned()] }).into(),
                 &None,
+                &hw_counter,
             )
             .unwrap();
 
@@ -189,6 +194,7 @@ mod tests {
                 3.into(),
                 &json!({ "color": vec!["red".to_owned(), "yellow".to_owned()] }).into(),
                 &None,
+                &hw_counter,
             )
             .unwrap();
 
@@ -198,30 +204,31 @@ mod tests {
                 4.into(),
                 &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
                 &None,
+                &hw_counter,
             )
             .unwrap();
 
         // Replace vectors
         segment
-            .upsert_point(4, 1.into(), only_default_vector(&vec1))
+            .upsert_point(4, 1.into(), only_default_vector(&vec1), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(5, 2.into(), only_default_vector(&vec2))
+            .upsert_point(5, 2.into(), only_default_vector(&vec2), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(6, 3.into(), only_default_vector(&vec3))
+            .upsert_point(6, 3.into(), only_default_vector(&vec3), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(7, 4.into(), only_default_vector(&vec4))
+            .upsert_point(7, 4.into(), only_default_vector(&vec4), &hw_counter)
             .unwrap();
         segment
-            .upsert_point(8, 5.into(), only_default_vector(&vec5))
+            .upsert_point(8, 5.into(), only_default_vector(&vec5), &hw_counter)
             .unwrap();
 
         assert_eq!(segment.version(), 8);
 
         let declined = segment
-            .upsert_point(3, 5.into(), only_default_vector(&vec5))
+            .upsert_point(3, 5.into(), only_default_vector(&vec5), &hw_counter)
             .unwrap();
 
         // Should not be processed due to operation number

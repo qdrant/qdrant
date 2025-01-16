@@ -107,11 +107,17 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let inner_request = request.into_inner();
+
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(inner_request.collection_name.clone());
+
         get(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
+            inner_request,
             None,
             access,
+            hw_metrics,
         )
         .await
     }
@@ -384,11 +390,18 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
+
+        let inner_request = request.into_inner();
+
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(inner_request.collection_name.clone());
+
         scroll(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
-            request.into_inner(),
+            inner_request,
             None,
             access,
+            hw_metrics,
         )
         .await
     }

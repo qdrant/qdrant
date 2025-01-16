@@ -55,6 +55,14 @@ impl PayloadStorage for SimplePayloadStorage {
         }
     }
 
+    fn get_measured(
+        &self,
+        point_id: PointOffsetType,
+        _: &common::counter::hardware_counter::HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.get(point_id)
+    }
+
     fn delete(
         &mut self,
         point_id: PointOffsetType,
