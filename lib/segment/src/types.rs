@@ -22,6 +22,7 @@ use smol_str::SmolStr;
 use strum::EnumIter;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
+use zerocopy::native_endian::U64;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
@@ -173,6 +174,32 @@ impl<'de> serde::Deserialize<'de> for ExtendedPointId {
 
 /// Type of point index across all segments
 pub type PointIdType = ExtendedPointId;
+
+/// Compact representation of [`ExtendedPointId`].
+/// Unlike [`ExtendedPointId`], this type is 17 bytes long vs 24 bytes.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub enum CompactExtendedPointId {
+    NumId(U64),
+    Uuid(Uuid),
+}
+
+impl From<ExtendedPointId> for CompactExtendedPointId {
+    fn from(id: ExtendedPointId) -> Self {
+        match id {
+            ExtendedPointId::NumId(num) => CompactExtendedPointId::NumId(U64::new(num)),
+            ExtendedPointId::Uuid(uuid) => CompactExtendedPointId::Uuid(uuid),
+        }
+    }
+}
+
+impl From<CompactExtendedPointId> for ExtendedPointId {
+    fn from(id: CompactExtendedPointId) -> Self {
+        match id {
+            CompactExtendedPointId::NumId(num) => ExtendedPointId::NumId(num.get()),
+            CompactExtendedPointId::Uuid(uuid) => ExtendedPointId::Uuid(uuid),
+        }
+    }
+}
 
 /// Type of internal tags, build from payload
 #[derive(
