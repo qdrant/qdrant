@@ -359,6 +359,7 @@ impl ShardReplicaSet {
                 hashring_filter,
                 merge_points,
                 &self.search_runtime,
+                self.this_peer_id(),
             )
             .await
     }

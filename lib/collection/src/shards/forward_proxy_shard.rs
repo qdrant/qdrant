@@ -16,7 +16,7 @@ use segment::types::{
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
-use super::shard::ShardId;
+use super::shard::{PeerId, ShardId};
 use super::update_tracker::UpdateTracker;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::point_ops::{
@@ -30,7 +30,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationToShard,
-    OperationWithClockTag, SplitByShard as _,
+    OperationWithClockTag, Reason, SplitByShard as _,
 };
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
@@ -123,6 +123,7 @@ impl ForwardProxyShard {
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
+        this_peer_id: PeerId,
     ) -> CollectionResult<Option<PointIdType>> {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
@@ -180,9 +181,20 @@ impl ForwardProxyShard {
         // We only need to wait for the last batch.
         let wait = next_page_offset.is_none();
 
+        let reason = if !merge_points {
+            Reason::StreamRecordsTransfer
+        } else {
+            Reason::Resharding
+        };
+
         // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
-            .update(OperationWithClockTag::from(insert_points_operation), wait) // TODO: Assign clock tag!? 🤔
+            .update(
+                OperationWithClockTag::from(insert_points_operation)
+                    .reason(reason)
+                    .sender(this_peer_id),
+                wait,
+            ) // TODO: Assign clock tag!? 🤔
             .await?;
 
         Ok(next_page_offset)
@@ -306,13 +318,13 @@ impl ShardOperation for ForwardProxyShard {
         };
 
         if let Some(operation) = forward_operation {
-            let remote_result =
-                self.remote_shard
-                    .update(operation, false)
-                    .await
-                    .map_err(|err| {
-                        CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
-                    })?;
+            let remote_result = self
+                .remote_shard
+                .update(operation.reason(Reason::ForwardProxy), false) // TODO: Assign current peer to operation debug metadata!
+                .await
+                .map_err(|err| {
+                    CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
+                })?;
 
             // Merge `result` and `remote_result`:
             //

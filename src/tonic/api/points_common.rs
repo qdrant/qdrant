@@ -37,7 +37,9 @@ use collection::operations::types::{
     RecommendExample, ScrollRequestInternal,
 };
 use collection::operations::vector_ops::DeleteVectors;
-use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use collection::operations::{
+    ClockTag, CollectionUpdateOperations, DebugMetadata, OperationWithClockTag,
+};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
@@ -115,6 +117,7 @@ pub async fn upsert(
     toc_provider: impl CheckedTocProvider,
     upsert_points: UpsertPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
@@ -144,6 +147,7 @@ pub async fn upsert(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -160,6 +164,7 @@ pub async fn sync(
     toc: Arc<TableOfContent>,
     sync_points: SyncPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
@@ -200,7 +205,8 @@ pub async fn sync(
     let result = toc
         .update(
             &collection_name,
-            OperationWithClockTag::new(collection_operation, clock_tag),
+            OperationWithClockTag::new(collection_operation, clock_tag)
+                .with_debug_metadata(debug_metadata),
             wait.unwrap_or(false),
             write_ordering_from_proto(ordering)?,
             shard_selector,
@@ -216,6 +222,7 @@ pub async fn delete(
     toc_provider: impl CheckedTocProvider,
     delete_points: DeletePoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
@@ -243,6 +250,7 @@ pub async fn delete(
         collection_name,
         points_selector,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -259,6 +267,7 @@ pub async fn update_vectors(
     toc_provider: impl CheckedTocProvider,
     update_point_vectors: UpdatePointVectors,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
@@ -300,6 +309,7 @@ pub async fn update_vectors(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -316,6 +326,7 @@ pub async fn delete_vectors(
     toc_provider: impl CheckedTocProvider,
     delete_point_vectors: DeletePointVectors,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -351,6 +362,7 @@ pub async fn delete_vectors(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -366,6 +378,7 @@ pub async fn set_payload(
     toc_provider: impl CheckedTocProvider,
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -399,6 +412,7 @@ pub async fn set_payload(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -414,6 +428,7 @@ pub async fn overwrite_payload(
     toc_provider: impl CheckedTocProvider,
     set_payload_points: SetPayloadPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -447,6 +462,7 @@ pub async fn overwrite_payload(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -462,6 +478,7 @@ pub async fn delete_payload(
     toc_provider: impl CheckedTocProvider,
     delete_payload_points: DeletePayloadPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -493,6 +510,7 @@ pub async fn delete_payload(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -508,6 +526,7 @@ pub async fn clear_payload(
     toc_provider: impl CheckedTocProvider,
     clear_payload_points: ClearPayloadPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -534,6 +553,7 @@ pub async fn clear_payload(
         collection_name,
         points_selector,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -549,6 +569,7 @@ pub async fn update_batch(
     dispatcher: &Dispatcher,
     update_batch_points: UpdateBatchPoints,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
@@ -583,6 +604,7 @@ pub async fn update_batch(
                         shard_key_selector,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
@@ -600,6 +622,7 @@ pub async fn update_batch(
                         shard_key_selector: None,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
@@ -626,6 +649,7 @@ pub async fn update_batch(
                         key,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                 )
@@ -652,6 +676,7 @@ pub async fn update_batch(
                         key: None,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                 )
@@ -675,6 +700,7 @@ pub async fn update_batch(
                         shard_key_selector,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                 )
@@ -694,6 +720,7 @@ pub async fn update_batch(
                         shard_key_selector,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                 )
@@ -715,6 +742,7 @@ pub async fn update_batch(
                         shard_key_selector,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
@@ -739,6 +767,7 @@ pub async fn update_batch(
                         shard_key_selector,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                 )
@@ -755,6 +784,7 @@ pub async fn update_batch(
                         shard_key_selector: None,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                 )
@@ -774,6 +804,7 @@ pub async fn update_batch(
                         shard_key_selector,
                     },
                     clock_tag,
+                    debug_metadata,
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
@@ -884,6 +915,7 @@ pub async fn create_field_index(
     dispatcher: Arc<Dispatcher>,
     create_field_index_collection: CreateFieldIndexCollection,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -910,6 +942,7 @@ pub async fn create_field_index(
         collection_name,
         operation,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -925,6 +958,7 @@ pub async fn create_field_index_internal(
     toc: Arc<TableOfContent>,
     create_field_index_collection: CreateFieldIndexCollection,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
@@ -946,6 +980,7 @@ pub async fn create_field_index_internal(
         field_name,
         field_schema,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -960,6 +995,7 @@ pub async fn delete_field_index(
     dispatcher: Arc<Dispatcher>,
     delete_field_index_collection: DeleteFieldIndexCollection,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
     access: Access,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
@@ -978,6 +1014,7 @@ pub async fn delete_field_index(
         collection_name,
         field_name,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
@@ -993,6 +1030,7 @@ pub async fn delete_field_index_internal(
     toc: Arc<TableOfContent>,
     delete_field_index_collection: DeleteFieldIndexCollection,
     clock_tag: Option<ClockTag>,
+    debug_metadata: Option<DebugMetadata>,
     shard_selection: Option<ShardId>,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeleteFieldIndexCollection {
@@ -1010,6 +1048,7 @@ pub async fn delete_field_index_internal(
         collection_name,
         field_name,
         clock_tag,
+        debug_metadata,
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
