@@ -14,6 +14,7 @@ struct StackTraceFrame {
 }
 
 impl StackTraceFrame {
+    #[allow(dead_code)]
     pub fn render(&self) -> String {
         let mut result = String::new();
         for symbol in &self.symbols {

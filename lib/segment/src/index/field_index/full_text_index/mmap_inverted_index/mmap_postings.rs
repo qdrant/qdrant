@@ -61,7 +61,7 @@ impl PostingListHeader {
 /// [ PostingListHeader, PostingListHeader, ... ] |
 /// [ CompressedMmapPostingList, CompressedMmapPostingList, ... ] |`
 pub struct MmapPostings {
-    path: PathBuf,
+    _path: PathBuf,
     mmap: Mmap,
     header: PostingsHeader,
 }
@@ -200,6 +200,10 @@ impl MmapPostings {
             )
         })?;
 
-        Ok(Self { path, mmap, header })
+        Ok(Self {
+            _path: path,
+            mmap,
+            header,
+        })
     }
 }

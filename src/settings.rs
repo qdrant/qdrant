@@ -16,7 +16,6 @@ use crate::tracing;
 const DEFAULT_CONFIG: &str = include_str!("../config/config.yaml");
 
 #[derive(Debug, Deserialize, Validate, Clone)]
-#[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct ServiceConfig {
     #[validate(length(min = 1))]
     pub host: String,
@@ -77,13 +76,11 @@ pub struct ClusterConfig {
     #[serde(default)]
     #[validate(nested)]
     pub consensus: ConsensusConfig,
-    #[allow(dead_code)] // `schema_generator` complains 🙄
     #[serde(default)]
     pub resharding_enabled: bool, // disabled by default
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
-#[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct P2pConfig {
     #[serde(default)]
     pub port: Option<u16>,
@@ -117,7 +114,6 @@ pub struct ConsensusConfig {
     #[validate(range(min = 1))]
     #[serde(default = "default_message_timeout_tics")]
     pub message_timeout_ticks: u64,
-    #[allow(dead_code)] // `schema_generator` complains about this 🙄
     #[serde(default)]
     pub compact_wal_entries: u64, // compact WAL when it grows to enough applied entries
 }
@@ -190,7 +186,6 @@ pub struct GpuConfig {
 }
 
 #[derive(Debug, Deserialize, Clone, Validate)]
-#[allow(dead_code)] // necessary because some field are only used in main.rs
 pub struct Settings {
     #[serde(default)]
     pub log_level: Option<String>,
@@ -222,7 +217,6 @@ pub struct Settings {
 }
 
 impl Settings {
-    #[allow(dead_code)]
     pub fn new(custom_config_path: Option<String>) -> Result<Self, ConfigError> {
         let mut load_errors = vec![];
         let config_exists = |path| File::with_name(path).collect().is_ok();
@@ -294,7 +288,6 @@ impl Settings {
         )
     }
 
-    #[allow(dead_code)]
     pub fn validate_and_warn(&self) {
         //
         // JWT RBAC
