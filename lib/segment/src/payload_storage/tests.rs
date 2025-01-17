@@ -92,11 +92,11 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
         "other_new": "other new text",
     })
     .into();
-    storage.overwrite(0, &new_payload).unwrap();
+    storage.overwrite(0, &new_payload, &hw_counter).unwrap();
     let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(stored, new_payload);
 
-    storage.clear(0).unwrap();
+    storage.clear(0, &hw_counter).unwrap();
     assert_eq!(storage.get(0, &hw_counter).unwrap(), json!({}).into());
 
     for i in 1..10 {

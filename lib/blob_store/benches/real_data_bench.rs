@@ -12,6 +12,7 @@ fn append_csv_data(storage: &mut blob_store::BlobStore<Payload>, csv_path: &Path
     let csv_file = File::open(csv_path).expect("file should open");
     let mut rdr = csv::Reader::from_reader(csv_file);
     let mut point_offset = storage.max_point_id();
+    let hw_counter = HardwareCounterCell::new();
     for result in rdr.records() {
         let record = result.unwrap();
         let mut payload = Payload::default();
@@ -21,7 +22,9 @@ fn append_csv_data(storage: &mut blob_store::BlobStore<Payload>, csv_path: &Path
                 Value::String(record.get(i).unwrap().to_string()),
             );
         }
-        storage.put_value(point_offset, &payload).unwrap();
+        storage
+            .put_value(point_offset, &payload, &hw_counter)
+            .unwrap();
         point_offset += 1;
     }
 }
@@ -101,11 +104,13 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         b.iter(|| black_box(storage.get_storage_size_bytes()));
     });
 
+    let hw_counter = HardwareCounterCell::new();
+
     // delete 30% of the points
     let mut rng = rand::thread_rng();
     for i in 0..storage.max_point_id() {
         if rng.gen_bool(0.3) {
-            storage.delete_value(i).unwrap();
+            storage.delete_value(i, &hw_counter).unwrap();
         }
     }
 

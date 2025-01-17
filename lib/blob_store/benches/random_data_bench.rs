@@ -9,11 +9,12 @@ pub fn random_data_bench(c: &mut Criterion) {
     let (_dir, mut storage) = empty_storage();
     let mut rng = rand::thread_rng();
     c.bench_function("write random payload", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter_batched_ref(
             || random_payload(&mut rng, 2),
             |payload| {
                 for i in 0..PAYLOAD_COUNT {
-                    storage.put_value(i, payload).unwrap();
+                    storage.put_value(i, payload, &hw_counter).unwrap();
                 }
             },
             BatchSize::SmallInput,

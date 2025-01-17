@@ -249,7 +249,8 @@ impl SimpleConditionChecker {
 #[cfg(feature = "testing")]
 impl ConditionChecker for SimpleConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate this value to caller!
+        let hw_counter = HardwareCounterCell::new(); // No measurements needed as this is only for test!
+
         let payload_storage_guard = self.payload_storage.borrow();
 
         let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
@@ -281,7 +282,7 @@ impl ConditionChecker for SimpleConditionChecker {
                             // The alternative:
                             // Rewrite condition checking code to support error reporting.
                             // Which may lead to slowdown and assumes a lot of changes.
-                            s.read_payload(point_id)
+                            s.read_payload(point_id, &hw_counter)
                                 .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"))
                                 .map(|x| x.into())
                         }
@@ -349,6 +350,8 @@ mod tests {
         })
         .into();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut payload_storage: PayloadStorageEnum =
             SimplePayloadStorage::open(db.clone()).unwrap().into();
         let mut id_tracker = SimpleIdTracker::open(db).unwrap();
@@ -357,7 +360,7 @@ mod tests {
         id_tracker.set_link(1.into(), 1).unwrap();
         id_tracker.set_link(2.into(), 2).unwrap();
         id_tracker.set_link(10.into(), 10).unwrap();
-        payload_storage.overwrite(0, &payload).unwrap();
+        payload_storage.overwrite(0, &payload, &hw_counter).unwrap();
 
         let payload_checker = SimpleConditionChecker::new(
             Arc::new(AtomicRefCell::new(payload_storage)),
