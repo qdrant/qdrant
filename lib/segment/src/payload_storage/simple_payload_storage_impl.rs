@@ -45,6 +45,9 @@ impl PayloadStorage for SimplePayloadStorage {
                 self.payload.insert(point_id, dest_payload);
             }
         }
+
+        self.update_storage(point_id)?;
+
         Ok(())
     }
 
@@ -119,6 +122,8 @@ impl PayloadStorage for SimplePayloadStorage {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use tempfile::Builder;
 
     use super::*;
@@ -139,6 +144,34 @@ mod tests {
         assert!(!storage.get(100).unwrap().is_empty());
         storage.wipe().unwrap();
         assert_eq!(storage.get(100).unwrap(), Default::default());
+    }
+
+    #[test]
+    fn test_set_by_key_consistency() {
+        let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
+
+        let expected_payload: Payload =
+            serde_json::from_str(r#"{"name": {"name": "Dohn Joe"}}"#).unwrap();
+
+        {
+            let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+            let mut storage = SimplePayloadStorage::open(db).unwrap();
+
+            let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
+            storage.set(100, &payload).unwrap();
+
+            let new_payload: Payload = serde_json::from_str(r#"{"name": "Dohn Joe"}"#).unwrap();
+
+            storage
+                .set_by_key(100, &new_payload, &JsonPath::from_str("name").unwrap())
+                .unwrap();
+
+            assert_eq!(storage.get(100).unwrap(), expected_payload); // Here it's `expected_payload`
+        }
+
+        let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
+        let storage = SimplePayloadStorage::open(db).unwrap();
+        assert_eq!(storage.get(100).unwrap(), expected_payload); // Here must be `expected_payload` as well
     }
 
     #[test]
