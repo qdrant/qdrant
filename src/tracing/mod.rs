@@ -1,5 +1,3 @@
-#![allow(dead_code)] // `schema_generator` binary target produce warnings
-
 pub mod config;
 pub mod default;
 pub mod handle;

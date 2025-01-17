@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 pub mod compressed_posting_list;
 pub mod inverted_index;
 pub mod loaders;

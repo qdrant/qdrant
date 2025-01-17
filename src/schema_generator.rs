@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use api::rest::models::{CollectionsResponse, HardwareUsage, VersionInfo};
 use api::rest::schema::PointInsertOperations;
 use api::rest::{

@@ -21,14 +21,13 @@ use crate::collection::Collection;
 // If you're not implementing a new point-api endpoint for which a strict mode check
 // is required, this is safe to use.
 pub fn new_unchecked_verification_pass() -> VerificationPass {
-    VerificationPass { inner: () }
+    VerificationPass { _inner: () }
 }
 
 /// A pass, created on successful verification.
 pub struct VerificationPass {
     // Private field, so we can't instantiate it from somewhere else.
-    #[allow(dead_code)]
-    inner: (),
+    _inner: (),
 }
 
 /// Trait to verify strict mode for requests.

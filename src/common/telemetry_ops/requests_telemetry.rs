@@ -59,7 +59,6 @@ impl ActixTelemetryCollector {
 }
 
 impl TonicTelemetryCollector {
-    #[allow(dead_code)]
     pub fn create_grpc_telemetry_collector(&mut self) -> Arc<Mutex<TonicWorkerTelemetryCollector>> {
         let worker: Arc<Mutex<_>> = Default::default();
         self.workers.push(worker.clone());
@@ -77,7 +76,6 @@ impl TonicTelemetryCollector {
 }
 
 impl TonicWorkerTelemetryCollector {
-    #[allow(dead_code)]
     pub fn add_response(&mut self, method: String, instant: std::time::Instant) {
         let aggregator = self
             .methods

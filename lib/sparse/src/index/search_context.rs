@@ -474,7 +474,7 @@ mod tests {
     /// Helper struct to store both an index and a temporary directory
     struct TestIndex<I: InvertedIndex> {
         index: I,
-        temp_dir: TempDir,
+        _temp_dir: TempDir,
     }
 
     impl<I: InvertedIndex> TestIndex<I> {
@@ -485,7 +485,7 @@ mod tests {
                 .unwrap();
             TestIndex {
                 index: I::from_ram_index(Cow::Owned(ram_index), &temp_dir).unwrap(),
-                temp_dir,
+                _temp_dir: temp_dir,
             }
         }
     }
@@ -885,6 +885,7 @@ mod tests {
     }
 
     /// Generates a random inverted index with `num_vectors` vectors
+    #[allow(dead_code)]
     fn random_inverted_index<R: Rng + ?Sized>(
         rnd_gen: &mut R,
         num_vectors: u32,

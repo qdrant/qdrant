@@ -137,8 +137,6 @@ fn log_service_error(err: &StorageError) {
     }
 }
 
-pub type HttpResult<T, E = HttpError> = Result<T, E>;
-
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct HttpError(StorageError);
