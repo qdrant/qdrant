@@ -14,7 +14,7 @@ use super::graph_links::{GraphLinks, GraphLinksFormat};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
-use crate::index::hnsw_index::graph_links::GraphLinksConverter;
+use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
@@ -312,7 +312,7 @@ impl GraphLayers {
 
         let links = GraphLinks::load_from_file(&plain_path, true, GraphLinksFormat::Plain)?;
         let original_size = plain_path.metadata()?.len();
-        GraphLinksConverter::new(links.into_edges(), GraphLinksFormat::Compressed, m, m0)
+        GraphLinksSerializer::new(links.into_edges(), GraphLinksFormat::Compressed, m, m0)
             .save_as(&compressed_path)?;
         let new_size = compressed_path.metadata()?.len();
 
@@ -332,12 +332,12 @@ impl GraphLayers {
 
     #[cfg(feature = "testing")]
     pub fn compress_ram(&mut self) {
-        use crate::index::hnsw_index::graph_links::GraphLinksConverter;
+        use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
         assert!(self.links.format() == GraphLinksFormat::Plain);
-        let dummy = GraphLinksConverter::new(Vec::new(), GraphLinksFormat::Plain, 0, 0)
+        let dummy = GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, 0, 0)
             .to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);
-        self.links = GraphLinksConverter::new(
+        self.links = GraphLinksSerializer::new(
             links.into_edges(),
             GraphLinksFormat::Compressed,
             self.m,
@@ -363,7 +363,7 @@ mod tests {
     use crate::fixtures::index_fixtures::{
         random_vector, FakeFilterContext, TestRawScorerProducer,
     };
-    use crate::index::hnsw_index::graph_links::GraphLinksConverter;
+    use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
     };
@@ -407,7 +407,7 @@ mod tests {
         let graph_layers = GraphLayers {
             m,
             m0: 2 * m,
-            links: GraphLinksConverter::new(graph_links.clone(), format, m, 2 * m)
+            links: GraphLinksSerializer::new(graph_links.clone(), format, m, 2 * m)
                 .to_graph_links_ram(),
             entry_points: EntryPoints::new(entry_points_num),
             visited_pool: VisitedPool::new(),
