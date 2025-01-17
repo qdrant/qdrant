@@ -148,6 +148,7 @@ impl ResponseError for HttpError {
         match &self.0 {
             StorageError::BadInput { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::NotFound { .. } => http::StatusCode::NOT_FOUND,
+            StorageError::PointNotFound { .. } => http::StatusCode::NOT_FOUND,
             StorageError::ServiceError { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
             StorageError::BadRequest { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::Locked { .. } => http::StatusCode::FORBIDDEN,

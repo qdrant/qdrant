@@ -19,6 +19,7 @@ impl From<StorageError> for tonic::Status {
         let error_code = match &error {
             StorageError::BadInput { .. } => tonic::Code::InvalidArgument,
             StorageError::NotFound { .. } => tonic::Code::NotFound,
+            StorageError::PointNotFound { .. } => tonic::Code::NotFound,
             StorageError::ServiceError { .. } => tonic::Code::Internal,
             StorageError::BadRequest { .. } => tonic::Code::InvalidArgument,
             StorageError::Locked { .. } => tonic::Code::FailedPrecondition,
@@ -30,7 +31,8 @@ impl From<StorageError> for tonic::Status {
             StorageError::InferenceError { .. } => tonic::Code::InvalidArgument,
             StorageError::RateLimitExceeded { .. } => tonic::Code::ResourceExhausted,
         };
-        Status::new(error_code, format!("{error}"))
+
+        Status::with_details(error_code, error.to_string(), Default::default())
     }
 }
 

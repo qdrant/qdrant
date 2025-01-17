@@ -3,6 +3,7 @@ use std::io::Error as IoError;
 
 use collection::operations::types::CollectionError;
 use io::file_operations::FileStorageError;
+use segment::types::ExtendedPointId;
 use tempfile::PersistError;
 use thiserror::Error;
 
@@ -17,6 +18,8 @@ pub enum StorageError {
     AlreadyExists { description: String },
     #[error("Not found: {description}")]
     NotFound { description: String },
+    #[error("No point with id {missed_point_id} found")]
+    PointNotFound { missed_point_id: ExtendedPointId },
     #[error("Service internal error: {description}")]
     ServiceError {
         description: String,
@@ -103,9 +106,9 @@ impl StorageError {
             CollectionError::NotFound { .. } => StorageError::NotFound {
                 description: overriding_description,
             },
-            CollectionError::PointNotFound { .. } => StorageError::NotFound {
-                description: overriding_description,
-            },
+            CollectionError::PointNotFound { missed_point_id } => {
+                StorageError::PointNotFound { missed_point_id }
+            }
             CollectionError::ServiceError { backtrace, .. } => StorageError::ServiceError {
                 description: overriding_description,
                 backtrace,
