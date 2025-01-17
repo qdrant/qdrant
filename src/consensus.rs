@@ -507,7 +507,7 @@ impl Consensus {
             // Update previous tick timestamp
             previous_tick += tick_period * elapsed_ticks;
 
-            // Calculate how many ticks we should *report* to Raft node
+            // Calculate how many ticks we should *report* to Raft node.
             //
             // If last iteration of the loop took too long to complete, and we report all elapsed
             // ticks to Raft node, it might trigger unnecessary leader election.
@@ -518,10 +518,12 @@ impl Consensus {
             // By default, election is triggered if no Raft messages were received for 20 ticks,
             // so we report at most 15 ticks.
             //
-            // (See https://docs.rs/raft/latest/raft/struct.Config.html#structfield.election_tick.)
+            // See https://docs.rs/raft/latest/raft/struct.Config.html#structfield.election_tick.
             let report_ticks = if raft_messages > 0 {
-                // Expected value here is 15 (20 - 5), but we cap it at 1 to prevent errors
-                let max_elapsed_ticks = cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
+                // Default `election_tick` is 20, so expected value here is 15
+                let max_elapsed_ticks =
+                    cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
+
                 cmp::min(elapsed_ticks, max_elapsed_ticks as u32)
             } else {
                 elapsed_ticks
