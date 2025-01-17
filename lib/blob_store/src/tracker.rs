@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{
@@ -287,11 +288,24 @@ impl Tracker {
     }
 
     /// Unset the value at the given point offset and return its previous value
-    pub fn unset(&mut self, point_offset: PointOffset) -> Option<ValuePointer> {
+    pub fn unset(
+        &mut self,
+        point_offset: PointOffset,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ValuePointer> {
         let pointer_opt = self.get(point_offset);
+
+        hw_counter
+            .io_read_counter()
+            .incr_delta(size_of::<Option<ValuePointer>>());
+
         if let Some(pointer) = pointer_opt {
             self.pending_updates
                 .insert(point_offset, PointerUpdate::Unset(pointer));
+
+            hw_counter
+                .io_write_counter()
+                .incr_delta(size_of::<Option<ValuePointer>>());
         }
 
         pointer_opt
@@ -363,6 +377,8 @@ mod tests {
     #[case(100)]
     #[case(1000)]
     fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
+        use common::counter::hardware_counter::HardwareCounterCell;
+
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
         let mut tracker = Tracker::new(path, Some(initial_tracker_size));
@@ -386,7 +402,8 @@ mod tests {
         );
         assert_eq!(tracker.get_raw(100_000), None); // out of bounds
 
-        tracker.unset(1);
+        let hw_counter = HardwareCounterCell::new();
+        tracker.unset(1, &hw_counter);
 
         tracker.write_pending_and_flush().unwrap();
 

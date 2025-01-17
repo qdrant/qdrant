@@ -161,6 +161,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         _point_id: PointOffsetType,
         _payload: &Payload,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         unreachable!()
     }
@@ -192,7 +193,11 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
-    fn clear_payload(&mut self, _point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear_payload(
+        &mut self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
         unreachable!()
     }
 
