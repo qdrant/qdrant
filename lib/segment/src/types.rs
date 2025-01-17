@@ -619,12 +619,37 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub struct RaBitQConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub always_ram: Option<bool>,
+}
+
+impl RaBitQConfig {
+    /// Detect configuration mismatch against `other` that requires rebuilding
+    ///
+    /// Returns true only if both conditions are met:
+    /// - this configuration does not match `other`
+    /// - to effectively change the configuration, a quantization rebuild is required
+    pub fn mismatch_requires_rebuild(&self, other: &Self) -> bool {
+        self != other
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq, Hash)]
+pub struct RaBitQ {
+    #[validate(nested)]
+    pub rabitq: RaBitQConfig,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
     Binary(BinaryQuantization),
+    RaBitQ(RaBitQ),
 }
 
 impl QuantizationConfig {
@@ -644,6 +669,7 @@ impl Validate for QuantizationConfig {
             QuantizationConfig::Scalar(scalar) => scalar.validate(),
             QuantizationConfig::Product(product) => product.validate(),
             QuantizationConfig::Binary(binary) => binary.validate(),
+            QuantizationConfig::RaBitQ(rabitq) => rabitq.validate(),
         }
     }
 }
@@ -663,6 +689,12 @@ impl From<ProductQuantizationConfig> for QuantizationConfig {
 impl From<BinaryQuantizationConfig> for QuantizationConfig {
     fn from(config: BinaryQuantizationConfig) -> Self {
         QuantizationConfig::Binary(BinaryQuantization { binary: config })
+    }
+}
+
+impl From<RaBitQConfig> for QuantizationConfig {
+    fn from(config: RaBitQConfig) -> Self {
+        QuantizationConfig::RaBitQ(RaBitQ { rabitq: config })
     }
 }
 

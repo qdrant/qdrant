@@ -4815,6 +4815,7 @@ dependencies = [
  "num-traits",
  "num_threads",
  "permutation_iterator",
+ "quantization",
  "rand 0.8.5",
  "rayon",
  "serde",

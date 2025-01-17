@@ -18,20 +18,24 @@ fn main() {
     if target_arch == "x86_64" {
         builder.file("cpp/sse.c");
         builder.file("cpp/avx2.c");
+        builder.file("cpp/avx512.c");
 
         if builder.get_compiler().is_like_msvc() {
             builder.flag("/arch:AVX");
             builder.flag("/arch:AVX2");
+            builder.flag("/arch:AVX512");
             builder.flag("/arch:SSE");
             builder.flag("/arch:SSE2");
         } else {
             builder.flag("-march=haswell");
+            builder.flag("-march=skylake-avx512");
         }
 
         // O3 optimization level
         builder.flag("-O3");
         // Use popcnt instruction
         builder.flag("-mpopcnt");
+        builder.flag("-mavx512vpopcntdq");
     } else if target_arch == "aarch64" && target_feature.split(',').any(|feat| feat == "neon") {
         builder.file("cpp/neon.c");
         builder.flag("-O3");
