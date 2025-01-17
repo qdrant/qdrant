@@ -837,7 +837,9 @@ impl Consensus {
             .map(|(id, _)| *id)
     }
 
-    /// Returns `true` if consensus should be stopped, `false` otherwise.
+    /// Returns two boolean flags: `stop_consensus` and `is_idle`.
+    /// If `stop_consensus` is true, then we should exit consensus loop and stop consensus.
+    /// If `is_idle` is true, it means that no on-disk state was updated during this `on_ready` call.
     fn on_ready(&mut self) -> anyhow::Result<(bool, bool)> {
         if !self.node.has_ready() {
             // No updates to process
