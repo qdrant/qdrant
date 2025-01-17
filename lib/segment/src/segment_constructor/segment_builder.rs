@@ -334,6 +334,8 @@ impl SegmentBuilder {
             }
         }
 
+        let hw_counter = HardwareCounterCell::disposable(); // Disposable counter for internal operations.
+
         if let Some(new_internal_range) = new_internal_range {
             let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 
@@ -343,7 +345,7 @@ impl SegmentBuilder {
                 let old_internal_id = point_data.internal_id;
 
                 let other_payload = payloads[point_data.segment_index.get() as usize]
-                    .get_payload(old_internal_id, &HardwareCounterCell::disposable())?; // Internal operation, no measurement needed!
+                    .get_payload(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
 
                 match self
                     .id_tracker
@@ -370,7 +372,8 @@ impl SegmentBuilder {
                             )?;
                             self.id_tracker
                                 .set_internal_version(new_internal_id, point_data.version)?;
-                            self.payload_storage.clear(existing_internal_id)?;
+                            self.payload_storage
+                                .clear(existing_internal_id, &hw_counter)?;
 
                             existing_internal_id
                         } else {
