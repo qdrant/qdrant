@@ -720,48 +720,6 @@ pub(super) mod test {
         assert_eq!(old_mappings, id_tracker.mappings);
     }
 
-    fn gen_random_point_mappings(size: usize, rand: &mut StdRng) -> PointMappings {
-        use std::collections::BTreeMap;
-
-        use uuid::Uuid;
-
-        use crate::types::ExtendedPointId;
-
-        const UUID_LIKELYNESS: f64 = 0.5;
-
-        let mut external_to_internal_num = BTreeMap::new();
-        let mut external_to_internal_uuid = BTreeMap::new();
-
-        let default_deleted = BitVec::repeat(false, size);
-
-        let internal_to_external = (0..size)
-            .map(|_| {
-                if rand.gen_bool(UUID_LIKELYNESS) {
-                    PointIdType::Uuid(Uuid::new_v4())
-                } else {
-                    PointIdType::NumId(rand.next_u64())
-                }
-            })
-            .enumerate()
-            .inspect(|(pos, point_type)| match point_type {
-                ExtendedPointId::NumId(num) => {
-                    external_to_internal_num.insert(*num, *pos as u32);
-                }
-                ExtendedPointId::Uuid(uuid) => {
-                    external_to_internal_uuid.insert(*uuid, *pos as u32);
-                }
-            })
-            .map(|(_, point_id)| point_id)
-            .collect();
-
-        PointMappings::new(
-            default_deleted,
-            internal_to_external,
-            external_to_internal_num,
-            external_to_internal_uuid,
-        )
-    }
-
     /// Tests de/serializing of whole `PointMappings`.
     #[test]
     fn test_point_mappings_de_serialization() {
@@ -776,7 +734,7 @@ pub(super) mod test {
 
             let size = 2usize.pow(size_exp);
 
-            let mappings = gen_random_point_mappings(size, &mut rng);
+            let mappings = PointMappings::random(&mut rng, size as u32);
 
             ImmutableIdTracker::store_mapping(&mappings, &mut buf).unwrap();
 
@@ -795,7 +753,7 @@ pub(super) mod test {
     #[test]
     fn test_point_mappings_de_serialization_empty() {
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let mappings = gen_random_point_mappings(0, &mut rng);
+        let mappings = PointMappings::random(&mut rng, 0);
 
         let mut buf = vec![];
 
@@ -817,7 +775,7 @@ pub(super) mod test {
 
         const SIZE: usize = 400_000;
 
-        let mappings = gen_random_point_mappings(SIZE, &mut rng);
+        let mappings = PointMappings::random(&mut rng, SIZE as u32);
 
         for i in 0..SIZE {
             let mut buf = vec![];
