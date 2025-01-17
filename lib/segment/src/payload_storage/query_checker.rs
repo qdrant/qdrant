@@ -6,6 +6,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::common::utils::{check_is_empty, check_is_null, IndexesMap};
@@ -248,6 +249,7 @@ impl SimpleConditionChecker {
 #[cfg(feature = "testing")]
 impl ConditionChecker for SimpleConditionChecker {
     fn check(&self, point_id: PointOffsetType, query: &Filter) -> bool {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate this value to caller!
         let payload_storage_guard = self.payload_storage.borrow();
 
         let payload_ref_cell: RefCell<Option<OwnedPayloadRef>> = RefCell::new(None);
@@ -284,7 +286,7 @@ impl ConditionChecker for SimpleConditionChecker {
                                 .map(|x| x.into())
                         }
                         PayloadStorageEnum::MmapPayloadStorage(s) => {
-                            let payload = s.get(point_id).unwrap_or_else(|err| {
+                            let payload = s.get(point_id, &hw_counter).unwrap_or_else(|err| {
                                 panic!("Payload storage is corrupted: {err}")
                             });
                             Some(OwnedPayloadRef::from(payload))

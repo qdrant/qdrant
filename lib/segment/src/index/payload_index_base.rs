@@ -97,6 +97,7 @@ pub trait PayloadIndex {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &Option<JsonPath>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Get payload for point
@@ -111,6 +112,7 @@ pub trait PayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point

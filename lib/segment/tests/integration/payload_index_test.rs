@@ -1077,10 +1077,12 @@ fn test_update_payload_index_type() {
         payloads.push(payload.into());
     }
 
+    let hw_counter = HardwareCounterCell::new();
+
     for (idx, payload) in payloads.into_iter().enumerate() {
         points.insert(idx, payload.clone());
         payload_storage
-            .set(idx as PointOffsetType, &payload)
+            .set(idx as PointOffsetType, &payload, &hw_counter)
             .unwrap();
     }
 

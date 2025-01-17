@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dataset::Dataset;
@@ -88,11 +89,13 @@ fn sparse_vector_index_search_benchmark_impl(
     })
     .into();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // all points have the same payload
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..NUM_VECTORS {
         payload_index
-            .set_payload(idx as PointOffsetType, &payload, &None)
+            .set_payload(idx as PointOffsetType, &payload, &None, &hw_counter)
             .unwrap();
     }
     drop(payload_index);

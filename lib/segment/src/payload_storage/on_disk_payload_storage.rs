@@ -76,7 +76,12 @@ impl PayloadStorage for OnDiskPayloadStorage {
         self.update_storage(point_id, payload)
     }
 
-    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn set(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): propagate values
+    ) -> OperationResult<()> {
         let stored_payload = self.read_payload(point_id)?;
         match stored_payload {
             Some(mut point_payload) => {
@@ -93,8 +98,9 @@ impl PayloadStorage for OnDiskPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let stored_payload = self.read_payload(point_id)?;
+        let stored_payload = self.read_payload_measured(point_id, hw_counter)?;
         match stored_payload {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
@@ -108,15 +114,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
-    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
-        let payload = self.read_payload(point_id)?;
-        match payload {
-            Some(payload) => Ok(payload),
-            None => Ok(Default::default()),
-        }
-    }
-
-    fn get_measured(
+    fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
@@ -128,8 +126,13 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
-    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
-        let stored_payload = self.read_payload(point_id)?;
+    fn delete(
+        &mut self,
+        point_id: PointOffsetType,
+        key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Value>> {
+        let stored_payload = self.read_payload_measured(point_id, hw_counter)?;
 
         match stored_payload {
             Some(mut payload) => {

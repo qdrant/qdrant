@@ -15,7 +15,12 @@ pub trait PayloadStorage {
     fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
 
     /// Set payload for point_id. If payload already exists, merge it with existing
-    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    fn set(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     /// Set payload to a point_id by key. If payload already exists, merge it with existing
     fn set_by_key(
@@ -23,20 +28,22 @@ pub trait PayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    // TODO(io_measurement): Replace with `get_measured`
-    /// Get payload for point. If no payload found, return empty payload
-    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload>;
-
-    fn get_measured(
+    fn get(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
     /// Delete payload by point_id and key
-    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>>;
+    fn delete(
+        &mut self,
+        point_id: PointOffsetType,
+        key: &JsonPath,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<Value>>;
 
     /// Clear all payload of the point
     fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;

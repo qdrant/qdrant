@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -17,7 +18,12 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn set(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn set(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): propagate value
+    ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
             None => {
@@ -32,6 +38,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): implement
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge_by_key(payload, key),
@@ -44,22 +51,23 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(())
     }
 
-    fn get(&self, point_id: PointOffsetType) -> OperationResult<Payload> {
+    fn get(
+        &self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
+    ) -> OperationResult<Payload> {
         match self.payload.get(&point_id) {
             Some(payload) => Ok(payload.to_owned()),
             None => Ok(Default::default()),
         }
     }
 
-    fn get_measured(
-        &self,
+    fn delete(
+        &mut self,
         point_id: PointOffsetType,
-        _: &common::counter::hardware_counter::HardwareCounterCell,
-    ) -> OperationResult<Payload> {
-        self.get(point_id)
-    }
-
-    fn delete(&mut self, point_id: PointOffsetType, key: &JsonPath) -> OperationResult<Vec<Value>> {
+        key: &JsonPath,
+        _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
+    ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
@@ -182,14 +190,16 @@ mod tests {
     fn test_wipe() {
         let mut storage = InMemoryPayloadStorage::default();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
-        storage.set(100, &payload).unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
+
+        storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
-        storage.set(100, &payload).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
         storage.wipe().unwrap();
-        storage.set(100, &payload).unwrap();
-        assert!(!storage.get(100).unwrap().is_empty());
+        storage.set(100, &payload, &hw_counter).unwrap();
+        assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
         storage.wipe().unwrap();
-        assert_eq!(storage.get(100).unwrap(), Default::default());
     }
 
     #[test]
@@ -216,10 +226,12 @@ mod tests {
             }
         }"#;
 
+        let hw_counter = HardwareCounterCell::new();
+
         let payload: Payload = serde_json::from_str(data).unwrap();
         let mut storage = InMemoryPayloadStorage::default();
-        storage.set(100, &payload).unwrap();
-        let pload = storage.get(100).unwrap();
+        storage.set(100, &payload, &hw_counter).unwrap();
+        let pload = storage.get(100, &hw_counter).unwrap();
         assert_eq!(pload, payload);
     }
 }

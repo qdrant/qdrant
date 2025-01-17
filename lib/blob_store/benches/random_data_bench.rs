@@ -1,4 +1,5 @@
 use blob_store::fixtures::{empty_storage, random_payload};
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 
 /// sized similarly to the real dataset for a fair comparison
@@ -20,9 +21,10 @@ pub fn random_data_bench(c: &mut Criterion) {
     });
 
     c.bench_function("read random payload", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for i in 0..PAYLOAD_COUNT {
-                let res = storage.get_value(i);
+                let res = storage.get_value(i, &hw_counter);
                 assert!(res.is_some());
             }
         });

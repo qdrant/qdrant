@@ -223,15 +223,17 @@ impl SegmentEntry for Segment {
         point_id: PointIdType,
         payload: &Payload,
         key: &Option<JsonPath>,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
             Some(internal_id) => {
-                segment
-                    .payload_index
-                    .borrow_mut()
-                    .set_payload(internal_id, payload, key)?;
+                segment.payload_index.borrow_mut().set_payload(
+                    internal_id,
+                    payload,
+                    key,
+                    hw_counter,
+                )?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {
@@ -245,7 +247,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
+        hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -253,7 +255,7 @@ impl SegmentEntry for Segment {
                 segment
                     .payload_index
                     .borrow_mut()
-                    .delete_payload(internal_id, key)?;
+                    .delete_payload(internal_id, key, hw_counter)?;
                 Ok((true, Some(internal_id)))
             }
             None => Err(OperationError::PointIdError {

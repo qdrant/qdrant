@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::struct_payload_index::StructPayloadIndex;
@@ -61,10 +62,12 @@ fn test_filtering_context_consistency() {
 
     let mut points = HashMap::new();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for (idx, payload) in nested_payloads().into_iter().enumerate() {
         points.insert(idx, payload.clone());
         payload_storage
-            .set(idx as PointOffsetType, &payload)
+            .set(idx as PointOffsetType, &payload, &hw_counter)
             .unwrap();
     }
 

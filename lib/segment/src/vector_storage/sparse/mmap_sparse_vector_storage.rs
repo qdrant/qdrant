@@ -6,6 +6,7 @@ use std::sync::Arc;
 use bitvec::slice::BitSlice;
 use blob_store::config::{Compression, StorageOptions};
 use blob_store::BlobStore;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -169,9 +170,10 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
     }
 
     fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): implement
         self.storage
             .read()
-            .get_value(key)
+            .get_value(key, &hw_counter)
             .map(SparseVector::try_from)
             .transpose()
     }

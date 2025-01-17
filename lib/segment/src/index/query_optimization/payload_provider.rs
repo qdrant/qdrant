@@ -2,6 +2,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -26,6 +27,8 @@ impl PayloadProvider {
     where
         F: FnOnce(OwnedPayloadRef) -> G,
     {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate this value!
+
         let payload_storage_guard = self.payload_storage.borrow();
         let payload_ptr_opt = match payload_storage_guard.deref() {
             #[cfg(feature = "testing")]
@@ -54,7 +57,7 @@ impl PayloadProvider {
                 .map(OwnedPayloadRef::from),
             PayloadStorageEnum::MmapPayloadStorage(s) => {
                 let payload = s
-                    .get(point_id)
+                    .get(point_id, &hw_counter)
                     .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"));
                 Some(OwnedPayloadRef::from(payload))
             }

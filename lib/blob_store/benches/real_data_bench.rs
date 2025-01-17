@@ -2,6 +2,7 @@ use std::fs::File;
 use std::path::Path;
 
 use blob_store::fixtures::{empty_storage, Payload, HM_FIELDS};
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::Rng;
 use serde_json::Value;
@@ -78,9 +79,10 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     });
 
     c.bench_function("scan storage", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for i in 0..storage.max_point_id() {
-                let res = storage.get_value(i).unwrap();
+                let res = storage.get_value(i, &hw_counter).unwrap();
                 assert!(res.0.contains_key("article_id"));
             }
         });

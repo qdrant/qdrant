@@ -4,6 +4,7 @@ mod prof;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use rand::prelude::StdRng;
@@ -44,6 +45,8 @@ fn range_filtering(c: &mut Criterion) {
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // generate points with payload
     let mut payload_storage = InMemoryPayloadStorage::default();
     for id in 0..NUM_POINTS {
@@ -53,7 +56,7 @@ fn range_filtering(c: &mut Criterion) {
         })
         .into();
         payload_storage
-            .set(id as PointOffsetType, &payload)
+            .set(id as PointOffsetType, &payload, &hw_counter)
             .unwrap();
     }
 
