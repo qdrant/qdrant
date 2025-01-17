@@ -200,7 +200,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         full_payload: &Payload,
-        hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -248,7 +248,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
@@ -269,7 +269,7 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         let internal_id = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, internal_id, |segment| match internal_id {
