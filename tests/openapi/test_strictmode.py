@@ -604,6 +604,152 @@ def test_strict_mode_max_collection_size_upsert_batch(collection_name):
 
     assert False, "Upserting should have failed but didn't"
 
+def test_strict_mode_max_multivector_size_upsert(collection_name):
+    # Clear collection to not depend on other tests
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "dense-multi": {
+                    "size": 4,
+                    "distance": "Dot",
+                    "multivector_config": {
+                        "comparator": "max_sim"
+                    }
+                },
+            },
+        }
+    )
+    assert response.ok
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "multivector_config": {
+            "dense-multi": {
+                "max_vectors": 5,
+            }
+        }
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "dense-multi": [
+                            [1.05, 1.61, 1.76, 1.74],
+                            [2.05, 2.61, 2.76, 2.74],
+                            [3.05, 3.61, 3.76, 3.74]
+                        ],
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    # insert multivectors with 6 vectors (points list)
+    failed_upsert = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "dense-multi": [
+                            [1.05, 1.61, 1.76, 1.74],
+                            [2.05, 2.61, 2.76, 2.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                        ],
+                    }
+                }
+            ]
+        }
+    )
+    assert not failed_upsert.ok
+    assert "Multivector 'dense-multi' has a limit of 5 vectors, but 6 were provided!" in failed_upsert.json()['status']['error']
+
+    # insert multivectors with 6 vectors (points batch)
+    failed_upsert = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "batch": {
+                "ids": [1],
+                "vectors": {
+                    "dense-multi" : [
+                         [
+                            [1.05, 1.61, 1.76, 1.74],
+                            [2.05, 2.61, 2.76, 2.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                        ]
+                    ]
+                }
+            }
+        }
+    )
+    assert not failed_upsert.ok
+    assert "Multivector 'dense-multi' has a limit of 5 vectors, but 6 were provided!" in failed_upsert.json()['status']['error']
+
+    # disable strict mode
+    set_strict_mode(collection_name, {
+        "enabled": False,
+        "multivector_config": {
+            "dense-multi": {
+                "max_vectors": 5,
+            }
+        }
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "batch": {
+                "ids": [1],
+                "vectors": {
+                    "dense-multi" : [
+                        [
+                            [1.05, 1.61, 1.76, 1.74],
+                            [2.05, 2.61, 2.76, 2.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                            [3.05, 3.61, 3.76, 3.74],
+                        ]
+                    ]
+                }
+            }
+        }
+    )
+    assert response.ok
 
 def test_strict_mode_read_rate_limiting(collection_name):
     set_strict_mode(collection_name, {

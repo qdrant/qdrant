@@ -460,11 +460,6 @@ mod test {
             search_max_hnsw_ef: Some(3),
             search_allow_exact: Some(false),
             search_max_oversampling: Some(0.2),
-            upsert_max_batchsize: None,
-            max_collection_vector_size_bytes: None,
-            read_rate_limit: None,
-            write_rate_limit: None,
-            max_collection_payload_size_bytes: None,
             ..Default::default()
         };
 
