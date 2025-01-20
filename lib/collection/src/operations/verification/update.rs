@@ -134,7 +134,7 @@ impl StrictModeVerification for PointInsertOperations {
         check_collection_size_limit(collection, strict_mode_config).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
-            check_multivectors_limits_insert(self, collection, multivector_config).await?;
+            check_multivectors_limits_insert(self, multivector_config).await?;
         }
 
         Ok(())
@@ -176,7 +176,7 @@ impl StrictModeVerification for UpdateVectors {
         check_collection_size_limit(collection, strict_mode_config).await?;
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
-            check_multivectors_limits_update(self, collection, multivector_config).await?;
+            check_multivectors_limits_update(self, multivector_config).await?;
         }
 
         Ok(())
@@ -271,30 +271,22 @@ fn check_collection_payload_size_limit(
 ///
 /// Return None if no multivectors are configured with strict mode
 async fn multivector_limits_by_name(
-    collection: &Collection,
     multivector_strict_config: &StrictModeMultivectorConfig,
 ) -> Option<TinyMap<String, usize>> {
     // If no multivectors strict mode no need to check anything.
     if multivector_strict_config.config.is_empty() {
         return None;
     }
-    let collection_guard = collection.collection_config.read().await;
 
-    let multivector_max_size_by_name: TinyMap<String, usize> = collection_guard
-        .params
-        .vectors
-        .params_iter()
-        .filter_map(|(name, config)| config.multivector_config.map(|_strict_config| name)) // keep only configured multivectors
-        .filter_map(|multi_vector_name| {
-            multivector_strict_config
-                .config
-                .get(multi_vector_name)
-                .and_then(|config| config.max_vectors)
-                .map(|max_vectors| (multi_vector_name, max_vectors))
+    let multivector_max_size_by_name: TinyMap<String, usize> = multivector_strict_config
+        .config
+        .iter()
+        .filter_map(|(name, config)| {
+            config
+                .max_vectors
+                .map(|max_vectors| (name.clone(), max_vectors))
         })
-        .map(|(name, max_vectors)| (name.to_string(), max_vectors))
         .collect();
-    drop(collection_guard);
 
     // If no multivectors are configured, no need to check anything.
     if multivector_max_size_by_name.is_empty() {
@@ -306,11 +298,10 @@ async fn multivector_limits_by_name(
 
 async fn check_multivectors_limits_update(
     point_insert: &UpdateVectors,
-    collection: &Collection,
     multivector_strict_config: &StrictModeMultivectorConfig,
 ) -> Result<(), CollectionError> {
     let Some(multivector_max_size_by_name) =
-        multivector_limits_by_name(collection, multivector_strict_config).await
+        multivector_limits_by_name(multivector_strict_config).await
     else {
         return Ok(());
     };
@@ -328,11 +319,10 @@ async fn check_multivectors_limits_update(
 
 async fn check_multivectors_limits_insert(
     point_insert: &PointInsertOperations,
-    collection: &Collection,
     multivector_strict_config: &StrictModeMultivectorConfig,
 ) -> Result<(), CollectionError> {
     let Some(multivector_max_size_by_name) =
-        multivector_limits_by_name(collection, multivector_strict_config).await
+        multivector_limits_by_name(multivector_strict_config).await
     else {
         return Ok(());
     };
