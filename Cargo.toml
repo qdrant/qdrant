@@ -175,7 +175,7 @@ http = "1.2.0"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17.9", features = ["rayon"] }
 itertools = "0.13.0"
-log = "0.4.22"
+log = "0.4.25"
 memmap2 = "0.9.5"
 nix = { version = "0.29", features = ["fs"] }
 num-traits = "0.2.19"
