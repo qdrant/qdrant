@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
 use std::ops::Deref;
@@ -666,6 +666,32 @@ impl From<BinaryQuantizationConfig> for QuantizationConfig {
     }
 }
 
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge, Hash,
+)]
+pub struct StrictModeMultivector {
+    /// Max number of vectors in a multivector
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_vectors: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+pub struct StrictModeMultivectorConfig {
+    #[validate(nested)]
+    #[serde(flatten)]
+    pub config: BTreeMap<String, StrictModeMultivector>,
+}
+
+impl Merge for StrictModeMultivectorConfig {
+    fn merge(&mut self, other: Self) {
+        for (key, value) in other.config {
+            // overwrite value if key exists
+            self.config.entry(key).or_default().merge(value);
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge)]
 pub struct StrictModeConfig {
     // Global
@@ -733,6 +759,11 @@ pub struct StrictModeConfig {
     /// Max size of a condition, eg. items in `MatchAny`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub condition_max_size: Option<usize>,
+
+    /// Multivector configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub multivector_config: Option<StrictModeMultivectorConfig>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -756,6 +787,7 @@ impl Hash for StrictModeConfig {
             max_collection_payload_size_bytes,
             filter_max_conditions,
             condition_max_size,
+            multivector_config,
         } = self;
         (
             enabled,
@@ -767,13 +799,13 @@ impl Hash for StrictModeConfig {
             search_allow_exact,
             upsert_max_batchsize,
             max_collection_vector_size_bytes,
-            read_rate_limit,
-            write_rate_limit,
+            (read_rate_limit, write_rate_limit),
             (
                 max_collection_payload_size_bytes,
                 filter_max_conditions,
                 condition_max_size,
             ),
+            multivector_config,
         )
             .hash(state);
     }

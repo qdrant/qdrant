@@ -523,6 +523,25 @@ pub struct StrictModeConfig {
     pub filter_max_conditions: ::core::option::Option<u64>,
     #[prost(uint64, optional, tag = "15")]
     pub condition_max_size: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "16")]
+    pub multivector_config: ::core::option::Option<StrictModeMultivectorConfig>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeMultivectorConfig {
+    #[prost(map = "string, message", tag = "1")]
+    pub multivector_config: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        StrictModeMultivector,
+    >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeMultivector {
+    #[prost(uint64, optional, tag = "1")]
+    pub max_vectors: ::core::option::Option<u64>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
