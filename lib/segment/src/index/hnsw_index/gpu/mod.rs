@@ -71,25 +71,20 @@ fn create_graph_layers_builder(
     // mark all vectors as ready
     graph_layers_builder.clear_ready_list();
 
-    // set first entry point
-    graph_layers_builder.set_levels(
-        batched_points.first_point_id(),
-        batched_points.levels_count() - 1,
-    );
-    graph_layers_builder.get_entry_points().new_point(
-        batched_points.first_point_id(),
-        batched_points.levels_count() - 1,
-        |_| true,
-    );
+    if let Some(first_point_id) = batched_points.first_point_id() {
+        // set first entry point
+        graph_layers_builder.get_entry_points().new_point(
+            first_point_id,
+            batched_points.levels_count() - 1,
+            |_| true,
+        );
 
-    // set levels
-    graph_layers_builder.set_levels(
-        batched_points.first_point_id(),
-        batched_points.levels_count() - 1,
-    );
-    for batch in batched_points.iter_batches(0) {
-        for linking_point in batch.points {
-            graph_layers_builder.set_levels(linking_point.point_id, batch.level);
+        // set levels
+        graph_layers_builder.set_levels(first_point_id, batched_points.levels_count() - 1);
+        for batch in batched_points.iter_batches(0) {
+            for linking_point in batch.points {
+                graph_layers_builder.set_levels(linking_point.point_id, batch.level);
+            }
         }
     }
 

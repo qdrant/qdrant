@@ -532,6 +532,12 @@ impl SegmentBuilder {
                 let quantized_vectors = quantized_vectors.remove(vector_name);
                 let quantized_vectors_arc = Arc::new(AtomicRefCell::new(quantized_vectors));
 
+                let gpu_device = if vector_storage_arc.borrow().total_vector_count() > 4 {
+                    gpu_device.as_ref()
+                } else {
+                    None
+                };
+
                 create_vector_index(
                     vector_config,
                     &vector_index_path,
@@ -540,7 +546,7 @@ impl SegmentBuilder {
                     payload_index_arc.clone(),
                     quantized_vectors_arc,
                     Some(permit.clone()),
-                    gpu_device.as_ref(),
+                    gpu_device,
                     stopped,
                 )?;
             }
