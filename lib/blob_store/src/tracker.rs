@@ -281,7 +281,16 @@ impl Tracker {
         self.pending_updates.contains_key(&point_offset) || self.get(point_offset).is_some()
     }
 
-    pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
+    pub fn set(
+        &mut self,
+        point_offset: PointOffset,
+        value_pointer: ValuePointer,
+        hw_counter: &HardwareCounterCell,
+    ) {
+        hw_counter
+            .io_write_counter()
+            .incr_delta(size_of::<Option<ValuePointer>>());
+
         self.pending_updates
             .insert(point_offset, PointerUpdate::Set(value_pointer));
         self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
@@ -316,6 +325,7 @@ impl Tracker {
 mod tests {
     use std::path::PathBuf;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use rstest::rstest;
     use tempfile::Builder;
 
@@ -357,14 +367,15 @@ mod tests {
         let path = file.path();
         let mut tracker = Tracker::new(path, Some(initial_tracker_size));
         assert!(tracker.is_empty());
-        tracker.set(0, ValuePointer::new(1, 1, 1));
+        let hw_counter = HardwareCounterCell::new();
+        tracker.set(0, ValuePointer::new(1, 1, 1), &hw_counter);
 
         tracker.write_pending_and_flush().unwrap();
 
         assert!(!tracker.is_empty());
         assert_eq!(tracker.mapping_len(), 1);
 
-        tracker.set(100, ValuePointer::new(2, 2, 2));
+        tracker.set(100, ValuePointer::new(2, 2, 2), &hw_counter);
 
         tracker.write_pending_and_flush().unwrap();
 
@@ -379,13 +390,14 @@ mod tests {
     fn test_set_get_clear_tracker(#[case] initial_tracker_size: usize) {
         use common::counter::hardware_counter::HardwareCounterCell;
 
+        let hw_counter = HardwareCounterCell::new();
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
         let mut tracker = Tracker::new(path, Some(initial_tracker_size));
-        tracker.set(0, ValuePointer::new(1, 1, 1));
-        tracker.set(1, ValuePointer::new(2, 2, 2));
-        tracker.set(2, ValuePointer::new(3, 3, 3));
-        tracker.set(10, ValuePointer::new(10, 10, 10));
+        tracker.set(0, ValuePointer::new(1, 1, 1), &hw_counter);
+        tracker.set(1, ValuePointer::new(2, 2, 2), &hw_counter);
+        tracker.set(2, ValuePointer::new(3, 3, 3), &hw_counter);
+        tracker.set(10, ValuePointer::new(10, 10, 10), &hw_counter);
 
         tracker.write_pending_and_flush().unwrap();
         assert!(!tracker.is_empty());
@@ -415,8 +427,8 @@ mod tests {
         assert_eq!(tracker.pointer_count(), 11);
 
         // overwrite some values
-        tracker.set(0, ValuePointer::new(10, 10, 10));
-        tracker.set(2, ValuePointer::new(30, 30, 30));
+        tracker.set(0, ValuePointer::new(10, 10, 10), &hw_counter);
+        tracker.set(2, ValuePointer::new(30, 30, 30), &hw_counter);
 
         tracker.write_pending_and_flush().unwrap();
 
@@ -434,12 +446,18 @@ mod tests {
 
         let value_count: usize = 1000;
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut tracker = Tracker::new(path, Some(initial_tracker_size));
 
         for i in 0..value_count {
             // save only half of the values
             if i % 2 == 0 {
-                tracker.set(i as u32, ValuePointer::new(i as u32, i as u32, i as u32));
+                tracker.set(
+                    i as u32,
+                    ValuePointer::new(i as u32, i as u32, i as u32),
+                    &hw_counter,
+                );
             }
         }
         tracker.write_pending_and_flush().unwrap();
@@ -476,12 +494,14 @@ mod tests {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut tracker = Tracker::new(path, Some(initial_tracker_size));
         assert_eq!(tracker.mapping_len(), 0);
         assert_eq!(tracker.mmap_file_size(), initial_tracker_size);
 
         for i in 0..100_000 {
-            tracker.set(i, ValuePointer::new(i, i, i));
+            tracker.set(i, ValuePointer::new(i, i, i), &hw_counter);
         }
 
         tracker.write_pending_and_flush().unwrap();
@@ -495,13 +515,15 @@ mod tests {
         let file = Builder::new().prefix("test-tracker").tempdir().unwrap();
         let path = file.path();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut tracker = Tracker::new(path, None);
         assert_eq!(tracker.mapping_len(), 0);
 
         let page_pointer = ValuePointer::new(1, 1, 1);
         let key = 1_000_000;
 
-        tracker.set(key, page_pointer);
+        tracker.set(key, page_pointer, &hw_counter);
         assert_eq!(tracker.get(key), Some(page_pointer));
     }
 }

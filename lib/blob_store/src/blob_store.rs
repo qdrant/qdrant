@@ -400,6 +400,7 @@ impl<V: Blob> BlobStore<V> {
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
+            hw_counter,
         );
 
         // return whether it was an update or not
