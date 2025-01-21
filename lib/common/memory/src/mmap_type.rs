@@ -165,7 +165,10 @@ where
         Box::new({
             let mmap = self.mmap.clone();
             move || {
-                mmap.flush()?;
+                // flushing a zero-sized mmap can cause panicking on some systems
+                if mmap.len() > 0 {
+                    mmap.flush()?;
+                }
                 Ok(())
             }
         })

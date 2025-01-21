@@ -10,7 +10,7 @@ use crate::index::field_index::full_text_index::mutable_inverted_index::MutableI
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
 
 #[cfg_attr(test, derive(Clone))]
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ImmutableInvertedIndex {
     pub(in crate::index::field_index::full_text_index) postings: Vec<CompressedPostingList>,
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
