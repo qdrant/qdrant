@@ -91,7 +91,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(res)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = HashMap::new();
         Ok(())
     }
@@ -203,12 +203,12 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
     }
 
     #[test]

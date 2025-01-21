@@ -430,7 +430,7 @@ impl<V: Blob> BlobStore<V> {
     }
 
     /// Wipe the storage, drop all pages and delete the base directory
-    pub fn wipe(&mut self) {
+    pub fn wipe(&mut self, _: &HardwareCounterCell) {
         // clear pages
         self.pages.clear();
         // deleted base directory
@@ -1077,7 +1077,7 @@ mod tests {
 
         // wipe storage manually
         assert!(dir.path().exists());
-        storage.wipe();
+        storage.wipe(&hw_counter);
         assert!(!dir.path().exists());
     }
 

@@ -58,7 +58,7 @@ pub trait PayloadStorage {
     ) -> OperationResult<Option<Payload>>;
 
     /// Completely delete payload storage. Pufff!
-    fn wipe(&mut self) -> OperationResult<()>;
+    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

@@ -165,8 +165,8 @@ impl PayloadStorage for MmapPayloadStorage {
         Ok(res)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
-        self.storage.write().wipe();
+    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.write().wipe(hw_counter);
         Ok(())
     }
 
