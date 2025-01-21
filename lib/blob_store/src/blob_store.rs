@@ -524,12 +524,6 @@ impl<V> BlobStore<V> {
     }
 }
 
-impl<V> Drop for BlobStore<V> {
-    fn drop(&mut self) {
-        self.flush().unwrap();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -922,8 +916,8 @@ mod tests {
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
 
-            // drop storage
-            drop(storage);
+            // flush storage before dropping
+            storage.flush().unwrap();
         }
 
         // reopen storage
