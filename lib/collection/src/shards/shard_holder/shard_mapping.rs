@@ -34,7 +34,7 @@ impl SaveOnDiskShardKeyMappingWrapper {
     /// Wraps `SaveOnDisk::load_or_init_default`, using a different persisted type.
     pub fn load_or_init_default(path: impl Into<PathBuf>) -> Result<Self, Error> {
         let persisted: SaveOnDisk<ShardKeyMappingWrapper> = SaveOnDisk::load_or_init_default(path)?;
-        let mapping = persisted.read().clone().into_mapping();
+        let mapping = ShardKeyMapping::from(persisted.read().clone());
         Ok(Self {
             persisted,
             mapping: RwLock::new(mapping),
@@ -51,14 +51,14 @@ impl SaveOnDiskShardKeyMappingWrapper {
         let mut updated_mapping = None;
 
         let is_changed = self.persisted.write_optional(|mapping| {
-            let persisted_mapping = f(&mapping.clone().into_mapping());
+            let persisted_mapping = f(&ShardKeyMapping::from(mapping.clone()));
 
             // If persisted mapping will be changed, keep to to update our mapping view
             if let Some(ref mapping) = persisted_mapping {
                 updated_mapping.replace(mapping.clone());
             }
 
-            persisted_mapping.map(ShardKeyMappingWrapper::from_mapping)
+            persisted_mapping.map(ShardKeyMappingWrapper::from)
         })?;
 
         // Persisted mapping got changed, also update our mapping view
@@ -104,6 +104,7 @@ impl Deref for SaveOnDiskShardKeyMappingWrapper {
 enum ShardKeyMappingWrapper {
     /// The `Old` format is the original format from when shard key mappings were implemented
     // TODO(1.15): either fully remove support for the old format, or keep it a bit longer
+    // TODO(1.15): if removing the old format, change back to regular SaveOnDisk<T> type
     Old(ShardKeyMapping),
     /// The `New` format is a more robust format, properly persisting shard key numbers
     New(Vec<NewShardKeyMapping>),
@@ -119,8 +120,8 @@ impl Default for ShardKeyMappingWrapper {
     }
 }
 
-impl ShardKeyMappingWrapper {
-    fn from_mapping(mapping: ShardKeyMapping) -> Self {
+impl From<ShardKeyMapping> for ShardKeyMappingWrapper {
+    fn from(mapping: ShardKeyMapping) -> Self {
         // If any shard key is a number, always prefer new persisted format
         // The old format is broken and fails to deserialize shard key numbers
         let any_number = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
@@ -136,9 +137,11 @@ impl ShardKeyMappingWrapper {
             Self::Old(mapping)
         }
     }
+}
 
-    fn into_mapping(self) -> ShardKeyMapping {
-        match self {
+impl From<ShardKeyMappingWrapper> for ShardKeyMapping {
+    fn from(mapping: ShardKeyMappingWrapper) -> Self {
+        match mapping {
             ShardKeyMappingWrapper::Old(mapping) => mapping,
             ShardKeyMappingWrapper::New(mappings) => mappings
                 .into_iter()
