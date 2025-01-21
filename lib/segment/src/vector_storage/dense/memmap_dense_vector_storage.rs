@@ -265,12 +265,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
 
 /// Open a file shortly for appending
 fn open_append<P: AsRef<Path>>(path: P) -> io::Result<File> {
-    OpenOptions::new()
-        .read(false)
-        .write(false)
-        .append(true)
-        .create(false)
-        .open(path)
+    OpenOptions::new().append(true).open(path)
 }
 
 #[cfg(test)]
