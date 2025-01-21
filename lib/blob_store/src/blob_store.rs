@@ -916,8 +916,8 @@ mod tests {
             assert!(stored_payload.is_some());
             assert_eq!(stored_payload.unwrap(), payload);
 
-            // drop storage
-            drop(storage);
+            // flush storage before dropping
+            storage.flush().unwrap();
         }
 
         // reopen storage
