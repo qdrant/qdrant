@@ -584,7 +584,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         "enabled": True,
         "sparse_config": {
             "sparse-vector": {
-                "max_length": 3
+                "max_length": 5
             }
         }
     })
@@ -600,8 +600,8 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                     "id": 1,
                     "vector": {
                         "sparse-vector": {
-                            "indices": [1, 2, 3, 4, 5],
-                            "values": [0.1, 0.2, 0.3, 0.4, 0.5]
+                            "indices": [1, 2, 3, 4],
+                            "values": [0.0, 0.1, 0.2, 0.3]
                         }
                     }
                 }
@@ -618,11 +618,11 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         body={
             "points": [
                 {
-                    "id": 1,
+                    "id": 2,
                     "vector": {
                         "sparse-vector": {
                             "indices": [1, 2, 3, 4, 5, 6],
-                            "values": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+                            "values": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
                         }
                     }
                 }
