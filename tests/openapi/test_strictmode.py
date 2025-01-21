@@ -556,6 +556,77 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
     assert False, "Upserting should have failed but didn't"
 
 
+
+def test_strict_mode_max_sparse_length_upsert(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "sparse-vector": {
+                    "size": 100,
+                    "distance": "Dot",
+                },
+            },
+        }
+    )
+    assert response.ok
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "sparse_config": {
+            "sparse-vector": {
+                "max_length": 5,
+            }
+        }
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "sparse-vector": [1, 2, 3, 4, 5],
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    failed_upsert = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "sparse-vector": [1, 2, 3, 4, 5, 6],
+                    }
+                }
+            ]
+        }
+    )
+    assert not failed_upsert.ok
+    assert "Sparse vector 'sparse-vector' exceeds max length of 5" in failed_upsert.json()['status']['error']
+
+
 def test_strict_mode_max_collection_size_upsert_batch(collection_name):
     basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
 

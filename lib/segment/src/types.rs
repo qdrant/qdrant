@@ -669,6 +669,31 @@ impl From<BinaryQuantizationConfig> for QuantizationConfig {
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge, Hash,
 )]
+pub struct StrictModeSparse {
+    /// Max length of sparse vector
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_length: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+pub struct StrictModeSparseConfig {
+    #[validate(nested)]
+    #[serde(flatten)]
+    pub config: BTreeMap<String, StrictModeSparse>,
+}
+
+impl Merge for StrictModeSparseConfig {
+    fn merge(&mut self, other: Self) {
+        for (key, value) in other.config {
+            self.config.entry(key).or_default().merge(value);
+        }
+    }
+}
+
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge, Hash,
+)]
 pub struct StrictModeMultivector {
     /// Max number of vectors in a multivector
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -764,6 +789,11 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
     pub multivector_config: Option<StrictModeMultivectorConfig>,
+
+    /// Sparse vector configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(nested)]
+    pub sparse_config: Option<StrictModeSparseConfig>,
 }
 
 impl Eq for StrictModeConfig {}
@@ -788,6 +818,7 @@ impl Hash for StrictModeConfig {
             filter_max_conditions,
             condition_max_size,
             multivector_config,
+            sparse_config: _,
         } = self;
         (
             enabled,
@@ -806,6 +837,7 @@ impl Hash for StrictModeConfig {
                 condition_max_size,
             ),
             multivector_config,
+            // sparse_config,
         )
             .hash(state);
     }

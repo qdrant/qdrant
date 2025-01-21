@@ -525,6 +525,25 @@ pub struct StrictModeConfig {
     pub condition_max_size: ::core::option::Option<u64>,
     #[prost(message, optional, tag = "16")]
     pub multivector_config: ::core::option::Option<StrictModeMultivectorConfig>,
+    #[prost(message, optional, tag = "17")]
+    pub sparse_config: ::core::option::Option<StrictModeSparseConfig>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeSparseConfig {
+    #[prost(map = "string, message", tag = "1")]
+    pub sparse_config: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        StrictModeSparse,
+    >,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StrictModeSparse {
+    #[prost(uint64, optional, tag = "10")]
+    pub max_length: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
