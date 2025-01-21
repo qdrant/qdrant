@@ -9,7 +9,6 @@ use collection::operations::types::{
 };
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;
@@ -111,13 +110,12 @@ async fn scroll_points(
     );
     let timing = Instant::now();
 
-    let collection = &path.collection;
-    let res = match hash_ring_filter {
+    let hash_ring_filter = match hash_ring_filter {
         Some(filter) => {
             get_hash_ring_filter(
                 &dispatcher,
                 &access,
-                &collection.clone(),
+                &path.collection.clone(),
                 AccessRequirements::new(),
                 filter.expected_shard_id,
                 &pass,
@@ -127,8 +125,9 @@ async fn scroll_points(
         }
 
         None => Ok(None),
-    }
-    .map(|hash_ring_filter| {
+    };
+
+    let res_future = hash_ring_filter.map(|hash_ring_filter| {
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
         dispatcher.toc(&access, &pass).scroll(
@@ -138,16 +137,16 @@ async fn scroll_points(
             params.timeout(),
             ShardSelectorInternal::ShardId(path.shard),
             access,
-            HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
+            request_hw_counter.get_counter(),
         )
     });
 
-    let res = match res {
+    let result = match res_future {
         Ok(e) => e.await,
         Err(err) => Err(err),
     };
 
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{collection}/shards/{shard}/points/count")]
