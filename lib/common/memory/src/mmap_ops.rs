@@ -15,7 +15,6 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(false)
             // Don't truncate because we explicitly set the length later
             .truncate(false)
             .open(path)?;
@@ -39,22 +38,15 @@ pub fn create_and_ensure_length(path: &Path, length: usize) -> io::Result<File> 
 
         std::fs::rename(&temp_path, path)?;
 
-        OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(false)
-            .truncate(false)
-            .open(path)
+        OpenOptions::new().read(true).write(true).open(path)
     }
 }
 
 pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<Mmap> {
     let file = OpenOptions::new()
         .read(true)
-        .write(false)
         .append(true)
         .create(true)
-        .truncate(false)
         .open(path)?;
 
     let mmap = unsafe { Mmap::map(&file)? };
@@ -71,11 +63,7 @@ pub fn open_read_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io:
 }
 
 pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io::Result<MmapMut> {
-    let file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(false)
-        .open(path)?;
+    let file = OpenOptions::new().read(true).write(true).open(path)?;
 
     let mmap = unsafe { MmapMut::map_mut(&file)? };
 
