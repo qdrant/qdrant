@@ -515,13 +515,14 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
             max_optimization_threads,
         } = optimizer_config;
 
-        let converted_max_optimization_threads: Option<usize> = match deprecated_max_optimization_threads {
-            None => match max_optimization_threads {
-                None => None,
-                Some(max_optimization_threads) => TryFrom::try_from(max_optimization_threads)?
-            }
-            Some(threads) => Some(threads as usize)
-        };
+        let converted_max_optimization_threads: Option<usize> =
+            match deprecated_max_optimization_threads {
+                None => match max_optimization_threads {
+                    None => None,
+                    Some(max_optimization_threads) => TryFrom::try_from(max_optimization_threads)?,
+                },
+                Some(threads) => Some(threads as usize),
+            };
 
         Ok(Self {
             deleted_threshold: deleted_threshold.unwrap_or_default(),
