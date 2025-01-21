@@ -524,12 +524,6 @@ impl<V> BlobStore<V> {
     }
 }
 
-impl<V> Drop for BlobStore<V> {
-    fn drop(&mut self) {
-        self.flush().unwrap();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs::File;
