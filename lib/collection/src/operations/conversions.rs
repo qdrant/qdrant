@@ -503,26 +503,36 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
     fn try_from(
         optimizer_config: api::grpc::qdrant::OptimizersConfigDiff,
     ) -> Result<Self, Self::Error> {
-        debug_assert!(
-            optimizer_config.max_optimization_threads.is_some(),
-            "This conversion is for CollectionInfo, max_optimization_threads should always have a value"
-        );
+        let api::grpc::qdrant::OptimizersConfigDiff {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            deprecated_max_optimization_threads,
+            max_optimization_threads,
+        } = optimizer_config;
+
+        let converted_max_optimization_threads: Option<usize> =
+            match deprecated_max_optimization_threads {
+                None => match max_optimization_threads {
+                    None => None,
+                    Some(max_optimization_threads) => TryFrom::try_from(max_optimization_threads)?,
+                },
+                Some(threads) => Some(threads as usize),
+            };
 
         Ok(Self {
-            deleted_threshold: optimizer_config.deleted_threshold.unwrap_or_default(),
-            vacuum_min_vector_number: optimizer_config
-                .vacuum_min_vector_number
-                .unwrap_or_default() as usize,
-            default_segment_number: optimizer_config.default_segment_number.unwrap_or_default()
-                as usize,
-            max_segment_size: optimizer_config.max_segment_size.map(|x| x as usize),
-            memmap_threshold: optimizer_config.memmap_threshold.map(|x| x as usize),
-            indexing_threshold: optimizer_config.indexing_threshold.map(|x| x as usize),
-            flush_interval_sec: optimizer_config.flush_interval_sec.unwrap_or_default(),
-            max_optimization_threads: match optimizer_config.max_optimization_threads {
-                None => return Err(Status::invalid_argument("Malformed OptimizersConfig")),
-                Some(max_optimization_threads) => TryFrom::try_from(max_optimization_threads)?,
-            },
+            deleted_threshold: deleted_threshold.unwrap_or_default(),
+            vacuum_min_vector_number: vacuum_min_vector_number.unwrap_or_default() as usize,
+            default_segment_number: default_segment_number.unwrap_or_default() as usize,
+            max_segment_size: max_segment_size.map(|x| x as usize),
+            memmap_threshold: memmap_threshold.map(|x| x as usize),
+            indexing_threshold: indexing_threshold.map(|x| x as usize),
+            flush_interval_sec: flush_interval_sec.unwrap_or_default(),
+            max_optimization_threads: converted_max_optimization_threads,
         })
     }
 }
