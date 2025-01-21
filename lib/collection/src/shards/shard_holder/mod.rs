@@ -1,4 +1,5 @@
 mod resharding;
+pub(crate) mod shard_mapping;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -13,6 +14,7 @@ use futures::{stream, Future, StreamExt, TryStreamExt as _};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
+use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, OwnedRwLockReadGuard, RwLock};
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -48,8 +50,6 @@ use crate::shards::CollectionId;
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
-
-pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
