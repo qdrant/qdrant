@@ -836,8 +836,7 @@ impl Hash for StrictModeConfig {
                 filter_max_conditions,
                 condition_max_size,
             ),
-            (multivector_config,
-            sparse_config,)
+            (multivector_config, sparse_config),
         )
             .hash(state);
     }
