@@ -104,13 +104,11 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         b.iter(|| black_box(storage.get_storage_size_bytes()));
     });
 
-    let hw_counter = HardwareCounterCell::new();
-
     // delete 30% of the points
     let mut rng = rand::thread_rng();
     for i in 0..storage.max_point_id() {
         if rng.gen_bool(0.3) {
-            storage.delete_value(i, &hw_counter).unwrap();
+            storage.delete_value(i).unwrap();
         }
     }
 

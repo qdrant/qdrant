@@ -159,14 +159,14 @@ impl PayloadStorage for MmapPayloadStorage {
     fn clear(
         &mut self,
         point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
+        _: &HardwareCounterCell,
     ) -> OperationResult<Option<Payload>> {
-        let res = self.storage.write().delete_value(point_id, hw_counter);
+        let res = self.storage.write().delete_value(point_id);
         Ok(res)
     }
 
-    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
-        self.storage.write().wipe(hw_counter);
+    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
+        self.storage.write().wipe();
         Ok(())
     }
 

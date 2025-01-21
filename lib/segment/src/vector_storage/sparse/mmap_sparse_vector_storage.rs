@@ -155,7 +155,7 @@ impl MmapSparseVectorStorage {
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
-            storage_guard.delete_value(key, hw_counter);
+            storage_guard.delete_value(key);
         }
 
         self.next_point_offset = std::cmp::max(self.next_point_offset, key as usize + 1);

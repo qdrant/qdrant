@@ -400,7 +400,6 @@ impl<V: Blob> BlobStore<V> {
         tracker_guard.set(
             point_offset,
             ValuePointer::new(start_page_id, block_offset, value_size as u32),
-            hw_counter,
         );
 
         // return whether it was an update or not
@@ -412,16 +411,12 @@ impl<V: Blob> BlobStore<V> {
     /// Returns None if the point_offset, page, or value was not found
     ///
     /// Returns the deleted value otherwise
-    pub fn delete_value(
-        &mut self,
-        point_offset: PointOffset,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<V> {
+    pub fn delete_value(&mut self, point_offset: PointOffset) -> Option<V> {
         let ValuePointer {
             page_id,
             block_offset,
             length,
-        } = self.tracker.write().unset(point_offset, hw_counter)?;
+        } = self.tracker.write().unset(point_offset)?;
         let raw = self.read_from_pages(page_id, block_offset, length);
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
@@ -430,7 +425,7 @@ impl<V: Blob> BlobStore<V> {
     }
 
     /// Wipe the storage, drop all pages and delete the base directory
-    pub fn wipe(&mut self, _: &HardwareCounterCell) {
+    pub fn wipe(&mut self) {
         // clear pages
         self.pages.clear();
         // deleted base directory
@@ -691,7 +686,7 @@ mod tests {
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
 
         // delete payload
-        let deleted = storage.delete_value(0, &hw_counter);
+        let deleted = storage.delete_value(0);
         assert_eq!(deleted, stored_payload);
         assert_eq!(storage.pages.len(), 1);
 
@@ -821,7 +816,7 @@ mod tests {
                     model_hashmap.insert(point_offset, payload);
                 }
                 Operation::Delete(point_offset) => {
-                    let old1 = storage.delete_value(point_offset, &hw_counter);
+                    let old1 = storage.delete_value(point_offset);
                     let old2 = model_hashmap.remove(&point_offset);
                     assert_eq!(
                         old1, old2,
@@ -911,7 +906,7 @@ mod tests {
 
         {
             // delete payload
-            let deleted = storage.delete_value(0, &hw_counter);
+            let deleted = storage.delete_value(0);
             assert!(deleted.is_some());
             assert_eq!(storage.pages.len(), 2);
 
@@ -1077,7 +1072,7 @@ mod tests {
 
         // wipe storage manually
         assert!(dir.path().exists());
-        storage.wipe(&hw_counter);
+        storage.wipe();
         assert!(!dir.path().exists());
     }
 
