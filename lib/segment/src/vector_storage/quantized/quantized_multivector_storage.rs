@@ -39,7 +39,6 @@ impl MultivectorOffsetsStorage for Vec<MultivectorOffset> {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .create(false)
             .open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let mut offsets_mmap_type =
@@ -71,7 +70,6 @@ impl MultivectorOffsetsStorage for MultivectorOffsetsStorageMmap {
         let offsets_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .create(false)
             .open(path)?;
         let offsets_mmap = unsafe { MmapMut::map_mut(&offsets_file) }?;
         let offsets = unsafe { MmapSlice::<MultivectorOffset>::try_from(offsets_mmap)? };

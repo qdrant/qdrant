@@ -124,7 +124,6 @@ impl DynamicMmapFlags {
             .read(true)
             .write(true)
             .create(true)
-            .truncate(false)
             .open(directory.join(FLAGS_FILE))?;
         file.set_len(capacity_bytes as u64)?;
 
