@@ -103,7 +103,7 @@ impl EntryPoints {
             .or_else(|| {
                 // Searching for at least some entry point
                 self.extra_entry_points
-                    .iter()
+                    .iter_unsorted()
                     .filter(|entry| checker(entry.point_id))
                     .cloned()
                     .max_by_key(|ep| ep.level)

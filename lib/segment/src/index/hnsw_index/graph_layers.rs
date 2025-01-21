@@ -247,7 +247,7 @@ impl GraphLayers {
             &mut points_scorer,
         );
         let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
-        nearest.into_iter().take(top).collect_vec()
+        nearest.into_iter_sorted().take(top).collect_vec()
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
@@ -435,7 +435,7 @@ mod tests {
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 
-        for nearest in &nearest_on_level {
+        for nearest in nearest_on_level.iter_unsorted() {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(
                 nearest.score,
@@ -530,6 +530,6 @@ mod tests {
 
         let graph_search = search_in_graph(&query, top, &vector_holder, &graph_layers);
 
-        assert_eq!(reference_top.into_vec(), graph_search);
+        assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
 }

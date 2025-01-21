@@ -359,7 +359,7 @@ impl GraphLayersBuilder {
     where
         F: FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     {
-        let closest_iter = candidates.into_iter();
+        let closest_iter = candidates.into_iter_sorted();
         Self::select_candidate_with_heuristic_from_sorted(closest_iter, m, score_internal)
     }
 
@@ -416,7 +416,7 @@ impl GraphLayersBuilder {
                         &mut points_scorer,
                     );
 
-                    if let Some(the_nearest) = search_context.nearest.iter().max() {
+                    if let Some(the_nearest) = search_context.nearest.iter_unsorted().max() {
                         level_entry = *the_nearest;
                     }
 
@@ -482,7 +482,7 @@ impl GraphLayersBuilder {
                             }
                         }
                     } else {
-                        for nearest_point in &search_context.nearest {
+                        for nearest_point in search_context.nearest.iter_unsorted() {
                             {
                                 let mut links =
                                     self.links_layers[point_id as usize][curr_level].write();
@@ -722,7 +722,7 @@ mod tests {
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
 
-        assert_eq!(reference_top.into_vec(), graph_search);
+        assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
 
     #[rstest]
@@ -811,7 +811,7 @@ mod tests {
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         let graph_search = graph.search(top, ef, scorer, None);
-        assert_eq!(reference_top.into_vec(), graph_search);
+        assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
 
     #[rstest]
@@ -887,7 +887,7 @@ mod tests {
             });
         }
 
-        let sorted_candidates = candidates.into_vec();
+        let sorted_candidates = candidates.into_sorted_vec();
 
         for x in sorted_candidates.iter().take(M) {
             eprintln!("sorted_candidates = ({}, {})", x.idx, x.score);

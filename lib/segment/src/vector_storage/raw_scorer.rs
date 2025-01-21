@@ -1046,7 +1046,7 @@ where
             }
         }
 
-        pq.into_vec()
+        pq.into_sorted_vec()
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {

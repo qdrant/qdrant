@@ -210,7 +210,7 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
             queue.push(scored_point);
             scores_output_cpu[group * inputs_count + i] = queue.top().unwrap().score;
         }
-        let sorted = queue.into_vec();
+        let sorted = queue.into_sorted_vec();
         for i in 0..ef {
             sorted_output_cpu[group * ef + i] = sorted[i].idx;
         }
