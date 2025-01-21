@@ -160,8 +160,13 @@ impl InvertedIndex for MmapInvertedIndex {
         }
 
         self.deleted_points.set(idx as usize, true);
-        self.point_to_tokens_count[idx as usize] = 0;
-        self.active_points_count -= 1;
+        if let Some(count) = self.point_to_tokens_count.get_mut(idx as usize) {
+            *count = 0;
+
+            // `deleted_points`'s length can be larger than `point_to_tokens_count`'s length.
+            // Only if the index is within bounds of `point_to_tokens_count`, we decrement the active points count.
+            self.active_points_count -= 1;
+        }
         true
     }
 
