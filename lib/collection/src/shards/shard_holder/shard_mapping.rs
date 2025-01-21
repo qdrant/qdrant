@@ -12,9 +12,17 @@ use crate::shards::shard::ShardId;
 
 pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 
+/// Whether to use the new format to persist shard keys
+///
+/// The old format fails to persist shard key numbers correctly, converting them into strings on
+/// load. While this is false, the new format is only used if any shard key is a number.
+// TODO(1.14): set to true, remove other branches in code, and remove this constant
+const USE_NEW_SHARD_KEY_MAPPING_FORMAT: bool = false;
+
 /// A `SaveOnDisk`-like structure for the shard key mapping
 ///
-/// Hold the shard key mapping, and persists in a different format to disk.
+/// Hold the shard key mapping and persists in a different format to disk.
+/// See [`ShardKeyMappingWrapper`].
 pub(super) struct SaveOnDiskShardKeyMappingWrapper {
     /// Persist mapping in a robust format that doesn't loose shard key type information
     persisted: SaveOnDisk<ShardKeyMappingWrapper>,
@@ -38,14 +46,14 @@ impl SaveOnDiskShardKeyMappingWrapper {
         &self,
         f: impl FnOnce(&ShardKeyMapping) -> Option<ShardKeyMapping>,
     ) -> Result<bool, Error> {
-        let read_lock = self.mapping.upgradable_read();
+        let mapping_read = self.mapping.upgradable_read();
 
         let mut updated_mapping = None;
 
         let is_changed = self.persisted.write_optional(|mapping| {
             let persisted_mapping = f(&mapping.clone().into_mapping());
 
-            // If persisted mapping will be changed, clone it to update our mapping view
+            // If persisted mapping will be changed, keep to to update our mapping view
             if let Some(ref mapping) = persisted_mapping {
                 updated_mapping.replace(mapping.clone());
             }
@@ -55,8 +63,8 @@ impl SaveOnDiskShardKeyMappingWrapper {
 
         // Persisted mapping got changed, also update our mapping view
         if let Some(new_mapping) = updated_mapping {
-            let mut write_lock = RwLockUpgradableReadGuard::upgrade(read_lock);
-            *write_lock = new_mapping;
+            let mut mapping_write = RwLockUpgradableReadGuard::upgrade(mapping_read);
+            *mapping_write = new_mapping;
         }
 
         Ok(is_changed)
@@ -80,22 +88,44 @@ impl Deref for SaveOnDiskShardKeyMappingWrapper {
     }
 }
 
+/// A wrapper type for persisting the shard key mapping
+///
+/// This type supports two different persisted formats:
+///
+/// - The `Old` format is the original format from when shard key mappings were implemented.
+/// - The `New` format is a more robust format, properly persisting shard key numbers.
+///
+/// The old format is problematic because it does not persist shard key numbers properly. On load,
+/// shard key numbers would be converted into shard key strings breaking shard key mappings.
+///
+/// This type functions as a compatibility layer between the two different persisted formats.
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 enum ShardKeyMappingWrapper {
+    /// The `Old` format is the original format from when shard key mappings were implemented
+    // TODO(1.15): either fully remove support for the old format, or keep it a bit longer
     Old(ShardKeyMapping),
+    /// The `New` format is a more robust format, properly persisting shard key numbers
     New(Vec<NewShardKeyMapping>),
 }
 
 impl Default for ShardKeyMappingWrapper {
     fn default() -> Self {
-        Self::Old(Default::default())
+        if USE_NEW_SHARD_KEY_MAPPING_FORMAT {
+            Self::New(Default::default())
+        } else {
+            Self::Old(Default::default())
+        }
     }
 }
 
 impl ShardKeyMappingWrapper {
     fn from_mapping(mapping: ShardKeyMapping) -> Self {
-        if mapping.keys().any(|key| matches!(key, ShardKey::Number(_))) {
+        // If any shard key is a number, always prefer new persisted format
+        // The old format is broken and fails to deserialize shard key numbers
+        let any_number = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
+
+        if USE_NEW_SHARD_KEY_MAPPING_FORMAT || any_number {
             Self::New(
                 mapping
                     .into_iter()
