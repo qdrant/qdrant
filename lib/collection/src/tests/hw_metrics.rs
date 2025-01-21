@@ -53,7 +53,10 @@ async fn test_hw_metrics_cancellation() {
     .unwrap();
 
     let upsert_ops = make_random_points_upsert_op(10_000);
-    shard.update(upsert_ops.into(), true).await.unwrap();
+    shard
+        .update(upsert_ops.into(), true, HwMeasurementAcc::new())
+        .await
+        .unwrap();
 
     let mut rand = thread_rng();
     let req = CoreSearchRequestBatch {

@@ -665,6 +665,7 @@ impl ShardOperation for RemoteShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement) fill this with response data
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
 
@@ -1009,6 +1010,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<FacetParams>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        _hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let processed_timeout = Self::process_read_timeout(timeout, "facet")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -1043,6 +1045,8 @@ impl ShardOperation for RemoteShard {
             })
             .await?
             .into_inner();
+
+        // TODO(io_measurement): measure remote io usage here!
 
         let hits = response
             .hits

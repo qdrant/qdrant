@@ -91,13 +91,15 @@ impl VectorIndex for PlainVectorIndex {
 
         let is_stopped = query_context.is_stopped();
 
+        let hw_counter = query_context.hardware_counter();
+
         match filter {
             Some(filter) => {
                 let _timer = ScopeDurationMeasurer::new(&self.filtered_searches_telemetry);
                 let id_tracker = self.id_tracker.borrow();
                 let payload_index = self.payload_index.borrow();
                 let vector_storage = self.vector_storage.borrow();
-                let filtered_ids_vec = payload_index.query_points(filter);
+                let filtered_ids_vec = payload_index.query_points(filter, &hw_counter);
                 let deleted_points = query_context
                     .deleted_points()
                     .unwrap_or_else(|| id_tracker.deleted_point_bitslice());

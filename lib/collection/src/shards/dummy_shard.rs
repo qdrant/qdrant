@@ -77,7 +77,12 @@ impl DummyShard {
 
 #[async_trait]
 impl ShardOperation for DummyShard {
-    async fn update(&self, _: OperationWithClockTag, _: bool) -> CollectionResult<UpdateResult> {
+    async fn update(
+        &self,
+        _: OperationWithClockTag,
+        _: bool,
+        _: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
         self.dummy()
     }
 
@@ -148,6 +153,7 @@ impl ShardOperation for DummyShard {
         _: Arc<FacetParams>,
         _search_runtime_handle: &Handle,
         _: Option<Duration>,
+        _: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.dummy()
     }

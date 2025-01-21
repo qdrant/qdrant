@@ -217,11 +217,19 @@ impl StructPayloadIndex {
         self.id_tracker.borrow().available_point_count()
     }
 
-    pub fn struct_filtered_context<'a>(&'a self, filter: &'a Filter) -> StructFilterContext<'a> {
+    pub fn struct_filtered_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> StructFilterContext<'a> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
-        let (optimized_filter, _) =
-            self.optimize_filter(filter, payload_provider, self.available_point_count());
+        let (optimized_filter, _) = self.optimize_filter(
+            filter,
+            payload_provider,
+            self.available_point_count(),
+            hw_counter,
+        );
 
         StructFilterContext::new(optimized_filter)
     }
@@ -366,8 +374,9 @@ impl StructPayloadIndex {
         filter: &'a Filter,
         id_tracker: &'a IdTrackerSS,
         query_cardinality: &'a CardinalityEstimation,
+        hw_counter: &HardwareCounterCell,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        let struct_filtered_context = self.struct_filtered_context(filter);
+        let struct_filtered_context = self.struct_filtered_context(filter, hw_counter);
 
         if query_cardinality.primary_clauses.is_empty() {
             let full_scan_iterator = id_tracker.iter_ids();
@@ -495,11 +504,15 @@ impl PayloadIndex for StructPayloadIndex {
         estimate_filter(&estimator, query, available_points)
     }
 
-    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
+    fn query_points(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
         let query_cardinality = self.estimate_cardinality(query);
         let id_tracker = self.id_tracker.borrow();
-        self.iter_filtered_points(query, &*id_tracker, &query_cardinality)
+        self.iter_filtered_points(query, &*id_tracker, &query_cardinality, hw_counter)
             .collect()
     }
 
@@ -516,8 +529,12 @@ impl PayloadIndex for StructPayloadIndex {
         })
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
-        Box::new(self.struct_filtered_context(filter))
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn FilterContext + 'a> {
+        Box::new(self.struct_filtered_context(filter, hw_counter))
     }
 
     fn payload_blocks(

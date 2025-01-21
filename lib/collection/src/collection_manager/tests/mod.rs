@@ -89,7 +89,7 @@ fn test_update_proxy_segments() {
             segment
                 .get()
                 .read()
-                .read_filtered(None, Some(100), None, &is_stopped)
+                .read_filtered(None, Some(100), None, &is_stopped, &hw_counter)
         })
         .sorted()
         .collect_vec();

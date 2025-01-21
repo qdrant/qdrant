@@ -1951,6 +1951,7 @@ pub async fn facet(
     toc_provider: impl CheckedTocProvider,
     facet_counts: FacetCounts,
     access: Access,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<FacetResponse>, Status> {
     let FacetCounts {
         collection_name,
@@ -1997,6 +1998,7 @@ pub async fn facet(
             read_consistency,
             access,
             timeout,
+            request_hw_counter.get_counter(),
         )
         .await?;
 
@@ -2005,6 +2007,7 @@ pub async fn facet(
     let response = FacetResponse {
         hits: hits.into_iter().map(From::from).collect(),
         time: timing.elapsed().as_secs_f64(),
+        // TDOO(io_measurement): add hw info in response
     };
 
     Ok(Response::new(response))

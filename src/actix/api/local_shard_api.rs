@@ -10,6 +10,7 @@ use collection::operations::types::{
 use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use futures::FutureExt;
 use segment::types::{Condition, Filter};
 use serde::Deserialize;
 use storage::content_manager::collection_verification::check_strict_mode;
@@ -20,7 +21,9 @@ use tokio::time::Instant;
 
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
+use crate::actix::helpers::{
+    self, get_request_hardware_counter, process_response, process_response_error,
+};
 use crate::common::points;
 use crate::settings::ServiceConfig;
 
@@ -39,27 +42,37 @@ async fn get_points(
     path: web::Path<CollectionShard>,
     request: web::Json<PointRequestInternal>,
     params: web::Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     // No strict mode verification needed
     let pass = new_unchecked_verification_pass();
 
-    helpers::time(async move {
-        let records = points::do_get_points(
-            dispatcher.toc(&access, &pass),
-            &path.collection,
-            request.into_inner(),
-            params.consistency,
-            params.timeout(),
-            ShardSelectorInternal::ShardId(path.shard),
-            access,
-            HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
-        )
-        .await?;
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        path.collection.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
 
-        let records: Vec<_> = records.into_iter().map(api::rest::Record::from).collect();
-        Ok(records)
-    })
+    let records = points::do_get_points(
+        dispatcher.toc(&access, &pass),
+        &path.collection,
+        request.into_inner(),
+        params.consistency,
+        params.timeout(),
+        ShardSelectorInternal::ShardId(path.shard),
+        access,
+        request_hw_counter.get_counter(),
+    )
     .await
+    .map(|records| {
+        records
+            .into_iter()
+            .map(api::rest::Record::from)
+            .collect::<Vec<_>>()
+    });
+
+    process_response(records, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{collection}/shards/{shard}/points/scroll")]
@@ -69,11 +82,14 @@ async fn scroll_points(
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<ScrollRequestInternal>>,
     params: web::Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     let WithFilter {
         mut request,
         hash_ring_filter,
     } = request.into_inner();
+
+    let path = path.into_inner();
 
     let pass = match check_strict_mode(
         &request,
@@ -88,38 +104,50 @@ async fn scroll_points(
         Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
-    helpers::time(async move {
-        let hash_ring_filter = match hash_ring_filter {
-            Some(filter) => get_hash_ring_filter(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        path.collection.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let collection = &path.collection;
+    let res = match hash_ring_filter {
+        Some(filter) => {
+            get_hash_ring_filter(
                 &dispatcher,
                 &access,
-                &path.collection,
+                &collection.clone(),
                 AccessRequirements::new(),
                 filter.expected_shard_id,
                 &pass,
             )
-            .await?
-            .into(),
+            .map(|i| i.map(Filter::from).map(Some))
+            .await
+        }
 
-            None => None,
-        };
-
+        None => Ok(None),
+    }
+    .map(|hash_ring_filter| {
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
-        dispatcher
-            .toc(&access, &pass)
-            .scroll(
-                &path.collection,
-                request,
-                params.consistency,
-                params.timeout(),
-                ShardSelectorInternal::ShardId(path.shard),
-                access,
-                HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
-            )
-            .await
-    })
-    .await
+        dispatcher.toc(&access, &pass).scroll(
+            &path.collection,
+            request,
+            params.consistency,
+            params.timeout(),
+            ShardSelectorInternal::ShardId(path.shard),
+            access,
+            HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
+        )
+    });
+
+    let res = match res {
+        Ok(e) => e.await,
+        Err(err) => Err(err),
+    };
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{collection}/shards/{shard}/points/count")]

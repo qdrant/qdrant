@@ -111,6 +111,7 @@ pub async fn query_batch_internal(
 async fn facet_counts_internal(
     toc: &TableOfContent,
     request: FacetCountsInternal,
+    request_hw_data: RequestHwCounter,
 ) -> Result<Response<FacetResponseInternal>, Status> {
     let timing = Instant::now();
 
@@ -140,6 +141,7 @@ async fn facet_counts_internal(
             request,
             shard_selection,
             timeout.map(Duration::from_secs),
+            request_hw_data.get_counter(),
         )
         .await?;
 
@@ -148,6 +150,7 @@ async fn facet_counts_internal(
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
         time: timing.elapsed().as_secs_f64(),
+        // TODO(io_measurement): add hw data
     };
 
     Ok(Response::new(response))
@@ -662,6 +665,10 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<FacetResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        facet_counts_internal(self.toc.as_ref(), request.into_inner()).await
+        let request_inner = request.into_inner();
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            request_inner.collection_name.clone(),
+        );
+        facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
     }
 }

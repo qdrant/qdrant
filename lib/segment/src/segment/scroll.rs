@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 
 use super::Segment;
@@ -58,9 +59,10 @@ impl Segment {
         limit: Option<usize>,
         condition: &Filter,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
-        let filter_context = payload_index.filter_context(condition);
+        let filter_context = payload_index.filter_context(condition, hw_counter);
         self.id_tracker
             .borrow()
             .iter_from(offset)
@@ -90,13 +92,14 @@ impl Segment {
         limit: Option<usize>,
         condition: &Filter,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
         let cardinality_estimation = payload_index.estimate_cardinality(condition);
 
         let ids_iterator = payload_index
-            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation)
+            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter)
             .check_stop(|| is_stopped.load(Ordering::Relaxed))
             .filter_map(|internal_id| {
                 let external_id = id_tracker.external_id(internal_id);

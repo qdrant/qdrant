@@ -470,6 +470,7 @@ impl SegmentsSearcher {
         segments: LockedSegmentHolder,
         filter: Option<&Filter>,
         runtime_handle: &Handle,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let stopping_guard = StoppingGuard::new();
         let filter = filter.cloned();
@@ -477,13 +478,17 @@ impl SegmentsSearcher {
             .spawn_blocking(move || {
                 let is_stopped = stopping_guard.get_is_stopped();
                 let segments = segments.read();
+                let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc);
                 let all_points: BTreeSet<_> = segments
                     .non_appendable_then_appendable_segments()
                     .flat_map(|segment| {
-                        segment
-                            .get()
-                            .read()
-                            .read_filtered(None, None, filter.as_ref(), &is_stopped)
+                        segment.get().read().read_filtered(
+                            None,
+                            None,
+                            filter.as_ref(),
+                            &is_stopped,
+                            &hw_counter,
+                        )
                     })
                     .collect();
                 Ok(all_points)

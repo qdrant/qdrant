@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use futures::future::try_join_all;
 use itertools::Itertools as _;
 use rand::distributions::WeightedIndex;
@@ -176,7 +177,7 @@ impl LocalShard {
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
-        let read_filtered = |segment: LockedSegment| {
+        let read_filtered = |segment: LockedSegment, hw_counter: HardwareCounterCell| {
             let filter = filter.cloned();
             let is_stopped = stopping_guard.get_is_stopped();
             search_runtime_handle.spawn_blocking(move || {
@@ -185,17 +186,19 @@ impl LocalShard {
                     Some(limit),
                     filter.as_ref(),
                     &is_stopped,
+                    &hw_counter,
                 )
             })
         };
 
+        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc.clone());
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(read_filtered),
+                    .map(|segment| read_filtered(segment, hw_counter.fork())),
             ),
         )
         .await
@@ -256,20 +259,24 @@ impl LocalShard {
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
-        let read_ordered_filtered = |segment: LockedSegment| {
+        let read_ordered_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
             let order_by = order_by.clone();
 
+            let hw_counter = hw_counter.fork();
             search_runtime_handle.spawn_blocking(move || {
                 segment.get().read().read_ordered_filtered(
                     Some(limit),
                     filter.as_ref(),
                     &order_by,
                     &is_stopped,
+                    &hw_counter,
                 )
             })
         };
+
+        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc.clone());
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -277,7 +284,7 @@ impl LocalShard {
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(read_ordered_filtered),
+                    .map(|segment| read_ordered_filtered(segment, &hw_counter)),
             ),
         )
         .await
@@ -343,20 +350,28 @@ impl LocalShard {
 
         let (non_appendable, appendable) = segments.read().split_segments();
 
-        let read_filtered = |segment: LockedSegment| {
+        let read_filtered = |segment: LockedSegment, hw_counter: &HardwareCounterCell| {
             let is_stopped = stopping_guard.get_is_stopped();
             let filter = filter.cloned();
 
+            let hw_counter = hw_counter.fork();
             search_runtime_handle.spawn_blocking(move || {
                 let get_segment = segment.get();
                 let read_segment = get_segment.read();
 
                 (
                     read_segment.available_point_count(),
-                    read_segment.read_random_filtered(limit, filter.as_ref(), &is_stopped),
+                    read_segment.read_random_filtered(
+                        limit,
+                        filter.as_ref(),
+                        &is_stopped,
+                        &hw_counter,
+                    ),
                 )
             })
         };
+
+        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc.clone());
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -364,7 +379,7 @@ impl LocalShard {
                 non_appendable
                     .into_iter()
                     .chain(appendable)
-                    .map(read_filtered),
+                    .map(|segment| read_filtered(segment, &hw_counter)),
             ),
         )
         .await

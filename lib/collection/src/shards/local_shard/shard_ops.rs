@@ -38,6 +38,7 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement): propagate value!
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
@@ -188,7 +189,7 @@ impl ShardOperation for LocalShard {
         request: Arc<CountRequestInternal>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        _hw_measurement_acc: HwMeasurementAcc, // TODO: measure hardware when counting
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(1)?;
@@ -196,7 +197,11 @@ impl ShardOperation for LocalShard {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
             let all_points = tokio::time::timeout(
                 timeout,
-                self.read_filtered(request.filter.as_ref(), search_runtime_handle),
+                self.read_filtered(
+                    request.filter.as_ref(),
+                    search_runtime_handle,
+                    hw_measurement_acc,
+                ),
             )
             .await
             .map_err(|_: Elapsed| {
@@ -204,6 +209,7 @@ impl ShardOperation for LocalShard {
             })??;
             all_points.len()
         } else {
+            // TODO(io_measurement): Maybe add measurement here too?
             self.estimate_cardinality(request.filter.as_ref())?.exp
         };
         Ok(CountResult { count: total_count })
@@ -269,14 +275,15 @@ impl ShardOperation for LocalShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(1)?;
         let hits = if request.exact {
-            self.exact_facet(request, search_runtime_handle, timeout)
+            self.exact_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
                 .await?
         } else {
-            self.approx_facet(request, search_runtime_handle, timeout)
+            self.approx_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
                 .await?
         };
         Ok(FacetResponse { hits })

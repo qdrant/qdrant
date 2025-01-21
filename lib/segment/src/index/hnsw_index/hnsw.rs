@@ -524,8 +524,15 @@ impl HNSWIndex {
 
         let cardinality_estimation = payload_index.estimate_cardinality(&filter);
 
+        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
+
         let points_to_index: Vec<_> = payload_index
-            .iter_filtered_points(&filter, id_tracker, &cardinality_estimation)
+            .iter_filtered_points(
+                &filter,
+                id_tracker,
+                &cardinality_estimation,
+                &disposed_hw_counter,
+            )
             .filter(|&point_id| {
                 !deleted_bitslice
                     .get(point_id as usize)
@@ -790,6 +797,7 @@ impl HNSWIndex {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn search_with_graph(
         &self,
         vector: &QueryVector,
@@ -798,6 +806,7 @@ impl HNSWIndex {
         params: Option<&SearchParams>,
         custom_entry_points: Option<&[PointOffsetType]>,
         vector_query_context: &VectorQueryContext,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let ef = params
             .and_then(|params| params.hnsw_ef)
@@ -825,7 +834,7 @@ impl HNSWIndex {
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let filter_context = filter.map(|f| payload_index.filter_context(f));
+        let filter_context = filter.map(|f| payload_index.filter_context(f, hw_counter));
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
         let search_result =
@@ -851,6 +860,7 @@ impl HNSWIndex {
         top: usize,
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         vectors
             .iter()
@@ -862,9 +872,15 @@ impl HNSWIndex {
                     params,
                     vector_query_context,
                 ),
-                other => {
-                    self.search_with_graph(other, filter, top, params, None, vector_query_context)
-                }
+                other => self.search_with_graph(
+                    other,
+                    filter,
+                    top,
+                    params,
+                    None,
+                    vector_query_context,
+                    hw_counter,
+                ),
             })
             .collect()
     }
@@ -950,7 +966,8 @@ impl HNSWIndex {
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let payload_index = self.payload_index.borrow();
         // share filtered points for all query vectors
-        let filtered_points = payload_index.query_points(filter);
+        let filtered_points =
+            payload_index.query_points(filter, &vector_query_context.hardware_counter());
         vectors
             .iter()
             .map(|vector| {
@@ -980,6 +997,7 @@ impl HNSWIndex {
                 params,
                 None,
                 vector_query_context,
+                &vector_query_context.hardware_counter(),
             )
             .map(|search_result| search_result.iter().map(|x| x.idx).collect())?;
 
@@ -993,6 +1011,7 @@ impl HNSWIndex {
             params,
             Some(&custom_entry_points),
             vector_query_context,
+            &vector_query_context.hardware_counter(),
         )
     }
 
@@ -1136,6 +1155,8 @@ impl VectorIndex for HNSWIndex {
             None
         };
 
+        let hw_counter = query_context.hardware_counter();
+
         match filter {
             None => {
                 let vector_storage = self.vector_storage.borrow();
@@ -1167,7 +1188,14 @@ impl VectorIndex for HNSWIndex {
                 } else {
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.unfiltered_hnsw);
-                    self.search_vectors_with_graph(vectors, None, top, params, query_context)
+                    self.search_vectors_with_graph(
+                        vectors,
+                        None,
+                        top,
+                        params,
+                        query_context,
+                        &hw_counter,
+                    )
                 }
             }
             Some(query_filter) => {
@@ -1228,10 +1256,11 @@ impl VectorIndex for HNSWIndex {
                         top,
                         params,
                         query_context,
+                        &hw_counter,
                     );
                 }
 
-                let filter_context = payload_index.filter_context(query_filter);
+                let filter_context = payload_index.filter_context(query_filter, &hw_counter);
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();
@@ -1244,7 +1273,14 @@ impl VectorIndex for HNSWIndex {
                     // if cardinality is high enough - use HNSW index
                     let _timer =
                         ScopeDurationMeasurer::new(&self.searches_telemetry.large_cardinality);
-                    self.search_vectors_with_graph(vectors, filter, top, params, query_context)
+                    self.search_vectors_with_graph(
+                        vectors,
+                        filter,
+                        top,
+                        params,
+                        query_context,
+                        &hw_counter,
+                    )
                 } else {
                     // if cardinality is small - use plain index
                     let _timer =

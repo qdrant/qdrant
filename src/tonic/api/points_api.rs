@@ -624,10 +624,13 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             access,
+            hw_metrics,
         )
         .await
     }

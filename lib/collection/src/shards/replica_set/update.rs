@@ -1,6 +1,7 @@
 use std::ops::Deref as _;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
@@ -44,25 +45,30 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
+        // TODO(io_measurement): Propagate measurements to caller
+        let hw_measurement = HwMeasurementAcc::disposable();
+
         let result = match state {
             ReplicaState::Active => {
                 // Rate limit update operations on Active replica
                 // TODO(ratelimits) determine cost of update based on operation
                 self.check_write_rate_limiter(1)?;
-                local.get().update(operation, wait).await
+                local.get().update(operation, wait, hw_measurement).await
             }
 
             ReplicaState::Partial
             | ReplicaState::Initializing
             | ReplicaState::Resharding
-            | ReplicaState::ReshardingScaleDown => local.get().update(operation, wait).await,
+            | ReplicaState::ReshardingScaleDown => {
+                local.get().update(operation, wait, hw_measurement).await
+            }
 
-            ReplicaState::Listener => local.get().update(operation, false).await,
+            ReplicaState::Listener => local.get().update(operation, false, hw_measurement).await,
 
             ReplicaState::PartialSnapshot | ReplicaState::Recovery
                 if operation.clock_tag.is_some_and(|tag| tag.force) =>
             {
-                local.get().update(operation, wait).await
+                local.get().update(operation, wait, hw_measurement).await
             }
 
             ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
@@ -229,6 +235,8 @@ impl ShardReplicaSet {
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
         // between nodes, so this method is not cancel safe.
 
+        let hw_measurement_acc = HwMeasurementAcc::disposable(); // TODO(io_measurement) propagate values!
+
         let remotes = self.remotes.read().await;
         let local = self.local.read().await;
         let replica_count = usize::from(local.is_some()) + remotes.len();
@@ -284,10 +292,11 @@ impl ShardReplicaSet {
 
                 let operation = operation.clone();
 
+                let hw_acc = hw_measurement_acc.clone();
                 let local_update = async move {
                     local
                         .get()
-                        .update(operation, local_wait)
+                        .update(operation, local_wait, hw_acc)
                         .await
                         .map(|ok| (this_peer_id, ok))
                         .map_err(|err| (this_peer_id, err))
@@ -300,9 +309,10 @@ impl ShardReplicaSet {
         for remote in updatable_remote_shards {
             let operation = operation.clone();
 
+            let hw_acc = hw_measurement_acc.clone();
             let remote_update = async move {
                 remote
-                    .update(operation, wait)
+                    .update(operation, wait, hw_acc)
                     .await
                     .map(|ok| (remote.peer_id, ok))
                     .map_err(|err| (remote.peer_id, err))

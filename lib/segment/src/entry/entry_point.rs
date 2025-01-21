@@ -136,6 +136,7 @@ pub trait SegmentEntry {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType>;
 
     /// Return points which satisfies filtering condition ordered by the `order_by.key` field,
@@ -149,6 +150,7 @@ pub trait SegmentEntry {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>>;
 
     /// Return random points which satisfies filtering condition.
@@ -159,6 +161,7 @@ pub trait SegmentEntry {
         limit: usize,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType>;
 
     /// Read points in [from; to) range
@@ -170,6 +173,7 @@ pub trait SegmentEntry {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>>;
 
     /// Return the largest counts for the given facet request.
@@ -177,6 +181,7 @@ pub trait SegmentEntry {
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>>;
 
     /// Check if there is point with `point_id` in this segment.
