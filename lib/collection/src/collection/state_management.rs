@@ -7,7 +7,8 @@ use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::{ShardKeyMapping, ShardTransferChange};
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::ShardTransferChange;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {

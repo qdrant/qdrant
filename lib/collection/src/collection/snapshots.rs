@@ -23,9 +23,8 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
-use crate::shards::shard_holder::{
-    shard_not_found_error, ShardHolder, ShardKeyMapping, SHARD_KEY_MAPPING_FILE,
-};
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::{shard_not_found_error, ShardHolder, SHARD_KEY_MAPPING_FILE};
 use crate::shards::shard_versioning;
 
 impl Collection {
