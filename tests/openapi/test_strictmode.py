@@ -574,8 +574,8 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                 "sparse-vector": {
                     "size": 100,
                     "distance": "Dot",
-                },
-            },
+                }
+            }
         }
     )
     assert response.ok
@@ -584,7 +584,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         "enabled": True,
         "sparse_config": {
             "sparse-vector": {
-                "max_length": 5,
+                "max_length": 3
             }
         }
     })
@@ -599,7 +599,10 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                 {
                     "id": 1,
                     "vector": {
-                        "sparse-vector": [1, 2, 3, 4, 5],
+                        "sparse-vector": {
+                            "indices": [1, 2, 3, 4, 5],
+                            "values": [0.1, 0.2, 0.3, 0.4, 0.5]
+                        }
                     }
                 }
             ]
@@ -617,14 +620,17 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                 {
                     "id": 1,
                     "vector": {
-                        "sparse-vector": [1, 2, 3, 4, 5, 6],
+                        "sparse-vector": {
+                            "indices": [1, 2, 3, 4, 5, 6],
+                            "values": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+                        }
                     }
                 }
             ]
         }
     )
     assert not failed_upsert.ok
-    assert "Sparse vector 'sparse-vector' exceeds max length of 5" in failed_upsert.json()['status']['error']
+    assert "Sparse vector 'sparse-vector' has a limit of 5 indices" in failed_upsert.json()['status']['error']
 
 
 def test_strict_mode_max_collection_size_upsert_batch(collection_name):
