@@ -285,6 +285,7 @@ mod tests {
     #[case(1111, 1110)]
     #[case(1111, 0)]
     #[case(10, 2)]
+    #[case(0, 0)]
     #[test]
     fn test_immutable_to_mmap(#[case] indexed_count: u32, #[case] deleted_count: u32) {
         let mutable = mutable_inverted_index(indexed_count, deleted_count);
