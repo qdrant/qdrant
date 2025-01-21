@@ -65,6 +65,7 @@ def delete_shard(
     )
     assert_http_ok(r_batch)
 
+
 def test_shard_consistency(tmp_path: pathlib.Path):
     assert_project_root()
 
@@ -216,3 +217,70 @@ def test_shard_consistency(tmp_path: pathlib.Path):
     assert len(result) == 6
     for point in result:
         assert point["shard_key"] in ["dogs", "birds"]
+
+
+def test_shard_key_storage(tmp_path: pathlib.Path):
+    """
+    Creates cluster with custom sharding. Asserts custom sharding keys are
+    loaded correctly on node restart.
+
+    Tests bug: <https://github.com/qdrant/qdrant/pull/5838>
+    """
+    assert_project_root()
+
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
+
+    create_collection_with_custom_sharding(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_PEERS)
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris)
+
+    # Create shards with string and number shard keys
+    create_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key="cats",
+        shard_number=1,
+        replication_factor=N_PEERS,
+    )
+    create_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key="dogs",
+        shard_number=1,
+        replication_factor=N_PEERS,
+    )
+    create_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key=123,
+        shard_number=1,
+        replication_factor=N_PEERS,
+    )
+    create_shard(
+        peer_api_uris[0],
+        COLLECTION_NAME,
+        shard_key=456,
+        shard_number=1,
+        replication_factor=N_PEERS,
+    )
+
+    # Shards must show keys in correct format
+    info = get_collection_cluster_info(peer_api_uris[-1], COLLECTION_NAME)
+    assert len(info['local_shards']) == 4
+    for shard in info['local_shards']:
+        assert shard['shard_key'] in ["cats", "dogs", 123, 456]
+
+    # Kill the last peer
+    processes.pop().kill()
+
+    # Restart the last peer
+    restarted_peer_url = start_peer(peer_dirs[-1], "peer_1_restarted.log", bootstrap_uri)
+    peer_api_uris[-1] = restarted_peer_url
+
+    wait_for_peer_online(peer_api_uris[-1])
+
+    # After restart, shards must show keys in correct format
+    info = get_collection_cluster_info(peer_api_uris[-1], COLLECTION_NAME)
+    assert len(info['local_shards']) == 4
+    for shard in info['local_shards']:
+        # This was previously broken, changing numbers into strings on restart
+        assert shard['shard_key'] in ["cats", "dogs", 123, 456]

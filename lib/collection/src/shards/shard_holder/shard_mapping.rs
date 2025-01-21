@@ -93,12 +93,14 @@ impl Deref for SaveOnDiskShardKeyMappingWrapper {
 /// This type supports two different persisted formats:
 ///
 /// - The `Old` format is the original format from when shard key mappings were implemented.
-/// - The `New` format is a more robust format, properly persisting shard key numbers.
+/// - The `New` format is a more robust, properly persisting shard key numbers.
 ///
 /// The old format is problematic because it does not persist shard key numbers properly. On load,
 /// shard key numbers would be converted into shard key strings breaking shard key mappings.
 ///
 /// This type functions as a compatibility layer between the two different persisted formats.
+///
+/// Bug: <https://github.com/qdrant/qdrant/pull/5838>
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 enum ShardKeyMappingWrapper {
