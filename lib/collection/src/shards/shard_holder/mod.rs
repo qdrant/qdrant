@@ -1,4 +1,5 @@
 mod resharding;
+pub(crate) mod shard_mapping;
 
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -13,6 +14,7 @@ use futures::{stream, Future, StreamExt, TryStreamExt as _};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
+use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMapping};
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, OwnedRwLockReadGuard, RwLock};
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -49,15 +51,13 @@ const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
 pub const SHARD_KEY_MAPPING_FILE: &str = "shard_key_mapping.json";
 
-pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
-
 pub struct ShardHolder {
     shards: HashMap<ShardId, ShardReplicaSet>,
     pub(crate) shard_transfers: SaveOnDisk<HashSet<ShardTransfer>>,
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
-    key_mapping: SaveOnDisk<ShardKeyMapping>,
+    key_mapping: SaveOnDiskShardKeyMappingWrapper,
     // Duplicates the information from `key_mapping` for faster access
     // Do not require locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
@@ -78,8 +78,9 @@ impl ShardHolder {
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
 
-        let key_mapping: SaveOnDisk<ShardKeyMapping> =
-            SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
+        let key_mapping = SaveOnDiskShardKeyMappingWrapper::load_or_init_default(
+            collection_path.join(SHARD_KEY_MAPPING_FILE),
+        )?;
 
         let mut shard_id_to_key_mapping = HashMap::new();
 

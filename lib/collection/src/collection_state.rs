@@ -8,7 +8,7 @@ use crate::config::CollectionConfigInternal;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::ShardKeyMapping;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::transfer::ShardTransfer;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]

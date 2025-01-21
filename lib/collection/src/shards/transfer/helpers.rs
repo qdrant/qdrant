@@ -4,7 +4,7 @@ use super::{ShardTransfer, ShardTransferKey, ShardTransferMethod};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::ShardKeyMapping;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 
 pub fn validate_transfer_exists(
     transfer_key: &ShardTransferKey,
