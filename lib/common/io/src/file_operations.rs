@@ -106,6 +106,11 @@ impl From<bincode::Error> for Error {
 
 impl From<Error> for io::Error {
     fn from(err: Error) -> Self {
-        io::Error::new(io::ErrorKind::Other, err.to_string())
+        match err {
+            Error::Io(err) => err,
+            Error::Bincode(err) => Self::other(err),
+            Error::SerdeJson(err) => Self::other(err),
+            Error::Generic(msg) => Self::other(msg),
+        }
     }
 }
