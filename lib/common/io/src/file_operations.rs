@@ -19,37 +19,42 @@ pub fn atomic_save_json<T: Serialize>(path: &Path, object: &T) -> Result<()> {
     Ok(())
 }
 
-pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    Ok(serde_json::from_reader(BufReader::new(File::open(path)?))?)
+pub fn read_bin<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    let file = File::open(path)?;
+    let value = bincode::deserialize_from(BufReader::new(file))?;
+    Ok(value)
 }
 
-pub fn read_bin<T: DeserializeOwned>(path: &Path) -> Result<T> {
-    Ok(bincode::deserialize_from(BufReader::new(File::open(
-        path,
-    )?))?)
+pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    let file = File::open(path)?;
+    let value = serde_json::from_reader(BufReader::new(file))?;
+    Ok(value)
 }
 
 /// Advise the operating system that the file is no longer needed to be in the page cache.
 pub fn advise_dontneed(path: &Path) -> Result<()> {
-    _ = path;
-
+    // https://github.com/nix-rust/nix/blob/v0.29.0/src/fcntl.rs#L35-L42
     #[cfg(any(
         target_os = "linux",
+        target_os = "freebsd",
         target_os = "android",
-        target_os = "emscripten",
         target_os = "fuchsia",
+        target_os = "emscripten",
         target_os = "wasi",
         target_env = "uclibc",
-        target_os = "freebsd",
-    ))] // https://github.com/nix-rust/nix/blob/v0.29.0/src/fcntl.rs#L35-L42
+    ))]
     {
-        nix::fcntl::posix_fadvise(
-            std::os::fd::AsRawFd::as_raw_fd(&File::open(path)?),
-            0,
-            0,
-            nix::fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED,
-        )?;
+        use std::os::fd::AsRawFd as _;
+
+        use nix::fcntl;
+
+        let file = File::open(path)?;
+        let fd = file.as_raw_fd();
+
+        fcntl::posix_fadvise(fd, 0, 0, fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED)?;
     }
+
+    _ = path;
 
     Ok(())
 }
