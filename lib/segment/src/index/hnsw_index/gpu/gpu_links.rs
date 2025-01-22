@@ -209,6 +209,8 @@ impl GpuLinks {
         stopped: &AtomicBool,
     ) -> OperationResult<()> {
         let timer = std::time::Instant::now();
+        // Collect bad links to check if there are any errors in the links.
+        let mut bad_links = Vec::new();
 
         let links_patch_capacity = self.max_patched_points
             * (self.links_capacity + 1)
@@ -253,8 +255,24 @@ impl GpuLinks {
                 let links = &chunk[1..=links_count];
                 let mut dst = graph_layers_builder.links_layers()[point_id][level].write();
                 dst.clear();
-                dst.extend_from_slice(links);
+                dst.extend(links.iter().copied().filter(|&other_point_id| {
+                    let is_correct_link =
+                        level < graph_layers_builder.links_layers()[other_point_id as usize].len();
+                    if !is_correct_link {
+                        bad_links.push(other_point_id);
+                    }
+                    is_correct_link
+                }));
             }
+        }
+
+        if !bad_links.is_empty() {
+            log::warn!(
+                "Incorrect links on level {} were found. Amount of incorrect links: {}, zeroes: {}",
+                level,
+                bad_links.len(),
+                bad_links.iter().filter(|&&point_id| point_id == 0).count()
+            );
         }
 
         log::trace!(

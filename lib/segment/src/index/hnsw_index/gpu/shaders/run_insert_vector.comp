@@ -103,8 +103,11 @@ void main() {
 
             subgroupMemoryBarrierShared();
             sort(NEAREST_HEAP_OFFSET, nearest_count);
+
+            subgroupMemoryBarrierShared();
             uint other_new_links_count = run_heuristic();
 
+            subgroupMemoryBarrierShared();
             for (uint j = gl_SubgroupInvocationID; j < other_new_links_count; j += SUBGROUP_SIZE) {
                 GET_LINK(other_id, j) = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
             }
@@ -112,6 +115,8 @@ void main() {
                 LINKS_SET_SIZE(other_id, other_new_links_count);
             }
         }
+
+        subgroupMemoryBarrier();
 
         if (gl_SubgroupInvocationID == 0) {
             atomicExchange(atomics.data[other_id], 0);
