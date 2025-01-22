@@ -1287,15 +1287,6 @@ impl IntoIterator for Payload {
     }
 }
 
-impl From<Value> for Payload {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::Object(map) => Payload(map),
-            _ => panic!("cannot convert from {value:?}"),
-        }
-    }
-}
-
 impl From<Map<String, Value>> for Payload {
     fn from(value: serde_json::Map<String, Value>) -> Self {
         Payload(value)
