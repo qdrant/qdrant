@@ -1203,6 +1203,19 @@ pub trait PayloadContainer {
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
 }
 
+/// Construct a [`Payload`] value from a JSON literal.
+///
+/// Similar to [`serde_json::json!`] but only allows objects (aka maps).
+#[macro_export]
+macro_rules! payload_json {
+    ($($tt:tt)*) => {
+        match ::serde_json::json!( { $($tt)* } ) {
+            ::serde_json::Value::Object(map) => $crate::types::Payload(map),
+            _ => unreachable!(),
+        }
+    };
+}
+
 #[allow(clippy::unnecessary_wraps)] // Used as schemars example
 fn payload_example() -> Option<Payload> {
     Some(Payload::from(serde_json::json!({
