@@ -76,7 +76,7 @@
     - [StrictModeMultivectorConfig.MultivectorConfigEntry](#qdrant-StrictModeMultivectorConfig-MultivectorConfigEntry)
     - [StrictModeSparse](#qdrant-StrictModeSparse)
     - [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig)
-    - [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-ConfigEntry)
+    - [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-SparseConfigEntry)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
@@ -1471,6 +1471,7 @@ Note: 1kB = 1 vector of size 256. |
 | filter_max_conditions | [uint64](#uint64) | optional |  |
 | condition_max_size | [uint64](#uint64) | optional |  |
 | multivector_config | [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig) | optional |  |
+| sparse_config | [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig) | optional |  |
 
 
 
@@ -1520,9 +1521,14 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+
+
+
 <a name="qdrant-StrictModeSparse"></a>
 
-### StrictModeSparseVectors
+### StrictModeSparse
+
+
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
@@ -1530,27 +1536,37 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+
+
+
 <a name="qdrant-StrictModeSparseConfig"></a>
 
-### StrictModeSparseConfig.SparseConfig
-
-
-| Field        | Type                                                                             | Label | Description |
-|--------------|----------------------------------------------------------------------------------| ----- | ----------- |
-| sparse_config | [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-ConfigEntry) | repeated |  |
+### StrictModeSparseConfig
 
 
 
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sparse_config | [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-SparseConfigEntry) | repeated |  |
 
-<a name="qdrant-StrictModeSparseConfig-ConfigEntry"></a>
-
-### StrictModeSparseConfig-SparseConfigEntry
 
 
-| Field | Type                                              | Label | Description |
-| ----- |---------------------------------------------------| ----- | ----------- |
-| key | [string](#string)                                 |  |  |
+
+
+
+<a name="qdrant-StrictModeSparseConfig-SparseConfigEntry"></a>
+
+### StrictModeSparseConfig.SparseConfigEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
 | value | [StrictModeSparse](#qdrant-StrictModeSparse) |  |  |
+
+
+
 
 
 
