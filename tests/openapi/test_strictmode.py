@@ -570,11 +570,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         path_params={'collection_name': collection_name},
         body={
             "vectors": {
-                "sparse-vector": {
-                    "size": 100,
-                    "distance": "Dot",
-                },
-                "model": "text"
+                "sparse-vector": {}
             }
         }
     )
@@ -584,7 +580,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         "enabled": True,
         "sparse_config": {
             "sparse-vector": {
-                "max_length": 5
+                "max_length": 4
             }
         }
     })
@@ -601,7 +597,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                     "vector": {
                         "sparse-vector": {
                             "indices": [1, 2, 3, 4],
-                            "values": [1.0, 2.0, 3.0, 4.0]
+                            "values": [0.0, 0.1, 0.2, 0.3]
                         }
                     }
                 }
@@ -622,7 +618,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                     "vector": {
                         "sparse-vector": {
                             "indices": [1, 2, 3, 4, 5, 6],
-                            "values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+                            "values": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
                         }
                     }
                 }
@@ -630,7 +626,8 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         }
     )
     assert not failed_upsert.ok
-    assert "Sparse vector 'sparse-vector' has a limit of 5 indices" in failed_upsert.json()['status']['error']
+    assert "Sparse vector 'sparse-vector' has a limit of 4 indices" in failed_upsert.json()['status']['error']
+
 
 def test_strict_mode_max_collection_size_upsert_batch(collection_name):
     basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
