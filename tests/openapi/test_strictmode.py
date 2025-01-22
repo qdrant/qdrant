@@ -569,7 +569,6 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         api='/collections/{collection_name}',
         method="PUT",
         path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
         body={
             "vectors": {
                 "sparse-vector": {
