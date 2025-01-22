@@ -561,7 +561,6 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
         method="DELETE",
-        query_params={'wait': 'true'},
         path_params={'collection_name': collection_name},
     )
     assert response.ok
