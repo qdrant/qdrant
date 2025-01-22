@@ -7354,6 +7354,17 @@
                 "nullable": true
               }
             ]
+          },
+          "sparse_config": {
+            "description": "Sparse vector configuration",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeSparseConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -7365,6 +7376,21 @@
         "properties": {
           "max_vectors": {
             "description": "Max number of vectors in a multivector",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "StrictModeSparseConfig": {
+        "type": "object"
+      },
+      "StrictModeSparse": {
+        "type": "object",
+        "properties": {
+          "max_length": {
+            "description": "Max length of sparse vector",
             "type": "integer",
             "format": "uint",
             "minimum": 1,
