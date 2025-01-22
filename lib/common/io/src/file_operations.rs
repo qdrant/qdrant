@@ -64,10 +64,6 @@ pub enum Error {
     #[error("{0}")]
     Io(#[from] io::Error),
 
-    #[cfg(unix)]
-    #[error("{0}")]
-    Errno(#[from] nix::errno::Errno),
-
     #[error("{0}")]
     Bincode(#[from] bincode::ErrorKind),
 
@@ -93,6 +89,12 @@ where
             atomicwrites::Error::Internal(err) => err.into(),
             atomicwrites::Error::User(err) => err.into(),
         }
+    }
+}
+
+impl From<nix::Error> for Error {
+    fn from(err: nix::Error) -> Self {
+        Self::Io(err.into())
     }
 }
 
