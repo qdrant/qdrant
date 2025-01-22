@@ -67,7 +67,7 @@ impl From<gpu_allocator::AllocationError> for GpuError {
     fn from(error: gpu_allocator::AllocationError) -> GpuError {
         match error {
             gpu_allocator::AllocationError::OutOfMemory => GpuError::OutOfMemory,
-            _ => GpuError::Other(format!("GPU allocator error: {:?}", error)),
+            _ => GpuError::Other(format!("GPU allocator error: {error:?}")),
         }
     }
 }
@@ -94,7 +94,7 @@ impl From<vk::Result> for GpuError {
             vk::Result::ERROR_FORMAT_NOT_SUPPORTED => {
                 GpuError::NotSupported("Format is not supported".to_string())
             }
-            _ => GpuError::Other(format!("Vulkan API error: {:?}", result)),
+            _ => GpuError::Other(format!("Vulkan API error: {result:?}")),
         }
     }
 }

@@ -110,7 +110,8 @@ unsafe extern "system" fn vulkan_debug_callback_panic(
     };
     let backtrace = std::backtrace::Backtrace::force_capture().to_string();
     panic!(
-        "Vulkan panic ({} {}) \nWith message: {}, \nBackrace: {}",
-        message_type, severity, message, backtrace,
+        "Vulkan panic ({message_type} {severity}) \n\
+         With message: {message}, \n\
+         Backrace: {backtrace}",
     )
 }
