@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -10,8 +11,10 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
+use common::small_uint::U24;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
+use itertools::Itertools;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -26,7 +29,7 @@ use crate::common::operation_error::{check_process_stopped, OperationError, Oper
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::{IdTracker, IdTrackerEnum};
+use crate::id_tracker::{for_each_unique_point, IdTracker, IdTrackerEnum};
 use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -36,7 +39,8 @@ use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::load_segment;
 use crate::types::{
-    ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SegmentState, SeqNumberType,
+    CompactExtendedPointId, ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
+    SegmentState, SeqNumberType,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -237,38 +241,38 @@ impl SegmentBuilder {
             return Ok(true);
         }
 
-        let mut merged_points: HashMap<ExtendedPointId, PositionedPointMetadata> = HashMap::new();
-
-        for (segment_index, segment) in segments.iter().enumerate() {
-            for external_id in segment.iter_points() {
-                let version = segment.point_version(external_id).unwrap_or(0);
-                let internal_id = segment.get_internal_id(external_id).unwrap();
-                merged_points
-                    .entry(external_id)
-                    .and_modify(|entry| {
-                        if entry.version < version {
-                            entry.segment_index = segment_index;
-                            entry.version = version;
-                            entry.internal_id = internal_id;
-                        }
-                    })
-                    .or_insert_with(|| PositionedPointMetadata {
-                        segment_index,
-                        internal_id,
-                        external_id,
-                        version,
-                        ordering: 0,
-                    });
-            }
+        struct PointData {
+            external_id: CompactExtendedPointId,
+            /// [`CompactExtendedPointId`] is 17 bytes, we reduce
+            /// `segment_index` to 3 bytes to avoid paddings and align nicely.
+            segment_index: U24,
+            internal_id: PointOffsetType,
+            version: u64,
+            ordering: u64,
         }
+
+        if segments.len() > U24::MAX as usize {
+            return Err(OperationError::service_error("Too many segments to update"));
+        }
+
+        let mut points_to_insert = Vec::new();
+        let locked_id_trackers = segments.iter().map(|s| s.id_tracker.borrow()).collect_vec();
+        for_each_unique_point(locked_id_trackers.iter().map(|i| i.deref()), |item| {
+            points_to_insert.push(PointData {
+                external_id: CompactExtendedPointId::from(item.external_id),
+                segment_index: U24::new_wrapped(item.tracker_index as u32),
+                internal_id: item.internal_id,
+                version: item.version,
+                ordering: 0,
+            });
+        });
+        drop(locked_id_trackers);
 
         let payloads: Vec<_> = segments.iter().map(|i| i.payload_index.borrow()).collect();
 
-        let mut points_to_insert: Vec<_> = merged_points.into_values().collect();
-
         for defragment_key in &self.defragment_keys {
             for point_data in &mut points_to_insert {
-                let Some(payload_indices) = payloads[point_data.segment_index]
+                let Some(payload_indices) = payloads[point_data.segment_index.get() as usize]
                     .field_indexes
                     .get(defragment_key)
                 else {
@@ -309,7 +313,8 @@ impl SegmentBuilder {
                 .collect::<Result<Vec<_>, OperationError>>()?;
 
             let mut iter = points_to_insert.iter().map(|point_data| {
-                let other_vector_storage = &other_vector_storages[point_data.segment_index];
+                let other_vector_storage =
+                    &other_vector_storages[point_data.segment_index.get() as usize];
                 let vec = other_vector_storage.get_vector(point_data.internal_id);
                 let vector_deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
                 (vec, vector_deleted)
@@ -337,10 +342,13 @@ impl SegmentBuilder {
 
                 let old_internal_id = point_data.internal_id;
 
-                let other_payload = payloads[point_data.segment_index]
+                let other_payload = payloads[point_data.segment_index.get() as usize]
                     .get_payload(old_internal_id, &HardwareCounterCell::disposable())?; // Internal operation, no measurement needed!
 
-                match self.id_tracker.internal_id(point_data.external_id) {
+                match self
+                    .id_tracker
+                    .internal_id(ExtendedPointId::from(point_data.external_id))
+                {
                     Some(existing_internal_id) => {
                         debug_assert!(
                             false,
@@ -354,9 +362,12 @@ impl SegmentBuilder {
 
                         let remove_id = if existing_external_version < point_data.version {
                             // Other version is the newest, remove the existing one and replace
-                            self.id_tracker.drop(point_data.external_id)?;
                             self.id_tracker
-                                .set_link(point_data.external_id, new_internal_id)?;
+                                .drop(ExtendedPointId::from(point_data.external_id))?;
+                            self.id_tracker.set_link(
+                                ExtendedPointId::from(point_data.external_id),
+                                new_internal_id,
+                            )?;
                             self.id_tracker
                                 .set_internal_version(new_internal_id, point_data.version)?;
                             self.payload_storage.clear(existing_internal_id)?;
@@ -372,8 +383,10 @@ impl SegmentBuilder {
                         }
                     }
                     None => {
-                        self.id_tracker
-                            .set_link(point_data.external_id, new_internal_id)?;
+                        self.id_tracker.set_link(
+                            ExtendedPointId::from(point_data.external_id),
+                            new_internal_id,
+                        )?;
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
                     }
@@ -665,13 +678,4 @@ fn create_temp_dir(parent_path: &Path) -> Result<TempDir, OperationError> {
                 err
             ))
         })
-}
-
-/// Internal point ID and metadata of a point.
-struct PositionedPointMetadata {
-    segment_index: usize,
-    internal_id: PointOffsetType,
-    external_id: ExtendedPointId,
-    version: SeqNumberType,
-    ordering: u64,
 }

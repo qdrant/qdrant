@@ -14,6 +14,7 @@ pub mod mmap_hashmap;
 pub mod num_traits;
 pub mod panic;
 pub mod rate_limiting;
+pub mod small_uint;
 pub mod tar_ext;
 pub mod tempfile_ext;
 pub mod top_k;
