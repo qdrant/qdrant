@@ -230,7 +230,7 @@ impl GpuScalarQuantization {
             device.clone(),
             "SQ offsets buffer",
             gpu::BufferType::Storage,
-            quantized_storage.vectors_count() * std::mem::size_of::<f32>(),
+            std::cmp::max(quantized_storage.vectors_count(), 1) * std::mem::size_of::<f32>(),
         )?;
 
         let sq_offsets_staging_buffer = gpu::Buffer::new(
@@ -349,7 +349,9 @@ impl GpuProductQuantization {
             device.clone(),
             "PQ vector division buffer",
             gpu::BufferType::Storage,
-            quantized_storage.get_metadata().vector_division.len() * std::mem::size_of::<u32>() * 2,
+            std::cmp::max(quantized_storage.get_metadata().vector_division.len(), 1)
+                * std::mem::size_of::<u32>()
+                * 2,
         )?;
         let vector_division_staging_buffer = gpu::Buffer::new(
             device.clone(),

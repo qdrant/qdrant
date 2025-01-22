@@ -80,7 +80,11 @@ pub fn build_hnsw_on_gpu<'a>(
 
     // Check if all points are linked on CPU.
     // If there are no batches left, we can return result before gpu resources creation.
-    if batched_points.iter_batches(cpu_linked_points_count).count() == 0 {
+    if batched_points
+        .iter_batches(cpu_linked_points_count)
+        .next()
+        .is_none()
+    {
         return Ok(graph_layers_builder);
     }
 

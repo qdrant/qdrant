@@ -54,11 +54,11 @@ impl Buffer {
         buffer_type: BufferType,
         size: usize,
     ) -> GpuResult<Arc<Self>> {
-        let extended_size = if size < 4 {
-            4 // Vulkan does not allow zero-sized buffers.
-        } else {
-            size
-        };
+        if size == 0 {
+            return Err(GpuError::NotSupported(
+                "Zero-sized GPU buffers are not supported".to_string(),
+            ));
+        }
 
         // Vulkan API requires buffer usage flags to be specified during the buffer creation.
         let vk_usage_flags = match buffer_type {
@@ -90,7 +90,7 @@ impl Buffer {
 
         // Create a Vulkan buffer.
         let vk_create_buffer_info = vk::BufferCreateInfo::default()
-            .size(extended_size as vk::DeviceSize)
+            .size(size as vk::DeviceSize)
             .usage(vk_usage_flags)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
         let vk_buffer = unsafe {
@@ -157,10 +157,6 @@ impl Buffer {
 
     pub fn size(&self) -> usize {
         self.size
-    }
-
-    pub fn extended_size(&self) -> usize {
-        self.allocation.lock().size() as usize
     }
 
     pub fn vk_buffer(&self) -> vk::Buffer {

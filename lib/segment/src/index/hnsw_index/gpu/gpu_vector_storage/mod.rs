@@ -550,7 +550,7 @@ impl GpuVectorStorage {
                     device.clone(),
                     "Vector storage buffer",
                     gpu::BufferType::Storage,
-                    points_in_storage_count * gpu_vector_size,
+                    std::cmp::max(points_in_storage_count, 1) * gpu_vector_size,
                 )
             })
             .collect::<gpu::GpuResult<Vec<_>>>()?;
@@ -569,7 +569,7 @@ impl GpuVectorStorage {
             device.clone(),
             "Vector storage upload staging buffer",
             gpu::BufferType::CpuToGpu,
-            upload_points_count * gpu_vector_size,
+            std::cmp::max(upload_points_count, 1) * gpu_vector_size,
         )?;
         // fill staging buffer with zeros
         let zero_vector = vec![TElement::default(); gpu_vector_capacity];
