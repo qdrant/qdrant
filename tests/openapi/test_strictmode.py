@@ -117,9 +117,9 @@ def test_strict_mode_query_limit_validation(collection_name):
         "enabled": True,
         "max_query_limit": 4,
     })
-    
+
     search_request().raise_for_status()
-    
+
     set_strict_mode(collection_name, {
         "max_query_limit": 3,
     })
@@ -149,7 +149,7 @@ def test_strict_mode_timeout_validation(collection_name):
         "enabled": True,
         "max_timeout": 2,
     })
-    
+
     search_request_with_timeout(2).raise_for_status()
 
     search_fail = search_request_with_timeout(3)
@@ -186,9 +186,9 @@ def test_strict_mode_unindexed_filter_read_validation(collection_name):
         "enabled": True,
         "unindexed_filtering_retrieve": True,
     })
-    
+
     search_request_with_filter().raise_for_status()
-    
+
     set_strict_mode(collection_name, {
         "unindexed_filtering_retrieve": False,
     })
@@ -242,9 +242,9 @@ def test_strict_mode_unindexed_filter_write_validation(collection_name):
         "enabled": True,
         "unindexed_filtering_update": True,
     })
-    
+
     update_request_with_filter().raise_for_status()
-    
+
     set_strict_mode(collection_name, {
         "unindexed_filtering_update": False,
     })
@@ -290,9 +290,9 @@ def test_strict_mode_max_ef_hnsw_validation(collection_name):
         "enabled": True,
         "search_max_hnsw_ef": 5,
     })
-    
+
     search_request().raise_for_status()
-    
+
     set_strict_mode(collection_name, {
         "search_max_hnsw_ef": 4,
     })
@@ -324,9 +324,9 @@ def test_strict_mode_allow_exact_validation(collection_name):
         "enabled": True,
         "search_allow_exact": True,
     })
-    
+
     search_request().raise_for_status()
-    
+
     set_strict_mode(collection_name, {
         "search_allow_exact": False,
     })
@@ -360,9 +360,9 @@ def test_strict_mode_search_max_oversampling_validation(collection_name):
         "enabled": True,
         "search_max_oversampling": 2.0,
     })
-    
+
     search_request().raise_for_status()
-    
+
     set_strict_mode(collection_name, {
         "enabled": True,
         "search_max_oversampling": 1.9,
@@ -556,7 +556,6 @@ def test_strict_mode_max_collection_size_upsert(collection_name):
     assert False, "Upserting should have failed but didn't"
 
 
-
 def test_strict_mode_max_sparse_length_upsert(collection_name):
     response = request_with_validation(
         api='/collections/{collection_name}',
@@ -574,7 +573,8 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                 "sparse-vector": {
                     "size": 100,
                     "distance": "Dot",
-                }
+                },
+                "model": "text"
             }
         }
     )
@@ -601,7 +601,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                     "vector": {
                         "sparse-vector": {
                             "indices": [1, 2, 3, 4],
-                            "values": [0.0, 0.1, 0.2, 0.3]
+                            "values": [1.0, 2.0, 3.0, 4.0]
                         }
                     }
                 }
@@ -622,7 +622,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
                     "vector": {
                         "sparse-vector": {
                             "indices": [1, 2, 3, 4, 5, 6],
-                            "values": [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+                            "values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
                         }
                     }
                 }
@@ -631,7 +631,6 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
     )
     assert not failed_upsert.ok
     assert "Sparse vector 'sparse-vector' has a limit of 5 indices" in failed_upsert.json()['status']['error']
-
 
 def test_strict_mode_max_collection_size_upsert_batch(collection_name):
     basic_collection_setup(collection_name=collection_name)  # Clear collection to not depend on other tests
@@ -1232,4 +1231,3 @@ def test_filter_nested_condition(collection_name):
     assert "condition" in search_fail.json()['status']['error']
     assert "limit" in search_fail.json()['status']['error']
     assert not search_fail.ok
-    
