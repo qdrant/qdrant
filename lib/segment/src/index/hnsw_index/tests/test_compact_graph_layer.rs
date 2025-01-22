@@ -36,7 +36,7 @@ fn search_in_builder(
     );
 
     let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
-    nearest.into_iter().take(top).collect_vec()
+    nearest.into_iter_sorted().take(top).collect_vec()
 }
 
 /// Check that HNSW index with raw and compacted links gives the same results

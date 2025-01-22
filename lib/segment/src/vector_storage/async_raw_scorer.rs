@@ -174,7 +174,7 @@ where
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
 
-        pq.into_vec()
+        pq.into_sorted_vec()
     }
 
     fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
@@ -201,7 +201,7 @@ where
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
 
-        pq.into_vec()
+        pq.into_sorted_vec()
     }
 }
 

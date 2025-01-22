@@ -29,7 +29,10 @@ where
     for element in elements {
         pq.push(Reverse(element));
     }
-    pq.into_vec().into_iter().map(|Reverse(x)| x).collect()
+    pq.into_sorted_vec()
+        .into_iter()
+        .map(|Reverse(x)| x)
+        .collect()
 }
 
 pub fn peek_top_largest_iterable<I, E: Ord>(elements: I, top: usize) -> Vec<E>
@@ -46,7 +49,7 @@ where
     for element in elements {
         pq.push(element);
     }
-    pq.into_vec()
+    pq.into_sorted_vec()
 }
 
 pub fn peek_top_scores<E: Ord + Clone>(scores: &[E], top: usize) -> Vec<E> {

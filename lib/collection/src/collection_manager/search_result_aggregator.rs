@@ -30,7 +30,7 @@ impl SearchResultAggregator {
     }
 
     pub fn into_vec(self) -> Vec<ScoredPoint> {
-        self.queue.into_vec()
+        self.queue.into_sorted_vec()
     }
 
     pub fn lowest(&self) -> Option<&ScoredPoint> {
