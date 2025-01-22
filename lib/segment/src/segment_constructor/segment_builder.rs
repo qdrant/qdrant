@@ -39,8 +39,8 @@ use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::load_segment;
 use crate::types::{
-    CompactExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig, SegmentState,
-    SeqNumberType,
+    CompactExtendedPointId, ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
+    SegmentState, SeqNumberType,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
@@ -243,8 +243,8 @@ impl SegmentBuilder {
 
         struct PointData {
             external_id: CompactExtendedPointId,
-            // ExtendedPointIdCompact is 17 bytes, we reduce `segment_index`
-            // to 3 bytes to avoid paddings and align nicely.
+            /// [`CompactExtendedPointId`] is 17 bytes, we reduce
+            /// `segment_index` to 3 bytes to avoid paddings and align nicely.
             segment_index: U24,
             internal_id: PointOffsetType,
             version: u64,
@@ -259,7 +259,7 @@ impl SegmentBuilder {
         let locked_id_trackers = segments.iter().map(|s| s.id_tracker.borrow()).collect_vec();
         for_each_unique_point(locked_id_trackers.iter().map(|i| i.deref()), |item| {
             points_to_insert.push(PointData {
-                external_id: item.external_id.into(),
+                external_id: CompactExtendedPointId::from(item.external_id),
                 segment_index: U24::new_wrapped(item.tracker_index as u32),
                 internal_id: item.internal_id,
                 version: item.version,
@@ -345,7 +345,10 @@ impl SegmentBuilder {
                 let other_payload = payloads[point_data.segment_index.get() as usize]
                     .get_payload(old_internal_id, &HardwareCounterCell::disposable())?; // Internal operation, no measurement needed!
 
-                match self.id_tracker.internal_id(point_data.external_id.into()) {
+                match self
+                    .id_tracker
+                    .internal_id(ExtendedPointId::from(point_data.external_id))
+                {
                     Some(existing_internal_id) => {
                         debug_assert!(
                             false,
@@ -359,9 +362,12 @@ impl SegmentBuilder {
 
                         let remove_id = if existing_external_version < point_data.version {
                             // Other version is the newest, remove the existing one and replace
-                            self.id_tracker.drop(point_data.external_id.into())?;
                             self.id_tracker
-                                .set_link(point_data.external_id.into(), new_internal_id)?;
+                                .drop(ExtendedPointId::from(point_data.external_id))?;
+                            self.id_tracker.set_link(
+                                ExtendedPointId::from(point_data.external_id),
+                                new_internal_id,
+                            )?;
                             self.id_tracker
                                 .set_internal_version(new_internal_id, point_data.version)?;
                             self.payload_storage.clear(existing_internal_id)?;
@@ -377,8 +383,10 @@ impl SegmentBuilder {
                         }
                     }
                     None => {
-                        self.id_tracker
-                            .set_link(point_data.external_id.into(), new_internal_id)?;
+                        self.id_tracker.set_link(
+                            ExtendedPointId::from(point_data.external_id),
+                            new_internal_id,
+                        )?;
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
                     }
