@@ -1,7 +1,22 @@
 [codespell]
+
+exclude-file =
+  Cargo.lock,
+  tests/tls/cert/key.pem,
+
 # openapi.json is typically a released version and could carry old typos
-skip = .git,*.pdf,*.svg,openapi.json,key.pem,Cargo.lock
+skip =
+  openapi.json,
+  static,
+  target,
+
+# ABD - Geohash example
+# generall - The boss
 # hel - Query token
-# generall - the boss
-# mmapped - memory mapped
-ignore-words-list = crate,hel,generall,mmapped
+# mmapped - Memory mapped
+ignore-words-list =
+  ABD,
+  crate,
+  generall,
+  hel,
+  mmapped,

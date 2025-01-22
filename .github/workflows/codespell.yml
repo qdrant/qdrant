@@ -20,5 +20,3 @@ jobs:
         uses: actions/checkout@v4
       - name: Codespell
         uses: codespell-project/actions-codespell@v2
-        with:
-          exclude_file: docs/CODE_OF_CONDUCT.md
