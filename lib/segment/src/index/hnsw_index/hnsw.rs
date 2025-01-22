@@ -93,6 +93,20 @@ struct HNSWSearchesTelemetry {
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
+impl HNSWSearchesTelemetry {
+    fn new() -> Self {
+        Self {
+            unfiltered_plain: OperationDurationsAggregator::new(),
+            filtered_plain: OperationDurationsAggregator::new(),
+            unfiltered_hnsw: OperationDurationsAggregator::new(),
+            small_cardinality: OperationDurationsAggregator::new(),
+            large_cardinality: OperationDurationsAggregator::new(),
+            exact_filtered: OperationDurationsAggregator::new(),
+            exact_unfiltered: OperationDurationsAggregator::new(),
+        }
+    }
+}
+
 pub struct HnswIndexOpenArgs<'a> {
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -195,15 +209,7 @@ impl HNSWIndex {
             config,
             path: path.to_owned(),
             graph,
-            searches_telemetry: HNSWSearchesTelemetry {
-                unfiltered_hnsw: OperationDurationsAggregator::new(),
-                unfiltered_plain: OperationDurationsAggregator::new(),
-                filtered_plain: OperationDurationsAggregator::new(),
-                small_cardinality: OperationDurationsAggregator::new(),
-                large_cardinality: OperationDurationsAggregator::new(),
-                exact_filtered: OperationDurationsAggregator::new(),
-                exact_unfiltered: OperationDurationsAggregator::new(),
-            },
+            searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
 
