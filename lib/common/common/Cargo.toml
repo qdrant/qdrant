@@ -16,6 +16,7 @@ workspace = true
 testing = []
 
 [dependencies]
+bytemuck = { workspace = true }
 num-traits = { workspace = true }
 num_cpus = "1.16"
 ordered-float = { workspace = true }

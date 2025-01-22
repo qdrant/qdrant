@@ -746,7 +746,7 @@ mod tests {
             let search_result = test
                 .graph_layers_builder
                 .search_on_level(entry, 0, ef, &mut scorer)
-                .into_vec();
+                .into_sorted_vec();
             for (cpu, (gpu_1, gpu_2)) in search_result
                 .iter()
                 .zip(gpu_responses_1[i].iter().zip(gpu_responses_2[i].iter()))

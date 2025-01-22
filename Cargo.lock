@@ -899,9 +899,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.18.0"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94bbb0ad554ad961ddc5da507a12a29b14e4ae5bda06b19f575a3e6079d2e2ae"
+checksum = "ef657dfab802224e671f5818e9a4935f9b1957ed18e58292690cc39e7a4092a3"
 
 [[package]]
 name = "byteorder"
@@ -1243,6 +1243,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "bytemuck",
  "common",
  "criterion",
  "itertools 0.13.0",
