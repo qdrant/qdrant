@@ -16,7 +16,7 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
-use segment::segment_constructor::build_segment;
+use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
     Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
@@ -198,17 +198,21 @@ fn _test_filterable_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        quantized_vectors: quantized_vectors.clone(),
-        payload_index: payload_index_ptr.clone(),
-        hnsw_config,
-        permit: Some(permit),
-        gpu_device: None,
-        stopped: &stopped,
-    })
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: payload_index_ptr.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            gpu_device: None,
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let top = 3;

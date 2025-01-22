@@ -199,6 +199,8 @@ fn test_multivector_quantization_hnsw(
     #[case] on_disk: bool,
     #[case] min_acc: f64, // out of 100
 ) {
+    use segment::segment_constructor::VectorIndexBuildArgs;
+
     let stopped = AtomicBool::new(false);
 
     let m = 8;
@@ -315,21 +317,25 @@ fn test_multivector_quantization_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_storage
-            .clone(),
-        quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
-            .quantized_vectors
-            .clone(),
-        payload_index: segment.payload_index.clone(),
-        hnsw_config,
-        permit: Some(permit),
-        gpu_device: None,
-        stopped: &stopped,
-    })
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            quantized_vectors: segment.vector_data[DEFAULT_VECTOR_NAME]
+                .quantized_vectors
+                .clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            gpu_device: None,
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let top = 5;

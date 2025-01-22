@@ -363,41 +363,78 @@ pub(crate) fn get_payload_index_path(segment_path: &Path) -> PathBuf {
     segment_path.join(PAYLOAD_INDEX_PATH)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn create_vector_index(
+pub(crate) struct VectorIndexOpenArgs<'a> {
+    pub path: &'a Path,
+    pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
+    pub vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
+    pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
+    pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
+}
+
+pub struct VectorIndexBuildArgs<'a> {
+    pub permit: Arc<CpuPermit>,
+    pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
+    pub stopped: &'a AtomicBool,
+}
+
+pub(crate) fn open_vector_index(
     vector_config: &VectorDataConfig,
-    vector_index_path: &Path,
-    id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    vector_storage: Arc<AtomicRefCell<VectorStorageEnum>>,
-    payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
-    quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
-    permit: Option<Arc<CpuPermit>>,
-    gpu_device: Option<&LockedGpuDevice>,
-    stopped: &AtomicBool,
+    open_args: VectorIndexOpenArgs,
 ) -> OperationResult<VectorIndexEnum> {
-    let vector_index = match &vector_config.index {
+    let VectorIndexOpenArgs {
+        path,
+        id_tracker,
+        vector_storage,
+        payload_index,
+        quantized_vectors,
+    } = open_args;
+    Ok(match &vector_config.index {
         Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
             id_tracker,
             vector_storage,
             payload_index,
         )),
-        Indexes::Hnsw(vector_hnsw_config) => {
-            let args = HnswIndexOpenArgs {
-                path: vector_index_path,
+        Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::open(HnswIndexOpenArgs {
+            path,
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            payload_index,
+            hnsw_config: hnsw_config.clone(),
+        })?),
+    })
+}
+
+pub(crate) fn build_vector_index(
+    vector_config: &VectorDataConfig,
+    open_args: VectorIndexOpenArgs,
+    build_args: VectorIndexBuildArgs,
+) -> OperationResult<VectorIndexEnum> {
+    let VectorIndexOpenArgs {
+        path,
+        id_tracker,
+        vector_storage,
+        payload_index,
+        quantized_vectors,
+    } = open_args;
+    Ok(match &vector_config.index {
+        Indexes::Plain {} => VectorIndexEnum::Plain(PlainVectorIndex::new(
+            id_tracker,
+            vector_storage,
+            payload_index,
+        )),
+        Indexes::Hnsw(hnsw_config) => VectorIndexEnum::Hnsw(HNSWIndex::build(
+            HnswIndexOpenArgs {
+                path,
                 id_tracker,
                 vector_storage,
                 quantized_vectors,
                 payload_index,
-                hnsw_config: vector_hnsw_config.clone(),
-                permit,
-                gpu_device,
-                stopped,
-            };
-            VectorIndexEnum::Hnsw(HNSWIndex::open(args)?)
-        }
-    };
-
-    Ok(vector_index)
+                hnsw_config: hnsw_config.clone(),
+            },
+            build_args,
+        )?),
+    })
 }
 
 #[cfg(feature = "testing")]
@@ -574,16 +611,15 @@ fn create_segment(
             None
         });
 
-        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = sp(create_vector_index(
+        let vector_index: Arc<AtomicRefCell<VectorIndexEnum>> = sp(open_vector_index(
             vector_config,
-            &vector_index_path,
-            id_tracker.clone(),
-            vector_storage.clone(),
-            payload_index.clone(),
-            quantized_vectors.clone(),
-            Default::default(),
-            None,
-            stopped,
+            VectorIndexOpenArgs {
+                path: &vector_index_path,
+                id_tracker: id_tracker.clone(),
+                vector_storage: vector_storage.clone(),
+                payload_index: payload_index.clone(),
+                quantized_vectors: quantized_vectors.clone(),
+            },
         )?);
 
         check_process_stopped(stopped)?;

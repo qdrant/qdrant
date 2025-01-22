@@ -98,6 +98,7 @@ fn test_byte_storage_hnsw(
     use common::counter::hardware_counter::HardwareCounterCell;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
+    use segment::segment_constructor::VectorIndexBuildArgs;
     use segment::types::PayloadSchemaType;
 
     let stopped = AtomicBool::new(false);
@@ -223,21 +224,25 @@ fn test_byte_storage_hnsw(
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
-    let hnsw_index_byte = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir_byte.path(),
-        id_tracker: segment_byte.id_tracker.clone(),
-        vector_storage: segment_byte.vector_data[DEFAULT_VECTOR_NAME]
-            .vector_storage
-            .clone(),
-        quantized_vectors: segment_byte.vector_data[DEFAULT_VECTOR_NAME]
-            .quantized_vectors
-            .clone(),
-        payload_index: segment_byte.payload_index.clone(),
-        hnsw_config,
-        permit: Some(permit),
-        gpu_device: None,
-        stopped: &stopped,
-    })
+    let hnsw_index_byte = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir_byte.path(),
+            id_tracker: segment_byte.id_tracker.clone(),
+            vector_storage: segment_byte.vector_data[DEFAULT_VECTOR_NAME]
+                .vector_storage
+                .clone(),
+            quantized_vectors: segment_byte.vector_data[DEFAULT_VECTOR_NAME]
+                .quantized_vectors
+                .clone(),
+            payload_index: segment_byte.payload_index.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            gpu_device: None,
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let top = 3;
