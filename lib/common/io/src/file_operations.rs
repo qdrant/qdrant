@@ -51,7 +51,8 @@ pub fn advise_dontneed(path: &Path) -> Result<()> {
         let file = File::open(path)?;
         let fd = file.as_raw_fd();
 
-        fcntl::posix_fadvise(fd, 0, 0, fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED)?;
+        fcntl::posix_fadvise(fd, 0, 0, fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED)
+            .map_err(io::Error::from)?;
     }
 
     _ = path;
@@ -94,12 +95,6 @@ where
             atomicwrites::Error::Internal(err) => err.into(),
             atomicwrites::Error::User(err) => err.into(),
         }
-    }
-}
-
-impl From<nix::Error> for Error {
-    fn from(err: nix::Error) -> Self {
-        Self::Io(err.into())
     }
 }
 
