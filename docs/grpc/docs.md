@@ -74,6 +74,9 @@
     - [StrictModeMultivector](#qdrant-StrictModeMultivector)
     - [StrictModeMultivectorConfig](#qdrant-StrictModeMultivectorConfig)
     - [StrictModeMultivectorConfig.MultivectorConfigEntry](#qdrant-StrictModeMultivectorConfig-MultivectorConfigEntry)
+    - [StrictModeSparse](#qdrant-StrictModeSparse)
+    - [StrictModeSparseConfig](#qdrant-StrictModeSparseConfig)
+    - [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-ConfigEntry)
     - [TextIndexParams](#qdrant-TextIndexParams)
     - [UpdateCollection](#qdrant-UpdateCollection)
     - [UpdateCollectionClusterSetupRequest](#qdrant-UpdateCollectionClusterSetupRequest)
@@ -1517,6 +1520,37 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-StrictModeSparse"></a>
+
+### StrictModeSparseVectors
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| max_length | [uint64](#uint64) | optional |  |
+
+
+
+<a name="qdrant-StrictModeSparseConfig"></a>
+
+### StrictModeSparseConfig.SparseConfig
+
+
+| Field        | Type                                                                             | Label | Description |
+|--------------|----------------------------------------------------------------------------------| ----- | ----------- |
+| sparse_config | [StrictModeSparseConfig.SparseConfigEntry](#qdrant-StrictModeSparseConfig-ConfigEntry) | repeated |  |
+
+
+
+
+<a name="qdrant-StrictModeSparseConfig-ConfigEntry"></a>
+
+### StrictModeSparseConfig-SparseConfigEntry
+
+
+| Field | Type                                              | Label | Description |
+| ----- |---------------------------------------------------| ----- | ----------- |
+| key | [string](#string)                                 |  |  |
+| value | [StrictModeSparse](#qdrant-StrictModeSparse) |  |  |
 
 
 
