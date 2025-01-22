@@ -569,7 +569,7 @@ def test_strict_mode_max_sparse_length_upsert(collection_name):
         method="PUT",
         path_params={'collection_name': collection_name},
         body={
-            "vectors": {
+            "sparse_vectors": {
                 "sparse-vector": {}
             }
         }
