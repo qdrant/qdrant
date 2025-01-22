@@ -13,12 +13,12 @@ use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{FLT_KEY, INT_KEY};
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
+use segment::payload_json;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
 use segment::types::{
     Condition, FieldCondition, Filter, PayloadSchemaType, Range as RangeCondition,
 };
-use serde_json::json;
 use tempfile::Builder;
 
 const NUM_POINTS: usize = 100_000;
@@ -50,11 +50,10 @@ fn range_filtering(c: &mut Criterion) {
     // generate points with payload
     let mut payload_storage = InMemoryPayloadStorage::default();
     for id in 0..NUM_POINTS {
-        let payload = json!({
+        let payload = payload_json! {
             INT_KEY: rng.gen_range(0..MAX_RANGE.round() as usize),
             FLT_KEY: rng.gen_range(0.0..MAX_RANGE),
-        })
-        .into();
+        };
         payload_storage
             .set(id as PointOffsetType, &payload, &hw_counter)
             .unwrap();

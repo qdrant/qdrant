@@ -14,9 +14,9 @@ use segment::index::sparse_index::sparse_vector_index::{
     SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use segment::index::{PayloadIndex, VectorIndex};
+use segment::payload_json;
 use segment::types::PayloadSchemaType::Keyword;
-use segment::types::{Condition, FieldCondition, Filter, Payload};
-use serde_json::json;
+use segment::types::{Condition, FieldCondition, Filter};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_positive_sparse_vector, random_sparse_vector};
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
@@ -84,10 +84,7 @@ fn sparse_vector_index_search_benchmark_impl(
     // adding payload on field
     let field_name = "field";
     let field_value = "important value";
-    let payload: Payload = json!({
-        field_name: field_value,
-    })
-    .into();
+    let payload = payload_json! {field_name: field_value};
 
     let hw_counter = HardwareCounterCell::new();
 

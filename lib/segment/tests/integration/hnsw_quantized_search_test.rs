@@ -16,17 +16,17 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
 use segment::json_path::JsonPath;
+use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload,
+    CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes,
     ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
     ScalarQuantizationConfig, SearchParams, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use serde_json::json;
 use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
@@ -97,12 +97,7 @@ fn hnsw_quantized_search_test(
     op_num += 1;
     for n in 0..payloads_count {
         let idx = n.into();
-        let payload: Payload = json!(
-            {
-                STR_KEY: STR_KEY,
-            }
-        )
-        .into();
+        let payload = payload_json! {STR_KEY: STR_KEY};
         segment
             .set_full_payload(op_num, idx, &payload, &hw_counter)
             .unwrap();

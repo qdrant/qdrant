@@ -30,6 +30,7 @@ use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
 use segment::json_path::JsonPath;
+use segment::payload_json;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
 use segment::segment::Segment;
@@ -44,7 +45,6 @@ use segment::types::{
     VectorDataConfig, VectorStorageType, WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
-use serde_json::json;
 use tempfile::{Builder, TempDir};
 
 const DIM: usize = 5;
@@ -1079,10 +1079,7 @@ fn test_update_payload_index_type() {
 
     let mut payloads: Vec<Payload> = vec![];
     for i in 0..point_num {
-        let payload = json!({
-            "field": i,
-        });
-        payloads.push(payload.into());
+        payloads.push(payload_json! {"field": i});
     }
 
     let hw_counter = HardwareCounterCell::new();

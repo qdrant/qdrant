@@ -218,8 +218,9 @@ mod tests {
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
     use segment::index::hnsw_index::num_rayon_threads;
+    use segment::payload_json;
     use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
-    use serde_json::{json, Value};
+    use serde_json::Value;
     use tempfile::Builder;
 
     use super::*;
@@ -287,7 +288,7 @@ mod tests {
                 .set_payload(
                     102,
                     point_id,
-                    &json!({ "color": "red" }).into(),
+                    &payload_json! {"color": "red"},
                     &None,
                     &hw_counter,
                 )
@@ -301,7 +302,7 @@ mod tests {
                 .set_payload(
                     102,
                     point_id,
-                    &json!({"size": 0.42}).into(),
+                    &payload_json! {"size": 0.42},
                     &None,
                     &hw_counter,
                 )

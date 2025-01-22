@@ -9,6 +9,7 @@ use rand::Rng;
 use serde_json::{json, Value};
 
 use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, VectorElementType};
+use crate::payload_json;
 use crate::types::{
     AnyVariants, Condition, ExtendedPointId, FieldCondition, Filter, HasIdCondition,
     IsEmptyCondition, Match, MatchAny, Payload, PayloadField, Range as RangeCondition, ValuesCount,
@@ -304,9 +305,9 @@ pub fn random_nested_filter<R: Rng + ?Sized>(rnd_gen: &mut R) -> Filter {
     Filter::new_should(condition)
 }
 
-fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
+pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
     if rnd_gen.gen_range(0.0..1.0) < 0.5 {
-        json!({
+        payload_json! {
             STR_KEY: random_keyword_payload(rnd_gen, 1..=3),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
@@ -315,9 +316,9 @@ fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
             GEO_KEY: random_geo_payload(rnd_gen, 1..=3),
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
             BOOL_KEY: random_bool_payload(rnd_gen, 1..=1),
-        })
+        }
     } else {
-        json!({
+        payload_json! {
             STR_KEY: random_keyword_payload(rnd_gen, 1..=2),
             INT_KEY: random_int_payload(rnd_gen, 1..=3),
             INT_KEY_2: random_int_payload(rnd_gen, 1..=2),
@@ -327,16 +328,12 @@ fn random_json<R: Rng + ?Sized>(rnd_gen: &mut R) -> Value {
             TEXT_KEY: random_keyword_payload(rnd_gen, 1..=1),
             BOOL_KEY: random_bool_payload(rnd_gen, 1..=2),
             FLICKING_KEY: random_int_payload(rnd_gen, 1..=3)
-        })
+        }
     }
 }
 
-pub fn generate_diverse_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
-    random_json(rnd_gen).into()
-}
-
 pub fn generate_diverse_nested_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payload {
-    json!({
+    payload_json! {
         STR_KEY: {
             "nested_1": {
                 "nested_2": random_keyword_payload(rnd_gen, 1..=3)
@@ -354,6 +351,5 @@ pub fn generate_diverse_nested_payload<R: Rng + ?Sized>(rnd_gen: &mut R) -> Payl
                 ]
             }
         ],
-    })
-    .into()
+    }
 }

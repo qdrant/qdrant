@@ -1218,10 +1218,10 @@ macro_rules! payload_json {
 
 #[allow(clippy::unnecessary_wraps)] // Used as schemars example
 fn payload_example() -> Option<Payload> {
-    Some(Payload::from(serde_json::json!({
+    Some(payload_json! {
         "city": "London",
         "color": "green",
-    })))
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize, JsonSchema)]
@@ -2877,7 +2877,6 @@ mod tests {
     use rstest::rstest;
     use serde::de::DeserializeOwned;
     use serde_json;
-    use serde_json::json;
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;
@@ -2895,7 +2894,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_rmp_vs_cbor_deserialize() {
-        let payload: Payload = json!({"payload_key":"payload_value"}).into();
+        let payload = payload_json! {"payload_key": "payload_value"};
         let raw = rmp_serde::to_vec(&payload).unwrap();
         let de_record: Payload = serde_cbor::from_slice(&raw).unwrap();
         eprintln!("payload = {payload:#?}");
@@ -3781,7 +3780,7 @@ mod tests {
 
     #[test]
     fn test_payload_selector_include() {
-        let payload = json!({
+        let payload = payload_json! {
             "a": 1,
             "b": {
                 "c": 123,
@@ -3802,55 +3801,55 @@ mod tests {
                     ]
                 }
             }
-        });
+        };
 
         // include root & nested
         let selector =
             PayloadSelector::new_include(vec![JsonPath::new("a"), JsonPath::new("b.e.f")]);
-        let payload = selector.process(payload.into());
+        let payload = selector.process(payload);
 
-        let expected = json!({
+        let expected = payload_json! {
             "a": 1,
             "b": {
                 "e": {
                     "f": [1,2,3],
                 }
             }
-        });
-        assert_eq!(payload, expected.into());
+        };
+        assert_eq!(payload, expected);
     }
 
     #[test]
     fn test_payload_selector_array_include() {
-        let payload = json!({
+        let payload = payload_json! {
             "a": 1,
             "b": {
                 "c": 123,
                 "f": [1,2,3,4,5],
             }
-        });
+        };
 
         // handles duplicates
         let selector = PayloadSelector::new_include(vec![JsonPath::new("a"), JsonPath::new("a")]);
-        let payload = selector.process(payload.into());
+        let payload = selector.process(payload);
 
-        let expected = json!({
+        let expected = payload_json! {
             "a": 1
-        });
-        assert_eq!(payload, expected.into());
+        };
+        assert_eq!(payload, expected);
 
         // ignore path that points to array
         let selector = PayloadSelector::new_include(vec![JsonPath::new("b.f[0]")]);
         let payload = selector.process(payload);
 
         // nothing included
-        let expected = json!({});
-        assert_eq!(payload, expected.into());
+        let expected = payload_json! {};
+        assert_eq!(payload, expected);
     }
 
     #[test]
     fn test_payload_selector_no_implicit_array_include() {
-        let payload = json!({
+        let payload = payload_json! {
             "a": 1,
             "b": {
                 "c": [
@@ -3864,12 +3863,12 @@ mod tests {
                     }
                 ],
             }
-        });
+        };
 
         let selector = PayloadSelector::new_include(vec![JsonPath::new("b.c")]);
-        let selected_payload = selector.process(payload.clone().into());
+        let selected_payload = selector.process(payload.clone());
 
-        let expected = json!({
+        let expected = payload_json! {
             "b": {
                 "c": [
                     {
@@ -3882,38 +3881,38 @@ mod tests {
                     }
                 ]
             }
-        });
-        assert_eq!(selected_payload, expected.into());
+        };
+        assert_eq!(selected_payload, expected);
 
         // with explicit array traversal ([] notation)
         let selector = PayloadSelector::new_include(vec![JsonPath::new("b.c[].d")]);
-        let selected_payload = selector.process(payload.clone().into());
+        let selected_payload = selector.process(payload.clone());
 
-        let expected = json!({
+        let expected = payload_json! {
             "b": {
                 "c": [
                     {"d": 1},
                     {"d": 3}
                 ]
             }
-        });
-        assert_eq!(selected_payload, expected.into());
+        };
+        assert_eq!(selected_payload, expected);
 
         // shortcuts implicit array traversal
         let selector = PayloadSelector::new_include(vec![JsonPath::new("b.c.d")]);
-        let selected_payload = selector.process(payload.into());
+        let selected_payload = selector.process(payload);
 
-        let expected = json!({
+        let expected = payload_json! {
             "b": {
                 "c": []
             }
-        });
-        assert_eq!(selected_payload, expected.into());
+        };
+        assert_eq!(selected_payload, expected);
     }
 
     #[test]
     fn test_payload_selector_exclude() {
-        let payload = json!({
+        let payload = payload_json! {
             "a": 1,
             "b": {
                 "c": 123,
@@ -3934,15 +3933,15 @@ mod tests {
                     ]
                 }
             }
-        });
+        };
 
         // exclude
         let selector =
             PayloadSelector::new_exclude(vec![JsonPath::new("a"), JsonPath::new("b.e.f")]);
-        let payload = selector.process(payload.into());
+        let payload = selector.process(payload);
 
         // root removal & nested removal
-        let expected = json!({
+        let expected = payload_json! {
             "b": {
                 "c": 123,
                 "e": {
@@ -3961,32 +3960,32 @@ mod tests {
                     ]
                 }
             }
-        });
-        assert_eq!(payload, expected.into());
+        };
+        assert_eq!(payload, expected);
     }
 
     #[test]
     fn test_payload_selector_array_exclude() {
-        let payload = json!({
+        let payload = payload_json! {
             "a": 1,
             "b": {
                 "c": 123,
                 "f": [1,2,3,4,5],
             }
-        });
+        };
 
         // handles duplicates
         let selector = PayloadSelector::new_exclude(vec![JsonPath::new("a"), JsonPath::new("a")]);
-        let payload = selector.process(payload.into());
+        let payload = selector.process(payload);
 
         // single removal
-        let expected = json!({
+        let expected = payload_json! {
             "b": {
                 "c": 123,
                 "f": [1,2,3,4,5],
             }
-        });
-        assert_eq!(payload, expected.into());
+        };
+        assert_eq!(payload, expected);
 
         // ignore path that points to array
         let selector = PayloadSelector::new_exclude(vec![JsonPath::new("b.f[0]")]);
@@ -3994,13 +3993,13 @@ mod tests {
         let payload = selector.process(payload);
 
         // no removal
-        let expected = json!({
+        let expected = payload_json! {
             "b": {
                 "c": 123,
                 "f": [1,2,3,4,5],
             }
-        });
-        assert_eq!(payload, expected.into());
+        };
+        assert_eq!(payload, expected);
     }
 }
 

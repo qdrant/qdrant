@@ -8,10 +8,10 @@ use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
 use segment::json_path::JsonPath;
+use segment::payload_json;
 use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
 use segment::types::{Condition, FieldCondition, Filter, Match, Payload, PayloadSchemaType, Range};
-use serde_json::json;
 use tempfile::Builder;
 
 const NUM_POINTS: usize = 200;
@@ -19,33 +19,30 @@ const NUM_POINTS: usize = 200;
 fn nested_payloads() -> Vec<Payload> {
     let mut res = Vec::new();
     for i in 0..NUM_POINTS {
-        let payload: Payload = json!(
+        let payload = payload_json! {
+            "arr1": [
+                {"a": 1, "b": i % 10 + 1, "c": i % 2 + 1, "d": i % 3, "text": format!("a1 b{} c{} d{}", i, i % 10 + 1,  i % 3) },
+                {"a": 2, "b": i % 10 + 2, "c": i % 2 + 1, "d": i % 3, "text": format!("a2 b{} c{} d{}", i, i % 10 + 2,  i % 3) },
+                {"a": 3, "b": i % 10 + 3, "c": i % 2 + 2, "d": i % 3, "text": format!("a3 b{} c{} d{}", i, i % 10 + 3,  i % 3) },
+                {"a": 4, "b": i % 10 + 4, "c": i % 2 + 2, "d": i % 3, "text": format!("a4 b{} c{} d{}", i, i % 10 + 4,  i % 3) },
+                {"a": [5, 6], "b": i % 10 + 5, "c": i % 2 + 2, "d": i % 3, "text": format!("a5 b{} c{} d{}", i, i % 10 + 5,  i % 3) },
+            ],
+            "f": i % 10,
+            "arr2": [
                 {
-                    "arr1": [
-                        {"a": 1, "b": i % 10 + 1, "c": i % 2 + 1, "d": i % 3, "text": format!("a1 b{} c{} d{}", i, i % 10 + 1,  i % 3) },
-                        {"a": 2, "b": i % 10 + 2, "c": i % 2 + 1, "d": i % 3, "text": format!("a2 b{} c{} d{}", i, i % 10 + 2,  i % 3) },
-                        {"a": 3, "b": i % 10 + 3, "c": i % 2 + 2, "d": i % 3, "text": format!("a3 b{} c{} d{}", i, i % 10 + 3,  i % 3) },
-                        {"a": 4, "b": i % 10 + 4, "c": i % 2 + 2, "d": i % 3, "text": format!("a4 b{} c{} d{}", i, i % 10 + 4,  i % 3) },
-                        {"a": [5, 6], "b": i % 10 + 5, "c": i % 2 + 2, "d": i % 3, "text": format!("a5 b{} c{} d{}", i, i % 10 + 5,  i % 3) },
-                    ],
-                    "f": i % 10,
-                    "arr2": [
-                        {
-                            "arr3": [
-                                { "a": 1, "b": i % 7 + 1 },
-                                { "a": 2, "b": i % 7 + 2 },
-                            ]
-                        },
-                        {
-                            "arr3": [
-                                { "a": 3, "b": i % 7 + 3 },
-                                { "a": 4, "b": i % 7 + 4 },
-                            ]
-                        }
-                    ],
+                    "arr3": [
+                        { "a": 1, "b": i % 7 + 1 },
+                        { "a": 2, "b": i % 7 + 2 },
+                    ]
+                },
+                {
+                    "arr3": [
+                        { "a": 3, "b": i % 7 + 3 },
+                        { "a": 4, "b": i % 7 + 4 },
+                    ]
                 }
-            )
-            .into();
+            ]
+        };
         res.push(payload);
     }
     res

@@ -1399,9 +1399,10 @@ mod tests {
     use rand::Rng;
     use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
     use segment::json_path::JsonPath;
+    use segment::payload_json;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
     use segment::types::{Distance, PayloadContainer};
-    use serde_json::{json, Value};
+    use serde_json::Value;
     use tempfile::Builder;
 
     use super::*;
@@ -1700,17 +1701,17 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         segment1
-            .set_payload(100, 1.into(), &json!({}).into(), &None, &hw_counter)
+            .set_payload(100, 1.into(), &payload_json! {}, &None, &hw_counter)
             .unwrap();
         segment1
-            .set_payload(100, 2.into(), &json!({}).into(), &None, &hw_counter)
+            .set_payload(100, 2.into(), &payload_json! {}, &None, &hw_counter)
             .unwrap();
 
         segment2
-            .set_payload(200, 4.into(), &json!({}).into(), &None, &hw_counter)
+            .set_payload(200, 4.into(), &payload_json! {}, &None, &hw_counter)
             .unwrap();
         segment2
-            .set_payload(200, 5.into(), &json!({}).into(), &None, &hw_counter)
+            .set_payload(200, 5.into(), &payload_json! {}, &None, &hw_counter)
             .unwrap();
 
         let mut holder = SegmentHolder::default();

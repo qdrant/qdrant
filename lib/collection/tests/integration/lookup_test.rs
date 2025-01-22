@@ -14,8 +14,8 @@ use rand::rngs::SmallRng;
 use rand::{self, Rng, SeedableRng};
 use rstest::*;
 use segment::data_types::vectors::VectorStructInternal;
-use segment::types::{Payload, PointIdType};
-use serde_json::json;
+use segment::payload_json;
+use segment::types::PointIdType;
 use tempfile::Builder;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -56,7 +56,7 @@ async fn setup() -> Resources {
 
     let payloads = ids
         .iter()
-        .map(|i| Some(Payload::from(json!({ "foo": format!("bar {}", i) }))))
+        .map(|i| Some(payload_json! {"foo": format!("bar {}", i)}))
         .collect_vec();
 
     let batch = BatchPersisted {
@@ -150,7 +150,7 @@ async fn happy_lookup_ids() {
         assert_eq!(record.id, PointIdType::try_from(id_value.clone()).unwrap());
         assert_eq!(
             record.payload,
-            Some(Payload::from(json!({ "foo": format!("bar {}", id_value) })))
+            Some(payload_json! { "foo": format!("bar {}", id_value) })
         );
         assert_eq!(record.vector, Some(vector));
     }

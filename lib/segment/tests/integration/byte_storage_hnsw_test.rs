@@ -15,12 +15,11 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, Range, SearchParams,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Range, SearchParams,
     SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use segment::vector_storage::VectorStorageEnum;
-use serde_json::json;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
@@ -98,6 +97,7 @@ fn test_byte_storage_hnsw(
     use common::counter::hardware_counter::HardwareCounterCell;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
+    use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
     use segment::types::PayloadSchemaType;
 
@@ -174,7 +174,7 @@ fn test_byte_storage_hnsw(
         let vector = random_dense_byte_vector(&mut rnd, dim);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-        let payload: Payload = json!({int_key:int_payload,}).into();
+        let payload = payload_json! {int_key: int_payload};
 
         let hw_counter = HardwareCounterCell::new();
 

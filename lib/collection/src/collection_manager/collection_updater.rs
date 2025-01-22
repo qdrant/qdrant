@@ -78,6 +78,7 @@ mod tests {
     };
     use segment::entry::entry_point::SegmentEntry;
     use segment::json_path::JsonPath;
+    use segment::payload_json;
     use segment::types::PayloadSchemaType::Keyword;
     use segment::types::{Payload, PayloadContainer, PayloadFieldSchema, WithPayload};
     use serde_json::json;
@@ -119,7 +120,7 @@ mod tests {
             PointStructPersisted {
                 id: 13.into(),
                 vector: VectorStructPersisted::from(VectorStructInternal::from(vec13)),
-                payload: Some(json!({ "color": "red" }).into()),
+                payload: Some(payload_json! { "color": "red" }),
             },
             PointStructPersisted {
                 id: 14.into(),
