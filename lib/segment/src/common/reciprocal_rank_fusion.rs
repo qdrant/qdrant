@@ -1,5 +1,5 @@
 //! Reciprocal Rank Fusion (RRF) is a method for combining rankings from multiple sources.
-//! See https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf
+//! See <https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf>
 
 use std::collections::hash_map::Entry;
 

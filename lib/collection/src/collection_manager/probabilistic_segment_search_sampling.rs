@@ -6,6 +6,8 @@
 ///
 /// TODO attach proper python code to generate the table
 /// Python code to generate the table:
+///
+/// ```python
 /// from scipy.stats import poisson
 /// q = 0.999 # probability to cover full top in all segments
 /// res = []
@@ -15,6 +17,7 @@
 ///     k = poisson.ppf(q**(1/s), lmbda)
 ///     res.append((lmbda, int(k)))
 /// res = sorted(res, key=lambda x: x[0])
+/// ```
 ///
 /// with additional code to remove duplicates and values within 5% of each other.
 const POISSON_DISTRIBUTION_SEARCH_SAMPLING: [(f64, usize); 121] = [

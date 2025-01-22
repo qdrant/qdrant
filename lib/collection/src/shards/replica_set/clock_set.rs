@@ -91,7 +91,7 @@ impl Clock {
     ///
     /// # Thread safety
     ///
-    /// Clock *has to* be locked (using [`Clock::lock`]) before calling `tick_once`!
+    /// Clock *has to* be locked (using [`Clock::try_lock`]) before calling [`Clock::tick_once`]!
     #[must_use = "new clock tick value must be used"]
     fn tick_once(&self) -> u64 {
         // `Clock` tracks *next* tick, so we increment `next_tick` by 1 and return *previous* value

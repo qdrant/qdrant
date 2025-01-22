@@ -22,11 +22,11 @@ pub struct JsonPath {
 
 #[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub enum JsonPathItem {
-    /// A key in a JSON object, e.g. ".foo"
+    /// A key in a JSON object, e.g. `.foo`
     Key(String),
-    /// An index in a JSON array, e.g. "[3]"
+    /// An index in a JSON array, e.g. `[3]`
     Index(usize),
-    /// All indices in a JSON array, i.e. "[]"
+    /// All indices in a JSON array, i.e. `[]`
     WildcardIndex,
 }
 

@@ -31,7 +31,7 @@ pub struct CompressedPostingList<W: Weight> {
     quantization_params: W::QuantizationParams,
 }
 
-/// A non-owning view of [`GenericCompressedPostingList`].
+/// A non-owning view of [`CompressedPostingList`].
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CompressedPostingListView<'a, W: Weight> {
     id_data: &'a [u8],

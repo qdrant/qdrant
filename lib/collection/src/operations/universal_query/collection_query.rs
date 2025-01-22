@@ -52,7 +52,9 @@ impl CollectionQueryRequest {
     pub const DEFAULT_WITH_PAYLOAD: WithPayloadInterface = WithPayloadInterface::Bool(false);
 }
 
-/// Lightweight representation of a query request to implement the [RetrieveRequest] trait.
+/// Lightweight representation of a query request to implement the [`RetrieveRequest`] trait.
+///
+/// [`RetrieveRequest`]: crate::common::retrieve_request_trait::RetrieveRequest
 #[derive(Debug)]
 pub struct CollectionQueryResolveRequest<'a> {
     pub vector_query: &'a VectorQuery<VectorInputInternal>,
