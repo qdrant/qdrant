@@ -127,7 +127,10 @@ uint run_heuristic() {
         }
 
         if (is_good) {
-            shared_buffer[NEAREST_HEAP_OFFSET + result_count] = current_closest;
+            if (subgroupElect()) {
+                shared_buffer[NEAREST_HEAP_OFFSET + result_count] = current_closest;
+            }
+            subgroupMemoryBarrierShared();
             result_count += 1;
         }
     }
