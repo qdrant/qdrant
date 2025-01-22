@@ -260,8 +260,8 @@ impl Device {
                 };
                 let queue = Queue {
                     vk_queue,
-                    vk_queue_index,
                     vk_queue_family_index,
+                    vk_queue_index,
                 };
 
                 let queue_flags = vk_queue_family.queue_flags;
@@ -395,8 +395,7 @@ impl Device {
 
             if !is_extension_available {
                 return Err(GpuError::NotSupported(format!(
-                    "Extension {:?} is not supported",
-                    required_extension
+                    "Extension {required_extension:?} is not supported"
                 )));
             }
         }

@@ -73,8 +73,7 @@ impl Pipeline {
                     Ok(descriptor_set_layouts.vk_descriptor_set_layout())
                 } else {
                     Err(GpuError::Other(format!(
-                        "Descriptor set layout {} is missing",
-                        descriptor_set_index
+                        "Descriptor set layout {descriptor_set_index} is missing"
                     )))
                 }
             })

@@ -69,7 +69,7 @@ impl Instance {
         // Create Vulkan API entry point.
         let entry = unsafe {
             ash::Entry::load().map_err(|e| {
-                GpuError::Other(format!("Failed to create Vulkan API entry point {:?}", e))
+                GpuError::Other(format!("Failed to create Vulkan API entry point {e:?}"))
             })?
         };
 
@@ -284,7 +284,7 @@ impl Instance {
                         content: code.to_owned(),
                     })
                 } else {
-                    Err(format!("Include file not found: {}", filename))
+                    Err(format!("Include file not found: {filename}"))
                 }
             });
         }
@@ -298,7 +298,7 @@ impl Instance {
                 "main",
                 Some(&options),
             )
-            .map_err(|e| GpuError::Other(format!("Failed to compile shader: {:?}", e)))?;
+            .map_err(|e| GpuError::Other(format!("Failed to compile shader: {e:?}")))?;
         Ok(result.as_binary_u8().to_owned())
     }
 
@@ -341,10 +341,7 @@ impl Instance {
                 name.to_str().unwrap_or("") == extension
             });
             if !extension_found {
-                return Err(GpuError::Other(format!(
-                    "Extension {} not found",
-                    extension
-                )));
+                return Err(GpuError::Other(format!("Extension {extension} not found")));
             }
         }
         Ok(())
@@ -358,7 +355,7 @@ impl Instance {
                 name.to_str().unwrap_or("") == layer
             });
             if !layer_found {
-                return Err(GpuError::Other(format!("Layer {} not found", layer)));
+                return Err(GpuError::Other(format!("Layer {layer} not found")));
             }
         }
         Ok(())

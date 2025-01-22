@@ -390,7 +390,7 @@ impl Drop for Context {
                 // Error was logged, do memory leak to keep the gpu running.
                 let resources = self.resources.clone();
                 self.resources.clear();
-                for resource in resources.into_iter() {
+                for resource in resources {
                     // !!!!!!!!!
                     std::mem::forget(resource);
                 }
