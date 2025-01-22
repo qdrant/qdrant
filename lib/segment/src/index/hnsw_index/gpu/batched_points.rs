@@ -45,7 +45,7 @@ impl BatchedPoints {
             remap[*id as usize] = remapped_id as PointOffsetType;
         }
 
-        let first_point_id = if ids.len() > 0 {
+        let first_point_id = if !ids.is_empty() {
             Some(ids.remove(0))
         } else {
             None

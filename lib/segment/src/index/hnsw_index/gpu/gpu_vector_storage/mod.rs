@@ -137,13 +137,6 @@ impl GpuVectorStorage {
         force_half_precision: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
-        // GPU buffers should not be empty.
-        // Check that we have enough vectors to store at least one vector in each buffer.
-        if vector_storage.total_vector_count() < STORAGES_COUNT {
-            return Err(OperationError::service_error(
-                "Vectors count is less than `STORAGES_COUNT`",
-            ));
-        }
         if let Some(quantized_storage) = quantized_storage {
             Self::new_quantized(
                 device,

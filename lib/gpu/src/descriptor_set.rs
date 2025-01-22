@@ -186,7 +186,7 @@ impl DescriptorSet {
             let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
                 .buffer(uniform_buffer.vk_buffer())
                 .offset(0)
-                .range(uniform_buffer.size() as u64);
+                .range(uniform_buffer.extended_size() as u64);
             vk_descriptor_uniform_buffer_infos.push(vec![vk_descriptor_buffer_info]);
         }
 
@@ -217,7 +217,7 @@ impl DescriptorSet {
             let vk_descriptor_buffer_info = vk::DescriptorBufferInfo::default()
                 .buffer(storage_buffer.vk_buffer())
                 .offset(0)
-                .range(storage_buffer.size() as u64);
+                .range(storage_buffer.extended_size() as u64);
             vk_descriptor_storage_buffer_infos.push(vec![vk_descriptor_buffer_info]);
         }
 
