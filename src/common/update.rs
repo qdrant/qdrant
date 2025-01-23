@@ -25,13 +25,6 @@ use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::inference::InferenceToken;
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
-pub struct CreateFieldIndex {
-    pub field_name: PayloadKeyType,
-    #[serde(alias = "field_type")]
-    pub field_schema: Option<PayloadFieldSchema>,
-}
-
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -191,6 +184,13 @@ pub struct UpdateVectorsOperation {
 pub struct DeleteVectorsOperation {
     #[validate(nested)]
     delete_vectors: DeleteVectors,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]
+pub struct CreateFieldIndex {
+    pub field_name: PayloadKeyType,
+    #[serde(alias = "field_type")]
+    pub field_schema: Option<PayloadFieldSchema>,
 }
 
 /// Converts a pair of parameters into a shard selector
