@@ -129,8 +129,7 @@ where
     /// # Warning
     ///
     /// This does not support slices, because those cannot be transmuted directly because it has
-    /// extra parts. See [`MmapSliceReadOnly`], [`MmapTypeReadOnly::slice_from`] and
-    /// [`std::slice::from_raw_parts`].
+    /// extra parts. See [`MmapSliceReadOnly`] and [`std::slice::from_raw_parts`].
     ///
     /// # Safety
     ///

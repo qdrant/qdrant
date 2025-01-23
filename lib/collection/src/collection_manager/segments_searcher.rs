@@ -76,14 +76,14 @@ impl SegmentsSearcher {
         Ok((search_results_per_segment, further_searches_per_segment))
     }
 
-    /// Processes search result of [segment_size x batch_size]
+    /// Processes search result of `[segment_size x batch_size]`.
     ///
     /// # Arguments
-    /// * search_result - [segment_size x batch_size]
-    /// * limits - [batch_size] - how many results to return for each batched request
-    /// * further_searches - [segment_size x batch_size] - whether we can search further in the segment
+    /// * `search_result` - `[segment_size x batch_size]`
+    /// * `limits` - `[batch_size]` - how many results to return for each batched request
+    /// * `further_searches` - `[segment_size x batch_size]` - whether we can search further in the segment
     ///
-    /// Returns batch results aggregated by [batch_size] and list of queries, grouped by segment to re-run
+    /// Returns batch results aggregated by `[batch_size]` and list of queries, grouped by segment to re-run
     pub(crate) fn process_search_result_step1(
         search_result: BatchSearchResult,
         limits: Vec<usize>,
