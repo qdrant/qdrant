@@ -154,25 +154,33 @@ mod tests {
         let expected_payload: Payload =
             serde_json::from_str(r#"{"name": {"name": "Dohn Joe"}}"#).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
             let mut storage = SimplePayloadStorage::open(db).unwrap();
 
             let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
-            storage.set(100, &payload).unwrap();
+            storage.set(100, &payload, &hw_counter).unwrap();
 
             let new_payload: Payload = serde_json::from_str(r#"{"name": "Dohn Joe"}"#).unwrap();
 
             storage
-                .set_by_key(100, &new_payload, &JsonPath::from_str("name").unwrap())
+                .set_by_key(
+                    100,
+                    &new_payload,
+                    &JsonPath::from_str("name").unwrap(),
+                    &hw_counter,
+                )
                 .unwrap();
 
-            assert_eq!(storage.get(100).unwrap(), expected_payload); // Here it's `expected_payload`
+            // Here it's `expected_payload`
+            assert_eq!(storage.get(100, &hw_counter).unwrap(), expected_payload);
         }
 
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
         let storage = SimplePayloadStorage::open(db).unwrap();
-        assert_eq!(storage.get(100).unwrap(), expected_payload); // Here must be `expected_payload` as well
+        assert_eq!(storage.get(100, &hw_counter).unwrap(), expected_payload); // Here must be `expected_payload` as well
     }
 
     #[test]
