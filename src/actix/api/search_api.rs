@@ -19,7 +19,7 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
 };
-use crate::common::points::{
+use crate::common::query::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
 };
 use crate::settings::ServiceConfig;
