@@ -444,17 +444,21 @@ where
     ///
     /// Example:
     ///
-    ///  resolved_iters = [
+    /// ```text
+    /// resolved_iters = [
     ///     <- (10, A) <- (4, B) <- (3, C)
     ///     <- (10, A) <- (4, B) <- (3, C)
     ///     <- (4, B) <- (3, C)
     /// ]
+    /// ```
     ///
     /// output:
+    /// ```text
     /// {
     ///     10: [0, 1],
     ///     4:  [2],
     /// }
+    /// ```
     fn heads_map(&mut self) -> HashMap<Id, TinyVec<[RowId; EXPECTED_REPLICAS]>> {
         let capacity = self.resolved_iters.len();
         self.peek_heads()

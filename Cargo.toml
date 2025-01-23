@@ -158,6 +158,9 @@ needless_pass_by_ref_mut = "warn"
 # https://blog.rust-lang.org/2024/05/06/check-cfg.html#expecting-custom-cfgs
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 
+[workspace.lints.rustdoc]
+private_intra_doc_links = "allow"
+
 [workspace.dependencies]
 ahash = { version = "0.8.11", features = ["serde"] }
 atomicwrites = "0.4.4"

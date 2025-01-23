@@ -532,7 +532,7 @@ impl From<MultiDenseVectorInternal> for grpc::MultiDenseVector {
 }
 
 impl From<grpc::MultiDenseVector> for MultiDenseVectorInternal {
-    /// Uses the equivalent of [new_unchecked()](segment_vectors::MultiDenseVectorInternal::new_unchecked), but rewritten to avoid collecting twice
+    /// Uses the equivalent of [`MultiDenseVectorInternal::new_unchecked`], but rewritten to avoid collecting twice
     fn from(value: grpc::MultiDenseVector) -> Self {
         let dim = value.vectors[0].data.len();
         let inner_vector = value

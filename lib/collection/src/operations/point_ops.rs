@@ -48,7 +48,7 @@ pub enum WriteOrdering {
 }
 
 /// Single vector data, as it is persisted in WAL
-/// Unlike [`Vector`], this struct only stores raw vectors, inferenced or resolved.
+/// Unlike [`api::rest::Vector`], this struct only stores raw vectors, inferenced or resolved.
 /// Unlike [`VectorInternal`], is not optimized for search
 #[derive(Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged, rename_all = "snake_case")]

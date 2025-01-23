@@ -4,7 +4,7 @@
 /// #[macro_rules_attribute::macro_rules_derive(schemars_rename_generics)]
 /// #[derive_args(<i32> => "NewName", ...)]
 /// ```
-/// Workaround for https://github.com/GREsau/schemars/issues/193
+/// Workaround for <https://github.com/GREsau/schemars/issues/193>
 macro_rules! schemars_rename_generics {
     {
         #[doc = $doc:literal]

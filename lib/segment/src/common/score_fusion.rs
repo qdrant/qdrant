@@ -118,7 +118,7 @@ pub fn min_max_norm(points: Vec<ScoredPoint>) -> Vec<ScoredPoint> {
 }
 
 /// Welford's method for stable one-pass mean and variance calculation.
-/// https://jonisalonen.com/2013/deriving-welfords-method-for-computing-variance/
+/// <https://jonisalonen.com/2013/deriving-welfords-method-for-computing-variance/>
 ///
 /// # Panics
 ///

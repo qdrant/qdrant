@@ -84,11 +84,12 @@ impl MmapPostings {
     ///
     /// Assume the following layout:
     ///
-    /// * `last_doc_id: &'a PointOffsetType,`
-    /// * `chunks_index: &'a [CompressedPostingChunksIndex],`
-    /// * `data: &'a [u8],`
-    /// * `_alignment: &'a [u8], // 0-3 extra bytes to align the data`
-    /// * `remainder_postings: &'a [PointOffsetType],`
+    /// ```ignore
+    /// last_doc_id: &'a PointOffsetType,
+    /// chunks_index: &'a [CompressedPostingChunksIndex],
+    /// data: &'a [u8],
+    /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
+    /// remainder_postings: &'a [PointOffsetType],
     /// ```
     fn get_reader(&self, header: &PostingListHeader) -> Option<ChunkReader<'_>> {
         let bytes = self.mmap.get(header.offset as usize..)?;

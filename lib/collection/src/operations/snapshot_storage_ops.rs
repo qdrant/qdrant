@@ -65,12 +65,12 @@ pub async fn get_snapshot_description(
 /// This function adjusts the chunk size based on service limits and the total size of the data to be uploaded.
 /// Note:
 ///
-/// * Amazon S3: https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html
+/// * Amazon S3: <https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html>
 ///     partsize: min 5 MB, max 5 GB, up to 10,000 parts.
-/// * Google Cloud Storage: https://cloud.google.com/storage/quotas?hl=ja#objects
+/// * Google Cloud Storage: <https://cloud.google.com/storage/quotas?hl=ja#objects>
 ///     partsize: min 5 MB, max 5 GB, up to 10,000 parts.
-/// * Azure Storage: https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob?tabs=microsoft-entra-id#remarks
-///     <TODO> It looks like Azure Storage has different limits for different service versions.
+/// * Azure Storage: <https://learn.microsoft.com/en-us/rest/api/storageservices/put-blob?tabs=microsoft-entra-id#remarks>
+///     TODO: It looks like Azure Storage has different limits for different service versions.
 pub async fn get_appropriate_chunk_size(local_source_path: &Path) -> CollectionResult<usize> {
     const DEFAULT_CHUNK_SIZE: usize = 50 * 1024 * 1024;
     const MAX_PART_NUMBER: usize = 10000;
