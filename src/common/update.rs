@@ -185,37 +185,6 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-/// Converts a pair of parameters into a shard selector
-/// suitable for update operations.
-///
-/// The key difference from selector for search operations is that
-/// empty shard selector in case of update means default shard,
-/// while empty shard selector in case of search means all shards.
-///
-/// Parameters:
-/// - shard_selection: selection of the exact shard ID, always have priority over shard_key
-/// - shard_key: selection of the shard key, can be a single key or a list of keys
-///
-/// Returns:
-/// - ShardSelectorInternal - resolved shard selector
-fn get_shard_selector_for_update(
-    shard_selection: Option<ShardId>,
-    shard_key: Option<ShardKeySelector>,
-) -> ShardSelectorInternal {
-    match (shard_selection, shard_key) {
-        (Some(shard_selection), None) => ShardSelectorInternal::ShardId(shard_selection),
-        (Some(shard_selection), Some(_)) => {
-            debug_assert!(
-                false,
-                "Shard selection and shard key are mutually exclusive"
-            );
-            ShardSelectorInternal::ShardId(shard_selection)
-        }
-        (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
-        (None, None) => ShardSelectorInternal::Empty,
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc: Arc<TableOfContent>,
@@ -836,4 +805,35 @@ pub async fn do_delete_index(
         ordering,
     )
     .await
+}
+
+/// Converts a pair of parameters into a shard selector
+/// suitable for update operations.
+///
+/// The key difference from selector for search operations is that
+/// empty shard selector in case of update means default shard,
+/// while empty shard selector in case of search means all shards.
+///
+/// Parameters:
+/// - shard_selection: selection of the exact shard ID, always have priority over shard_key
+/// - shard_key: selection of the shard key, can be a single key or a list of keys
+///
+/// Returns:
+/// - ShardSelectorInternal - resolved shard selector
+fn get_shard_selector_for_update(
+    shard_selection: Option<ShardId>,
+    shard_key: Option<ShardKeySelector>,
+) -> ShardSelectorInternal {
+    match (shard_selection, shard_key) {
+        (Some(shard_selection), None) => ShardSelectorInternal::ShardId(shard_selection),
+        (Some(shard_selection), Some(_)) => {
+            debug_assert!(
+                false,
+                "Shard selection and shard key are mutually exclusive"
+            );
+            ShardSelectorInternal::ShardId(shard_selection)
+        }
+        (None, Some(shard_key)) => ShardSelectorInternal::from(shard_key),
+        (None, None) => ShardSelectorInternal::Empty,
+    }
 }
