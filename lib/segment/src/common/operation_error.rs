@@ -24,8 +24,6 @@ pub enum OperationError {
     },
     #[error("Not existing vector name error: {received_name}")]
     VectorNameNotExists { received_name: String },
-    #[error("Missed vector name error: {received_name}")]
-    MissedVectorName { received_name: String },
     #[error("No point with id {missed_point_id}")]
     PointIdError { missed_point_id: PointIdType },
     #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
