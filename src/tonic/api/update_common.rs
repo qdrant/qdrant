@@ -55,16 +55,6 @@ fn extract_points_selector(
     Ok((points, filter))
 }
 
-pub fn points_operation_response_internal(
-    timing: Instant,
-    update_result: collection::operations::types::UpdateResult,
-) -> PointsOperationResponseInternal {
-    PointsOperationResponseInternal {
-        result: Some(update_result.into()),
-        time: timing.elapsed().as_secs_f64(),
-    }
-}
-
 pub async fn upsert(
     toc_provider: impl CheckedTocProvider,
     upsert_points: UpsertPoints,
@@ -884,6 +874,16 @@ pub async fn sync(
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
+}
+
+pub fn points_operation_response_internal(
+    timing: Instant,
+    update_result: collection::operations::types::UpdateResult,
+) -> PointsOperationResponseInternal {
+    PointsOperationResponseInternal {
+        result: Some(update_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+    }
 }
 
 fn convert_field_type(
