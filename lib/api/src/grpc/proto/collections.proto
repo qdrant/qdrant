@@ -343,6 +343,15 @@ message StrictModeConfig {
   optional uint64 filter_max_conditions = 14;
   optional uint64 condition_max_size = 15;
   optional StrictModeMultivectorConfig multivector_config = 16;
+  optional StrictModeSparseConfig sparse_config = 17;
+}
+
+message StrictModeSparseConfig {
+  map<string, StrictModeSparse> sparse_config = 1;
+}
+
+message StrictModeSparse {
+  optional uint64 max_length = 10;
 }
 
 message StrictModeMultivectorConfig {
