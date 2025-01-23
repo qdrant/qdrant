@@ -1,32 +1,20 @@
 use std::sync::Arc;
 
-use api::rest::schema::{PointInsertOperations, PointsBatch, PointsList};
-use api::rest::{ShardKeySelector, UpdateVectors};
+use api::rest::*;
 use collection::collection::Collection;
-use collection::operations::payload_ops::{
-    DeletePayload, DeletePayloadOp, PayloadOps, SetPayload, SetPayloadOp,
-};
-use collection::operations::point_ops::{
-    FilterSelector, PointIdsList, PointInsertOperationsInternal, PointOperations, PointsSelector,
-    WriteOrdering,
-};
+use collection::operations::payload_ops::*;
+use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CollectionError, UpdateResult};
-use collection::operations::vector_ops::{DeleteVectors, UpdateVectorsOp, VectorOperations};
-use collection::operations::verification::{
-    new_unchecked_verification_pass, StrictModeVerification,
-};
-use collection::operations::{
-    ClockTag, CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
-};
+use collection::operations::vector_ops::*;
+use collection::operations::verification::*;
+use collection::operations::*;
 use collection::shards::shard::ShardId;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
 use serde::{Deserialize, Serialize};
-use storage::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreatePayloadIndex, DropPayloadIndex,
-};
+use storage::content_manager::collection_meta_ops::*;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
@@ -34,9 +22,7 @@ use storage::rbac::Access;
 use validator::Validate;
 
 use crate::common::inference::service::InferenceType;
-use crate::common::inference::update_requests::{
-    convert_batch, convert_point_struct, convert_point_vectors,
-};
+use crate::common::inference::update_requests::*;
 use crate::common::inference::InferenceToken;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate)]

@@ -1,21 +1,13 @@
 use std::time::Duration;
 
 use api::rest::SearchGroupsRequestInternal;
-use collection::collection::distance_matrix::{
-    CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
-};
+use collection::collection::distance_matrix::*;
 use collection::common::batching::batch_requests;
 use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{
-    CoreSearchRequest, CoreSearchRequestBatch, CountRequestInternal, CountResult,
-    DiscoverRequestBatch, GroupsResult, PointRequestInternal, RecommendGroupsRequestInternal,
-    RecordInternal, ScrollRequestInternal, ScrollResult,
-};
-use collection::operations::universal_query::collection_query::{
-    CollectionQueryGroupsRequest, CollectionQueryRequest,
-};
+use collection::operations::types::*;
+use collection::operations::universal_query::collection_query::*;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ScoredPoint;
 use storage::content_manager::errors::StorageError;
