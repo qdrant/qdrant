@@ -6,7 +6,6 @@ pub mod raft_api;
 pub mod snapshots_api;
 
 mod collections_common;
-mod points_common;
 mod query_common;
 mod update_common;
 
