@@ -169,6 +169,10 @@ impl Context {
         dst_offset: usize,
         size: usize,
     ) -> GpuResult<()> {
+        if size == 0 {
+            return Ok(());
+        }
+
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
         }
@@ -201,6 +205,10 @@ impl Context {
 
     /// Clear buffer with zeros command. It records command to run it on GPU after `run` call.
     pub fn clear_buffer(&mut self, buffer: Arc<Buffer>) -> GpuResult<()> {
+        if buffer.size() == 0 {
+            return Ok(());
+        }
+
         if buffer.size() % std::mem::size_of::<u32>() != 0 {
             return Err(GpuError::OutOfBounds(
                 "Buffer size must be a multiple of `uint32` size to clear it".to_string(),

@@ -129,7 +129,7 @@ impl GpuMultivectors {
             device.clone(),
             "Multivector offsets buffer",
             gpu::BufferType::Storage,
-            multivectors_count * std::mem::size_of::<GpuMultivectorOffset>(),
+            std::cmp::max(multivectors_count, 1) * std::mem::size_of::<GpuMultivectorOffset>(),
         )?;
         let offsets_staging_buffer = gpu::Buffer::new(
             device.clone(),

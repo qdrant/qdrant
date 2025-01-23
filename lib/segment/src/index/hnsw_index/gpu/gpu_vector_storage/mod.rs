@@ -137,13 +137,6 @@ impl GpuVectorStorage {
         force_half_precision: bool,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
-        // GPU buffers should not be empty.
-        // Check that we have enough vectors to store at least one vector in each buffer.
-        if vector_storage.total_vector_count() < STORAGES_COUNT {
-            return Err(OperationError::service_error(
-                "Vectors count is less than `STORAGES_COUNT`",
-            ));
-        }
         if let Some(quantized_storage) = quantized_storage {
             Self::new_quantized(
                 device,
@@ -557,7 +550,7 @@ impl GpuVectorStorage {
                     device.clone(),
                     "Vector storage buffer",
                     gpu::BufferType::Storage,
-                    points_in_storage_count * gpu_vector_size,
+                    std::cmp::max(points_in_storage_count, 1) * gpu_vector_size,
                 )
             })
             .collect::<gpu::GpuResult<Vec<_>>>()?;
@@ -576,7 +569,7 @@ impl GpuVectorStorage {
             device.clone(),
             "Vector storage upload staging buffer",
             gpu::BufferType::CpuToGpu,
-            upload_points_count * gpu_vector_size,
+            std::cmp::max(upload_points_count, 1) * gpu_vector_size,
         )?;
         // fill staging buffer with zeros
         let zero_vector = vec![TElement::default(); gpu_vector_capacity];

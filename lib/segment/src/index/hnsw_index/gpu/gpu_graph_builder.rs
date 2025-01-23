@@ -57,18 +57,6 @@ pub fn build_hnsw_on_gpu<'a>(
         groups_count,
     )?;
 
-    // Create all GPU resources.
-    let mut gpu_search_context = GpuInsertContext::new(
-        gpu_vector_storage,
-        groups_count,
-        batched_points.remap(),
-        m,
-        m0,
-        ef,
-        exact,
-        1..MAX_VISITED_FLAGS_FACTOR,
-    )?;
-
     let graph_layers_builder =
         create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num);
 
@@ -90,9 +78,31 @@ pub fn build_hnsw_on_gpu<'a>(
         }
     }
 
+    // Check if all points are linked on CPU.
+    // If there are no batches left, we can return result before gpu resources creation.
+    if batched_points
+        .iter_batches(cpu_linked_points_count)
+        .next()
+        .is_none()
+    {
+        return Ok(graph_layers_builder);
+    }
+
+    // Create all GPU resources.
+    let mut gpu_search_context = GpuInsertContext::new(
+        gpu_vector_storage,
+        groups_count,
+        batched_points.remap(),
+        m,
+        m0,
+        ef,
+        exact,
+        1..MAX_VISITED_FLAGS_FACTOR,
+    )?;
+
     // Build all levels on GPU level by level.
     for level in (0..batched_points.levels_count()).rev() {
-        log::debug!("Starting GPU level {}", level,);
+        log::trace!("Starting GPU level {level}");
 
         gpu_search_context.upload_links(level, &graph_layers_builder, stopped)?;
         build_level_on_gpu(
@@ -235,5 +245,27 @@ mod tests {
             build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false);
 
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
+    }
+
+    #[test]
+    fn test_gpu_empty_hnsw() {
+        let _ = env_logger::builder()
+            .is_test(true)
+            .filter_level(log::LevelFilter::Trace)
+            .try_init();
+
+        let num_vectors = 0;
+        let dim = 64;
+        let m = 8;
+        let m0 = 16;
+        let ef = 32;
+        let groups_count = 4;
+        let searches_count = 20;
+        let min_cpu_linked_points_count = 64;
+
+        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
+        let graph_layers_builder =
+            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false);
+        assert!(graph_layers_builder.links_layers().is_empty());
     }
 }
