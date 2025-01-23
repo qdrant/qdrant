@@ -25,6 +25,11 @@ use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::inference::InferenceToken;
 
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct UpdateOperations {
+    pub operations: Vec<UpdateOperation>,
+}
+
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -37,11 +42,6 @@ pub enum UpdateOperation {
     ClearPayload(ClearPayloadOperation),
     UpdateVectors(UpdateVectorsOperation),
     DeleteVectors(DeleteVectorsOperation),
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct UpdateOperations {
-    pub operations: Vec<UpdateOperation>,
 }
 
 impl Validate for UpdateOperation {
