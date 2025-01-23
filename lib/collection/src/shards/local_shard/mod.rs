@@ -693,7 +693,25 @@ impl LocalShard {
 
         // The storage is expected to be consistent after WAL recovery
         #[cfg(feature = "data-consistency-check")]
-        self.check_data_consistency()?;
+        {
+            let result = self.check_data_consistency();
+
+            if let Err(err) = result {
+                log::error!("CONSISTENCY CHECK FAILED! {err:?}");
+
+                // Deduplicate and see what happens
+                log::error!("RE-DEDUPLICATING");
+                let res = self.segments.read().deduplicate_points().await?;
+                if res > 0 {
+                    log::debug!("Deduplicated {} points", res);
+                }
+
+                let result = self.check_data_consistency();
+                log::error!("RE-DEDUPLICATING RESULT: {result:?}");
+
+                result?;
+            }
+        }
 
         Ok(())
     }
