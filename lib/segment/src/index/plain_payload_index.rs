@@ -170,6 +170,7 @@ impl PayloadIndex for PlainPayloadIndex {
         _point_id: PointOffsetType,
         _payload: &Payload,
         _key: &Option<JsonPath>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         unreachable!()
     }
@@ -186,6 +187,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &mut self,
         _point_id: PointOffsetType,
         _key: PayloadKeyTypeRef,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         unreachable!()
     }
