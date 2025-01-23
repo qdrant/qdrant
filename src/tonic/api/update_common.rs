@@ -746,94 +746,6 @@ pub async fn update_batch(
     }))
 }
 
-fn convert_field_type(
-    field_type: Option<i32>,
-    field_index_params: Option<PayloadIndexParams>,
-) -> Result<Option<PayloadFieldSchema>, Status> {
-    let field_type_parsed = field_type
-        .map(|x| FieldType::try_from(x).ok())
-        .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
-
-    let field_schema = match (field_type_parsed, field_index_params) {
-        (
-            Some(field_type),
-            Some(PayloadIndexParams {
-                index_params: Some(index_params),
-            }),
-        ) => {
-            let schema_params = match index_params {
-                // Parameterized keyword type
-                IndexParams::KeywordIndexParams(keyword_index_params) => {
-                    matches!(field_type, FieldType::Keyword).then(|| {
-                        TryFrom::try_from(keyword_index_params).map(PayloadSchemaParams::Keyword)
-                    })
-                }
-                IndexParams::IntegerIndexParams(integer_index_params) => {
-                    matches!(field_type, FieldType::Integer).then(|| {
-                        TryFrom::try_from(integer_index_params).map(PayloadSchemaParams::Integer)
-                    })
-                }
-                // Parameterized float type
-                IndexParams::FloatIndexParams(float_index_params) => {
-                    matches!(field_type, FieldType::Float).then(|| {
-                        TryFrom::try_from(float_index_params).map(PayloadSchemaParams::Float)
-                    })
-                }
-                IndexParams::GeoIndexParams(geo_index_params) => {
-                    matches!(field_type, FieldType::Geo)
-                        .then(|| TryFrom::try_from(geo_index_params).map(PayloadSchemaParams::Geo))
-                }
-                // Parameterized text type
-                IndexParams::TextIndexParams(text_index_params) => {
-                    matches!(field_type, FieldType::Text).then(|| {
-                        TryFrom::try_from(text_index_params).map(PayloadSchemaParams::Text)
-                    })
-                }
-                // Parameterized bool type
-                IndexParams::BoolIndexParams(bool_index_params) => {
-                    matches!(field_type, FieldType::Bool).then(|| {
-                        TryFrom::try_from(bool_index_params).map(PayloadSchemaParams::Bool)
-                    })
-                }
-                // Parameterized Datetime type
-                IndexParams::DatetimeIndexParams(datetime_index_params) => {
-                    matches!(field_type, FieldType::Datetime).then(|| {
-                        TryFrom::try_from(datetime_index_params).map(PayloadSchemaParams::Datetime)
-                    })
-                }
-                // Parameterized Uuid type
-                IndexParams::UuidIndexParams(uuid_index_params) => {
-                    matches!(field_type, FieldType::Uuid).then(|| {
-                        TryFrom::try_from(uuid_index_params).map(PayloadSchemaParams::Uuid)
-                    })
-                }
-            }
-            .ok_or_else(|| {
-                Status::invalid_argument(format!(
-                    "field_type ({field_type:?}) and field_index_params do not match"
-                ))
-            })??;
-
-            Some(PayloadFieldSchema::FieldParams(schema_params))
-        }
-        // Regular field types
-        (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
-            FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
-            FieldType::Integer => Some(PayloadSchemaType::Integer.into()),
-            FieldType::Float => Some(PayloadSchemaType::Float.into()),
-            FieldType::Geo => Some(PayloadSchemaType::Geo.into()),
-            FieldType::Text => Some(PayloadSchemaType::Text.into()),
-            FieldType::Bool => Some(PayloadSchemaType::Bool.into()),
-            FieldType::Datetime => Some(PayloadSchemaType::Datetime.into()),
-            FieldType::Uuid => Some(PayloadSchemaType::Uuid.into()),
-        },
-        (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
-        (None, None) => None,
-    };
-
-    Ok(field_schema)
-}
-
 pub async fn create_field_index(
     dispatcher: Arc<Dispatcher>,
     create_field_index_collection: CreateFieldIndexCollection,
@@ -972,4 +884,92 @@ pub async fn delete_field_index_internal(
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
+}
+
+fn convert_field_type(
+    field_type: Option<i32>,
+    field_index_params: Option<PayloadIndexParams>,
+) -> Result<Option<PayloadFieldSchema>, Status> {
+    let field_type_parsed = field_type
+        .map(|x| FieldType::try_from(x).ok())
+        .ok_or_else(|| Status::invalid_argument("cannot convert field_type"))?;
+
+    let field_schema = match (field_type_parsed, field_index_params) {
+        (
+            Some(field_type),
+            Some(PayloadIndexParams {
+                index_params: Some(index_params),
+            }),
+        ) => {
+            let schema_params = match index_params {
+                // Parameterized keyword type
+                IndexParams::KeywordIndexParams(keyword_index_params) => {
+                    matches!(field_type, FieldType::Keyword).then(|| {
+                        TryFrom::try_from(keyword_index_params).map(PayloadSchemaParams::Keyword)
+                    })
+                }
+                IndexParams::IntegerIndexParams(integer_index_params) => {
+                    matches!(field_type, FieldType::Integer).then(|| {
+                        TryFrom::try_from(integer_index_params).map(PayloadSchemaParams::Integer)
+                    })
+                }
+                // Parameterized float type
+                IndexParams::FloatIndexParams(float_index_params) => {
+                    matches!(field_type, FieldType::Float).then(|| {
+                        TryFrom::try_from(float_index_params).map(PayloadSchemaParams::Float)
+                    })
+                }
+                IndexParams::GeoIndexParams(geo_index_params) => {
+                    matches!(field_type, FieldType::Geo)
+                        .then(|| TryFrom::try_from(geo_index_params).map(PayloadSchemaParams::Geo))
+                }
+                // Parameterized text type
+                IndexParams::TextIndexParams(text_index_params) => {
+                    matches!(field_type, FieldType::Text).then(|| {
+                        TryFrom::try_from(text_index_params).map(PayloadSchemaParams::Text)
+                    })
+                }
+                // Parameterized bool type
+                IndexParams::BoolIndexParams(bool_index_params) => {
+                    matches!(field_type, FieldType::Bool).then(|| {
+                        TryFrom::try_from(bool_index_params).map(PayloadSchemaParams::Bool)
+                    })
+                }
+                // Parameterized Datetime type
+                IndexParams::DatetimeIndexParams(datetime_index_params) => {
+                    matches!(field_type, FieldType::Datetime).then(|| {
+                        TryFrom::try_from(datetime_index_params).map(PayloadSchemaParams::Datetime)
+                    })
+                }
+                // Parameterized Uuid type
+                IndexParams::UuidIndexParams(uuid_index_params) => {
+                    matches!(field_type, FieldType::Uuid).then(|| {
+                        TryFrom::try_from(uuid_index_params).map(PayloadSchemaParams::Uuid)
+                    })
+                }
+            }
+            .ok_or_else(|| {
+                Status::invalid_argument(format!(
+                    "field_type ({field_type:?}) and field_index_params do not match"
+                ))
+            })??;
+
+            Some(PayloadFieldSchema::FieldParams(schema_params))
+        }
+        // Regular field types
+        (Some(v), None | Some(PayloadIndexParams { index_params: None })) => match v {
+            FieldType::Keyword => Some(PayloadSchemaType::Keyword.into()),
+            FieldType::Integer => Some(PayloadSchemaType::Integer.into()),
+            FieldType::Float => Some(PayloadSchemaType::Float.into()),
+            FieldType::Geo => Some(PayloadSchemaType::Geo.into()),
+            FieldType::Text => Some(PayloadSchemaType::Text.into()),
+            FieldType::Bool => Some(PayloadSchemaType::Bool.into()),
+            FieldType::Datetime => Some(PayloadSchemaType::Datetime.into()),
+            FieldType::Uuid => Some(PayloadSchemaType::Uuid.into()),
+        },
+        (None, Some(_)) => return Err(Status::invalid_argument("field type is missing")),
+        (None, None) => None,
+    };
+
+    Ok(field_schema)
 }
