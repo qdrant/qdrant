@@ -563,18 +563,19 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &Option<JsonPath>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if let Some(key) = key {
             self.payload
                 .borrow_mut()
-                .set_by_key(point_id, payload, key)?;
+                .set_by_key(point_id, payload, key, hw_counter)?;
         } else {
-            self.payload.borrow_mut().set(point_id, payload)?;
+            self.payload
+                .borrow_mut()
+                .set(point_id, payload, hw_counter)?;
         };
 
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Implement!!
-
-        let updated_payload = self.get_payload(point_id, &hw_counter)?;
+        let updated_payload = self.get_payload(point_id, hw_counter)?;
         for (field, field_index) in &mut self.field_indexes {
             if !field.is_affected_by_value_set(&payload.0, key.as_ref()) {
                 continue;
@@ -598,20 +599,21 @@ impl PayloadIndex for StructPayloadIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        self.payload.borrow().get_measured(point_id, hw_counter)
+        self.payload.borrow().get(point_id, hw_counter)
     }
 
     fn delete_payload(
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         if let Some(indexes) = self.field_indexes.get_mut(key) {
             for index in indexes {
                 index.remove_point(point_id)?;
             }
         }
-        self.payload.borrow_mut().delete(point_id, key)
+        self.payload.borrow_mut().delete(point_id, key, hw_counter)
     }
 
     fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {

@@ -394,7 +394,11 @@ impl SegmentBuilder {
 
                 // Propagate payload to new segment
                 if !other_payload.is_empty() {
-                    self.payload_storage.set(new_internal_id, &other_payload)?;
+                    self.payload_storage.set(
+                        new_internal_id,
+                        &other_payload,
+                        &HardwareCounterCell::disposable(),
+                    )?;
                 }
             }
         }

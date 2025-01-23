@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use serde_json::json;
 
 use super::mmap_payload_storage::MmapPayloadStorage;
@@ -20,9 +21,11 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     })
     .into();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // set
-    storage.set(0, &payload).unwrap();
-    assert_eq!(storage.get(0).unwrap(), payload);
+    storage.set(0, &payload, &hw_counter).unwrap();
+    assert_eq!(storage.get(0, &hw_counter).unwrap(), payload);
 
     // set on existing
     let payload_to_merge = json!({
@@ -30,9 +33,9 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     })
     .into();
 
-    storage.set(0, &payload_to_merge).unwrap();
+    storage.set(0, &payload_to_merge, &hw_counter).unwrap();
 
-    let stored = storage.get(0).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(
         stored,
         json!({
@@ -48,9 +51,15 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     })
     .into();
     storage
-        .set_by_key(0, &nested_payload, &"layer1".try_into().unwrap())
+        .set_by_key(
+            0,
+            &nested_payload,
+            &"layer1".try_into().unwrap(),
+            &hw_counter,
+        )
         .unwrap();
-    let stored = storage.get(0).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
+
     assert_eq!(
         stored,
         json!({
@@ -64,8 +73,10 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     );
 
     // delete key
-    storage.delete(0, &"layer1".try_into().unwrap()).unwrap();
-    let stored = storage.get(0).unwrap();
+    storage
+        .delete(0, &"layer1".try_into().unwrap(), &hw_counter)
+        .unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(
         stored,
         json!({
@@ -82,14 +93,14 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
     })
     .into();
     storage.overwrite(0, &new_payload).unwrap();
-    let stored = storage.get(0).unwrap();
+    let stored = storage.get(0, &hw_counter).unwrap();
     assert_eq!(stored, new_payload);
 
     storage.clear(0).unwrap();
-    assert_eq!(storage.get(0).unwrap(), json!({}).into());
+    assert_eq!(storage.get(0, &hw_counter).unwrap(), json!({}).into());
 
     for i in 1..10 {
-        storage.set(i, &payload).unwrap();
+        storage.set(i, &payload, &hw_counter).unwrap();
     }
 
     let assert_payloads = |storage: &S| {
