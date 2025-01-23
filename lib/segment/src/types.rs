@@ -677,6 +677,7 @@ pub struct StrictModeSparse {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+#[schemars(deny_unknown_fields)]
 pub struct StrictModeSparseConfig {
     #[validate(nested)]
     #[serde(flatten)]
@@ -702,6 +703,7 @@ pub struct StrictModeMultivector {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
+#[schemars(deny_unknown_fields)]
 pub struct StrictModeMultivectorConfig {
     #[validate(nested)]
     #[serde(flatten)]
