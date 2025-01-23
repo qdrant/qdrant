@@ -25,7 +25,7 @@ use super::points_common::{
     delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
     recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
 };
-use super::validate;
+use super::{auth_middleware_hw_acc, validate};
 use crate::common::inference::extract_token;
 use crate::settings::ServiceConfig;
 use crate::tonic::api::points_common::{
@@ -49,9 +49,19 @@ impl PointsService {
         }
     }
 
-    fn get_request_collection_hw_usage_counter(&self, collection_name: String) -> RequestHwCounter {
+    fn get_request_collection_hw_usage_counter(
+        &self,
+        collection_name: String,
+        initial: &HwMeasurementAcc,
+    ) -> RequestHwCounter {
         let counter = HwMeasurementAcc::new_with_metrics_drain(
             self.dispatcher.get_collection_hw_metrics(collection_name),
+        );
+
+        counter.accumulate(
+            initial.get_cpu(),
+            initial.get_io_read(),
+            initial.get_io_write(),
         );
 
         RequestHwCounter::new(counter, self.service_config.hardware_reporting())
@@ -107,10 +117,13 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        let inner_request = request.into_inner();
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
 
-        let hw_metrics =
-            self.get_request_collection_hw_usage_counter(inner_request.collection_name.clone());
+        let inner_request = request.into_inner();
 
         get(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -305,7 +318,11 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
 
         let res = search(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -327,6 +344,13 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
+
         let SearchBatchPoints {
             collection_name,
             search_points,
@@ -346,8 +370,6 @@ impl Points for PointsService {
 
             requests.push((core_search_request, shard_selector));
         }
-
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name.clone());
 
         let res = core_search_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -370,7 +392,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
         let res = search_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -391,14 +415,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        let inner_request = request.into_inner();
-
-        let hw_metrics =
-            self.get_request_collection_hw_usage_counter(inner_request.collection_name.clone());
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
 
         scroll(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
-            inner_request,
+            request.into_inner(),
             None,
             access,
             hw_metrics,
@@ -413,7 +438,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
         let res = recommend(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -431,14 +458,18 @@ impl Points for PointsService {
     ) -> Result<Response<RecommendBatchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
+
         let RecommendBatchPoints {
             collection_name,
             recommend_points,
             read_consistency,
             timeout,
         } = request.into_inner();
-
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name.clone());
 
         let res = recommend_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -461,7 +492,9 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
 
         let res = recommend_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -482,7 +515,9 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
 
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
         let res = discover(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -500,14 +535,19 @@ impl Points for PointsService {
     ) -> Result<Response<DiscoverBatchResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
+
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
+
         let DiscoverBatchPoints {
             collection_name,
             discover_points,
             read_consistency,
             timeout,
         } = request.into_inner();
-
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name.clone());
         let res = discover_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -530,7 +570,9 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
         let res = count(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -551,7 +593,9 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
 
         let res = query(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -573,15 +617,21 @@ impl Points for PointsService {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
-        let request = request.into_inner();
+
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
+
         let QueryBatchPoints {
             collection_name,
             query_points,
             read_consistency,
             timeout,
-        } = request;
+        } = request.into_inner();
+
         let timeout = timeout.map(Duration::from_secs);
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name.clone());
         let res = query_batch(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             &collection_name,
@@ -604,7 +654,9 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
 
         let res = query_groups(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -624,8 +676,11 @@ impl Points for PointsService {
     ) -> Result<Response<FacetResponse>, Status> {
         validate(request.get_ref())?;
         let access = extract_access(&mut request);
-        let hw_metrics =
-            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics = self.get_request_collection_hw_usage_counter(
+            request.get_ref().collection_name.clone(),
+            parent_hw_acc,
+        );
         facet(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -643,7 +698,9 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
@@ -669,7 +726,9 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let timing = Instant::now();
         let collection_name = request.get_ref().collection_name.clone();
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name);
+        let parent_hw_acc = auth_middleware_hw_acc(request.extensions());
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(collection_name, parent_hw_acc);
         let search_matrix_response = search_points_matrix(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),

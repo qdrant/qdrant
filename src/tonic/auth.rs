@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use futures::future::BoxFuture;
 use storage::rbac::Access;
 use tonic::body::BoxBody;
@@ -69,10 +69,12 @@ where
         self.service.poll_ready(cx)
     }
 
-    fn call(&mut self, request: Request) -> Self::Future {
+    fn call(&mut self, mut request: Request) -> Self::Future {
         let auth_keys = self.auth_keys.clone();
         let mut service = self.service.clone();
-        let hw_measurement_acc = HwMeasurementAcc::disposable(); // TODO(io_measurement): propagate this value!
+
+        let hw_measurement_acc = HwMeasurementAcc::new_with_metrics_drain(HwSharedDrain::default());
+        request.extensions_mut().insert(hw_measurement_acc.clone());
 
         Box::pin(async move {
             match check(auth_keys, request, hw_measurement_acc).await {

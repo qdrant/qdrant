@@ -12,7 +12,9 @@ use tokio::time::Instant;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
+use crate::actix::helpers::{
+    self, get_request_hardware_counter, process_response_error, AuthMwHardwareCounter,
+};
 use crate::common::points::do_discover_batch_points;
 use crate::settings::ServiceConfig;
 
@@ -23,6 +25,7 @@ async fn discover_points(
     request: Json<DiscoverRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let DiscoverRequest {
@@ -52,6 +55,7 @@ async fn discover_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
 
     let timing = Instant::now();
@@ -85,6 +89,7 @@ async fn discover_batch_points(
     request: Json<DiscoverRequestBatch>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let request = request.into_inner();
@@ -106,6 +111,7 @@ async fn discover_batch_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 

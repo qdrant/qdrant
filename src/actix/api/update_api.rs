@@ -17,7 +17,7 @@ use validator::Validate;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
+    get_request_hardware_counter, process_response, process_response_error, AuthMwHardwareCounter,
 };
 use crate::common::inference::InferenceToken;
 use crate::common::points::{
@@ -40,11 +40,13 @@ pub struct UpdateParam {
 }
 
 #[put("/collections/{name}/points")]
+#[allow(clippy::too_many_arguments)]
 async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -63,6 +65,7 @@ async fn upsert_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -84,11 +87,13 @@ async fn upsert_points(
 }
 
 #[post("/collections/{name}/points/delete")]
+#[allow(clippy::too_many_arguments)]
 async fn delete_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -107,6 +112,7 @@ async fn delete_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -128,11 +134,13 @@ async fn delete_points(
 }
 
 #[put("/collections/{name}/points/vectors")]
+#[allow(clippy::too_many_arguments)]
 async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<UpdateVectors>,
     params: Query<UpdateParam>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -151,6 +159,7 @@ async fn update_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -177,6 +186,7 @@ async fn delete_vectors(
     collection: Path<CollectionPath>,
     operation: Json<DeleteVectors>,
     params: Query<UpdateParam>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -196,6 +206,7 @@ async fn delete_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -221,6 +232,7 @@ async fn set_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -239,6 +251,7 @@ async fn set_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -264,6 +277,7 @@ async fn overwrite_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -280,6 +294,7 @@ async fn overwrite_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -306,6 +321,7 @@ async fn delete_payload(
     operation: Json<DeletePayload>,
     params: Query<UpdateParam>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -321,6 +337,7 @@ async fn delete_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -347,6 +364,7 @@ async fn clear_payload(
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -363,6 +381,7 @@ async fn clear_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -383,12 +402,14 @@ async fn clear_payload(
 }
 
 #[post("/collections/{name}/points/batch")]
+#[allow(clippy::too_many_arguments)]
 async fn update_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operations: Json<UpdateOperations>,
     params: Query<UpdateParam>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
@@ -415,6 +436,7 @@ async fn update_batch(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
 
     let timing = Instant::now();

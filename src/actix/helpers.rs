@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::future::Future;
 
 use actix_web::rt::time::Instant;
-use actix_web::{http, HttpResponse, ResponseError};
+use actix_web::{http, FromRequest, HttpMessage, HttpResponse, ResponseError};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -11,17 +11,41 @@ use storage::content_manager::errors::StorageError;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 
-pub fn get_request_hardware_counter(
+#[derive(Clone)]
+pub(super) struct AuthMwHardwareCounter(HwMeasurementAcc);
+
+impl FromRequest for AuthMwHardwareCounter {
+    type Error = actix_web::Error;
+
+    type Future = futures::future::Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &actix_web::HttpRequest, _: &mut actix_web::dev::Payload) -> Self::Future {
+        match req.extensions().get::<AuthMwHardwareCounter>() {
+            Some(hw) => futures::future::ok(hw.clone()),
+            None => {
+                panic!("Internal error: Tried to get Hw counter from Auth but endpoint does't need authentication")
+            }
+        }
+    }
+}
+
+pub(super) fn get_request_hardware_counter(
     dispatcher: &Dispatcher,
     collection_name: String,
     report_to_api: bool,
+    initial: AuthMwHardwareCounter,
 ) -> RequestHwCounter {
-    RequestHwCounter::new(
-        HwMeasurementAcc::new_with_metrics_drain(
-            dispatcher.get_collection_hw_metrics(collection_name),
-        ),
-        report_to_api,
-    )
+    let counter = HwMeasurementAcc::new_with_metrics_drain(
+        dispatcher.get_collection_hw_metrics(collection_name),
+    );
+
+    counter.accumulate_request(
+        initial.0.get_cpu(),
+        initial.0.get_io_read(),
+        initial.0.get_io_write(),
+    );
+
+    RequestHwCounter::new(counter, report_to_api)
 }
 
 pub fn accepted_response(timing: Instant, hardware_usage: Option<HardwareUsage>) -> HttpResponse {

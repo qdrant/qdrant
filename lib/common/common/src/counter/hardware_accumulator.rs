@@ -87,14 +87,7 @@ impl HwMeasurementAcc {
     }
 
     pub fn accumulate(&self, cpu: usize, io_read: usize, io_write: usize) {
-        let HwSharedDrain {
-            cpu_counter,
-            io_read_counter,
-            io_write_counter,
-        } = &self.request_drain;
-        cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
-        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
+        self.accumulate_request(cpu, io_read, io_write);
 
         let HwSharedDrain {
             cpu_counter,

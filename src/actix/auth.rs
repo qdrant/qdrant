@@ -5,7 +5,7 @@ use std::sync::Arc;
 use actix_web::body::{BoxBody, EitherBody};
 use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::{Error, FromRequest, HttpMessage, HttpResponse, ResponseError};
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use futures_util::future::LocalBoxFuture;
 use storage::rbac::Access;
 
@@ -115,7 +115,8 @@ where
             return Box::pin(self.service.call(req));
         }
 
-        let hw_acc = HwMeasurementAcc::disposable(); // TODO(io_measurement) use this value!
+        let hw_acc = HwMeasurementAcc::new_with_metrics_drain(HwSharedDrain::default());
+        req.extensions_mut().insert(hw_acc.clone());
 
         let auth_keys = self.auth_keys.clone();
         let service = self.service.clone();

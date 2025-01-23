@@ -22,7 +22,9 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
+use crate::actix::helpers::{
+    self, get_request_hardware_counter, process_response_error, AuthMwHardwareCounter,
+};
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/recommend")]
@@ -32,6 +34,7 @@ async fn recommend_points(
     request: Json<RecommendRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let RecommendRequest {
@@ -61,6 +64,7 @@ async fn recommend_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
 
     let timing = Instant::now();
@@ -127,6 +131,7 @@ async fn recommend_batch_points(
     request: Json<RecommendRequestBatch>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_batch(
@@ -146,6 +151,7 @@ async fn recommend_batch_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -181,6 +187,7 @@ async fn recommend_point_groups(
     request: Json<RecommendGroupsRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let RecommendGroupsRequest {
@@ -210,6 +217,7 @@ async fn recommend_point_groups(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 

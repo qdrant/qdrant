@@ -17,7 +17,7 @@ use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
+    get_request_hardware_counter, process_response, process_response_error, AuthMwHardwareCounter,
 };
 use crate::common::points::{
     do_core_search_points, do_search_batch_points, do_search_point_groups, do_search_points_matrix,
@@ -31,6 +31,7 @@ async fn search_points(
     request: Json<SearchRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let SearchRequest {
@@ -60,6 +61,7 @@ async fn search_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
 
     let timing = Instant::now();
@@ -92,6 +94,7 @@ async fn batch_search_points(
     request: Json<SearchRequestBatch>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let requests = request
@@ -130,6 +133,7 @@ async fn batch_search_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
 
     let timing = Instant::now();
@@ -166,6 +170,7 @@ async fn search_point_groups(
     request: Json<SearchGroupsRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     let SearchGroupsRequest {
@@ -195,6 +200,7 @@ async fn search_point_groups(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -220,6 +226,7 @@ async fn search_points_matrix_pairs(
     request: Json<SearchMatrixRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let SearchMatrixRequest {
@@ -249,6 +256,7 @@ async fn search_points_matrix_pairs(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -275,6 +283,7 @@ async fn search_points_matrix_offsets(
     request: Json<SearchMatrixRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let SearchMatrixRequest {
@@ -304,6 +313,7 @@ async fn search_points_matrix_offsets(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 

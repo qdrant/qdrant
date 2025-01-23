@@ -13,7 +13,9 @@ use tokio::time::Instant;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
+use crate::actix::helpers::{
+    self, get_request_hardware_counter, process_response_error, AuthMwHardwareCounter,
+};
 use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
@@ -22,11 +24,13 @@ use crate::common::points::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/query")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<QueryRequest>,
     params: Query<ReadParams>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -53,6 +57,7 @@ async fn query_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -91,11 +96,13 @@ async fn query_points(
 }
 
 #[post("/collections/{name}/points/query/batch")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<QueryRequestBatch>,
     params: Query<ReadParams>,
+    initial_hw: AuthMwHardwareCounter,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -119,6 +126,7 @@ async fn query_points_batch(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
@@ -167,12 +175,14 @@ async fn query_points_batch(
 }
 
 #[post("/collections/{name}/points/query/groups")]
+#[allow(clippy::too_many_arguments)]
 async fn query_points_groups(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     request: Json<QueryGroupsRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
@@ -198,6 +208,7 @@ async fn query_points_groups(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();

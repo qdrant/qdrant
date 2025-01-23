@@ -26,7 +26,7 @@ use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
+    get_request_hardware_counter, process_response, process_response_error, AuthMwHardwareCounter,
 };
 use crate::common::points::do_get_points;
 use crate::settings::ServiceConfig;
@@ -75,6 +75,7 @@ async fn get_point(
     point: Path<PointPath>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
@@ -100,6 +101,7 @@ async fn get_point(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -130,6 +132,7 @@ async fn get_points(
     request: Json<PointRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
@@ -158,6 +161,7 @@ async fn get_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -189,6 +193,7 @@ async fn scroll_points(
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let ScrollRequest {
@@ -218,6 +223,7 @@ async fn scroll_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 

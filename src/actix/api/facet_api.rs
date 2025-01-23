@@ -10,7 +10,7 @@ use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
+    get_request_hardware_counter, process_response, process_response_error, AuthMwHardwareCounter,
 };
 use crate::settings::ServiceConfig;
 
@@ -21,6 +21,7 @@ async fn facet(
     request: Json<FacetRequest>,
     params: Query<ReadParams>,
     service_config: web::Data<ServiceConfig>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -54,6 +55,7 @@ async fn facet(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
 
     let response = dispatcher

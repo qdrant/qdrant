@@ -22,6 +22,7 @@ use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     self, get_request_hardware_counter, process_response, process_response_error,
+    AuthMwHardwareCounter,
 };
 use crate::common::points;
 use crate::settings::ServiceConfig;
@@ -37,6 +38,7 @@ pub fn config_local_shard_api(cfg: &mut web::ServiceConfig) {
 #[post("/collections/{collection}/shards/{shard}/points")]
 async fn get_points(
     dispatcher: web::Data<Dispatcher>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
     request: web::Json<PointRequestInternal>,
@@ -50,6 +52,7 @@ async fn get_points(
         &dispatcher,
         path.collection.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -77,6 +80,7 @@ async fn get_points(
 #[post("/collections/{collection}/shards/{shard}/points/scroll")]
 async fn scroll_points(
     dispatcher: web::Data<Dispatcher>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<ScrollRequestInternal>>,
@@ -107,6 +111,7 @@ async fn scroll_points(
         &dispatcher,
         path.collection.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
 
@@ -152,6 +157,7 @@ async fn scroll_points(
 #[post("/collections/{collection}/shards/{shard}/points/count")]
 async fn count_points(
     dispatcher: web::Data<Dispatcher>,
+    initial_hw: AuthMwHardwareCounter,
     ActixAccess(access): ActixAccess,
     path: web::Path<CollectionShard>,
     request: web::Json<WithFilter<CountRequestInternal>>,
@@ -180,6 +186,7 @@ async fn count_points(
         &dispatcher,
         path.collection.clone(),
         service_config.hardware_reporting(),
+        initial_hw,
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();

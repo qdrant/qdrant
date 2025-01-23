@@ -8,6 +8,7 @@ pub mod raft_api;
 pub mod snapshots_api;
 
 use collection::operations::validation;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use tonic::Status;
 use validator::Validate;
 
@@ -25,6 +26,13 @@ fn validate_and_log(request: &impl Validate) {
     if let Err(ref err) = request.validate() {
         validation::warn_validation_errors("Internal gRPC", err);
     }
+}
+
+// Returns the hardware measurements from auth middleware. Not needed (and will panic) if endpoint doesn't perform jwt check!
+fn auth_middleware_hw_acc(extensions: &tonic::Extensions) -> &HwMeasurementAcc {
+    extensions
+        .get()
+        .expect("Hw results from auth middleware not vailable")
 }
 
 #[cfg(test)]
