@@ -7369,7 +7369,10 @@
         }
       },
       "StrictModeMultivectorConfig": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/StrictModeMultivector"
+        }
       },
       "StrictModeMultivector": {
         "type": "object",
@@ -7384,7 +7387,10 @@
         }
       },
       "StrictModeSparseConfig": {
-        "type": "object"
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/StrictModeSparse"
+        }
       },
       "StrictModeSparse": {
         "type": "object",
