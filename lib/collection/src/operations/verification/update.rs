@@ -327,18 +327,18 @@ async fn check_multivectors_limits_update(
     Ok(())
 }
 
-async fn sparse_limits(sparse_config: &StrictModeSparseConfig) -> Option<TinyMap<String, usize>> {
+async fn sparse_limits(sparse_config: &StrictModeSparseConfig) -> Option<TinyMap<&str, usize>> {
     if sparse_config.config.is_empty() {
         return None;
     }
 
-    let sparse_max_size: TinyMap<String, usize> = sparse_config
+    let sparse_max_size: TinyMap<&str, usize> = sparse_config
         .config
         .iter()
         .filter_map(|(name, config)| {
             config
                 .max_length
-                .map(|max_length| (name.clone(), max_length))
+                .map(|max_length| (name.as_str(), max_length))
         })
         .collect();
 
@@ -407,7 +407,7 @@ async fn check_sparse_vector_limits_insert(
 
 fn check_sparse_vecstruct_limit(
     vector: &VectorStruct,
-    sparse_max_size_by_name: &TinyMap<String, usize>,
+    sparse_max_size_by_name: &TinyMap<&str, usize>,
 ) -> Result<(), CollectionError> {
     match vector {
         VectorStruct::Named(named) => {
@@ -427,7 +427,7 @@ fn check_sparse_vecstruct_limit(
 fn check_named_sparse_vec_limit(
     name: &str,
     vector: &Vector,
-    sparse_max_size_by_name: &TinyMap<String, usize>,
+    sparse_max_size_by_name: &TinyMap<&str, usize>,
 ) -> Result<(), CollectionError> {
     if let Vector::Sparse(sparse) = vector {
         if let Some(strict_sparse_limit) = sparse_max_size_by_name.get(name) {
