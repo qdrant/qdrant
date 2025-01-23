@@ -27,7 +27,7 @@ pub struct Batch<'a> {
 pub struct BatchedPoints {
     points: Vec<PointLinkingData>,
     batches: Vec<Range<usize>>,
-    first_point_id: PointOffsetType,
+    first_point_id: Option<PointOffsetType>,
     levels_count: usize,
     remap: Vec<PointOffsetType>,
 }
@@ -45,7 +45,11 @@ impl BatchedPoints {
             remap[*id as usize] = remapped_id as PointOffsetType;
         }
 
-        let first_point_id = ids.remove(0);
+        let first_point_id = if !ids.is_empty() {
+            Some(ids.remove(0))
+        } else {
+            None
+        };
 
         let batches = Self::build_initial_batches(&level_fn, &ids, groups_count);
 
@@ -57,7 +61,7 @@ impl BatchedPoints {
                 points.push(PointLinkingData {
                     point_id,
                     level,
-                    entry: first_point_id.into(),
+                    entry: first_point_id.unwrap_or_default().into(),
                 });
             }
         }
@@ -66,12 +70,14 @@ impl BatchedPoints {
             points,
             batches,
             first_point_id,
-            levels_count: level_fn(first_point_id) + 1,
+            levels_count: first_point_id
+                .map(|first_point_id| level_fn(first_point_id) + 1)
+                .unwrap_or_default(),
             remap,
         })
     }
 
-    pub fn first_point_id(&self) -> PointOffsetType {
+    pub fn first_point_id(&self) -> Option<PointOffsetType> {
         self.first_point_id
     }
 
