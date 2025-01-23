@@ -40,21 +40,6 @@ use crate::common::update::{
 };
 use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 
-fn extract_points_selector(
-    points_selector: Option<PointsSelector>,
-) -> Result<(Option<Vec<ExtendedPointId>>, Option<Filter>), Status> {
-    let (points, filter) = if let Some(points_selector) = points_selector {
-        let points_selector = try_points_selector_from_grpc(points_selector, None)?;
-        match points_selector {
-            point_ops::PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
-            point_ops::PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
-        }
-    } else {
-        return Err(Status::invalid_argument("points_selector is expected"));
-    };
-    Ok((points, filter))
-}
-
 pub async fn upsert(
     toc_provider: impl CheckedTocProvider,
     upsert_points: UpsertPoints,
@@ -884,6 +869,21 @@ pub fn points_operation_response_internal(
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
     }
+}
+
+fn extract_points_selector(
+    points_selector: Option<PointsSelector>,
+) -> Result<(Option<Vec<ExtendedPointId>>, Option<Filter>), Status> {
+    let (points, filter) = if let Some(points_selector) = points_selector {
+        let points_selector = try_points_selector_from_grpc(points_selector, None)?;
+        match points_selector {
+            point_ops::PointsSelector::PointIdsSelector(points) => (Some(points.points), None),
+            point_ops::PointsSelector::FilterSelector(filter) => (None, Some(filter.filter)),
+        }
+    } else {
+        return Err(Status::invalid_argument("points_selector is expected"));
+    };
+    Ok((points, filter))
 }
 
 fn convert_field_type(
