@@ -110,62 +110,6 @@ pub async fn upsert(
     Ok(Response::new(response))
 }
 
-pub async fn sync(
-    toc: Arc<TableOfContent>,
-    sync_points: SyncPoints,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
-    access: Access,
-    inference_token: InferenceToken,
-) -> Result<Response<PointsOperationResponseInternal>, Status> {
-    let SyncPoints {
-        collection_name,
-        wait,
-        points,
-        from_id,
-        to_id,
-        ordering,
-    } = sync_points;
-
-    let timing = Instant::now();
-
-    let point_structs: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
-
-    // No actual inference should happen here, as we are just syncing existing points
-    // So this function is used for consistency only
-    let points =
-        convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
-
-    let operation = PointSyncOperation {
-        points,
-        from_id: from_id.map(|x| x.try_into()).transpose()?,
-        to_id: to_id.map(|x| x.try_into()).transpose()?,
-    };
-    let collection_operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
-
-    let shard_selector = if let Some(shard_selection) = shard_selection {
-        ShardSelectorInternal::ShardId(shard_selection)
-    } else {
-        debug_assert!(false, "Sync operation is supposed to select shard directly");
-        ShardSelectorInternal::Empty
-    };
-
-    let result = toc
-        .update(
-            &collection_name,
-            OperationWithClockTag::new(collection_operation, clock_tag),
-            wait.unwrap_or(false),
-            write_ordering_from_proto(ordering)?,
-            shard_selector,
-            access,
-        )
-        .await?;
-
-    let response = points_operation_response_internal(timing, result);
-    Ok(Response::new(response))
-}
-
 pub async fn delete(
     toc_provider: impl CheckedTocProvider,
     delete_points: DeletePoints,
@@ -881,6 +825,62 @@ pub async fn delete_field_index_internal(
         write_ordering_from_proto(ordering)?,
     )
     .await?;
+
+    let response = points_operation_response_internal(timing, result);
+    Ok(Response::new(response))
+}
+
+pub async fn sync(
+    toc: Arc<TableOfContent>,
+    sync_points: SyncPoints,
+    clock_tag: Option<ClockTag>,
+    shard_selection: Option<ShardId>,
+    access: Access,
+    inference_token: InferenceToken,
+) -> Result<Response<PointsOperationResponseInternal>, Status> {
+    let SyncPoints {
+        collection_name,
+        wait,
+        points,
+        from_id,
+        to_id,
+        ordering,
+    } = sync_points;
+
+    let timing = Instant::now();
+
+    let point_structs: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
+
+    // No actual inference should happen here, as we are just syncing existing points
+    // So this function is used for consistency only
+    let points =
+        convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
+
+    let operation = PointSyncOperation {
+        points,
+        from_id: from_id.map(|x| x.try_into()).transpose()?,
+        to_id: to_id.map(|x| x.try_into()).transpose()?,
+    };
+    let collection_operation =
+        CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
+
+    let shard_selector = if let Some(shard_selection) = shard_selection {
+        ShardSelectorInternal::ShardId(shard_selection)
+    } else {
+        debug_assert!(false, "Sync operation is supposed to select shard directly");
+        ShardSelectorInternal::Empty
+    };
+
+    let result = toc
+        .update(
+            &collection_name,
+            OperationWithClockTag::new(collection_operation, clock_tag),
+            wait.unwrap_or(false),
+            write_ordering_from_proto(ordering)?,
+            shard_selector,
+            access,
+        )
+        .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
