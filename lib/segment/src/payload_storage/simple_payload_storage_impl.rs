@@ -47,7 +47,7 @@ impl PayloadStorage for SimplePayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Add measurements when rebased on dev
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge_by_key(payload, key),
@@ -58,7 +58,7 @@ impl PayloadStorage for SimplePayloadStorage {
             }
         }
 
-        self.update_storage(point_id)?;
+        self.update_storage(point_id, hw_counter)?;
 
         Ok(())
     }
