@@ -166,19 +166,11 @@ impl MmapSparseVectorStorage {
 
 impl SparseVectorStorage for MmapSparseVectorStorage {
     fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
-        if self.is_deleted_vector(key) {
-            return Err(OperationError::service_error(format!(
-                "Key {key} is deleted"
-            )));
-        }
         self.get_sparse_opt(key)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
     }
 
     fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
-        if self.is_deleted_vector(key) {
-            return Ok(None);
-        }
         let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): implement
         self.storage
             .read()
