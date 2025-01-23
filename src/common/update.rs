@@ -734,37 +734,6 @@ pub async fn do_create_index_internal(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn do_delete_index_internal(
-    toc: Arc<TableOfContent>,
-    collection_name: String,
-    index_name: JsonPath,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
-    wait: bool,
-    ordering: WriteOrdering,
-) -> Result<UpdateResult, StorageError> {
-    let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
-        FieldIndexOperations::DeleteIndex(index_name),
-    );
-
-    let shard_selector = if let Some(shard_selection) = shard_selection {
-        ShardSelectorInternal::ShardId(shard_selection)
-    } else {
-        ShardSelectorInternal::All
-    };
-
-    toc.update(
-        &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
-        Access::full("Internal API"),
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -803,6 +772,37 @@ pub async fn do_delete_index(
         shard_selection,
         wait,
         ordering,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn do_delete_index_internal(
+    toc: Arc<TableOfContent>,
+    collection_name: String,
+    index_name: JsonPath,
+    clock_tag: Option<ClockTag>,
+    shard_selection: Option<ShardId>,
+    wait: bool,
+    ordering: WriteOrdering,
+) -> Result<UpdateResult, StorageError> {
+    let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
+        FieldIndexOperations::DeleteIndex(index_name),
+    );
+
+    let shard_selector = if let Some(shard_selection) = shard_selection {
+        ShardSelectorInternal::ShardId(shard_selection)
+    } else {
+        ShardSelectorInternal::All
+    };
+
+    toc.update(
+        &collection_name,
+        OperationWithClockTag::new(collection_operation, clock_tag),
+        wait,
+        ordering,
+        shard_selector,
+        Access::full("Internal API"),
     )
     .await
 }
