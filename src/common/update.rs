@@ -86,51 +86,43 @@ impl StrictModeVerification for UpdateOperation {
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         match self {
-            UpdateOperation::Upsert(upsert_op) => {
-                upsert_op
-                    .upsert
+            UpdateOperation::Upsert(op) => {
+                op.upsert
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::Delete(delete_op) => {
-                delete_op
-                    .delete
+            UpdateOperation::Delete(op) => {
+                op.delete
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::SetPayload(set_payload) => {
-                set_payload
-                    .set_payload
+            UpdateOperation::SetPayload(op) => {
+                op.set_payload
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::OverwritePayload(overwrite_payload) => {
-                overwrite_payload
-                    .overwrite_payload
+            UpdateOperation::OverwritePayload(op) => {
+                op.overwrite_payload
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::DeletePayload(delete_payload) => {
-                delete_payload
-                    .delete_payload
+            UpdateOperation::DeletePayload(op) => {
+                op.delete_payload
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::ClearPayload(clear_payload) => {
-                clear_payload
-                    .clear_payload
+            UpdateOperation::ClearPayload(op) => {
+                op.clear_payload
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::UpdateVectors(update) => {
-                update
-                    .update_vectors
+            UpdateOperation::UpdateVectors(op) => {
+                op.update_vectors
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::DeleteVectors(delete_op) => {
-                delete_op
-                    .delete_vectors
+            UpdateOperation::DeleteVectors(op) => {
+                op.delete_vectors
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
