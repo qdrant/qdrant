@@ -89,6 +89,7 @@ pub trait PayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Assign payload to a concrete point with a concrete payload value
@@ -116,7 +117,11 @@ pub trait PayloadIndex {
     ) -> OperationResult<Vec<Value>>;
 
     /// Drop all payload of the point
-    fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
+    fn clear_payload(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

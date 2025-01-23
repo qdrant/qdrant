@@ -13,9 +13,14 @@ use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef};
 
 impl PayloadStorage for SimplePayloadStorage {
-    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.payload.insert(point_id, payload.to_owned());
-        self.update_storage(point_id)?;
+        self.update_storage(point_id, hw_counter)?;
         Ok(())
     }
 
@@ -23,7 +28,7 @@ impl PayloadStorage for SimplePayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
@@ -32,7 +37,7 @@ impl PayloadStorage for SimplePayloadStorage {
             }
         }
 
-        self.update_storage(point_id)?;
+        self.update_storage(point_id, hw_counter)?;
 
         Ok(())
     }
@@ -42,7 +47,7 @@ impl PayloadStorage for SimplePayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): measure
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge_by_key(payload, key),
@@ -53,7 +58,7 @@ impl PayloadStorage for SimplePayloadStorage {
             }
         }
 
-        self.update_storage(point_id)?;
+        self.update_storage(point_id, hw_counter)?;
 
         Ok(())
     }
@@ -69,13 +74,13 @@ impl PayloadStorage for SimplePayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         key: PayloadKeyTypeRef,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): measure
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
         match self.payload.get_mut(&point_id) {
             Some(payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    self.update_storage(point_id)?;
+                    self.update_storage(point_id, hw_counter)?;
                 }
                 Ok(res)
             }
@@ -83,13 +88,17 @@ impl PayloadStorage for SimplePayloadStorage {
         }
     }
 
-    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
-        self.update_storage(point_id)?;
+        self.update_storage(point_id, hw_counter)?;
         Ok(res)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = HashMap::new();
         self.db_wrapper.recreate_column_family()
     }
@@ -138,12 +147,12 @@ mod tests {
         let mut storage = SimplePayloadStorage::open(db).unwrap();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 

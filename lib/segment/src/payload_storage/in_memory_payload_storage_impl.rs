@@ -13,7 +13,12 @@ use crate::payload_storage::PayloadStorage;
 use crate::types::Payload;
 
 impl PayloadStorage for InMemoryPayloadStorage {
-    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        _hw_counter: &HardwareCounterCell, // No measurement needed for in memory payload
+    ) -> OperationResult<()> {
         self.payload.insert(point_id, payload.to_owned());
         Ok(())
     }
@@ -22,7 +27,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): propagate value
+        _hw_counter: &HardwareCounterCell, // No measurement needed for in memory payload
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge(payload),
@@ -38,7 +43,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         point_id: PointOffsetType,
         payload: &Payload,
         key: &JsonPath,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): implement
+        _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
     ) -> OperationResult<()> {
         match self.payload.get_mut(&point_id) {
             Some(point_payload) => point_payload.merge_by_key(payload, key),
@@ -77,12 +82,16 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
     }
 
-    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell, // No measurements for in memory storage
+    ) -> OperationResult<Option<Payload>> {
         let res = self.payload.remove(&point_id);
         Ok(res)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = HashMap::new();
         Ok(())
     }
@@ -194,12 +203,12 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
     }
 
     #[test]

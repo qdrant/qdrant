@@ -145,12 +145,13 @@ impl MmapSparseVectorStorage {
         &mut self,
         key: PointOffsetType,
         vector: Option<&SparseVector>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut storage_guard = self.storage.write();
         if let Some(vector) = vector {
             // upsert vector
             storage_guard
-                .put_value(key, &StoredSparseVector::from(vector))
+                .put_value(key, &StoredSparseVector::from(vector), hw_counter)
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
@@ -212,10 +213,12 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate value!
+
         let vector = <&SparseVector>::try_from(vector)?;
         debug_assert!(vector.is_sorted());
         self.set_deleted(key, false)?;
-        self.update_stored(key, Some(vector))?;
+        self.update_stored(key, Some(vector), &hw_counter)?;
         Ok(())
     }
 
@@ -224,6 +227,7 @@ impl VectorStorage for MmapSparseVectorStorage {
         other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate value!
         let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in
             other_vectors.check_stop(|| stopped.load(Ordering::Relaxed))
@@ -235,7 +239,7 @@ impl VectorStorage for MmapSparseVectorStorage {
             self.set_deleted(new_id, other_deleted)?;
 
             let vector = (!other_deleted).then_some(other_vector);
-            self.update_stored(new_id, vector)?;
+            self.update_stored(new_id, vector, &hw_counter)?;
         }
         Ok(start_index..self.next_point_offset as PointOffsetType)
     }
@@ -267,7 +271,8 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> crate::common::operation_error::OperationResult<bool> {
         let was_deleted = !self.set_deleted(key, true)?;
 
-        self.update_stored(key, None)?;
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate value!
+        self.update_stored(key, None, &hw_counter)?;
 
         Ok(was_deleted)
     }
