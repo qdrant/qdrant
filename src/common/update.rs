@@ -32,54 +32,6 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct UpsertOperation {
-    #[validate(nested)]
-    upsert: PointInsertOperations,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct DeleteOperation {
-    #[validate(nested)]
-    delete: PointsSelector,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct SetPayloadOperation {
-    #[validate(nested)]
-    set_payload: SetPayload,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct OverwritePayloadOperation {
-    #[validate(nested)]
-    overwrite_payload: SetPayload,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct DeletePayloadOperation {
-    #[validate(nested)]
-    delete_payload: DeletePayload,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct ClearPayloadOperation {
-    #[validate(nested)]
-    clear_payload: PointsSelector,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct UpdateVectorsOperation {
-    #[validate(nested)]
-    update_vectors: UpdateVectors,
-}
-
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct DeleteVectorsOperation {
-    #[validate(nested)]
-    delete_vectors: DeleteVectors,
-}
-
 #[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[serde(untagged)]
@@ -191,6 +143,54 @@ impl StrictModeVerification for UpdateOperation {
             }
         }
     }
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct UpsertOperation {
+    #[validate(nested)]
+    upsert: PointInsertOperations,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct DeleteOperation {
+    #[validate(nested)]
+    delete: PointsSelector,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct SetPayloadOperation {
+    #[validate(nested)]
+    set_payload: SetPayload,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct OverwritePayloadOperation {
+    #[validate(nested)]
+    overwrite_payload: SetPayload,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct DeletePayloadOperation {
+    #[validate(nested)]
+    delete_payload: DeletePayload,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct ClearPayloadOperation {
+    #[validate(nested)]
+    clear_payload: PointsSelector,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct UpdateVectorsOperation {
+    #[validate(nested)]
+    update_vectors: UpdateVectors,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+pub struct DeleteVectorsOperation {
+    #[validate(nested)]
+    delete_vectors: DeleteVectors,
 }
 
 /// Converts a pair of parameters into a shard selector
