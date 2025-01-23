@@ -1754,10 +1754,10 @@ impl From<StrictModeSparseConfig> for segment::types::StrictModeSparseConfig {
         Self {
             config: value
                 .sparse_config
-                .iter()
+                .into_iter()
                 .map(|(name, config)| {
                     (
-                        name.clone(),
+                        name,
                         segment::types::StrictModeSparse {
                             max_length: config.max_length.map(|i| i as usize),
                         },
