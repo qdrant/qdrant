@@ -1773,10 +1773,10 @@ impl From<segment::types::StrictModeSparseConfig> for StrictModeSparseConfig {
         Self {
             sparse_config: value
                 .config
-                .iter()
+                .into_iter()
                 .map(|(name, config)| {
                     (
-                        name.clone(),
+                        name,
                         StrictModeSparse {
                             max_length: config.max_length.map(|i| i as u64),
                         },
