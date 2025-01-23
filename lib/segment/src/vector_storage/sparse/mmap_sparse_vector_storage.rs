@@ -32,7 +32,7 @@ const BITSLICE_GROWTH_SLACK: usize = 1024;
 pub struct MmapSparseVectorStorage {
     storage: Arc<RwLock<BlobStore<StoredSparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
-    deleted: DynamicMmapFlags,
+    deleted: DynamicMmapFlags, // TODO currently eagerly flushed outside of the flushing sequence
     /// Current number of deleted vectors.
     deleted_count: usize,
     /// Maximum point offset in the storage + 1. This also means the total amount of point offsets
@@ -246,14 +246,14 @@ impl VectorStorage for MmapSparseVectorStorage {
 
     fn flusher(&self) -> crate::common::Flusher {
         let storage = self.storage.clone();
-        let deleted_flusher = self.deleted.flusher();
+        let deleted_flags_flusher = self.deleted.flusher();
         Box::new(move || {
+            deleted_flags_flusher()?;
             storage.read().flush().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap sparse vector storage: {err}"
                 ))
             })?;
-            deleted_flusher()?;
             Ok(())
         })
     }
