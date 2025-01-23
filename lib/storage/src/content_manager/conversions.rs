@@ -3,7 +3,7 @@ use collection::operations::config_diff::{
 };
 use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
-use segment::types::{StrictModeConfig, StrictModeMultivectorConfig};
+use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
 use tonic::Status;
 
 use crate::content_manager::collection_meta_ops::{
@@ -100,6 +100,7 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
         multivector_config: value
             .multivector_config
             .map(StrictModeMultivectorConfig::from),
+        sparse_config: value.sparse_config.map(StrictModeSparseConfig::from),
     }
 }
 

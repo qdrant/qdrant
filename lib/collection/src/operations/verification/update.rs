@@ -3,7 +3,9 @@ use api::rest::{
 };
 use segment::data_types::tiny_map::TinyMap;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use segment::types::{Filter, StrictModeConfig, StrictModeMultivectorConfig};
+use segment::types::{
+    Filter, StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig,
+};
 
 use super::{check_limit_opt, StrictModeVerification};
 use crate::collection::Collection;
@@ -137,6 +139,10 @@ impl StrictModeVerification for PointInsertOperations {
             check_multivectors_limits_insert(self, multivector_config).await?;
         }
 
+        if let Some(sparse_config) = &strict_mode_config.sparse_config {
+            check_sparse_vector_limits_insert(self, sparse_config).await?;
+        }
+
         Ok(())
     }
 
@@ -177,6 +183,10 @@ impl StrictModeVerification for UpdateVectors {
 
         if let Some(multivector_config) = &strict_mode_config.multivector_config {
             check_multivectors_limits_update(self, multivector_config).await?;
+        }
+
+        if let Some(sparse_config) = &strict_mode_config.sparse_config {
+            check_sparse_vector_limits_update(self, sparse_config).await?;
         }
 
         Ok(())
@@ -314,6 +324,131 @@ async fn check_multivectors_limits_update(
         )?;
     }
 
+    Ok(())
+}
+
+async fn sparse_limits(sparse_config: &StrictModeSparseConfig) -> Option<TinyMap<&str, usize>> {
+    if sparse_config.config.is_empty() {
+        return None;
+    }
+
+    let sparse_max_size: TinyMap<&str, usize> = sparse_config
+        .config
+        .iter()
+        .filter_map(|(name, config)| {
+            config
+                .max_length
+                .map(|max_length| (name.as_str(), max_length))
+        })
+        .collect();
+
+    (!sparse_max_size.is_empty()).then_some(sparse_max_size)
+}
+
+async fn check_sparse_vector_limits_update(
+    point_insert: &UpdateVectors,
+    sparse_config: &StrictModeSparseConfig,
+) -> Result<(), CollectionError> {
+    let Some(sparse_max_size_by_name) = sparse_limits(sparse_config).await else {
+        return Ok(());
+    };
+
+    for point in &point_insert.points {
+        check_sparse_vecstruct_limit(&point.vector, &sparse_max_size_by_name)?;
+    }
+
+    Ok(())
+}
+
+async fn check_sparse_vector_limits_insert(
+    point_insert: &PointInsertOperations,
+    sparse_config: &StrictModeSparseConfig,
+) -> Result<(), CollectionError> {
+    let Some(sparse_max_size_by_name) = sparse_limits(sparse_config).await else {
+        return Ok(());
+    };
+
+    match point_insert {
+        PointInsertOperations::PointsBatch(batch) => match &batch.batch.vectors {
+            BatchVectorStruct::Named(named_batch_vectors) => {
+                for (name, vectors) in named_batch_vectors {
+                    for vector in vectors {
+                        check_named_sparse_vec_limit(name, vector, &sparse_max_size_by_name)?;
+                    }
+                }
+            }
+
+            BatchVectorStruct::Single(_)
+            | BatchVectorStruct::Document(_)
+            | BatchVectorStruct::MultiDense(_)
+            | BatchVectorStruct::Image(_)
+            | BatchVectorStruct::Object(_) => {}
+        },
+        PointInsertOperations::PointsList(list) => {
+            for point_struct in &list.points {
+                match &point_struct.vector {
+                    VectorStruct::Named(named_vectors) => {
+                        for (name, vector) in named_vectors {
+                            check_named_sparse_vec_limit(name, vector, &sparse_max_size_by_name)?;
+                        }
+                    }
+                    VectorStruct::Single(_) => {}
+                    VectorStruct::MultiDense(_) => {}
+                    VectorStruct::Document(_) => {}
+                    VectorStruct::Image(_) => {}
+                    VectorStruct::Object(_) => {}
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn check_sparse_vecstruct_limit(
+    vector: &VectorStruct,
+    sparse_max_size_by_name: &TinyMap<&str, usize>,
+) -> Result<(), CollectionError> {
+    match vector {
+        VectorStruct::Named(named) => {
+            for (name, vec) in named {
+                check_named_sparse_vec_limit(name, vec, sparse_max_size_by_name)?;
+            }
+            Ok(())
+        }
+        VectorStruct::Single(_) => Ok(()),
+        VectorStruct::MultiDense(_) => Ok(()),
+        VectorStruct::Document(_) => Ok(()),
+        VectorStruct::Image(_) => Ok(()),
+        VectorStruct::Object(_) => Ok(()),
+    }
+}
+
+fn check_named_sparse_vec_limit(
+    name: &str,
+    vector: &Vector,
+    sparse_max_size_by_name: &TinyMap<&str, usize>,
+) -> Result<(), CollectionError> {
+    if let Vector::Sparse(sparse) = vector {
+        if let Some(strict_sparse_limit) = sparse_max_size_by_name.get(name) {
+            check_sparse_vector_limit(name, sparse, *strict_sparse_limit)?;
+        }
+    }
+    Ok(())
+}
+
+fn check_sparse_vector_limit(
+    name: &str,
+    sparse: &sparse::common::sparse_vector::SparseVector,
+    max_size: usize,
+) -> Result<(), CollectionError> {
+    let vector_len = sparse.indices.len();
+
+    if vector_len > max_size || sparse.values.len() > max_size {
+        return Err(CollectionError::bad_request(format!(
+            "Sparse vector '{name}' has a limit of {max_size} indices, but {vector_len} were provided!"
+        )));
+    }
     Ok(())
 }
 

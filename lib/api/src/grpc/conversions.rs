@@ -26,7 +26,7 @@ use super::qdrant::{
     MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
     RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
     ShardKeySelector, SparseIndices, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
-    UuidIndexParams, VectorsOutput, WithLookup,
+    StrictModeSparse, StrictModeSparseConfig, UuidIndexParams, VectorsOutput, WithLookup,
 };
 use crate::conversions::json;
 use crate::grpc::qdrant::condition::ConditionOneOf;
@@ -1723,6 +1723,9 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             multivector_config: value
                 .multivector_config
                 .map(segment::types::StrictModeMultivectorConfig::from),
+            sparse_config: value
+                .sparse_config
+                .map(segment::types::StrictModeSparseConfig::from),
         }
     }
 }
@@ -1738,6 +1741,44 @@ impl From<StrictModeMultivectorConfig> for segment::types::StrictModeMultivector
                         name.clone(),
                         segment::types::StrictModeMultivector {
                             max_vectors: config.max_vectors.map(|i| i as usize),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<StrictModeSparseConfig> for segment::types::StrictModeSparseConfig {
+    fn from(value: StrictModeSparseConfig) -> Self {
+        Self {
+            config: value
+                .sparse_config
+                .into_iter()
+                .map(|(name, config)| {
+                    (
+                        name,
+                        segment::types::StrictModeSparse {
+                            max_length: config.max_length.map(|i| i as usize),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<segment::types::StrictModeSparseConfig> for StrictModeSparseConfig {
+    fn from(value: segment::types::StrictModeSparseConfig) -> Self {
+        Self {
+            sparse_config: value
+                .config
+                .into_iter()
+                .map(|(name, config)| {
+                    (
+                        name,
+                        StrictModeSparse {
+                            max_length: config.max_length.map(|i| i as u64),
                         },
                     )
                 })
@@ -1771,6 +1812,7 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
             multivector_config: value
                 .multivector_config
                 .map(StrictModeMultivectorConfig::from),
+            sparse_config: value.sparse_config.map(StrictModeSparseConfig::from),
         }
     }
 }
