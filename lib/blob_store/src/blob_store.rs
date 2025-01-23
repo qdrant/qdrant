@@ -322,7 +322,12 @@ impl<V: Blob> BlobStore<V> {
     /// Put a value in the storage.
     ///
     /// Returns true if the value existed previously and was updated, false if it was newly inserted.
-    pub fn put_value(&mut self, point_offset: PointOffset, value: &V) -> Result<bool> {
+    pub fn put_value(
+        &mut self,
+        point_offset: PointOffset,
+        value: &V,
+        hw_counter: &HardwareCounterCell,
+    ) -> Result<bool> {
         // This function needs to NOT corrupt data in case of a crash.
         //
         // Since we cannot know deterministically when a write is persisted without flushing explicitly,
@@ -374,6 +379,8 @@ impl<V: Blob> BlobStore<V> {
         let value_bytes = value.to_bytes();
         let comp_value = self.compress(value_bytes);
         let value_size = comp_value.len();
+
+        hw_counter.io_write_counter().incr_delta(value_size);
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =
@@ -550,9 +557,11 @@ mod tests {
     fn test_put_single_empty_value() {
         let (_dir, mut storage) = empty_storage();
 
+        let hw_counter = HardwareCounterCell::new();
+
         // TODO: should we actually use the pages for empty values?
         let payload = Payload::default();
-        storage.put_value(0, &payload).unwrap();
+        storage.put_value(0, &payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -573,7 +582,9 @@ mod tests {
             serde_json::Value::String("value".to_string()),
         );
 
-        storage.put_value(0, &payload).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        storage.put_value(0, &payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -598,7 +609,8 @@ mod tests {
             serde_json::Value::String("value".to_string()),
         );
 
-        storage.put_value(0, &payload).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        storage.put_value(0, &payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
         let files = storage.files();
@@ -633,7 +645,9 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
         for (point_offset, payload) in payloads.iter() {
-            storage.put_value(*point_offset, payload).unwrap();
+            storage
+                .put_value(*point_offset, payload, &hw_counter)
+                .unwrap();
 
             let stored_payload = storage.get_value(*point_offset, &hw_counter);
             assert!(stored_payload.is_some());
@@ -659,14 +673,14 @@ mod tests {
             serde_json::Value::String("value".to_string()),
         );
 
-        storage.put_value(0, &payload).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        storage.put_value(0, &payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let hw_counter = HardwareCounterCell::new();
         let stored_payload = storage.get_value(0, &hw_counter);
         assert_eq!(stored_payload, Some(payload));
         assert_eq!(storage.get_storage_size_bytes(), DEFAULT_BLOCK_SIZE_BYTES);
@@ -692,8 +706,9 @@ mod tests {
             "key".to_string(),
             serde_json::Value::String("value".to_string()),
         );
+        let hw_counter = HardwareCounterCell::new();
 
-        storage.put_value(0, &payload).unwrap();
+        storage.put_value(0, &payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -713,7 +728,7 @@ mod tests {
             serde_json::Value::String("updated".to_string()),
         );
 
-        storage.put_value(0, &updated_payload).unwrap();
+        storage.put_value(0, &updated_payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -789,11 +804,15 @@ mod tests {
             .map(|_| Operation::random(rng, max_point_offset))
             .collect::<Vec<_>>();
 
+        let hw_counter = HardwareCounterCell::new();
+
         // apply operations to storage and model_hashmap
         for operation in operations {
             match operation {
                 Operation::Put(point_offset, payload) => {
-                    storage.put_value(point_offset, &payload).unwrap();
+                    storage
+                        .put_value(point_offset, &payload, &hw_counter)
+                        .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
                 Operation::Delete(point_offset) => {
@@ -805,7 +824,9 @@ mod tests {
                     );
                 }
                 Operation::Update(point_offset, payload) => {
-                    storage.put_value(point_offset, &payload).unwrap();
+                    storage
+                        .put_value(point_offset, &payload, &hw_counter)
+                        .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
             }
@@ -813,8 +834,6 @@ mod tests {
 
         // asset same length
         assert_eq!(storage.tracker.read().mapping_len(), model_hashmap.len());
-
-        let hw_counter = HardwareCounterCell::new();
 
         // validate storage and model_hashmap are the same
         for point_offset in 0..=max_point_offset {
@@ -865,14 +884,14 @@ mod tests {
             serde_json::Value::String(distr.sample_iter(rng).take(huge_payload_size).collect());
         payload.0.insert("huge".to_string(), huge_value);
 
-        storage.put_value(0, &payload).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        storage.put_value(0, &payload, &hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 2);
 
         let page_mapping = storage.get_pointer(0).unwrap();
         assert_eq!(page_mapping.page_id, 0); // first page
         assert_eq!(page_mapping.block_offset, 0); // first cell
 
-        let hw_counter = HardwareCounterCell::new();
         let stored_payload = storage.get_value(0, &hw_counter);
         assert!(stored_payload.is_some());
         assert_eq!(stored_payload.unwrap(), payload);
@@ -909,7 +928,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
         {
             let mut storage = BlobStore::new(path.clone(), Default::default()).unwrap();
-            storage.put_value(0, &payload).unwrap();
+            storage.put_value(0, &payload, &hw_counter).unwrap();
             assert_eq!(storage.pages.len(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
@@ -945,6 +964,8 @@ mod tests {
 
             let csv_file = File::open(csv_path).expect("file should open");
 
+            let hw_counter = HardwareCounterCell::new();
+
             let mut rdr = csv::Reader::from_reader(csv_file);
             let mut point_offset = init_offset;
             for result in rdr.records() {
@@ -956,7 +977,9 @@ mod tests {
                         serde_json::Value::String(record.get(i).unwrap().to_string()),
                     );
                 }
-                storage.put_value(point_offset, &payload).unwrap();
+                storage
+                    .put_value(point_offset, &payload, &hw_counter)
+                    .unwrap();
                 point_offset += 1;
             }
             point_offset
@@ -1032,10 +1055,16 @@ mod tests {
         for i in (0..EXPECTED_LEN).rev() {
             let payload = storage.get_value(i as u32, &hw_counter).unwrap();
             // move first write to the right
-            storage.put_value(i as u32 + offset, &payload).unwrap();
+            storage
+                .put_value(i as u32 + offset, &payload, &hw_counter)
+                .unwrap();
             // move second write to the right
             storage
-                .put_value(i as u32 + offset + EXPECTED_LEN as u32, &payload)
+                .put_value(
+                    i as u32 + offset + EXPECTED_LEN as u32,
+                    &payload,
+                    &hw_counter,
+                )
                 .unwrap();
         }
         // assert storage is consistent after updating
@@ -1073,10 +1102,13 @@ mod tests {
         };
         let mut storage = BlobStore::new(dir.path().to_path_buf(), options).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
         let payload = minimal_payload();
         let last_point_id = 3 * blocks_per_page as u32;
         for point_offset in 0..=last_point_id {
-            storage.put_value(point_offset, &payload).unwrap();
+            storage
+                .put_value(point_offset, &payload, &hw_counter)
+                .unwrap();
         }
 
         storage.flush().unwrap();

@@ -12,7 +12,12 @@ use crate::types::{Filter, Payload};
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
     /// Overwrite payload for point_id. If payload already exists, replace it
-    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()>;
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     /// Set payload for point_id. If payload already exists, merge it with existing
     fn set(
@@ -46,10 +51,14 @@ pub trait PayloadStorage {
     ) -> OperationResult<Vec<Value>>;
 
     /// Clear all payload of the point
-    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>>;
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>>;
 
     /// Completely delete payload storage. Pufff!
-    fn wipe(&mut self) -> OperationResult<()>;
+    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()>;
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;

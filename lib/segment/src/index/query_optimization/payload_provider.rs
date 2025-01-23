@@ -52,7 +52,7 @@ impl PayloadProvider {
             // Rewrite condition checking code to support error reporting.
             // Which may lead to slowdown and assumes a lot of changes.
             PayloadStorageEnum::OnDiskPayloadStorage(s) => s
-                .read_payload(point_id)
+                .read_payload(point_id, &hw_counter)
                 .unwrap_or_else(|err| panic!("Payload storage is corrupted: {err}"))
                 .map(OwnedPayloadRef::from),
             PayloadStorageEnum::MmapPayloadStorage(s) => {

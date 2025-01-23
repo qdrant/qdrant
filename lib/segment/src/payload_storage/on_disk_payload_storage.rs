@@ -31,31 +31,31 @@ impl OnDiskPayloadStorage {
         Ok(OnDiskPayloadStorage { db_wrapper })
     }
 
-    pub fn remove_from_storage(&self, point_id: PointOffsetType) -> OperationResult<()> {
-        self.db_wrapper
-            .remove(serde_cbor::to_vec(&point_id).unwrap())
+    pub fn remove_from_storage(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let serialized = serde_cbor::to_vec(&point_id).unwrap();
+        hw_counter.io_write_counter().incr_delta(serialized.len());
+        self.db_wrapper.remove(serialized)
     }
 
     pub fn update_storage(
         &self,
         point_id: PointOffsetType,
         payload: &Payload,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.db_wrapper.put(
-            serde_cbor::to_vec(&point_id).unwrap(),
-            serde_cbor::to_vec(payload).unwrap(),
-        )
+        let point_id_serialized = serde_cbor::to_vec(&point_id).unwrap();
+        let payload_serialized = serde_cbor::to_vec(payload).unwrap();
+        hw_counter
+            .io_write_counter()
+            .incr_delta(point_id_serialized.len() + payload_serialized.len());
+        self.db_wrapper.put(point_id_serialized, payload_serialized)
     }
 
-    pub fn read_payload(&self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
-        let key = serde_cbor::to_vec(&point_id).unwrap();
-        self.db_wrapper
-            .get_pinned(&key, |raw| serde_cbor::from_slice(raw))?
-            .transpose()
-            .map_err(OperationError::from)
-    }
-
-    pub fn read_payload_measured(
+    pub fn read_payload(
         &self,
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
@@ -72,23 +72,28 @@ impl OnDiskPayloadStorage {
 }
 
 impl PayloadStorage for OnDiskPayloadStorage {
-    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
-        self.update_storage(point_id, payload)
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.update_storage(point_id, payload, hw_counter)
     }
 
     fn set(
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): propagate values
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let stored_payload = self.read_payload(point_id)?;
+        let stored_payload = self.read_payload(point_id, hw_counter)?;
         match stored_payload {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
-                self.update_storage(point_id, &point_payload)?
+                self.update_storage(point_id, &point_payload, hw_counter)?
             }
-            None => self.update_storage(point_id, payload)?,
+            None => self.update_storage(point_id, payload, hw_counter)?,
         }
         Ok(())
     }
@@ -100,16 +105,16 @@ impl PayloadStorage for OnDiskPayloadStorage {
         key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let stored_payload = self.read_payload_measured(point_id, hw_counter)?;
+        let stored_payload = self.read_payload(point_id, hw_counter)?;
         match stored_payload {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
-                self.update_storage(point_id, &point_payload)
+                self.update_storage(point_id, &point_payload, hw_counter)
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
-                self.update_storage(point_id, &dest_payload)
+                self.update_storage(point_id, &dest_payload, hw_counter)
             }
         }
     }
@@ -119,7 +124,7 @@ impl PayloadStorage for OnDiskPayloadStorage {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        let payload = self.read_payload_measured(point_id, hw_counter)?;
+        let payload = self.read_payload(point_id, hw_counter)?;
         match payload {
             Some(payload) => Ok(payload),
             None => Ok(Default::default()),
@@ -132,13 +137,13 @@ impl PayloadStorage for OnDiskPayloadStorage {
         key: &JsonPath,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<Value>> {
-        let stored_payload = self.read_payload_measured(point_id, hw_counter)?;
+        let stored_payload = self.read_payload(point_id, hw_counter)?;
 
         match stored_payload {
             Some(mut payload) => {
                 let res = payload.remove(key);
                 if !res.is_empty() {
-                    self.update_storage(point_id, &payload)?;
+                    self.update_storage(point_id, &payload, hw_counter)?;
                 }
                 Ok(res)
             }
@@ -146,13 +151,17 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
-    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
-        let payload = self.read_payload(point_id)?;
-        self.remove_from_storage(point_id)?;
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
+        let payload = self.read_payload(point_id, hw_counter)?;
+        self.remove_from_storage(point_id, hw_counter)?;
         Ok(payload)
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.db_wrapper.recreate_column_family()
     }
 

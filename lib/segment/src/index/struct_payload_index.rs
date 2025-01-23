@@ -540,9 +540,13 @@ impl PayloadIndex for StructPayloadIndex {
         &mut self,
         point_id: PointOffsetType,
         payload: &Payload,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.payload.borrow_mut().overwrite(point_id, payload)?;
+        self.payload
+            .borrow_mut()
+            .overwrite(point_id, payload, hw_counter)?;
 
+        // TODO(io_measurement): Maybe add measurements to index here too.
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
             if !field_value.is_empty() {
@@ -616,9 +620,13 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow_mut().delete(point_id, key, hw_counter)
     }
 
-    fn clear_payload(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear_payload(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
         self.clear_index_for_point(point_id)?;
-        self.payload.borrow_mut().clear(point_id)
+        self.payload.borrow_mut().clear(point_id, hw_counter)
     }
 
     fn flusher(&self) -> Flusher {

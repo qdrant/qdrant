@@ -50,13 +50,24 @@ impl From<MmapPayloadStorage> for PayloadStorageEnum {
 }
 
 impl PayloadStorage for PayloadStorageEnum {
-    fn overwrite(&mut self, point_id: PointOffsetType, payload: &Payload) -> OperationResult<()> {
+    fn overwrite(
+        &mut self,
+        point_id: PointOffsetType,
+        payload: &Payload,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.overwrite(point_id, payload),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.overwrite(point_id, payload),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.overwrite(point_id, payload),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter)
+            }
+            PayloadStorageEnum::SimplePayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter)
+            }
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => {
+                s.overwrite(point_id, payload, hw_counter)
+            }
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.overwrite(point_id, payload, hw_counter),
         }
     }
 
@@ -128,23 +139,27 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn clear(&mut self, point_id: PointOffsetType) -> OperationResult<Option<Payload>> {
+    fn clear(
+        &mut self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<Payload>> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.clear(point_id),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear(point_id),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.clear(point_id, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.clear(point_id, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.clear(point_id, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear(point_id, hw_counter),
         }
     }
 
-    fn wipe(&mut self) -> OperationResult<()> {
+    fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.wipe(),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.wipe(),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.wipe(),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.wipe(),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.wipe(hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.wipe(hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.wipe(hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.wipe(hw_counter),
         }
     }
 
@@ -210,12 +225,12 @@ mod tests {
         let mut storage: PayloadStorageEnum = SimplePayloadStorage::open(db).unwrap().into();
         let payload: Payload = serde_json::from_str(r#"{"name": "John Doe"}"#).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         storage.set(100, &payload, &hw_counter).unwrap();
         assert!(!storage.get(100, &hw_counter).unwrap().is_empty());
-        storage.wipe().unwrap();
+        storage.wipe(&hw_counter).unwrap();
         assert_eq!(storage.get(100, &hw_counter).unwrap(), Default::default());
     }
 
@@ -244,7 +259,7 @@ mod tests {
             )
             .unwrap();
 
-            storage.overwrite(100, &payload).unwrap();
+            storage.overwrite(100, &payload, &hw_counter).unwrap();
 
             let partial_payload: Payload = serde_json::from_str(r#"{ "age": 53 }"#).unwrap();
             storage.set(100, &partial_payload, &hw_counter).unwrap();
@@ -299,6 +314,8 @@ mod tests {
 
         let mut storage = SimplePayloadStorage::open(db.clone()).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 
         let point_id = 0;
@@ -323,7 +340,7 @@ mod tests {
         assert_eq!(raw_payload_size, 98);
 
         // insert payload
-        storage.overwrite(point_id, &payload).unwrap();
+        storage.overwrite(point_id, &payload, &hw_counter).unwrap();
         assert_eq!(storage.get_storage_size_bytes().unwrap(), 0);
 
         // needs a flush to impact the storage size
@@ -337,7 +354,7 @@ mod tests {
 
         // check how it scales
         for _ in 1..=100 {
-            storage.overwrite(point_id, &payload).unwrap();
+            storage.overwrite(point_id, &payload, &hw_counter).unwrap();
         }
 
         storage.flusher()().unwrap();
