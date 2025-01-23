@@ -86,6 +86,12 @@ impl StrictModeVerification for UpdateOperation {
         strict_mode_config: &StrictModeConfig,
     ) -> Result<(), CollectionError> {
         match self {
+            UpdateOperation::Upsert(upsert_op) => {
+                upsert_op
+                    .upsert
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
             UpdateOperation::Delete(delete_op) => {
                 delete_op
                     .delete
@@ -116,21 +122,15 @@ impl StrictModeVerification for UpdateOperation {
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
-            UpdateOperation::DeleteVectors(delete_op) => {
-                delete_op
-                    .delete_vectors
-                    .check_strict_mode(collection, strict_mode_config)
-                    .await
-            }
-            UpdateOperation::Upsert(upsert_op) => {
-                upsert_op
-                    .upsert
-                    .check_strict_mode(collection, strict_mode_config)
-                    .await
-            }
             UpdateOperation::UpdateVectors(update) => {
                 update
                     .update_vectors
+                    .check_strict_mode(collection, strict_mode_config)
+                    .await
+            }
+            UpdateOperation::DeleteVectors(delete_op) => {
+                delete_op
+                    .delete_vectors
                     .check_strict_mode(collection, strict_mode_config)
                     .await
             }
