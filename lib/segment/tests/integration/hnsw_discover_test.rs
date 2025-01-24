@@ -14,7 +14,7 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
-use segment::segment_constructor::build_segment;
+use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
     SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
@@ -117,17 +117,21 @@ fn hnsw_discover_precision() {
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        quantized_vectors: quantized_vectors.clone(),
-        payload_index: payload_index_ptr,
-        hnsw_config,
-        permit: Some(permit),
-        gpu_device: None,
-        stopped: &stopped,
-    })
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: payload_index_ptr,
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            gpu_device: None,
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let top = 3;
@@ -248,17 +252,21 @@ fn filtered_hnsw_discover_precision() {
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        quantized_vectors: quantized_vectors.clone(),
-        payload_index: payload_index_ptr,
-        hnsw_config,
-        permit: Some(permit),
-        gpu_device: None,
-        stopped: &stopped,
-    })
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: payload_index_ptr,
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            gpu_device: None,
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let top = 3;

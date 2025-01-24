@@ -20,9 +20,8 @@ use uuid::Uuid;
 
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
-    create_sparse_vector_storage, create_vector_index, get_payload_index_path,
-    get_vector_index_path, get_vector_storage_path, new_segment_path, open_segment_db,
-    open_vector_storage,
+    create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
+    get_vector_storage_path, new_segment_path, open_segment_db, open_vector_storage,
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
@@ -37,7 +36,9 @@ use crate::index::PayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{Segment, SegmentVersion};
-use crate::segment_constructor::load_segment;
+use crate::segment_constructor::{
+    build_vector_index, load_segment, VectorIndexBuildArgs, VectorIndexOpenArgs,
+};
 use crate::types::{
     CompactExtendedPointId, ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
     SegmentState, SeqNumberType,
@@ -534,21 +535,22 @@ impl SegmentBuilder {
             let permit = Arc::new(permit);
 
             for (vector_name, vector_config) in &segment_config.vector_data {
-                let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
-                let vector_index_path = get_vector_index_path(temp_dir.path(), vector_name);
-                let quantized_vectors = quantized_vectors.remove(vector_name);
-                let quantized_vectors_arc = Arc::new(AtomicRefCell::new(quantized_vectors));
-
-                create_vector_index(
+                build_vector_index(
                     vector_config,
-                    &vector_index_path,
-                    id_tracker_arc.clone(),
-                    vector_storage_arc,
-                    payload_index_arc.clone(),
-                    quantized_vectors_arc,
-                    Some(permit.clone()),
-                    gpu_device.as_ref(),
-                    stopped,
+                    VectorIndexOpenArgs {
+                        path: &get_vector_index_path(temp_dir.path(), vector_name),
+                        id_tracker: id_tracker_arc.clone(),
+                        vector_storage: vector_storages_arc.remove(vector_name).unwrap(),
+                        payload_index: payload_index_arc.clone(),
+                        quantized_vectors: Arc::new(AtomicRefCell::new(
+                            quantized_vectors.remove(vector_name),
+                        )),
+                    },
+                    VectorIndexBuildArgs {
+                        permit: permit.clone(),
+                        gpu_device: gpu_device.as_ref(),
+                        stopped,
+                    },
                 )?;
             }
 
