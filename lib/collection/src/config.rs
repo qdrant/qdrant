@@ -13,8 +13,8 @@ use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, Spars
 use segment::types::{
     default_replication_factor_const, default_shard_number_const,
     default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
-    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig,
-    VectorStorageDatatype, VectorStorageType,
+    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName,
+    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -108,7 +108,7 @@ pub struct CollectionParams {
     /// Configuration of the sparse vector storage
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[validate(nested)]
-    pub sparse_vectors: Option<BTreeMap<String, SparseVectorParams>>,
+    pub sparse_vectors: Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
 }
 
 impl CollectionParams {
@@ -268,12 +268,12 @@ impl CollectionParams {
         }
     }
 
-    fn missing_vector_error(&self, vector_name: &str) -> CollectionError {
+    fn missing_vector_error(&self, vector_name: &VectorName) -> CollectionError {
         let mut available_names = vec![];
 
         match &self.vectors {
             VectorsConfig::Single(_) => {
-                available_names.push(DEFAULT_VECTOR_NAME.to_string());
+                available_names.push(DEFAULT_VECTOR_NAME.to_owned());
             }
             VectorsConfig::Multi(vectors) => {
                 for name in vectors.keys() {
@@ -316,7 +316,7 @@ impl CollectionParams {
         }
     }
 
-    pub fn get_distance(&self, vector_name: &str) -> CollectionResult<Distance> {
+    pub fn get_distance(&self, vector_name: &VectorName) -> CollectionResult<Distance> {
         match self.vectors.get_params(vector_name) {
             Some(params) => Ok(params.distance),
             None => {
@@ -330,7 +330,10 @@ impl CollectionParams {
         }
     }
 
-    fn get_vector_params_mut(&mut self, vector_name: &str) -> CollectionResult<&mut VectorParams> {
+    fn get_vector_params_mut(
+        &mut self,
+        vector_name: &VectorName,
+    ) -> CollectionResult<&mut VectorParams> {
         self.vectors
             .get_params_mut(vector_name)
             .ok_or_else(|| CollectionError::BadInput {
@@ -342,7 +345,10 @@ impl CollectionParams {
             })
     }
 
-    pub fn get_sparse_vector_params_opt(&self, vector_name: &str) -> Option<&SparseVectorParams> {
+    pub fn get_sparse_vector_params_opt(
+        &self,
+        vector_name: &VectorName,
+    ) -> Option<&SparseVectorParams> {
         self.sparse_vectors
             .as_ref()
             .and_then(|sparse_vectors| sparse_vectors.get(vector_name))
@@ -350,7 +356,7 @@ impl CollectionParams {
 
     pub fn get_sparse_vector_params_mut(
         &mut self,
-        vector_name: &str,
+        vector_name: &VectorName,
     ) -> CollectionResult<&mut SparseVectorParams> {
         self.sparse_vectors
             .as_mut()
@@ -438,7 +444,9 @@ impl CollectionParams {
     ///
     /// It is the job of the segment optimizer to change this configuration with optimized settings
     /// based on threshold configurations.
-    pub fn to_base_vector_data(&self) -> CollectionResult<HashMap<String, VectorDataConfig>> {
+    pub fn to_base_vector_data(
+        &self,
+    ) -> CollectionResult<HashMap<VectorNameBuf, VectorDataConfig>> {
         Ok(self
             .vectors
             .params_iter()
@@ -472,13 +480,13 @@ impl CollectionParams {
     /// based on threshold configurations.
     pub fn to_sparse_vector_data(
         &self,
-    ) -> CollectionResult<HashMap<String, SparseVectorDataConfig>> {
+    ) -> CollectionResult<HashMap<VectorNameBuf, SparseVectorDataConfig>> {
         if let Some(sparse_vectors) = &self.sparse_vectors {
             sparse_vectors
                 .iter()
                 .map(|(name, params)| {
                     Ok((
-                        name.into(),
+                        name.clone(),
                         SparseVectorDataConfig {
                             index: SparseIndexConfig {
                                 full_scan_threshold: params

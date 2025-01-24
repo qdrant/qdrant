@@ -19,13 +19,13 @@ use collection::recommendations::recommend_by;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{NamedVector, VectorStructInternal};
-use segment::types::{Distance, WithPayloadInterface, WithVector};
+use segment::types::{Distance, VectorName, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
 use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
 
-const VEC_NAME1: &str = "vec1";
-const VEC_NAME2: &str = "vec2";
+const VECTOR1_NAME: &VectorName = "vec1";
+const VECTOR2_NAME: &VectorName = "vec2";
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_multi_vec() {
@@ -45,8 +45,8 @@ pub async fn multi_vec_collection_fixture(collection_path: &Path, shard_number: 
 
     let mut vectors_config = BTreeMap::new();
 
-    vectors_config.insert(VEC_NAME1.to_string(), vector_params1);
-    vectors_config.insert(VEC_NAME2.to_string(), vector_params2);
+    vectors_config.insert(VECTOR1_NAME.to_owned(), vector_params1);
+    vectors_config.insert(VECTOR2_NAME.to_owned(), vector_params2);
 
     let collection_params = CollectionParams {
         vectors: VectorsConfig::Multi(vectors_config),
@@ -89,8 +89,14 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
     let mut points = Vec::new();
     for i in 0..1000 {
         let mut vectors = NamedVectors::default();
-        vectors.insert(VEC_NAME1.to_string(), vec![i as f32, 0.0, 0.0, 0.0].into());
-        vectors.insert(VEC_NAME2.to_string(), vec![0.0, i as f32, 0.0, 0.0].into());
+        vectors.insert(
+            VECTOR1_NAME.to_owned(),
+            vec![i as f32, 0.0, 0.0, 0.0].into(),
+        );
+        vectors.insert(
+            VECTOR2_NAME.to_owned(),
+            vec![0.0, i as f32, 0.0, 0.0].into(),
+        );
 
         points.push(PointStructPersisted {
             id: i.into(),
@@ -110,7 +116,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     let full_search_request = SearchRequestInternal {
         vector: NamedVector {
-            name: VEC_NAME1.to_string(),
+            name: VECTOR1_NAME.to_owned(),
             vector: query_vector,
         }
         .into(),
@@ -140,8 +146,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             VectorStructInternal::Single(_) => panic!("expected multi vector"),
             VectorStructInternal::MultiDense(_) => panic!("expected multi vector"),
             VectorStructInternal::Named(vectors) => {
-                assert!(vectors.contains_key(VEC_NAME1));
-                assert!(vectors.contains_key(VEC_NAME2));
+                assert!(vectors.contains_key(VECTOR1_NAME));
+                assert!(vectors.contains_key(VECTOR2_NAME));
             }
         }
     }
@@ -177,7 +183,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
 
     let full_search_request = SearchRequestInternal {
         vector: NamedVector {
-            name: VEC_NAME2.to_string(),
+            name: VECTOR2_NAME.to_owned(),
             vector: query_vector,
         }
         .into(),
@@ -207,8 +213,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             VectorStructInternal::Single(_) => panic!("expected multi vector"),
             VectorStructInternal::MultiDense(_) => panic!("expected multi vector"),
             VectorStructInternal::Named(vectors) => {
-                assert!(vectors.contains_key(VEC_NAME1));
-                assert!(vectors.contains_key(VEC_NAME2));
+                assert!(vectors.contains_key(VECTOR1_NAME));
+                assert!(vectors.contains_key(VECTOR2_NAME));
             }
         }
     }
@@ -218,7 +224,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             PointRequestInternal {
                 ids: vec![6.into()],
                 with_payload: Some(WithPayloadInterface::Bool(false)),
-                with_vector: WithVector::Selector(vec![VEC_NAME1.to_string()]),
+                with_vector: WithVector::Selector(vec![VECTOR1_NAME.to_owned()]),
             },
             None,
             &ShardSelectorInternal::All,
@@ -233,8 +239,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         VectorStructInternal::Single(_) => panic!("expected multi vector"),
         VectorStructInternal::MultiDense(_) => panic!("expected multi vector"),
         VectorStructInternal::Named(vectors) => {
-            assert!(vectors.contains_key(VEC_NAME1));
-            assert!(!vectors.contains_key(VEC_NAME2));
+            assert!(vectors.contains_key(VECTOR1_NAME));
+            assert!(!vectors.contains_key(VECTOR2_NAME));
         }
     }
 
@@ -243,7 +249,7 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         RecommendRequestInternal {
             positive: vec![6.into()],
             with_payload: Some(WithPayloadInterface::Bool(false)),
-            with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
+            with_vector: Some(WithVector::Selector(vec![VECTOR2_NAME.to_owned()])),
             limit: 10,
             ..Default::default()
         },
@@ -270,9 +276,9 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
         RecommendRequestInternal {
             positive: vec![6.into()],
             with_payload: Some(WithPayloadInterface::Bool(false)),
-            with_vector: Some(WithVector::Selector(vec![VEC_NAME2.to_string()])),
+            with_vector: Some(WithVector::Selector(vec![VECTOR2_NAME.to_owned()])),
             limit: 10,
-            using: Some(VEC_NAME1.to_string().into()),
+            using: Some(VECTOR1_NAME.to_owned().into()),
             ..Default::default()
         },
         &collection,
@@ -291,8 +297,8 @@ async fn test_multi_vec_with_shards(shard_number: u32) {
             VectorStructInternal::Single(_) => panic!("expected multi vector"),
             VectorStructInternal::MultiDense(_) => panic!("expected multi vector"),
             VectorStructInternal::Named(vectors) => {
-                assert!(!vectors.contains_key(VEC_NAME1));
-                assert!(vectors.contains_key(VEC_NAME2));
+                assert!(!vectors.contains_key(VECTOR1_NAME));
+                assert!(vectors.contains_key(VECTOR2_NAME));
             }
         }
     }

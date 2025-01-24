@@ -26,7 +26,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
     Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    SegmentState, SeqNumberType, SnapshotFormat,
+    SegmentState, SeqNumberType, SnapshotFormat, VectorName,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorage;
@@ -351,7 +351,7 @@ impl Segment {
     #[inline]
     pub(super) fn vector_by_offset(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         point_offset: PointOffsetType,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
@@ -630,7 +630,7 @@ impl Segment {
         }
     }
 
-    pub fn available_vector_count(&self, vector_name: &str) -> OperationResult<usize> {
+    pub fn available_vector_count(&self, vector_name: &VectorName) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         Ok(self.vector_data[vector_name]
             .vector_storage

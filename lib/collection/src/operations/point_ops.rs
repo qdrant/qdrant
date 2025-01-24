@@ -15,7 +15,7 @@ use segment::data_types::vectors::{
     BatchVectorStructInternal, MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
     DEFAULT_VECTOR_NAME,
 };
-use segment::types::{Filter, Payload, PointIdType};
+use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::{Validate, ValidationErrors};
@@ -192,7 +192,7 @@ impl From<VectorPersisted> for VectorInternal {
 pub enum VectorStructPersisted {
     Single(DenseVector),
     MultiDense(MultiDenseVector),
-    Named(HashMap<String, VectorPersisted>),
+    Named(HashMap<VectorNameBuf, VectorPersisted>),
 }
 
 impl Debug for VectorStructPersisted {
@@ -311,14 +311,14 @@ impl From<VectorStructPersisted> for NamedVectors<'_> {
     fn from(value: VectorStructPersisted) -> Self {
         match value {
             VectorStructPersisted::Single(vector) => {
-                NamedVectors::from_pairs([(DEFAULT_VECTOR_NAME.to_string(), vector)])
+                NamedVectors::from_pairs([(DEFAULT_VECTOR_NAME.to_owned(), vector)])
             }
             VectorStructPersisted::MultiDense(vector) => {
                 let mut named_vector = NamedVectors::default();
                 let multivec = MultiDenseVectorInternal::new_unchecked(vector);
 
                 named_vector.insert(
-                    DEFAULT_VECTOR_NAME.to_string(),
+                    DEFAULT_VECTOR_NAME.to_owned(),
                     segment::data_types::vectors::VectorInternal::from(multivec),
                 );
                 named_vector
@@ -353,11 +353,11 @@ impl PointStructPersisted {
         let mut named_vectors = NamedVectors::default();
         match &self.vector {
             VectorStructPersisted::Single(vector) => named_vectors.insert(
-                DEFAULT_VECTOR_NAME.to_string(),
+                DEFAULT_VECTOR_NAME.to_owned(),
                 VectorInternal::from(vector.clone()),
             ),
             VectorStructPersisted::MultiDense(vector) => named_vectors.insert(
-                DEFAULT_VECTOR_NAME.to_string(),
+                DEFAULT_VECTOR_NAME.to_owned(),
                 VectorInternal::from(MultiDenseVectorInternal::new_unchecked(vector.clone())),
             ),
             VectorStructPersisted::Named(vectors) => {
@@ -375,7 +375,7 @@ impl PointStructPersisted {
 pub enum BatchVectorStructPersisted {
     Single(Vec<DenseVector>),
     MultiDense(Vec<MultiDenseVector>),
-    Named(HashMap<String, Vec<VectorPersisted>>),
+    Named(HashMap<VectorNameBuf, Vec<VectorPersisted>>),
 }
 
 impl From<BatchVectorStructPersisted> for BatchVectorStructInternal {

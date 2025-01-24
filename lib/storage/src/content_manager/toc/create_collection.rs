@@ -11,6 +11,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::CollectionId;
+use segment::types::VectorNameBuf;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::*;
@@ -265,7 +266,7 @@ impl TableOfContent {
     async fn check_collections_compatibility(
         &self,
         vectors: &VectorsConfig,
-        sparse_vectors: &Option<BTreeMap<String, SparseVectorParams>>,
+        sparse_vectors: &Option<BTreeMap<VectorNameBuf, SparseVectorParams>>,
         source_collection: &CollectionId,
     ) -> Result<(), StorageError> {
         let collection = self.get_collection_unchecked(source_collection).await?;

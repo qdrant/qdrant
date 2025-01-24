@@ -6,7 +6,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use segment::common::operation_time_statistics::OperationDurationsAggregator;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
-use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType};
+use segment::types::{HnswConfig, Indexes, QuantizationConfig, SegmentType, VectorName};
 
 use crate::collection_manager::holders::segment_holder::{LockedSegmentHolder, SegmentId};
 use crate::collection_manager::optimizers::segment_optimizer::{
@@ -51,7 +51,7 @@ impl ConfigMismatchOptimizer {
     }
 
     /// Check if current configuration requires vectors to be stored on disk
-    fn check_if_vectors_on_disk(&self, vector_name: &str) -> Option<bool> {
+    fn check_if_vectors_on_disk(&self, vector_name: &VectorName) -> Option<bool> {
         self.collection_params
             .vectors
             .get_params(vector_name)
@@ -59,7 +59,7 @@ impl ConfigMismatchOptimizer {
     }
 
     /// Check if current configuration requires sparse vectors index to be stored on disk
-    fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &str) -> Option<bool> {
+    fn check_if_sparse_vectors_index_on_disk(&self, vector_name: &VectorName) -> Option<bool> {
         self.collection_params
             .sparse_vectors
             .as_ref()
@@ -72,7 +72,7 @@ impl ConfigMismatchOptimizer {
     /// with current configuration.
     ///
     /// Takes vector-specific HNSW config (if any) and merges it with the collection-wide config.
-    fn get_required_hnsw_config(&self, vector_name: &str) -> Cow<HnswConfig> {
+    fn get_required_hnsw_config(&self, vector_name: &VectorName) -> Cow<HnswConfig> {
         let target_hnsw_collection = &self.hnsw_config;
         // Select vector specific target HNSW config
         let target_hnsw_vector = self
@@ -260,6 +260,7 @@ mod tests {
 
     use common::cpu::CpuPermit;
     use parking_lot::RwLock;
+    use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::types::{
@@ -275,6 +276,9 @@ mod tests {
     use crate::operations::config_diff::HnswConfigDiff;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+    const VECTOR1_NAME: &VectorName = "vector1";
+    const VECTOR2_NAME: &VectorName = "vector2";
 
     /// This test the config mismatch optimizer for a changed HNSW config
     ///
@@ -400,7 +404,7 @@ mod tests {
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert_eq!(
-                    segment.config().vector_data[""].index,
+                    segment.config().vector_data[DEFAULT_VECTOR_NAME].index,
                     Indexes::Hnsw(changed_hnsw_config.clone()),
                     "segment must be optimized with changed HNSW config",
                 );
@@ -442,13 +446,13 @@ mod tests {
         let collection_params = CollectionParams {
             vectors: VectorsConfig::Multi(BTreeMap::from([
                 (
-                    "vector1".into(),
+                    VECTOR1_NAME.to_owned(),
                     VectorParamsBuilder::new(vector1_dim as u64, Distance::Dot)
                         .with_hnsw_config(hnsw_config_vector1)
                         .build(),
                 ),
                 (
-                    "vector2".into(),
+                    VECTOR2_NAME.to_owned(),
                     VectorParamsBuilder::new(vector2_dim as u64, Distance::Dot).build(),
                 ),
             ])),
@@ -530,7 +534,7 @@ mod tests {
         match config_mismatch_optimizer.collection_params.vectors {
             VectorsConfig::Single(_) => unreachable!(),
             VectorsConfig::Multi(ref mut map) => {
-                map.get_mut("vector2")
+                map.get_mut(VECTOR2_NAME)
                     .unwrap()
                     .hnsw_config
                     .replace(hnsw_config_vector2);
@@ -563,12 +567,12 @@ mod tests {
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert_eq!(
-                    segment.config().vector_data["vector1"].index,
+                    segment.config().vector_data[VECTOR1_NAME].index,
                     Indexes::Hnsw(hnsw_config_vector1.update(&hnsw_config_collection).unwrap()),
                     "HNSW config of vector1 is not what we expect",
                 );
                 assert_eq!(
-                    segment.config().vector_data["vector2"].index,
+                    segment.config().vector_data[VECTOR2_NAME].index,
                     Indexes::Hnsw(hnsw_config_vector2.update(&hnsw_config_collection).unwrap()),
                     "HNSW config of vector2 is not what we expect",
                 );
@@ -612,13 +616,13 @@ mod tests {
         let collection_params = CollectionParams {
             vectors: VectorsConfig::Multi(BTreeMap::from([
                 (
-                    "vector1".into(),
+                    VECTOR1_NAME.to_owned(),
                     VectorParamsBuilder::new(vector1_dim as u64, Distance::Dot)
                         .with_quantization_config(quantization_config_vector1.clone())
                         .build(),
                 ),
                 (
-                    "vector2".into(),
+                    VECTOR2_NAME.to_owned(),
                     VectorParamsBuilder::new(vector2_dim as u64, Distance::Dot).build(),
                 ),
             ])),
@@ -703,7 +707,7 @@ mod tests {
         match config_mismatch_optimizer.collection_params.vectors {
             VectorsConfig::Single(_) => unreachable!(),
             VectorsConfig::Multi(ref mut map) => {
-                map.get_mut("vector2")
+                map.get_mut(VECTOR2_NAME)
                     .unwrap()
                     .quantization_config
                     .replace(quantization_config_vector2.clone());
@@ -736,12 +740,12 @@ mod tests {
             .filter(|segment| segment.total_point_count() > 0)
             .for_each(|segment| {
                 assert_eq!(
-                    segment.config().vector_data["vector1"].quantization_config,
+                    segment.config().vector_data[VECTOR1_NAME].quantization_config,
                     Some(quantization_config_vector1.clone()),
                     "Quantization config of vector1 is not what we expect",
                 );
                 assert_eq!(
-                    segment.config().vector_data["vector2"].quantization_config,
+                    segment.config().vector_data[VECTOR2_NAME].quantization_config,
                     Some(quantization_config_vector2.clone()),
                     "Quantization config of vector2 is not what we expect",
                 );

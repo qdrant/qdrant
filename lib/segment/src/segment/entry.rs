@@ -32,7 +32,7 @@ use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    SnapshotFormat, VectorDataInfo, WithPayload, WithVector,
+    SnapshotFormat, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
@@ -53,7 +53,7 @@ impl SegmentEntry for Segment {
 
     fn search_batch(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         query_vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
@@ -171,7 +171,7 @@ impl SegmentEntry for Segment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector_name: &str,
+        vector_name: &VectorName,
         _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set values!
     ) -> OperationResult<bool> {
         check_vector_name(vector_name, &self.segment_config)?;
@@ -184,7 +184,7 @@ impl SegmentEntry for Segment {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
                     let vector_data = segment.vector_data.get(vector_name).ok_or_else(|| {
                         OperationError::VectorNameNotExists {
-                            received_name: vector_name.to_string(),
+                            received_name: vector_name.to_owned(),
                         }
                     })?;
                     let mut vector_storage = vector_data.vector_storage.borrow_mut();
@@ -288,7 +288,7 @@ impl SegmentEntry for Segment {
 
     fn vector(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         point_id: PointIdType,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
@@ -405,7 +405,7 @@ impl SegmentEntry for Segment {
         self.id_tracker.borrow().deleted_point_count()
     }
 
-    fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
+    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
         let size = vector_data
@@ -782,7 +782,7 @@ impl SegmentEntry for Segment {
         Ok(deleted_points)
     }
 
-    fn vector_names(&self) -> HashSet<String> {
+    fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.vector_data.keys().cloned().collect()
     }
 

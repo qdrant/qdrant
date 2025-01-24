@@ -4,7 +4,8 @@ use api::rest::{
 use segment::data_types::tiny_map::TinyMap;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{
-    Filter, StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig,
+    Filter, StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig, VectorName,
+    VectorNameBuf,
 };
 
 use super::{check_limit_opt, StrictModeVerification};
@@ -282,13 +283,13 @@ fn check_collection_payload_size_limit(
 /// Return None if no multivectors are configured with strict mode
 async fn multivector_limits_by_name(
     multivector_strict_config: &StrictModeMultivectorConfig,
-) -> Option<TinyMap<String, usize>> {
+) -> Option<TinyMap<VectorNameBuf, usize>> {
     // If no multivectors strict mode no need to check anything.
     if multivector_strict_config.config.is_empty() {
         return None;
     }
 
-    let multivector_max_size_by_name: TinyMap<String, usize> = multivector_strict_config
+    let multivector_max_size_by_name: TinyMap<VectorNameBuf, usize> = multivector_strict_config
         .config
         .iter()
         .filter_map(|(name, config)| {
@@ -327,18 +328,20 @@ async fn check_multivectors_limits_update(
     Ok(())
 }
 
-async fn sparse_limits(sparse_config: &StrictModeSparseConfig) -> Option<TinyMap<&str, usize>> {
+async fn sparse_limits(
+    sparse_config: &StrictModeSparseConfig,
+) -> Option<TinyMap<&VectorName, usize>> {
     if sparse_config.config.is_empty() {
         return None;
     }
 
-    let sparse_max_size: TinyMap<&str, usize> = sparse_config
+    let sparse_max_size: TinyMap<&VectorName, usize> = sparse_config
         .config
         .iter()
         .filter_map(|(name, config)| {
             config
                 .max_length
-                .map(|max_length| (name.as_str(), max_length))
+                .map(|max_length| (name.as_ref(), max_length))
         })
         .collect();
 
@@ -407,7 +410,7 @@ async fn check_sparse_vector_limits_insert(
 
 fn check_sparse_vecstruct_limit(
     vector: &VectorStruct,
-    sparse_max_size_by_name: &TinyMap<&str, usize>,
+    sparse_max_size_by_name: &TinyMap<&VectorName, usize>,
 ) -> Result<(), CollectionError> {
     match vector {
         VectorStruct::Named(named) => {
@@ -425,9 +428,9 @@ fn check_sparse_vecstruct_limit(
 }
 
 fn check_named_sparse_vec_limit(
-    name: &str,
+    name: &VectorName,
     vector: &Vector,
-    sparse_max_size_by_name: &TinyMap<&str, usize>,
+    sparse_max_size_by_name: &TinyMap<&VectorName, usize>,
 ) -> Result<(), CollectionError> {
     if let Vector::Sparse(sparse) = vector {
         if let Some(strict_sparse_limit) = sparse_max_size_by_name.get(name) {
@@ -438,7 +441,7 @@ fn check_named_sparse_vec_limit(
 }
 
 fn check_sparse_vector_limit(
-    name: &str,
+    name: &VectorName,
     sparse: &sparse::common::sparse_vector::SparseVector,
     max_size: usize,
 ) -> Result<(), CollectionError> {
@@ -521,9 +524,9 @@ async fn check_multivectors_limits_insert(
 }
 
 fn check_named_multivectors_vecstruct_limit(
-    name: &str,
+    name: &VectorName,
     vector: &VectorStruct,
-    multivector_max_size_by_name: &TinyMap<String, usize>,
+    multivector_max_size_by_name: &TinyMap<VectorNameBuf, usize>,
 ) -> Result<(), CollectionError> {
     match vector {
         VectorStruct::MultiDense(multi) => {
@@ -543,9 +546,9 @@ fn check_named_multivectors_vecstruct_limit(
 }
 
 fn check_named_multivectors_vec_limit(
-    name: &str,
+    name: &VectorName,
     vector: &Vector,
-    multivector_max_size_by_name: &TinyMap<String, usize>,
+    multivector_max_size_by_name: &TinyMap<VectorNameBuf, usize>,
 ) -> Result<(), CollectionError> {
     match vector {
         Vector::MultiDense(multi) => {
@@ -560,9 +563,9 @@ fn check_named_multivectors_vec_limit(
 }
 
 fn check_named_multivector_limit(
-    name: &str,
+    name: &VectorName,
     multi: &MultiDenseVector,
-    multivector_max_size_by_name: &TinyMap<String, usize>,
+    multivector_max_size_by_name: &TinyMap<VectorNameBuf, usize>,
 ) -> Result<(), CollectionError> {
     if let Some(strict_multi_limit) = multivector_max_size_by_name.get(name) {
         check_multivector_limit(name, multi, *strict_multi_limit)?
@@ -571,7 +574,7 @@ fn check_named_multivector_limit(
 }
 
 fn check_multivector_limit(
-    name: &str,
+    name: &VectorName,
     multi: &MultiDenseVector,
     max_size: usize,
 ) -> Result<(), CollectionError> {

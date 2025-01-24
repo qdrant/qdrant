@@ -24,8 +24,9 @@ use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
+use crate::fixtures::segment::SPARSE_VECTOR_NAME;
+
 const MAX_EXAMPLE_PAIRS: usize = 3;
-const SPARSE_VECTOR_NAME: &str = "sparse_test";
 
 fn convert_to_sparse_vector(vector: &[VectorElementType]) -> SparseVector {
     let mut sparse_vector = SparseVector::default();

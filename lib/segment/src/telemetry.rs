@@ -5,7 +5,7 @@ use crate::common::anonymize::Anonymize;
 use crate::common::operation_time_statistics::OperationDurationStatistics;
 use crate::types::{
     PayloadIndexInfo, SegmentConfig, SegmentInfo, SparseVectorDataConfig, VectorDataConfig,
-    VectorDataInfo,
+    VectorDataInfo, VectorNameBuf,
 };
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
@@ -40,7 +40,7 @@ impl PayloadIndexTelemetry {
 #[derive(Serialize, Clone, Debug, JsonSchema, Default)]
 pub struct VectorIndexSearchesTelemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub index_name: Option<String>,
+    pub index_name: Option<VectorNameBuf>,
 
     #[serde(skip_serializing_if = "OperationDurationStatistics::is_empty")]
     pub unfiltered_plain: OperationDurationStatistics,

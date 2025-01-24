@@ -38,7 +38,7 @@ use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
     IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, VectorName,
+    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, VectorNameBuf,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
@@ -50,7 +50,7 @@ pub struct StructPayloadIndex {
     /// Used for `has_id` condition and estimating cardinality
     pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Vector storages for each field, used for `has_vector` condition
-    pub(super) vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
+    pub(super) vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     /// Indexes, associated with fields
     pub field_indexes: IndexesMap,
     config: PayloadConfig,
@@ -145,7 +145,7 @@ impl StructPayloadIndex {
     pub fn open(
         payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-        vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
+        vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
         is_appendable: bool,
     ) -> OperationResult<Self> {

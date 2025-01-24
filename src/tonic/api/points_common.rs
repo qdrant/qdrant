@@ -2039,7 +2039,7 @@ pub async fn search_points_matrix(
             .transpose()
             .map_err(|_| Status::invalid_argument("could not parse 'limit' param into usize"))?
             .unwrap_or(CollectionSearchMatrixRequest::DEFAULT_LIMIT_PER_SAMPLE),
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
     };
 
     let toc = toc_provider

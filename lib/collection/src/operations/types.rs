@@ -30,8 +30,8 @@ use segment::data_types::vectors::{
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
     PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
-    SparseVectorStorageType, StrictModeConfig, VectorStorageDatatype, WithPayloadInterface,
-    WithVector,
+    SparseVectorStorageType, StrictModeConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
+    WithPayloadInterface, WithVector,
 };
 use semver::Version;
 use serde;
@@ -675,19 +675,19 @@ impl From<u64> for RecommendExample {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq)]
 #[serde(rename_all = "snake_case", untagged)]
 pub enum UsingVector {
-    Name(String),
+    Name(VectorNameBuf),
 }
 
 impl UsingVector {
-    pub fn as_string(&self) -> String {
+    pub fn as_name(&self) -> VectorNameBuf {
         match self {
-            UsingVector::Name(name) => name.to_string(),
+            UsingVector::Name(name) => name.clone(),
         }
     }
 }
 
-impl From<String> for UsingVector {
-    fn from(name: String) -> Self {
+impl From<VectorNameBuf> for UsingVector {
+    fn from(name: VectorNameBuf) -> Self {
         UsingVector::Name(name)
     }
 }
@@ -1418,7 +1418,7 @@ impl From<tempfile::PathPersistError> for CollectionError {
 pub type CollectionResult<T> = Result<T, CollectionError>;
 
 impl RecordInternal {
-    pub fn get_vector_by_name(&self, name: &str) -> Option<VectorRef> {
+    pub fn get_vector_by_name(&self, name: &VectorName) -> Option<VectorRef> {
         match &self.vector {
             Some(VectorStructInternal::Single(vector)) => {
                 (name == DEFAULT_VECTOR_NAME).then_some(VectorRef::from(vector))
@@ -1622,7 +1622,7 @@ impl SparseIndexParams {
 #[serde(rename_all = "snake_case", untagged)]
 pub enum VectorsConfig {
     Single(VectorParams),
-    Multi(BTreeMap<String, VectorParams>),
+    Multi(BTreeMap<VectorNameBuf, VectorParams>),
 }
 
 impl Default for VectorsConfig {
@@ -1643,14 +1643,14 @@ impl VectorsConfig {
         }
     }
 
-    pub fn get_params(&self, name: &str) -> Option<&VectorParams> {
+    pub fn get_params(&self, name: &VectorName) -> Option<&VectorParams> {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
             VectorsConfig::Multi(params) => params.get(name),
         }
     }
 
-    pub fn get_params_mut(&mut self, name: &str) -> Option<&mut VectorParams> {
+    pub fn get_params_mut(&mut self, name: &VectorName) -> Option<&mut VectorParams> {
         match self {
             VectorsConfig::Single(params) => (name == DEFAULT_VECTOR_NAME).then_some(params),
             VectorsConfig::Multi(params) => params.get_mut(name),
@@ -1660,10 +1660,12 @@ impl VectorsConfig {
     /// Iterate over the named vector parameters.
     ///
     /// If this is `Single` it iterates over a single parameter named [`DEFAULT_VECTOR_NAME`].
-    pub fn params_iter<'a>(&'a self) -> Box<dyn Iterator<Item = (&'a str, &'a VectorParams)> + 'a> {
+    pub fn params_iter<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = (&'a VectorName, &'a VectorParams)> + 'a> {
         match self {
             VectorsConfig::Single(p) => Box::new(std::iter::once((DEFAULT_VECTOR_NAME, p))),
-            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_str(), p))),
+            VectorsConfig::Multi(p) => Box::new(p.iter().map(|(n, p)| (n.as_ref(), p))),
         }
     }
 
@@ -1693,13 +1695,13 @@ impl VectorsConfig {
     // TODO: Further unify `check_compatible` and `check_compatible_with_segment_config`?
     pub fn check_compatible_with_segment_config(
         &self,
-        other: &HashMap<String, segment::types::VectorDataConfig>,
+        other: &HashMap<VectorNameBuf, segment::types::VectorDataConfig>,
         exact: bool,
     ) -> CollectionResult<()> {
         if exact && self.vectors_num() != other.len() {
             return Err(incompatible_vectors_error(
                 self.params_iter().map(|(name, _)| name),
-                other.keys().map(String::as_str),
+                other.keys().map(AsRef::as_ref),
             ));
         }
 
@@ -1717,8 +1719,8 @@ impl VectorsConfig {
 
 // TODO(sparse): Further unify `check_compatible` and `check_compatible_with_segment_config`?
 pub fn check_sparse_compatible(
-    self_config: &BTreeMap<String, SparseVectorParams>,
-    other_config: &BTreeMap<String, SparseVectorParams>,
+    self_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
+    other_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
 ) -> CollectionResult<()> {
     for (vector_name, _this) in self_config.iter() {
         let Some(_other) = other_config.get(vector_name) else {
@@ -1730,14 +1732,14 @@ pub fn check_sparse_compatible(
 }
 
 pub fn check_sparse_compatible_with_segment_config(
-    self_config: &BTreeMap<String, SparseVectorParams>,
-    other: &HashMap<String, segment::types::SparseVectorDataConfig>,
+    self_config: &BTreeMap<VectorNameBuf, SparseVectorParams>,
+    other: &HashMap<VectorNameBuf, segment::types::SparseVectorDataConfig>,
     exact: bool,
 ) -> CollectionResult<()> {
     if exact && self_config.len() != other.len() {
         return Err(incompatible_vectors_error(
-            self_config.keys().map(String::as_str),
-            other.keys().map(String::as_str),
+            self_config.keys().map(AsRef::as_ref),
+            other.keys().map(AsRef::as_ref),
         ));
     }
 
@@ -1751,8 +1753,8 @@ pub fn check_sparse_compatible_with_segment_config(
 }
 
 fn incompatible_vectors_error<'a, 'b>(
-    this: impl Iterator<Item = &'a str>,
-    other: impl Iterator<Item = &'b str>,
+    this: impl Iterator<Item = &'a VectorName>,
+    other: impl Iterator<Item = &'b VectorName>,
 ) -> CollectionError {
     let this_vectors = this.collect::<Vec<_>>().join(", ");
     let other_vectors = other.collect::<Vec<_>>().join(", ");
@@ -1766,7 +1768,7 @@ fn incompatible_vectors_error<'a, 'b>(
     }
 }
 
-fn missing_vector_error(vector_name: &str) -> CollectionError {
+fn missing_vector_error(vector_name: &VectorName) -> CollectionError {
     CollectionError::BadInput {
         description: format!(
             "Vectors configuration is not compatible: \
@@ -1808,7 +1810,7 @@ struct VectorParamsBase {
 }
 
 impl VectorParamsBase {
-    fn check_compatibility(&self, other: &Self, vector_name: &str) -> CollectionResult<()> {
+    fn check_compatibility(&self, other: &Self, vector_name: &VectorName) -> CollectionResult<()> {
         if self.size != other.size {
             return Err(CollectionError::BadInput {
                 description: format!(
@@ -1881,7 +1883,7 @@ pub struct VectorParamsDiff {
 ///     }
 /// }
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
-pub struct VectorsConfigDiff(pub BTreeMap<String, VectorParamsDiff>);
+pub struct VectorsConfigDiff(pub BTreeMap<VectorNameBuf, VectorParamsDiff>);
 
 impl VectorsConfigDiff {
     /// Check that the vector names in this config are part of the given collection.
@@ -1894,7 +1896,7 @@ impl VectorsConfigDiff {
                 .get_params(vector_name)
                 .map(|_| ())
                 .ok_or_else(|| OperationError::VectorNameNotExists {
-                    received_name: vector_name.into(),
+                    received_name: vector_name.clone(),
                 })?;
         }
         Ok(())
@@ -1914,7 +1916,7 @@ impl From<VectorParamsDiff> for VectorsConfigDiff {
 }
 
 #[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
-pub struct SparseVectorsConfig(pub BTreeMap<String, SparseVectorParams>);
+pub struct SparseVectorsConfig(pub BTreeMap<VectorNameBuf, SparseVectorParams>);
 
 impl SparseVectorsConfig {
     /// Check that the vector names in this config are part of the given collection.
@@ -1927,7 +1929,7 @@ impl SparseVectorsConfig {
                 .as_ref()
                 .and_then(|v| v.get(vector_name).map(|_| ()))
                 .ok_or_else(|| OperationError::VectorNameNotExists {
-                    received_name: vector_name.into(),
+                    received_name: vector_name.clone(),
                 })?;
         }
         Ok(())
