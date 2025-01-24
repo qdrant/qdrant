@@ -709,7 +709,7 @@ pub struct StrictModeSparse {
 pub struct StrictModeSparseConfig {
     #[validate(nested)]
     #[serde(flatten)]
-    pub config: BTreeMap<String, StrictModeSparse>,
+    pub config: BTreeMap<VectorNameBuf, StrictModeSparse>,
 }
 
 impl Merge for StrictModeSparseConfig {
@@ -735,7 +735,7 @@ pub struct StrictModeMultivector {
 pub struct StrictModeMultivectorConfig {
     #[validate(nested)]
     #[serde(flatten)]
-    pub config: BTreeMap<String, StrictModeMultivector>,
+    pub config: BTreeMap<VectorNameBuf, StrictModeMultivector>,
 }
 
 impl Merge for StrictModeMultivectorConfig {
