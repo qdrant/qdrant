@@ -218,7 +218,7 @@ mod tests {
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
     use segment::index::hnsw_index::num_rayon_threads;
-    use segment::types::{Distance, PayloadContainer, PayloadSchemaType};
+    use segment::types::{Distance, PayloadContainer, PayloadSchemaType, VectorName};
     use serde_json::{json, Value};
     use tempfile::Builder;
 
@@ -228,6 +228,9 @@ mod tests {
     use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
     use crate::operations::types::VectorsConfig;
     use crate::operations::vector_params_builder::VectorParamsBuilder;
+
+    const VECTOR1_NAME: &VectorName = "vector1";
+    const VECTOR2_NAME: &VectorName = "vector2";
 
     #[test]
     fn test_vacuum_conditions() {
@@ -409,11 +412,11 @@ mod tests {
         let collection_params = CollectionParams {
             vectors: VectorsConfig::Multi(BTreeMap::from([
                 (
-                    "vector1".into(),
+                    VECTOR1_NAME.to_owned(),
                     VectorParamsBuilder::new(vector1_dim, Distance::Dot).build(),
                 ),
                 (
-                    "vector2".into(),
+                    VECTOR2_NAME.to_owned(),
                     VectorParamsBuilder::new(vector2_dim, Distance::Dot).build(),
                 ),
             ])),
@@ -536,7 +539,7 @@ mod tests {
             // Delete 25% of vectors named vector1
             {
                 let id_tracker = segment.id_tracker.clone();
-                let vector1_data = segment.vector_data.get_mut("vector1").unwrap();
+                let vector1_data = segment.vector_data.get_mut(VECTOR1_NAME).unwrap();
                 let mut vector1_storage = vector1_data.vector_storage.borrow_mut();
 
                 let vector1_vecs_to_delete = id_tracker
@@ -554,7 +557,7 @@ mod tests {
             // Delete 10% of vectors named vector2
             {
                 let id_tracker = segment.id_tracker.clone();
-                let vector2_data = segment.vector_data.get_mut("vector2").unwrap();
+                let vector2_data = segment.vector_data.get_mut(VECTOR2_NAME).unwrap();
                 let mut vector2_storage = vector2_data.vector_storage.borrow_mut();
 
                 let vector2_vecs_to_delete = id_tracker

@@ -12,6 +12,8 @@ use crate::data_types::vectors::VectorStructInternal;
 #[cfg(feature = "testing")]
 use crate::entry::entry_point::SegmentEntry;
 #[cfg(feature = "testing")]
+use crate::types::VectorName;
+#[cfg(feature = "testing")]
 use crate::types::{Filter, SearchParams};
 use crate::types::{ScoredPoint, WithPayload, WithVector};
 
@@ -94,7 +96,7 @@ impl Segment {
     #[cfg(feature = "testing")]
     pub fn search(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,

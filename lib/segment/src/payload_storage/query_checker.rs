@@ -17,7 +17,7 @@ use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{ConditionChecker, PayloadStorage};
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, MinShould,
-    OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorName,
+    OwnedPayloadRef, Payload, PayloadContainer, PayloadKeyType, VectorNameBuf,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
@@ -115,7 +115,7 @@ where
 pub fn check_payload<'a, R>(
     get_payload: Box<dyn Fn() -> OwnedPayloadRef<'a> + 'a>,
     id_tracker: Option<&IdTrackerSS>,
-    vector_storages: &HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
+    vector_storages: &HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     query: &Filter,
     point_id: PointOffsetType,
     field_indexes: &HashMap<PayloadKeyType, R>,
@@ -226,7 +226,7 @@ where
 pub struct SimpleConditionChecker {
     payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
     id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-    vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
+    vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     empty_payload: Payload,
 }
 
@@ -235,7 +235,7 @@ impl SimpleConditionChecker {
     pub fn new(
         payload_storage: Arc<AtomicRefCell<PayloadStorageEnum>>,
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
-        vector_storages: HashMap<VectorName, Arc<AtomicRefCell<VectorStorageEnum>>>,
+        vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
     ) -> Self {
         SimpleConditionChecker {
             payload_storage,

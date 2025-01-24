@@ -3,11 +3,12 @@ use std::fmt::Debug;
 use segment::data_types::vectors::{
     DenseVector, Named, NamedQuery, NamedVectorStruct, VectorInternal,
 };
+use segment::types::VectorName;
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::SparseVector;
 
 impl QueryEnum {
-    pub fn get_vector_name(&self) -> &str {
+    pub fn get_vector_name(&self) -> &VectorName {
         match self {
             QueryEnum::Nearest(vector) => vector.get_name(),
             QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
@@ -26,7 +27,7 @@ impl QueryEnum {
         }
     }
 
-    pub fn iterate_sparse(&self, mut f: impl FnMut(&str, &SparseVector)) {
+    pub fn iterate_sparse(&self, mut f: impl FnMut(&VectorName, &SparseVector)) {
         match self {
             QueryEnum::Nearest(vector) => match vector {
                 NamedVectorStruct::Sparse(named_sparse_vector) => {

@@ -141,8 +141,8 @@ fn test_missed_vector_name() {
             7,
             1.into(),
             NamedVectors::from_pairs([
-                ("vector2".to_owned(), vec![10.]),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ("vector2".into(), vec![10.]),
+                ("vector3".into(), vec![5., 6., 7., 8.]),
             ]),
             &hw_counter,
         )
@@ -154,8 +154,8 @@ fn test_missed_vector_name() {
             8,
             6.into(),
             NamedVectors::from_pairs([
-                ("vector2".to_owned(), vec![10.]),
-                ("vector3".to_owned(), vec![5., 6., 7., 8.]),
+                ("vector2".into(), vec![10.]),
+                ("vector3".into(), vec![5., 6., 7., 8.]),
             ]),
             &hw_counter,
         )
@@ -174,10 +174,10 @@ fn test_vector_name_not_exists() {
         6,
         6.into(),
         NamedVectors::from_pairs([
-            ("vector1".to_owned(), vec![5., 6., 7., 8.]),
-            ("vector2".to_owned(), vec![10.]),
-            ("vector3".to_owned(), vec![5., 6., 7., 8.]),
-            ("vector4".to_owned(), vec![5., 6., 7., 8.]),
+            ("vector1".into(), vec![5., 6., 7., 8.]),
+            ("vector2".into(), vec![10.]),
+            ("vector3".into(), vec![5., 6., 7., 8.]),
+            ("vector4".into(), vec![5., 6., 7., 8.]),
         ]),
         &hw_counter,
     );

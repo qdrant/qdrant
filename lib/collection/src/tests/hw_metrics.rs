@@ -5,7 +5,9 @@ use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::cpu::CpuBudget;
 use rand::rngs::ThreadRng;
 use rand::{thread_rng, RngCore};
-use segment::data_types::vectors::{NamedVector, NamedVectorStruct, VectorStructInternal};
+use segment::data_types::vectors::{
+    NamedVector, NamedVectorStruct, VectorStructInternal, DEFAULT_VECTOR_NAME,
+};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
@@ -59,7 +61,7 @@ async fn test_hw_metrics_cancellation() {
     let req = CoreSearchRequestBatch {
         searches: vec![CoreSearchRequest {
             query: QueryEnum::Nearest(NamedVectorStruct::Dense(NamedVector {
-                name: "".to_string(),
+                name: DEFAULT_VECTOR_NAME.to_owned(),
                 vector: rand_vector(512, &mut rand),
             })),
             filter: None,

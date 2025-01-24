@@ -77,7 +77,7 @@ pub async fn convert_query_point_groups_from_grpc(
     let request = CollectionQueryGroupsRequest {
         prefetch,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter: filter.map(TryFrom::try_from).transpose()?,
         score_threshold,
         with_vector: with_vectors
@@ -154,7 +154,7 @@ pub async fn convert_query_points_from_grpc(
     Ok(CollectionQueryRequest {
         prefetch,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter: filter.map(TryFrom::try_from).transpose()?,
         score_threshold,
         limit: limit
@@ -202,7 +202,7 @@ fn convert_prefetch_with_inferred(
     Ok(CollectionPrefetch {
         prefetch: nested_prefetches,
         query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_string()),
+        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter: filter.map(TryFrom::try_from).transpose()?,
         score_threshold,
         limit: limit

@@ -23,7 +23,7 @@ use segment::telemetry::SegmentTelemetry;
 use segment::types::{
     Condition, Filter, HasIdCondition, Payload, PayloadFieldSchema, PayloadKeyType,
     PayloadKeyTypeRef, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo,
-    SegmentType, SeqNumberType, SnapshotFormat, WithPayload, WithVector,
+    SegmentType, SeqNumberType, SnapshotFormat, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
@@ -324,7 +324,7 @@ impl ProxySegment {
     #[allow(clippy::too_many_arguments)]
     pub fn search(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         vector: &QueryVector,
         with_payload: &WithPayload,
         with_vector: &WithVector,
@@ -368,7 +368,7 @@ impl SegmentEntry for ProxySegment {
 
     fn search_batch(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         vectors: &[&QueryVector],
         with_payload: &WithPayload,
         with_vector: &WithVector,
@@ -535,7 +535,7 @@ impl SegmentEntry for ProxySegment {
         &mut self,
         op_num: SeqNumberType,
         point_id: PointIdType,
-        vector_name: &str,
+        vector_name: &VectorName,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         self.move_if_exists(op_num, point_id, hw_counter)?;
@@ -605,7 +605,7 @@ impl SegmentEntry for ProxySegment {
 
     fn vector(
         &self,
-        vector_name: &str,
+        vector_name: &VectorName,
         point_id: PointIdType,
     ) -> OperationResult<Option<VectorInternal>> {
         return if self.deleted_points.read().contains_key(&point_id) {
@@ -892,7 +892,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().deleted_point_count()
     }
 
-    fn available_vectors_size_in_bytes(&self, vector_name: &str) -> OperationResult<usize> {
+    fn available_vectors_size_in_bytes(&self, vector_name: &VectorName) -> OperationResult<usize> {
         let wrapped_segment = self.wrapped_segment.get();
         let wrapped_segment_guard = wrapped_segment.read();
         let wrapped_size = wrapped_segment_guard.available_vectors_size_in_bytes(vector_name)?;
@@ -1222,7 +1222,7 @@ impl SegmentEntry for ProxySegment {
         Ok(deleted_points)
     }
 
-    fn vector_names(&self) -> HashSet<String> {
+    fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.write_segment.get().read().vector_names()
     }
 

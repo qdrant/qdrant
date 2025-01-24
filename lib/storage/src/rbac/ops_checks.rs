@@ -767,10 +767,10 @@ mod tests_ops {
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: Some(WithVector::Bool(true)),
             score_threshold: Some(42.0),
-            using: Some(UsingVector::Name("vector".to_string())),
+            using: Some(UsingVector::Name("vector".into())),
             lookup_from: Some(LookupLocation {
                 collection: "col2".to_string(),
-                vector: Some("vector".to_string()),
+                vector: Some("vector".into()),
                 shard_key: None,
             }),
         };
@@ -1006,10 +1006,10 @@ mod tests_ops {
             offset: Some(100),
             with_payload: Some(WithPayloadInterface::Bool(true)),
             with_vector: Some(WithVector::Bool(true)),
-            using: Some(UsingVector::Name("vector".to_string())),
+            using: Some(UsingVector::Name("vector".into())),
             lookup_from: Some(LookupLocation {
                 collection: "col2".to_string(),
-                vector: Some("vector".to_string()),
+                vector: Some("vector".into()),
                 shard_key: None,
             }),
         };
@@ -1257,7 +1257,7 @@ mod tests_ops {
                             points: vec![ExtendedPointId::NumId(12345)],
                             shard_key: None,
                         },
-                        vec!["vector".to_string()],
+                        vec!["vector".into()],
                     ));
                 check_collection_update_operations_delete_vectors(&op);
             }
@@ -1265,7 +1265,7 @@ mod tests_ops {
                 let op = CollectionUpdateOperations::VectorOperation(
                     VectorOperations::DeleteVectorsByFilter(
                         make_filter_from_ids(vec![ExtendedPointId::NumId(12345)]),
-                        vec!["vector".to_string()],
+                        vec!["vector".into()],
                     ),
                 );
                 check_collection_update_operations_delete_vectors(&op);
@@ -1300,7 +1300,7 @@ mod tests_ops {
                     VectorOperations::DeleteVectorsByFilter(
                         make_filter_from_ids(vec![ExtendedPointId::NumId(12345)])
                             .merge_owned(PayloadConstraint::new_test("col").to_filter()),
-                        vec!["vector".to_string()],
+                        vec!["vector".into()],
                     ),
                 );
             },
