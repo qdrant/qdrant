@@ -534,6 +534,8 @@ fn test_is_empty_conditions() {
         },
     }));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let estimation_struct = test_segments
         .struct_segment
         .payload_index
@@ -550,7 +552,7 @@ fn test_is_empty_conditions() {
         .plain_segment
         .payload_index
         .borrow()
-        .query_points(&filter);
+        .query_points(&filter, &hw_counter);
 
     let real_number = plain_result.len();
 
@@ -558,7 +560,7 @@ fn test_is_empty_conditions() {
         .struct_segment
         .payload_index
         .borrow()
-        .query_points(&filter);
+        .query_points(&filter, &hw_counter);
 
     assert_eq!(plain_result, struct_result);
 
@@ -637,8 +639,10 @@ fn test_cardinality_estimation() {
         .borrow()
         .estimate_cardinality(&filter);
 
+    let hw_counter = HardwareCounterCell::new();
+
     let payload_index = test_segments.struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter);
+    let filter_context = payload_index.filter_context(&filter, &hw_counter);
     let exact = test_segments
         .struct_segment
         .id_tracker
@@ -693,8 +697,10 @@ fn test_root_nested_array_filter_cardinality_estimation() {
         o => panic!("unexpected primary clause: {o:?}"),
     }
 
+    let hw_counter = HardwareCounterCell::new();
+
     let payload_index = struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter);
+    let filter_context = payload_index.filter_context(&filter, &hw_counter);
     let exact = struct_segment
         .id_tracker
         .borrow()
@@ -756,8 +762,10 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
         o => panic!("unexpected primary clause: {o:?}"),
     }
 
+    let hw_counter = HardwareCounterCell::new();
+
     let payload_index = struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter);
+    let filter_context = payload_index.filter_context(&filter, &hw_counter);
     let exact = struct_segment
         .id_tracker
         .borrow()
@@ -1163,8 +1171,10 @@ fn test_any_matcher_cardinality_estimation() {
         }
     }
 
+    let hw_counter = HardwareCounterCell::new();
+
     let payload_index = test_segments.struct_segment.payload_index.borrow();
-    let filter_context = payload_index.filter_context(&filter);
+    let filter_context = payload_index.filter_context(&filter, &hw_counter);
     let exact = test_segments
         .struct_segment
         .id_tracker
@@ -1187,6 +1197,8 @@ fn validate_facet_result(
     facet_hits: HashMap<FacetValue, usize>,
     filter: Option<Filter>,
 ) {
+    let hw_counter = HardwareCounterCell::new();
+
     for (value, count) in facet_hits.iter() {
         // Compare against exact count
         let value = ValueVariants::from(value.clone());
@@ -1198,7 +1210,13 @@ fn validate_facet_result(
         let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
 
         let exact = segment
-            .read_filtered(None, None, count_filter.as_ref(), &Default::default())
+            .read_filtered(
+                None,
+                None,
+                count_filter.as_ref(),
+                &Default::default(),
+                &hw_counter,
+            )
             .len();
 
         assert_eq!(*count, exact);
@@ -1221,16 +1239,18 @@ fn test_keyword_facet() {
         exact,
     };
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Plain segment should fail, as it does not have a keyword index
     assert!(test_segments
         .plain_segment
-        .facet(&request, &Default::default())
+        .facet(&request, &Default::default(), &hw_counter)
         .is_err());
 
     // Struct segment
     let facet_hits = test_segments
         .struct_segment
-        .facet(&request, &Default::default())
+        .facet(&request, &Default::default(), &hw_counter)
         .unwrap();
 
     validate_facet_result(&test_segments.struct_segment, facet_hits, None);
@@ -1238,7 +1258,7 @@ fn test_keyword_facet() {
     // Mmap segment
     let facet_hits = test_segments
         .mmap_segment
-        .facet(&request, &Default::default())
+        .facet(&request, &Default::default(), &hw_counter)
         .unwrap();
 
     validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
@@ -1256,7 +1276,7 @@ fn test_keyword_facet() {
     // Struct segment
     let facet_hits = test_segments
         .struct_segment
-        .facet(&request, &Default::default())
+        .facet(&request, &Default::default(), &hw_counter)
         .unwrap();
 
     validate_facet_result(
@@ -1268,7 +1288,7 @@ fn test_keyword_facet() {
     // Mmap segment
     let facet_hits = test_segments
         .mmap_segment
-        .facet(&request, &Default::default())
+        .facet(&request, &Default::default(), &hw_counter)
         .unwrap();
 
     validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter));

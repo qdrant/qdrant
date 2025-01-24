@@ -695,13 +695,14 @@ impl SegmentEntry for ProxySegment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_filtered(offset, limit, filter, is_stopped)
+                .read_filtered(offset, limit, filter, is_stopped, hw_counter)
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -712,13 +713,14 @@ impl SegmentEntry for ProxySegment {
                 limit,
                 Some(&wrapped_filter),
                 is_stopped,
+                hw_counter,
             )
         };
         let mut write_segment_points = self
             .write_segment
             .get()
             .read()
-            .read_filtered(offset, limit, filter, is_stopped);
+            .read_filtered(offset, limit, filter, is_stopped, hw_counter);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points.dedup();
@@ -731,13 +733,14 @@ impl SegmentEntry for ProxySegment {
         filter: Option<&'a Filter>,
         order_by: &'a segment::data_types::order_by::OrderBy,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_ordered_filtered(limit, filter, order_by, is_stopped)?
+                .read_ordered_filtered(limit, filter, order_by, is_stopped, hw_counter)?
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -748,13 +751,14 @@ impl SegmentEntry for ProxySegment {
                 Some(&wrapped_filter),
                 order_by,
                 is_stopped,
+                hw_counter,
             )?
         };
         let mut write_segment_points = self
             .write_segment
             .get()
             .read()
-            .read_ordered_filtered(limit, filter, order_by, is_stopped)?;
+            .read_ordered_filtered(limit, filter, order_by, is_stopped, hw_counter)?;
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points.dedup();
@@ -766,13 +770,14 @@ impl SegmentEntry for ProxySegment {
         limit: usize,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         let deleted_points = self.deleted_points.read();
         let mut read_points = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .read_random_filtered(limit, filter, is_stopped)
+                .read_random_filtered(limit, filter, is_stopped, hw_counter)
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 filter,
@@ -782,13 +787,14 @@ impl SegmentEntry for ProxySegment {
                 limit,
                 Some(&wrapped_filter),
                 is_stopped,
+                hw_counter,
             )
         };
         let mut write_segment_points = self
             .write_segment
             .get()
             .read()
-            .read_random_filtered(limit, filter, is_stopped);
+            .read_random_filtered(limit, filter, is_stopped, hw_counter);
         read_points.append(&mut write_segment_points);
         read_points.sort_unstable();
         read_points.dedup();
@@ -814,18 +820,19 @@ impl SegmentEntry for ProxySegment {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<BTreeSet<FacetValue>> {
         let mut values = self
             .wrapped_segment
             .get()
             .read()
-            .unique_values(key, filter, is_stopped)?;
+            .unique_values(key, filter, is_stopped, hw_counter)?;
 
         values.extend(
             self.write_segment
                 .get()
                 .read()
-                .unique_values(key, filter, is_stopped)?,
+                .unique_values(key, filter, is_stopped, hw_counter)?,
         );
 
         Ok(values)
@@ -835,13 +842,14 @@ impl SegmentEntry for ProxySegment {
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
         let deleted_points = self.deleted_points.read();
         let mut hits = if deleted_points.is_empty() {
             self.wrapped_segment
                 .get()
                 .read()
-                .facet(request, is_stopped)?
+                .facet(request, is_stopped, hw_counter)?
         } else {
             let wrapped_filter = Self::add_deleted_points_condition_to_filter(
                 request.filter.as_ref(),
@@ -854,10 +862,14 @@ impl SegmentEntry for ProxySegment {
             self.wrapped_segment
                 .get()
                 .read()
-                .facet(&new_request, is_stopped)?
+                .facet(&new_request, is_stopped, hw_counter)?
         };
 
-        let write_segment_hits = self.write_segment.get().read().facet(request, is_stopped)?;
+        let write_segment_hits = self
+            .write_segment
+            .get()
+            .read()
+            .facet(request, is_stopped, hw_counter)?;
 
         write_segment_hits
             .into_iter()
@@ -1179,11 +1191,13 @@ impl SegmentEntry for ProxySegment {
         let mut deleted_points = 0;
         // we don’t want to cancel this filtered read
         let is_stopped = AtomicBool::new(false);
-        let points_to_delete =
-            self.wrapped_segment
-                .get()
-                .read()
-                .read_filtered(None, None, Some(filter), &is_stopped);
+        let points_to_delete = self.wrapped_segment.get().read().read_filtered(
+            None,
+            None,
+            Some(filter),
+            &is_stopped,
+            hw_counter,
+        );
         let points_offsets_to_delete = match &self.wrapped_segment {
             LockedSegment::Original(raw_segment) => {
                 let raw_segment_read = raw_segment.read();
@@ -1608,22 +1622,27 @@ mod tests {
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let original_segment = LockedSegment::new(build_segment_1(dir.path()));
 
+        let hw_counter = HardwareCounterCell::new();
+
         let filter = Filter::new_must_not(Condition::Field(FieldCondition::new_match(
             "color".parse().unwrap(),
             "blue".to_string().into(),
         )));
 
-        let original_points =
-            original_segment
-                .get()
-                .read()
-                .read_filtered(None, Some(100), None, &is_stopped);
+        let original_points = original_segment.get().read().read_filtered(
+            None,
+            Some(100),
+            None,
+            &is_stopped,
+            &hw_counter,
+        );
 
         let original_points_filtered = original_segment.get().read().read_filtered(
             None,
             Some(100),
             Some(&filter),
             &is_stopped,
+            &hw_counter,
         );
 
         let mut proxy_segment = wrap_proxy(&dir, original_segment);
@@ -1634,9 +1653,10 @@ mod tests {
             .delete_point(100, 2.into(), &hw_counter)
             .unwrap();
 
-        let proxy_res = proxy_segment.read_filtered(None, Some(100), None, &is_stopped);
+        let proxy_res =
+            proxy_segment.read_filtered(None, Some(100), None, &is_stopped, &hw_counter);
         let proxy_res_filtered =
-            proxy_segment.read_filtered(None, Some(100), Some(&filter), &is_stopped);
+            proxy_segment.read_filtered(None, Some(100), Some(&filter), &is_stopped, &hw_counter);
 
         assert_eq!(original_points_filtered.len() - 1, proxy_res_filtered.len());
         assert_eq!(original_points.len() - 1, proxy_res.len());

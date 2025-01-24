@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
@@ -25,13 +26,15 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut result_size = 0;
     let mut query_count = 0;
 
     group.bench_function("conditional-search-query-points", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            result_size += plain_index.query_points(&filter).len();
+            result_size += plain_index.query_points(&filter, &hw_counter).len();
             query_count += 1;
         })
     });
@@ -49,7 +52,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
     group.bench_function("conditional-search-query-points-large", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 1);
-            result_size += plain_index.query_points(&filter).len();
+            result_size += plain_index.query_points(&filter, &hw_counter).len();
             query_count += 1;
         })
     });
@@ -69,8 +72,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = plain_index.filter_context(&filter);
-
+            let context = plain_index.filter_context(&filter, &hw_counter);
             let filtered_sample = sample
                 .into_iter()
                 .filter(|id| context.check(*id))
@@ -96,7 +98,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = plain_index.filter_context(&filter);
+            let context = plain_index.filter_context(&filter, &hw_counter);
             let filtered_sample = sample
                 .into_iter()
                 .filter(|id| context.check(*id))
@@ -112,7 +114,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = plain_index.filter_context(&filter);
+            let context = plain_index.filter_context(&filter, &hw_counter);
             let filtered_sample = sample
                 .into_iter()
                 .filter(|id| context.check(*id))
@@ -131,6 +133,8 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
 
     let seed = 42;
 
+    let hw_counter = HardwareCounterCell::new();
+
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
@@ -148,7 +152,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     group.bench_function("struct-conditional-search-query-points", |b| {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
-            result_size += struct_index.query_points(&filter).len();
+            result_size += struct_index.query_points(&filter, &hw_counter).len();
             query_count += 1;
         })
     });
@@ -168,7 +172,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
             let sample = (0..CHECK_SAMPLE_SIZE)
                 .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
-            let context = struct_index.filter_context(&filter);
+            let context = struct_index.filter_context(&filter, &hw_counter);
 
             let filtered_sample = sample
                 .into_iter()

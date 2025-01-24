@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
@@ -43,7 +44,12 @@ async fn test_delete_from_indexed_payload() {
 
     let upsert_ops = upsert_operation();
 
-    shard.update(upsert_ops.into(), true).await.unwrap();
+    let hw_acc = HwMeasurementAcc::new();
+
+    shard
+        .update(upsert_ops.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     let index_op = create_payload_index_operation();
 
@@ -55,10 +61,16 @@ async fn test_delete_from_indexed_payload() {
             );
         })
         .unwrap();
-    shard.update(index_op.into(), true).await.unwrap();
+    shard
+        .update(index_op.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     let delete_point_op = delete_point_operation(4);
-    shard.update(delete_point_op.into(), true).await.unwrap();
+    shard
+        .update(delete_point_op.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     let info = shard.info().await.unwrap();
     eprintln!("info = {:#?}", info.payload_schema);
@@ -89,7 +101,10 @@ async fn test_delete_from_indexed_payload() {
 
     eprintln!("dropping point 5");
     let delete_point_op = delete_point_operation(5);
-    shard.update(delete_point_op.into(), true).await.unwrap();
+    shard
+        .update(delete_point_op.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     drop(shard);
 

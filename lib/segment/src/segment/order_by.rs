@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use itertools::Either;
 
@@ -18,6 +19,7 @@ impl Segment {
         limit: Option<usize>,
         condition: &Filter,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
@@ -35,7 +37,7 @@ impl Segment {
         let start_from = order_by.start_from();
 
         let values_ids_iterator = payload_index
-            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation)
+            .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter)
             .check_stop(|| is_stopped.load(Ordering::Relaxed))
             .flat_map(|internal_id| {
                 // Repeat a point for as many values as it has
@@ -82,6 +84,7 @@ impl Segment {
         limit: Option<usize>,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         let payload_index = self.payload_index.borrow();
 
@@ -105,7 +108,7 @@ impl Segment {
         let filtered_iter = match filter {
             None => Either::Left(directed_range_iter),
             Some(filter) => {
-                let filter_context = payload_index.filter_context(filter);
+                let filter_context = payload_index.filter_context(filter, hw_counter);
 
                 Either::Right(
                     directed_range_iter

@@ -16,6 +16,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuBudget;
 use common::rate_limiting::RateLimiter;
@@ -952,9 +953,10 @@ impl LocalShard {
         &'a self,
         filter: Option<&'a Filter>,
         runtime_handle: &Handle,
+        hw_counter: HwMeasurementAcc,
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
-        SegmentsSearcher::read_filtered(segments, filter, runtime_handle).await
+        SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter).await
     }
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {

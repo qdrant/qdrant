@@ -330,14 +330,17 @@ impl SegmentEntry for Segment {
         limit: Option<usize>,
         filter: Option<&'a Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         match filter {
             None => self.read_by_id_stream(offset, limit),
             Some(condition) => {
                 if self.should_pre_filter(condition, limit) {
-                    self.filtered_read_by_index(offset, limit, condition, is_stopped)
+                    self.filtered_read_by_index(offset, limit, condition, is_stopped, hw_counter)
                 } else {
-                    self.filtered_read_by_id_stream(offset, limit, condition, is_stopped)
+                    self.filtered_read_by_id_stream(
+                        offset, limit, condition, is_stopped, hw_counter,
+                    )
                 }
             }
         }
@@ -349,14 +352,25 @@ impl SegmentEntry for Segment {
         filter: Option<&'a Filter>,
         order_by: &'a OrderBy,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<(OrderValue, PointIdType)>> {
         match filter {
-            None => self.filtered_read_by_value_stream(order_by, limit, None, is_stopped),
+            None => {
+                self.filtered_read_by_value_stream(order_by, limit, None, is_stopped, hw_counter)
+            }
             Some(filter) => {
                 if self.should_pre_filter(filter, limit) {
-                    self.filtered_read_by_index_ordered(order_by, limit, filter, is_stopped)
+                    self.filtered_read_by_index_ordered(
+                        order_by, limit, filter, is_stopped, hw_counter,
+                    )
                 } else {
-                    self.filtered_read_by_value_stream(order_by, limit, Some(filter), is_stopped)
+                    self.filtered_read_by_value_stream(
+                        order_by,
+                        limit,
+                        Some(filter),
+                        is_stopped,
+                        hw_counter,
+                    )
                 }
             }
         }
@@ -367,14 +381,15 @@ impl SegmentEntry for Segment {
         limit: usize,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Vec<PointIdType> {
         match filter {
             None => self.read_by_random_id(limit),
             Some(condition) => {
                 if self.should_pre_filter(condition, Some(limit)) {
-                    self.filtered_read_by_index_shuffled(limit, condition, is_stopped)
+                    self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)
                 } else {
-                    self.filtered_read_by_random_stream(limit, condition, is_stopped)
+                    self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)
                 }
             }
         }
@@ -438,16 +453,18 @@ impl SegmentEntry for Segment {
         key: &JsonPath,
         filter: Option<&Filter>,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<std::collections::BTreeSet<FacetValue>> {
-        self.facet_values(key, filter, is_stopped)
+        self.facet_values(key, filter, is_stopped, hw_counter)
     }
 
     fn facet(
         &self,
         request: &FacetParams,
         is_stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<HashMap<FacetValue, usize>> {
-        self.approximate_facet(request, is_stopped)
+        self.approximate_facet(request, is_stopped, hw_counter)
     }
 
     fn segment_type(&self) -> SegmentType {
@@ -775,7 +792,7 @@ impl SegmentEntry for Segment {
     ) -> OperationResult<usize> {
         let mut deleted_points = 0;
         let is_stopped = AtomicBool::new(false);
-        for point_id in self.read_filtered(None, None, Some(filter), &is_stopped) {
+        for point_id in self.read_filtered(None, None, Some(filter), &is_stopped, hw_counter) {
             deleted_points += usize::from(self.delete_point(op_num, point_id, hw_counter)?);
         }
 

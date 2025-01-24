@@ -37,11 +37,12 @@ impl TableOfContent {
         request: FacetParams,
         shard_selection: ShardSelectorInternal,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<FacetResponse> {
         let collection = self.get_collection_unchecked(collection_name).await?;
 
         let res = collection
-            .facet(request, shard_selection, None, timeout)
+            .facet(request, shard_selection, None, timeout, hw_measurement_acc)
             .await?;
 
         Ok(res)

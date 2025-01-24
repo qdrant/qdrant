@@ -69,12 +69,20 @@ pub trait PayloadIndex {
     /// Return list of all point ids, which satisfy filtering criteria
     ///
     /// A best estimation of the number of available points should be given.
-    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType>;
+    fn query_points(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointOffsetType>;
 
     /// Return number of points, indexed by this field
     fn indexed_points(&self, field: PayloadKeyTypeRef) -> usize;
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a>;
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn FilterContext + 'a>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index

@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -21,11 +22,13 @@ fn test_filtering_context_consistency() {
     let plain_index = create_plain_payload_index(dir.path(), NUM_POINTS, seed);
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
+    let hw_counter = HardwareCounterCell::new();
+
     for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rng, 3);
 
-        let plain_filter_context = plain_index.filter_context(&filter);
-        let struct_filter_context = struct_index.filter_context(&filter);
+        let plain_filter_context = plain_index.filter_context(&filter, &hw_counter);
+        let struct_filter_context = struct_index.filter_context(&filter, &hw_counter);
 
         let plain_result = (0..NUM_POINTS)
             .filter(|point_id| plain_filter_context.check(*point_id as PointOffsetType))

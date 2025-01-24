@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use match_converter::get_match_checkers;
 use serde_json::Value;
@@ -25,6 +26,7 @@ impl StructPayloadIndex {
         &'a self,
         condition: &'a Condition,
         payload_provider: PayloadProvider,
+        hw_counter: &HardwareCounterCell,
     ) -> ConditionCheckerFn<'a> {
         let id_tracker = self.id_tracker.borrow();
         let field_indexes = &self.field_indexes;
@@ -37,10 +39,15 @@ impl StructPayloadIndex {
                         .find_map(|index| field_condition_index(index, field_condition))
                 })
                 .unwrap_or_else(|| {
+                    let hw = hw_counter.fork();
                     Box::new(move |point_id| {
-                        payload_provider.with_payload(point_id, |payload| {
-                            check_field_condition(field_condition, &payload, field_indexes)
-                        })
+                        payload_provider.with_payload(
+                            point_id,
+                            |payload| {
+                                check_field_condition(field_condition, &payload, field_indexes)
+                            },
+                            &hw,
+                        )
                     })
                 }),
             // We can use index for `is_empty` condition effectively only when it is not empty.
@@ -50,10 +57,13 @@ impl StructPayloadIndex {
                     .get(&is_empty.is_empty.key)
                     .and_then(|indexes| indexes.first());
 
+                let hw = hw_counter.fork();
                 let fallback = Box::new(move |point_id| {
-                    payload_provider.with_payload(point_id, |payload| {
-                        check_is_empty_condition(is_empty, &payload)
-                    })
+                    payload_provider.with_payload(
+                        point_id,
+                        |payload| check_is_empty_condition(is_empty, &payload),
+                        &hw,
+                    )
                 });
 
                 match first_field_index {
@@ -62,11 +72,16 @@ impl StructPayloadIndex {
                 }
             }
 
-            Condition::IsNull(is_null) => Box::new(move |point_id| {
-                payload_provider.with_payload(point_id, |payload| {
-                    check_is_null_condition(is_null, &payload)
+            Condition::IsNull(is_null) => {
+                let hw = hw_counter.fork();
+                Box::new(move |point_id| {
+                    payload_provider.with_payload(
+                        point_id,
+                        |payload| check_is_null_condition(is_null, &payload),
+                        &hw,
+                    )
                 })
-            }),
+            }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
             Condition::HasId(has_id) => {
                 let segment_ids: HashSet<_> = has_id
@@ -108,31 +123,36 @@ impl StructPayloadIndex {
 
                 let nested_indexes = select_nested_indexes(&nested_path, field_indexes);
 
+                let hw = hw_counter.fork();
                 Box::new(move |point_id| {
-                    payload_provider.with_payload(point_id, |payload| {
-                        let field_values = payload.get_value(&nested_path);
+                    payload_provider.with_payload(
+                        point_id,
+                        |payload| {
+                            let field_values = payload.get_value(&nested_path);
 
-                        for value in field_values {
-                            if let Value::Object(object) = value {
-                                let get_payload = || OwnedPayloadRef::from(object);
-                                if check_payload(
-                                    Box::new(get_payload),
-                                    // None because has_id in nested is not supported. So retrieving
-                                    // IDs through the tracker would always return None.
-                                    None,
-                                    // Same as above, nested conditions don't support has_vector.
-                                    &HashMap::new(),
-                                    &nested.nested.filter,
-                                    point_id,
-                                    &nested_indexes,
-                                ) {
-                                    // If at least one nested object matches, return true
-                                    return true;
+                            for value in field_values {
+                                if let Value::Object(object) = value {
+                                    let get_payload = || OwnedPayloadRef::from(object);
+                                    if check_payload(
+                                        Box::new(get_payload),
+                                        // None because has_id in nested is not supported. So retrieving
+                                        // IDs through the tracker would always return None.
+                                        None,
+                                        // Same as above, nested conditions don't support has_vector.
+                                        &HashMap::new(),
+                                        &nested.nested.filter,
+                                        point_id,
+                                        &nested_indexes,
+                                    ) {
+                                        // If at least one nested object matches, return true
+                                        return true;
+                                    }
                                 }
                             }
-                        }
-                        false
-                    })
+                            false
+                        },
+                        &hw,
+                    )
                 })
             }
             Condition::CustomIdChecker(cond) => {

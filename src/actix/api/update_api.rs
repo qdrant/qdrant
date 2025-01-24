@@ -16,13 +16,16 @@ use validator::Validate;
 
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response, process_response_error};
+use crate::actix::helpers::{
+    get_request_hardware_counter, process_response, process_response_error,
+};
 use crate::common::inference::InferenceToken;
 use crate::common::points::{
     do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
     do_delete_points, do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors,
     do_upsert_points, CreateFieldIndex, UpdateOperations,
 };
+use crate::settings::ServiceConfig;
 
 #[derive(Deserialize, Validate)]
 struct FieldPath {
@@ -42,6 +45,7 @@ async fn upsert_points(
     collection: Path<CollectionPath>,
     operation: Json<PointInsertOperations>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
@@ -55,7 +59,15 @@ async fn upsert_points(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    helpers::time(do_upsert_points(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure upsertion io
+    let res = do_upsert_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -65,8 +77,10 @@ async fn upsert_points(
         ordering,
         access,
         inference_token,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/delete")]
@@ -75,6 +89,7 @@ async fn delete_points(
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
@@ -88,7 +103,15 @@ async fn delete_points(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    helpers::time(do_delete_points(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure io of deletion
+    let res = do_delete_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -98,8 +121,10 @@ async fn delete_points(
         ordering,
         access,
         inference_token,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[put("/collections/{name}/points/vectors")]
@@ -108,6 +133,7 @@ async fn update_vectors(
     collection: Path<CollectionPath>,
     operation: Json<UpdateVectors>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
@@ -121,7 +147,15 @@ async fn update_vectors(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    helpers::time(do_update_vectors(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure update io
+    let res = do_update_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -131,8 +165,10 @@ async fn update_vectors(
         ordering,
         access,
         inference_token,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/vectors/delete")]
@@ -141,6 +177,7 @@ async fn delete_vectors(
     collection: Path<CollectionPath>,
     operation: Json<DeleteVectors>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
@@ -155,6 +192,14 @@ async fn delete_vectors(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure vector deletion io
     let response = do_delete_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -166,7 +211,8 @@ async fn delete_vectors(
         access,
     )
     .await;
-    process_response(response, timing, None)
+
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/payload")]
@@ -175,6 +221,7 @@ async fn set_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -188,7 +235,15 @@ async fn set_payload(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    helpers::time(do_set_payload(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure upsertion io
+    let res = do_set_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -197,8 +252,10 @@ async fn set_payload(
         wait,
         ordering,
         access,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[put("/collections/{name}/points/payload")]
@@ -207,6 +264,7 @@ async fn overwrite_payload(
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -218,7 +276,15 @@ async fn overwrite_payload(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    helpers::time(do_overwrite_payload(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure upsertion io
+    let res = do_overwrite_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -227,8 +293,10 @@ async fn overwrite_payload(
         wait,
         ordering,
         access,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/payload/delete")]
@@ -237,6 +305,7 @@ async fn delete_payload(
     collection: Path<CollectionPath>,
     operation: Json<DeletePayload>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -248,7 +317,15 @@ async fn delete_payload(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    helpers::time(do_delete_payload(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure upsertion io
+    let res = do_delete_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -257,8 +334,10 @@ async fn delete_payload(
         wait,
         ordering,
         access,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/payload/clear")]
@@ -267,6 +346,7 @@ async fn clear_payload(
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let operation = operation.into_inner();
@@ -279,7 +359,15 @@ async fn clear_payload(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    helpers::time(do_clear_payload(
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    // TODO(io_measurement): Measure upsertion io
+    let res = do_clear_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -288,8 +376,10 @@ async fn clear_payload(
         wait,
         ordering,
         access,
-    ))
-    .await
+    )
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/batch")]
@@ -298,6 +388,7 @@ async fn update_batch(
     collection: Path<CollectionPath>,
     operations: Json<UpdateOperations>,
     params: Query<UpdateParam>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
@@ -320,9 +411,18 @@ async fn update_batch(
         return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None);
     };
 
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+
+    let timing = Instant::now();
+
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
+    // TODO(io_measurement): Measure upsertion io
     let response = do_batch_update_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -335,8 +435,9 @@ async fn update_batch(
         inference_token,
     )
     .await;
-    process_response(response, timing, None)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
+
 #[put("/collections/{name}/index")]
 async fn create_field_index(
     dispatcher: web::Data<Dispatcher>,

@@ -536,8 +536,15 @@ impl HNSWIndex {
 
         let cardinality_estimation = payload_index.estimate_cardinality(&filter);
 
+        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
+
         let points_to_index: Vec<_> = payload_index
-            .iter_filtered_points(&filter, id_tracker, &cardinality_estimation)
+            .iter_filtered_points(
+                &filter,
+                id_tracker,
+                &cardinality_estimation,
+                &disposed_hw_counter,
+            )
             .filter(|&point_id| {
                 !deleted_bitslice
                     .get(point_id as usize)
@@ -802,6 +809,7 @@ impl HNSWIndex {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn search_with_graph(
         &self,
         vector: &QueryVector,
@@ -837,7 +845,9 @@ impl HNSWIndex {
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let filter_context = filter.map(|f| payload_index.filter_context(f));
+        let hw_counter = vector_query_context.hardware_counter();
+
+        let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
         let search_result =
@@ -962,7 +972,8 @@ impl HNSWIndex {
     ) -> OperationResult<Vec<Vec<ScoredPointOffset>>> {
         let payload_index = self.payload_index.borrow();
         // share filtered points for all query vectors
-        let filtered_points = payload_index.query_points(filter);
+        let filtered_points =
+            payload_index.query_points(filter, &vector_query_context.hardware_counter());
         vectors
             .iter()
             .map(|vector| {
@@ -1243,7 +1254,8 @@ impl VectorIndex for HNSWIndex {
                     );
                 }
 
-                let filter_context = payload_index.filter_context(query_filter);
+                let hw_counter = query_context.hardware_counter();
+                let filter_context = payload_index.filter_context(query_filter, &hw_counter);
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality
                 let id_tracker = self.id_tracker.borrow();

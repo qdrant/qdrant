@@ -161,6 +161,7 @@ impl ShardOperation for ProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we modify `self.changed_points`, we *have to* (?) execute `local_shard` update
         // to completion, so this method is not cancel safe.
@@ -178,7 +179,7 @@ impl ShardOperation for ProxyShard {
                 } else {
                     let runtime_handle = self.wrapped_shard.search_runtime.clone();
                     let points = local_shard
-                        .read_filtered(Some(filter), &runtime_handle)
+                        .read_filtered(Some(filter), &runtime_handle, hw_measurement_acc.clone())
                         .await?;
                     PointsOperationEffect::Some(points.into_iter().collect())
                 }
@@ -204,7 +205,9 @@ impl ShardOperation for ProxyShard {
 
             // Shard update is within a write lock scope, because we need a way to block the shard updates
             // during the transfer restart and finalization.
-            local_shard.update(operation, wait).await
+            local_shard
+                .update(operation, wait, hw_measurement_acc)
+                .await
         }
     }
 
@@ -313,10 +316,11 @@ impl ShardOperation for ProxyShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout)
+            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 }

@@ -25,8 +25,11 @@ use validator::Validate;
 use super::read_params::ReadParams;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, process_response_error};
+use crate::actix::helpers::{
+    get_request_hardware_counter, process_response, process_response_error,
+};
 use crate::common::points::do_get_points;
+use crate::settings::ServiceConfig;
 
 #[derive(Deserialize, Validate)]
 struct PointPath {
@@ -42,6 +45,7 @@ async fn do_get_point(
     read_consistency: Option<ReadConsistency>,
     timeout: Option<Duration>,
     access: Access,
+    hw_counter: HwMeasurementAcc,
 ) -> Result<Option<RecordInternal>, StorageError> {
     let request = PointRequestInternal {
         ids: vec![point_id],
@@ -58,7 +62,7 @@ async fn do_get_point(
         timeout,
         shard_selection,
         access,
-        HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
+        hw_counter,
     )
     .await
     .map(|points| points.into_iter().next())
@@ -70,6 +74,7 @@ async fn get_point(
     collection: Path<CollectionPath>,
     point: Path<PointPath>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
@@ -84,29 +89,38 @@ async fn get_point(
         Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
-    helpers::time(async move {
-        let point_id: PointIdType = point.id.parse().map_err(|_| StorageError::BadInput {
+    let Ok(point_id) = point.id.parse::<PointIdType>() else {
+        let err = StorageError::BadInput {
             description: format!("Can not recognize \"{}\" as point id", point.id),
-        })?;
-
-        let Some(record) = do_get_point(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            point_id,
-            params.consistency,
-            params.timeout(),
-            access,
-        )
-        .await?
-        else {
-            return Err(StorageError::NotFound {
-                description: format!("Point with id {point_id} does not exists!"),
-            });
         };
+        return process_response_error(err, Instant::now(), None);
+    };
 
-        Ok(api::rest::Record::from(record))
-    })
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let res = do_get_point(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        point_id,
+        params.consistency,
+        params.timeout(),
+        access,
+        request_hw_counter.get_counter(),
+    )
     .await
+    .and_then(|i| {
+        i.ok_or_else(|| StorageError::NotFound {
+            description: format!("Point with id {point_id} does not exists!"),
+        })
+    })
+    .map(api::rest::Record::from);
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points")]
@@ -115,6 +129,7 @@ async fn get_points(
     collection: Path<CollectionPath>,
     request: Json<PointRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let pass = match check_strict_mode_timeout(
@@ -139,25 +154,32 @@ async fn get_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    helpers::time(
-        do_get_points(
-            dispatcher.toc(&access, &pass),
-            &collection.name,
-            point_request,
-            params.consistency,
-            params.timeout(),
-            shard_selection,
-            access,
-            HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
-        )
-        .map_ok(|response| {
-            response
-                .into_iter()
-                .map(api::rest::Record::from)
-                .collect_vec()
-        }),
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let res = do_get_points(
+        dispatcher.toc(&access, &pass),
+        &collection.name,
+        point_request,
+        params.consistency,
+        params.timeout(),
+        shard_selection,
+        access,
+        request_hw_counter.get_counter(),
     )
-    .await
+    .map_ok(|response| {
+        response
+            .into_iter()
+            .map(api::rest::Record::from)
+            .collect_vec()
+    })
+    .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/scroll")]
@@ -166,6 +188,7 @@ async fn scroll_points(
     collection: Path<CollectionPath>,
     request: Json<ScrollRequest>,
     params: Query<ReadParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let ScrollRequest {
@@ -191,14 +214,25 @@ async fn scroll_points(
         Some(shard_keys) => ShardSelectorInternal::from(shard_keys),
     };
 
-    helpers::time(dispatcher.toc(&access, &pass).scroll(
-        &collection.name,
-        scroll_request,
-        params.consistency,
-        params.timeout(),
-        shard_selection,
-        access,
-        HwMeasurementAcc::disposable(), // TODO(io_measurement): implement!!
-    ))
-    .await
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+    );
+    let timing = Instant::now();
+
+    let res = dispatcher
+        .toc(&access, &pass)
+        .scroll(
+            &collection.name,
+            scroll_request,
+            params.consistency,
+            params.timeout(),
+            shard_selection,
+            access,
+            request_hw_counter.get_counter(),
+        )
+        .await;
+
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }

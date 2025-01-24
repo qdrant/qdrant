@@ -65,6 +65,7 @@ async fn facet(
             params.consistency,
             access,
             params.timeout(),
+            request_hw_counter.get_counter(),
         )
         .await
         .map(FacetResponse::from);
