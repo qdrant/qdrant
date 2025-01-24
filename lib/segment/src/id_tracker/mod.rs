@@ -27,6 +27,8 @@ pub struct MergedPointId {
 }
 
 /// Calls a closure for each unique point from multiple ID trackers.
+///
+/// Discard points that have no version.
 pub fn for_each_unique_point<'a>(
     id_trackers: impl Iterator<Item = &'a (impl IdTracker + ?Sized + 'a)>,
     mut f: impl FnMut(MergedPointId),
@@ -36,11 +38,15 @@ pub fn for_each_unique_point<'a>(
         .map(|(segment_index, id_tracker)| {
             id_tracker
                 .iter_from(None)
-                .map(move |(external_id, internal_id)| MergedPointId {
-                    external_id,
-                    tracker_index: segment_index,
-                    internal_id,
-                    version: id_tracker.internal_version(internal_id).unwrap_or(0),
+                .filter_map(move |(external_id, internal_id)| {
+                    let version = id_tracker.internal_version(internal_id);
+                    // a point without a version had an interrupted flush sequence and should be discarded
+                    version.map(|version| MergedPointId {
+                        external_id,
+                        tracker_index: segment_index,
+                        internal_id,
+                        version,
+                    })
                 })
         })
         .kmerge_by(|a, b| a.external_id < b.external_id);
