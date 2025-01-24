@@ -109,6 +109,10 @@ mkShell {
       export MACOSX_DEPLOYMENT_TARGET="10.13"
     fi
 
+    # GPU bindings require libvulkan.so.1 during runtime
+    export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.vulkan-loader ]}\
+    ''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
     # https://qdrant.tech/documentation/guides/common-errors/#too-many-files-open-os-error-24
     [ "$(ulimit -n)" -ge 10000 ] || ulimit -n 10000
   '';
