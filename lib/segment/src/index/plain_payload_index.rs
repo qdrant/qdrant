@@ -128,8 +128,12 @@ impl PayloadIndex for PlainPayloadIndex {
         self.estimate_cardinality(query)
     }
 
-    fn query_points(&self, query: &Filter) -> Vec<PointOffsetType> {
-        let filter_context = self.filter_context(query);
+    fn query_points(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> Vec<PointOffsetType> {
+        let filter_context = self.filter_context(query, hw_counter);
         self.id_tracker
             .borrow()
             .iter_ids()
@@ -141,7 +145,11 @@ impl PayloadIndex for PlainPayloadIndex {
         0 // No points are indexed in the plain index
     }
 
-    fn filter_context<'a>(&'a self, filter: &'a Filter) -> Box<dyn FilterContext + 'a> {
+    fn filter_context<'a>(
+        &'a self,
+        filter: &'a Filter,
+        _: &HardwareCounterCell,
+    ) -> Box<dyn FilterContext + 'a> {
         Box::new(PlainFilterContext {
             filter,
             condition_checker: self.condition_checker.clone(),

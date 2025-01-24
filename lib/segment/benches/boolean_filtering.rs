@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -37,10 +38,12 @@ pub fn plain_boolean_query_points(c: &mut Criterion) {
     let mut result_size = 0;
     let mut query_count = 0;
 
+    let hw_counter = HardwareCounterCell::new();
+
     group.bench_function("plain", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
-            result_size += plain_index.query_points(&filter).len();
+            result_size += plain_index.query_points(&filter, &hw_counter).len();
             query_count += 1;
         })
     });
@@ -61,13 +64,14 @@ pub fn struct_boolean_query_points(c: &mut Criterion) {
     let struct_index = create_struct_payload_index(dir.path(), NUM_POINTS, seed);
 
     let mut group = c.benchmark_group("boolean-query-points");
+    let hw_counter = HardwareCounterCell::new();
 
     let mut result_size = 0;
     let mut query_count = 0;
     group.bench_function("binary-index", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
-            result_size += struct_index.query_points(&filter).len();
+            result_size += struct_index.query_points(&filter, &hw_counter).len();
             query_count += 1;
         })
     });
@@ -92,6 +96,8 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     ));
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(NUM_POINTS)));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut index = StructPayloadIndex::open(
         payload_storage,
         id_tracker,
@@ -112,7 +118,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     group.bench_function("keyword-index", |b| {
         b.iter(|| {
             let filter = random_bool_filter(&mut rng);
-            result_size += index.query_points(&filter).len();
+            result_size += index.query_points(&filter, &hw_counter).len();
             query_count += 1;
         })
     });

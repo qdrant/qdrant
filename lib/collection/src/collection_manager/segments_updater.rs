@@ -141,7 +141,7 @@ pub(crate) fn delete_vectors_by_filter(
     vector_names: &[VectorNameBuf],
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
-    let affected_points = points_by_filter(segments, filter)?;
+    let affected_points = points_by_filter(segments, filter, hw_counter)?;
     delete_vectors(segments, op_num, &affected_points, vector_names, hw_counter)
 }
 
@@ -183,7 +183,7 @@ pub(crate) fn overwrite_payload_by_filter(
     filter: &Filter,
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
-    let affected_points = points_by_filter(segments, filter)?;
+    let affected_points = points_by_filter(segments, filter, hw_counter)?;
     overwrite_payload(segments, op_num, payload, &affected_points, hw_counter)
 }
 
@@ -224,12 +224,13 @@ pub(crate) fn set_payload(
 fn points_by_filter(
     segments: &SegmentHolder,
     filter: &Filter,
+    hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<Vec<PointIdType>> {
     let mut affected_points: Vec<PointIdType> = Vec::new();
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
     segments.for_each_segment(|s| {
-        let points = s.read_filtered(None, None, Some(filter), &is_stopped);
+        let points = s.read_filtered(None, None, Some(filter), &is_stopped, hw_counter);
         affected_points.extend_from_slice(points.as_slice());
         Ok(true)
     })?;
@@ -244,7 +245,7 @@ pub(crate) fn set_payload_by_filter(
     key: &Option<JsonPath>,
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
-    let affected_points = points_by_filter(segments, filter)?;
+    let affected_points = points_by_filter(segments, filter, hw_counter)?;
     set_payload(segments, op_num, payload, &affected_points, key, hw_counter)
 }
 
@@ -297,7 +298,7 @@ pub(crate) fn delete_payload_by_filter(
     keys: &[PayloadKeyType],
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
-    let affected_points = points_by_filter(segments, filter)?;
+    let affected_points = points_by_filter(segments, filter, hw_counter)?;
     delete_payload(segments, op_num, &affected_points, keys, hw_counter)
 }
 
@@ -332,7 +333,7 @@ pub(crate) fn clear_payload_by_filter(
     filter: &Filter,
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
-    let points_to_clear = points_by_filter(segments, filter)?;
+    let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
 
     let mut total_updated_points = 0;
 
@@ -734,10 +735,13 @@ pub(crate) fn delete_points_by_filter(
         .map(|(segment_id, segment)| {
             (
                 *segment_id,
-                segment
-                    .get()
-                    .read()
-                    .read_filtered(None, None, Some(filter), &is_stopped),
+                segment.get().read().read_filtered(
+                    None,
+                    None,
+                    Some(filter),
+                    &is_stopped,
+                    hw_counter,
+                ),
             )
         })
         .collect();

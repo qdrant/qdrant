@@ -235,9 +235,12 @@ impl ShardOperation for QueueProxyShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `Inner::update` is cancel safe, so this is also cancel safe.
-        self.inner_unchecked().update(operation, wait).await
+        self.inner_unchecked()
+            .update(operation, wait, hw_measurement_acc)
+            .await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
@@ -338,10 +341,11 @@ impl ShardOperation for QueueProxyShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.inner_unchecked()
             .wrapped_shard
-            .facet(request, search_runtime_handle, timeout)
+            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 }
@@ -547,6 +551,7 @@ impl ShardOperation for Inner {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` is cancel safe, so this is also cancel safe.
 
@@ -555,7 +560,9 @@ impl ShardOperation for Inner {
         let local_shard = &self.wrapped_shard;
         // Shard update is within a write lock scope, because we need a way to block the shard updates
         // during the transfer restart and finalization.
-        local_shard.update(operation.clone(), wait).await
+        local_shard
+            .update(operation.clone(), wait, hw_measurement_acc)
+            .await
     }
 
     /// Forward read-only `scroll_by` to `wrapped_shard`
@@ -663,10 +670,11 @@ impl ShardOperation for Inner {
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout)
+            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 }

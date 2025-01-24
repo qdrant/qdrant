@@ -379,6 +379,7 @@ impl TableOfContent {
     }
 
     // Return unique values for a payload key, and a count of points for each value.
+    #[allow(clippy::too_many_arguments)]
     pub async fn facet(
         &self,
         collection_name: &str,
@@ -387,13 +388,20 @@ impl TableOfContent {
         read_consistency: Option<ReadConsistency>,
         access: Access,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<FacetResponse> {
         let collection_pass = access.check_point_op(collection_name, &mut request)?;
 
         let collection = self.get_collection(&collection_pass).await?;
 
         collection
-            .facet(request, shard_selection, read_consistency, timeout)
+            .facet(
+                request,
+                shard_selection,
+                read_consistency,
+                timeout,
+                hw_measurement_acc,
+            )
             .await
             .map_err(StorageError::from)
     }

@@ -18,6 +18,7 @@ pub trait ShardOperation {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult>;
 
     #[allow(clippy::too_many_arguments)]
@@ -75,6 +76,7 @@ pub trait ShardOperation {
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse>;
 }
 

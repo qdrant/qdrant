@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
@@ -41,15 +42,26 @@ async fn test_fix_payload_indices() {
     .await
     .unwrap();
 
+    let hw_acc = HwMeasurementAcc::new();
+
     let upsert_ops = upsert_operation();
-    shard.update(upsert_ops.into(), true).await.unwrap();
+    shard
+        .update(upsert_ops.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     // Create payload index in shard locally, not in global collection configuration
     let index_op = create_payload_index_operation();
-    shard.update(index_op.into(), true).await.unwrap();
+    shard
+        .update(index_op.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     let delete_point_op = delete_point_operation(4);
-    shard.update(delete_point_op.into(), true).await.unwrap();
+    shard
+        .update(delete_point_op.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 

@@ -104,6 +104,7 @@ impl ForwardProxyShard {
                         }),
                     )),
                     false,
+                    HwMeasurementAcc::disposable(), // Internal operation
                 )
                 .await?;
         }
@@ -182,7 +183,11 @@ impl ForwardProxyShard {
 
         // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
         self.remote_shard
-            .update(OperationWithClockTag::from(insert_points_operation), wait) // TODO: Assign clock tag!? 🤔
+            .update(
+                OperationWithClockTag::from(insert_points_operation),
+                wait,
+                HwMeasurementAcc::disposable(), // Internal operation
+            ) // TODO: Assign clock tag!? 🤔
             .await?;
 
         Ok(next_page_offset)
@@ -244,6 +249,7 @@ impl ShardOperation for ForwardProxyShard {
         &self,
         operation: OperationWithClockTag,
         _wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // If we apply `local_shard` update, we *have to* execute `remote_shard` update to completion
         // (or we *might* introduce an inconsistency between shards?), so this method is not cancel
@@ -256,7 +262,10 @@ impl ShardOperation for ForwardProxyShard {
 
         // We always have to wait for the result of the update, cause after we release the lock,
         // the transfer needs to have access to the latest version of points.
-        let mut result = self.wrapped_shard.update(operation.clone(), true).await?;
+        let mut result = self
+            .wrapped_shard
+            .update(operation.clone(), true, hw_measurement_acc.clone())
+            .await?;
 
         let forward_operation = if let Some(ring) = &self.resharding_hash_ring {
             // If `ForwardProxyShard::resharding_hash_ring` is `Some`, we assume that proxy is used
@@ -306,13 +315,13 @@ impl ShardOperation for ForwardProxyShard {
         };
 
         if let Some(operation) = forward_operation {
-            let remote_result =
-                self.remote_shard
-                    .update(operation, false)
-                    .await
-                    .map_err(|err| {
-                        CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
-                    })?;
+            let remote_result = self
+                .remote_shard
+                .update(operation, false, hw_measurement_acc)
+                .await
+                .map_err(|err| {
+                    CollectionError::forward_proxy_error(self.remote_shard.peer_id, err)
+                })?;
 
             // Merge `result` and `remote_result`:
             //
@@ -432,10 +441,11 @@ impl ShardOperation for ForwardProxyShard {
         request: Arc<FacetParams>,
         search_runtime_handle: &Handle,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let local_shard = &self.wrapped_shard;
         local_shard
-            .facet(request, search_runtime_handle, timeout)
+            .facet(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 }

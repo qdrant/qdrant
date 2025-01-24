@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
 use itertools::Itertools;
@@ -19,6 +20,7 @@ impl Collection {
         shard_selection: ShardSelectorInternal,
         read_consistency: Option<ReadConsistency>,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         if request.limit == 0 {
             return Ok(FacetResponse { hits: vec![] });
@@ -37,6 +39,7 @@ impl Collection {
                     read_consistency,
                     shard_selection.is_shard_id(),
                     timeout,
+                    hw_measurement_acc.clone(),
                 )
             })
             .collect::<FuturesUnordered<_>>();

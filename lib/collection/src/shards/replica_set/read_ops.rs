@@ -221,13 +221,15 @@ impl ShardReplicaSet {
         read_consistency: Option<ReadConsistency>,
         local_only: bool,
         timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         self.execute_and_resolve_read_operation(
             |shard| {
                 let request = request.clone();
                 let search_runtime = self.search_runtime.clone();
 
-                async move { shard.facet(request, &search_runtime, timeout).await }.boxed()
+                let hw_acc = hw_measurement_acc.clone();
+                async move { shard.facet(request, &search_runtime, timeout, hw_acc).await }.boxed()
             },
             read_consistency,
             local_only,

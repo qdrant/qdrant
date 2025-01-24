@@ -297,13 +297,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &is_stopped,
             vector_query_context.hardware_counter(),
         )?;
+        let hw_counter = vector_query_context.hardware_counter();
         match filter {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
                 let mut filtered_points = match prefiltered_points {
                     Some(filtered_points) => filtered_points.iter().copied(),
                     None => {
-                        let filtered_points = payload_index.query_points(filter);
+                        let filtered_points = payload_index.query_points(filter, &hw_counter);
                         *prefiltered_points = Some(filtered_points);
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
@@ -337,10 +338,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             .unwrap_or(id_tracker.deleted_point_bitslice());
         let deleted_vectors = vector_storage.deleted_vector_bitslice();
 
+        let hw_counter = vector_query_context.hardware_counter();
+
         let ids = match prefiltered_points {
             Some(filtered_points) => filtered_points.iter(),
             None => {
-                let filtered_points = payload_index.query_points(filter);
+                let filtered_points = payload_index.query_points(filter, &hw_counter);
                 *prefiltered_points = Some(filtered_points);
                 prefiltered_points.as_ref().unwrap().iter()
             }
@@ -395,10 +398,12 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             vector_query_context.hardware_counter(),
         );
 
+        let hw_counter = vector_query_context.hardware_counter();
+
         match filter {
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                let filter_context = payload_index.filter_context(filter);
+                let filter_context = payload_index.filter_context(filter, &hw_counter);
                 let matches_filter_condition = |idx: PointOffsetType| -> bool {
                     not_deleted_condition(idx) && filter_context.check(idx)
                 };

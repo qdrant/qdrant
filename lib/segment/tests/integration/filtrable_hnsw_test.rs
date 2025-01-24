@@ -177,7 +177,7 @@ fn _test_filterable_hnsw(
     let px = payload_index_ptr.borrow();
     for block in &blocks {
         let filter = Filter::new_must(Condition::Field(block.condition.clone()));
-        let points = px.query_points(&filter);
+        let points = px.query_points(&filter, &hw_counter);
         for point in points {
             coverage.insert(point, coverage.get(&point).unwrap_or(&0) + 1);
         }
