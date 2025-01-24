@@ -16,7 +16,7 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
-use segment::segment_constructor::build_segment;
+use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
     Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
@@ -141,17 +141,21 @@ fn test_gpu_filterable_hnsw() {
         Mutex::new(gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap());
     let locked_device = LockedGpuDevice::new(device.lock());
 
-    let hnsw_index = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        quantized_vectors: quantized_vectors.clone(),
-        payload_index: payload_index_ptr.clone(),
-        hnsw_config,
-        permit: Some(permit),
-        gpu_device: Some(&locked_device), // enable GPU
-        stopped: &stopped,
-    })
+    let hnsw_index = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: payload_index_ptr.clone(),
+            hnsw_config,
+        },
+        VectorIndexBuildArgs {
+            permit,
+            gpu_device: Some(&locked_device), // enable GPU
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let top = 3;

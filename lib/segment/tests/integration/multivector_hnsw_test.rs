@@ -18,7 +18,7 @@ use segment::fixtures::payload_fixtures::random_int_payload;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::VectorIndex;
 use segment::json_path::JsonPath;
-use segment::segment_constructor::build_segment;
+use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use segment::types::{
@@ -149,17 +149,21 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
-    let hnsw_index_dense = HNSWIndex::open(HnswIndexOpenArgs {
-        path: hnsw_dir.path(),
-        id_tracker: segment.id_tracker.clone(),
-        vector_storage: vector_storage.clone(),
-        quantized_vectors: quantized_vectors.clone(),
-        payload_index: segment.payload_index.clone(),
-        hnsw_config: hnsw_config.clone(),
-        permit: Some(permit.clone()),
-        gpu_device: None,
-        stopped: &stopped,
-    })
+    let hnsw_index_dense = HNSWIndex::build(
+        HnswIndexOpenArgs {
+            path: hnsw_dir.path(),
+            id_tracker: segment.id_tracker.clone(),
+            vector_storage: vector_storage.clone(),
+            quantized_vectors: quantized_vectors.clone(),
+            payload_index: segment.payload_index.clone(),
+            hnsw_config: hnsw_config.clone(),
+        },
+        VectorIndexBuildArgs {
+            permit: permit.clone(),
+            gpu_device: None,
+            stopped: &stopped,
+        },
+    )
     .unwrap();
 
     let multi_storage = Arc::new(AtomicRefCell::new(multi_storage));
@@ -171,9 +175,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         quantized_vectors: quantized_vectors.clone(),
         payload_index: segment.payload_index.clone(),
         hnsw_config,
-        permit: Some(permit),
-        gpu_device: None,
-        stopped: &stopped,
     })
     .unwrap();
 

@@ -11,7 +11,6 @@ use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
-use common::cpu::{get_num_cpus, CpuPermit};
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::mmap_ops;
@@ -20,6 +19,7 @@ use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
+#[cfg(feature = "gpu")]
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
 use super::graph_links::GraphLinksFormat;
@@ -45,6 +45,7 @@ use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
 use crate::index::{PayloadIndex, VectorIndex};
 #[cfg(feature = "gpu")]
 use crate::payload_storage::FilterContext;
+use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
@@ -93,6 +94,20 @@ struct HNSWSearchesTelemetry {
     exact_unfiltered: Arc<Mutex<OperationDurationsAggregator>>,
 }
 
+impl HNSWSearchesTelemetry {
+    fn new() -> Self {
+        Self {
+            unfiltered_plain: OperationDurationsAggregator::new(),
+            filtered_plain: OperationDurationsAggregator::new(),
+            unfiltered_hnsw: OperationDurationsAggregator::new(),
+            small_cardinality: OperationDurationsAggregator::new(),
+            large_cardinality: OperationDurationsAggregator::new(),
+            exact_filtered: OperationDurationsAggregator::new(),
+            exact_unfiltered: OperationDurationsAggregator::new(),
+        }
+    }
+}
+
 pub struct HnswIndexOpenArgs<'a> {
     pub path: &'a Path,
     pub id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
@@ -100,9 +115,6 @@ pub struct HnswIndexOpenArgs<'a> {
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
     pub payload_index: Arc<AtomicRefCell<StructPayloadIndex>>,
     pub hnsw_config: HnswConfig,
-    pub permit: Option<Arc<CpuPermit>>,
-    pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
-    pub stopped: &'a AtomicBool,
 }
 
 impl HNSWIndex {
@@ -114,78 +126,38 @@ impl HNSWIndex {
             quantized_vectors,
             payload_index,
             hnsw_config,
-            permit,
-            gpu_device,
-            stopped,
         } = args;
 
-        create_dir_all(path)?;
-
         let config_path = HnswGraphConfig::get_config_path(path);
-        let graph_path = GraphLayers::get_path(path);
-        let (config, graph) = if graph_path.exists() {
-            let config = if config_path.exists() {
-                HnswGraphConfig::load(&config_path)?
-            } else {
-                let vector_storage = vector_storage.borrow();
-                let available_vectors = vector_storage.available_vector_count();
-                let full_scan_threshold = vector_storage
-                    .size_of_available_vectors_in_bytes()
-                    .checked_div(available_vectors)
-                    .and_then(|avg_vector_size| {
-                        hnsw_config
-                            .full_scan_threshold
-                            .saturating_mul(BYTES_IN_KB)
-                            .checked_div(avg_vector_size)
-                    })
-                    .unwrap_or(1);
-
-                HnswGraphConfig::new(
-                    hnsw_config.m,
-                    hnsw_config.ef_construct,
-                    full_scan_threshold,
-                    hnsw_config.max_indexing_threads,
-                    hnsw_config.payload_m,
-                    available_vectors,
-                )
-            };
-
-            let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
-
-            (
-                config,
-                GraphLayers::load(path, !hnsw_config.on_disk.unwrap_or(false), do_convert)?,
-            )
+        let config = if config_path.exists() {
+            HnswGraphConfig::load(&config_path)?
         } else {
-            let num_cpus = match permit {
-                Some(p) => p.num_cpus as usize,
-                None => {
-                    log::warn!("Rebuilding HNSW index");
+            let vector_storage = vector_storage.borrow();
+            let available_vectors = vector_storage.available_vector_count();
+            let full_scan_threshold = vector_storage
+                .size_of_available_vectors_in_bytes()
+                .checked_div(available_vectors)
+                .and_then(|avg_vector_size| {
+                    hnsw_config
+                        .full_scan_threshold
+                        .saturating_mul(BYTES_IN_KB)
+                        .checked_div(avg_vector_size)
+                })
+                .unwrap_or(1);
 
-                    // We have no CPU permit, meaning this call is not triggered by the segment
-                    // optimizer which is supposed to be the only entity that builds an HNSW index.
-                    // This should never be executed unless files are removed manually.
-                    debug_assert!(false);
-
-                    get_num_cpus()
-                }
-            };
-            let (config, graph) = Self::build_index(
-                path,
-                id_tracker.as_ref().borrow().deref(),
-                &vector_storage.borrow(),
-                &quantized_vectors.borrow(),
-                &payload_index.borrow(),
-                &hnsw_config,
-                num_cpus,
-                gpu_device,
-                stopped,
-            )?;
-
-            config.save(&config_path)?;
-
-            (config, graph)
+            HnswGraphConfig::new(
+                hnsw_config.m,
+                hnsw_config.ef_construct,
+                full_scan_threshold,
+                hnsw_config.max_indexing_threads,
+                hnsw_config.payload_m,
+                available_vectors,
+            )
         };
+
+        let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
+
+        let graph = GraphLayers::load(path, !hnsw_config.on_disk.unwrap_or(false), do_convert)?;
 
         Ok(HNSWIndex {
             id_tracker,
@@ -195,15 +167,7 @@ impl HNSWIndex {
             config,
             path: path.to_owned(),
             graph,
-            searches_telemetry: HNSWSearchesTelemetry {
-                unfiltered_hnsw: OperationDurationsAggregator::new(),
-                unfiltered_plain: OperationDurationsAggregator::new(),
-                filtered_plain: OperationDurationsAggregator::new(),
-                small_cardinality: OperationDurationsAggregator::new(),
-                large_cardinality: OperationDurationsAggregator::new(),
-                exact_filtered: OperationDurationsAggregator::new(),
-                exact_unfiltered: OperationDurationsAggregator::new(),
-            },
+            searches_telemetry: HNSWSearchesTelemetry::new(),
         })
     }
 
@@ -216,21 +180,45 @@ impl HNSWIndex {
         self.quantized_vectors.clone()
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn build_index(
-        path: &Path,
-        id_tracker: &IdTrackerSS,
-        vector_storage: &VectorStorageEnum,
-        quantized_vectors: &Option<QuantizedVectors>,
-        payload_index: &StructPayloadIndex,
-        hnsw_config: &HnswConfig,
-        num_cpus: usize,
-        #[allow(unused_variables)] gpu_device: Option<&LockedGpuDevice>,
-        stopped: &AtomicBool,
-    ) -> OperationResult<(HnswGraphConfig, GraphLayers)> {
-        let total_vector_count = vector_storage.total_vector_count();
+    pub fn build(
+        open_args: HnswIndexOpenArgs<'_>,
+        build_args: VectorIndexBuildArgs<'_>,
+    ) -> OperationResult<Self> {
+        if HnswGraphConfig::get_config_path(open_args.path).exists()
+            || GraphLayers::get_path(open_args.path).exists()
+        {
+            log::warn!(
+                "HNSW index already exists at {:?}, skipping building",
+                open_args.path
+            );
+            debug_assert!(false);
+            return Self::open(open_args);
+        }
 
-        let full_scan_threshold = vector_storage
+        let HnswIndexOpenArgs {
+            path,
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            payload_index,
+            hnsw_config,
+        } = open_args;
+        let VectorIndexBuildArgs {
+            permit,
+            gpu_device,
+            stopped,
+        } = build_args;
+
+        create_dir_all(path)?;
+
+        let id_tracker_ref = id_tracker.borrow();
+        let vector_storage_ref = vector_storage.borrow();
+        let quantized_vectors_ref = quantized_vectors.borrow();
+        let payload_index_ref = payload_index.borrow();
+
+        let total_vector_count = vector_storage_ref.total_vector_count();
+
+        let full_scan_threshold = vector_storage_ref
             .size_of_available_vectors_in_bytes()
             .checked_div(total_vector_count)
             .and_then(|avg_vector_size| {
@@ -252,7 +240,7 @@ impl HNSWIndex {
 
         // Build main index graph
         let mut rng = thread_rng();
-        let deleted_bitslice = vector_storage.deleted_vector_bitslice();
+        let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
         #[cfg(feature = "gpu")]
         let gpu_name_postfix = if let Some(gpu_device) = gpu_device {
@@ -262,8 +250,11 @@ impl HNSWIndex {
         };
         #[cfg(not(feature = "gpu"))]
         let gpu_name_postfix = "";
+        #[cfg(not(feature = "gpu"))]
+        let _ = gpu_device;
         debug!(
-            "building HNSW for {total_vector_count} vectors with {num_cpus} CPUs{gpu_name_postfix}"
+            "building HNSW for {total_vector_count} vectors with {} CPUs{gpu_name_postfix}",
+            permit.num_cpus,
         );
 
         let num_entries = std::cmp::max(
@@ -284,7 +275,7 @@ impl HNSWIndex {
 
         let pool = rayon::ThreadPoolBuilder::new()
             .thread_name(|idx| format!("hnsw-build-{idx}"))
-            .num_threads(num_cpus)
+            .num_threads(permit.num_cpus as usize)
             .spawn_handler(|thread| {
                 let mut b = thread::Builder::new();
                 if let Some(name) = thread.name() {
@@ -309,7 +300,7 @@ impl HNSWIndex {
             .build()?;
 
         let mut indexed_vectors = 0;
-        for vector_id in id_tracker.iter_ids_excluding(deleted_bitslice) {
+        for vector_id in id_tracker_ref.iter_ids_excluding(deleted_bitslice) {
             check_process_stopped(stopped)?;
             let level = graph_layers_builder.get_random_layer(&mut rng);
             graph_layers_builder.set_levels(vector_id, level);
@@ -327,12 +318,16 @@ impl HNSWIndex {
         #[cfg(feature = "gpu")]
         let gpu_vectors = if build_main_graph {
             let timer = std::time::Instant::now();
-            let gpu_vectors =
-                Self::create_gpu_vectors(gpu_device, vector_storage, quantized_vectors, stopped)?;
+            let gpu_vectors = Self::create_gpu_vectors(
+                gpu_device,
+                &vector_storage_ref,
+                &quantized_vectors_ref,
+                stopped,
+            )?;
             if let Some(gpu_constructed_graph) = Self::build_main_graph_on_gpu(
-                id_tracker,
-                vector_storage,
-                quantized_vectors,
+                id_tracker_ref.deref(),
+                &vector_storage_ref,
+                &quantized_vectors_ref,
                 gpu_vectors.as_ref(),
                 &graph_layers_builder,
                 deleted_bitslice,
@@ -353,7 +348,7 @@ impl HNSWIndex {
         if build_main_graph {
             let timer = std::time::Instant::now();
 
-            let mut ids_iterator = id_tracker.iter_ids_excluding(deleted_bitslice);
+            let mut ids_iterator = id_tracker_ref.iter_ids_excluding(deleted_bitslice);
 
             let first_few_ids: Vec<_> = ids_iterator
                 .by_ref()
@@ -363,24 +358,24 @@ impl HNSWIndex {
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
-                let vector = vector_storage.get_vector(vector_id);
+                let vector = vector_storage_ref.get_vector(vector_id);
                 let vector = vector.as_vec_ref().into();
                 // No need to accumulate hardware, since this is an internal operation
                 let internal_hardware_counter = HardwareCounterCell::disposable();
 
-                let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
+                let raw_scorer = if let Some(quantized_storage) = quantized_vectors_ref.as_ref() {
                     quantized_storage.raw_scorer(
                         vector,
-                        id_tracker.deleted_point_bitslice(),
-                        vector_storage.deleted_vector_bitslice(),
+                        id_tracker_ref.deleted_point_bitslice(),
+                        vector_storage_ref.deleted_vector_bitslice(),
                         stopped,
                         internal_hardware_counter,
                     )
                 } else {
                     new_raw_scorer(
                         vector,
-                        vector_storage,
-                        id_tracker.deleted_point_bitslice(),
+                        &vector_storage_ref,
+                        id_tracker_ref.deleted_point_bitslice(),
                         stopped,
                         internal_hardware_counter,
                     )
@@ -422,7 +417,7 @@ impl HNSWIndex {
                 BitVec::repeat(false, total_vector_count)
             };
 
-            for (field, _) in payload_index.indexed_fields() {
+            for (field, _) in payload_index_ref.indexed_fields() {
                 debug!("building additional index for field {}", &field);
 
                 // It is expected, that graph will become disconnected less than
@@ -436,7 +431,7 @@ impl HNSWIndex {
                     usize::MAX
                 };
 
-                for payload_block in payload_index.payload_blocks(&field, full_scan_threshold) {
+                for payload_block in payload_index_ref.payload_blocks(&field, full_scan_threshold) {
                     check_process_stopped(stopped)?;
                     if payload_block.cardinality > max_block_size {
                         continue;
@@ -452,11 +447,11 @@ impl HNSWIndex {
                         false,
                     );
                     Self::build_filtered_graph(
-                        id_tracker,
-                        vector_storage,
-                        quantized_vectors,
+                        id_tracker_ref.deref(),
+                        &vector_storage_ref,
+                        &quantized_vectors_ref,
                         gpu_vectors.as_ref(),
-                        payload_index,
+                        &payload_index_ref,
                         &pool,
                         stopped,
                         &mut additional_graph,
@@ -497,7 +492,24 @@ impl HNSWIndex {
         }
 
         debug!("finish additional payload field indexing");
-        Ok((config, graph))
+
+        config.save(&HnswGraphConfig::get_config_path(path))?;
+
+        drop(id_tracker_ref);
+        drop(vector_storage_ref);
+        drop(quantized_vectors_ref);
+        drop(payload_index_ref);
+
+        Ok(HNSWIndex {
+            id_tracker,
+            vector_storage,
+            quantized_vectors,
+            payload_index,
+            config,
+            path: path.to_owned(),
+            graph,
+            searches_telemetry: HNSWSearchesTelemetry::new(),
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
