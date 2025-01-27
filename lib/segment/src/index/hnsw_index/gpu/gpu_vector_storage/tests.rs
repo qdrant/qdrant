@@ -583,6 +583,7 @@ fn create_vector_storage_u8_multi(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn test_gpu_vector_storage_impl(
     storage_type: TestStorageType,
     num_vectors: usize,
