@@ -194,6 +194,8 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::iterator_ext::{check_exact_size_iterator_len, check_iterator_fold};
+
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum Cases {
         OnlyUnsorted = 0,
@@ -249,12 +251,18 @@ mod tests {
             );
 
             let mut unpacked = Vec::new();
-            for_each_packed_link(&links, bits_per_unsorted, sorted_count, |value| {
-                unpacked.push(value);
-            });
+            let iter = iterate_packed_links(&links, bits_per_unsorted, sorted_count);
+            iter.for_each(|value| unpacked.push(value));
 
             raw_links[..sorted_count.min(total_count)].sort_unstable();
             assert_eq!(raw_links, unpacked);
+
+            check_iterator_fold(|| iterate_packed_links(&links, bits_per_unsorted, sorted_count));
+            check_exact_size_iterator_len(iterate_packed_links(
+                &links,
+                bits_per_unsorted,
+                sorted_count,
+            ));
         }
     }
 
