@@ -186,72 +186,70 @@ impl BitmaskGaps {
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
-        if self.mmap_slice.len() == 1 {
-            return if self.get(0).unwrap().max as usize >= num_blocks as usize {
-                Some(0..1)
-            } else {
-                None
-            };
+        if self.len() == 0 {
+            return None;
         }
 
-        // try to find gap in the minimum regions needed
-        let regions_needed = num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
+        let min_regions_needed =
+            num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
+        let max_regions_needed = min_regions_needed + 1;
 
-        let fits_in_min_regions = match regions_needed {
-            0 => unreachable!("num_blocks should be at least 1"),
-            // we might not need to merge any regions, just check the `max` field
-            1 => self
-                .as_slice()
-                .iter()
-                .enumerate()
-                .find_map(|(region_id, gap)| {
-                    if gap.max as usize >= num_blocks as usize {
-                        Some(region_id as RegionId..(region_id + 1) as RegionId)
-                    } else {
-                        None
-                    }
-                }),
-            // we need to merge at least 2 regions
-            window_size => self.find_merged_gap(window_size, num_blocks),
-        };
+        let (mut head, mut tail) = (0, 0);
 
-        if fits_in_min_regions.is_some() {
-            return fits_in_min_regions;
+        // Slide head/tail over regions until we find a gap
+        'slider: while head < self.len() {
+            // If we need more/less regions, advance head/tail
+            let region_count = head.saturating_sub(tail) + 1;
+            if region_count < min_regions_needed {
+                head += 1;
+                continue;
+            }
+            if region_count > max_regions_needed {
+                tail += 1;
+                continue;
+            }
+
+            // If enough blocks in just the head, return
+            let head_region = self.get(head).unwrap();
+            if min_regions_needed == 1 && u32::from(head_region.max) >= num_blocks {
+                return Some(head as u32..head as u32 + 1);
+            }
+
+            let mut blocks = u32::from(head_region.leading);
+
+            // If enough blocks including middle regions, return
+            let middle_regions = (tail..=head)
+                .rev()
+                .skip(1)
+                .take(region_count.saturating_sub(2));
+            for region_index in middle_regions {
+                let region = self.get(region_index).unwrap();
+                blocks += u32::from(region.trailing);
+
+                if blocks >= num_blocks {
+                    return Some(region_index as u32..head as u32 + 1);
+                }
+
+                // Cannot have contiguous blocks if region is not empty, advance tail to this region
+                if region.max < self.config.region_size_blocks as u16 {
+                    tail = region_index;
+                    continue 'slider;
+                }
+            }
+
+            // If enough blocks in head to tail, return
+            if head != tail {
+                let tail_region = self.get(tail).unwrap();
+                blocks += u32::from(tail_region.trailing);
+                if blocks >= num_blocks {
+                    return Some(tail as u32..head as u32 + 1);
+                }
+            }
+
+            head += 1;
         }
 
-        // try to find gap by merging one more region (which is the maximum regions we may need for the value)
-        let window_size = regions_needed + 1;
-
-        self.find_merged_gap(window_size, num_blocks)
-    }
-
-    /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks, in a merged window of regions.
-    fn find_merged_gap(&self, window_size: usize, num_blocks: u32) -> Option<Range<RegionId>> {
-        debug_assert!(window_size >= 2, "window size must be at least 2");
-
-        self.as_slice()
-            .windows(window_size)
-            .enumerate()
-            .find_map(|(start_region_id, gaps)| {
-                // make sure the middle regions are all free
-                let middle_regions = &gaps[1..window_size - 1];
-                if middle_regions
-                    .iter()
-                    .any(|gap| gap.max as usize != self.config.region_size_blocks)
-                {
-                    return None;
-                }
-                let first_trailing = gaps[0].trailing;
-                let last_leading = gaps[window_size - 1].leading;
-                let merged_gap = (first_trailing + last_leading) as usize
-                    + (window_size - 2) * self.config.region_size_blocks;
-
-                if merged_gap as u32 >= num_blocks {
-                    Some(start_region_id as RegionId..(start_region_id + window_size) as RegionId)
-                } else {
-                    None
-                }
-            })
+        None
     }
 }
 
