@@ -42,7 +42,14 @@ impl Bitmask {
 
     /// Calculate the amount of trailing free blocks in the bitmask.
     pub fn trailing_free_blocks(&self) -> u32 {
-        self.regions_gaps.trailing_free_blocks()
+        let trailing_gap = self.regions_gaps.trailing_free_blocks();
+        #[cfg(debug_assertions)]
+        {
+            let num_trailing_zeros = self.bitslice.trailing_zeros();
+            debug_assert_eq!(num_trailing_zeros, trailing_gap as usize);
+        }
+
+        trailing_gap
     }
 
     /// Calculate the amount of bytes needed for covering the blocks of a page.

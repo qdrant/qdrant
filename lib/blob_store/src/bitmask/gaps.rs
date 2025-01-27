@@ -184,13 +184,8 @@ impl BitmaskGaps {
     }
 
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
-    /// Returns the region id of the gap.
-    /// In case of boundary gaps, returns the region id of the left gap.
+    /// Returns the range of regions where the gap is.
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
-        let regions_needed = num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
-
-        let window_size = regions_needed + 1;
-
         if self.mmap_slice.len() == 1 {
             return if self.get(0).unwrap().max as usize >= num_blocks as usize {
                 Some(0..1)
@@ -199,61 +194,60 @@ impl BitmaskGaps {
             };
         }
 
+        // try to find gap in the minimum regions needed
+        let regions_needed = num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
+
+        let fits_in_min_regions = match regions_needed {
+            0 => unreachable!("num_blocks should be at least 1"),
+            // we might not need to merge any regions, just check the `max` field
+            1 => self
+                .as_slice()
+                .iter()
+                .enumerate()
+                .find_map(|(region_id, gap)| {
+                    if gap.max as usize >= num_blocks as usize {
+                        Some(region_id as RegionId..(region_id + 1) as RegionId)
+                    } else {
+                        None
+                    }
+                }),
+            // we need to merge at least 2 regions
+            window_size => self.find_merged_gap(window_size, num_blocks),
+        };
+
+        if fits_in_min_regions.is_some() {
+            return fits_in_min_regions;
+        }
+
+        // try to find gap by merging one more region (which is the maximum regions we may need for the value)
+        let window_size = regions_needed + 1;
+
+        self.find_merged_gap(window_size, num_blocks)
+    }
+
+    /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks, in a merged window of regions.
+    fn find_merged_gap(&self, window_size: usize, num_blocks: u32) -> Option<Range<RegionId>> {
+        debug_assert!(window_size >= 2, "window size must be at least 2");
+
         self.as_slice()
             .windows(window_size)
             .enumerate()
             .find_map(|(start_region_id, gaps)| {
-                // cover the case of large number of blocks
-                if window_size >= 3 {
-                    // check that the middle regions are empty
-                    for gap in gaps.iter().take(window_size - 1).skip(1) {
-                        if gap.max as usize != self.config.region_size_blocks {
-                            return None;
-                        }
-                    }
-                    let trailing = gaps[0].trailing;
-                    let leading = gaps[window_size - 1].leading;
-                    let merged_gap = (trailing + leading) as usize
-                        + (window_size - 2) * self.config.region_size_blocks;
-
-                    return if merged_gap as u32 >= num_blocks {
-                        Some(
-                            start_region_id as RegionId
-                                ..(start_region_id + window_size) as RegionId,
-                        )
-                    } else {
-                        None
-                    };
+                // make sure the middle regions are all free
+                let middle_regions = &gaps[1..window_size - 1];
+                if middle_regions
+                    .iter()
+                    .any(|gap| gap.max as usize != self.config.region_size_blocks)
+                {
+                    return None;
                 }
+                let first_trailing = gaps[0].trailing;
+                let last_leading = gaps[window_size - 1].leading;
+                let merged_gap = (first_trailing + last_leading) as usize
+                    + (window_size - 2) * self.config.region_size_blocks;
 
-                // windows of 2
-                debug_assert!(window_size == 2, "Unexpected window size");
-                let left = &gaps[0];
-                let right = &gaps[1];
-
-                // check it fits in the left region
-                if u32::from(left.max) >= num_blocks {
-                    // if both gaps are large enough, choose the smaller one
-                    if u32::from(right.max) >= num_blocks {
-                        return if left.max <= right.max {
-                            Some(start_region_id as RegionId..start_region_id as RegionId + 1)
-                        } else {
-                            Some(start_region_id as RegionId + 1..start_region_id as RegionId + 2)
-                        };
-                    }
-                    return Some(start_region_id as RegionId..start_region_id as RegionId + 1);
-                }
-
-                // check it fits in the right region
-                if u32::from(right.max) >= num_blocks {
-                    return Some(start_region_id as RegionId + 1..start_region_id as RegionId + 2);
-                }
-
-                // Otherwise, check if the gap in between them is large enough
-                let in_between = left.trailing + right.leading;
-
-                if u32::from(in_between) >= num_blocks {
-                    Some(start_region_id as RegionId..start_region_id as RegionId + 2)
+                if merged_gap as u32 >= num_blocks {
+                    Some(start_region_id as RegionId..(start_region_id + window_size) as RegionId)
                 } else {
                     None
                 }
@@ -373,6 +367,181 @@ mod tests {
                 prop_assert!(max_gap >= num_blocks, "max_gap: {}, num_blocks: {}", max_gap, num_blocks);
             }
         }
+    }
+
+    /// Tests that it is possible to find a large gap in the end of the gaps list
+    #[test]
+    fn test_find_fitting_gap_large() {
+        let large_value_blocks = DEFAULT_REGION_SIZE_BLOCKS + 20;
+
+        let gaps = [
+            RegionGaps {
+                max: 0,
+                leading: 0,
+                trailing: 0,
+            },
+            RegionGaps {
+                max: 500,
+                leading: 0,
+                trailing: 500,
+            },
+            RegionGaps::all_free(DEFAULT_REGION_SIZE_BLOCKS as u16),
+        ];
+
+        let temp_dir = tempdir().unwrap();
+        let config = StorageOptions::default().try_into().unwrap();
+        let mut bitmask_gaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+        assert!(bitmask_gaps.mmap_slice.len() >= 3);
+        bitmask_gaps.mmap_slice[0..3].clone_from_slice(&gaps[..]);
+
+        assert!(bitmask_gaps
+            .find_fitting_gap(large_value_blocks as u32)
+            .is_some());
+    }
+
+    #[test]
+    fn test_find_fitting_gap_windows_end() {
+        const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
+
+        let temp_dir = tempdir().unwrap();
+        let config: StorageConfig = StorageOptions::default().try_into().unwrap();
+
+        // 3 regions, all empty
+        let gaps = vec![
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+        ];
+        let bitmask_gaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+
+        // Find space for blocks covering up to 2 regions
+        assert!(bitmask_gaps.find_fitting_gap(1).is_some());
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+            .is_some());
+
+        // Find space for blocks covering 3 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 3)
+            .is_some());
+
+        // No space for blocks covering 4 or more regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 4)
+            .is_none());
+
+        // 3 regions with first 0.5 regions occupied and last 2.5 regions available
+        let gaps = vec![
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 2) as u16,
+                leading: 0,
+                trailing: (REGION_SIZE_BLOCKS / 2) as u16,
+            },
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+        ];
+        let bitmask_gaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+
+        // Find space for blocks covering up to 2 regions
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+            .is_some());
+
+        // Find space for blocks covering more than 2 up to 2.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2))
+            .is_some());
+
+        // No space for blocks covering more than 2.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2) + 1)
+            .is_none());
+
+        // 3 regions with first 1.5 regions occupied and last 1.5 regions available
+        let gaps = vec![
+            RegionGaps {
+                max: 0,
+                leading: 0,
+                trailing: 0,
+            },
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 2) as u16,
+                leading: 0,
+                trailing: (REGION_SIZE_BLOCKS / 2) as u16,
+            },
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+        ];
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+
+        // Find space for blocks covering more than 1 to 1.5 regions
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2))
+            .is_some());
+
+        // No space for blocks covering more than 1.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+            .is_none());
+    }
+
+    #[test]
+    fn test_find_fitting_gap_windows_middle() {
+        const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
+
+        let temp_dir = tempdir().unwrap();
+        let config = StorageOptions::default().try_into().unwrap();
+
+        // 3 regions with 1.5 regions occupied and 1.5 regions available
+        let gaps = vec![
+            // First region: occupied
+            RegionGaps {
+                max: 0,
+                leading: 0,
+                trailing: 0,
+            },
+            // Second region: first 25% is occupied
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                leading: 0,
+                trailing: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+            },
+            // Third region: last 25% is occupied
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                leading: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                trailing: 0,
+            },
+        ];
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+
+        // Find space for blocks covering up to 1.5 region
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
+            .is_some());
+
+        // No space for blocks covering more than 1.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+            .is_none());
     }
 
     #[test]
