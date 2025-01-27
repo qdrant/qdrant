@@ -106,27 +106,55 @@ mod tests {
     use itertools::Itertools as _;
     use rand::rngs::StdRng;
     use rand::{Rng as _, SeedableRng as _};
+    use rstest::rstest;
 
     use super::*;
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Cases {
+        OnlyUnsorted = 0,
+        OnlySorted = 1,
+        OnlySortedExact = 2,
+        Empty = 3,
+        Both = 4,
+    }
 
-    #[test]
-    fn test_random() {
-        let mut rng = StdRng::seed_from_u64(42);
+    #[rstest]
+    #[case::only_unsorted(Cases::OnlyUnsorted)]
+    #[case::only_sorted(Cases::OnlySorted)]
+    #[case::only_sorted_exact(Cases::OnlySortedExact)]
+    #[case::empty(Cases::Empty)]
+    #[case::both(Cases::Both)]
+    fn test_random(#[case] case: Cases) {
+        let mut rng = StdRng::seed_from_u64(42u64.wrapping_add(case as u64));
 
-        for _ in 0..100 {
-            let bits_per_unsorted = rng.random_range(7..=32);
-            let sorted_count = rng.random_range(0..100);
-            let unsorted_count = rng.random_range(0..100);
-            if 1 << bits_per_unsorted < sorted_count + unsorted_count {
-                continue;
+        for _ in 0..1_000 {
+            let (sorted_count, total_count);
+            match case {
+                Cases::OnlyUnsorted => {
+                    sorted_count = 0;
+                    total_count = rng.random_range(1..100);
+                }
+                Cases::OnlySorted => {
+                    sorted_count = rng.random_range(2..100);
+                    total_count = rng.random_range(1..sorted_count);
+                }
+                Cases::OnlySortedExact => {
+                    sorted_count = rng.random_range(1..100);
+                    total_count = sorted_count;
+                }
+                Cases::Empty => {
+                    sorted_count = rng.random_range(0..100); // intentionally not 0
+                    total_count = 0;
+                }
+                Cases::Both => {
+                    sorted_count = rng.random_range(0..100);
+                    total_count = rng.random_range(sorted_count..sorted_count + 100);
+                }
             }
 
-            let mut raw_links =
-                std::iter::repeat_with(|| rng.random_range(0..1u64 << bits_per_unsorted) as u32)
-                    .unique()
-                    .take(sorted_count + unsorted_count)
-                    .collect::<Vec<u32>>();
+            let bits_per_unsorted = rng.random_range(MIN_BITS_PER_VALUE..=32);
 
+            let mut raw_links = gen_unique_values(&mut rng, total_count, bits_per_unsorted);
             let mut links = Vec::new();
             pack_links(
                 &mut links,
@@ -137,11 +165,20 @@ mod tests {
 
             let mut unpacked = Vec::new();
             for_each_packed_link(&links, bits_per_unsorted, sorted_count, |value| {
-                unpacked.push(value)
+                unpacked.push(value);
             });
 
-            raw_links[..sorted_count].sort_unstable();
+            raw_links[..sorted_count.min(total_count)].sort_unstable();
             assert_eq!(raw_links, unpacked);
         }
+    }
+
+    /// Generate `count` unique values in range `[0, 2^bits)`.
+    fn gen_unique_values(rng: &mut StdRng, count: usize, bits: u8) -> Vec<u32> {
+        assert!(count <= 1 << bits);
+        std::iter::repeat_with(|| rng.random_range(0..1u64 << bits) as u32)
+            .unique()
+            .take(count)
+            .collect::<Vec<u32>>()
     }
 }
