@@ -424,7 +424,6 @@ mod tests {
             .is_some());
 
         // Find space for blocks covering 3 regions
-        // TODO: fails, windows size is 4 but we have just 3 regions
         assert!(bitmask_gaps
             .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
             .is_some());
@@ -457,7 +456,6 @@ mod tests {
             .is_some());
 
         // Find space for blocks covering more than 2 up to 2.5 regions
-        // TODO: fails, windows size is 4 but we have just 3 regions
         assert!(bitmask_gaps
             .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
             .is_some());
@@ -497,7 +495,7 @@ mod tests {
 
         // No space for blocks covering more than 1.5 regions
         assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2) + 1)
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
             .is_none());
     }
 
