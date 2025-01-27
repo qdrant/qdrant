@@ -186,13 +186,13 @@ impl BitmaskGaps {
     /// Find a gap in the bitmask that is large enough to fit `num_blocks` blocks.
     /// Returns the range of regions where the gap is.
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
-        if self.len() == 0 {
-            return None;
-        }
-
         let min_regions_needed =
             num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
         let max_regions_needed = min_regions_needed + 1;
+
+        if self.len() < min_regions_needed {
+            return None;
+        }
 
         let (mut head, mut tail) = (0, 0);
 
