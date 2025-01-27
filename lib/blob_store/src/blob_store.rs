@@ -664,6 +664,37 @@ mod tests {
     }
 
     #[test]
+    fn test_put_large_payload() {
+        let (_dir, mut storage) = empty_storage();
+
+        let rng = &mut rand::rngs::SmallRng::from_entropy();
+
+        // Generate 100 payloads if around 1 to 2 MBs each
+        let mut payloads = (0..100u32)
+            .map(|point_offset| (point_offset, random_payload(rng, 4000)))
+            .collect::<Vec<_>>();
+
+        let hw_counter = HardwareCounterCell::new();
+        for (point_offset, payload) in payloads.iter() {
+            storage
+                .put_value(*point_offset, payload, &hw_counter)
+                .unwrap();
+
+            let stored_payload = storage.get_value(*point_offset, &hw_counter);
+            assert!(stored_payload.is_some());
+            assert_eq!(&stored_payload.unwrap(), payload);
+        }
+
+        // read randomly
+        payloads.shuffle(rng);
+        for (point_offset, payload) in payloads.iter() {
+            let stored_payload = storage.get_value(*point_offset, &hw_counter);
+            assert!(stored_payload.is_some());
+            assert_eq!(stored_payload.unwrap(), payload.clone());
+        }
+    }
+
+    #[test]
     fn test_delete_single_payload() {
         let (_dir, mut storage) = empty_storage();
 
