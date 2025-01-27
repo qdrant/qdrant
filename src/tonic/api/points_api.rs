@@ -21,18 +21,11 @@ use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
-use super::points_common::{
-    delete_vectors, discover, discover_batch, facet, query, query_batch, query_groups,
-    recommend_groups, scroll, search_groups, search_points_matrix, update_batch, update_vectors,
-};
+use super::query_common::*;
+use super::update_common::*;
 use super::validate;
 use crate::common::inference::extract_token;
 use crate::settings::ServiceConfig;
-use crate::tonic::api::points_common::{
-    clear_payload, convert_shard_selector_for_read, core_search_batch, count, create_field_index,
-    delete, delete_field_index, delete_payload, get, overwrite_payload, recommend, recommend_batch,
-    search, set_payload, upsert,
-};
 use crate::tonic::auth::extract_access;
 use crate::tonic::verification::StrictModeCheckedTocProvider;
 

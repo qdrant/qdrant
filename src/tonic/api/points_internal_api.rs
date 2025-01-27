@@ -26,15 +26,11 @@ use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 use tonic::{Request, Response, Status};
 
-use super::points_common::{core_search_list, scroll};
+use super::query_common::*;
+use super::update_common::*;
 use super::validate_and_log;
 use crate::common::inference::InferenceToken;
 use crate::settings::ServiceConfig;
-use crate::tonic::api::points_common::{
-    clear_payload, count, create_field_index_internal, delete, delete_field_index_internal,
-    delete_payload, delete_vectors, get, overwrite_payload, recommend, set_payload, sync,
-    update_vectors, upsert,
-};
 use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
 
 const FULL_ACCESS: Access = Access::full("Internal API");
