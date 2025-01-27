@@ -15,7 +15,7 @@ pub fn random_segment(path: &Path, num_points: usize) -> Segment {
     let dim = 4;
     let distance = Distance::Dot;
 
-    let mut rnd_gen = rand::thread_rng();
+    let mut rnd_gen = rand::rng();
 
     let mut segment = build_simple_segment(path, dim, distance).unwrap();
 

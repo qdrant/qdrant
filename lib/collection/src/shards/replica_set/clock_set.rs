@@ -401,7 +401,7 @@ mod tests {
             let mut clocks = iter::repeat_with(|| clock_set.get_clock())
                 .take(N)
                 .collect::<Vec<_>>();
-            clocks.shuffle(&mut rand::thread_rng());
+            clocks.shuffle(&mut rand::rng());
 
             for clock in &mut clocks {
                 assert_eq!(clock.tick_once(), 0);
@@ -415,7 +415,7 @@ mod tests {
                 let mut clocks = iter::repeat_with(|| clock_set.get_clock())
                     .take(N)
                     .collect::<Vec<_>>();
-                clocks.shuffle(&mut rand::thread_rng());
+                clocks.shuffle(&mut rand::rng());
 
                 for clock in &mut clocks {
                     assert_eq!(clock.tick_once(), 1 + tick);
@@ -437,7 +437,7 @@ mod tests {
                 let mut clocks = iter::repeat_with(|| clock_set.get_clock())
                     .take(N - (N / 10))
                     .collect::<Vec<_>>();
-                clocks.shuffle(&mut rand::thread_rng());
+                clocks.shuffle(&mut rand::rng());
 
                 for clock in clocks.iter_mut() {
                     assert_eq!(clock.tick_once(), 11 + tick);

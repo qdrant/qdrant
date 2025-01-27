@@ -197,7 +197,7 @@ mod tests {
     use std::iter::zip;
 
     use num_traits::{ConstOne, ConstZero, PrimInt, Unsigned};
-    use rand::distributions::uniform::SampleUniform;
+    use rand::distr::uniform::SampleUniform;
     use rand::rngs::StdRng;
     use rand::{Rng as _, SeedableRng as _};
 
@@ -265,8 +265,8 @@ mod tests {
                 bits_per_value.clear();
                 let mut total_bits = 0;
                 for _ in 0..len {
-                    let bits = rng.gen_range(0u8..=T::BITS as u8);
-                    values.push(rng.gen_range(T::ZERO..=make_bitmask(bits)));
+                    let bits = rng.random_range(0u8..=T::BITS as u8);
+                    values.push(rng.random_range(T::ZERO..=make_bitmask(bits)));
                     bits_per_value.push(bits);
                     total_bits += u64::from(bits);
                 }

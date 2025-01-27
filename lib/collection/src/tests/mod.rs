@@ -290,10 +290,10 @@ async fn test_new_segment_when_all_over_capacity() {
             })
             .unwrap();
 
-        let mut rnd = rand::thread_rng();
+        let mut rnd = rand::rng();
         for _ in 0..10 {
             let point_id: PointIdType = PointIdGenerator::default().unique();
-            let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen()).collect();
+            let random_vector: Vec<_> = (0..dim).map(|_| rnd.random()).collect();
             segment
                 .get()
                 .write()

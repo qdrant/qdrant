@@ -258,7 +258,7 @@ mod tests {
         let num_flags = 5000;
         let mut rng = StdRng::seed_from_u64(42);
 
-        let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(num_flags).collect();
+        let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
             let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
@@ -298,7 +298,7 @@ mod tests {
         // Create randomized dynamic mmap flags to test counting
         let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
         dynamic_flags.set_len(num_flags).unwrap();
-        let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(num_flags).collect();
+        let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags
             .iter()
             .enumerate()

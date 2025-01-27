@@ -22,7 +22,7 @@ const NUM_POINTS: usize = 100000;
 fn random_bool_filter<R: Rng + ?Sized>(rng: &mut R) -> Filter {
     Filter::new_must(Condition::Field(FieldCondition::new_match(
         BOOL_KEY.parse().unwrap(),
-        Match::new_value(ValueVariants::Bool(rng.gen_bool(0.5))),
+        Match::new_value(ValueVariants::Bool(rng.random_bool(0.5))),
     )))
 }
 

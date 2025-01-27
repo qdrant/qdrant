@@ -369,10 +369,10 @@ impl Collection {
                 .collect()
             } else {
                 // If the order is not defined, it is a random query. Take from all shards randomly.
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 shards_results
                     .into_iter()
-                    .kmerge_by(|_, _| rng.gen_bool(0.5))
+                    .kmerge_by(|_, _| rng.random_bool(0.5))
                     .unique_by(|point| point.id)
                     .take(query_info.take)
                     .collect()

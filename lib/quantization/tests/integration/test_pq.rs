@@ -19,9 +19,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
-        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.gen()).collect();
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
@@ -52,9 +52,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
-        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.gen()).collect();
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
@@ -85,9 +85,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
-        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.gen()).collect();
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
@@ -118,9 +118,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
-        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.gen()).collect();
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
@@ -151,9 +151,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
-        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.gen()).collect();
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
@@ -184,9 +184,9 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
-        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.gen()).collect();
+        let query: Vec<_> = (0..VECTOR_DIM).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsPQ::encode(
             vector_data.iter(),
@@ -217,7 +217,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
 
         let encoded = EncodedVectorsPQ::encode(
@@ -248,7 +248,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
 
         let encoded = EncodedVectorsPQ::encode(
@@ -283,7 +283,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<_>> = vec![];
         for _ in 0..VECTORS_COUNT {
-            vector_data.push((0..VECTOR_DIM).map(|_| rng.gen()).collect());
+            vector_data.push((0..VECTOR_DIM).map(|_| rng.random()).collect());
         }
 
         for i in 0.. {

@@ -51,7 +51,7 @@ fn random_named_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> (NamedVector
 }
 
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> (QueryVector, QueryVector) {
-    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
     let dense_target = random_vector(rnd, dim);
     let sparse_target = convert_to_sparse_vector(&dense_target);
 

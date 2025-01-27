@@ -257,11 +257,11 @@ mod tests {
         const DIM: usize = 1500;
         const ATTEMPTS: usize = 100;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for attempt in 0..ATTEMPTS {
-            let range = rng.gen_range(-2.5..=0.0)..=rng.gen_range(0.0..2.5);
-            let vector: Vec<_> = (0..DIM).map(|_| rng.gen_range(range.clone())).collect();
+            let range = rng.random_range(-2.5..=0.0)..=rng.random_range(0.0..2.5);
+            let vector: Vec<_> = (0..DIM).map(|_| rng.random_range(range.clone())).collect();
 
             // Preprocess and re-preprocess
             let preprocess1 = <CosineMetric as Metric<VectorElementType>>::preprocess(vector);

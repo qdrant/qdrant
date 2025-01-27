@@ -5,7 +5,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
-use rand::distributions::Standard;
+use rand::distr::StandardUniform;
 use rand::Rng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
@@ -20,9 +20,9 @@ const NUM_VECTORS: usize = 100000;
 const DIM: usize = 1024; // Larger dimensionality - greater the SIMD advantage
 
 fn random_vector(size: usize) -> DenseVector {
-    let rng = rand::thread_rng();
+    let rng = rand::rng();
 
-    rng.sample_iter(Standard).take(size).collect()
+    rng.sample_iter(StandardUniform).take(size).collect()
 }
 
 fn init_vector_storage(
@@ -94,7 +94,7 @@ fn random_access_benchmark(c: &mut Criterion) {
     let mut total_score = 0.;
     group.bench_function("storage vector search", |b| {
         b.iter(|| {
-            let random_id = rand::thread_rng().gen_range(0..NUM_VECTORS) as PointOffsetType;
+            let random_id = rand::rng().random_range(0..NUM_VECTORS) as PointOffsetType;
             total_score += scorer.score_point(random_id);
         })
     });

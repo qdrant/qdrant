@@ -22,7 +22,7 @@ impl PeerShardCount {
     fn new(peer_id: PeerId) -> Self {
         Self {
             shard_count: 0,
-            bias: rand::random(),
+            bias: rand::random::<u32>() as usize,
             peer_id,
         }
     }

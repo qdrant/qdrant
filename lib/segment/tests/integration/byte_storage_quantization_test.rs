@@ -63,7 +63,7 @@ fn random_discovery_query<R: Rng + ?Sized>(
     dim: usize,
     data_type: VectorStorageDatatype,
 ) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let target = random_vector(rnd, dim, data_type).into();
 
@@ -83,7 +83,7 @@ fn random_reco_query<R: Rng + ?Sized>(
     dim: usize,
     data_type: VectorStorageDatatype,
 ) -> QueryVector {
-    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let positive = (0..num_examples)
         .map(|_| random_vector(rnd, dim, data_type).into())
@@ -375,7 +375,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         let query = random_query(&query_variant, &mut rnd, dim, storage_data_type);
 
         let range_size = 40;
-        let left_range = rnd.gen_range(0..400);
+        let left_range = rnd.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

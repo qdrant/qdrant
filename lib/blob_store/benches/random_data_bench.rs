@@ -7,7 +7,7 @@ const PAYLOAD_COUNT: u32 = 100_000;
 
 pub fn random_data_bench(c: &mut Criterion) {
     let (_dir, mut storage) = empty_storage();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     c.bench_function("write random payload", |b| {
         let hw_counter = HardwareCounterCell::new();
         b.iter_batched_ref(

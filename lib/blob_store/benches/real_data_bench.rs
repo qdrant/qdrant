@@ -105,9 +105,9 @@ pub fn real_data_data_bench(c: &mut Criterion) {
     });
 
     // delete 30% of the points
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for i in 0..storage.max_point_id() {
-        if rng.gen_bool(0.3) {
+        if rng.random_bool(0.3) {
             storage.delete_value(i).unwrap();
         }
     }
@@ -123,7 +123,7 @@ pub fn real_data_data_bench(c: &mut Criterion) {
         b.iter(|| {
             append_csv_data(&mut storage, &csv_path);
             // do not always flush to build up pending updates
-            if rng.gen_bool(0.3) {
+            if rng.random_bool(0.3) {
                 storage.flush().unwrap();
             }
         });

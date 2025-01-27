@@ -4,7 +4,7 @@ use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
 use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
-use rand::distributions::Uniform;
+use rand::distr::Uniform;
 use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::vectors::DenseVector;
@@ -15,7 +15,9 @@ use serde_json::json;
 use crate::common::simple_collection_fixture;
 
 fn rand_dense_vector(rng: &mut ThreadRng, size: usize) -> DenseVector {
-    rng.sample_iter(Uniform::new(0.4, 0.6)).take(size).collect()
+    rng.sample_iter(Uniform::new(0.4, 0.6).unwrap())
+        .take(size)
+        .collect()
 }
 
 mod group_by {
@@ -35,7 +37,7 @@ mod group_by {
     }
 
     async fn setup(docs: u64, chunks: u64) -> Resources {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let source = SourceRequest::Search(SearchRequestInternal {
             vector: vec![0.5, 0.5, 0.5, 0.5].into(),
@@ -493,7 +495,7 @@ mod group_by_builder {
 
     /// Sets up two collections: one for chunks and one for docs.
     async fn setup(docs: u64, chunks_per_doc: u64) -> Resources {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let source_request = SourceRequest::Search(SearchRequestInternal {
             vector: vec![0.5, 0.5, 0.5, 0.5].into(),

@@ -11,7 +11,7 @@ pub type Result<T, E = Error> = result::Result<T, E>;
 pub type Error = Box<dyn error::Error>;
 
 pub fn sampler(rng: impl rand::Rng) -> impl Iterator<Item = f32> {
-    rng.sample_iter(rand::distributions::Standard)
+    rng.sample_iter(rand::distr::StandardUniform)
 }
 
 pub fn insert_distributed_vectors(

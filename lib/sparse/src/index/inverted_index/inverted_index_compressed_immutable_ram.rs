@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn test_save_load_large() {
-        let mut rnd_gen = rand::thread_rng();
+        let mut rnd_gen = rand::rng();
         let mut builder = InvertedIndexBuilder::new();
         // Enough elements to put some of them into chunks
         for i in 0..1024 {

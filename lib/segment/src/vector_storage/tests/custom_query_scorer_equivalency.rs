@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::{thread_rng, Rng, SeedableRng};
+use rand::{rng, Rng, SeedableRng};
 use rstest::rstest;
 
 use super::utils::sampler;
@@ -60,8 +60,8 @@ fn random_reco_query<R: Rng + ?Sized>(
     rnd: &mut R,
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
-    let num_positives: usize = rnd.gen_range(0..MAX_EXAMPLES);
-    let num_negatives: usize = rnd.gen_range(1..MAX_EXAMPLES);
+    let num_positives: usize = rnd.random_range(0..MAX_EXAMPLES);
+    let num_negatives: usize = rnd.random_range(1..MAX_EXAMPLES);
 
     let positives = (0..num_positives)
         .map(|_| sampler.take(DIMS).collect_vec().into())
@@ -78,7 +78,7 @@ fn random_discovery_query<R: Rng + ?Sized>(
     rnd: &mut R,
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
+    let num_pairs: usize = rnd.random_range(0..MAX_EXAMPLES);
 
     let target = sampler.take(DIMS).collect_vec().into();
 
@@ -97,7 +97,7 @@ fn random_context_query<R: Rng + ?Sized>(
     rnd: &mut R,
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(0..MAX_EXAMPLES);
+    let num_pairs: usize = rnd.random_range(0..MAX_EXAMPLES);
 
     let pairs = (0..num_pairs)
         .map(|_| {
@@ -150,8 +150,8 @@ fn product_x4() -> WithQuantization {
     .into();
 
     let sampler = {
-        let rng = thread_rng();
-        Box::new(rng.sample_iter(rand::distributions::Standard))
+        let rng = rng();
+        Box::new(rng.sample_iter(rand::distr::StandardUniform))
     };
 
     (config, sampler)
@@ -166,7 +166,7 @@ fn binary() -> WithQuantization {
     let sampler = {
         let rng = StdRng::seed_from_u64(SEED);
         Box::new(
-            rng.sample_iter(rand::distributions::Uniform::new_inclusive(-1.0, 1.0))
+            rng.sample_iter(rand::distr::Uniform::new_inclusive(-1.0, 1.0).unwrap())
                 .map(|x| f32::from(x as u8)),
         )
     };

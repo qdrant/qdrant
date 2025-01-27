@@ -873,9 +873,9 @@ pub(super) mod test {
         for _ in 0..num_points {
             // Generate num id in range from 0 to 100
 
-            let point_id = PointIdType::NumId(rng.gen_range(0..num_points as u64));
+            let point_id = PointIdType::NumId(rng.random_range(0..num_points as u64));
 
-            let version = rng.gen_range(0..1000);
+            let version = rng.random_range(0..1000);
 
             let internal_id_mmap = id_tracker.total_point_count() as PointOffsetType;
             let internal_id_simple = simple_id_tracker.total_point_count() as PointOffsetType;

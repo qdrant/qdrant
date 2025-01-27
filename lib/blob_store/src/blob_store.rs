@@ -530,7 +530,7 @@ mod tests {
     use std::fs::File;
 
     use itertools::Itertools;
-    use rand::distributions::Uniform;
+    use rand::distr::Uniform;
     use rand::prelude::Distribution;
     use rand::seq::SliceRandom;
     use rand::{Rng, SeedableRng};
@@ -639,7 +639,7 @@ mod tests {
     fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usize) {
         let (_dir, mut storage) = empty_storage();
 
-        let rng = &mut rand::rngs::SmallRng::from_entropy();
+        let rng = &mut rand::rngs::SmallRng::from_os_rng();
 
         let mut payloads = (0..num_payloads)
             .map(|point_offset| (point_offset, random_payload(rng, payload_size_factor)))
@@ -770,17 +770,17 @@ mod tests {
 
     impl Operation {
         fn random(rng: &mut impl Rng, max_point_offset: u32) -> Self {
-            let point_offset = rng.gen_range(0..=max_point_offset);
-            let operation = rng.gen_range(0..3);
+            let point_offset = rng.random_range(0..=max_point_offset);
+            let operation = rng.random_range(0..3);
             match operation {
                 0 => {
-                    let size_factor = rng.gen_range(1..10);
+                    let size_factor = rng.random_range(1..10);
                     let payload = random_payload(rng, size_factor);
                     Operation::Put(point_offset, payload)
                 }
                 1 => Operation::Delete(point_offset),
                 2 => {
-                    let size_factor = rng.gen_range(1..10);
+                    let size_factor = rng.random_range(1..10);
                     let payload = random_payload(rng, size_factor);
                     Operation::Update(point_offset, payload)
                 }
@@ -797,7 +797,7 @@ mod tests {
 
         let (dir, mut storage) = empty_storage_sized(page_size);
 
-        let rng = &mut rand::rngs::SmallRng::from_entropy();
+        let rng = &mut rand::rngs::SmallRng::from_os_rng();
         let max_point_offset = 100000u32;
 
         let mut model_hashmap = HashMap::new();
@@ -879,8 +879,8 @@ mod tests {
 
         let huge_payload_size = 1024 * 1024 * 50; // 50MB
 
-        let distr = Uniform::new('a', 'z');
-        let rng = rand::rngs::SmallRng::from_entropy();
+        let distr = Uniform::new('a', 'z').unwrap();
+        let rng = rand::rngs::SmallRng::from_os_rng();
 
         let huge_value =
             serde_json::Value::String(distr.sample_iter(rng).take(huge_payload_size).collect());
@@ -1080,7 +1080,7 @@ mod tests {
 
     #[test]
     fn test_payload_compression() {
-        let payload = random_payload(&mut rand::rngs::SmallRng::from_entropy(), 2);
+        let payload = random_payload(&mut rand::rngs::SmallRng::from_os_rng(), 2);
         let payload_bytes = payload.to_bytes();
         let compressed = compress_lz4(&payload_bytes);
         let decompressed = decompress_lz4(&compressed);

@@ -31,7 +31,7 @@ enum QueryVariant {
 }
 
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let target = random_dense_byte_vector(rnd, dim).into();
 
@@ -47,7 +47,7 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
 }
 
 fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let positive = (0..num_examples)
         .map(|_| random_dense_byte_vector(rnd, dim).into())
@@ -253,7 +253,7 @@ fn test_byte_storage_hnsw(
         let query = random_query(&query_variant, &mut rnd, dim);
 
         let range_size = 40;
-        let left_range = rnd.gen_range(0..400);
+        let left_range = rnd.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

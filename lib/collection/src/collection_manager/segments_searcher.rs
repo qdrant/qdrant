@@ -815,7 +815,7 @@ mod tests {
 
         let segment_holder = Arc::new(RwLock::new(holder));
 
-        let mut rnd = rand::thread_rng();
+        let mut rnd = rand::rng();
 
         for _ in 0..100 {
             let req1 = SearchRequestInternal {

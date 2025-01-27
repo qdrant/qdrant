@@ -13,7 +13,9 @@ const FLAG_COUNT: usize = 50_000_000;
 fn dynamic_mmap_flag_count(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     let dir = tempdir().unwrap();
-    let random_flags: Vec<bool> = iter::repeat_with(|| rng.gen()).take(FLAG_COUNT).collect();
+    let random_flags: Vec<bool> = iter::repeat_with(|| rng.random())
+        .take(FLAG_COUNT)
+        .collect();
     let stopped = AtomicBool::new(false);
 
     // Build dynamic mmap flags with random deletions

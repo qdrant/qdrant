@@ -151,12 +151,12 @@ mod tests {
         let num_iterations = 100;
         let max_length = 100;
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..num_iterations {
-            let length = rng.gen_range(0..max_length);
+            let length = rng.random_range(0..max_length);
             let mut data = (0..length)
-                .map(|_| rng.gen_range(0..u64::MAX))
+                .map(|_| rng.random_range(0..u64::MAX))
                 .collect::<Vec<_>>();
             data.sort();
             let packed = delta_pack(&data);

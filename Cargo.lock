@@ -498,7 +498,7 @@ dependencies = [
  "prost 0.12.6",
  "prost-build 0.12.6",
  "prost-wkt-types",
- "rand 0.8.5",
+ "rand 0.9.0",
  "schemars",
  "segment",
  "serde",
@@ -842,7 +842,7 @@ dependencies = [
  "memory",
  "parking_lot",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.0",
  "rocksdb",
  "rstest",
  "serde",
@@ -1186,7 +1186,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "proptest",
- "rand 0.8.5",
+ "rand 0.9.0",
  "ringbuffer",
  "rmp-serde",
  "rstest",
@@ -1254,7 +1254,7 @@ dependencies = [
  "num_cpus",
  "ordered-float 4.6.0",
  "ph",
- "rand 0.8.5",
+ "rand 0.9.0",
  "self_cell",
  "semver",
  "serde",
@@ -2280,6 +2280,18 @@ dependencies = [
  "libc",
  "wasi 0.11.0+wasi-snapshot-preview1",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "getrandom"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71393ecc86efbf00e4ca13953979ba8b94cfe549a4b74cc26d8b62f4d8feac2b"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "wasi 0.13.3+wasi-0.2.2",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -3749,7 +3761,7 @@ dependencies = [
  "log",
  "memmap2",
  "parking_lot",
- "rand 0.8.5",
+ "rand 0.9.0",
  "serde",
  "tempfile",
  "thiserror 2.0.11",
@@ -4778,7 +4790,7 @@ dependencies = [
  "pyroscope_pprofrs",
  "raft",
  "raft-proto",
- "rand 0.8.5",
+ "rand 0.9.0",
  "reqwest",
  "rstack-self",
  "rustls 0.23.21",
@@ -4825,7 +4837,7 @@ dependencies = [
  "num-traits",
  "num_threads",
  "permutation_iterator",
- "rand 0.8.5",
+ "rand 0.9.0",
  "rayon",
  "serde",
  "serde_json",
@@ -4971,6 +4983,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
+dependencies = [
+ "rand_chacha 0.9.0",
+ "rand_core 0.9.0",
+ "zerocopy 0.8.14",
+]
+
+[[package]]
 name = "rand_chacha"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4988,6 +5011,16 @@ checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3022b5f1df60f26e1ffddd6c66e8aa15de382ae63b3a0c1bfc0e4d3e3f325cb"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.9.0",
 ]
 
 [[package]]
@@ -5009,6 +5042,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_core"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b08f3c9802962f7e1b25113931d94f43ed9725bebc59db9d0c3e9a23b67e15ff"
+dependencies = [
+ "getrandom 0.3.0",
+ "zerocopy 0.8.14",
+]
+
+[[package]]
 name = "rand_distr"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5016,6 +5059,16 @@ checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
 dependencies = [
  "num-traits",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "rand_distr"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddc3b5afe4c995c44540865b8ca5c52e6a59fa362da96c5d30886930ddc8da1c"
+dependencies = [
+ "num-traits",
+ "rand 0.9.0",
 ]
 
 [[package]]
@@ -5708,8 +5761,8 @@ dependencies = [
  "procfs",
  "proptest",
  "quantization",
- "rand 0.8.5",
- "rand_distr",
+ "rand 0.9.0",
+ "rand_distr 0.5.0",
  "rayon",
  "rmp-serde",
  "rocksdb",
@@ -6115,7 +6168,7 @@ dependencies = [
  "ordered-float 4.6.0",
  "parking_lot",
  "pprof",
- "rand 0.8.5",
+ "rand 0.9.0",
  "schemars",
  "serde",
  "serde_json",
@@ -6168,7 +6221,7 @@ dependencies = [
  "prost 0.11.9",
  "protobuf",
  "raft",
- "rand 0.8.5",
+ "rand 0.9.0",
  "reqwest",
  "schemars",
  "segment",
@@ -7174,7 +7227,7 @@ dependencies = [
  "log",
  "memmap2",
  "rand 0.8.5",
- "rand_distr",
+ "rand_distr 0.4.3",
  "rustix 0.38.40",
  "serde",
 ]
@@ -7221,6 +7274,15 @@ name = "wasi"
 version = "0.11.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
+
+[[package]]
+name = "wasi"
+version = "0.13.3+wasi-0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26816d2e1a4a36a2940b96c5296ce403917633dff8f3440e9b236ed6f6bacad2"
+dependencies = [
+ "wit-bindgen-rt",
+]
 
 [[package]]
 name = "wasm-bindgen"
@@ -7710,6 +7772,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39281189af81c07ec09db316b302a3e67bf9bd7cbf6c820b50e35fee9c2fa980"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "wit-bindgen-rt"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3268f3d866458b787f390cf61f4bbb563b922d091359f9608842999eaee3943c"
+dependencies = [
+ "bitflags 2.4.1",
 ]
 
 [[package]]

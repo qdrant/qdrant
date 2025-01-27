@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use rand::distributions::Standard;
+use rand::distr::StandardUniform;
 use rand::Rng;
 use segment::data_types::named_vectors::CowVector;
 use segment::data_types::vectors::{DenseVector, QueryVector};
@@ -22,8 +22,8 @@ const NUM_VECTORS: usize = 10_000;
 const DIM: usize = 1024;
 
 fn random_vector(size: usize) -> DenseVector {
-    let rng = rand::thread_rng();
-    rng.sample_iter(Standard).take(size).collect()
+    let rng = rand::rng();
+    rng.sample_iter(StandardUniform).take(size).collect()
 }
 
 fn init_mmap_vector_storage(

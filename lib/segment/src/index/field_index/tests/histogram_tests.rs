@@ -26,7 +26,7 @@ fn test_build_histogram_small() {
     let num_samples = 1000;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let points = (0..num_samples)
         .map(|i| Point {
             val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 10.0),
@@ -225,7 +225,7 @@ fn test_build_histogram_round() {
     let num_samples = 100_000;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let points = (0..num_samples).map(|i| Point {
         val: f64::round(rnd.sample::<f64, _>(StandardNormal) * 100.0),
         idx: i,
@@ -242,7 +242,7 @@ fn test_build_histogram() {
     let num_samples = 100_000;
     let mut rnd = StdRng::seed_from_u64(42);
 
-    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let points = (0..num_samples)
         .map(|i| Point {
             val: rnd.sample(StandardNormal),
@@ -264,7 +264,7 @@ fn test_save_load_histogram() {
 
     let points = (0..num_samples)
         .map(|i| Point {
-            val: rnd.gen_range(-10.0..10.0),
+            val: rnd.random_range(-10.0..10.0),
             idx: i,
         })
         .collect_vec();

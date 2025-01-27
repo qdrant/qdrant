@@ -26,7 +26,7 @@ use tempfile::Builder;
 const MAX_EXAMPLE_PAIRS: usize = 3;
 
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let target = random_vector(rnd, dim).into();
 
@@ -42,7 +42,7 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
 }
 
 fn get_random_keyword_of<R: Rng + ?Sized>(num_options: usize, rnd: &mut R) -> String {
-    let random_number = rnd.gen_range(0..num_options);
+    let random_number = rnd.random_range(0..num_options);
     format!("keyword_{random_number}")
 }
 

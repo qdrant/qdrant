@@ -249,7 +249,7 @@ fn skip_deleted_segment() {
 fn test_update_named_vector() {
     let num_points = 25;
     let dim = 4;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let distance = Distance::Cosine;
     let vectors = (0..num_points)
         .map(|_| random_vector(&mut rng, dim))
