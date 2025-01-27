@@ -381,7 +381,7 @@ mod tests {
             if self.0 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    "Forced error in write",
+                    "Forced error in flush",
                 ));
             }
             let _ = self.1.blocking_lock(); // panics in async
@@ -414,7 +414,7 @@ mod tests {
     #[tokio::test]
     async fn test_dummy_drop_fail() {
         let data = Arc::new(Mutex::new(Vec::new()));
-        let tar = BuilderExt::new_seekable_owned(DummyBridgeWriter(false, Arc::clone(&data)));
+        let tar = BuilderExt::new_seekable_owned(DummyBridgeWriter(true, Arc::clone(&data)));
         drop(tar);
         assert_eq!(data.lock().await.len(), 0);
     }
