@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_find_fitting_gap_windows_middle() {
-        const BLOCKS_PER_REGION: u32 = (DEFAULT_REGION_SIZE_BLOCKS / DEFAULT_BLOCK_SIZE_BYTES) as _;
+        const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
 
         let temp_dir = tempdir().unwrap();
         let config = StorageOptions::default().try_into().unwrap();
@@ -519,31 +519,31 @@ mod tests {
             },
             // Second region: first 25% is occupied
             RegionGaps {
-                max: (BLOCKS_PER_REGION / 4) as u16 * 3,
+                max: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
                 leading: 0,
-                trailing: (BLOCKS_PER_REGION / 4) as u16 * 3,
+                trailing: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
             },
             // Third region: last 25% is occupied
             RegionGaps {
-                max: (BLOCKS_PER_REGION / 4) as u16 * 3,
-                leading: (BLOCKS_PER_REGION / 4) as u16 * 3,
+                max: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                leading: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
                 trailing: 0,
             },
         ];
         let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
 
         // Find space for blocks covering up to 1.5 region
-        assert!(bitmask_gaps.find_fitting_gap(BLOCKS_PER_REGION).is_some());
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
         assert!(bitmask_gaps
-            .find_fitting_gap(BLOCKS_PER_REGION + 1)
+            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
             .is_some());
         assert!(bitmask_gaps
-            .find_fitting_gap(BLOCKS_PER_REGION + BLOCKS_PER_REGION / 2)
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
             .is_some());
 
         // No space for blocks covering more than 1.5 regions
         assert!(bitmask_gaps
-            .find_fitting_gap(BLOCKS_PER_REGION + BLOCKS_PER_REGION / 2 + 1)
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
             .is_none());
     }
 
