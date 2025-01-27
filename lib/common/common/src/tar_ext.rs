@@ -1,6 +1,6 @@
 //! Extensions for the `tar` crate.
 
-use std::io::{Seek, Write};
+use std::io::{self, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -53,26 +53,26 @@ impl<W: Write + Seek> Drop for BlowFuseOnDrop<W> {
 }
 
 impl<W: Write> Write for FusedWriteSeek<W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if !self.enabled.load(Ordering::Acquire) {
             // This error shouldn't be observable. It might appear only in
             // `tar::Builder::drop`, and will be ignored there.
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
                 "Using WriteBox after it is disabled",
             ));
         }
         self.output.write(buf)
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         // This method is never called by `tar::Builder`.
         self.output.flush()
     }
 }
 
 impl<W: Seek> Seek for FusedWriteSeek<W> {
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         self.output.seek(pos)
     }
 }
@@ -97,14 +97,14 @@ trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
 impl Write for WriteSeekBoxOwned {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             WriteSeekBoxOwned::Streaming(w) => w.write(buf),
             WriteSeekBoxOwned::Seekable(w) => w.write(buf),
         }
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         match self {
             WriteSeekBoxOwned::Streaming(w) => w.flush(),
             WriteSeekBoxOwned::Seekable(w) => w.flush(),
@@ -113,10 +113,10 @@ impl Write for WriteSeekBoxOwned {
 }
 
 impl Seek for WriteSeekBoxOwned {
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         match self {
-            WriteSeekBoxOwned::Streaming(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            WriteSeekBoxOwned::Streaming(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
                 "Seeking is not supported",
             )),
             WriteSeekBoxOwned::Seekable(w) => w.seek(pos),
@@ -125,14 +125,14 @@ impl Seek for WriteSeekBoxOwned {
 }
 
 impl Write for WriteSeekBoxBorrowed<'_> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             WriteSeekBoxBorrowed::Streaming(w) => w.write(buf),
             WriteSeekBoxBorrowed::Seekable(w) => w.write(buf),
         }
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         match self {
             WriteSeekBoxBorrowed::Streaming(w) => w.flush(),
             WriteSeekBoxBorrowed::Seekable(w) => w.flush(),
@@ -141,10 +141,10 @@ impl Write for WriteSeekBoxBorrowed<'_> {
 }
 
 impl Seek for WriteSeekBoxBorrowed<'_> {
-    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
         match self {
-            WriteSeekBoxBorrowed::Streaming(_) => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            WriteSeekBoxBorrowed::Streaming(_) => Err(io::Error::new(
+                io::ErrorKind::Other,
                 "Seeking is not supported",
             )),
             WriteSeekBoxBorrowed::Seekable(w) => w.seek(pos),
@@ -205,7 +205,7 @@ impl<W: Write + Seek> BuilderExt<W> {
     /// builder.append_data(data, Path::new("foo/bar/baz")).await?;
     /// builder.descend(Path::new("foo/bar"))?.append_data(data, Path::new("baz")).await?;
     /// ```
-    pub fn descend(&self, subdir: &Path) -> std::io::Result<Self> {
+    pub fn descend(&self, subdir: &Path) -> io::Result<Self> {
         Ok(Self {
             tar: Arc::clone(&self.tar),
             path: join_relative(&self.path, subdir)?,
@@ -226,7 +226,7 @@ impl<W: Write + Seek> BuilderExt<W> {
         &self,
         dst: &Path,
         f: impl FnOnce(&mut tar::EntryWriter) -> T,
-    ) -> std::io::Result<T> {
+    ) -> io::Result<T> {
         let dst = join_relative(&self.path, dst)?;
         let mut header = tar::Header::new_gnu();
         header.set_mode(0o644);
@@ -243,7 +243,7 @@ impl<W: Write + Seek> BuilderExt<W> {
     ///
     /// This function panics if called within an asynchronous execution context.
     /// Use [`BuilderExt::append_file`] instead.
-    pub fn blocking_append_file(&self, src: &Path, dst: &Path) -> std::io::Result<()> {
+    pub fn blocking_append_file(&self, src: &Path, dst: &Path) -> io::Result<()> {
         let dst = join_relative(&self.path, dst)?;
         self.tar
             .blocking_lock()
@@ -256,7 +256,7 @@ impl<W: Write + Seek> BuilderExt<W> {
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
-    pub fn blocking_append_dir_all(&self, src: &Path, dst: &Path) -> std::io::Result<()> {
+    pub fn blocking_append_dir_all(&self, src: &Path, dst: &Path) -> io::Result<()> {
         let dst = join_relative(&self.path, dst)?;
         self.tar.blocking_lock().tar().append_dir_all(dst, src)
     }
@@ -267,7 +267,7 @@ impl<W: Write + Seek> BuilderExt<W> {
     ///
     /// This function panics if called within an asynchronous execution context.
     /// Use [`BuilderExt::append_data`] instead.
-    pub fn blocking_append_data(&self, src: &[u8], dst: &Path) -> std::io::Result<()> {
+    pub fn blocking_append_data(&self, src: &[u8], dst: &Path) -> io::Result<()> {
         let dst = join_relative(&self.path, dst)?;
         let mut header = tar::Header::new_gnu();
         header.set_mode(0o644);
@@ -280,11 +280,11 @@ impl<W: Write + Seek> BuilderExt<W> {
 
     /// Finish writing the tar archive. For async counterpart, see
     /// [`BuilderExt::finish`].
-    pub fn blocking_finish(self) -> std::io::Result<()> {
+    pub fn blocking_finish(self) -> io::Result<()> {
         let mut bb: BlowFuseOnDrop<_> = Arc::try_unwrap(self.tar)
             .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                io::Error::new(
+                    io::ErrorKind::Other,
                     "finish called with multiple references to the tar builder",
                 )
             })?
@@ -303,7 +303,7 @@ impl<W: Write + Seek> BuilderExt<W> {
 
 impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
     /// Append a file to the tar archive.
-    pub async fn append_file(&self, src: &Path, dst: &Path) -> std::io::Result<()> {
+    pub async fn append_file(&self, src: &Path, dst: &Path) -> io::Result<()> {
         let src = src.to_path_buf();
         let dst = join_relative(&self.path, dst)?;
         self.run_async(move |tar| tar.append_path_with_name(src, dst))
@@ -315,7 +315,7 @@ impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
     /// # Panics
     ///
     /// This function panics if called within an asynchronous execution context.
-    pub async fn append_data(&self, src: Vec<u8>, dst: &Path) -> std::io::Result<()> {
+    pub async fn append_data(&self, src: Vec<u8>, dst: &Path) -> io::Result<()> {
         let dst = join_relative(&self.path, dst)?;
         let mut header = tar::Header::new_gnu();
         header.set_mode(0o644);
@@ -325,7 +325,7 @@ impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
     }
 
     /// Finish writing the tar archive.
-    pub async fn finish(self) -> std::io::Result<()> {
+    pub async fn finish(self) -> io::Result<()> {
         tokio::task::spawn_blocking(move || self.blocking_finish()).await?
     }
 
@@ -342,10 +342,10 @@ impl<W: Send + Write + Seek + 'static> BuilderExt<W> {
     }
 }
 
-fn join_relative(base: &Path, rel_path: &Path) -> std::io::Result<PathBuf> {
+fn join_relative(base: &Path, rel_path: &Path) -> io::Result<PathBuf> {
     if rel_path.is_absolute() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
             format!("path must be relative, but got {rel_path:?}"),
         ));
     }
@@ -355,8 +355,6 @@ fn join_relative(base: &Path, rel_path: &Path) -> std::io::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use super::*;
 
     // -------------------------------------------------------------------------
@@ -366,10 +364,10 @@ mod tests {
     struct DummyBridgeWriter(bool, Arc<Mutex<Vec<u8>>>);
 
     impl Write for DummyBridgeWriter {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             if self.0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
                     "Forced error in write",
                 ));
             }
@@ -377,10 +375,10 @@ mod tests {
             Ok(buf.len())
         }
 
-        fn flush(&mut self) -> std::io::Result<()> {
+        fn flush(&mut self) -> io::Result<()> {
             if self.0 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
                     "Forced error in flush",
                 ));
             }
@@ -390,7 +388,7 @@ mod tests {
     }
 
     impl Seek for DummyBridgeWriter {
-        fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
+        fn seek(&mut self, _: io::SeekFrom) -> io::Result<u64> {
             unimplemented!()
         }
     }
@@ -448,7 +446,7 @@ mod tests {
 
     #[test]
     fn test_writeseek_ok() {
-        let tar = BuilderExt::new_seekable_borrowed(Cursor::new(Vec::new()));
+        let tar = BuilderExt::new_seekable_borrowed(io::Cursor::new(Vec::new()));
         tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
         tar.blocking_write_fn(Path::new("foo"), |writer| writer.write_all(b"bar"))
             .unwrap()
