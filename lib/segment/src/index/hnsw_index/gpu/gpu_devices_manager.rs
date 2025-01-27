@@ -37,7 +37,7 @@ impl GpuDevicesMaganer {
         wait_free: bool,
         parallel_indexes: usize,
     ) -> OperationResult<Self> {
-        let instance = gpu::Instance::new(None, None, false)?;
+        let instance = gpu::Instance::builder().build()?;
 
         // Device filter is case-insensitive and comma-separated.
         let filter = filter.to_lowercase();

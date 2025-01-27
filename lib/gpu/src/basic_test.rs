@@ -23,13 +23,11 @@ fn basic_gpu_test() {
 
     // Panic if case of wrong Vulkan API calls.
     let debug_messenger = crate::PanicIfErrorMessenger {};
-    // Use default CPU allocator.
-    let allocation_callbacks = None;
-    // Don't dump Vulkan API calls.
-    let dump_api = false;
     // Create Vulkan API instance.
-    let instance =
-        crate::Instance::new(Some(&debug_messenger), allocation_callbacks, dump_api).unwrap();
+    let instance = crate::Instance::builder()
+        .with_debug_messenger(&debug_messenger)
+        .build()
+        .unwrap();
     // Choose any GPU hardware to use.
     let physical_device = &instance.physical_devices()[0];
     // Create GPU device.
