@@ -23,7 +23,7 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     self, get_request_hardware_counter, process_response, process_response_error,
 };
-use crate::common::points;
+use crate::common::query;
 use crate::settings::ServiceConfig;
 
 // Configure services
@@ -53,7 +53,7 @@ async fn get_points(
     );
     let timing = Instant::now();
 
-    let records = points::do_get_points(
+    let records = query::do_get_points(
         dispatcher.toc(&access, &pass),
         &path.collection,
         request.into_inner(),
@@ -202,7 +202,7 @@ async fn count_points(
 
         request.filter = merge_with_optional_filter(request.filter.take(), hash_ring_filter);
 
-        points::do_count_points(
+        query::do_count_points(
             dispatcher.toc(&access, &pass),
             &path.collection,
             request,

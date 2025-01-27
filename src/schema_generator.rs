@@ -31,8 +31,8 @@ use storage::content_manager::collection_meta_ops::{
 use storage::types::ClusterStatus;
 
 use crate::common::helpers::LocksOption;
-use crate::common::points::{CreateFieldIndex, UpdateOperations};
 use crate::common::telemetry::TelemetryData;
+use crate::common::update::{CreateFieldIndex, UpdateOperations};
 
 mod actix;
 mod common;

@@ -10,7 +10,7 @@ use super::CollectionPath;
 use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
-use crate::common::points::do_count_points;
+use crate::common::query::do_count_points;
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/count")]

@@ -59,13 +59,8 @@ use crate::common::inference::query_requests_grpc::{
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
 use crate::common::inference::InferenceToken;
-use crate::common::points::{
-    do_clear_payload, do_core_search_points, do_count_points, do_create_index,
-    do_create_index_internal, do_delete_index, do_delete_index_internal, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_get_points, do_overwrite_payload,
-    do_query_batch_points, do_query_point_groups, do_query_points, do_scroll_points,
-    do_search_batch_points, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
-};
+use crate::common::query::*;
+use crate::common::update::*;
 use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 
 fn extract_points_selector(
@@ -1237,7 +1232,7 @@ pub async fn search_groups(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let timing = Instant::now();
-    let groups_result = crate::common::points::do_search_point_groups(
+    let groups_result = crate::common::query::do_search_point_groups(
         toc,
         &collection_name,
         search_groups_request,
@@ -1453,7 +1448,7 @@ pub async fn recommend_groups(
     let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
 
     let timing = Instant::now();
-    let groups_result = crate::common::points::do_recommend_point_groups(
+    let groups_result = crate::common::query::do_recommend_point_groups(
         toc,
         &collection_name,
         recommend_groups_request,

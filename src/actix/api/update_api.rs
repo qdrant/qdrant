@@ -20,11 +20,7 @@ use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
 };
 use crate::common::inference::InferenceToken;
-use crate::common::points::{
-    do_batch_update_points, do_clear_payload, do_create_index, do_delete_index, do_delete_payload,
-    do_delete_points, do_delete_vectors, do_overwrite_payload, do_set_payload, do_update_vectors,
-    do_upsert_points, CreateFieldIndex, UpdateOperations,
-};
+use crate::common::update::*;
 use crate::settings::ServiceConfig;
 
 #[derive(Deserialize, Validate)]
