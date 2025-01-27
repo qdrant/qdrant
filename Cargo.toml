@@ -178,7 +178,7 @@ half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 http = "1.2.0"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17.9", features = ["rayon"] }
-itertools = "0.13.0"
+itertools = "0.14.0"
 log = "0.4.25"
 memmap2 = "0.9.5"
 nix = { version = "0.29", features = ["fs"] }

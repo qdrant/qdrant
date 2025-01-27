@@ -493,7 +493,7 @@ version = "1.13.1"
 dependencies = [
  "chrono",
  "common",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "parking_lot",
  "prost 0.12.6",
  "prost-build 0.12.6",
@@ -836,7 +836,7 @@ dependencies = [
  "csv",
  "dataset",
  "io",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "lz4_flex",
  "memmap2",
  "memory",
@@ -1177,7 +1177,7 @@ dependencies = [
  "indicatif",
  "io",
  "issues",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "lazy_static",
  "log",
  "merge",
@@ -1246,7 +1246,7 @@ dependencies = [
  "bytemuck",
  "common",
  "criterion",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "lazy_static",
  "log",
  "memmap2",
@@ -3105,6 +3105,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4758,7 +4767,7 @@ dependencies = [
  "futures-util",
  "gpu",
  "issues",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "jsonwebtoken",
  "log",
  "memory",
@@ -5682,7 +5691,7 @@ dependencies = [
  "io-uring",
  "is_sorted",
  "issues",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "lazy_static",
  "log",
  "macro_rules_attribute",
@@ -6099,7 +6108,7 @@ dependencies = [
  "half 2.4.1",
  "indicatif",
  "io",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "memmap2",
  "memory",
@@ -6151,7 +6160,7 @@ dependencies = [
  "http 0.2.9",
  "io",
  "issues",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "memory",
  "parking_lot",
