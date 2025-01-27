@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use quantization::encoded_vectors_binary::{BitsStoreType, EncodedVectorsBin};
 use quantization::{EncodedStorage, EncodedVectorsPQ, EncodedVectorsU8};
@@ -141,7 +142,9 @@ impl GpuBinaryQuantization {
         let orig_dim = quantized_storage.get_vector_parameters().dim;
         // Bytes count for quantized vector.
         let quantized_vector_len = if quantized_storage.vectors_count() > 0 {
-            quantized_storage.get_quantized_vector(0).len()
+            quantized_storage
+                .get_quantized_vector(0, &HardwareCounterCell::disposable())
+                .len()
         } else {
             0
         };
@@ -243,7 +246,8 @@ impl GpuScalarQuantization {
         let mut upload_context = gpu::Context::new(device.clone())?;
 
         for i in 0..quantized_storage.vectors_count() {
-            let (offset, _) = quantized_storage.get_quantized_vector(i as PointOffsetType);
+            let (offset, _) = quantized_storage
+                .get_quantized_vector(i as PointOffsetType, &HardwareCounterCell::disposable());
             sq_offsets_staging_buffer.upload(&offset, i * std::mem::size_of::<f32>())?;
         }
 

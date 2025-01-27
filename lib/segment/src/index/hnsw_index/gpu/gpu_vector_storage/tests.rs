@@ -599,9 +599,18 @@ fn test_gpu_vector_storage_impl(
     let dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
     let storage = create_vector_storage(dir.path(), storage_type, num_vectors, dim, distance);
 
+    let hw_acc = HwMeasurementAcc::new();
+
     let quantized_vectors = quantization_config.as_ref().map(|quantization_config| {
-        QuantizedVectors::create(&storage, quantization_config, dir.path(), 1, &false.into())
-            .unwrap()
+        QuantizedVectors::create(
+            &storage,
+            quantization_config,
+            dir.path(),
+            1,
+            &false.into(),
+            hw_acc,
+        )
+        .unwrap()
     });
 
     let debug_messenger = gpu::PanicIfErrorMessenger {};
@@ -714,9 +723,10 @@ fn test_gpu_vector_storage_impl(
     let mut gpu_scores = vec![0.0f32; num_vectors];
     staging_buffer.download_slice(&mut gpu_scores, 0).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
     let stopped = false.into();
     let point_deleted = BitVec::repeat(false, num_vectors);
-    let query = QueryVector::Nearest(storage.get_vector(test_point_id).to_owned());
+    let query = QueryVector::Nearest(storage.get_vector(test_point_id, &hw_counter).to_owned());
 
     let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {

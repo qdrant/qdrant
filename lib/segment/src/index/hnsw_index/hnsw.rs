@@ -649,7 +649,7 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let points_scorer_builder = |vector_id| {
-            let vector = vector_storage.get_vector(vector_id);
+            let vector = vector_storage.get_vector(vector_id, &HardwareCounterCell::disposable());
             let vector = vector.as_vec_ref().into();
             let hardware_counter = HardwareCounterCell::disposable();
             let raw_scorer = if let Some(quantized_storage) = quantized_vectors.as_ref() {
@@ -696,7 +696,8 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let points_scorer_builder = |block_point_id| -> OperationResult<_> {
-            let vector = vector_storage.get_vector(block_point_id);
+            let vector =
+                vector_storage.get_vector(block_point_id, &HardwareCounterCell::disposable());
             let vector = vector.as_vec_ref().into();
             let hardware_counter = HardwareCounterCell::disposable();
             let raw_scorer = match quantized_vectors.as_ref() {

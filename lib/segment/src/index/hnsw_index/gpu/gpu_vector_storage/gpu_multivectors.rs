@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use quantization::EncodedVectors;
 
@@ -89,7 +90,7 @@ impl GpuMultivectors {
                 // map ID to count of vectors in multivector
                 .map(|id| {
                     vector_storage
-                        .get_multi(id as PointOffsetType)
+                        .get_multi(id as PointOffsetType, &HardwareCounterCell::disposable())
                         .vectors_count()
                 })
                 // Map count of vectors to start and count of vectors in multivector.

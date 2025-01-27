@@ -124,6 +124,8 @@ pub fn build_hnsw_on_gpu<'a>(
 mod tests {
     use std::borrow::Borrow;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
+
     use super::*;
     use crate::fixtures::index_fixtures::FakeFilterContext;
     use crate::index::hnsw_index::gpu::tests::{
@@ -165,11 +167,12 @@ mod tests {
             exact,
             ids,
             |point_id| {
+                let hw_cell = HardwareCounterCell::new();
                 let fake_filter_context = FakeFilterContext {};
                 let added_vector = test
                     .vector_holder
                     .vectors
-                    .get(point_id as VectorOffsetType)
+                    .get(point_id as VectorOffsetType, &hw_cell)
                     .to_vec();
                 let raw_scorer = test
                     .vector_holder

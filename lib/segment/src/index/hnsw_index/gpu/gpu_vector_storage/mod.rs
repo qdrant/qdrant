@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gpu_multivectors::GpuMultivectors;
 use gpu_quantization::GpuQuantization;
@@ -263,14 +265,19 @@ impl GpuVectorStorage {
         multivectors: Option<GpuMultivectors>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        let disposable_hw = HardwareCounterCell::disposable();
         Self::new_typed::<VectorElementTypeByte>(
             device.clone(),
             distance,
             quantized_storage.vectors_count(),
             num_vectors,
-            quantized_storage.get_quantized_vector(0).1.len(),
+            quantized_storage
+                .get_quantized_vector(0, &disposable_hw)
+                .1
+                .len(),
             (0..quantized_storage.vectors_count()).map(|id| {
-                let (_, vector) = quantized_storage.get_quantized_vector(id as PointOffsetType);
+                let (_, vector) =
+                    quantized_storage.get_quantized_vector(id as PointOffsetType, &disposable_hw);
                 Cow::Borrowed(vector)
             }),
             Some(GpuQuantization::new_sq(device, quantized_storage)?),
@@ -287,14 +294,18 @@ impl GpuVectorStorage {
         multivectors: Option<GpuMultivectors>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        let disposable_hw = HardwareCounterCell::disposable();
         Self::new_typed::<VectorElementTypeByte>(
             device.clone(),
             distance,
             quantized_storage.vectors_count(),
             num_vectors,
-            quantized_storage.get_quantized_vector(0).len(),
+            quantized_storage
+                .get_quantized_vector(0, &disposable_hw)
+                .len(),
             (0..quantized_storage.vectors_count()).map(|id| {
-                let vector = quantized_storage.get_quantized_vector(id as PointOffsetType);
+                let vector =
+                    quantized_storage.get_quantized_vector(id as PointOffsetType, &disposable_hw);
                 Cow::Borrowed(vector)
             }),
             Some(GpuQuantization::new_pq(device, quantized_storage)?),
@@ -311,14 +322,19 @@ impl GpuVectorStorage {
         multivectors: Option<GpuMultivectors>,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        let disposable_hw = HardwareCounterCell::disposable();
         Self::new_typed::<VectorElementTypeByte>(
             device.clone(),
             distance,
             quantized_storage.vectors_count(),
             num_vectors,
-            quantized_storage.get_quantized_vector(0).len(),
+            quantized_storage
+                .get_quantized_vector(0, &disposable_hw)
+                .len(),
             (0..quantized_storage.vectors_count()).map(|id| {
-                Cow::Borrowed(quantized_storage.get_quantized_vector(id as PointOffsetType))
+                Cow::Borrowed(
+                    quantized_storage.get_quantized_vector(id as PointOffsetType, &disposable_hw),
+                )
             }),
             Some(GpuQuantization::new_bq(device, quantized_storage)),
             multivectors,
@@ -430,6 +446,7 @@ impl GpuVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         if force_half_precision && device.has_half_precision() {
+            let disposable_hw = HardwareCounterCell::disposable();
             Self::new_typed::<VectorElementTypeHalf>(
                 device,
                 vector_storage.distance(),
@@ -438,7 +455,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense(id as PointOffsetType),
+                        vector_storage.get_dense(id as PointOffsetType, &disposable_hw),
                     ))
                 }),
                 None,
@@ -458,6 +475,7 @@ impl GpuVectorStorage {
         if device.has_half_precision() {
             Self::new_dense(device, vector_storage, stopped)
         } else {
+            let disposable_hw = HardwareCounterCell::disposable();
             Self::new_typed::<VectorElementType>(
                 device,
                 vector_storage.distance(),
@@ -466,7 +484,7 @@ impl GpuVectorStorage {
                 vector_storage.vector_dim(),
                 (0..vector_storage.total_vector_count()).map(|id| {
                     VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(
-                        vector_storage.get_dense(id as PointOffsetType),
+                        vector_storage.get_dense(id as PointOffsetType, &disposable_hw),
                     ))
                 }),
                 None,
@@ -481,14 +499,16 @@ impl GpuVectorStorage {
         vector_storage: &TVectorStorage,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        let disposable_hw = HardwareCounterCell::disposable();
         Self::new_typed::<TElement>(
             device,
             vector_storage.distance(),
             vector_storage.total_vector_count(),
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
-            (0..vector_storage.total_vector_count())
-                .map(|id| Cow::Borrowed(vector_storage.get_dense(id as PointOffsetType))),
+            (0..vector_storage.total_vector_count()).map(|id| {
+                Cow::Borrowed(vector_storage.get_dense(id as PointOffsetType, &disposable_hw))
+            }),
             None,
             None,
             stopped,
@@ -502,21 +522,24 @@ impl GpuVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         if force_half_precision && device.has_half_precision() {
+            let disposable_hw = HardwareCounterCell::disposable();
             Self::new_typed::<VectorElementTypeHalf>(
                 device.clone(),
                 vector_storage.distance(),
                 (0..vector_storage.total_vector_count())
                     .map(|id| {
                         vector_storage
-                            .get_multi(id as PointOffsetType)
+                            .get_multi(id as PointOffsetType, &disposable_hw)
                             .vectors_count()
                     })
                     .sum(),
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
-                vector_storage.iterate_inner_vectors().map(|vector| {
-                    VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(vector))
-                }),
+                vector_storage
+                    .iterate_inner_vectors(HwMeasurementAcc::disposable())
+                    .map(|vector| {
+                        VectorElementTypeHalf::slice_from_float_cow(Cow::Borrowed(vector))
+                    }),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
                 stopped,
@@ -534,20 +557,21 @@ impl GpuVectorStorage {
         if device.has_half_precision() {
             Self::new_multi(device, vector_storage, stopped)
         } else {
+            let disposable_hw = HardwareCounterCell::disposable();
             Self::new_typed::<VectorElementType>(
                 device.clone(),
                 vector_storage.distance(),
                 (0..vector_storage.total_vector_count())
                     .map(|id| {
                         vector_storage
-                            .get_multi(id as PointOffsetType)
+                            .get_multi(id as PointOffsetType, &disposable_hw)
                             .vectors_count()
                     })
                     .sum(),
                 vector_storage.total_vector_count(),
                 vector_storage.vector_dim(),
                 vector_storage
-                    .iterate_inner_vectors()
+                    .iterate_inner_vectors(HwMeasurementAcc::disposable())
                     .map(|vector| VectorElementTypeHalf::slice_to_float_cow(Cow::Borrowed(vector))),
                 None,
                 Some(GpuMultivectors::new_multidense(device, vector_storage)?),
@@ -561,19 +585,22 @@ impl GpuVectorStorage {
         vector_storage: &TVectorStorage,
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
+        let disposable_hw = HardwareCounterCell::disposable();
         Self::new_typed::<TElement>(
             device.clone(),
             vector_storage.distance(),
             (0..vector_storage.total_vector_count())
                 .map(|id| {
                     vector_storage
-                        .get_multi(id as PointOffsetType)
+                        .get_multi(id as PointOffsetType, &disposable_hw)
                         .vectors_count()
                 })
                 .sum(),
             vector_storage.total_vector_count(),
             vector_storage.vector_dim(),
-            vector_storage.iterate_inner_vectors().map(Cow::Borrowed),
+            vector_storage
+                .iterate_inner_vectors(HwMeasurementAcc::disposable())
+                .map(Cow::Borrowed),
             None,
             Some(GpuMultivectors::new_multidense(device, vector_storage)?),
             stopped,

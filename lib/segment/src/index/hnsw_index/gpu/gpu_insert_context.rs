@@ -453,6 +453,7 @@ impl<'a> GpuInsertContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
     use rand::rngs::StdRng;
@@ -506,8 +507,9 @@ mod tests {
         let mut storage =
             open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, Distance::Dot, &false.into())
                 .unwrap();
+        let hw_counter = HardwareCounterCell::new();
         for idx in 0..(num_vectors + groups_count) {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+            let v = vector_holder.get_vector(idx as PointOffsetType, &hw_counter);
             storage
                 .insert_vector(idx as PointOffsetType, v.as_vec_ref())
                 .unwrap();
@@ -521,7 +523,10 @@ mod tests {
         }
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_counter)
+                .to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers_builder.link_new_point(idx, scorer);
@@ -733,10 +738,16 @@ mod tests {
         // restart search to check reset
         let gpu_responses_2 = search(&search_requests);
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Check response
         for i in 0..groups_count {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
+            let added_vector = test
+                .vector_holder
+                .vectors
+                .get(num_vectors + i, &hw_counter)
+                .to_vec();
             let raw_scorer = test
                 .vector_holder
                 .get_raw_scorer(added_vector.clone())
@@ -792,10 +803,16 @@ mod tests {
             .unwrap();
         let gpu_responses = gpu_insert_context.download_responses(groups_count).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Check response
         for (i, &gpu_search_result) in gpu_responses.iter().enumerate() {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
+            let added_vector = test
+                .vector_holder
+                .vectors
+                .get(num_vectors + i, &hw_counter)
+                .to_vec();
             let raw_scorer = test
                 .vector_holder
                 .get_raw_scorer(added_vector.clone())
@@ -962,10 +979,16 @@ mod tests {
             .map(|r| r.to_owned())
             .collect_vec();
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Check response
         for (i, gpu_group_result) in gpu_responses.iter().enumerate() {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
+            let added_vector = test
+                .vector_holder
+                .vectors
+                .get(num_vectors + i, &hw_counter)
+                .to_vec();
             let raw_scorer = test
                 .vector_holder
                 .get_raw_scorer(added_vector.clone())

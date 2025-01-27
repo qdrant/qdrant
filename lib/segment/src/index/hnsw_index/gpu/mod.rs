@@ -94,6 +94,7 @@ fn create_graph_layers_builder(
 #[cfg(test)]
 mod tests {
     use ahash::HashSet;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
@@ -145,8 +146,9 @@ mod tests {
             &false.into(),
         )
         .unwrap();
+        let hw_acc = HardwareCounterCell::new();
         for idx in 0..num_vectors {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+            let v = vector_holder.get_vector(idx as PointOffsetType, &hw_acc);
             storage
                 .insert_vector(idx as PointOffsetType, v.as_vec_ref())
                 .unwrap();
@@ -167,7 +169,10 @@ mod tests {
 
         for &idx in &ids {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_acc)
+                .to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers_builder.link_new_point(idx, scorer);
