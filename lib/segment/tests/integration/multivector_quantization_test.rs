@@ -332,6 +332,7 @@ fn test_multivector_quantization_hnsw(
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },

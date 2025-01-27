@@ -148,6 +148,7 @@ fn hnsw_quantized_search_test(
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },
