@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::ScoredPointOffset;
@@ -296,6 +297,7 @@ fn test_multivector_quantization_hnsw(
                 quantized_data_path,
                 4,
                 &stopped,
+                HwMeasurementAcc::new(),
             )
             .unwrap();
         }

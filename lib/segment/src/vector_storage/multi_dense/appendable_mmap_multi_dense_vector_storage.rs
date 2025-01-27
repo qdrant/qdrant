@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
@@ -83,19 +85,29 @@ impl<
     }
 
     /// Panics if key is not found
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
-        self.get_multi_opt(key).expect("vector not found")
+    fn get_multi(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> TypedMultiDenseVectorRef<T> {
+        self.get_multi_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// Returns None if key is not found
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
+    fn get_multi_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<TypedMultiDenseVectorRef<T>> {
         self.offsets
-            .get(key as VectorOffsetType)
+            .get(key as VectorOffsetType, hw_counter)
             .and_then(|mmap_offset| {
                 let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
                 self.vectors.get_many(
                     mmap_offset.offset as VectorOffsetType,
                     mmap_offset.count as usize,
+                    hw_counter,
                 )
             })
             .map(|flattened_vectors| TypedMultiDenseVectorRef {
@@ -108,25 +120,31 @@ impl<
         &'a self,
         keys: &[PointOffsetType],
         vectors: &mut [TypedMultiDenseVectorRef<'a, T>],
+        hw_counter: &HardwareCounterCell,
     ) {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         for (idx, key) in keys.iter().enumerate() {
-            vectors[idx] = self.get_multi(*key);
+            vectors[idx] = self.get_multi(*key, hw_counter);
         }
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
-        (0..self.total_vector_count()).flat_map(|key| {
+    fn iterate_inner_vectors(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> impl Iterator<Item = &[T]> + Clone + Send {
+        (0..self.total_vector_count()).flat_map(move |key| {
             let mmap_offset = self
                 .offsets
-                .get(key as VectorOffsetType)
+                .get(key as VectorOffsetType, &hw_acc.get_counter_cell())
                 .unwrap()
                 .first()
                 .unwrap();
-            (0..mmap_offset.count).map(|i| {
+            let acc = hw_acc.clone();
+            (0..mmap_offset.count).map(move |i| {
+                let cell = acc.get_counter_cell();
                 self.vectors
-                    .get((mmap_offset.offset + i) as VectorOffsetType)
+                    .get((mmap_offset.offset + i) as VectorOffsetType, &cell)
                     .unwrap()
             })
         })
@@ -169,19 +187,26 @@ impl<
         self.offsets.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        self.get_multi_opt(key).map(|multi_dense_vector| {
-            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
-                multi_dense_vector,
-            )))
-        })
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
+        self.get_multi_opt(key, hw_counter)
+            .map(|multi_dense_vector| {
+                CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
+                    multi_dense_vector,
+                )))
+            })
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate!
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
         let multi_vector = multi_vector.as_vec_ref();
@@ -197,7 +222,7 @@ impl<
 
         let mut offset = self
             .offsets
-            .get(key as VectorOffsetType)
+            .get(key as VectorOffsetType, &hw_counter)
             .map(|x| x.first().copied().unwrap_or_default())
             .unwrap_or_default();
 

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
@@ -61,13 +62,18 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
         self.vectors.dim()
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> &[T] {
         self.vectors
-            .get(key as VectorOffsetType)
+            .get(key as VectorOffsetType, hw_counter)
             .expect("mmap vector not found")
     }
 
-    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+    fn get_dense_batch<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    ) {
         debug_assert!(keys.len() == vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
 
@@ -76,7 +82,7 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             vector_offsets[i] = *key as VectorOffsetType;
         }
         self.vectors
-            .get_batch(&vector_offsets[..keys.len()], vectors);
+            .get_batch(&vector_offsets[..keys.len()], vectors, hw_counter);
     }
 }
 
@@ -99,13 +105,18 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
         self.vectors
-            .get(key as VectorOffsetType)
+            .get(key as VectorOffsetType, hw_counter)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 

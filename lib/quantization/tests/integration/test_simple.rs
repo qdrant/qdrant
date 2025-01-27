@@ -39,8 +39,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -76,8 +78,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -113,8 +117,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -150,8 +156,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = -dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -187,8 +195,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = -l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -224,8 +233,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = -l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -332,8 +343,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_simple(&query_u8, index as u32);
+            let score = encoded.score_point_simple(&query_u8, index as u32, &hw_counter);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }

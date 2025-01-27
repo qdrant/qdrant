@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
 
@@ -14,7 +15,7 @@ pub struct QuantizedMmapStorageBuilder {
 }
 
 impl quantization::EncodedStorage for QuantizedMmapStorage {
-    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
+    fn get_vector_data(&self, index: usize, vector_size: usize, _: &HardwareCounterCell) -> &[u8] {
         &self.mmap[vector_size * index..vector_size * (index + 1)]
     }
 

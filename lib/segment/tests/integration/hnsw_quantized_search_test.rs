@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
@@ -111,6 +112,7 @@ fn hnsw_quantized_search_test(
             quantized_data_path,
             4,
             &stopped,
+            HwMeasurementAcc::new(),
         )
         .unwrap();
         vector_storage.quantized_vectors = Arc::new(AtomicRefCell::new(Some(quantized_vectors)));

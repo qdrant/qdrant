@@ -2,6 +2,7 @@ use std::cmp::max;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
 use memory::chunked_utils::{chunk_name, create_chunk, read_mmaps, UniversalMmapChunk};
@@ -248,8 +249,13 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         Ok(new_id)
     }
 
-    fn get(&self, key: VectorOffsetType, force_sequential: bool) -> Option<&[T]> {
-        self.get_many(key, 1, force_sequential)
+    fn get(
+        &self,
+        key: VectorOffsetType,
+        force_sequential: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<&[T]> {
+        self.get_many(key, 1, force_sequential, hw_counter)
     }
 
     // returns count flattened vectors starting from key. if chunk boundary is crossed, returns None
@@ -259,6 +265,7 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         start_key: VectorOffsetType,
         count: usize,
         force_sequential: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<&[T]> {
         let start_key: usize = start_key.as_();
         let chunk_idx = self.get_chunk_index(start_key);
@@ -271,22 +278,32 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         let chunk_end = chunk_offset + block_size_elements;
         let chunk = &self.chunks[chunk_idx];
         if chunk_end > chunk.len() {
-            None
-        } else if force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4 {
-            Some(&chunk.as_seq_slice()[chunk_offset..chunk_end])
+            return None;
+        }
+
+        let vector_range = chunk_offset..chunk_end;
+        hw_counter.io_read_counter().incr_delta(vector_range.len());
+
+        if force_sequential || block_size_elements * size_of::<T>() > PAGE_SIZE_BYTES * 4 {
+            Some(&chunk.as_seq_slice()[vector_range])
         } else {
-            Some(&chunk.as_slice()[chunk_offset..chunk_end])
+            Some(&chunk.as_slice()[vector_range])
         }
     }
 
-    pub fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+    pub fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    ) {
         debug_assert!(keys.len() == vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         let do_sequential_read = is_read_with_prefetch_efficient_vectors(keys);
 
         for (i, key) in keys.iter().enumerate() {
             vectors[i] = self
-                .get(*key, do_sequential_read)
+                .get(*key, do_sequential_read, hw_counter)
                 .unwrap_or_else(|| panic!("Vector {key} not found"));
         }
     }
@@ -328,8 +345,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
-        ChunkedMmapVectors::get(self, key, false)
+    fn get(&self, key: VectorOffsetType, hw_counter: &HardwareCounterCell) -> Option<&[T]> {
+        ChunkedMmapVectors::get(self, key, false, hw_counter)
     }
 
     #[inline]
@@ -363,13 +380,23 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        ChunkedMmapVectors::get_many(self, key, count, false)
+    fn get_many(
+        &self,
+        key: VectorOffsetType,
+        count: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<&[T]> {
+        ChunkedMmapVectors::get_many(self, key, count, false, hw_counter)
     }
 
     #[inline]
-    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
-        ChunkedMmapVectors::get_batch(self, keys, vectors)
+    fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    ) {
+        ChunkedMmapVectors::get_batch(self, keys, vectors, hw_counter)
     }
 
     #[inline]
@@ -434,8 +461,10 @@ mod tests {
             assert!(random_offset + batch_size < num_vectors);
             assert!(batch_size <= VECTOR_READ_BATCH_SIZE);
 
+            let hw_counter = HardwareCounterCell::new();
+
             let batch_ids = (random_offset..random_offset + batch_size).collect::<Vec<_>>();
-            chunked_mmap.get_batch(&batch_ids, &mut vectors_buffer[..batch_size]);
+            chunked_mmap.get_batch(&batch_ids, &mut vectors_buffer[..batch_size], &hw_counter);
 
             for (i, (vec, loaded_vec)) in zip(
                 &vectors[random_offset..random_offset + batch_size],

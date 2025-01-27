@@ -439,14 +439,16 @@ impl SegmentsSearcher {
                         },
                         vector: {
                             match with_vector {
-                                WithVector::Bool(true) => {
-                                    Some(VectorStructInternal::from(segment.all_vectors(id)?))
-                                }
+                                WithVector::Bool(true) => Some(VectorStructInternal::from(
+                                    segment.all_vectors(id, &hw_counter)?,
+                                )),
                                 WithVector::Bool(false) => None,
                                 WithVector::Selector(vector_names) => {
                                     let mut selected_vectors = NamedVectors::default();
                                     for vector_name in vector_names {
-                                        if let Some(vector) = segment.vector(vector_name, id)? {
+                                        if let Some(vector) =
+                                            segment.vector(vector_name, id, &hw_counter)?
+                                        {
                                             selected_vectors.insert(vector_name.clone(), vector);
                                         }
                                     }

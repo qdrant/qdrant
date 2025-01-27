@@ -4,6 +4,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -282,16 +284,25 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
     }
 
     /// Panics if key is out of bounds
-    fn get_multi(&self, key: PointOffsetType) -> TypedMultiDenseVectorRef<T> {
-        self.get_multi_opt(key).expect("vector not found")
+    fn get_multi(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> TypedMultiDenseVectorRef<T> {
+        self.get_multi_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// None if key is out of bounds
-    fn get_multi_opt(&self, key: PointOffsetType) -> Option<TypedMultiDenseVectorRef<T>> {
+    fn get_multi_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<TypedMultiDenseVectorRef<T>> {
         self.vectors_metadata.get(key as usize).map(|metadata| {
             let flattened_vectors = self
                 .vectors
-                .get_many(metadata.start, metadata.inner_vectors_count)
+                .get_many(metadata.start, metadata.inner_vectors_count, hw_counter)
                 .unwrap_or_else(|| panic!("Vectors does not contain data for {metadata:?}"));
             TypedMultiDenseVectorRef {
                 flattened_vectors,
@@ -304,19 +315,27 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
         &'a self,
         keys: &[PointOffsetType],
         vectors: &mut [TypedMultiDenseVectorRef<'a, T>],
+        hw_counter: &HardwareCounterCell,
     ) {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
 
         for (i, key) in keys.iter().enumerate() {
-            vectors[i] = self.get_multi(*key);
+            vectors[i] = self.get_multi(*key, hw_counter);
         }
     }
 
-    fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
-        (0..self.total_vector_count()).flat_map(|key| {
+    fn iterate_inner_vectors(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> impl Iterator<Item = &[T]> + Clone + Send {
+        (0..self.total_vector_count()).flat_map(move |key| {
             let metadata = &self.vectors_metadata[key];
-            (0..metadata.inner_vectors_count).map(|i| self.vectors.get(metadata.start + i))
+            let hw_acc = hw_acc.clone();
+            (0..metadata.inner_vectors_count).map(move |i| {
+                self.vectors
+                    .get(metadata.start + i, &hw_acc.get_counter_cell())
+            })
         })
     }
 
@@ -352,16 +371,22 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         self.vectors_metadata.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        self.get_multi_opt(key).map(|multi_dense_vector| {
-            CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
-                multi_dense_vector,
-            )))
-        })
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
+        self.get_multi_opt(key, hw_counter)
+            .map(|multi_dense_vector| {
+                CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
+                    multi_dense_vector,
+                )))
+            })
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

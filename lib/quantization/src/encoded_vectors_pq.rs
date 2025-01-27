@@ -337,10 +337,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.1")]
-    unsafe fn score_point_sse(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
+    unsafe fn score_point_sse(
+        &self,
+        query: &EncodedQueryPQ,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let centroids = self.encoded_vectors.get_vector_data(
+            i as usize,
+            self.metadata.vector_division.len(),
+            hw_counter,
+        );
         let len = centroids.len();
         let centroids_count = self.metadata.centroids.len();
 
@@ -406,10 +413,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
         sum
     }
 
-    fn score_point_simple(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
+    fn score_point_simple(
+        &self,
+        query: &EncodedQueryPQ,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let centroids = self.encoded_vectors.get_vector_data(
+            i as usize,
+            self.metadata.vector_division.len(),
+            hw_counter,
+        );
         let len = centroids.len();
         let centroids_count = self.metadata.centroids.len();
 
@@ -426,9 +440,12 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
             .sum()
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
-        self.encoded_vectors
-            .get_vector_data(i as _, self.metadata.vector_division.len())
+    pub fn get_quantized_vector(&self, i: u32, hw_counter: &HardwareCounterCell) -> &[u8] {
+        self.encoded_vectors.get_vector_data(
+            i as _,
+            self.metadata.vector_division.len(),
+            hw_counter,
+        )
     }
 
     pub fn get_metadata(&self) -> &Metadata {
@@ -498,7 +515,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
 
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {
-            return unsafe { self.score_point_sse(query, i) };
+            return unsafe { self.score_point_sse(query, i, hw_counter) };
         }
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
@@ -506,19 +523,23 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
             return unsafe { self.score_point_neon(query, i) };
         }
 
-        self.score_point_simple(query, i)
+        self.score_point_simple(query, i, hw_counter)
     }
 
     /// Score two points inside endoded data by their indexes
     /// To find score, this method decode both encoded vectors.
     /// Decocing in PQ is a replacing centroid index by centroid position
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
-        let centroids_i = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
-        let centroids_j = self
-            .encoded_vectors
-            .get_vector_data(j as usize, self.metadata.vector_division.len());
+        let centroids_i = self.encoded_vectors.get_vector_data(
+            i as usize,
+            self.metadata.vector_division.len(),
+            hw_counter,
+        );
+        let centroids_j = self.encoded_vectors.get_vector_data(
+            j as usize,
+            self.metadata.vector_division.len(),
+            hw_counter,
+        );
 
         hw_counter.cpu_counter().incr_delta(
             centroids_i.len()

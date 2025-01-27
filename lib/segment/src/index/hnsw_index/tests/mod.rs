@@ -1,6 +1,7 @@
 mod test_compact_graph_layer;
 mod test_graph_connectivity;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 
@@ -37,9 +38,14 @@ where
         use_heuristic,
     );
 
+    let hw_counter = HardwareCounterCell::new();
+
     for idx in 0..(num_vectors as PointOffsetType) {
         let fake_filter_context = FakeFilterContext {};
-        let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+        let added_vector = vector_holder
+            .vectors
+            .get(idx as VectorOffsetType, &hw_counter)
+            .to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
 
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));

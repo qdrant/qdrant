@@ -49,7 +49,7 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self
             .vector_storage
-            .get_sparse(idx)
+            .get_sparse(idx, &self.hardware_counter)
             .expect("Failed to get sparse vector");
         self.query.score_by(|example| {
             let cpu_units = example.indices.len() + stored.indices.len();

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 
@@ -13,7 +15,7 @@ pub trait ChunkedVectorStorage<T> {
 
     fn dim(&self) -> usize;
 
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]>;
+    fn get(&self, key: VectorOffsetType, hw_counter: &HardwareCounterCell) -> Option<&[T]>;
 
     fn files(&self) -> Vec<PathBuf>;
 
@@ -31,11 +33,21 @@ pub trait ChunkedVectorStorage<T> {
     ) -> OperationResult<()>;
 
     /// Returns `count` flattened vectors starting from key. if chunk boundary is crossed, returns None
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
+    fn get_many(
+        &self,
+        key: VectorOffsetType,
+        count: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<&[T]>;
 
     /// Returns batch of vectors by keys.
     /// Underlying storage might apply some optimizations to prefetch vectors.
-    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]);
+    fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    );
 
     fn get_remaining_chunk_keys(&self, start_key: VectorOffsetType) -> usize;
 

@@ -59,7 +59,10 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
-        TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
+        TMetric::similarity(
+            &self.query,
+            self.vector_storage.get_dense(idx, &self.hardware_counter),
+        )
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
@@ -69,7 +72,7 @@ impl<
         let mut vectors: [&[TElement]; VECTOR_READ_BATCH_SIZE] = [&[]; VECTOR_READ_BATCH_SIZE];
 
         self.vector_storage
-            .get_dense_batch(ids, &mut vectors[..ids.len()]);
+            .get_dense_batch(ids, &mut vectors[..ids.len()], &self.hardware_counter);
         self.hardware_counter.cpu_counter().incr_delta(ids.len());
 
         for idx in 0..ids.len() {
@@ -85,8 +88,12 @@ impl<
 
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
-        let v1 = self.vector_storage.get_dense(point_a);
-        let v2 = self.vector_storage.get_dense(point_b);
+        let v1 = self
+            .vector_storage
+            .get_dense(point_a, &self.hardware_counter);
+        let v2 = self
+            .vector_storage
+            .get_dense(point_b, &self.hardware_counter);
         TMetric::similarity(v1, v2)
     }
 }

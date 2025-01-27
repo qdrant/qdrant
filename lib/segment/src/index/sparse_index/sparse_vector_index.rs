@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
@@ -215,7 +216,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // Because:
             // - the `id_tracker` is flushed before the `vector_storage`
             // - the sparse index is built *before* recovering the WAL when loading a segment
-            match borrowed_vector_storage.get_vector_opt(id) {
+            match borrowed_vector_storage.get_vector_opt(id, &HardwareCounterCell::disposable()) {
                 None => {
                     // the vector was lost in a crash but will be recovered by the WAL
                     let point_id = borrowed_id_tracker.external_id(id);
@@ -578,10 +579,13 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (old_vector, new_vector) = {
             let mut vector_storage = self.vector_storage.borrow_mut();
-            let old_vector = vector_storage.get_vector_opt(id).map(CowVector::to_owned);
+            let old_vector = vector_storage
+                .get_vector_opt(id, hw_counter)
+                .map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
                 vector_storage.insert_vector(id, vector)?;
                 vector.to_owned()

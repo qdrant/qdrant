@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use super::hardware_counter::HardwareCounterCell;
+
 /// Data structure, that routes hardware measurement counters to specific location.
 /// Shared drain MUST NOT create its own counters, but only hold a reference to the existing one,
 /// as it doesn't provide any checks on drop.
@@ -77,6 +79,10 @@ impl HwMeasurementAcc {
             request_drain: HwSharedDrain::default(),
             metrics_drain: HwSharedDrain::default(),
         }
+    }
+
+    pub fn get_counter_cell(&self) -> HardwareCounterCell {
+        HardwareCounterCell::new_with_accumulator(self.clone())
     }
 
     pub fn new_with_metrics_drain(metrics_drain: HwSharedDrain) -> Self {

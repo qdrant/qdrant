@@ -1,6 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
@@ -22,6 +23,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let vector_holder = TestRawScorerProducer::<CosineMetric>::new(DIM, NUM_VECTORS, &mut rng);
     let mut group = c.benchmark_group("hnsw-index-build-group");
     group.sample_size(10);
+    let hw_counter = HardwareCounterCell::new();
     group.bench_function("hnsw_index", |b| {
         b.iter(|| {
             let mut rng = thread_rng();
@@ -29,7 +31,10 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
             let fake_filter_context = FakeFilterContext {};
             for idx in 0..(NUM_VECTORS as PointOffsetType) {
-                let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+                let added_vector = vector_holder
+                    .vectors
+                    .get(idx as VectorOffsetType, &hw_counter)
+                    .to_vec();
                 let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                 let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
                 let level = graph_layers_builder.get_random_layer(&mut rng);

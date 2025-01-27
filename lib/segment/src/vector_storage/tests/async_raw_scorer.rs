@@ -78,9 +78,11 @@ fn test_async_raw_scorer(
         insert_random_vectors(&mut rng, dim, &mut mutable_storage, points)?;
         delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut iter = (0..points).map(|i| {
             let i = i as PointOffsetType;
-            let vec = mutable_storage.get_vector(i);
+            let vec = mutable_storage.get_vector(i, &hw_counter);
             let deleted = mutable_storage.is_deleted_vector(i);
             (vec, deleted)
         });

@@ -5,6 +5,8 @@ use std::io::{BufReader, Read, Write};
 use std::mem;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
@@ -44,11 +46,11 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
         self.len == 0
     }
 
-    pub fn get(&self, key: VectorOffsetType) -> &[T] {
-        self.get_opt(key).expect("vector not found")
+    pub fn get(&self, key: VectorOffsetType, hw_counter: &HardwareCounterCell) -> &[T] {
+        self.get_opt(key, hw_counter).expect("vector not found")
     }
 
-    pub fn get_opt(&self, key: VectorOffsetType) -> Option<&[T]> {
+    pub fn get_opt(&self, key: VectorOffsetType, _: &HardwareCounterCell) -> Option<&[T]> {
         if self.chunks.is_empty() {
             return None;
         }
@@ -61,7 +63,12 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
             })
     }
 
-    pub fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+    pub fn get_many(
+        &self,
+        key: VectorOffsetType,
+        count: usize,
+        _: &HardwareCounterCell, // Not needed for in memory vector storage
+    ) -> Option<&[T]> {
         if self.chunks.is_empty() {
             return None;
         }
@@ -170,8 +177,13 @@ impl<T: Copy + Clone + Default> ChunkedVectors<T> {
 }
 
 impl quantization::EncodedStorage for ChunkedVectors<u8> {
-    fn get_vector_data(&self, index: usize, _vector_size: usize) -> &[u8] {
-        self.get(index)
+    fn get_vector_data(
+        &self,
+        index: usize,
+        _vector_size: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> &[u8] {
+        self.get(index, hw_counter)
     }
 
     fn from_file(
@@ -215,7 +227,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
         let mut buffer = File::create(path)?;
         for i in 0..self.len() {
-            buffer.write_all(self.get(i))?;
+            buffer.write_all(self.get(i, &HardwareCounterCell::disposable()))?;
         }
         buffer.sync_all()?;
         Ok(())
@@ -260,21 +272,22 @@ mod tests {
     #[test]
     fn test_chunked_vectors_with_skipped_chunks() {
         let mut vectors = ChunkedVectors::new(3);
-        assert_eq!(vectors.get_opt(0), None);
+        let hw_counter = HardwareCounterCell::new();
+        assert_eq!(vectors.get_opt(0, &hw_counter), None);
 
         vectors.insert(0, &[1, 2, 3]).unwrap();
         vectors.insert(10_000_000, &[4, 5, 6]).unwrap();
         assert!(vectors.chunks.len() > 3);
 
-        assert_eq!(vectors.get(0), &[1, 2, 3]);
-        assert_eq!(vectors.get(10_000_000), &[4, 5, 6]);
+        assert_eq!(vectors.get(0, &hw_counter), &[1, 2, 3]);
+        assert_eq!(vectors.get(10_000_000, &hw_counter), &[4, 5, 6]);
 
-        assert_eq!(vectors.get_opt(10_000_001), None);
+        assert_eq!(vectors.get_opt(10_000_001, &hw_counter), None);
 
         // check if first chunk is fully allocated
-        assert_eq!(vectors.get(100), &[0, 0, 0]);
+        assert_eq!(vectors.get(100, &hw_counter), &[0, 0, 0]);
 
         // check if middle chunk is fully allocated
-        assert_eq!(vectors.get(5_000_000), &[0, 0, 0]);
+        assert_eq!(vectors.get(5_000_000, &hw_counter), &[0, 0, 0]);
     }
 }

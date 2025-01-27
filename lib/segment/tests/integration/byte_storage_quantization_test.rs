@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuPermit;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
@@ -329,6 +330,7 @@ fn test_byte_storage_binary_quantization_hnsw(
                 quantized_data_path,
                 4,
                 &stopped,
+                HwMeasurementAcc::new(),
             )
             .unwrap();
             vector_storage.quantized_vectors =

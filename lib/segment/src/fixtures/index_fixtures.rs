@@ -43,11 +43,17 @@ impl<TMetric: Metric<VectorElementType>> DenseVectorStorage<VectorElementType>
     for TestRawScorerProducer<TMetric>
 {
     fn vector_dim(&self) -> usize {
-        self.vectors.get(0).len()
+        self.vectors
+            .get(0, &HardwareCounterCell::disposable())
+            .len()
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[VectorElementType] {
-        self.vectors.get(key as _)
+    fn get_dense(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> &[VectorElementType] {
+        self.vectors.get(key as _, hw_counter)
     }
 }
 
@@ -68,12 +74,17 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        self.vectors.get_opt(key as _).map(|v| v.into())
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
+        self.vectors.get_opt(key as _, hw_counter).map(|v| v.into())
     }
 
     fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {

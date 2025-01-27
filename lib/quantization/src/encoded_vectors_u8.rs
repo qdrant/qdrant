@@ -142,8 +142,13 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
         })
     }
 
-    pub fn score_point_simple(&self, query: &EncodedQueryU8, i: u32) -> f32 {
-        let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+    pub fn score_point_simple(
+        &self,
+        query: &EncodedQueryU8,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let (vector_offset, v_ptr) = self.get_vec_ptr(i, hw_counter);
 
         let score = match self.metadata.vector_parameters.distance_type {
             DistanceType::Dot | DistanceType::L2 => impl_score_dot(
@@ -182,9 +187,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    pub fn score_point_sse(&self, query: &EncodedQueryU8, i: u32) -> f32 {
+    pub fn score_point_sse(
+        &self,
+        query: &EncodedQueryU8,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         unsafe {
-            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+            let (vector_offset, v_ptr) = self.get_vec_ptr(i, hw_counter);
             let score = match self.metadata.vector_parameters.distance_type {
                 DistanceType::Dot | DistanceType::L2 => impl_score_dot_sse(
                     query.encoded_query.as_ptr(),
@@ -202,9 +212,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[cfg(target_arch = "x86_64")]
-    pub fn score_point_avx(&self, query: &EncodedQueryU8, i: u32) -> f32 {
+    pub fn score_point_avx(
+        &self,
+        query: &EncodedQueryU8,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         unsafe {
-            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+            let (vector_offset, v_ptr) = self.get_vec_ptr(i, hw_counter);
             let score = match self.metadata.vector_parameters.distance_type {
                 DistanceType::Dot | DistanceType::L2 => impl_score_dot_avx(
                     query.encoded_query.as_ptr(),
@@ -240,20 +255,20 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[inline]
-    fn get_vec_ptr(&self, i: u32) -> (f32, *const u8) {
+    fn get_vec_ptr(&self, i: u32, hw_counter: &HardwareCounterCell) -> (f32, *const u8) {
         unsafe {
             let vector_data_size = self.metadata.actual_dim + std::mem::size_of::<f32>();
             let v_ptr = self
                 .encoded_vectors
-                .get_vector_data(i as usize, vector_data_size)
+                .get_vector_data(i as usize, vector_data_size, hw_counter)
                 .as_ptr();
             let vector_offset = *v_ptr.cast::<f32>();
             (vector_offset, v_ptr.add(std::mem::size_of::<f32>()))
         }
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> (f32, &[u8]) {
-        let (offset, v_ptr) = self.get_vec_ptr(i);
+    pub fn get_quantized_vector(&self, i: u32, hw_counter: &HardwareCounterCell) -> (f32, &[u8]) {
+        let (offset, v_ptr) = self.get_vec_ptr(i, hw_counter);
         let vector_data_size = self.metadata.actual_dim;
         (offset, unsafe {
             std::slice::from_raw_parts(v_ptr, vector_data_size)
@@ -364,7 +379,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
             .incr_delta(self.metadata.vector_parameters.dim);
 
         let q_ptr = query.encoded_query.as_ptr();
-        let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+        let (vector_offset, v_ptr) = self.get_vec_ptr(i, hw_counter);
 
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
@@ -414,7 +429,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
             }
         }
 
-        self.score_point_simple(query, i)
+        self.score_point_simple(query, i, hw_counter)
     }
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
@@ -422,8 +437,8 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
             .cpu_counter()
             .incr_delta(self.metadata.vector_parameters.dim);
 
-        let (query_offset, q_ptr) = self.get_vec_ptr(i);
-        let (vector_offset, v_ptr) = self.get_vec_ptr(j);
+        let (query_offset, q_ptr) = self.get_vec_ptr(i, hw_counter);
+        let (vector_offset, v_ptr) = self.get_vec_ptr(j, hw_counter);
         let diff = self.metadata.actual_dim as f32 * self.metadata.offset * self.metadata.offset;
         let diff = if self.metadata.vector_parameters.invert {
             -diff

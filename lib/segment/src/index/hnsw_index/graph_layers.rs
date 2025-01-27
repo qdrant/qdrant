@@ -353,6 +353,7 @@ impl GraphLayers {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use rstest::rstest;
@@ -415,10 +416,11 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
+        let hw_counter = HardwareCounterCell::new();
         let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder
             .vectors
-            .get(linking_idx as VectorOffsetType)
+            .get(linking_idx as VectorOffsetType, &hw_counter)
             .to_vec();
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
@@ -520,8 +522,11 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
+        let hw_counter = HardwareCounterCell::new();
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
+            let vec = &vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_counter);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),

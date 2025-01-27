@@ -165,16 +165,23 @@ impl MmapSparseVectorStorage {
 }
 
 impl SparseVectorStorage for MmapSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
-        self.get_sparse_opt(key)?
+    fn get_sparse(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SparseVector> {
+        self.get_sparse_opt(key, hw_counter)?
             .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))
     }
 
-    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): implement
+    fn get_sparse_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<SparseVector>> {
         self.storage
             .read()
-            .get_value(key, &hw_counter)
+            .get_value(key, hw_counter)
             .map(SparseVector::try_from)
             .transpose()
     }
@@ -197,16 +204,20 @@ impl VectorStorage for MmapSparseVectorStorage {
         self.next_point_offset
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        let vector = self.get_vector_opt(key);
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        let vector = self.get_vector_opt(key, hw_counter);
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        match self.get_sparse_opt(key) {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
+        match self.get_sparse_opt(key, hw_counter) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,
         }
@@ -295,6 +306,7 @@ mod test {
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use sparse::common::sparse_vector;
 
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
@@ -357,8 +369,10 @@ mod test {
             storage.flusher()().unwrap();
         }
 
+        let hw_counter = HardwareCounterCell::new();
+
         let storage = MmapSparseVectorStorage::open(tmp_dir.path()).unwrap();
-        let result_vector = storage.get_vector(0);
+        let result_vector = storage.get_vector(0, &hw_counter);
 
         match result_vector {
             crate::data_types::named_vectors::CowVector::Sparse(sparse) => {

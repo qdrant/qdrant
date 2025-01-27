@@ -257,9 +257,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         }
     }
 
-    pub fn get_quantized_vector(&self, i: u32) -> &[u8] {
+    pub fn get_quantized_vector(&self, i: u32, hw_counter: &HardwareCounterCell) -> &[u8] {
         self.encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size())
+            .get_vector_data(i as _, self.get_quantized_vector_size(), hw_counter)
     }
 
     pub fn get_vector_parameters(&self) -> &VectorParameters {
@@ -313,9 +313,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         i: u32,
         hw_counter: &HardwareCounterCell,
     ) -> f32 {
-        let vector_data_1 = self
-            .encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size());
+        let vector_data_1 = self.encoded_vectors.get_vector_data(
+            i as _,
+            self.get_quantized_vector_size(),
+            hw_counter,
+        );
         let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
 
         hw_counter
@@ -326,12 +328,16 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     }
 
     fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32 {
-        let vector_data_1 = self
-            .encoded_vectors
-            .get_vector_data(i as _, self.get_quantized_vector_size());
-        let vector_data_2 = self
-            .encoded_vectors
-            .get_vector_data(j as _, self.get_quantized_vector_size());
+        let vector_data_1 = self.encoded_vectors.get_vector_data(
+            i as _,
+            self.get_quantized_vector_size(),
+            hw_counter,
+        );
+        let vector_data_2 = self.encoded_vectors.get_vector_data(
+            j as _,
+            self.get_quantized_vector_size(),
+            hw_counter,
+        );
 
         let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
         let vector_data_usize_2 = transmute_from_u8_to_slice(vector_data_2);

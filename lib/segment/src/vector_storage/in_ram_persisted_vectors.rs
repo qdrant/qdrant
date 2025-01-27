@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memory::madvise::{Advice, AdviceSetting};
 
 use crate::common::operation_error::OperationResult;
@@ -39,8 +40,8 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get(&self, key: VectorOffsetType) -> Option<&[T]> {
-        self.mmap_storage.get(key)
+    fn get(&self, key: VectorOffsetType, hw_counter: &HardwareCounterCell) -> Option<&[T]> {
+        self.mmap_storage.get(key, hw_counter)
     }
 
     #[inline]
@@ -74,13 +75,23 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        self.mmap_storage.get_many(key, count)
+    fn get_many(
+        &self,
+        key: VectorOffsetType,
+        count: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<&[T]> {
+        self.mmap_storage.get_many(key, count, hw_counter)
     }
 
     #[inline]
-    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
-        self.mmap_storage.get_batch(keys, vectors)
+    fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    ) {
+        self.mmap_storage.get_batch(keys, vectors, hw_counter)
     }
 
     #[inline]

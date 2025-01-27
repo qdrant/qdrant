@@ -3,6 +3,7 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use rand::{Rng, SeedableRng};
@@ -39,8 +40,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_avx(&query_u8, index as u32);
+            let score = encoded.score_point_avx(&query_u8, index as u32, &hw_counter);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -76,8 +78,10 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_avx(&query_u8, index as u32);
+            let score = encoded.score_point_avx(&query_u8, index as u32, &hw_counter);
             let orginal_score = l2_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }
@@ -113,8 +117,9 @@ mod tests {
         .unwrap();
         let query_u8 = encoded.encode_query(&query);
 
+        let hw_counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point_avx(&query_u8, index as u32);
+            let score = encoded.score_point_avx(&query_u8, index as u32, &hw_counter);
             let orginal_score = l1_similarity(&query, vector);
             assert!((score - orginal_score).abs() < error);
         }

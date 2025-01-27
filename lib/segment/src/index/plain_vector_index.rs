@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 
@@ -184,6 +185,7 @@ impl VectorIndex for PlainVectorIndex {
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): measure!
     ) -> OperationResult<()> {
         let mut vector_storage = self.vector_storage.borrow_mut();
 

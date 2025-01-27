@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::{error, result};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -216,11 +217,13 @@ fn scoring_equivalency(
 
     let other_dir = tempfile::Builder::new().prefix("other-storage").tempdir()?;
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut other_storage = other_storage(other_dir.path());
 
     let mut iter = (0..NUM_POINTS).map(|i| {
         let i = i as PointOffsetType;
-        let vec = raw_storage.get_vector(i);
+        let vec = raw_storage.get_vector(i, &hw_counter);
         let deleted = raw_storage.is_deleted_vector(i);
         (vec, deleted)
     });
@@ -234,6 +237,7 @@ fn scoring_equivalency(
             quant_dir.path(),
             4,
             &AtomicBool::new(false),
+            HwMeasurementAcc::new(),
         )?)
     } else {
         None

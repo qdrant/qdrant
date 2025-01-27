@@ -77,7 +77,7 @@ impl<
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        let stored = self.vector_storage.get_dense(idx);
+        let stored = self.vector_storage.get_dense(idx, &self.hardware_counter);
         self.score(stored)
     }
 
@@ -88,7 +88,7 @@ impl<
         let mut vectors: [&[TElement]; VECTOR_READ_BATCH_SIZE] = [&[]; VECTOR_READ_BATCH_SIZE];
 
         self.vector_storage
-            .get_dense_batch(ids, &mut vectors[..ids.len()]);
+            .get_dense_batch(ids, &mut vectors[..ids.len()], &self.hardware_counter);
 
         for idx in 0..ids.len() {
             scores[idx] = self.score(vectors[idx]);

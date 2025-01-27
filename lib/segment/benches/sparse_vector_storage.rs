@@ -3,6 +3,7 @@ mod prof;
 
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rngs::StdRng;
@@ -39,10 +40,13 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
         })
     });
 
+    let hw_counter = HardwareCounterCell::new();
+
     group.bench_function("read-rocksdb", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
-                let vec = rocksdb_sparse_vector_storage.get_vector_opt(idx as PointOffsetType);
+                let vec = rocksdb_sparse_vector_storage
+                    .get_vector_opt(idx as PointOffsetType, &hw_counter);
                 assert!(vec.is_some());
             }
         })
@@ -66,9 +70,11 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     });
 
     group.bench_function("read-mmap-compression", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
-                let vec = mmap_sparse_vector_storage.get_vector_opt(idx as PointOffsetType);
+                let vec =
+                    mmap_sparse_vector_storage.get_vector_opt(idx as PointOffsetType, &hw_counter);
                 assert!(vec.is_some());
             }
         })

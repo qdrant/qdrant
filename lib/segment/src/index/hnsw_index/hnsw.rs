@@ -359,10 +359,10 @@ impl HNSWIndex {
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
-                let vector = vector_storage_ref.get_vector(vector_id);
+                let internal_hardware_counter = HardwareCounterCell::disposable();
+                let vector = vector_storage_ref.get_vector(vector_id, &internal_hardware_counter);
                 let vector = vector.as_vec_ref().into();
                 // No need to accumulate hardware, since this is an internal operation
-                let internal_hardware_counter = HardwareCounterCell::disposable();
 
                 let raw_scorer = if let Some(quantized_storage) = quantized_vectors_ref.as_ref() {
                     quantized_storage.raw_scorer(
@@ -578,13 +578,13 @@ impl HNSWIndex {
         }
 
         let insert_points = |block_point_id| {
-            check_process_stopped(stopped)?;
-
-            let vector = vector_storage.get_vector(block_point_id);
-            let vector = vector.as_vec_ref().into();
-
             // This hardware counter can be discarded, since it is only used for internal operations
             let internal_hardware_counter = HardwareCounterCell::disposable();
+
+            check_process_stopped(stopped)?;
+
+            let vector = vector_storage.get_vector(block_point_id, &internal_hardware_counter);
+            let vector = vector.as_vec_ref().into();
 
             let raw_scorer = match quantized_vectors.as_ref() {
                 Some(quantized_storage) => quantized_storage.raw_scorer(
@@ -1322,6 +1322,7 @@ impl VectorIndex for HNSWIndex {
         &mut self,
         _id: PointOffsetType,
         _vector: Option<VectorRef>,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error("Cannot update HNSW index"))
     }

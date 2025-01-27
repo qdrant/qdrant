@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::slice::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -220,73 +221,179 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: HwMeasurementAcc,
     ) -> OperationResult<Self> {
         match vector_storage {
-            VectorStorageEnum::DenseSimple(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseSimpleByte(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseSimpleHalf(v) => {
-                Self::create_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseMemmap(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseMemmapByte(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseMemmapHalf(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmap(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRam(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRamByte(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => {
-                Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::DenseSimple(v) => Self::create_impl(
+                v,
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseSimpleByte(v) => Self::create_impl(
+                v,
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseSimpleHalf(v) => Self::create_impl(
+                v,
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseMemmap(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseMemmapByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseMemmapHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseAppendableMemmap(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseAppendableInRam(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => Self::create_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::WrongSparse),
-            VectorStorageEnum::MultiDenseSimple(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseSimpleByte(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => {
-                Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => {
-                Self::create_multi_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
-            }
+            VectorStorageEnum::MultiDenseSimple(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => Self::create_multi_impl(
+                v,
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => Self::create_multi_impl(
+                v.as_ref(),
+                quantization_config,
+                path,
+                max_threads,
+                stopped,
+                hw_counter.clone(),
+            ),
         }
     }
 
@@ -299,16 +406,18 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: HwMeasurementAcc,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let count = vector_storage.total_vector_count();
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
-        let vectors = (0..count as PointOffsetType).map(|i| {
+        let vectors = (0..count as PointOffsetType).map(move |i| {
+            let hw_counter = HardwareCounterCell::new_with_accumulator(hw_counter.clone());
             PrimitiveVectorElement::quantization_preprocess(
                 quantization_config,
                 distance,
-                vector_storage.get_dense(i),
+                vector_storage.get_dense(i, &hw_counter),
             )
         });
         let on_disk_vector_storage = vector_storage.is_on_disk();
@@ -376,22 +485,26 @@ impl QuantizedVectors {
         path: &Path,
         max_threads: usize,
         stopped: &AtomicBool,
+        hw_counter: HwMeasurementAcc,
     ) -> OperationResult<Self> {
         let dim = vector_storage.vector_dim();
         let distance = vector_storage.distance();
         let datatype = vector_storage.datatype();
         let multi_vector_config = *vector_storage.multi_vector_config();
-        let vectors = vector_storage.iterate_inner_vectors().map(|v| {
-            PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, v)
-        });
+        let vectors = vector_storage
+            .iterate_inner_vectors(hw_counter.clone())
+            .map(|v| {
+                PrimitiveVectorElement::quantization_preprocess(quantization_config, distance, v)
+            });
         let inner_vectors_count = vectors.clone().count();
         let on_disk_vector_storage = vector_storage.is_on_disk();
 
         let vector_parameters =
             Self::construct_vector_parameters(distance, dim, inner_vectors_count);
 
+        let hw_cell = hw_counter.get_counter_cell();
         let offsets = (0..vector_storage.total_vector_count() as PointOffsetType)
-            .map(|idx| vector_storage.get_multi(idx).vectors_count() as PointOffsetType)
+            .map(|idx| vector_storage.get_multi(idx, &hw_cell).vectors_count() as PointOffsetType)
             .scan(0, |offset_acc, multi_vector_len| {
                 let offset = *offset_acc;
                 *offset_acc += multi_vector_len;

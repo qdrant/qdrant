@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use log::debug;
 use parking_lot::RwLock;
@@ -187,8 +188,8 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStora
         self.dim
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
-        self.vectors.get(key as VectorOffsetType)
+    fn get_dense(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> &[T] {
+        self.vectors.get(key as VectorOffsetType, hw_counter)
     }
 }
 
@@ -209,14 +210,19 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// Get vector by key, if it exists.
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
         self.vectors
-            .get_opt(key as VectorOffsetType)
+            .get_opt(key as VectorOffsetType, hw_counter)
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 

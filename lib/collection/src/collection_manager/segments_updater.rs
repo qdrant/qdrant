@@ -445,7 +445,7 @@ pub(crate) fn sync_points(
     let is_stopped = AtomicBool::new(false);
     let _num_updated =
         segments.read_points(existing_point_ids.as_slice(), &is_stopped, |id, segment| {
-            let all_vectors = match segment.all_vectors(id) {
+            let all_vectors = match segment.all_vectors(id, hw_counter) {
                 Ok(v) => v,
                 Err(OperationError::InconsistentStorage { .. }) => NamedVectors::default(),
                 Err(e) => return Err(e),

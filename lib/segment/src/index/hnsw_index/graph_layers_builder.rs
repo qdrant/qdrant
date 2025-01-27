@@ -546,6 +546,7 @@ impl GraphLayersBuilder {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
@@ -575,6 +576,7 @@ mod tests {
     where
         R: Rng + ?Sized,
     {
+        use common::counter::hardware_counter::HardwareCounterCell;
         use rayon::prelude::{IntoParallelIterator, ParallelIterator};
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(2)
@@ -605,7 +607,11 @@ mod tests {
                 .into_par_iter()
                 .for_each(|idx| {
                     let fake_filter_context = FakeFilterContext {};
-                    let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+                    let hw_counter = HardwareCounterCell::new();
+                    let added_vector = vector_holder
+                        .vectors
+                        .get(idx as VectorOffsetType, &hw_counter)
+                        .to_vec();
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
@@ -647,7 +653,11 @@ mod tests {
 
         for idx in 0..(num_vectors as PointOffsetType) {
             let fake_filter_context = FakeFilterContext {};
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let hw_counter = HardwareCounterCell::new();
+            let added_vector = vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_counter)
+                .to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             graph_layers.link_new_point(idx, scorer);
@@ -706,8 +716,11 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
+        let hw_counter = HardwareCounterCell::new();
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
+            let vec = &vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_counter);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),
@@ -796,8 +809,11 @@ mod tests {
         let query = random_vector(&mut rng, dim);
         let processed_query = <M as Metric<VectorElementType>>::preprocess(query.clone());
         let mut reference_top = FixedLengthPriorityQueue::new(top);
+        let hw_counter = HardwareCounterCell::new();
         for idx in 0..vector_holder.vectors.len() as PointOffsetType {
-            let vec = &vector_holder.vectors.get(idx as VectorOffsetType);
+            let vec = &vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_counter);
             reference_top.push(ScoredPointOffset {
                 idx,
                 score: M::similarity(vec, &processed_query),
@@ -810,6 +826,7 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
+
         let graph_search = graph.search(top, ef, scorer, None);
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
@@ -830,8 +847,12 @@ mod tests {
         let mut graph_layers_builder =
             GraphLayersBuilder::new(NUM_VECTORS, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
         let fake_filter_context = FakeFilterContext {};
+        let hw_counter = HardwareCounterCell::new();
         for idx in 0..(NUM_VECTORS as PointOffsetType) {
-            let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
+            let added_vector = vector_holder
+                .vectors
+                .get(idx as VectorOffsetType, &hw_counter)
+                .to_vec();
             let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let level = graph_layers_builder.get_random_layer(&mut rng);

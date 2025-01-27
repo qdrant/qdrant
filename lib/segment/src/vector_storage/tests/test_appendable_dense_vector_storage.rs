@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use tempfile::Builder;
@@ -113,6 +114,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
+
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -136,7 +139,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         }
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector(i, &hw_counter);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });
@@ -278,8 +281,15 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
 
     let stopped = AtomicBool::new(false);
 
-    let quantized_vectors =
-        QuantizedVectors::create(storage, &config, dir.path(), 1, &stopped).unwrap();
+    let quantized_vectors = QuantizedVectors::create(
+        storage,
+        &config,
+        dir.path(),
+        1,
+        &stopped,
+        HwMeasurementAcc::new(),
+    )
+    .unwrap();
 
     let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
     let hardware_counter = HardwareCounterCell::new();

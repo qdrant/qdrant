@@ -112,9 +112,14 @@ pub trait SegmentEntry {
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>>;
 
-    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors>;
+    fn all_vectors(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors>;
 
     /// Retrieve payload for the point
     /// If not found, return empty payload

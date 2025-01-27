@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use permutation_iterator::Permutor;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
@@ -37,20 +38,22 @@ fn encode_dot_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score all u8 avx", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = i8_encoded.score_point_avx(&encoded_query, i);
+                _s = i8_encoded.score_point_avx(&encoded_query, i, &hw_counter);
             }
         });
     });
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score all u8 sse", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = i8_encoded.score_point_sse(&encoded_query, i);
+                _s = i8_encoded.score_point_sse(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -70,10 +73,11 @@ fn encode_dot_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score random access u8 avx", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                _s = i8_encoded.score_point_avx(&encoded_query, i);
+                _s = i8_encoded.score_point_avx(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -81,9 +85,10 @@ fn encode_dot_bench(c: &mut Criterion) {
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score random access u8 sse", |b| {
         let mut _s = 0.0;
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for &i in &permutation {
-                _s = i8_encoded.score_point_sse(&encoded_query, i);
+                _s = i8_encoded.score_point_sse(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -130,20 +135,22 @@ fn encode_l1_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score all u8 avx", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = i8_encoded.score_point_avx(&encoded_query, i);
+                _s = i8_encoded.score_point_avx(&encoded_query, i, &hw_counter);
             }
         });
     });
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score all u8 sse", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = i8_encoded.score_point_sse(&encoded_query, i);
+                _s = i8_encoded.score_point_sse(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -163,10 +170,11 @@ fn encode_l1_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score random access u8 avx", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for &i in &permutation {
-                _s = i8_encoded.score_point_avx(&encoded_query, i);
+                _s = i8_encoded.score_point_avx(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -174,9 +182,10 @@ fn encode_l1_bench(c: &mut Criterion) {
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score random access u8 sse", |b| {
         let mut _s = 0.0;
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for &i in &permutation {
-                _s = i8_encoded.score_point_sse(&encoded_query, i);
+                _s = i8_encoded.score_point_sse(&encoded_query, i, &hw_counter);
             }
         });
     });

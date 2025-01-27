@@ -64,12 +64,14 @@ impl Segment {
                 };
                 let vector = match with_vector {
                     WithVector::Bool(false) => None,
-                    WithVector::Bool(true) => Some(self.all_vectors_by_offset(point_offset).into()),
+                    WithVector::Bool(true) => {
+                        Some(self.all_vectors_by_offset(point_offset, hw_counter).into())
+                    }
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
                             if let Some(vector) =
-                                self.vector_by_offset(vector_name, point_offset)?
+                                self.vector_by_offset(vector_name, point_offset, hw_counter)?
                             {
                                 result.insert(vector_name.clone(), vector);
                             }

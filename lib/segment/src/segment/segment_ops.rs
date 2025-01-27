@@ -49,13 +49,14 @@ impl Segment {
         &mut self,
         internal_id: PointOffsetType,
         vectors: &NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_named_vectors(vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(internal_id, vector)?;
+            vector_index.update_vector(internal_id, vector, hw_counter)?;
         }
         Ok(())
     }
@@ -78,13 +79,14 @@ impl Segment {
         &mut self,
         internal_id: PointOffsetType,
         vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()))?;
+            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
         }
         Ok(())
     }
@@ -98,6 +100,7 @@ impl Segment {
         &mut self,
         point_id: PointIdType,
         vectors: &NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         check_named_vectors(vectors, &self.segment_config)?;
@@ -105,7 +108,7 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(new_index, vector_opt)?;
+            vector_index.update_vector(new_index, vector_opt, hw_counter)?;
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)
@@ -353,6 +356,7 @@ impl Segment {
         &self,
         vector_name: &VectorName,
         point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
@@ -378,14 +382,22 @@ impl Segment {
                     ),
                 })
             } else {
-                Ok(Some(vector_storage.get_vector(point_offset).to_owned()))
+                Ok(Some(
+                    vector_storage
+                        .get_vector(point_offset, hw_counter)
+                        .to_owned(),
+                ))
             }
         } else {
             Ok(None)
         }
     }
 
-    pub(super) fn all_vectors_by_offset(&self, point_offset: PointOffsetType) -> NamedVectors {
+    pub(super) fn all_vectors_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> NamedVectors {
         let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
             let is_vector_deleted = vector_data
@@ -395,7 +407,7 @@ impl Segment {
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let vector = vector_storage
-                    .get_vector(point_offset)
+                    .get_vector(point_offset, hw_counter)
                     .as_vec_ref()
                     .to_owned();
                 vectors.insert(vector_name.clone(), vector);
@@ -597,7 +609,8 @@ impl Segment {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);
                 let is_vector_deleted_tracker = id_tracker.is_deleted_point(internal_id);
-                let vector_stored = vector_storage.get_vector_opt(internal_id);
+                let vector_stored =
+                    vector_storage.get_vector_opt(internal_id, &HardwareCounterCell::disposable());
                 if !is_vector_deleted_storage
                     && !is_vector_deleted_tracker
                     && vector_stored.is_none()

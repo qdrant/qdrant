@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -28,6 +29,8 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     .map(|v| v.try_into().unwrap())
     .collect();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let delete_mask = [false, false, true, true, false];
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
@@ -43,7 +46,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = storage.get_vector(i as PointOffsetType);
+        let stored_vec = storage.get_vector(i as PointOffsetType, &hw_counter);
         let sparse: &SparseVector = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, vec);
     }
@@ -123,6 +126,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let borrowed_id_tracker = id_tracker.borrow_mut();
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
@@ -142,7 +147,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector(i, &hw_counter);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });
@@ -201,6 +206,8 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut storage = open(dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     let points = vec![
         vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)],
         vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)],
@@ -233,15 +240,15 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
 
     // Check deleted vectors are still marked as deleted
     assert!(storage.is_deleted_vector(1));
-    assert!(storage.get_vector_opt(1).is_none());
+    assert!(storage.get_vector_opt(1, &hw_counter).is_none());
 
     assert!(storage.is_deleted_vector(3));
-    assert!(storage.get_vector_opt(3).is_none());
+    assert!(storage.get_vector_opt(3, &hw_counter).is_none());
 
     // Check non-deleted vectors still have correct data
     let verify_idx = [0, 2, 4];
     for idx in verify_idx {
-        let stored = storage.get_vector(idx);
+        let stored = storage.get_vector(idx, &hw_counter);
         let sparse: &SparseVector = stored.as_vec_ref().try_into().unwrap();
         assert_eq!(sparse, &points[idx as usize]);
     }

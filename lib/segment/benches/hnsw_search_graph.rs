@@ -4,6 +4,7 @@ mod prof;
 use std::hint::black_box;
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use indicatif::{ParallelProgressIterator, ProgressStyle};
@@ -66,7 +67,8 @@ fn hnsw_benchmark(c: &mut Criterion) {
                     ProgressStyle::with_template("{percent:>3}% Buildng HNSW {wide_bar}").unwrap(),
                 )
                 .for_each(|idx| {
-                    let added_vector = vector_holder.vectors.get(idx).to_vec();
+                    let hw_counter = HardwareCounterCell::new();
+                    let added_vector = vector_holder.vectors.get(idx, &hw_counter).to_vec();
                     let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
                     let scorer =
                         FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));

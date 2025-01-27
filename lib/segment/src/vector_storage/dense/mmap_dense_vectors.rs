@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
@@ -140,14 +141,21 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     }
 
     /// Returns reference to vector data by key
-    fn get_vector(&self, key: PointOffsetType) -> &[T] {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> &[T] {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
     /// Returns an optional reference to vector data by key
-    pub fn get_vector_opt(&self, key: PointOffsetType) -> Option<&[T]> {
-        self.data_offset(key)
-            .map(|offset| self.raw_vector_offset(offset))
+    pub fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<&[T]> {
+        self.data_offset(key).map(|offset| {
+            hw_counter.io_read_counter().incr_delta(self.raw_size());
+            self.raw_vector_offset(offset)
+        })
     }
 
     pub fn get_vector_opt_sequential(&self, key: PointOffsetType) -> Option<&[T]> {
@@ -155,7 +163,12 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             .map(|offset| self.raw_vector_offset_sequential(offset))
     }
 
-    pub fn get_vectors<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+    pub fn get_vectors<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    ) {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         if is_read_with_prefetch_efficient_points(keys) {
@@ -164,7 +177,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             }
         } else {
             for (i, key) in keys.iter().enumerate() {
-                vectors[i] = self.get_vector(*key);
+                vectors[i] = self.get_vector(*key, hw_counter);
             }
         }
     }

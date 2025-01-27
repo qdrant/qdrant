@@ -2,8 +2,15 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 pub trait EncodedStorage {
-    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];
+    fn get_vector_data(
+        &self,
+        index: usize,
+        vector_size: usize,
+        hw_counter: &HardwareCounterCell,
+    ) -> &[u8];
 
     fn from_file(
         path: &Path,
@@ -23,7 +30,7 @@ pub trait EncodedStorageBuilder<TStorage: EncodedStorage> {
 }
 
 impl EncodedStorage for Vec<u8> {
-    fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8] {
+    fn get_vector_data(&self, index: usize, vector_size: usize, _: &HardwareCounterCell) -> &[u8] {
         &self[vector_size * index..vector_size * (index + 1)]
     }
 

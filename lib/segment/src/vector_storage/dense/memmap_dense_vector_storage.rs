@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
@@ -131,17 +132,22 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
         self.mmap_store.as_ref().unwrap().dim
     }
 
-    fn get_dense(&self, key: PointOffsetType) -> &[T] {
+    fn get_dense(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> &[T] {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt(key)
+            .get_vector_opt(key, hw_counter)
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
-    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+    fn get_dense_batch<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &mut [&'a [T]],
+        hw_counter: &HardwareCounterCell,
+    ) {
         let mmap_store = self.mmap_store.as_ref().unwrap();
-        mmap_store.get_vectors(keys, vectors);
+        mmap_store.get_vectors(keys, vectors, hw_counter);
     }
 }
 
@@ -162,15 +168,20 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
         self.mmap_store
             .as_ref()
             .unwrap()
-            .get_vector_opt(key)
+            .get_vector_opt(key, hw_counter)
             .map(|vector| T::slice_to_float_cow(vector.into()).into())
     }
 
@@ -274,6 +285,7 @@ mod tests {
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::ScoredPointOffset;
     use memory::mmap_ops::transmute_to_u8_slice;
@@ -292,6 +304,8 @@ mod tests {
     #[test]
     fn test_basic_persistence() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        let hw_counter = HardwareCounterCell::new();
 
         let points = [
             vec![1.0, 0.0, 1.0, 1.0],
@@ -337,7 +351,7 @@ mod tests {
             }
             let mut iter = (0..3).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -346,7 +360,7 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 3);
 
-        let vector = storage.get_vector(1).to_owned();
+        let vector = storage.get_vector(1, &hw_counter).to_owned();
         let vector: DenseVector = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
@@ -374,7 +388,7 @@ mod tests {
             }
             let mut iter = (0..2).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -421,6 +435,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -441,7 +457,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -543,6 +559,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -566,7 +584,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -622,6 +640,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -642,7 +662,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -706,6 +726,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -726,7 +748,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -741,9 +763,9 @@ mod tests {
         .into();
 
         let stopped = Arc::new(AtomicBool::new(false));
-        let hardware_counter = HardwareCounterCell::new();
+        let hw_acc = HwMeasurementAcc::new();
         let quantized_vectors =
-            QuantizedVectors::create(&storage, &config, dir.path(), 1, &stopped).unwrap();
+            QuantizedVectors::create(&storage, &config, dir.path(), 1, &stopped, hw_acc).unwrap();
 
         let query: QueryVector = [0.5, 0.5, 0.5, 0.5].into();
 
@@ -753,7 +775,7 @@ mod tests {
                 borrowed_id_tracker.deleted_point_bitslice(),
                 storage.deleted_vector_bitslice(),
                 &stopped,
-                hardware_counter,
+                HardwareCounterCell::new(),
             )
             .unwrap();
 
