@@ -18,7 +18,7 @@ use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
 use crate::common::inference::InferenceToken;
-use crate::common::points::do_query_point_groups;
+use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 
 #[post("/collections/{name}/points/query")]

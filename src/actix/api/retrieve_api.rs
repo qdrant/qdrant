@@ -28,7 +28,7 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
 };
-use crate::common::points::do_get_points;
+use crate::common::query::do_get_points;
 use crate::settings::ServiceConfig;
 
 #[derive(Deserialize, Validate)]

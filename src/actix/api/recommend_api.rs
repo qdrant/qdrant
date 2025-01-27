@@ -213,7 +213,7 @@ async fn recommend_point_groups(
     );
     let timing = Instant::now();
 
-    let result = crate::common::points::do_recommend_point_groups(
+    let result = crate::common::query::do_recommend_point_groups(
         dispatcher.toc(&access, &pass),
         &collection.name,
         recommend_group_request,
