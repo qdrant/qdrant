@@ -209,7 +209,6 @@ impl BitmaskGaps {
         let mut accumulated_blocks = 0;
 
         loop {
-            eprintln!("outer loop start:{start}, end:{end}");
             let start_gap = self.get(start)?;
 
             // if the gap is large enough, return it
@@ -222,8 +221,6 @@ impl BitmaskGaps {
 
             // explore following gaps up to `end` pointer
             loop {
-                eprintln!("inner loop start:{start}, end:{end}");
-                eprintln!("accumulated: {accumulated_blocks}");
                 if accumulated_blocks >= num_blocks as usize {
                     return Some(start as RegionId..end as RegionId);
                 }
