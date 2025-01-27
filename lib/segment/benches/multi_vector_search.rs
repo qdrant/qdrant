@@ -90,6 +90,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
         },
         VectorIndexBuildArgs {
             permit,
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },

@@ -160,6 +160,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         },
         VectorIndexBuildArgs {
             permit: permit.clone(),
+            old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
         },
