@@ -13,10 +13,16 @@ use tokio::task::JoinError;
 /// 1. Usable both in sync and async contexts.
 /// 2. Provides the [`BuilderExt::descend`] method.
 /// 3. Supports both seekable (i.e. file) and streaming (i.e. sockets) outputs.
-pub struct BuilderExt<W: Write + Seek = WriteSeekBoxOwned> {
+pub struct BuilderExt<W: Write + Seek = OwnedOutput> {
     tar: Arc<Mutex<BlowFuseOnDrop<W>>>,
     path: PathBuf,
 }
+
+type OwnedOutput = Box<dyn WriteSeek + Send + 'static>;
+type BorrowedOutput<'a> = Box<dyn WriteSeek + 'a>;
+
+pub trait WriteSeek: Write + Seek {}
+impl<T: Write + Seek> WriteSeek for T {}
 
 /// A wrapper around [`tar::Builder<FusedWriteSeek>`] that disables
 /// [`FusedWriteSeek`] when it is dropped.
@@ -77,98 +83,23 @@ impl<W: Seek> Seek for FusedWriteSeek<W> {
     }
 }
 
-/// Either [`Write`] or [`Write`] + [`Seek`], configurable at runtime.
-/// This is owned variant for use in async contexts.
-#[allow(private_interfaces)]
-pub enum WriteSeekBoxOwned {
-    Streaming(Box<dyn Send + Write + 'static>),
-    Seekable(Box<dyn Send + WriteSeek + 'static>),
-}
-
-/// Either [`Write`] or [`Write`] + [`Seek`], configurable at runtime.
-/// This variant is for borrowed writers, e.g. [`tar::EntryWriter`].
-#[allow(private_interfaces)]
-pub enum WriteSeekBoxBorrowed<'a> {
-    Streaming(Box<dyn Write + 'a>),
-    Seekable(Box<dyn WriteSeek + 'a>),
-}
-
-trait WriteSeek: Write + Seek {}
-impl<T: Write + Seek> WriteSeek for T {}
-
-impl Write for WriteSeekBoxOwned {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            WriteSeekBoxOwned::Streaming(w) => w.write(buf),
-            WriteSeekBoxOwned::Seekable(w) => w.write(buf),
-        }
+impl BuilderExt<OwnedOutput> {
+    pub fn new_seekable_owned(output: impl Write + Seek + Send + 'static) -> Self {
+        Self::new(Box::new(output))
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            WriteSeekBoxOwned::Streaming(w) => w.flush(),
-            WriteSeekBoxOwned::Seekable(w) => w.flush(),
-        }
+    pub fn new_streaming_owned(output: impl Write + Send + 'static) -> Self {
+        Self::new(Box::new(SeekWrapper(output)))
     }
 }
 
-impl Seek for WriteSeekBoxOwned {
-    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        match self {
-            WriteSeekBoxOwned::Streaming(_) => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Seeking is not supported",
-            )),
-            WriteSeekBoxOwned::Seekable(w) => w.seek(pos),
-        }
-    }
-}
-
-impl Write for WriteSeekBoxBorrowed<'_> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        match self {
-            WriteSeekBoxBorrowed::Streaming(w) => w.write(buf),
-            WriteSeekBoxBorrowed::Seekable(w) => w.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        match self {
-            WriteSeekBoxBorrowed::Streaming(w) => w.flush(),
-            WriteSeekBoxBorrowed::Seekable(w) => w.flush(),
-        }
-    }
-}
-
-impl Seek for WriteSeekBoxBorrowed<'_> {
-    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        match self {
-            WriteSeekBoxBorrowed::Streaming(_) => Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Seeking is not supported",
-            )),
-            WriteSeekBoxBorrowed::Seekable(w) => w.seek(pos),
-        }
-    }
-}
-
-impl BuilderExt<WriteSeekBoxOwned> {
-    pub fn new_seekable_owned(output: impl Send + Write + Seek + 'static) -> Self {
-        Self::new(WriteSeekBoxOwned::Seekable(Box::new(output)))
-    }
-
-    pub fn new_streaming_owned(output: impl Send + Write + 'static) -> Self {
-        Self::new(WriteSeekBoxOwned::Streaming(Box::new(output)))
-    }
-}
-
-impl<'a> BuilderExt<WriteSeekBoxBorrowed<'a>> {
+impl<'a> BuilderExt<BorrowedOutput<'a>> {
     pub fn new_seekable_borrowed(output: impl Write + Seek + 'a) -> Self {
-        Self::new(WriteSeekBoxBorrowed::Seekable(Box::new(output)))
+        Self::new(Box::new(output))
     }
 
     pub fn new_streaming_borrowed(output: impl Write + 'a) -> Self {
-        Self::new(WriteSeekBoxBorrowed::Streaming(Box::new(output)))
+        Self::new(Box::new(SeekWrapper(output)))
     }
 }
 
@@ -353,6 +284,25 @@ fn join_relative(base: &Path, rel_path: &Path) -> io::Result<PathBuf> {
     Ok(base.join(rel_path))
 }
 
+/// A wrapper that provides "dummy" [`io::Seek`] implementation to [`io::Write`] stream.
+struct SeekWrapper<T>(T);
+
+impl<T: Write> io::Write for SeekWrapper<T> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl<T: Write> io::Seek for SeekWrapper<T> {
+    fn seek(&mut self, _: io::SeekFrom) -> io::Result<u64> {
+        Err(io::ErrorKind::NotSeekable.into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,7 +391,7 @@ mod tests {
         let tar = BuilderExt::new_streaming_borrowed(Vec::new());
         tar.blocking_append_data(b"foo", Path::new("foo")).unwrap();
         let result = tar.blocking_write_fn(Path::new("foo"), |writer| writer.write_all(b"bar"));
-        assert_eq!(result.unwrap_err().to_string(), "Seeking is not supported");
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::NotSeekable);
     }
 
     #[test]
