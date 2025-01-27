@@ -395,6 +395,152 @@ mod tests {
     }
 
     #[test]
+    fn test_find_fitting_gap_windows_end() {
+        const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
+
+        let temp_dir = tempdir().unwrap();
+        let config: StorageConfig = StorageOptions::default().try_into().unwrap();
+
+        // 3 regions, all empty
+        let gaps = vec![
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+        ];
+        let bitmask_gaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+
+        // Find space for blocks covering up to 2 regions
+        assert!(bitmask_gaps.find_fitting_gap(1).is_some());
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+            .is_some());
+
+        // Find space for blocks covering 3 regions
+        // TODO: fails, windows size is 4 but we have just 3 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 3)
+            .is_some());
+
+        // No space for blocks covering 4 or more regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 4)
+            .is_none());
+
+        // 3 regions with first 0.5 regions occupied and last 2.5 regions available
+        let gaps = vec![
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 2) as u16,
+                leading: 0,
+                trailing: (REGION_SIZE_BLOCKS / 2) as u16,
+            },
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+        ];
+        let bitmask_gaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config.clone());
+
+        // Find space for blocks covering up to 2 regions
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+            .is_some());
+
+        // Find space for blocks covering more than 2 up to 2.5 regions
+        // TODO: fails, windows size is 4 but we have just 3 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2))
+            .is_some());
+
+        // No space for blocks covering more than 2.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2) + 1)
+            .is_none());
+
+        // 3 regions with first 1.5 regions occupied and last 1.5 regions available
+        let gaps = vec![
+            RegionGaps {
+                max: 0,
+                leading: 0,
+                trailing: 0,
+            },
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 2) as u16,
+                leading: 0,
+                trailing: (REGION_SIZE_BLOCKS / 2) as u16,
+            },
+            RegionGaps::all_free(REGION_SIZE_BLOCKS as u16),
+        ];
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+
+        // Find space for blocks covering more than 1 to 1.5 regions
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2))
+            .is_some());
+
+        // No space for blocks covering more than 1.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS)
+            .is_none());
+    }
+
+    #[test]
+    fn test_find_fitting_gap_windows_middle() {
+        const REGION_SIZE_BLOCKS: u32 = DEFAULT_REGION_SIZE_BLOCKS as u32;
+
+        let temp_dir = tempdir().unwrap();
+        let config = StorageOptions::default().try_into().unwrap();
+
+        // 3 regions with 1.5 regions occupied and 1.5 regions available
+        let gaps = vec![
+            // First region: occupied
+            RegionGaps {
+                max: 0,
+                leading: 0,
+                trailing: 0,
+            },
+            // Second region: first 25% is occupied
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                leading: 0,
+                trailing: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+            },
+            // Third region: last 25% is occupied
+            RegionGaps {
+                max: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                leading: (REGION_SIZE_BLOCKS / 4) as u16 * 3,
+                trailing: 0,
+            },
+        ];
+        let bitmask_gaps = BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+
+        // Find space for blocks covering up to 1.5 region
+        assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+            .is_some());
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
+            .is_some());
+
+        // No space for blocks covering more than 1.5 regions
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+            .is_none());
+    }
+
+    #[test]
     fn test_region_gaps_persistence() {
         use std::fs;
 
