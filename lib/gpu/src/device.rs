@@ -109,8 +109,6 @@ impl Device {
 
         let physical_device_features = vk::PhysicalDeviceFeatures::default();
 
-        // TODO(gpu): check presence of features
-
         // Define Vulkan features that we need.
         let mut enabled_physical_device_features_1_1 =
             vk::PhysicalDeviceVulkan11Features::default();
@@ -142,8 +140,8 @@ impl Device {
         if !enabled_physical_device_features_1_2.shader_int8 == 0 {
             return Err(GpuError::NotSupported("Int8 is not supported".to_string()));
         }
-        let has_half_precision = instance.skip_half_precision()
-            && enabled_physical_device_features_1_2.shader_float16 == 0;
+        let has_half_precision = !instance.skip_half_precision()
+            && enabled_physical_device_features_1_2.shader_float16 == 1;
         if !has_half_precision {
             log::warn!("Half precision is not supported");
         }
@@ -154,7 +152,7 @@ impl Device {
         }
         let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
-            .shader_float16(true)
+            .shader_float16(has_half_precision)
             .storage_buffer8_bit_access(true);
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
