@@ -36,10 +36,7 @@ use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
 use crate::common::inference::InferenceToken;
-use crate::common::query::{
-    do_core_search_points, do_count_points, do_get_points, do_query_batch_points,
-    do_query_point_groups, do_query_points, do_scroll_points, do_search_batch_points,
-};
+use crate::common::query::*;
 use crate::tonic::verification::CheckedTocProvider;
 
 pub(crate) fn convert_shard_selector_for_read(

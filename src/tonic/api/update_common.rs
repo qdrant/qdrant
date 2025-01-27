@@ -33,11 +33,7 @@ use tonic::{Response, Status};
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
 use crate::common::inference::InferenceToken;
-use crate::common::update::{
-    do_clear_payload, do_create_index, do_create_index_internal, do_delete_index,
-    do_delete_index_internal, do_delete_payload, do_delete_points, do_delete_vectors,
-    do_overwrite_payload, do_set_payload, do_update_vectors, do_upsert_points, CreateFieldIndex,
-};
+use crate::common::update::*;
 use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 
 pub async fn upsert(
