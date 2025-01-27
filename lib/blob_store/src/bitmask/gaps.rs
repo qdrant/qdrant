@@ -261,7 +261,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::config::{StorageOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS};
+    use crate::config::{StorageOptions, DEFAULT_REGION_SIZE_BLOCKS};
 
     prop_compose! {
         fn arbitrary_region_gaps(region_size_blocks: u16)(
@@ -496,10 +496,9 @@ mod tests {
             .is_some());
 
         // No space for blocks covering more than 1.5 regions
-        assert!(
-            dbg!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 1)))
-                .is_none()
-        );
+        assert!(bitmask_gaps
+            .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2) + 1)
+            .is_none());
     }
 
     #[test]
