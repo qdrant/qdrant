@@ -189,8 +189,12 @@ impl BitmaskGaps {
     pub fn find_fitting_gap(&self, num_blocks: u32) -> Option<Range<RegionId>> {
         let regions_needed = num_blocks.div_ceil(self.config.region_size_blocks as u32) as usize;
 
-        let window_size = regions_needed + 1;
+        // if the number of regions needed is larger than the number of regions available, return None
+        if regions_needed > self.mmap_slice.len() {
+            return None;
+        }
 
+        // if there is only one region, check if it is large enough
         if self.mmap_slice.len() == 1 {
             return if self.get(0).unwrap().max as usize >= num_blocks as usize {
                 Some(0..1)
@@ -199,65 +203,54 @@ impl BitmaskGaps {
             };
         }
 
-        self.as_slice()
-            .windows(window_size)
-            .enumerate()
-            .find_map(|(start_region_id, gaps)| {
-                // cover the case of large number of blocks
-                if window_size >= 3 {
-                    // check that the middle regions are empty
-                    for gap in gaps.iter().take(window_size - 1).skip(1) {
-                        if gap.max as usize != self.config.region_size_blocks {
-                            return None;
-                        }
-                    }
-                    let trailing = gaps[0].trailing;
-                    let leading = gaps[window_size - 1].leading;
-                    let merged_gap = (trailing + leading) as usize
-                        + (window_size - 2) * self.config.region_size_blocks;
+        // double pointer traversal to find a fitting range
+        let mut start = 0;
+        let mut end = 1;
+        let mut accumulated_blocks = 0;
 
-                    return if merged_gap as u32 >= num_blocks {
-                        Some(
-                            start_region_id as RegionId
-                                ..(start_region_id + window_size) as RegionId,
-                        )
-                    } else {
-                        None
-                    };
+        loop {
+            eprintln!("outer loop start:{start}, end:{end}");
+            let start_gap = self.get(start)?;
+
+            // if the gap is large enough, return it
+            if start_gap.max as usize >= num_blocks as usize {
+                return Some(start as RegionId..start as RegionId + 1);
+            }
+
+            // we need to accumulate with the next gap(s)
+            accumulated_blocks += start_gap.trailing as usize;
+
+            // explore following gaps up to `end` pointer
+            loop {
+                eprintln!("inner loop start:{start}, end:{end}");
+                eprintln!("accumulated: {accumulated_blocks}");
+                if accumulated_blocks >= num_blocks as usize {
+                    return Some(start as RegionId..end as RegionId);
                 }
 
-                // windows of 2
-                debug_assert!(window_size == 2, "Unexpected window size");
-                let left = &gaps[0];
-                let right = &gaps[1];
+                let Some(end_gap) = self.get(end) else {
+                    break;
+                };
 
-                // check it fits in the left region
-                if u32::from(left.max) >= num_blocks {
-                    // if both gaps are large enough, choose the smaller one
-                    if u32::from(right.max) >= num_blocks {
-                        return if left.max <= right.max {
-                            Some(start_region_id as RegionId..start_region_id as RegionId + 1)
-                        } else {
-                            Some(start_region_id as RegionId + 1..start_region_id as RegionId + 2)
-                        };
-                    }
-                    return Some(start_region_id as RegionId..start_region_id as RegionId + 1);
-                }
-
-                // check it fits in the right region
-                if u32::from(right.max) >= num_blocks {
-                    return Some(start_region_id as RegionId + 1..start_region_id as RegionId + 2);
-                }
-
-                // Otherwise, check if the gap in between them is large enough
-                let in_between = left.trailing + right.leading;
-
-                if u32::from(in_between) >= num_blocks {
-                    Some(start_region_id as RegionId..start_region_id as RegionId + 2)
+                if end_gap.max == self.config.region_size_blocks as u16 {
+                    // the block is empty - accumulate it and advance the end pointer
+                    accumulated_blocks += end_gap.max as usize;
+                    end += 1;
                 } else {
-                    None
+                    // the block is not empty - check if the leading blocks are enough
+                    if accumulated_blocks + end_gap.leading as usize >= num_blocks as usize {
+                        return Some(start as RegionId..end as RegionId);
+                    } else {
+                        break;
+                    }
                 }
-            })
+            }
+
+            // reset and advance
+            accumulated_blocks = 0;
+            start += 1;
+            end = start + 1;
+        }
     }
 }
 
@@ -373,6 +366,35 @@ mod tests {
                 prop_assert!(max_gap >= num_blocks, "max_gap: {}, num_blocks: {}", max_gap, num_blocks);
             }
         }
+    }
+
+    #[test]
+    fn test_find_fitting_gap_large() {
+        let large_value_blocks = DEFAULT_REGION_SIZE_BLOCKS + 20;
+
+        let gaps = [
+            RegionGaps {
+                max: 0,
+                leading: 0,
+                trailing: 0,
+            },
+            RegionGaps {
+                max: 500,
+                leading: 0,
+                trailing: 500,
+            },
+            RegionGaps::all_free(DEFAULT_REGION_SIZE_BLOCKS as u16),
+        ];
+
+        let temp_dir = tempdir().unwrap();
+        let config = StorageOptions::default().try_into().unwrap();
+        let mut bitmask_gaps =
+            BitmaskGaps::create(temp_dir.path(), gaps.clone().into_iter(), config);
+        bitmask_gaps.mmap_slice[0..3].clone_from_slice(&gaps[..]);
+
+        assert!(bitmask_gaps
+            .find_fitting_gap(large_value_blocks as u32)
+            .is_some());
     }
 
     #[test]

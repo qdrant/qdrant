@@ -633,17 +633,18 @@ mod tests {
         assert_eq!(files[4].file_name().unwrap(), "config.json");
     }
 
-    #[test]
-    fn test_put_payload() {
+    #[rstest]
+    #[case(1000, 2000)]
+    fn test_put_payload(#[case] num_payloads: u32, #[case] payload_size_factor: usize) {
+        let hw_counter = HardwareCounterCell::new();
         let (_dir, mut storage) = empty_storage();
 
         let rng = &mut rand::rngs::SmallRng::from_entropy();
 
-        let mut payloads = (0..100000u32)
-            .map(|point_offset| (point_offset, random_payload(rng, 2)))
+        let mut payloads = (0..num_payloads)
+            .map(|point_offset| (point_offset, random_payload(rng, payload_size_factor)))
             .collect::<Vec<_>>();
 
-        let hw_counter = HardwareCounterCell::new();
         for (point_offset, payload) in payloads.iter() {
             storage
                 .put_value(*point_offset, payload, &hw_counter)
