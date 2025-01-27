@@ -36,6 +36,7 @@ csv = "1.3.1"
 rstest = { workspace = true }
 proptest = { workspace = true }
 bustle = "0.5.1"
+common = { path = "../common/common", features = ["testing"] }
 
 [[bench]]
 name = "random_data_bench"

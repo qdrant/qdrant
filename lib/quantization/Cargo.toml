@@ -29,6 +29,7 @@ io = { path = "../common/io" }
 criterion = { workspace = true }
 num_threads = "0.1.6"
 tempfile = { workspace = true }
+common = { path = "../common/common", features = ["testing"] }
 
 [[bench]]
 name = "encode"
