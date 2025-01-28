@@ -58,7 +58,6 @@ jobs:
     - name: Setup monitoring
       run: ./monitor.sh
     - name: Run tests with coverage
-      # Profile "ci" is configured in .config/nextest.toml
       run: |
         tail -f resource_usage.log &
         ./coverage.sh
