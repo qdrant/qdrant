@@ -257,10 +257,10 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(requests.len())?;
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
-
+        // Check read rate limiter before proceeding
+        let cost = planned_query.searches.len() + planned_query.scrolls.len();
+        self.check_read_rate_limiter(cost)?;
         self.do_planned_query(
             planned_query,
             search_runtime_handle,
