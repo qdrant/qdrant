@@ -61,7 +61,7 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
     let inputs_data: Vec<ScoredPointOffset> = (0..inputs_count * groups_count)
         .map(|i| ScoredPointOffset {
             idx: i as PointOffsetType,
-            score: rng.gen_range(-1.0..1.0),
+            score: rng.random_range(-1.0..1.0),
         })
         .collect();
 
@@ -265,7 +265,7 @@ fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
     let inputs_data: Vec<ScoredPointOffset> = (0..inputs_count * groups_count)
         .map(|i| ScoredPointOffset {
             idx: i as PointOffsetType,
-            score: rng.gen_range(-1.0..1.0),
+            score: rng.random_range(-1.0..1.0),
         })
         .collect();
 

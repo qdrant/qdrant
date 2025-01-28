@@ -189,7 +189,7 @@ fn test_build_i64_histogram() {
     let precision = 0.01;
     let num_samples = 100_000;
 
-    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let points: Vec<_> = (0..num_samples)
         .map(|i| Point {
             val: rand::random::<i64>(),
