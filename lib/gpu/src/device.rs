@@ -143,7 +143,7 @@ impl Device {
         let has_half_precision = !instance.skip_half_precision()
             && enabled_physical_device_features_1_2.shader_float16 == 1;
         if !has_half_precision {
-            log::warn!("Half precision is not supported");
+            log::warn!("Half precision is not supported, falling back to full precision floats");
         }
         if !enabled_physical_device_features_1_2.storage_buffer8_bit_access == 0 {
             return Err(GpuError::NotSupported(
