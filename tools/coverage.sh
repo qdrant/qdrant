@@ -1,10 +1,17 @@
 #!/bin/bash
 
+# Usage: tools/coverage.sh
+#
+# For running on low RAM machines like Github CI, Use `RUN_PER_PACKAGE=true tools/coverage.sh`
+#
+# If using locally, occasionally run `cargo llvm-cov clean` to avoid bloating `target/llvm-cov-target` dir with .profraw files
+
 RUN_PER_PACKAGE=${RUN_PER_PACKAGE:-"false"}
 
 if [ "$RUN_PER_PACKAGE" == "false" ]; then
     # Run for the entire workspace in one shot. This assumes we have enough memory
-    cargo llvm-cov nextest --profile ci --workspace --lcov --output-path "lcov.info"
+    cargo llvm-cov --no-clean nextest --profile ci --workspace --lcov --output-path "lcov.info"
+    cargo llvm-cov report --html
     exit 0
 fi
 
