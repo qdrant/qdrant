@@ -13,9 +13,9 @@ for CRATE in $WORKSPACE_CRATES; do
     fi
 
     echo "Testing crate with coverage: $CRATE"
-    cargo llvm-cov --no-clean nextest --profile ci --jobs=1 -p "$CRATE" --lcov --output-path "$REPORT_DIR/$CRATE.lcov"
+    cargo llvm-cov --no-clean nextest --profile ci --jobs=1 -p "$CRATE" --lcov --output-path "$REPORT_DIR/$CRATE.info"
 
-    LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$CRATE.lcov"
+    LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$CRATE.info"
 done
 
-lcov $LCOV_COMMAND_ARGS --output-file merged.lcov
+lcov $LCOV_COMMAND_ARGS --output-file lcov.info
