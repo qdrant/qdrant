@@ -4,7 +4,7 @@ RUN_PER_PACKAGE=${RUN_PER_PACKAGE:-"false"}
 
 if [ "$RUN_PER_PACKAGE" == "false" ]; then
     # Run for the entire workspace in one shot. This assumes we have enough memory
-    cargo llvm-cov nextest --profile ci --workspace --html
+    cargo llvm-cov nextest --profile ci --workspace --lcov --output-path "lcov.info"
     exit 0
 fi
 

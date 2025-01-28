@@ -30,8 +30,3 @@ jobs:
           with:
             files: lcov.info
             token: ${{ secrets.CODECOV_TOKEN }}
-        - name: Display resource log on error
-          if: failure()
-          run: |
-            echo "Job failed. Here is the resource usage log:"
-            cat resource_usage.log
