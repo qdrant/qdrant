@@ -492,20 +492,19 @@ impl<'s> SegmentHolder {
             let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
             for segment_point in segment_points {
-                let point_version = segment_lock
-                    .point_version(segment_point)
-                    .unwrap_or_default();
-                match points.entry(segment_point) {
-                    // First time we see the point, add it to the list
-                    Entry::Vacant(entry) => {
-                        entry.insert((point_version, *idx));
+                if let Some(point_version) = segment_lock.point_version(segment_point) {
+                    match points.entry(segment_point) {
+                        // First time we see the point, add it to the list
+                        Entry::Vacant(entry) => {
+                            entry.insert((point_version, *idx));
+                        }
+                        // Point we have seen before is older, replace it
+                        Entry::Occupied(mut entry) if entry.get().0 < point_version => {
+                            entry.insert((point_version, *idx));
+                        }
+                        // Point we have seen before is newer, do nothing
+                        Entry::Occupied(_) => {}
                     }
-                    // Point we have seen before is older, replace it
-                    Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                        entry.insert((point_version, *idx));
-                    }
-                    // Point we have seen before is newer, do nothing
-                    Entry::Occupied(_) => {}
                 }
             }
         }
