@@ -1,0 +1,37 @@
+name: Coverage Report
+
+on:
+  push:
+    branches: [ master, dev ]
+  workflow_dispatch: # Trigger from UI for selected branch
+
+jobs:
+    coverage:
+        runs-on: ubuntu-latest
+        steps:
+        - name: Install minimal stable
+          uses: dtolnay/rust-toolchain@stable
+          with:
+            components: llvm-tools-preview
+        - uses: actions/checkout@v4
+        - uses: Swatinem/rust-cache@v2
+        - name: Install Protoc
+          uses: arduino/setup-protoc@v3
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
+        - name: Install nextest
+          uses: taiki-e/install-action@nextest
+        - name: Install llvm-cov
+          run: cargo install cargo-llvm-cov && sudo apt install -y lcov
+        - name: Run tests with coverage
+          run: RUN_PER_PACKAGE=true tools/coverage.sh
+        - name: Upload coverage data to Codecov
+          uses: codecov/codecov-action@v3
+          with:
+            files: lcov.info
+            token: ${{ secrets.CODECOV_TOKEN }}
+        - name: Display resource log on error
+          if: failure()
+          run: |
+            echo "Job failed. Here is the resource usage log:"
+            cat resource_usage.log
