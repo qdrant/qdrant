@@ -96,4 +96,8 @@ impl<
             .get_dense(point_b, &self.hardware_counter);
         TMetric::similarity(v1, v2)
     }
+
+    fn get_hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
+    }
 }

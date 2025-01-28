@@ -113,4 +113,8 @@ where
         self.quantized_data
             .score_internal(point_a, point_b, &self.hardware_counter)
     }
+
+    fn get_hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
+    }
 }

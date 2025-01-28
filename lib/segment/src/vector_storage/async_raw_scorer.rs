@@ -79,13 +79,17 @@ where
 
         let mut processed = 0;
         self.storage
-            .read_vectors_async(points_stream, |idx, point_id, other_vector| {
-                scores[idx] = ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score(other_vector),
-                };
-                processed += 1;
-            })
+            .read_vectors_async(
+                points_stream,
+                |idx, point_id, other_vector| {
+                    scores[idx] = ScoredPointOffset {
+                        idx: point_id,
+                        score: self.query_scorer.score(other_vector),
+                    };
+                    processed += 1;
+                },
+                self.query_scorer.get_hw_counter(),
+            )
             .unwrap();
 
         // ToDo: io_uring is experimental, it can fail if it is not supported.
@@ -105,12 +109,16 @@ where
         let mut scores = vec![];
 
         self.storage
-            .read_vectors_async(points, |_idx, point_id, other_vector| {
-                scores.push(ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score(other_vector),
-                });
-            })
+            .read_vectors_async(
+                points,
+                |_idx, point_id, other_vector| {
+                    scores.push(ScoredPointOffset {
+                        idx: point_id,
+                        score: self.query_scorer.score(other_vector),
+                    });
+                },
+                self.query_scorer.get_hw_counter(),
+            )
             .unwrap();
 
         // ToDo: io_uring is experimental, it can fail if it is not supported.
@@ -161,13 +169,17 @@ where
             .filter(|point_id| self.check_vector(*point_id));
 
         self.storage
-            .read_vectors_async(points_stream, |_, point_id, other_vector| {
-                let scored_point_offset = ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score(other_vector),
-                };
-                pq.push(scored_point_offset);
-            })
+            .read_vectors_async(
+                points_stream,
+                |_, point_id, other_vector| {
+                    let scored_point_offset = ScoredPointOffset {
+                        idx: point_id,
+                        score: self.query_scorer.score(other_vector),
+                    };
+                    pq.push(scored_point_offset);
+                },
+                self.query_scorer.get_hw_counter(),
+            )
             .unwrap();
 
         // ToDo: io_uring is experimental, it can fail if it is not supported.
@@ -188,13 +200,17 @@ where
 
         let mut pq = FixedLengthPriorityQueue::new(top);
         self.storage
-            .read_vectors_async(points_stream, |_, point_id, other_vector| {
-                let scored_point_offset = ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score(other_vector),
-                };
-                pq.push(scored_point_offset);
-            })
+            .read_vectors_async(
+                points_stream,
+                |_, point_id, other_vector| {
+                    let scored_point_offset = ScoredPointOffset {
+                        idx: point_id,
+                        score: self.query_scorer.score(other_vector),
+                    };
+                    pq.push(scored_point_offset);
+                },
+                self.query_scorer.get_hw_counter(),
+            )
             .unwrap();
 
         // ToDo: io_uring is experimental, it can fail if it is not supported.

@@ -214,14 +214,13 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         &self,
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[T]),
-        _hw_counter: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // TODO(io_measurements): measure io_uring reads
         self.uring_reader
             .lock()
             .as_mut()
             .expect("io_uring reader should be initialized")
-            .read_stream(points, callback)
+            .read_stream(points, callback, hw_counter)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -244,16 +243,16 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         &self,
         points: impl Iterator<Item = PointOffsetType>,
         callback: impl FnMut(usize, PointOffsetType, &[T]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurements): propagate this value!
         #[cfg(target_os = "linux")]
         {
-            self.process_points_uring(points, callback, &hw_counter)
+            self.process_points_uring(points, callback, hw_counter)
         }
 
         #[cfg(not(target_os = "linux"))]
         {
-            self.process_points_simple(points, callback, &hw_counter);
+            self.process_points_simple(points, callback, hw_counter);
             Ok(())
         }
     }

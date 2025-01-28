@@ -2,6 +2,7 @@ use std::fmt;
 use std::fs::File;
 use std::os::fd::AsRawFd;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io_uring::{opcode, types, IoUring};
 use memory::mmap_ops::transmute_from_u8_to_slice;
@@ -87,6 +88,7 @@ impl<T: PrimitiveVectorElement> UringReader<T> {
         &mut self,
         points: impl IntoIterator<Item = PointOffsetType>,
         mut callback: impl FnMut(usize, PointOffsetType, &[T]),
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Take `UringReader::io_uring`, so that if we return an error or panic during `read_stream`,
         // `IoUring` would be transparently dropped.
@@ -110,6 +112,7 @@ impl<T: PrimitiveVectorElement> UringReader<T> {
                     &mut unused_buffer_ids,
                     &mut callback,
                     self.raw_size,
+                    hw_counter,
                 )?;
             }
             // Assume there is at least one buffer available at this point
@@ -151,6 +154,7 @@ impl<T: PrimitiveVectorElement> UringReader<T> {
                 &mut unused_buffer_ids,
                 &mut callback,
                 self.raw_size,
+                hw_counter,
             )?;
 
             operations_to_wait_for = self.buffers.buffers.len() - unused_buffer_ids.len();
@@ -168,6 +172,7 @@ fn submit_and_read<T: PrimitiveVectorElement>(
     unused_buffer_ids: &mut Vec<usize>,
     mut callback: impl FnMut(usize, PointOffsetType, &[T]),
     raw_size: usize,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<()> {
     let buffers_count = buffers.buffers.len();
     let used_buffers_count = buffers_count - unused_buffer_ids.len();
@@ -192,6 +197,7 @@ fn submit_and_read<T: PrimitiveVectorElement>(
         let meta = buffers.buffers[buffer_id].meta.take().unwrap();
         let buffer = &buffers.buffers[buffer_id].buffer;
         let vector = transmute_from_u8_to_slice(buffer);
+        hw_counter.io_read_counter().incr_delta(buffer.len());
         callback(meta.index, meta.point_id, vector);
         unused_buffer_ids.push(buffer_id);
     }

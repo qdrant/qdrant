@@ -165,4 +165,8 @@ where
     fn score_internal(&self, _point_a: PointOffsetType, _point_b: PointOffsetType) -> ScoreType {
         unimplemented!("Custom scorer compares against multiple vectors, not just one")
     }
+
+    fn get_hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
+    }
 }

@@ -123,4 +123,8 @@ impl<
             .get_multi(point_b, &self.hardware_counter);
         self.score_multi(v1, v2)
     }
+
+    fn get_hw_counter(&self) -> &HardwareCounterCell {
+        &self.hardware_counter
+    }
 }
