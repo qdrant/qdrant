@@ -8,9 +8,9 @@ if [ "${PACKAGES[*]}" != "${EXPECTED_PACKAGES[*]}" ]; then
     exit 1
 fi
 
-WHITELISTED_PACKAGES=("api" "blob_store" "collection" "common" "segment" "storage") # ToDo: Use block list instead?
+WHITELISTED_PACKAGES=("qdrant" "api" "blob_store" "collection" "common" "segment" "storage")
 # EMPTY_PACKAGES=("cancel" "dataset" "gpu" "io")
-# IGNORED_PACKAGES=("issues" "memory" "qdrant" "quantization" "sparse")
+# IGNORED_PACKAGES=("issues" "memory" "quantization" "sparse")
 
 REPORT_DIR="target/llvm-cov/package-reports"
 
@@ -22,10 +22,6 @@ mkdir -p "$REPORT_DIR"
 LCOV_COMMAND_ARGS=""
 
 for PACKAGE in "${WHITELISTED_PACKAGES[@]}"; do
-    if [ "$PACKAGE" == "qdrant" ]; then
-        continue
-    fi
-
     echo "Testing PACKAGE with coverage: $PACKAGE"
     # Profile "ci" is configured in .config/nextest.toml
     cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"

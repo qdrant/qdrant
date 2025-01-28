@@ -55,12 +55,8 @@ jobs:
       uses: taiki-e/install-action@nextest
     - name: Install llvm-cov
       run: cargo install cargo-llvm-cov && sudo apt install -y lcov
-    - name: Setup monitoring
-      run: ./monitor.sh
     - name: Run tests with coverage
-      run: |
-        tail -f resource_usage.log &
-        ./coverage.sh
+      run: tools/coverage.sh
     - name: Upload coverage data to Codecov
       uses: codecov/codecov-action@v3
       with:
