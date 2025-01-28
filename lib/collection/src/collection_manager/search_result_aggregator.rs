@@ -85,13 +85,10 @@ impl BatchResultAggregator {
         let aggregator = &mut self.batch_aggregators[batch_id];
         for scored_point in search_results {
             debug_assert!(self.point_versions.contains_key(&scored_point.id));
-            let point_max_version = self
-                .point_versions
-                .get(&scored_point.id)
-                .copied()
-                .unwrap_or(0);
-            if scored_point.version >= point_max_version {
-                aggregator.push(scored_point);
+            if let Some(point_max_version) = self.point_versions.get(&scored_point.id) {
+                if scored_point.version >= *point_max_version {
+                    aggregator.push(scored_point);
+                }
             }
         }
     }
