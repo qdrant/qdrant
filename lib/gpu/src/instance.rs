@@ -33,6 +33,9 @@ pub struct Instance {
 
     /// Shader compiler.
     compiler: Mutex<shaderc::Compiler>,
+
+    /// Disable half precision support. It's useful for unit tests.
+    skip_half_precision: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,11 +56,66 @@ pub struct PhysicalDevice {
     pub device_type: PhysicalDeviceType,
 }
 
+#[derive(Default)]
+pub struct InstanceBuilder<'a> {
+    debug_messenger: Option<&'a dyn DebugMessenger>,
+    allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
+    dump_api: bool,
+    skip_half_precision: bool,
+}
+
+impl<'a> InstanceBuilder<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set debug messenger for the instance.
+    pub fn with_debug_messenger(mut self, debug_messenger: &'a dyn DebugMessenger) -> Self {
+        self.debug_messenger = Some(debug_messenger);
+        self
+    }
+
+    /// Set CPU allocation callbacks for the instance.
+    pub fn with_allocation_callbacks(
+        mut self,
+        allocation_callbacks: Box<dyn AllocationCallbacks>,
+    ) -> Self {
+        self.allocation_callbacks = Some(allocation_callbacks);
+        self
+    }
+
+    // Enable API dump layer.
+    pub fn with_dump_api(mut self, dump_api: bool) -> Self {
+        self.dump_api = dump_api;
+        self
+    }
+
+    /// Disable half precision support. It's useful for unit tests.
+    pub fn with_skip_half_precision(mut self, skip_half_precision: bool) -> Self {
+        self.skip_half_precision = skip_half_precision;
+        self
+    }
+
+    pub fn build(self) -> GpuResult<Arc<Instance>> {
+        Instance::new(
+            self.debug_messenger,
+            self.allocation_callbacks,
+            self.dump_api,
+            self.skip_half_precision,
+        )
+    }
+}
+
 impl Instance {
-    pub fn new(
+    pub fn builder() -> InstanceBuilder<'static> {
+        InstanceBuilder::new()
+    }
+
+    fn new(
         debug_messenger: Option<&dyn DebugMessenger>,
         allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
         dump_api: bool,
+        skip_half_precision: bool,
     ) -> GpuResult<Arc<Self>> {
         // Create a shader compiler before we start.
         // It's used to compile GLSL into SPIR-V.
@@ -218,6 +276,7 @@ impl Instance {
             allocation_callbacks,
             vk_debug_utils_loader,
             vk_debug_messenger,
+            skip_half_precision,
             compiler,
         }))
     }
@@ -244,6 +303,10 @@ impl Instance {
 
     pub fn physical_devices(&self) -> &[PhysicalDevice] {
         &self.vk_physical_devices
+    }
+
+    pub fn skip_half_precision(&self) -> bool {
+        self.skip_half_precision
     }
 
     pub fn compile_shader(

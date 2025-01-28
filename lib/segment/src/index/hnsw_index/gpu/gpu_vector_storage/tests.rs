@@ -103,6 +103,7 @@ fn test_gpu_vector_storage_sq(
         distance,
         Some(quantization_config.clone()),
         false,
+        false,
         precision,
     );
 }
@@ -149,6 +150,7 @@ fn test_gpu_vector_storage_bq(
         distance,
         Some(quantization_config.clone()),
         false,
+        false,
         precision,
     );
 }
@@ -193,6 +195,7 @@ fn test_gpu_vector_storage_pq(
         dim,
         distance,
         Some(quantization_config.clone()),
+        false,
         false,
         precision,
     );
@@ -239,6 +242,7 @@ fn test_gpu_vector_storage(
         distance,
         None,
         false,
+        false,
         precision,
     );
 }
@@ -275,6 +279,45 @@ fn test_gpu_vector_storage_force_half(
         distance,
         None,
         true, // force half precision
+        false,
+        precision,
+    );
+}
+
+#[rstest]
+fn test_gpu_vector_storage_without_half(
+    #[values(Distance::Cosine)] distance: Distance,
+    #[values(
+        TestStorageType::Dense(TestElementType::Float32),
+        TestStorageType::Multi(TestElementType::Float32),
+        TestStorageType::Dense(TestElementType::Float16),
+        TestStorageType::Multi(TestElementType::Float16)
+    )]
+    storage_type: TestStorageType,
+    #[values(15)] dim: usize,
+    #[values(2048 + 17)] num_vectors: usize,
+) {
+    let _ = env_logger::builder()
+        .is_test(true)
+        .filter_level(log::LevelFilter::Trace)
+        .try_init();
+
+    let precision = 5.0 * get_precision(storage_type, dim, distance);
+    log::info!(
+        "Testing distance {:?}, element type {:?}, dim {} with precision {}",
+        distance,
+        storage_type,
+        dim,
+        precision
+    );
+    test_gpu_vector_storage_impl(
+        storage_type,
+        num_vectors,
+        dim,
+        distance,
+        None,
+        true, // force half precision
+        true, // skip half support
         precision,
     );
 }
@@ -540,6 +583,7 @@ fn create_vector_storage_u8_multi(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn test_gpu_vector_storage_impl(
     storage_type: TestStorageType,
     num_vectors: usize,
@@ -547,6 +591,7 @@ fn test_gpu_vector_storage_impl(
     distance: Distance,
     quantization_config: Option<QuantizationConfig>,
     force_half_precision: bool,
+    skip_half_support: bool,
     precision: f32,
 ) {
     let test_point_id: PointOffsetType = 0;
@@ -560,7 +605,11 @@ fn test_gpu_vector_storage_impl(
     });
 
     let debug_messenger = gpu::PanicIfErrorMessenger {};
-    let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
+    let instance = gpu::Instance::builder()
+        .with_debug_messenger(&debug_messenger)
+        .with_skip_half_precision(skip_half_support)
+        .build()
+        .unwrap();
     let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
     let gpu_vector_storage = GpuVectorStorage::new(
@@ -580,13 +629,19 @@ fn test_gpu_vector_storage_impl(
         } else {
             match storage_type.element_type() {
                 TestElementType::Float32 => {
-                    if force_half_precision {
+                    if force_half_precision && device.has_half_precision() {
                         VectorStorageDatatype::Float16
                     } else {
                         VectorStorageDatatype::Float32
                     }
                 }
-                TestElementType::Float16 => VectorStorageDatatype::Float16,
+                TestElementType::Float16 => {
+                    if device.has_half_precision() {
+                        VectorStorageDatatype::Float16
+                    } else {
+                        VectorStorageDatatype::Float32
+                    }
+                }
                 TestElementType::Uint8 => VectorStorageDatatype::Uint8,
             }
         }

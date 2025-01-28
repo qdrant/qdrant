@@ -66,7 +66,10 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
         .collect();
 
     let debug_messenger = gpu::PanicIfErrorMessenger {};
-    let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
+    let instance = gpu::Instance::builder()
+        .with_debug_messenger(&debug_messenger)
+        .build()
+        .unwrap();
     let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
     let gpu_nearest_heap = GpuHeapTestConfig { ef, linear };
@@ -267,7 +270,10 @@ fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
         .collect();
 
     let debug_messenger = gpu::PanicIfErrorMessenger {};
-    let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
+    let instance = gpu::Instance::builder()
+        .with_debug_messenger(&debug_messenger)
+        .build()
+        .unwrap();
     let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
     let gpu_candidates_heap = GpuHeapTestConfig {
