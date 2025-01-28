@@ -47,6 +47,9 @@ pub struct Device {
 
     /// Selected queue index to use.
     queue_index: usize,
+
+    /// Does the device support half precision floats.
+    has_half_precision: bool,
 }
 
 // GPU execution queue.
@@ -106,8 +109,6 @@ impl Device {
 
         let physical_device_features = vk::PhysicalDeviceFeatures::default();
 
-        // TODO(gpu): check presence of features
-
         // Define Vulkan features that we need.
         let mut enabled_physical_device_features_1_1 =
             vk::PhysicalDeviceVulkan11Features::default();
@@ -139,10 +140,10 @@ impl Device {
         if !enabled_physical_device_features_1_2.shader_int8 == 0 {
             return Err(GpuError::NotSupported("Int8 is not supported".to_string()));
         }
-        if !enabled_physical_device_features_1_2.shader_float16 == 0 {
-            return Err(GpuError::NotSupported(
-                "Float16 is not supported".to_string(),
-            ));
+        let has_half_precision = !instance.skip_half_precision()
+            && enabled_physical_device_features_1_2.shader_float16 == 1;
+        if !has_half_precision {
+            log::warn!("Half precision is not supported, falling back to full precision floats");
         }
         if !enabled_physical_device_features_1_2.storage_buffer8_bit_access == 0 {
             return Err(GpuError::NotSupported(
@@ -151,7 +152,7 @@ impl Device {
         }
         let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
-            .shader_float16(true)
+            .shader_float16(has_half_precision)
             .storage_buffer8_bit_access(true);
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
@@ -307,6 +308,7 @@ impl Device {
             is_dynamic_subgroup_size,
             queue_index,
             name: vk_physical_device.name.clone(),
+            has_half_precision,
         }))
     }
 
@@ -365,6 +367,10 @@ impl Device {
 
     pub fn max_buffer_size(&self) -> usize {
         self.max_buffer_size
+    }
+
+    pub fn has_half_precision(&self) -> bool {
+        self.has_half_precision
     }
 
     pub fn compute_queue(&self) -> &Queue {

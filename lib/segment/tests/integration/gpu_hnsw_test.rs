@@ -136,7 +136,10 @@ fn test_gpu_filterable_hnsw() {
     let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
 
     let debug_messenger = gpu::PanicIfErrorMessenger {};
-    let instance = gpu::Instance::new(Some(&debug_messenger), None, false).unwrap();
+    let instance = gpu::Instance::builder()
+        .with_debug_messenger(&debug_messenger)
+        .build()
+        .unwrap();
     let device =
         Mutex::new(gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap());
     let locked_device = LockedGpuDevice::new(device.lock());
