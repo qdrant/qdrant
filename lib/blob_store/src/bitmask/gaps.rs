@@ -194,18 +194,18 @@ impl BitmaskGaps {
             return None;
         }
 
-        let (mut head, mut tail) = (0, 0);
+        let (mut head, mut tail) = (min_regions_needed - 1, 0);
 
         // Slide head/tail over regions until we find a gap
         'slider: while head < self.len() {
             // If we need more/less regions, advance head/tail
             let region_count = head.saturating_sub(tail) + 1;
             if region_count < min_regions_needed {
-                head += 1;
+                head += min_regions_needed - region_count;
                 continue;
             }
             if region_count > max_regions_needed {
-                tail += 1;
+                tail += region_count - max_regions_needed;
                 continue;
             }
 
@@ -218,22 +218,25 @@ impl BitmaskGaps {
             let mut blocks = u32::from(head_region.leading);
 
             // If enough blocks including middle regions, return
-            let middle_regions = (tail..=head)
-                .rev()
-                .skip(1)
-                .take(region_count.saturating_sub(2));
-            for region_index in middle_regions {
-                let region = self.get(region_index).unwrap();
-                blocks += u32::from(region.trailing);
+            if region_count >= 3 {
+                let middle_regions = (tail..=head)
+                    .rev()
+                    .skip(1)
+                    .take(region_count.saturating_sub(2));
+                for region_index in middle_regions {
+                    let region = self.get(region_index).unwrap();
+                    blocks += u32::from(region.trailing);
 
-                if blocks >= num_blocks {
-                    return Some(region_index as u32..head as u32 + 1);
-                }
+                    if blocks >= num_blocks {
+                        return Some(region_index as u32..head as u32 + 1);
+                    }
 
-                // Cannot have contiguous blocks if region is not empty, advance tail to this region
-                if region.max < self.config.region_size_blocks as u16 {
-                    tail = region_index;
-                    continue 'slider;
+                    // Cannot have contiguous blocks if region is not empty, advance tail to this region
+                    if region.max < self.config.region_size_blocks as u16 {
+                        tail = region_index;
+                        head = head.max(tail + min_regions_needed - 1);
+                        continue 'slider;
+                    }
                 }
             }
 
