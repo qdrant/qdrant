@@ -557,6 +557,7 @@ mod tests {
     use std::collections::HashMap;
 
     use segment::data_types::groups::GroupId;
+    use segment::payload_json;
     use segment::types::{Payload, ScoredPoint};
 
     use crate::grouping::types::Group;
@@ -602,8 +603,8 @@ mod tests {
             groups.push(group);
         });
 
-        let payload_a = Payload::from(serde_json::json!({"some_key": "some value a"}));
-        let payload_b = Payload::from(serde_json::json!({"some_key": "some value b"}));
+        let payload_a = payload_json! {"some_key": "some value a"};
+        let payload_b = payload_json! {"some_key": "some value b"};
 
         let hydrated = vec![
             make_scored_point(1, 1.0, Some(payload_a.clone())),

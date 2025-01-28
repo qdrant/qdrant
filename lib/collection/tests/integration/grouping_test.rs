@@ -9,7 +9,7 @@ use rand::rngs::ThreadRng;
 use rand::Rng;
 use segment::data_types::vectors::DenseVector;
 use segment::json_path::JsonPath;
-use segment::types::{Filter, Payload, WithPayloadInterface, WithVector};
+use segment::types::{Filter, WithPayloadInterface, WithVector};
 use serde_json::json;
 
 use crate::common::simple_collection_fixture;
@@ -25,6 +25,7 @@ mod group_by {
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use segment::payload_json;
 
     use super::*;
 
@@ -66,9 +67,7 @@ mod group_by {
             payloads: (0..docs)
                 .flat_map(|x| {
                     (0..chunks).map(move |_| {
-                        Some(Payload::from(
-                            json!({ "docId": x , "other_stuff": x.to_string() + "foo" }),
-                        ))
+                        Some(payload_json! { "docId": x , "other_stuff": x.to_string() + "foo" })
                     })
                 })
                 .collect_vec()
@@ -479,6 +478,7 @@ mod group_by_builder {
     };
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::json_path::JsonPath;
+    use segment::payload_json;
     use tokio::sync::RwLock;
 
     use super::*;
@@ -523,7 +523,7 @@ mod group_by_builder {
                 ),
                 payloads: (0..docs)
                     .flat_map(|x| {
-                        (0..chunks_per_doc).map(move |_| Some(Payload::from(json!({ "docId": x }))))
+                        (0..chunks_per_doc).map(move |_| Some(payload_json! {"docId": x}))
                     })
                     .collect_vec()
                     .into(),
@@ -554,11 +554,7 @@ mod group_by_builder {
                         .collect_vec(),
                 ),
                 payloads: (0..docs)
-                    .map(|x| {
-                        Some(Payload::from(
-                            json!({ "docId": x, "body": format!("{x} {BODY_TEXT}") }),
-                        ))
-                    })
+                    .map(|x| Some(payload_json! {"docId": x, "body": format!("{x} {BODY_TEXT}")}))
                     .collect_vec()
                     .into(),
             };

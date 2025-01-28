@@ -2,7 +2,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use segment::common::operation_error::{OperationError, SegmentFailedState};
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
-use serde_json::json;
+use segment::payload_json;
 use tempfile::Builder;
 
 use crate::fixtures::segment::empty_segment;
@@ -34,7 +34,7 @@ fn test_insert_fail_recovery() {
     let fail_res = segment.set_payload(
         3,
         1.into(),
-        &json!({ "color": vec!["red".to_string()] }).into(),
+        &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
     );
@@ -44,7 +44,7 @@ fn test_insert_fail_recovery() {
     let fail_res = segment.set_payload(
         3,
         2.into(),
-        &json!({ "color": vec!["red".to_string()] }).into(),
+        &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
     );
@@ -54,7 +54,7 @@ fn test_insert_fail_recovery() {
     let ok_res = segment.set_payload(
         2,
         2.into(),
-        &json!({ "color": vec!["red".to_string()] }).into(),
+        &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
     );
@@ -65,7 +65,7 @@ fn test_insert_fail_recovery() {
     let recover_res = segment.set_payload(
         2,
         1.into(),
-        &json!({ "color": vec!["red".to_string()] }).into(),
+        &payload_json! {"color": vec!["red".to_string()]},
         &None,
         &hw_counter,
     );

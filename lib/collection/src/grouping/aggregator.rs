@@ -201,7 +201,7 @@ impl GroupsAggregator {
 mod unit_tests {
 
     use common::types::ScoreType;
-    use segment::types::Payload;
+    use segment::payload_json;
     use serde_json::json;
 
     use super::*;
@@ -211,7 +211,7 @@ mod unit_tests {
             id: idx.into(),
             version: 0,
             score,
-            payload: Some(Payload::from(serde_json::json!({ "docId": payloads }))),
+            payload: Some(payload_json! { "docId": payloads }),
             vector: None,
             shard_key: None,
             order_value: None,

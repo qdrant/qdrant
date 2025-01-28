@@ -116,13 +116,13 @@ pub fn build_multivec_segment(
 #[cfg(test)]
 mod tests {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
     use crate::common::operation_error::OperationError;
     use crate::data_types::vectors::only_default_vector;
     use crate::entry::entry_point::SegmentEntry;
+    use crate::payload_json;
 
     #[test]
     fn test_create_simple_segment() {
@@ -172,7 +172,7 @@ mod tests {
             .set_payload(
                 3,
                 1.into(),
-                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
                 &None,
                 &hw_counter,
             )
@@ -182,7 +182,7 @@ mod tests {
             .set_payload(
                 3,
                 2.into(),
-                &json!({ "color": vec!["red".to_owned(), "blue".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "blue".to_owned()]},
                 &None,
                 &hw_counter,
             )
@@ -192,7 +192,7 @@ mod tests {
             .set_payload(
                 3,
                 3.into(),
-                &json!({ "color": vec!["red".to_owned(), "yellow".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "yellow".to_owned()]},
                 &None,
                 &hw_counter,
             )
@@ -202,7 +202,7 @@ mod tests {
             .set_payload(
                 3,
                 4.into(),
-                &json!({ "color": vec!["red".to_owned(), "green".to_owned()] }).into(),
+                &payload_json! {"color": vec!["red".to_owned(), "green".to_owned()]},
                 &None,
                 &hw_counter,
             )

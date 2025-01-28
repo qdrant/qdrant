@@ -14,13 +14,13 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
+use segment::payload_json;
 use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadSchemaType,
     SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
-use serde_json::json;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 3;
@@ -218,7 +218,7 @@ fn filtered_hnsw_discover_precision() {
         let vector = random_vector(&mut rnd, dim);
 
         let keyword_payload = get_random_keyword_of(num_payload_values, &mut rnd);
-        let payload: Payload = json!({keyword_key:keyword_payload,}).into();
+        let payload = payload_json! {keyword_key: keyword_payload};
 
         segment
             .upsert_point(

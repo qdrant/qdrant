@@ -20,14 +20,13 @@ use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
-    HnswConfig, Indexes, Payload, PayloadSchemaType, ProductQuantizationConfig,
-    QuantizationSearchParams, Range, ScalarQuantizationConfig, SearchParams, SegmentConfig,
-    SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
+    HnswConfig, Indexes, PayloadSchemaType, ProductQuantizationConfig, QuantizationSearchParams,
+    Range, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
+    VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use segment::vector_storage::VectorStorageEnum;
-use serde_json::json;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
@@ -228,6 +227,7 @@ fn test_byte_storage_binary_quantization_hnsw(
 ) {
     use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
+    use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
 
     let stopped = AtomicBool::new(false);
@@ -283,7 +283,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         let vector = random_vector(&mut rnd, dim, storage_data_type);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-        let payload: Payload = json!({int_key:int_payload,}).into();
+        let payload = payload_json! {int_key: int_payload};
 
         segment_byte
             .upsert_point(

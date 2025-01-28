@@ -15,12 +15,12 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::VectorIndex;
 use segment::json_path::JsonPath;
+use segment::payload_json;
 use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadSchemaType,
     SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType, WithPayload,
 };
-use serde_json::json;
 use tempfile::Builder;
 
 #[test]
@@ -68,7 +68,7 @@ fn test_batch_and_single_request_equivalency() {
         let vector = random_vector(&mut rnd, dim);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-        let payload: Payload = json!({int_key:int_payload,}).into();
+        let payload = payload_json! {int_key: int_payload};
 
         let hw_counter = HardwareCounterCell::new();
 

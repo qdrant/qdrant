@@ -6,6 +6,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{only_default_vector, DenseVector, VectorRef};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
+use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
@@ -13,7 +14,6 @@ use segment::types::{
     Distance, Indexes, SegmentConfig, SparseVectorDataConfig, SparseVectorStorageType,
     VectorDataConfig, VectorName, VectorStorageType,
 };
-use serde_json::json;
 use sparse::common::sparse_vector::SparseVector;
 
 pub fn empty_segment(path: &Path) -> Segment {
@@ -52,9 +52,9 @@ pub fn build_segment_1(path: &Path) -> Segment {
 
     let payload_key = PAYLOAD_KEY;
 
-    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
-    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
-    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
+    let payload_option1 = payload_json! {payload_key: vec!["red".to_owned()]};
+    let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
+    let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
     segment1
         .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter)
@@ -104,9 +104,9 @@ pub fn build_segment_2(path: &Path) -> Segment {
 
     let payload_key = PAYLOAD_KEY;
 
-    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
-    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
-    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
+    let payload_option1 = payload_json! {payload_key: vec!["red".to_owned()]};
+    let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
+    let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
     segment2
         .set_payload(16, 11.into(), &payload_option1, &None, &hw_counter)
@@ -230,9 +230,9 @@ pub fn build_segment_3(path: &Path) -> Segment {
 
     let payload_key = PAYLOAD_KEY;
 
-    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
-    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
-    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
+    let payload_option1 = payload_json! {payload_key: vec!["red".to_owned()]};
+    let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
+    let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
     segment3
         .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter)
@@ -322,9 +322,9 @@ pub fn build_segment_sparse_1(path: &Path) -> Segment {
 
     let payload_key = PAYLOAD_KEY;
 
-    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
-    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
-    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
+    let payload_option1 = payload_json! {payload_key: vec!["red".to_owned()]};
+    let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
+    let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
     segment1
         .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter)
@@ -414,9 +414,9 @@ pub fn build_segment_sparse_2(path: &Path) -> Segment {
 
     let payload_key = PAYLOAD_KEY;
 
-    let payload_option1 = json!({ payload_key: vec!["red".to_owned()] }).into();
-    let payload_option2 = json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
-    let payload_option3 = json!({ payload_key: vec!["blue".to_owned()] }).into();
+    let payload_option1 = payload_json! {payload_key: vec!["red".to_owned()]};
+    let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
+    let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
     segment2
         .set_payload(16, 11.into(), &payload_option1, &None, &hw_counter)

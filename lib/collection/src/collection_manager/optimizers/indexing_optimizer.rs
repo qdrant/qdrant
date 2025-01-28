@@ -294,8 +294,8 @@ mod tests {
     use segment::fixtures::index_fixtures::random_vector;
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
-    use segment::types::{Distance, Payload, PayloadSchemaType, VectorNameBuf};
-    use serde_json::json;
+    use segment::payload_json;
+    use segment::types::{Distance, PayloadSchemaType, VectorNameBuf};
     use tempfile::Builder;
 
     use super::*;
@@ -612,7 +612,7 @@ mod tests {
             );
         }
 
-        let point_payload: Payload = json!({"number":10000i64}).into();
+        let point_payload = payload_json! {"number": 10000i64};
 
         let batch = BatchPersisted {
             ids: vec![501.into(), 502.into(), 503.into()],

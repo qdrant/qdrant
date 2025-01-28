@@ -1357,8 +1357,8 @@ mod tests {
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+    use segment::payload_json;
     use segment::types::{FieldCondition, PayloadSchemaType};
-    use serde_json::json;
     use tempfile::{Builder, TempDir};
 
     use super::*;
@@ -1682,7 +1682,7 @@ mod tests {
             .set_payload(
                 101,
                 3.into(),
-                &json!({ "color": vec!["red".to_owned()] }).into(),
+                &payload_json! { "color": vec!["red".to_owned()] },
                 &None,
                 &hw_cell,
             )

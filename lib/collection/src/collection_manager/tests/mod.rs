@@ -8,8 +8,8 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
-use segment::types::{Payload, PointIdType, WithPayload, WithVector};
-use serde_json::json;
+use segment::payload_json;
+use segment::types::{PointIdType, WithPayload, WithVector};
 use tempfile::Builder;
 
 use super::holders::proxy_segment;
@@ -261,8 +261,8 @@ fn test_proxy_shared_updates() {
     let old_vec = vec![1.0, 0.0, 0.0, 1.0];
     let new_vec = vec![1.0, 0.0, 1.0, 0.0];
 
-    let old_payload: Payload = json!({ "size": vec!["small"] }).into();
-    let new_payload: Payload = json!({ "size": vec!["big"] }).into();
+    let old_payload = payload_json! {"size": vec!["small"]};
+    let new_payload = payload_json! {"size": vec!["big"]};
     // let newest_vec = vec![1.0, 1.0, 0.0, 0.0];
 
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
@@ -323,7 +323,7 @@ fn test_proxy_shared_updates() {
     holder.add_new(proxy_segment_1);
     holder.add_new(proxy_segment_2);
 
-    let payload: Payload = json!({ "color": vec!["yellow"] }).into();
+    let payload = payload_json! {"color": vec!["yellow"]};
 
     let ids = vec![idx1, idx2];
 
@@ -346,7 +346,7 @@ fn test_proxy_shared_updates() {
     )
     .unwrap();
 
-    let expected_payload: Payload = json!({ "size": vec!["big"], "color": vec!["yellow"] }).into();
+    let expected_payload = payload_json! {"size": vec!["big"], "color": vec!["yellow"]};
 
     for (point_id, record) in result {
         if let Some(payload) = record.payload {
