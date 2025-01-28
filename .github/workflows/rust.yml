@@ -61,7 +61,7 @@ jobs:
       # Profile "ci" is configured in .config/nextest.toml
       run: |
         tail -f resource_usage.log &
-        cargo llvm-cov nextest --workspace --profile ci --jobs=1
+        ./coverage.sh
     - name: Save code coverage report
       run: cargo llvm-cov report --lcov --output-path lcov.info
     - name: Upload coverage data to Codecov
