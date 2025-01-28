@@ -8,5 +8,5 @@ for CRATE in $WORKSPACE_CRATES; do
     fi
 
     echo "Testing crate with coverage: $CRATE"
-    cargo llvm-cov nextest --profile ci --jobs=1 -p "$CRATE"
+    cargo llvm-cov --no-clean nextest --profile ci --jobs=1 -p "$CRATE"
 done
