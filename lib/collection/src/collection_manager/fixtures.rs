@@ -8,12 +8,12 @@ use rand::Rng;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
+use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
     build_multivec_segment, build_simple_segment,
 };
-use segment::types::{Distance, Payload, PointIdType, SeqNumberType, VectorName};
-use serde_json::json;
+use segment::types::{Distance, PointIdType, SeqNumberType, VectorName};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -80,8 +80,7 @@ pub fn random_multi_vec_segment(
         let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.gen_range(1..1_000);
         let random_keyword = format!("keyword_{}", rnd.gen_range(1..10));
-        let payload: Payload =
-            json!({ payload_key: vec![payload_value], keyword_key: random_keyword}).into();
+        let payload = payload_json! {payload_key: vec![payload_value], keyword_key: random_keyword};
         segment
             .upsert_point(opnum, point_id, vectors, &hw_counter)
             .unwrap();
@@ -102,7 +101,7 @@ pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: 
         let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0..1.0)).collect();
         let point_id: PointIdType = id_gen.unique();
         let payload_value = rnd.gen_range(1..1_000);
-        let payload: Payload = json!({ payload_key: vec![payload_value] }).into();
+        let payload = payload_json! {payload_key: vec![payload_value]};
         segment
             .upsert_point(
                 opnum,
@@ -147,10 +146,9 @@ pub fn build_segment_1(path: &Path) -> Segment {
 
     let payload_key = "color";
 
-    let payload_option1: Payload = json!({ payload_key: vec!["red".to_owned()] }).into();
-    let payload_option2: Payload =
-        json!({ payload_key: vec!["red".to_owned(), "blue".to_owned()] }).into();
-    let payload_option3: Payload = json!({ payload_key: vec!["blue".to_owned()] }).into();
+    let payload_option1 = payload_json! {payload_key: vec!["red".to_owned()]};
+    let payload_option2 = payload_json! {payload_key: vec!["red".to_owned(), "blue".to_owned()]};
+    let payload_option3 = payload_json! {payload_key: vec!["blue".to_owned()]};
 
     segment1
         .set_payload(6, 1.into(), &payload_option1, &None, &hw_counter)

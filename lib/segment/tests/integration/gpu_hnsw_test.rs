@@ -16,12 +16,12 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
+use segment::payload_json;
 use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Payload, PayloadSchemaType,
-    Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadSchemaType, Range,
+    SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
 };
-use serde_json::json;
 use tempfile::Builder;
 
 /// Captured logs from env_logger. It's used to check that indexing was performed using GPU correctly.
@@ -96,7 +96,7 @@ fn test_gpu_filterable_hnsw() {
         let vector = random_vector(&mut rnd, dim);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-        let payload: Payload = json!({int_key:int_payload,}).into();
+        let payload = payload_json! {int_key: int_payload};
 
         let hw_counter = HardwareCounterCell::new();
 

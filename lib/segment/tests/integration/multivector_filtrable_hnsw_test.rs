@@ -16,13 +16,12 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig, Payload,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig,
     PayloadSchemaType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageType,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use segment::vector_storage::VectorStorage;
-use serde_json::json;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
@@ -103,6 +102,7 @@ fn test_multi_filterable_hnsw(
 ) {
     use common::counter::hardware_counter::HardwareCounterCell;
     use segment::json_path::JsonPath;
+    use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
 
     let stopped = AtomicBool::new(false);
@@ -149,7 +149,7 @@ fn test_multi_filterable_hnsw(
         let multi_vec = random_multi_vector(&mut rnd, vector_dim, num_vector_for_point);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-        let payload: Payload = json!({int_key:int_payload,}).into();
+        let payload = payload_json! {int_key: int_payload};
 
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment

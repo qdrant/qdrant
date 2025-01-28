@@ -13,7 +13,6 @@ use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
-use segment::fixture_for_all_indices;
 use segment::fixtures::payload_fixtures::STR_KEY;
 use segment::fixtures::sparse_fixtures::{fixture_sparse_index, fixture_sparse_index_from_iter};
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
@@ -27,12 +26,12 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    Condition, FieldCondition, Filter, Payload, ScoredPoint, SegmentConfig, SeqNumberType,
+    Condition, FieldCondition, Filter, ScoredPoint, SegmentConfig, SeqNumberType,
     SparseVectorDataConfig, SparseVectorStorageType, VectorName, VectorStorageDatatype,
     DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
 };
 use segment::vector_storage::VectorStorage;
-use serde_json::json;
+use segment::{fixture_for_all_indices, payload_json};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::common::types::DimId;
@@ -404,10 +403,7 @@ fn sparse_vector_index_ram_filtered_search() {
 
     // add payload on the first half of the points
     let half_indexed_count = sparse_vector_index.indexed_vector_count() / 2;
-    let payload: Payload = json!({
-        field_name: field_value,
-    })
-    .into();
+    let payload = payload_json! {field_name: field_value};
     let hw_counter = HardwareCounterCell::new();
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     for idx in 0..half_indexed_count {
@@ -477,10 +473,7 @@ fn sparse_vector_index_plain_search() {
     assert_eq!(before_plain_results.len(), 1);
     assert_eq!(before_plain_results[0].len(), 0);
 
-    let payload: Payload = json!({
-        field_name: field_value,
-    })
-    .into();
+    let payload = payload_json! {field_name: field_value};
 
     let hw_counter = HardwareCounterCell::new();
 

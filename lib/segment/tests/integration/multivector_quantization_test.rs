@@ -22,13 +22,12 @@ use segment::json_path::JsonPath;
 use segment::segment_constructor::build_segment;
 use segment::types::{
     BinaryQuantizationConfig, CompressionRatio, Condition, Distance, FieldCondition, Filter,
-    HnswConfig, Indexes, MultiVectorConfig, Payload, PayloadSchemaType, ProductQuantizationConfig,
+    HnswConfig, Indexes, MultiVectorConfig, PayloadSchemaType, ProductQuantizationConfig,
     QuantizationSearchParams, Range, ScalarQuantizationConfig, SearchParams, SegmentConfig,
     SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
-use serde_json::json;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;
@@ -199,6 +198,7 @@ fn test_multivector_quantization_hnsw(
     #[case] on_disk: bool,
     #[case] min_acc: f64, // out of 100
 ) {
+    use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
 
     let stopped = AtomicBool::new(false);
@@ -248,7 +248,7 @@ fn test_multivector_quantization_hnsw(
         let vector = random_vector(&mut rnd, dim);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
-        let payload: Payload = json!({int_key:int_payload,}).into();
+        let payload = payload_json! {int_key: int_payload};
 
         segment
             .upsert_point(

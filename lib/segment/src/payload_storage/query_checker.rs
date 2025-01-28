@@ -313,7 +313,6 @@ mod tests {
     use std::collections::HashSet;
     use std::str::FromStr;
 
-    use serde_json::json;
     use tempfile::Builder;
 
     use super::*;
@@ -321,6 +320,7 @@ mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::id_tracker::IdTracker;
     use crate::json_path::JsonPath;
+    use crate::payload_json;
     use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::payload_storage::PayloadStorage;
     use crate::types::{
@@ -332,11 +332,10 @@ mod tests {
         let dir = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-        let payload: Payload = json!(
-            {
-                "location":{
-                    "lon": 13.404954,
-                    "lat": 52.520008,
+        let payload = payload_json! {
+            "location": {
+                "lon": 13.404954,
+                "lat": 52.520008,
             },
             "price": 499.90,
             "amount": 10,
@@ -346,9 +345,8 @@ mod tests {
             "shipped_at": "2020-02-15T00:00:00Z",
             "parts": [],
             "packaging": null,
-            "not_null": [null]
-        })
-        .into();
+            "not_null": [null],
+        };
 
         let hw_counter = HardwareCounterCell::new();
 
