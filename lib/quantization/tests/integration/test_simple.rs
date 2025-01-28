@@ -15,7 +15,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -52,7 +51,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -89,7 +87,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -130,7 +127,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -167,7 +163,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -204,7 +199,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -245,7 +239,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -281,7 +274,6 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {

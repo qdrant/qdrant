@@ -38,7 +38,6 @@ mod tests {
         let vectors_count = 128;
         let error = vector_dim as f32 * 0.01;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -85,7 +84,6 @@ mod tests {
         let vectors_count = 128;
         let error = vector_dim as f32 * 0.01;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -132,7 +130,6 @@ mod tests {
         let vectors_count = 128;
         let error = vector_dim as f32 * 0.01;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -176,7 +173,6 @@ mod tests {
         let vectors_count = 128;
         let error = vector_dim as f32 * 0.01;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -219,7 +215,6 @@ mod tests {
     fn test_binary_l1_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -281,7 +276,6 @@ mod tests {
     fn test_binary_l1_inverted_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -343,7 +337,6 @@ mod tests {
     fn test_binary_l1_internal_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -402,7 +395,6 @@ mod tests {
     fn test_binary_l1_inverted_internal_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -461,7 +453,6 @@ mod tests {
     fn test_binary_l2_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -523,7 +514,6 @@ mod tests {
     fn test_binary_l2_inverted_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -585,7 +575,6 @@ mod tests {
     fn test_binary_l2_internal_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
@@ -644,7 +633,6 @@ mod tests {
     fn test_binary_l2_inverted_internal_impl<TBitsStoreType: BitsStoreType>(vector_dim: usize) {
         let vectors_count = 128;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
