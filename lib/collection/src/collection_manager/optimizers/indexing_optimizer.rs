@@ -288,7 +288,7 @@ mod tests {
     use common::cpu::CpuPermit;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
-    use rand::thread_rng;
+    use rand::rng;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
     use segment::fixtures::index_fixtures::random_vector;
@@ -425,7 +425,7 @@ mod tests {
     fn test_indexing_optimizer() {
         init();
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut holder = SegmentHolder::default();
 
         let payload_field: JsonPath = "number".parse().unwrap();

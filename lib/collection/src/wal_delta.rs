@@ -264,8 +264,9 @@ mod tests {
     use std::sync::Arc;
 
     use parking_lot::Mutex as ParkingMutex;
+    use rand::prelude::SliceRandom;
     use rand::rngs::StdRng;
-    use rand::seq::SliceRandom;
+    use rand::seq::IndexedRandom;
     use rand::{Rng, SeedableRng};
     use rstest::rstest;
     use segment::data_types::vectors::VectorStructInternal;
@@ -1260,8 +1261,8 @@ mod tests {
         // - assert correctness
         for _ in 0..25 {
             // Insert random number of operations on all nodes
-            for _ in 0..rng.gen_range(0..10) {
-                let entrypoint = rng.gen_range(0..node_count);
+            for _ in 0..rng.random_range(0..10) {
+                let entrypoint = rng.random_range(0..node_count);
 
                 let mut clock = clock_sets[entrypoint].get_clock();
                 clock.advance_to(0);
@@ -1273,7 +1274,7 @@ mod tests {
                         PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
                             id: point_id_source.next().unwrap().into(),
                             vector: VectorStructInternal::from(
-                                std::iter::repeat_with(|| rng.gen::<f32>())
+                                std::iter::repeat_with(|| rng.random::<f32>())
                                     .take(3)
                                     .collect::<Vec<_>>(),
                             )
@@ -1291,7 +1292,7 @@ mod tests {
                 }
 
                 // Maybe keep the clock for some iterations
-                let keep_clock_for = rng.gen_range(0..3);
+                let keep_clock_for = rng.random_range(0..3);
                 if keep_clock_for > 0 {
                     kept_clocks.push((keep_clock_for, clock));
                 }
@@ -1301,11 +1302,11 @@ mod tests {
             let mut alive_nodes = (0..node_count).collect::<Vec<_>>();
             alive_nodes.shuffle(&mut rng);
             let dead_nodes = alive_nodes
-                .drain(0..rng.gen_range(dead_nodes_range.clone()))
+                .drain(0..rng.random_range(dead_nodes_range.clone()))
                 .collect::<HashSet<_>>();
 
             // Insert random number of operations into all alive nodes
-            let operation_count = rng.gen_range(0..100);
+            let operation_count = rng.random_range(0..100);
             for _ in 0..operation_count {
                 let entrypoint = *alive_nodes.choose(&mut rng).unwrap();
 
@@ -1319,7 +1320,7 @@ mod tests {
                         PointInsertOperationsInternal::PointsList(vec![PointStructPersisted {
                             id: point_id_source.next().unwrap().into(),
                             vector: VectorStructInternal::from(
-                                std::iter::repeat_with(|| rng.gen::<f32>())
+                                std::iter::repeat_with(|| rng.random::<f32>())
                                     .take(3)
                                     .collect::<Vec<_>>(),
                             )
@@ -1341,7 +1342,7 @@ mod tests {
                 }
 
                 // Maybe keep the clock for some iterations
-                let keep_clock_for = rng.gen_range(0..10);
+                let keep_clock_for = rng.random_range(0..10);
                 if keep_clock_for > 0 {
                     kept_clocks.push((keep_clock_for, clock));
                 }

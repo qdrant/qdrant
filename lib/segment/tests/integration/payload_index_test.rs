@@ -163,7 +163,7 @@ impl TestSegments {
 
         for _ in 0..points_to_clear {
             opnum += 1;
-            let idx_to_remove = rnd.gen_range(0..num_points);
+            let idx_to_remove = rnd.random_range(0..num_points);
             plain_segment
                 .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
@@ -177,7 +177,7 @@ impl TestSegments {
 
         for _ in 0..points_to_delete {
             opnum += 1;
-            let idx_to_remove = rnd.gen_range(0..num_points);
+            let idx_to_remove = rnd.random_range(0..num_points);
             plain_segment
                 .delete_point(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
@@ -413,7 +413,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for _ in 0..points_to_clear {
         opnum += 1;
-        let idx_to_remove = rnd.gen_range(0..num_points);
+        let idx_to_remove = rnd.random_range(0..num_points);
         plain_segment
             .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
@@ -424,7 +424,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for _ in 0..points_to_delete {
         opnum += 1;
-        let idx_to_remove = rnd.gen_range(0..num_points);
+        let idx_to_remove = rnd.random_range(0..num_points);
         plain_segment
             .delete_point(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
@@ -447,7 +447,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 }
 
 fn validate_geo_filter(query_filter: Filter) {
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
     let query = random_vector(&mut rnd, DIM).into();
     let test_segments = TestSegments::new();
 
@@ -784,7 +784,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 /// Compare search with plain, struct, and mmap indices.
 #[test]
 fn test_struct_payload_index() {
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
 
     let test_segments = TestSegments::new();
 
@@ -908,16 +908,16 @@ fn test_struct_payload_index() {
 
 #[test]
 fn test_struct_payload_geo_boundingbox_index() {
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
 
     let geo_bbox = GeoBoundingBox {
         top_left: GeoPoint {
-            lon: rnd.gen_range(LON_RANGE),
-            lat: rnd.gen_range(LAT_RANGE),
+            lon: rnd.random_range(LON_RANGE),
+            lat: rnd.random_range(LAT_RANGE),
         },
         bottom_right: GeoPoint {
-            lon: rnd.gen_range(LON_RANGE),
-            lat: rnd.gen_range(LAT_RANGE),
+            lon: rnd.random_range(LON_RANGE),
+            lat: rnd.random_range(LAT_RANGE),
         },
     };
 
@@ -933,13 +933,13 @@ fn test_struct_payload_geo_boundingbox_index() {
 
 #[test]
 fn test_struct_payload_geo_radius_index() {
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
 
-    let r_meters = rnd.gen_range(1.0..10000.0);
+    let r_meters = rnd.random_range(1.0..10000.0);
     let geo_radius = GeoRadius {
         center: GeoPoint {
-            lon: rnd.gen_range(LON_RANGE),
-            lat: rnd.gen_range(LAT_RANGE),
+            lon: rnd.random_range(LON_RANGE),
+            lat: rnd.random_range(LAT_RANGE),
         },
         radius: r_meters,
     };
@@ -960,12 +960,12 @@ fn test_struct_payload_geo_polygon_index() {
     let interiors_num = 3;
 
     fn generate_ring(polygon_edge: i32) -> GeoLineString {
-        let mut rnd = rand::thread_rng();
+        let mut rnd = rand::rng();
         let mut line = GeoLineString {
             points: (0..polygon_edge)
                 .map(|_| GeoPoint {
-                    lon: rnd.gen_range(LON_RANGE),
-                    lat: rnd.gen_range(LAT_RANGE),
+                    lon: rnd.random_range(LON_RANGE),
+                    lat: rnd.random_range(LAT_RANGE),
                 })
                 .collect(),
         };
@@ -1001,7 +1001,7 @@ fn test_struct_payload_index_nested_fields() {
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
 
     let (struct_segment, plain_segment) =
         build_test_segments_nested_payload(dir1.path(), dir2.path());
@@ -1261,7 +1261,7 @@ fn test_keyword_facet() {
     validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
 
     // *** With filter ***
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let filter = random_filter(&mut rng, 3);
     let request = FacetParams {
         key,

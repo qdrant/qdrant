@@ -70,7 +70,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
             let sample = (0..CHECK_SAMPLE_SIZE)
-                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .map(|_| rng.random_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
             let context = plain_index.filter_context(&filter, &hw_counter);
             let filtered_sample = sample
@@ -96,7 +96,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         let filter = random_match_any_filter(&mut rng, 2, 51.0);
         b.iter(|| {
             let sample = (0..CHECK_SAMPLE_SIZE)
-                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .map(|_| rng.random_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
             let context = plain_index.filter_context(&filter, &hw_counter);
             let filtered_sample = sample
@@ -112,7 +112,7 @@ fn conditional_plain_search_benchmark(c: &mut Criterion) {
         let filter = random_match_any_filter(&mut rng, 1000, 15.0);
         b.iter(|| {
             let sample = (0..CHECK_SAMPLE_SIZE)
-                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .map(|_| rng.random_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
             let context = plain_index.filter_context(&filter, &hw_counter);
             let filtered_sample = sample
@@ -170,7 +170,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let filter = random_must_filter(&mut rng, 2);
             let sample = (0..CHECK_SAMPLE_SIZE)
-                .map(|_| rng.gen_range(0..NUM_POINTS) as PointOffsetType)
+                .map(|_| rng.random_range(0..NUM_POINTS) as PointOffsetType)
                 .collect_vec();
             let context = struct_index.filter_context(&filter, &hw_counter);
 

@@ -13,7 +13,7 @@ use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
     build_multivec_segment, build_simple_segment,
 };
-use segment::types::{Distance, PointIdType, SeqNumberType, VectorName};
+use segment::types::{Distance, Payload, PointIdType, SeqNumberType, VectorName};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -40,7 +40,7 @@ pub(crate) struct PointIdGenerator {
 impl PointIdGenerator {
     #[inline]
     pub fn random(&mut self) -> PointIdType {
-        self.thread_rng.gen_range(1..u64::MAX).into()
+        self.thread_rng.random_range(1..u64::MAX).into()
     }
 
     #[inline]
@@ -66,21 +66,22 @@ pub fn random_multi_vec_segment(
 ) -> Segment {
     let mut id_gen = PointIdGenerator::default();
     let mut segment = build_multivec_segment(path, dim1, dim2, Distance::Dot).unwrap();
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
     let payload_key = "number";
     let keyword_key = "keyword";
     let hw_counter = HardwareCounterCell::new();
     for _ in 0..num_vectors {
-        let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.gen_range(0.0..1.0)).collect();
-        let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.gen_range(0.0..1.0)).collect();
+        let random_vector1: Vec<_> = (0..dim1).map(|_| rnd.random_range(0.0..1.0)).collect();
+        let random_vector2: Vec<_> = (0..dim2).map(|_| rnd.random_range(0.0..1.0)).collect();
         let mut vectors = NamedVectors::default();
         vectors.insert(VECTOR1_NAME.to_owned(), random_vector1.into());
         vectors.insert(VECTOR2_NAME.to_owned(), random_vector2.into());
 
         let point_id: PointIdType = id_gen.unique();
-        let payload_value = rnd.gen_range(1..1_000);
-        let random_keyword = format!("keyword_{}", rnd.gen_range(1..10));
-        let payload = payload_json! {payload_key: vec![payload_value], keyword_key: random_keyword};
+        let payload_value = rnd.random_range(1..1_000);
+        let random_keyword = format!("keyword_{}", rnd.random_range(1..10));
+        let payload: Payload =
+            payload_json! {payload_key: vec![payload_value], keyword_key: random_keyword};
         segment
             .upsert_point(opnum, point_id, vectors, &hw_counter)
             .unwrap();
@@ -94,14 +95,14 @@ pub fn random_multi_vec_segment(
 pub fn random_segment(path: &Path, opnum: SeqNumberType, num_vectors: u64, dim: usize) -> Segment {
     let mut id_gen = PointIdGenerator::default();
     let mut segment = build_simple_segment(path, dim, Distance::Dot).unwrap();
-    let mut rnd = rand::thread_rng();
+    let mut rnd = rand::rng();
     let payload_key = "number";
     let hw_counter = HardwareCounterCell::new();
     for _ in 0..num_vectors {
-        let random_vector: Vec<_> = (0..dim).map(|_| rnd.gen_range(0.0..1.0)).collect();
+        let random_vector: Vec<_> = (0..dim).map(|_| rnd.random_range(0.0..1.0)).collect();
         let point_id: PointIdType = id_gen.unique();
-        let payload_value = rnd.gen_range(1..1_000);
-        let payload = payload_json! {payload_key: vec![payload_value]};
+        let payload_value = rnd.random_range(1..1_000);
+        let payload: Payload = payload_json! {payload_key: vec![payload_value]};
         segment
             .upsert_point(
                 opnum,

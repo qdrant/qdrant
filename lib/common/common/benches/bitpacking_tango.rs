@@ -16,20 +16,20 @@ use zerocopy::IntoBytes;
 pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
     let data8 = StateBencher::new(move || {
         let mut rng = StdRng::seed_from_u64(42);
-        (0..64_000_000).map(|_| rng.gen()).collect::<Vec<u8>>()
+        (0..64_000_000).map(|_| rng.random()).collect::<Vec<u8>>()
     });
     let data32 = StateBencher::new(move || {
         let mut rng = StdRng::seed_from_u64(42);
-        (0..4_000_000).map(|_| rng.gen()).collect::<Vec<u32>>()
+        (0..4_000_000).map(|_| rng.random()).collect::<Vec<u32>>()
     });
 
     [
         data8.benchmark_fn("bitpacking/read", move |b, data8| {
             let mut rng = StdRng::seed_from_u64(42);
             b.iter(move || {
-                let bits = rng.gen_range(1..=32);
-                let bytes = rng.gen_range(0..=16);
-                let start = rng.gen_range(0..data8.len() - bytes);
+                let bits = rng.random_range(1..=32);
+                let bytes = rng.random_range(0..=16);
+                let start = rng.random_range(0..data8.len() - bytes);
                 let data = &data8[start..start + bytes];
 
                 let mut r = BitReader::new(data);
@@ -43,9 +43,9 @@ pub fn benchmarks_bitpacking() -> impl IntoBenchmarks {
             let mut rng = StdRng::seed_from_u64(42);
             let mut out = Vec::new();
             b.iter(move || {
-                let bits = rng.gen_range(1..=32);
-                let values = rng.gen_range(0..=16);
-                let start = rng.gen_range(0..data32.len() - values);
+                let bits = rng.random_range(1..=32);
+                let values = rng.random_range(0..=16);
+                let start = rng.random_range(0..data32.len() - values);
                 let data = &data32[start..start + values];
 
                 out.clear();
@@ -81,19 +81,21 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
                 sorted_count: 0,
             }];
             while links.len() <= 64_000_000 {
-                let bits_per_unsorted = rng.gen_range(7..=32);
-                let sorted_count = rng.gen_range(0..100);
-                let unsorted_count = rng.gen_range(0..100);
+                let bits_per_unsorted = rng.random_range(7..=32);
+                let sorted_count = rng.random_range(0..100);
+                let unsorted_count = rng.random_range(0..100);
                 if 1 << bits_per_unsorted < sorted_count + unsorted_count {
                     continue;
                 }
 
                 common::bitpacking_links::pack_links(
                     &mut links,
-                    std::iter::repeat_with(|| rng.gen_range(0..1u64 << bits_per_unsorted) as u32)
-                        .unique()
-                        .take(sorted_count + unsorted_count)
-                        .collect(),
+                    std::iter::repeat_with(|| {
+                        rng.random_range(0..1u64 << bits_per_unsorted) as u32
+                    })
+                    .unique()
+                    .take(sorted_count + unsorted_count)
+                    .collect(),
                     bits_per_unsorted,
                     sorted_count,
                 );
@@ -109,9 +111,9 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
     });
 
     [b.benchmark_fn("bitpacking_links/read", move |b, state| {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         b.iter(move || {
-            let idx = rng.gen_range(1..state.items.len());
+            let idx = rng.random_range(1..state.items.len());
             for_each_packed_link(
                 &state.links[state.items[idx - 1].offset..state.items[idx].offset],
                 state.items[idx].bits_per_unsorted,
@@ -164,20 +166,20 @@ fn benchmarks_ordered() -> impl IntoBenchmarks {
     [
         b.benchmark_fn("ordered/get", {
             move |b, state| {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 let len = state.borrow_owner().values.len() - 1;
                 b.iter(move || {
-                    let i = rng.gen_range(0..len);
+                    let i = rng.random_range(0..len);
                     black_box(state.borrow_dependent().decompressor.get(i));
                 })
             }
         }),
         b.benchmark_fn("ordered/get2", {
             move |b, state| {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 let len = state.borrow_owner().values.len() - 1;
                 b.iter(move || {
-                    let i = rng.gen_range(0..len);
+                    let i = rng.random_range(0..len);
                     let a = state.borrow_dependent().decompressor.get(i);
                     let b = state.borrow_dependent().decompressor.get(i + 1);
                     black_box((a, b));

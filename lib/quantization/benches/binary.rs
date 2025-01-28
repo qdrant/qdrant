@@ -8,7 +8,7 @@ use quantization::encoded_vectors_binary::EncodedVectorsBin;
 use rand::{Rng, SeedableRng};
 
 fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
-    let n = f32::signum(rng.gen_range(-1.0..1.0));
+    let n = f32::signum(rng.random_range(-1.0..1.0));
     if n == 0.0 {
         1.0
     } else {
@@ -30,7 +30,7 @@ fn binary_bench(c: &mut Criterion) {
         .map(|_| generate_vector(vector_dim, &mut rng))
         .collect();
     for _ in 0..vectors_count {
-        let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+        let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
         vectors.push(vector);
     }
 

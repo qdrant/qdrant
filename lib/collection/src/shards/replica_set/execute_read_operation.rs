@@ -186,7 +186,7 @@ impl ShardReplicaSet {
             .filter(|remote| self.peer_is_active(remote.peer_id))
             .collect();
 
-        active_remotes.shuffle(&mut rand::thread_rng());
+        active_remotes.shuffle(&mut rand::rng());
 
         let remote_operations = active_remotes.into_iter().map(|remote| {
             read_operation(remote)

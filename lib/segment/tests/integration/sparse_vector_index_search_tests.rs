@@ -59,7 +59,7 @@ const SPARSE_VECTOR_NAME: &VectorName = "sparse_vector";
 
 /// Expects the filter to match ALL points in order to compare the results with/without filter
 fn compare_sparse_vectors_search_with_without_filter(full_scan_threshold: usize) {
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rnd = StdRng::seed_from_u64(43);
 
     let data_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
 

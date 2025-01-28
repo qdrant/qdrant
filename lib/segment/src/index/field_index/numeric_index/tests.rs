@@ -80,7 +80,7 @@ fn random_index(
 
     for i in 0..num_points {
         let values = (0..values_per_point)
-            .map(|_| Value::from(rng.gen_range(0.0..100.0)))
+            .map(|_| Value::from(rng.random_range(0.0..100.0)))
             .collect_vec();
         let values = values.iter().collect_vec();
         index_builder

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use api::rest::OrderByInterface;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use segment::data_types::vectors::NamedVectorStruct;
 use segment::types::{
     Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,
@@ -105,14 +105,14 @@ async fn fixture() -> Collection {
     // Insert two points into all shards directly, a point matching the shard ID, and point 100
     // We insert into all shards directly to prevent spreading points by the hashring
     // We insert the same point into multiple shards on purpose
-    let mut rng = thread_rng();
+    let mut rng = rng();
     for (shard_id, shard) in collection.shards_holder().write().await.get_shards() {
         let op = OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(vec![
                 PointStructPersisted {
                     id: u64::from(shard_id).into(),
                     vector: VectorStructPersisted::Single(
-                        (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
+                        (0..DIM).map(|_| rng.random_range(0.0..1.0)).collect(),
                     ),
                     payload: Some(Payload(Map::from_iter([(
                         "num".to_string(),
@@ -122,7 +122,7 @@ async fn fixture() -> Collection {
                 PointStructPersisted {
                     id: DUPLICATE_POINT_ID,
                     vector: VectorStructPersisted::Single(
-                        (0..DIM).map(|_| rng.gen_range(0.0..1.0)).collect(),
+                        (0..DIM).map(|_| rng.random_range(0.0..1.0)).collect(),
                     ),
                     payload: Some(Payload(Map::from_iter([(
                         "num".to_string(),

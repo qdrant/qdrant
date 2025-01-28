@@ -11,10 +11,10 @@ fn encode_bench(c: &mut Criterion) {
 
     let vectors_count = 100_000;
     let vector_dim = 1024;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut list: Vec<f32> = Vec::new();
     for _ in 0..vectors_count {
-        let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+        let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
         list.extend_from_slice(&vector);
     }
 
@@ -33,7 +33,7 @@ fn encode_bench(c: &mut Criterion) {
     )
     .unwrap();
 
-    let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+    let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
     let encoded_query = pq_encoded.encode_query(&query);
 
     let mut total = 0.0;

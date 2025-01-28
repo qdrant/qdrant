@@ -135,7 +135,7 @@ pub trait IdTracker: fmt::Debug {
         let total = self.total_point_count() as PointOffsetType;
         Box::new(
             (0..total)
-                .map(move |_| rng.gen_range(0..total))
+                .map(move |_| rng.random_range(0..total))
                 .filter(move |x| {
                     // Check for deleted vector first, as that is more likely
                     !deleted_vector_bitslice

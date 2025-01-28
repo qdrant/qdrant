@@ -37,7 +37,7 @@ fn random_multi_vec_discovery_query<R: Rng + ?Sized>(
     dim: usize,
     num_vector_per_points: usize,
 ) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let target = random_multi_vector(rnd, dim, num_vector_per_points).into();
 
@@ -57,7 +57,7 @@ fn random_multi_vec_reco_query<R: Rng + ?Sized>(
     dim: usize,
     num_vector_per_points: usize,
 ) -> QueryVector {
-    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let positive = (0..num_examples)
         .map(|_| random_multi_vector(rnd, dim, num_vector_per_points).into())
@@ -145,7 +145,7 @@ fn test_multi_filterable_hnsw(
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point
-        let num_vector_for_point = rnd.gen_range(1..=max_num_vector_per_points);
+        let num_vector_for_point = rnd.random_range(1..=max_num_vector_per_points);
         let multi_vec = random_multi_vector(&mut rnd, vector_dim, num_vector_for_point);
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
@@ -210,12 +210,12 @@ fn test_multi_filterable_hnsw(
     let attempts = 100;
     for i in 0..attempts {
         // Random number of vectors per multivec query
-        let num_vector_for_query = rnd.gen_range(1..=max_num_vector_per_points);
+        let num_vector_for_query = rnd.random_range(1..=max_num_vector_per_points);
         let query =
             random_multi_vec_query(&query_variant, &mut rnd, vector_dim, num_vector_for_query);
 
         let range_size = 40;
-        let left_range = rnd.gen_range(0..400);
+        let left_range = rnd.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

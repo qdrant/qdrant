@@ -112,7 +112,7 @@ fn update_centroids(
     for (centroid_index, centroid_data) in counter.acc.chunks_exact_mut(dim).enumerate() {
         if counter.counter[centroid_index] == 0 {
             // the cluster is empty, so we take random vector as centroid
-            let data_index = rand::thread_rng().gen_range(0..centroid_indexes.len());
+            let data_index = rand::rng().random_range(0..centroid_indexes.len());
             let vector = &data[dim * data_index..dim * (data_index + 1)];
             centroid_data
                 .iter_mut()

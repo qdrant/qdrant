@@ -51,7 +51,7 @@ async fn distance_matrix_anonymous_vector() {
     let mut rng = SmallRng::seed_from_u64(SEED);
 
     let vectors = (0..point_count)
-        .map(|_| rng.gen::<[f32; 4]>().to_vec())
+        .map(|_| rng.random::<[f32; 4]>().to_vec())
         .collect_vec();
 
     let batch = BatchPersisted {

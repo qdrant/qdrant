@@ -46,7 +46,7 @@ enum QuantizationVariant {
 }
 
 fn random_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> MultiDenseVectorInternal {
-    let count = rnd.gen_range(1..=MAX_VECTORS_COUNT);
+    let count = rnd.random_range(1..=MAX_VECTORS_COUNT);
     let mut vector = random_multi_vector(rnd, dim, count);
     // for BQ change range to [-0.5; 0.5]
     vector.flattened_vectors.iter_mut().for_each(|x| *x -= 0.5);
@@ -54,7 +54,7 @@ fn random_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> MultiDenseVectorIn
 }
 
 fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_pairs: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let target = random_vector(rnd, dim).into();
 
@@ -70,7 +70,7 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
 }
 
 fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_examples: usize = rnd.gen_range(1..MAX_EXAMPLE_PAIRS);
+    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let positive = (0..num_examples)
         .map(|_| random_vector(rnd, dim).into())
@@ -346,7 +346,7 @@ fn test_multivector_quantization_hnsw(
         let query = random_query(&query_variant, &mut rnd, dim);
 
         let range_size = 40;
-        let left_range = rnd.gen_range(0..400);
+        let left_range = rnd.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

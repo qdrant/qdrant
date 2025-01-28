@@ -193,19 +193,19 @@ mod tests {
     use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 
     fn generate_word() -> String {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Each word is 1 to 3 characters long
-        let len = rng.gen_range(1..=3);
-        rng.sample_iter(rand::distributions::Alphanumeric)
+        let len = rng.random_range(1..=3);
+        rng.sample_iter(rand::distr::Alphanumeric)
             .take(len)
             .map(char::from)
             .collect()
     }
 
     fn generate_query() -> Vec<String> {
-        let mut rng = rand::thread_rng();
-        let len = rng.gen_range(1..=2);
+        let mut rng = rand::rng();
+        let len = rng.random_range(1..=2);
         (0..len).map(|_| generate_word()).collect()
     }
 
@@ -222,7 +222,7 @@ mod tests {
 
         for idx in 0..indexed_count {
             // Generate 10 tot 30-word documents
-            let doc_len = rand::thread_rng().gen_range(10..=30);
+            let doc_len = rand::rng().random_range(10..=30);
             let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
             let document = index.document_from_tokens(&tokens);
             index.index_document(idx, document).unwrap();
@@ -230,7 +230,7 @@ mod tests {
 
         // Remove some points
         let mut points_to_delete = (0..indexed_count).collect::<Vec<_>>();
-        points_to_delete.shuffle(&mut rand::thread_rng());
+        points_to_delete.shuffle(&mut rand::rng());
         for idx in &points_to_delete[..deleted_count as usize] {
             index.remove_document(*idx);
         }
@@ -367,7 +367,7 @@ mod tests {
         // Delete random documents from both indexes
 
         let points_to_delete: Vec<_> = (0..deleted_count)
-            .map(|_| rand::thread_rng().gen_range(0..indexed_count))
+            .map(|_| rand::rng().random_range(0..indexed_count))
             .collect();
 
         for point_id in &points_to_delete {

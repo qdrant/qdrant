@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
@@ -36,7 +36,7 @@ fn exact_search_test() {
     let indexing_threshold = 500; // num vectors
     let num_payload_values = 2;
 
-    let mut rnd = thread_rng();
+    let mut rnd = rng();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -187,7 +187,7 @@ fn exact_search_test() {
         );
 
         let range_size = 40;
-        let left_range = rnd.gen_range(0..400);
+        let left_range = rnd.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

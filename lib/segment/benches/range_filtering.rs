@@ -30,8 +30,8 @@ fn random_range_filter<R: Rng + ?Sized>(rng: &mut R, key: &str) -> Filter {
         RangeCondition {
             lt: None,
             gt: None,
-            gte: Some(rng.gen_range(0.0..MAX_RANGE / 2.0)),
-            lte: Some(rng.gen_range(MAX_RANGE / 2.0..MAX_RANGE)),
+            gte: Some(rng.random_range(0.0..MAX_RANGE / 2.0)),
+            lte: Some(rng.random_range(MAX_RANGE / 2.0..MAX_RANGE)),
         },
     )))
 }
@@ -51,8 +51,8 @@ fn range_filtering(c: &mut Criterion) {
     let mut payload_storage = InMemoryPayloadStorage::default();
     for id in 0..NUM_POINTS {
         let payload = payload_json! {
-            INT_KEY: rng.gen_range(0..MAX_RANGE.round() as usize),
-            FLT_KEY: rng.gen_range(0.0..MAX_RANGE),
+            INT_KEY: rng.random_range(0..MAX_RANGE.round() as usize),
+            FLT_KEY: rng.random_range(0.0..MAX_RANGE),
         };
         payload_storage
             .set(id as PointOffsetType, &payload, &hw_counter)

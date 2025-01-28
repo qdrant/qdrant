@@ -15,7 +15,7 @@ use common::tar_ext;
 use futures::future::try_join_all;
 use io::storage_version::StorageVersion;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::entry::entry_point::SegmentEntry;
@@ -351,7 +351,7 @@ impl<'s> SegmentHolder {
     pub fn random_appendable_segment(&self) -> Option<LockedSegment> {
         let segment_ids: Vec<_> = self.appendable_segments_ids();
         segment_ids
-            .choose(&mut rand::thread_rng())
+            .choose(&mut rand::rng())
             .and_then(|idx| self.appendable_segments.get(idx).cloned())
     }
 
@@ -392,7 +392,7 @@ impl<'s> SegmentHolder {
 
         // Fall back to picking a random segment
         segment_ids
-            .choose(&mut rand::thread_rng())
+            .choose(&mut rand::rng())
             .and_then(|idx| self.appendable_segments.get(idx).cloned())
     }
 
@@ -592,7 +592,7 @@ impl<'s> SegmentHolder {
             };
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let (segment_id, segment_lock) = entries.choose(&mut rng).unwrap();
         let mut segment_write = segment_lock.write();
         apply(*segment_id, &mut segment_write)
@@ -1825,7 +1825,7 @@ mod tests {
     async fn test_points_deduplication_randomized() {
         const POINT_COUNT: usize = 1000;
 
-        let mut rand = rand::thread_rng();
+        let mut rand = rand::rng();
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let vector = segment::data_types::vectors::only_default_vector(&[0.0; 4]);
 
@@ -1846,7 +1846,7 @@ mod tests {
             let point_id = PointIdType::from(id as u64);
 
             for segment in &mut segments {
-                let version = rand.gen_range(1..10);
+                let version = rand.random_range(1..10);
                 segment
                     .upsert_point(version, point_id, vector.clone(), &hw_counter)
                     .unwrap();
