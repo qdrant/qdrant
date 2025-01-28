@@ -114,15 +114,15 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         for _ in 0..100 {
-            let bits_per_unsorted = rng.gen_range(7..=32);
-            let sorted_count = rng.gen_range(0..100);
-            let unsorted_count = rng.gen_range(0..100);
+            let bits_per_unsorted = rng.random_range(7..=32);
+            let sorted_count = rng.random_range(0..100);
+            let unsorted_count = rng.random_range(0..100);
             if 1 << bits_per_unsorted < sorted_count + unsorted_count {
                 continue;
             }
 
             let mut raw_links =
-                std::iter::repeat_with(|| rng.gen_range(0..1u64 << bits_per_unsorted) as u32)
+                std::iter::repeat_with(|| rng.random_range(0..1u64 << bits_per_unsorted) as u32)
                     .unique()
                     .take(sorted_count + unsorted_count)
                     .collect::<Vec<u32>>();

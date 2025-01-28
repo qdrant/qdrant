@@ -10,7 +10,7 @@ const MAX_VALUES_PER_VECTOR: usize = 300;
 
 /// Generates a non empty sparse vector
 pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_dim_size: usize) -> SparseVector {
-    let size = rnd_gen.gen_range(1..max_dim_size);
+    let size = rnd_gen.random_range(1..max_dim_size);
     let mut tuples: Vec<(u32, f32)> = vec![];
 
     for i in 1..=size {
@@ -19,17 +19,17 @@ pub fn random_sparse_vector<R: Rng + ?Sized>(rnd_gen: &mut R, max_dim_size: usiz
             break;
         }
         // high probability of skipping a dimension to make the vectors more sparse
-        let skip = rnd_gen.gen_bool(0.98);
+        let skip = rnd_gen.random_bool(0.98);
         if !skip {
-            tuples.push((i as u32, rnd_gen.gen_range(VALUE_RANGE) as f32));
+            tuples.push((i as u32, rnd_gen.random_range(VALUE_RANGE) as f32));
         }
     }
 
     // make sure we have at least one vector
     if tuples.is_empty() {
         tuples.push((
-            rnd_gen.gen_range(1..max_dim_size) as u32,
-            rnd_gen.gen_range(VALUE_RANGE) as f32,
+            rnd_gen.random_range(1..max_dim_size) as u32,
+            rnd_gen.random_range(VALUE_RANGE) as f32,
         ));
     }
 
@@ -44,7 +44,7 @@ pub fn random_full_sparse_vector<R: Rng + ?Sized>(
     let mut tuples: Vec<(u32, f32)> = Vec::with_capacity(max_size);
 
     for i in 1..=max_size {
-        tuples.push((i as u32, rnd_gen.gen_range(VALUE_RANGE) as f32));
+        tuples.push((i as u32, rnd_gen.random_range(VALUE_RANGE) as f32));
     }
 
     SparseVector::try_from(tuples).unwrap()

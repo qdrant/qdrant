@@ -25,7 +25,7 @@ impl Segment {
             .check_stop(|| is_stopped.load(Ordering::Relaxed))
             .filter_map(|internal_id| id_tracker.external_id(internal_id));
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut shuffled = ids_iterator.choose_multiple(&mut rng, limit);
         shuffled.shuffle(&mut rng);
 

@@ -4,7 +4,7 @@ mod prof;
 use common::types::PointOffsetType;
 use criterion::{criterion_group, criterion_main, Criterion};
 use itertools::Itertools;
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 use segment::data_types::vectors::VectorElementType;
 use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
@@ -26,7 +26,7 @@ const USE_HEURISTIC: bool = true;
 fn build_index<TMetric: Metric<VectorElementType>>(
     num_vectors: usize,
 ) -> (TestRawScorerProducer<TMetric>, GraphLayers) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
     let mut graph_layers_builder =
@@ -49,7 +49,7 @@ fn build_index<TMetric: Metric<VectorElementType>>(
 fn hnsw_build_asymptotic(c: &mut Criterion) {
     let mut group = c.benchmark_group("hnsw-index-build-asymptotic");
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS);
 
@@ -91,7 +91,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..1500)
-                .map(|_| rng.gen_range(0..(NUM_VECTORS * 10)) as u32)
+                .map(|_| rng.random_range(0..(NUM_VECTORS * 10)) as u32)
                 .collect_vec();
             scorer.score_points(&mut points_to_score, 1000);
         })
@@ -108,7 +108,7 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
 
 fn scoring_vectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("scoring-vector");
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000;
 
@@ -123,7 +123,7 @@ fn scoring_vectors(c: &mut Criterion) {
             let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.gen_range(0..num_vectors) as u32)
+                .map(|_| rng.random_range(0..num_vectors) as u32)
                 .collect_vec();
             scorer.score_points(&mut points_to_score, points_per_cycle);
         })
@@ -140,7 +140,7 @@ fn scoring_vectors(c: &mut Criterion) {
             let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.gen_range(0..num_vectors) as u32)
+                .map(|_| rng.random_range(0..num_vectors) as u32)
                 .collect_vec();
             scorer.score_points(&mut points_to_score, points_per_cycle);
         })
@@ -157,7 +157,7 @@ fn scoring_vectors(c: &mut Criterion) {
             let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.gen_range(0..num_vectors) as u32)
+                .map(|_| rng.random_range(0..num_vectors) as u32)
                 .collect_vec();
             scorer.score_points(&mut points_to_score, points_per_cycle);
         })
@@ -166,7 +166,7 @@ fn scoring_vectors(c: &mut Criterion) {
 
 fn basic_scoring_vectors(c: &mut Criterion) {
     let mut group = c.benchmark_group("scoring-vector");
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let points_per_cycle = 1000;
     let base_num_vectors = 10_000_000;
 
@@ -179,7 +179,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     group.bench_function("basic-score-point", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
+            let points_to_score = (0..points_per_cycle).map(|_| rng.random_range(0..num_vectors));
 
             let _s: f32 = points_to_score
                 .map(|x| DotProductMetric::similarity(&vectors[x], &query))
@@ -196,7 +196,7 @@ fn basic_scoring_vectors(c: &mut Criterion) {
     group.bench_function("basic-score-point-10x", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
-            let points_to_score = (0..points_per_cycle).map(|_| rng.gen_range(0..num_vectors));
+            let points_to_score = (0..points_per_cycle).map(|_| rng.random_range(0..num_vectors));
 
             let _s: f32 = points_to_score
                 .map(|x| DotProductMetric::similarity(&vectors[x], &query))

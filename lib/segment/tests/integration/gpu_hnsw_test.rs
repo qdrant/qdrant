@@ -169,7 +169,7 @@ fn test_gpu_filterable_hnsw() {
         let query = random_vector(&mut rnd, dim).into();
 
         let range_size = 40;
-        let left_range = rnd.gen_range(0..400);
+        let left_range = rnd.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

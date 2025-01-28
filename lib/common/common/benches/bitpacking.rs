@@ -13,16 +13,16 @@ pub fn bench_bitpacking(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitpacking");
 
     let mut rng = StdRng::seed_from_u64(42);
-    let data8 = (0..64_000_000).map(|_| rng.gen()).collect::<Vec<u8>>();
-    let data32 = (0..4_000_000).map(|_| rng.gen()).collect::<Vec<u32>>();
+    let data8 = (0..64_000_000).map(|_| rng.random()).collect::<Vec<u8>>();
+    let data32 = (0..4_000_000).map(|_| rng.random()).collect::<Vec<u32>>();
 
     let mut rng = StdRng::seed_from_u64(42);
     group.bench_function("read", |b| {
         b.iter_batched(
             || {
-                let bits = rng.gen_range(1..=32);
-                let bytes = rng.gen_range(0..=16);
-                let start = rng.gen_range(0..data8.len() - bytes);
+                let bits = rng.random_range(1..=32);
+                let bytes = rng.random_range(0..=16);
+                let start = rng.random_range(0..data8.len() - bytes);
                 (bits, &data8[start..start + bytes])
             },
             |(bits, data)| {
@@ -41,9 +41,9 @@ pub fn bench_bitpacking(c: &mut Criterion) {
     group.bench_function("write", |b| {
         b.iter_batched(
             || {
-                let bits = rng.gen_range(1..=32);
-                let values = rng.gen_range(0..=16);
-                let start = rng.gen_range(0..data32.len() - values);
+                let bits = rng.random_range(1..=32);
+                let values = rng.random_range(0..=16);
+                let start = rng.random_range(0..data32.len() - values);
                 (bits, &data32[start..start + values])
             },
             |(bits, data)| {
@@ -67,16 +67,16 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
     let mut links = Vec::new();
     let mut pos = vec![(0, 0, 0)];
     while links.len() <= 64_000_000 {
-        let bits_per_unsorted = rng.gen_range(7..=32);
-        let sorted_count = rng.gen_range(0..100);
-        let unsorted_count = rng.gen_range(0..100);
+        let bits_per_unsorted = rng.random_range(7..=32);
+        let sorted_count = rng.random_range(0..100);
+        let unsorted_count = rng.random_range(0..100);
         if 1 << bits_per_unsorted < sorted_count + unsorted_count {
             continue;
         }
 
         pack_links(
             &mut links,
-            std::iter::repeat_with(|| rng.gen_range(0..1u64 << bits_per_unsorted) as u32)
+            std::iter::repeat_with(|| rng.random_range(0..1u64 << bits_per_unsorted) as u32)
                 .unique()
                 .take(sorted_count + unsorted_count)
                 .collect(),
@@ -90,7 +90,7 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
     group.bench_function("read", |b| {
         b.iter_batched(
             || {
-                let idx = rng.gen_range(1..pos.len());
+                let idx = rng.random_range(1..pos.len());
                 (&links[pos[idx - 1].0..pos[idx].0], pos[idx].1, pos[idx].2)
             },
             |(links, bits_per_unsorted, sorted_count)| {
@@ -128,7 +128,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     group.bench_function("get_raw", |b| {
         b.iter_batched(
-            || rng.gen_range(0..values.len()),
+            || rng.random_range(0..values.len()),
             |i| {
                 black_box(compressed[i]);
             },
@@ -139,7 +139,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     group.bench_function("get", |b| {
         b.iter_batched(
-            || rng.gen_range(0..values.len()),
+            || rng.random_range(0..values.len()),
             |i| {
                 black_box(decompressor.get(i));
             },
@@ -150,7 +150,7 @@ pub fn bench_bitpacking_ordered(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
     group.bench_function("get2", |b| {
         b.iter_batched(
-            || rng.gen_range(0..values.len() - 1),
+            || rng.random_range(0..values.len() - 1),
             |i| {
                 let a = decompressor.get(i);
                 let b = decompressor.get(i + 1);

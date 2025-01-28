@@ -121,10 +121,10 @@ mod tests {
     fn test_entry_points() {
         let mut points = EntryPoints::new(10);
 
-        let mut rnd = rand::thread_rng();
+        let mut rnd = rand::rng();
 
         for i in 0..1000 {
-            let level = rnd.gen_range(0..10000);
+            let level = rnd.random_range(0..10000);
             points.new_point(i, level, |_x| true);
         }
 
@@ -134,7 +134,7 @@ mod tests {
         assert!(points.entry_points[0].level > 1);
 
         for i in 1000..2000 {
-            let level = rnd.gen_range(0..10000);
+            let level = rnd.random_range(0..10000);
             points.new_point(i, level, |x| x % 5 == i % 5);
         }
 

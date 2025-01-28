@@ -180,17 +180,17 @@ mod tests {
         m: usize,
         m0: usize,
     ) -> Vec<Vec<Vec<PointOffsetType>>> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         (0..points_count)
             .map(|_| {
-                let levels_count = rng.gen_range(1..max_levels_count);
+                let levels_count = rng.random_range(1..max_levels_count);
                 (0..levels_count)
                     .map(|level| {
                         let mut max_links_count = if level == 0 { m0 } else { m };
                         max_links_count *= 2; // Simulate additional payload links.
-                        let links_count = rng.gen_range(0..max_links_count);
+                        let links_count = rng.random_range(0..max_links_count);
                         (0..links_count)
-                            .map(|_| rng.gen_range(0..points_count) as PointOffsetType)
+                            .map(|_| rng.random_range(0..points_count) as PointOffsetType)
                             .collect()
                     })
                     .collect()

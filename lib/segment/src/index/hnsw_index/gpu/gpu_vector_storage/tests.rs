@@ -466,7 +466,7 @@ fn create_vector_storage_f32_multi(
     .unwrap();
     for i in 0..num_vectors {
         let mut vectors = vec![];
-        let num_vectors_per_points = 1 + rnd.gen::<usize>() % 3;
+        let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
         for _ in 0..num_vectors_per_points {
             let vec = random_vector(&mut rnd, dim);
             let vec = match distance {
@@ -507,7 +507,7 @@ fn create_vector_storage_f16_multi(
     .unwrap();
     for i in 0..num_vectors {
         let mut vectors = vec![];
-        let num_vectors_per_points = 1 + rnd.gen::<usize>() % 3;
+        let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
         for _ in 0..num_vectors_per_points {
             let vec = random_vector(&mut rnd, dim);
             let vec = match distance {
@@ -554,7 +554,7 @@ fn create_vector_storage_u8_multi(
     .unwrap();
     for i in 0..num_vectors {
         let mut vectors = vec![];
-        let num_vectors_per_points = 1 + rnd.gen::<usize>() % 3;
+        let num_vectors_per_points = 1 + rnd.random::<u8>() % 3;
         for _ in 0..num_vectors_per_points {
             let vec = random_dense_byte_vector(&mut rnd, dim);
             let vec = match distance {

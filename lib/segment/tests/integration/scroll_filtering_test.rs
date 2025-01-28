@@ -25,7 +25,7 @@ fn test_filtering_context_consistency() {
     for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rng, 3);
 
-        let random_offset = rng.gen_range(0..10);
+        let random_offset = rng.random_range(0..10);
 
         let read_by_index_res = segment.filtered_read_by_index(
             Some(random_offset.into()),

@@ -508,7 +508,7 @@ mod tests {
     use bitvec::bits;
     use bitvec::vec::BitVec;
     use proptest::prelude::*;
-    use rand::thread_rng;
+    use rand::{rng, Rng};
 
     use crate::config::{StorageOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS};
 
@@ -611,13 +611,13 @@ mod tests {
             let mut bitvec = BitVec::new();
             bitvec.resize(len, true);
 
-            let mut rng = thread_rng();
+            let mut rng = rng();
 
             let mut i = 0;
             let mut max_gap = 0;
             while i < len {
-                let run = rng.gen_range(1..max_gap_size).min(len - i);
-                let skip = rng.gen_range(1..max_gap_size);
+                let run = rng.random_range(1..max_gap_size).min(len - i);
+                let skip = rng.random_range(1..max_gap_size);
 
                 for j in 0..run {
                     bitvec.set(i + j, false);

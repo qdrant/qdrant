@@ -1,4 +1,4 @@
-use rand::distributions::{Distribution, Uniform};
+use rand::distr::{Distribution, Uniform};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
@@ -45,10 +45,10 @@ pub fn empty_storage_sized(page_size: usize) -> (TempDir, BlobStore<Payload>) {
 }
 
 pub fn random_word(rng: &mut impl Rng) -> String {
-    let len = rng.gen_range(1..10);
+    let len = rng.random_range(1..10);
     let mut word = String::with_capacity(len);
     for _ in 0..len {
-        word.push(rng.gen_range(b'a'..=b'z') as char);
+        word.push(rng.random_range(b'a'..=b'z') as char);
     }
     word
 }
@@ -58,13 +58,13 @@ pub fn random_payload(rng: &mut impl Rng, size_factor: usize) -> Payload {
 
     let word = random_word(rng);
 
-    let sentence = (0..rng.gen_range(1..20 * size_factor))
+    let sentence = (0..rng.random_range(1..20 * size_factor))
         .map(|_| random_word(rng))
         .collect::<Vec<_>>()
         .join(" ");
 
-    let distr = Uniform::new(0, 100000);
-    let indices = (0..rng.gen_range(1..100 * size_factor))
+    let distr = Uniform::new(0, 100000).unwrap();
+    let indices = (0..rng.random_range(1..100 * size_factor))
         .map(|_| distr.sample(rng))
         .collect::<Vec<_>>();
 
@@ -72,12 +72,12 @@ pub fn random_payload(rng: &mut impl Rng, size_factor: usize) -> Payload {
         {
             "word": word, // string
             "sentence": sentence, // string
-            "number": rng.gen_range(0..1000), // number
+            "number": rng.random_range(0..1000), // number
             "indices": indices, // array of numbers
-            "bool": rng.gen_bool(0.5), // boolean
+            "bool": rng.random_bool(0.5), // boolean
             "null": serde_json::Value::Null, // null
             "object": {
-                "bool": rng.gen_bool(0.5),
+                "bool": rng.random_bool(0.5),
             }, // object
         }
     )

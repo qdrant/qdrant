@@ -105,7 +105,7 @@ fn generate_even_placement(
     replication_factor: usize,
 ) -> ShardsPlacement {
     let mut exact_placement = Vec::new();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     pool.shuffle(&mut rng);
     let mut loop_iter = pool.iter().cycle();
 
@@ -624,7 +624,7 @@ pub async fn do_update_collection_cluster(
                     .expect("select shard ID must always exist in collection state")
                     .replicas
                     .keys()
-                    .choose(&mut rand::thread_rng())
+                    .choose(&mut rand::rng())
                     .copied()
                     .unwrap(),
             };

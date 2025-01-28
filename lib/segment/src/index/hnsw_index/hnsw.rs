@@ -15,7 +15,6 @@ use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
-use rand::thread_rng;
 use rayon::prelude::*;
 use rayon::ThreadPool;
 
@@ -240,7 +239,7 @@ impl HNSWIndex {
         );
 
         // Build main index graph
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
         #[cfg(feature = "gpu")]

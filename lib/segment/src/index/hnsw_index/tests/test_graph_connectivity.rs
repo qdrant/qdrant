@@ -5,7 +5,7 @@ use std::sync::Arc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
-use rand::thread_rng;
+use rand::rng;
 use tempfile::Builder;
 
 use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
@@ -30,7 +30,7 @@ fn test_graph_connectivity() {
     let distance = Distance::Cosine;
     let full_scan_threshold = 10_000;
 
-    let mut rnd = thread_rng();
+    let mut rnd = rng();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();

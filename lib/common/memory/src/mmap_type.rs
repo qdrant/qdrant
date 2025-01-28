@@ -552,7 +552,7 @@ mod tests {
     use std::fmt::Debug;
     use std::iter;
 
-    use rand::rngs::StdRng;
+    use rand::rngs::{SmallRng, StdRng};
     use rand::{Rng, SeedableRng};
     use tempfile::{Builder, NamedTempFile};
 
@@ -622,17 +622,17 @@ mod tests {
 
     #[test]
     fn test_reopen_random() {
-        let mut rng = StdRng::seed_from_u64(42);
-        check_reopen_random::<(), _>(0, || rng.gen());
-        check_reopen_random::<u8, _>(0, || rng.gen());
-        check_reopen_random::<u8, _>(1, || rng.gen());
-        check_reopen_random::<u8, _>(131, || rng.gen());
-        check_reopen_random::<usize, _>(0, || rng.gen());
-        check_reopen_random::<usize, _>(1, || rng.gen());
-        check_reopen_random::<usize, _>(131, || rng.gen());
-        check_reopen_random::<f32, _>(0, || rng.gen());
-        check_reopen_random::<f32, _>(1, || rng.gen());
-        check_reopen_random::<f32, _>(131, || rng.gen());
+        let mut rng = SmallRng::seed_from_u64(42);
+        check_reopen_random::<(), _>(0, || rng.random());
+        check_reopen_random::<u8, _>(0, || rng.random());
+        check_reopen_random::<u8, _>(1, || rng.random());
+        check_reopen_random::<u8, _>(131, || rng.random());
+        check_reopen_random::<u64, _>(0, || rng.random());
+        check_reopen_random::<u64, _>(1, || rng.random());
+        check_reopen_random::<u64, _>(131, || rng.random());
+        check_reopen_random::<f32, _>(0, || rng.random());
+        check_reopen_random::<f32, _>(1, || rng.random());
+        check_reopen_random::<f32, _>(131, || rng.random());
     }
 
     fn check_reopen_random<T, R>(len: usize, rng: R)
@@ -682,7 +682,7 @@ mod tests {
             let mmap =
                 mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let mut mmap_bitslice = MmapBitSlice::from(mmap, header_size);
-            (0..bits).for_each(|i| mmap_bitslice.set(i, rng.gen()));
+            (0..bits).for_each(|i| mmap_bitslice.set(i, rng.random()));
         }
 
         // Reopen and assert contents
@@ -691,7 +691,7 @@ mod tests {
             let mmap =
                 mmap_ops::open_write_mmap(tempfile.path(), AdviceSetting::Global, false).unwrap();
             let mmap_bitslice = MmapBitSlice::from(mmap, header_size);
-            (0..bits).for_each(|i| assert_eq!(mmap_bitslice[i], rng.gen::<bool>()));
+            (0..bits).for_each(|i| assert_eq!(mmap_bitslice[i], rng.random::<bool>()));
         }
     }
 

@@ -126,9 +126,9 @@ fn test_histogram() {
     let max_bucket_size = 1000;
     let precision = 0.01;
 
-    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let mut points: Vec<_> = histogram_fixture_values();
-    points.shuffle(&mut rand::thread_rng());
+    points.shuffle(&mut rand::rng());
     let points: Vec<_> = points
         .into_iter()
         .enumerate()
@@ -189,7 +189,7 @@ fn test_build_i64_histogram() {
     let precision = 0.01;
     let num_samples = 100_000;
 
-    // let points = (0..100000).map(|i| Point { val: rnd.gen_range(-10.0..10.0), idx: i }).collect_vec();
+    // let points = (0..100000).map(|i| Point { val: rnd.random_range(-10.0..10.0), idx: i }).collect_vec();
     let points: Vec<_> = (0..num_samples)
         .map(|i| Point {
             val: rand::random::<i64>(),

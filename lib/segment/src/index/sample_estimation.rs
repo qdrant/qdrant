@@ -79,7 +79,7 @@ mod tests {
         let mut delta = 100_000;
         let mut positive = 0;
         for i in 1..=101 {
-            positive += usize::from(rng.gen_bool(true_p));
+            positive += usize::from(rng.random_bool(true_p));
             if i % 20 == 1 {
                 let interval = confidence_agresti_coull_interval(i, positive, total);
                 assert!(interval.1 < delta);

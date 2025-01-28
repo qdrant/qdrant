@@ -939,15 +939,15 @@ mod tests {
     fn random_circles() {
         let mut rnd = StdRng::seed_from_u64(42);
         for _ in 0..1000 {
-            let r_meters = rnd.gen_range(1.0..10000.0);
+            let r_meters = rnd.random_range(1.0..10000.0);
             let query = GeoRadius {
                 center: GeoPoint {
-                    lon: rnd.gen_range(LON_RANGE),
-                    lat: rnd.gen_range(LAT_RANGE),
+                    lon: rnd.random_range(LON_RANGE),
+                    lat: rnd.random_range(LAT_RANGE),
                 },
                 radius: r_meters,
             };
-            let max_hashes = rnd.gen_range(1..32);
+            let max_hashes = rnd.random_range(1..32);
             let hashes = circle_hashes(&query, max_hashes);
             assert!(hashes.unwrap().len() <= max_hashes);
         }

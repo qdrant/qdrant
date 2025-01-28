@@ -45,13 +45,13 @@ async fn setup() -> Resources {
     let int_ids = (0..1000).map(PointIdType::from);
 
     let mut rng = SmallRng::seed_from_u64(SEED);
-    let uuids = (0..1000).map(|_| PointIdType::Uuid(Uuid::from_u128(rng.gen())));
+    let uuids = (0..1000).map(|_| PointIdType::Uuid(Uuid::from_u128(rng.random())));
 
     let ids = int_ids.chain(uuids).collect_vec();
 
     let mut rng = SmallRng::seed_from_u64(SEED);
     let vectors = (0..2000)
-        .map(|_| rng.gen::<[f32; 4]>().to_vec())
+        .map(|_| rng.random::<[f32; 4]>().to_vec())
         .collect_vec();
 
     let payloads = ids
@@ -104,7 +104,7 @@ async fn happy_lookup_ids() {
 
     let mut rng = SmallRng::seed_from_u64(SEED);
     let uuids = (0..n)
-        .map(|_| Uuid::from_u128(rng.gen()).to_string())
+        .map(|_| Uuid::from_u128(rng.random()).to_string())
         .map_into();
 
     let values = ints.chain(uuids).collect_vec();
@@ -137,7 +137,7 @@ async fn happy_lookup_ids() {
 
     // use points 0..n and 1000..1000+n as expected vectors
     let expected_vectors = (0..1000 + n)
-        .map(|i| (i, rng.gen::<[f32; 4]>().to_vec()))
+        .map(|i| (i, rng.random::<[f32; 4]>().to_vec()))
         .filter(|(i, _)| !(&n..&1000).contains(&i))
         .map(|(_, v)| v)
         .map(VectorStructInternal::from);
@@ -158,7 +158,7 @@ async fn happy_lookup_ids() {
 
 fn first_uuid() -> String {
     let mut rng = SmallRng::seed_from_u64(SEED);
-    Uuid::from_u128(rng.gen()).to_string()
+    Uuid::from_u128(rng.random()).to_string()
 }
 
 #[rstest]

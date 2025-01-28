@@ -456,8 +456,8 @@ pub fn gen_map<T: Eq + Ord + Hash>(
 
     for _ in 0..count {
         let key = repeat_until(|| gen_key(rng), |key| !map.contains_key(key));
-        let set = (0..rng.gen_range(1..=100))
-            .map(|_| rng.gen_range(0..=1000))
+        let set = (0..rng.random_range(1..=100))
+            .map(|_| rng.random_range(0..=1000))
             .collect::<BTreeSet<_>>();
         map.insert(key, set);
     }
@@ -467,8 +467,8 @@ pub fn gen_map<T: Eq + Ord + Hash>(
 
 #[cfg(any(test, feature = "testing"))]
 pub fn gen_ident(rng: &mut StdRng) -> String {
-    (0..rng.gen_range(5..=32))
-        .map(|_| rng.gen_range(b'a'..=b'z') as char)
+    (0..rng.random_range(5..=32))
+        .map(|_| rng.random_range(b'a'..=b'z') as char)
         .collect()
 }
 
@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn test_mmap_hash() {
         test_mmap_hash_impl(gen_ident, |s| s.as_str(), |s| s.to_owned());
-        test_mmap_hash_impl(|rng| rng.gen::<i64>(), |i| i, |i| *i);
+        test_mmap_hash_impl(|rng| rng.random::<i64>(), |i| i, |i| *i);
     }
 
     fn test_mmap_hash_impl<K: Key + ?Sized, K1: Ord + Hash>(
@@ -543,7 +543,7 @@ mod tests {
         let mut map: HashMap<i64, BTreeSet<u64>> = Default::default();
 
         for key in 0..10i64 {
-            map.insert(key, (0..100).map(|_| rng.gen_range(0..=1000)).collect());
+            map.insert(key, (0..100).map(|_| rng.random_range(0..=1000)).collect());
         }
 
         MmapHashMap::<i64, u64>::create(

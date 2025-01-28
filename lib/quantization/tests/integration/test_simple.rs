@@ -15,14 +15,13 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+        let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
@@ -52,14 +51,13 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen::<f32>()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random::<f32>()).collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen::<f32>()).collect();
+        let query: Vec<f32> = (0..vector_dim).map(|_| rng.random::<f32>()).collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
@@ -89,14 +87,17 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen_range(-1.0..=1.0)).collect();
+            let vector: Vec<f32> = (0..vector_dim)
+                .map(|_| rng.random_range(-1.0..=1.0))
+                .collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen_range(-1.0..=1.0)).collect();
+        let query: Vec<f32> = (0..vector_dim)
+            .map(|_| rng.random_range(-1.0..=1.0))
+            .collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
@@ -126,14 +127,13 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+        let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
@@ -163,14 +163,13 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen::<f32>()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random::<f32>()).collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen::<f32>()).collect();
+        let query: Vec<f32> = (0..vector_dim).map(|_| rng.random::<f32>()).collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
@@ -200,14 +199,17 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen_range(-1.0..=1.0)).collect();
+            let vector: Vec<f32> = (0..vector_dim)
+                .map(|_| rng.random_range(-1.0..=1.0))
+                .collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen_range(-1.0..=1.0)).collect();
+        let query: Vec<f32> = (0..vector_dim)
+            .map(|_| rng.random_range(-1.0..=1.0))
+            .collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),
@@ -237,11 +239,10 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
             vector_data.push(vector);
         }
 
@@ -273,11 +274,10 @@ mod tests {
         let vector_dim = 65;
         let error = vector_dim as f32 * 0.1;
 
-        //let mut rng = rand::thread_rng();
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
             vector_data.push(vector);
         }
 
@@ -312,10 +312,10 @@ mod tests {
         let mut rng = rand::rngs::StdRng::seed_from_u64(42);
         let mut vector_data: Vec<Vec<f32>> = Vec::new();
         for _ in 0..vectors_count {
-            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+            let vector: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
             vector_data.push(vector);
         }
-        let query: Vec<f32> = (0..vector_dim).map(|_| rng.gen()).collect();
+        let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
 
         let encoded = EncodedVectorsU8::encode(
             vector_data.iter(),

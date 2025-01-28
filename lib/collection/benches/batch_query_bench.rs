@@ -18,7 +18,7 @@ use collection::shards::shard_trait::ShardOperation;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::cpu::CpuBudget;
 use criterion::{criterion_group, criterion_main, Criterion};
-use rand::thread_rng;
+use rand::rng;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::fixtures::payload_fixtures::random_vector;
 use segment::types::{
@@ -101,7 +101,7 @@ fn setup() -> (TempDir, LocalShard) {
 }
 
 fn create_rnd_batch() -> CollectionUpdateOperations {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let num_points = 2000;
     let dim = 100;
     let mut points = Vec::with_capacity(num_points);
@@ -157,7 +157,7 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("query-batch-{fid}"), |b| {
             b.iter(|| {
                 search_runtime.block_on(async {
-                    let mut rng = thread_rng();
+                    let mut rng = rng();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
@@ -188,7 +188,7 @@ fn batch_search_bench(c: &mut Criterion) {
         group.bench_function(format!("search-batch-{fid}"), |b| {
             b.iter(|| {
                 search_runtime.block_on(async {
-                    let mut rng = thread_rng();
+                    let mut rng = rng();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query = random_vector(&mut rng, 100);
@@ -234,7 +234,7 @@ fn batch_rrf_query_bench(c: &mut Criterion) {
         group.bench_function(format!("hybrid-query-batch-{fid}"), |b| {
             b.iter(|| {
                 search_runtime.block_on(async {
-                    let mut rng = thread_rng();
+                    let mut rng = rng();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query1 = random_vector(&mut rng, 100);
@@ -298,7 +298,7 @@ fn batch_rescore_bench(c: &mut Criterion) {
         group.bench_function(format!("rescore-query-batch-{fid}"), |b| {
             b.iter(|| {
                 search_runtime.block_on(async {
-                    let mut rng = thread_rng();
+                    let mut rng = rng();
                     let mut searches = Vec::with_capacity(batch_size);
                     for _i in 0..batch_size {
                         let query1 = random_vector(&mut rng, 100);

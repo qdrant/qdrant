@@ -33,7 +33,7 @@ impl InMemoryIdTracker {
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {
         Self {
-            internal_to_version: vec![rand.gen(); size as usize],
+            internal_to_version: vec![rand.random(); size as usize],
             mappings: PointMappings::random_with_params(rand, size, preserved_size, bits_in_id),
         }
     }

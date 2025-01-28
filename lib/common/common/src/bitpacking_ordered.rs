@@ -295,7 +295,7 @@ pub fn gen_test_sequence(rng: &mut impl rand::Rng, max_delta: u64, len: usize) -
     let mut last = 0u64;
     (0..len)
         .map(|_| {
-            last = last.checked_add(rng.gen_range(0..=max_delta)).unwrap();
+            last = last.checked_add(rng.random_range(0..=max_delta)).unwrap();
             last
         })
         .collect()
@@ -346,7 +346,7 @@ mod tests {
             }),
             once_with(|| {
                 let mut rng = StdRng::seed_from_u64(42);
-                let mut values = (0..1000).map(|_| rng.gen()).collect::<Vec<_>>();
+                let mut values = (0..1000).map(|_| rng.random()).collect::<Vec<_>>();
                 values.sort_unstable();
                 values
             }),

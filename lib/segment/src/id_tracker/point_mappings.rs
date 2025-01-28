@@ -9,7 +9,7 @@ use byteorder::LittleEndian;
 use common::bitpacking::make_bitmask;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use rand::distributions::Distribution;
+use rand::distr::Distribution;
 #[cfg(test)]
 use rand::rngs::StdRng;
 #[cfg(test)]
@@ -95,12 +95,13 @@ impl PointMappings {
     pub(crate) fn iter_random(
         &self,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let rng = rand::thread_rng();
+        let rng = rand::rng();
         let max_internal = self.internal_to_external.len();
         if max_internal == 0 {
             return Box::new(iter::empty());
         }
-        let uniform = rand::distributions::Uniform::new(0, max_internal);
+        let uniform = rand::distr::Uniform::new(0, max_internal)
+            .expect("above check guarantees max_internal > 0");
         let iter = Distribution::sample_iter(uniform, rng)
             // TODO: this is not efficient if `max_internal` is large and we iterate over most of them,
             // but it's good enough for low limits.
@@ -284,14 +285,14 @@ impl PointMappings {
 
         let internal_to_external = (0..total_size)
             .map(|pos| loop {
-                if rand.gen_bool(UUID_LIKELYNESS) {
-                    let uuid = Uuid::from_u128(rand.gen_range(0..=mask));
+                if rand.random_bool(UUID_LIKELYNESS) {
+                    let uuid = Uuid::from_u128(rand.random_range(0..=mask));
                     if let Entry::Vacant(e) = external_to_internal_uuid.entry(uuid) {
                         e.insert(pos);
                         return PointIdType::Uuid(uuid);
                     }
                 } else {
-                    let num = rand.gen_range(0..=mask_u64);
+                    let num = rand.random_range(0..=mask_u64);
                     if let Entry::Vacant(e) = external_to_internal_num.entry(num) {
                         e.insert(pos);
                         return PointIdType::NumId(num);

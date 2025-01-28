@@ -67,10 +67,10 @@ fn byte_metrics_bench(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(42);
 
     let random_vectors_1: Vec<Vec<u8>> = (0..COUNT)
-        .map(|_| (0..DIM).map(|_| rng.gen_range(0..=255)).collect())
+        .map(|_| (0..DIM).map(|_| rng.random_range(0..=255)).collect())
         .collect();
     let random_vectors_2: Vec<Vec<u8>> = (0..COUNT)
-        .map(|_| (0..DIM).map(|_| rng.gen_range(0..=255)).collect())
+        .map(|_| (0..DIM).map(|_| rng.random_range(0..=255)).collect())
         .collect();
 
     group.bench_function("byte-dot", |b| {
@@ -266,14 +266,14 @@ fn half_metrics_bench(c: &mut Criterion) {
     let random_vectors_1: Vec<Vec<f16>> = (0..COUNT)
         .map(|_| {
             (0..DIM)
-                .map(|_| f16::from_f32(rng.gen_range(0.0..=1.0)))
+                .map(|_| f16::from_f32(rng.random_range(0.0..=1.0)))
                 .collect()
         })
         .collect();
     let random_vectors_2: Vec<Vec<f16>> = (0..COUNT)
         .map(|_| {
             (0..DIM)
-                .map(|_| f16::from_f32(rng.gen_range(0.0..=1.0)))
+                .map(|_| f16::from_f32(rng.random_range(0.0..=1.0)))
                 .collect()
         })
         .collect();

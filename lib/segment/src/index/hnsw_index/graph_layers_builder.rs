@@ -9,7 +9,7 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use io::file_operations::atomic_save_bin;
 use parking_lot::{Mutex, MutexGuard, RwLock};
-use rand::distributions::Uniform;
+use rand::distr::Uniform;
 use rand::Rng;
 
 use super::graph_layers::GraphLayerData;
@@ -265,7 +265,7 @@ impl GraphLayersBuilder {
     where
         R: Rng + ?Sized,
     {
-        let distribution = Uniform::new(0.0, 1.0);
+        let distribution = Uniform::new(0.0, 1.0).unwrap();
         let sample: f64 = rng.sample(distribution);
         let picked_level = -sample.ln() * self.level_factor;
         picked_level.round() as usize

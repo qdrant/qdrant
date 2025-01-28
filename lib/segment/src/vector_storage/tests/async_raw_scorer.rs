@@ -126,7 +126,7 @@ fn test_random_score(
         unreachable!();
     };
 
-    let points = rng.gen_range(1..storage.total_vector_count());
+    let points = rng.random_range(1..storage.total_vector_count());
     let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
 
     let res = score(&*raw_scorer, &points);

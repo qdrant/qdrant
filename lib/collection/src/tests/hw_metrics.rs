@@ -4,7 +4,7 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::cpu::CpuBudget;
 use rand::rngs::ThreadRng;
-use rand::{thread_rng, RngCore};
+use rand::{rng, RngCore};
 use segment::data_types::vectors::{
     NamedVector, NamedVectorStruct, VectorStructInternal, DEFAULT_VECTOR_NAME,
 };
@@ -60,7 +60,7 @@ async fn test_hw_metrics_cancellation() {
         .await
         .unwrap();
 
-    let mut rand = thread_rng();
+    let mut rand = rng();
     let req = CoreSearchRequestBatch {
         searches: vec![CoreSearchRequest {
             query: QueryEnum::Nearest(NamedVectorStruct::Dense(NamedVector {
@@ -106,7 +106,7 @@ async fn test_hw_metrics_cancellation() {
 fn make_random_points_upsert_op(len: usize) -> CollectionUpdateOperations {
     let mut points = vec![];
 
-    let mut rand = thread_rng();
+    let mut rand = rng();
 
     for i in 0..len as u64 {
         let rand_vector = rand_vector(512, &mut rand);
