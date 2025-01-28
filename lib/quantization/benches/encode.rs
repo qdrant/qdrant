@@ -60,10 +60,11 @@ fn encode_dot_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score all u8 neon", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = i8_encoded.score_point_neon(&encoded_query, i);
+                _s = i8_encoded.score_point_neon(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -95,10 +96,11 @@ fn encode_dot_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score random access u8 neon", |b| {
+        let hw_counter = HardwareCounterCell::new();
         let mut _s = 0.0;
         b.iter(|| {
             for &i in &permutation {
-                _s = i8_encoded.score_point_neon(&encoded_query, i);
+                _s = i8_encoded.score_point_neon(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -157,10 +159,11 @@ fn encode_l1_bench(c: &mut Criterion) {
 
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score all u8 neon", |b| {
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             let mut _s = 0.0;
             for i in 0..vectors_count as u32 {
-                _s = i8_encoded.score_point_neon(&encoded_query, i);
+                _s = i8_encoded.score_point_neon(&encoded_query, i, &hw_counter);
             }
         });
     });
@@ -193,9 +196,10 @@ fn encode_l1_bench(c: &mut Criterion) {
     #[cfg(target_arch = "aarch64")]
     group.bench_function("score random access u8 neon", |b| {
         let mut _s = 0.0;
+        let hw_counter = HardwareCounterCell::new();
         b.iter(|| {
             for &i in &permutation {
-                _s = i8_encoded.score_point_neon(&encoded_query, i);
+                _s = i8_encoded.score_point_neon(&encoded_query, i, &hw_counter);
             }
         });
     });

@@ -380,10 +380,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    unsafe fn score_point_neon(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
+    unsafe fn score_point_neon(
+        &self,
+        query: &EncodedQueryPQ,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
+        let centroids = self.encoded_vectors.get_vector_data(
+            i as usize,
+            self.metadata.vector_division.len(),
+            hw_counter,
+        );
         let len = centroids.len();
         let centroids_count = self.metadata.centroids.len();
 
@@ -520,7 +527,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
 
         #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
         if std::arch::is_aarch64_feature_detected!("neon") {
-            return unsafe { self.score_point_neon(query, i) };
+            return unsafe { self.score_point_neon(query, i, hw_counter) };
         }
 
         self.score_point_simple(query, i, hw_counter)

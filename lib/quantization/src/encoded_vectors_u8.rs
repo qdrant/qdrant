@@ -167,9 +167,14 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-    pub fn score_point_neon(&self, query: &EncodedQueryU8, i: u32) -> f32 {
+    pub fn score_point_neon(
+        &self,
+        query: &EncodedQueryU8,
+        i: u32,
+        hw_counter: &HardwareCounterCell,
+    ) -> f32 {
         unsafe {
-            let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+            let (vector_offset, v_ptr) = self.get_vec_ptr(i, hw_counter);
             let score = match self.metadata.vector_parameters.distance_type {
                 DistanceType::Dot | DistanceType::L2 => impl_score_dot_neon(
                     query.encoded_query.as_ptr(),
