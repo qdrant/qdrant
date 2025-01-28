@@ -1,5 +1,5 @@
 use common::bitpacking::packed_bits;
-use common::bitpacking_links::{for_each_packed_link, MIN_BITS_PER_VALUE};
+use common::bitpacking_links::{iterate_packed_links, MIN_BITS_PER_VALUE};
 use common::bitpacking_ordered;
 use common::types::PointOffsetType;
 use itertools::Itertools as _;
@@ -120,12 +120,12 @@ impl GraphLinksView<'_> {
             } => {
                 let links_range =
                     offsets.get(idx).unwrap() as usize..offsets.get(idx + 1).unwrap() as usize;
-                for_each_packed_link(
+                iterate_packed_links(
                     &compressed_links[links_range],
                     bits_per_unsorted,
                     if level == 0 { m0 } else { m },
-                    f,
-                );
+                )
+                .for_each(f);
             }
         }
     }

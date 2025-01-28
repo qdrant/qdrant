@@ -58,18 +58,6 @@ pub fn pack_links(
     w.finish();
 }
 
-/// Iterate over packed links and apply a function to each value.
-/// See [`pack_links`] for parameter descriptions.
-#[inline]
-pub fn for_each_packed_link(
-    links: &[u8],
-    bits_per_unsorted: u8,
-    sorted_count: usize,
-    f: impl FnMut(u32),
-) {
-    iterate_packed_links(links, bits_per_unsorted, sorted_count).for_each(f)
-}
-
 /// Returns an iterator over packed links.
 /// See [`pack_links`] for parameter descriptions.
 #[inline]
