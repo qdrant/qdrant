@@ -180,11 +180,11 @@ impl GraphLayersBase for GraphLayers {
         self.visited_pool.get(self.links.num_points())
     }
 
-    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, mut f: F)
+    fn links_map<F>(&self, point_id: PointOffsetType, level: usize, f: F)
     where
         F: FnMut(PointOffsetType),
     {
-        self.links.for_each_link(point_id, level, &mut f);
+        self.links.links(point_id, level).for_each(f);
     }
 
     fn get_m(&self, level: usize) -> usize {
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(main_entry.level, num_levels);
 
         let total_links_0 = (0..num_vectors)
-            .map(|i| graph_layers.links.links_vec(i as PointOffsetType, 0).len())
+            .map(|i| graph_layers.links.links(i as PointOffsetType, 0).len())
             .sum::<usize>();
 
         eprintln!("total_links_0 = {total_links_0:#?}");
