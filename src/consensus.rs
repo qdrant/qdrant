@@ -3,7 +3,7 @@ use std::str::FromStr;
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
-use std::{fmt, thread};
+use std::{cmp, fmt, thread};
 
 use anyhow::{anyhow, Context as _};
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
@@ -14,7 +14,6 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::shard::PeerId;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_high_thread_priority;
-use common::defaults;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
 use raft::{SoftState, StateRole, INVALID_ID};
@@ -55,6 +54,7 @@ pub struct Consensus {
     /// ToDo: Make if many
     config: ConsensusConfig,
     broker: RaftMessageBroker,
+    raft_config: Config,
 }
 
 impl Consensus {
@@ -207,16 +207,6 @@ impl Consensus {
             ..Default::default()
         };
         raft_config.validate()?;
-        let op_wait = defaults::CONSENSUS_META_OP_WAIT;
-        // Commit might take up to 4 ticks as:
-        // 1 tick - send proposal to leader
-        // 2 tick - leader sends append entries to peers
-        // 3 tick - peer answers leader, that entry is persisted
-        // 4 tick - leader increases commit index and sends it
-        if 4 * Duration::from_millis(config.tick_period_ms) > op_wait {
-            log::warn!("With current tick period of {}ms, operation commit time might exceed default wait timeout: {}ms",
-                 config.tick_period_ms, op_wait.as_millis())
-        }
         // bounded channel for backpressure
         let (sender, receiver) = tokio::sync::mpsc::channel(config.max_message_queue_size);
         // State might be initialized but the node might be shutdown without actually syncing or committing anything.
@@ -285,6 +275,7 @@ impl Consensus {
             runtime,
             config,
             broker,
+            raft_config,
         };
 
         if !state_ref.is_new_deployment() {
@@ -486,114 +477,118 @@ impl Consensus {
             }
         }
 
+        // If this is the origin peer of the cluster, try to add origin peer to consensus
+        if let Err(err) = self.try_add_origin() {
+            log::error!("Failed to add origin peer to consensus: {err}");
+        }
+
         let tick_period = Duration::from_millis(self.config.tick_period_ms);
         let mut previous_tick = Instant::now();
+        let mut idle_cycles = 0_usize;
 
         loop {
-            // Apply in-memory changes to the Raft State Machine
-            // If updates = None, we need to skip this step due to timing limits
-            // If updates = Some(0), means we didn't receive any updates explicitly
-            let updates = self.advance_node(previous_tick, tick_period)?;
+            // Wait (for up to `tick_period`) for incoming client requests and Raft messages
+            let raft_messages = self.advance_node(tick_period)?;
 
-            let mut elapsed = previous_tick.elapsed();
+            // Calculate how many ticks passed since the last one
+            let elapsed_ticks = previous_tick.elapsed().div_duration_f32(tick_period) as u32;
 
-            while elapsed > tick_period {
+            // Update previous tick timestamp
+            previous_tick += tick_period * elapsed_ticks;
+
+            // Calculate how many ticks we should *report* to Raft node.
+            //
+            // If last iteration of the loop took too long to complete, and we report all elapsed
+            // ticks to Raft node, it might trigger unnecessary leader election.
+            //
+            // To prevent this, we check if we received new Raft messages (i.e., we are still
+            // connected to Raft leader), and cap how many ticks we report to Raft node.
+            //
+            // By default, election is triggered if no Raft messages were received for 20 ticks,
+            // so we report at most 15 ticks.
+            //
+            // See https://docs.rs/raft/latest/raft/struct.Config.html#structfield.election_tick.
+            let report_ticks = if raft_messages > 0 {
+                // Default `election_tick` is 20, so expected value here is 15
+                let max_elapsed_ticks =
+                    cmp::max(1, self.raft_config.election_tick.saturating_sub(5));
+
+                cmp::min(elapsed_ticks, max_elapsed_ticks as u32)
+            } else {
+                elapsed_ticks
+            };
+
+            // Report elapsed ticks to Raft node
+            for _ in 0..report_ticks {
                 self.node.tick();
-
-                previous_tick += tick_period;
-                elapsed -= tick_period;
             }
 
-            if self.node.has_ready() {
-                // Persist AND apply changes, which were committed in the Raft State Machine
-                let stop_consensus = self.on_ready()?;
+            // Append new entries to the WAL, apply committed entries, etc...
+            let (stop_consensus, is_idle) = self.on_ready()?;
 
-                if stop_consensus {
-                    return Ok(());
+            if stop_consensus {
+                return Ok(());
+            }
+
+            // If we only sent outgoing Raft messages, but did not change any state during `on_ready`,
+            // we consider Raft node to be "idle"
+            if is_idle {
+                // If we received new Raft messages (i.e., we are still connected to Raft leader)
+                // and Raft node is idle, count "idle cycle"
+                if raft_messages > 0 {
+                    idle_cycles += 1;
                 }
-            } else if updates == Some(0) {
-                // Assume consensus is up-to-date, we can sync local state
-                // Which involves resoling inconsistencies and trying to recover data marked as dead
+            } else {
+                // If Raft state was updated, reset idle cycle counter
+                idle_cycles = 0;
+            }
+
+            // If Raft node was idle for 3 cycles, try to sync local state to consensus
+            if idle_cycles >= 3 {
                 self.try_sync_local_state()?;
             }
         }
     }
 
-    fn advance_node(
-        &mut self,
-        previous_tick: Instant,
-        tick_period: Duration,
-    ) -> anyhow::Result<Option<usize>> {
-        if previous_tick.elapsed() >= tick_period {
-            return Ok(None);
-        }
-
-        match self.try_add_origin() {
-            // `try_add_origin` is not applicable:
-            // - either current peer is not an origin peer
-            // - or cluster is already established
-            Ok(false) => (),
-
-            // Successfully proposed origin peer to consensus, return to consensus loop to handle `on_ready`
-            Ok(true) => return Ok(Some(1)),
-
-            // Origin peer is not a leader yet, wait for the next tick and return to consensus loop
-            // to tick Raft node
-            Err(err @ TryAddOriginError::NotLeader) => {
-                log::debug!("{err}");
-
-                let next_tick = previous_tick + tick_period;
-                let duration_until_next_tick = next_tick.saturating_duration_since(Instant::now());
-                thread::sleep(duration_until_next_tick);
-
-                return Ok(None);
-            }
-
-            // Failed to propose origin peer ID to consensus (which should never happen!),
-            // log error and continue regular consensus loop
-            Err(err) => {
-                log::error!("{err}");
-            }
-        }
-
+    fn advance_node(&mut self, tick_period: Duration) -> anyhow::Result<usize> {
         if self
             .try_promote_learner()
             .context("failed to promote learner")?
         {
-            return Ok(Some(1));
+            return Ok(0);
         }
 
-        let mut updates = 0;
-        let mut timeout_at = previous_tick + tick_period;
+        // This method propagates incoming client requests and Raft messages to Raft node
 
-        // We need to limit the batch size, as application of one batch should be limited in time.
+        // It's more efficient to process multiple events, so we propagate up to 128 events at a time
         const RAFT_BATCH_SIZE: usize = 128;
 
-        let wait_timeout_for_consecutive_messages = tick_period / 10;
+        // We have to tick Raft node periodically, so we can wait for new events for up to `tick_period`
+        let hard_timeout_at = Instant::now() + tick_period;
 
-        // This loop batches incoming messages, so we would need to "apply" them only once.
-        // The "Apply" step is expensive, so it is done for performance reasons.
+        // We also want to react to new events as quickly as possible, so we only wait for `tick_period / 10`
+        // for any consecutive events after the first one
+        let consecutive_message_timeout = tick_period / 10;
 
-        // But on the other hand, we still want to react to rare
-        // individual messages as fast as possible.
-        // To fulfill both requirements, we are going the following way:
-        //   1. Wait for the first message for full tick period.
-        //   2. If the message is received, wait for the next message only for 1/10 of the tick period.
+        // Timeout to wait for the *next* event
+        let mut timeout_at = hard_timeout_at;
+
+        // Track how many *events* we received...
+        let mut events = 0;
+        // ...and how many of these events were *Raft messages*
+        let mut raft_messages = 0;
+
         loop {
-            // This queue have 2 types of events:
-            // - Messages from the leader, like pings, requests to add logs, acks, etc.
-            // - Messages from users, like requests to start shard transfers, etc.
-            //
-            // Timeout defines how long can we wait for the next message.
-            // Since this thread is sync, we can't wait indefinitely.
-            // Timeout is set up to be about the time of tick.
             let Ok(message) = self.recv_update(timeout_at) else {
                 break;
             };
 
-            // Those messages should not be batched, so we interrupt the loop if we see them.
-            // Motivation is: if we change the peer, it should be done immediately,
-            //  otherwise we loose the update on this new peer
+            // When we discover conf-change request, we have to break early and process it ASAP,
+            // because Raft node allows to process single conf-change request at a time.
+            //
+            // E.g., without this condition, if two nodes try to join cluster at the same time and
+            // both conf-change requests are processed in the same batch, the second request would
+            // be ignored and the node would fail to join.
             let is_conf_change = matches!(
                 message,
                 Message::FromClient(
@@ -601,34 +596,35 @@ impl Consensus {
                 ),
             );
 
-            // We put the message in Raft State Machine
-            // This update will hold update in memory, but will not be persisted yet.
-            // E.g. if it is a ping, we don't need to persist anything ofr it.
+            let is_raft_message = matches!(message, Message::FromPeer(_));
+
             if let Err(err) = self.advance_node_impl(message) {
                 log::warn!("{err}");
                 continue;
             }
 
-            updates += 1;
-            timeout_at = Instant::now() + wait_timeout_for_consecutive_messages;
+            timeout_at = cmp::min(
+                hard_timeout_at,
+                Instant::now() + consecutive_message_timeout,
+            );
 
-            if previous_tick.elapsed() >= tick_period
-                || updates >= RAFT_BATCH_SIZE
-                || is_conf_change
-            {
+            events += 1;
+            raft_messages += usize::from(is_raft_message);
+
+            if events >= RAFT_BATCH_SIZE || is_conf_change {
                 break;
             }
         }
 
-        Ok(Some(updates))
+        Ok(raft_messages)
     }
 
     fn recv_update(&mut self, timeout_at: Instant) -> Result<Message, TryRecvUpdateError> {
         self.runtime.block_on(async {
             tokio::select! {
                 biased;
-                _ = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
                 message = self.receiver.recv() => message.ok_or(TryRecvUpdateError::Closed),
+                _ = tokio::time::sleep_until(timeout_at.into()) => Err(TryRecvUpdateError::Timeout),
             }
         })
     }
@@ -832,22 +828,26 @@ impl Consensus {
             .map(|(id, _)| *id)
     }
 
-    /// Returns `true` if consensus should be stopped, `false` otherwise.
-    fn on_ready(&mut self) -> anyhow::Result<bool> {
+    /// Returns two boolean flags: `stop_consensus` and `is_idle`.
+    /// If `stop_consensus` is true, then we should exit consensus loop and stop consensus.
+    /// If `is_idle` is true, it means that no on-disk state was updated during this `on_ready` call.
+    fn on_ready(&mut self) -> anyhow::Result<(bool, bool)> {
         if !self.node.has_ready() {
             // No updates to process
-            return Ok(false);
+            return Ok((false, true));
         }
+
         self.store().record_consensus_working();
+
         // Get the `Ready` with `RawNode::ready` interface.
         let ready = self.node.ready();
 
-        let (Some(light_ready), role_change) = self.process_ready(ready)? else {
+        let (Some(light_ready), role_change, is_idle_ready) = self.process_ready(ready)? else {
             // No light ready, so we need to stop consensus.
-            return Ok(true);
+            return Ok((true, false));
         };
 
-        let result = self.process_light_ready(light_ready)?;
+        let (stop_consensus, is_idle_light_ready) = self.process_light_ready(light_ready)?;
 
         if let Some(role_change) = role_change {
             self.process_role_change(role_change);
@@ -855,7 +855,7 @@ impl Consensus {
 
         self.store().compact_wal(self.config.compact_wal_entries)?;
 
-        Ok(result)
+        Ok((stop_consensus, is_idle_ready && is_idle_light_ready))
     }
 
     fn process_role_change(&self, role_change: StateRole) {
@@ -883,58 +883,83 @@ impl Consensus {
     fn process_ready(
         &mut self,
         mut ready: raft::Ready,
-    ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>)> {
+    ) -> anyhow::Result<(Option<raft::LightReady>, Option<StateRole>, bool)> {
         let store = self.store();
+
+        // We consider Raft node to be idle if we don't change Raft state during `process_ready`.
+        //
+        // E.g.:
+        // - sending messages does not change Raft state, so it's considered idle
+        // - but anything else does, and so is not idle
+        let mut is_idle = true;
 
         if !ready.messages().is_empty() {
             log::trace!("Handling {} messages", ready.messages().len());
             self.send_messages(ready.take_messages());
         }
+
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
             log::debug!("Applying snapshot");
+            is_idle = false;
 
             if let Err(err) = store.apply_snapshot(&ready.snapshot().clone())? {
                 log::error!("Failed to apply snapshot: {err}");
             }
         }
+
         if !ready.entries().is_empty() {
             // Append entries to the Raft log.
             log::debug!("Appending {} entries to raft log", ready.entries().len());
+            is_idle = false;
+
             store
                 .append_entries(ready.take_entries())
                 .map_err(|err| anyhow!("Failed to append entries: {}", err))?
         }
+
         if let Some(hs) = ready.hs() {
             // Raft HardState changed, and we need to persist it.
             log::debug!("Changing hard state. New hard state: {hs:?}");
+            is_idle = false;
+
             store
                 .set_hard_state(hs.clone())
                 .map_err(|err| anyhow!("Failed to set hard state: {}", err))?
         }
+
         let role_change = ready.ss().map(|ss| ss.raft_state);
+
         if let Some(ss) = ready.ss() {
             log::debug!("Changing soft state. New soft state: {ss:?}");
+            is_idle = false;
+
             self.handle_soft_state(ss);
         }
+
         if !ready.persisted_messages().is_empty() {
             log::trace!(
                 "Handling {} persisted messages",
                 ready.persisted_messages().len()
             );
+
             self.send_messages(ready.take_persisted_messages());
         }
+
+        let committed_entries = ready.take_committed_entries();
+        is_idle &= committed_entries.is_empty();
+
         // Should be done after Hard State is saved, so that `applied` index is never bigger than `commit`.
-        let stop_consensus =
-            handle_committed_entries(&ready.take_committed_entries(), &store, &mut self.node)
-                .context("Failed to handle committed entries")?;
+        let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
+            .context("Failed to handle committed entries")?;
+
         if stop_consensus {
-            return Ok((None, None));
+            return Ok((None, None, false));
         }
 
         // Advance the Raft.
         let light_rd = self.node.advance(ready);
-        Ok((Some(light_rd), role_change))
+        Ok((Some(light_rd), role_change, is_idle))
     }
 
     /// Tries to process raft's light ready state.
@@ -943,23 +968,41 @@ impl Consensus {
     ///
     /// Returns with err on failure to apply the state.
     /// If it receives message to stop the consensus - returns `true`, otherwise `false`.
-    fn process_light_ready(&mut self, mut light_rd: raft::LightReady) -> anyhow::Result<bool> {
+    fn process_light_ready(
+        &mut self,
+        mut light_rd: raft::LightReady,
+    ) -> anyhow::Result<(bool, bool)> {
         let store = self.store();
+
+        // We consider Raft node to be idle, if we don't change Raft state during `process_light_ready`.
+        //
+        // E.g.:
+        // - sending messages does not change Raft state, so it's considered idle
+        // - but anything else does, and so is not idle
+        let mut is_idle = true;
+
         // Update commit index.
         if let Some(commit) = light_rd.commit_index() {
             log::debug!("Updating commit index to {commit}");
+            is_idle = false;
+
             store
                 .set_commit_index(commit)
                 .map_err(|err| anyhow!("Failed to set commit index: {}", err))?;
         }
+
         self.send_messages(light_rd.take_messages());
+
+        let committed_entries = light_rd.take_committed_entries();
+        is_idle &= committed_entries.is_empty();
+
         // Apply all committed entries.
-        let stop_consensus =
-            handle_committed_entries(&light_rd.take_committed_entries(), &store, &mut self.node)
-                .context("Failed to apply committed entries")?;
+        let stop_consensus = handle_committed_entries(&committed_entries, &store, &mut self.node)
+            .context("Failed to apply committed entries")?;
+
         // Advance the apply index.
         self.node.advance_apply();
-        Ok(stop_consensus)
+        Ok((stop_consensus, is_idle))
     }
 
     fn store(&self) -> ConsensusStateRef {
