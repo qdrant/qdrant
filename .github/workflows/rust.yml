@@ -38,7 +38,6 @@ jobs:
         name: junit-${{ matrix.os }}.xml
         path: target/nextest/ci/junit.xml
 
-
   # After tests are run, this hacky script will process the JUnit output of nextest
   # and will create a GH Issue if there is a test marked as flaky,
   # Failure of updating an issue is ignored because it fails for external contributors.

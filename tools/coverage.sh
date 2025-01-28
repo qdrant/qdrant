@@ -9,7 +9,7 @@
 RUN_PER_PACKAGE=${RUN_PER_PACKAGE:-"false"}
 
 if [ "$RUN_PER_PACKAGE" == "false" ]; then
-    # Run for the entire workspace in one shot. This assumes we have enough memory
+    # Run for the entire workspace in one shot. This assumes that the machine has enough memory
     cargo llvm-cov --no-clean nextest --profile ci --workspace --lcov --output-path "lcov.info"
     cargo llvm-cov report --html
     exit 0
