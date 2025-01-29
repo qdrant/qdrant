@@ -49,7 +49,7 @@ impl SimplePayloadStorage {
     ) -> OperationResult<()> {
         let point_id_serialized = serde_cbor::to_vec(&point_id).unwrap();
         hw_counter
-            .io_write_counter()
+            .payload_io_write_counter()
             .incr_delta(point_id_serialized.len());
 
         match self.payload.get(&point_id) {

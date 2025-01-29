@@ -2927,8 +2927,9 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | cpu | [uint64](#uint64) |  |  |
-| io_read | [uint64](#uint64) |  |  |
-| io_write | [uint64](#uint64) |  |  |
+| payload_io_read | [uint64](#uint64) |  |  |
+| payload_io_write | [uint64](#uint64) |  |  |
+| vector_io_write | [uint64](#uint64) |  |  |
 
 
 

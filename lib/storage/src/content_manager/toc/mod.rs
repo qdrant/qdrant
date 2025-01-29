@@ -671,8 +671,9 @@ impl TableOfContent {
                 let key = i.key().to_string();
                 let hw_usage = HardwareUsage {
                     cpu: i.get_cpu(),
-                    io_read: i.get_io_read(),
-                    io_write: i.get_io_write(),
+                    payload_io_read: i.get_payload_io_read(),
+                    payload_io_write: i.get_payload_io_write(),
+                    vector_io_write: i.get_vector_io_write(),
                 };
                 (key, hw_usage)
             })

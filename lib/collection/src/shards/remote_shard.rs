@@ -791,8 +791,9 @@ impl ShardOperation for RemoteShard {
         if let Some(usage) = usage {
             hw_measurement_acc.accumulate_request(
                 usage.cpu as usize,
-                usage.io_read as usize,
-                usage.io_write as usize,
+                usage.payload_io_read as usize,
+                usage.payload_io_write as usize,
+                usage.vector_io_write as usize,
             );
         }
 
@@ -860,8 +861,9 @@ impl ShardOperation for RemoteShard {
         if let Some(usage) = usage {
             hw_measurement_acc.accumulate_request(
                 usage.cpu as usize,
-                usage.io_read as usize,
-                usage.io_write as usize,
+                usage.payload_io_read as usize,
+                usage.payload_io_write as usize,
+                usage.vector_io_write as usize,
             );
         }
 
@@ -975,8 +977,9 @@ impl ShardOperation for RemoteShard {
         if let Some(usage) = usage {
             hw_measurement_acc.accumulate_request(
                 usage.cpu as usize,
-                usage.io_read as usize,
-                usage.io_write as usize,
+                usage.payload_io_read as usize,
+                usage.payload_io_write as usize,
+                usage.vector_io_write as usize,
             );
         }
 
