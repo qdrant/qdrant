@@ -784,20 +784,15 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             return Ok(false);
         };
 
-        let Some(applied_index) = self.persistent.read().last_applied_entry() else {
+        let Some(last_applied_index) = self.persistent.read().last_applied_entry() else {
             return Ok(false);
         };
 
-        let first_unapplied_index = applied_index + 1;
-
-        // ToDo: it seems like a mistake, need to check if it's correct
-        // debug_assert!(first_unapplied_index <= first_entry.index);
-
-        if first_unapplied_index - first_entry.index < min_entries_to_compact {
+        if last_applied_index - first_entry.index < min_entries_to_compact {
             return Ok(false);
         }
 
-        self.wal.lock().compact(first_unapplied_index)?;
+        self.wal.lock().compact(last_applied_index)?;
         Ok(true)
     }
 
