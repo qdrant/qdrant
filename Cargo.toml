@@ -264,6 +264,9 @@ members = [
 lto = "fat"
 codegen-units = 1
 
+# Used for pprof heap dump
+debug = 2
+
 # Inherit from release, because we are not rebuilding often,
 # and we don't want the huge binary sizes from debug builds.
 [profile.ci]
