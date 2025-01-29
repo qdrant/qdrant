@@ -30,6 +30,11 @@ async fn update_debugger_config(
     .await
 }
 
+// A pprof heap dump is only supported on Linux
+#[cfg(all(
+    target_os = "linux",
+    any(target_arch = "x86_64", target_arch = "aarch64")
+))]
 #[get("/debug/pprof/heap")]
 async fn debug_pprof_heap(ActixAccess(access): ActixAccess) -> impl Responder {
     if let Err(err) = access.check_global_access(AccessRequirements::new().manage()) {
@@ -64,6 +69,11 @@ async fn debug_pprof_heap(ActixAccess(access): ActixAccess) -> impl Responder {
 // Configure services
 pub fn config_debugger_api(cfg: &mut web::ServiceConfig) {
     cfg.service(get_debugger_config)
-        .service(update_debugger_config)
-        .service(debug_pprof_heap);
+        .service(update_debugger_config);
+
+    #[cfg(all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ))]
+    cfg.service(debug_pprof_heap);
 }
