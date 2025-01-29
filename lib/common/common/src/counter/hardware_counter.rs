@@ -164,7 +164,6 @@ impl Drop for HardwareCounterCell {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::counter::hardware_accumulator::HwMeasurementAcc;
 
     #[test]
@@ -172,7 +171,7 @@ mod test {
         let accumulator = HwMeasurementAcc::new();
 
         {
-            let draining_cell = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+            let draining_cell = accumulator.get_counter_cell();
             draining_cell.cpu_counter().incr(); // Dropping here means we drain the values to `atomic` instead of panicking
         }
 

@@ -535,7 +535,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -589,7 +589,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -630,7 +630,7 @@ mod tests {
             },
             None,
         );
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -684,7 +684,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -723,7 +723,7 @@ mod tests {
         assert_eq!(accumulator.get_cpu(), 15);
 
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -774,7 +774,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -813,7 +813,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -857,7 +857,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -914,7 +914,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -956,7 +956,7 @@ mod tests {
 
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 2, 3],
@@ -1010,7 +1010,7 @@ mod tests {
         // query vector has a gap for dimension 2
         let is_stopped = AtomicBool::new(false);
         let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = HardwareCounterCell::new_with_accumulator(accumulator.clone());
+        let hardware_counter = accumulator.get_counter_cell();
         let mut search_context = SearchContext::new(
             RemappedSparseVector {
                 indices: vec![1, 3],

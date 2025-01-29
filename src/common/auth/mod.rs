@@ -75,7 +75,6 @@ impl AuthKeys {
     pub async fn validate_request<'a>(
         &self,
         get_header: impl Fn(&'a str) -> Option<&'a str>,
-        hw_measurement_acc: HwMeasurementAcc,
     ) -> Result<(Access, InferenceToken), AuthError> {
         let Some(key) = get_header(HTTP_HEADER_API_KEY)
             .or_else(|| get_header("authorization").and_then(|v| v.strip_prefix("Bearer ")))
@@ -108,8 +107,7 @@ impl AuthKeys {
             } = claims?;
 
             if let Some(value_exists) = value_exists {
-                self.validate_value_exists(&value_exists, hw_measurement_acc)
-                    .await?;
+                self.validate_value_exists(&value_exists).await?;
             }
 
             return Ok((access, InferenceToken(sub)));
@@ -120,11 +118,7 @@ impl AuthKeys {
         ))
     }
 
-    async fn validate_value_exists(
-        &self,
-        value_exists: &ValueExists,
-        hw_measurement_acc: HwMeasurementAcc,
-    ) -> Result<(), AuthError> {
+    async fn validate_value_exists(&self, value_exists: &ValueExists) -> Result<(), AuthError> {
         let scroll_req = ScrollRequestInternal {
             offset: None,
             limit: Some(1),
@@ -143,7 +137,7 @@ impl AuthKeys {
                 None, // no timeout
                 ShardSelectorInternal::All,
                 Access::full("JWT stateful validation"),
-                hw_measurement_acc,
+                HwMeasurementAcc::disposable(),
             )
             .await
             .map_err(|e| match e {
