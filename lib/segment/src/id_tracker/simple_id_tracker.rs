@@ -164,7 +164,8 @@ impl SimpleIdTracker {
                 internal_to_version[internal_id as usize] = version;
             } else {
                 log::debug!(
-                    "Found version without internal id, external id: {}",
+                    "Found version: {} without internal id, external id: {}",
+                    version,
                     external_id
                 );
             }
@@ -232,6 +233,16 @@ impl IdTracker for SimpleIdTracker {
     ) -> OperationResult<()> {
         if let Some(external_id) = self.external_id(internal_id) {
             if internal_id as usize >= self.internal_to_version.len() {
+                #[cfg(debug_assertions)]
+                {
+                    if internal_id as usize > self.internal_to_version.len() + 1 {
+                        log::info!(
+                            "Resizing versions is initializing larger range {} -> {}",
+                            self.internal_to_version.len(),
+                            internal_id + 1
+                        );
+                    }
+                }
                 self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
             self.internal_to_version[internal_id as usize] = version;

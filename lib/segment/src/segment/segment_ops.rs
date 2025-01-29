@@ -240,7 +240,7 @@ impl Segment {
 
     /// Manage segment version checking, for segment level operations
     ///
-    /// If current version if higher than operation version - do not perform the operation
+    /// If current version is higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
     fn handle_segment_version<F>(
         &mut self,
@@ -262,7 +262,7 @@ impl Segment {
 
     /// Manage point version checking inside this segment, for point level operations
     ///
-    /// If current version if higher than operation version - do not perform the operation
+    /// If current version is higher than operation version - do not perform the operation
     /// Update current version if operation successfully executed
     pub(super) fn handle_point_version<F>(
         &mut self,
@@ -553,11 +553,13 @@ impl Segment {
         Ok(())
     }
 
-    /// Check data consistency of the segment
+    /// Check data consistency of the segment on its own
     /// - internal id without external id
     /// - external id without internal
     /// - internal id without version
     /// - internal id without vector
+    ///
+    /// A shard can still be consistent with an inconsistent segment as points are merged based on their version.
     ///
     /// Returns an error if any inconsistency is found
     pub fn check_data_consistency(&self) -> OperationResult<()> {
@@ -604,14 +606,18 @@ impl Segment {
                 {
                     let point_id = id_tracker.external_id(internal_id);
                     let point_version = id_tracker.internal_version(internal_id);
-                    log::error!(
+                    // ignoring initial version because the WAL replay can resurrect un-flushed points by assigning them a new initial version
+                    // those points will be deleted by the next deduplication process
+                    if point_version != Some(0) {
+                        log::error!(
                         "Vector storage '{}' is missing point {:?} point_offset: {} version: {:?}",
                         vector_name,
                         point_id,
                         internal_id,
                         point_version
                     );
-                    has_internal_ids_without_vector = true;
+                        has_internal_ids_without_vector = true;
+                    }
                 }
             }
         }
