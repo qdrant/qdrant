@@ -114,8 +114,9 @@ pub struct ConsensusConfig {
     #[validate(range(min = 1))]
     #[serde(default = "default_message_timeout_tics")]
     pub message_timeout_ticks: u64,
-    #[serde(default)]
-    pub compact_wal_entries: u64, // compact WAL when it grows to enough applied entries
+    /// Compact WAL when it grows to enough applied entries
+    #[serde(default = "default_compact_wal_entries")]
+    pub compact_wal_entries: u64,
 }
 
 impl Default for ConsensusConfig {
@@ -125,7 +126,7 @@ impl Default for ConsensusConfig {
             tick_period_ms: default_tick_period_ms(),
             bootstrap_timeout_sec: default_bootstrap_timeout_sec(),
             message_timeout_ticks: default_message_timeout_tics(),
-            compact_wal_entries: 0,
+            compact_wal_entries: default_compact_wal_entries(),
         }
     }
 }
@@ -381,6 +382,10 @@ const fn default_connection_pool_size() -> usize {
 
 const fn default_message_timeout_tics() -> u64 {
     10
+}
+
+const fn default_compact_wal_entries() -> u64 {
+    128
 }
 
 #[allow(clippy::unnecessary_wraps)] // Used as serde default
