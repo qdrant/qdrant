@@ -69,7 +69,7 @@ const FULL_ACCESS: Access = Access::full("For main");
 struct Args {
     /// Uri of the peer to bootstrap from in case of multi-peer deployment.
     /// If not specified - this peer will be considered as a first in a new deployment.
-    #[arg(long, value_parser, value_name = "URI")]
+    #[arg(long, value_parser, value_name = "URI", env = "QDRANT_BOOTSTRAP")]
     bootstrap: Option<Uri>,
     /// Uri of this peer.
     /// Other peers should be able to reach it by this uri.
@@ -78,7 +78,7 @@ struct Args {
     ///
     /// In case this is not the first peer and it bootstraps the value is optional.
     /// If not supplied then qdrant will take internal grpc port from config and derive the IP address of this peer on bootstrap peer (receiving side)
-    #[arg(long, value_parser, value_name = "URI")]
+    #[arg(long, value_parser, value_name = "URI", env = "QDRANT_URI")]
     uri: Option<Uri>,
 
     /// Force snapshot re-creation
