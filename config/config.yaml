@@ -320,6 +320,12 @@ cluster:
     # We encourage you NOT to change this parameter unless you know what you are doing.
     tick_period_ms: 100
 
+    # Compact consensus operations once we have this amount of applied
+    # operations. Allows peers to join quickly with a consensus snapshot without
+    # replaying a huge amount of operations.
+    # If 0 - disable compaction
+    compact_wal_entries: 128
+
 # Set to true to prevent service from sending usage statistics to the developers.
 # Read more: https://qdrant.tech/documentation/guides/telemetry
 telemetry_disabled: false
