@@ -127,8 +127,9 @@ pyroscope_pprofrs = "0.2.8"
 rstack-self = { version = "0.3.0", optional = true }
 
 [target.'cfg(all(not(target_env = "msvc"), any(target_arch = "x86_64", target_arch = "aarch64")))'.dependencies]
-tikv-jemallocator = { version = "0.6", features = ["stats", "unprefixed_malloc_on_supported_platforms", "background_threads"] }
+tikv-jemallocator = { version = "0.6", features = ["stats", "profiling", "unprefixed_malloc_on_supported_platforms", "background_threads"] }
 tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
+jemalloc_pprof = "0.6"
 
 [workspace.lints.clippy]
 cast_lossless = "warn"
