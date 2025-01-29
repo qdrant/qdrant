@@ -4761,6 +4761,7 @@
     },
     "/collections/{collection_name}/points/search": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -4872,6 +4873,7 @@
     },
     "/collections/{collection_name}/points/search/batch": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -4986,6 +4988,7 @@
     },
     "/collections/{collection_name}/points/search/groups": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -5094,6 +5097,7 @@
     },
     "/collections/{collection_name}/points/recommend": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -5205,6 +5209,7 @@
     },
     "/collections/{collection_name}/points/recommend/batch": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -5319,6 +5324,7 @@
     },
     "/collections/{collection_name}/points/recommend/groups": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -5427,6 +5433,7 @@
     },
     "/collections/{collection_name}/points/discover": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
@@ -5538,6 +5545,7 @@
     },
     "/collections/{collection_name}/points/discover/batch": {
       "post": {
+        "deprecated": true,
         "tags": [
           "Search"
         ],
