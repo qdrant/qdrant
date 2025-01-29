@@ -1,9 +1,9 @@
 name: Coverage Report
 
 on:
-  push:
-    branches: [ master, dev ]
   workflow_dispatch: # Trigger from UI for selected branch
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
     coverage:
