@@ -788,7 +788,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
             return Ok(false);
         };
 
-        if last_applied_index - first_entry.index < min_entries_to_compact {
+        if last_applied_index.saturating_sub(first_entry.index) < min_entries_to_compact {
             return Ok(false);
         }
 
