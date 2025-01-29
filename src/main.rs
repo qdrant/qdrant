@@ -61,7 +61,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[allow(non_upper_case_globals)]
 #[cfg(all(
-    not(target_env = "msvc"),
+    target_os = "linux",
     any(target_arch = "x86_64", target_arch = "aarch64")
 ))]
 #[export_name = "malloc_conf"]
