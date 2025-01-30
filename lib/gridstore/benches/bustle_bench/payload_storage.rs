@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blob_store::fixtures::{empty_storage, Payload};
+use gridstore::fixtures::{empty_storage, Payload};
 use bustle::Collection;
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;

@@ -1,4 +1,4 @@
-use blob_store::fixtures::{empty_storage, random_payload};
+use gridstore::fixtures::{empty_storage, random_payload};
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 

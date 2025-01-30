@@ -1,4 +1,4 @@
-use blob_store::Blob;
+use gridstore::Blob;
 use common::delta_pack::{delta_pack, delta_unpack};
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::{double_sort, SparseVector};

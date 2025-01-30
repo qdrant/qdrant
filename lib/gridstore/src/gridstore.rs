@@ -21,7 +21,7 @@ pub(crate) type Result<T> = std::result::Result<T, String>;
 ///
 /// Assumes sequential IDs to the values (0, 1, 2, 3, ...)
 #[derive(Debug)]
-pub struct BlobStore<V> {
+pub struct Gridstore<V> {
     /// Configuration of the storage.
     pub(super) config: StorageConfig,
     /// Holds mapping from `PointOffset` -> `ValuePointer`
@@ -49,7 +49,7 @@ fn decompress_lz4(value: &[u8]) -> Vec<u8> {
     lz4_flex::decompress_size_prepended(value).unwrap()
 }
 
-impl<V: Blob> BlobStore<V> {
+impl<V: Blob> Gridstore<V> {
     /// LZ4 compression
     fn compress(&self, value: Vec<u8>) -> Vec<u8> {
         match self.config.compression {
@@ -104,7 +104,7 @@ impl<V: Blob> BlobStore<V> {
         } else {
             // create folder if it does not exist
             std::fs::create_dir_all(&base_path)
-                .map_err(|err| format!("Failed to create blob_store storage directory: {err}"))?;
+                .map_err(|err| format!("Failed to create gridstore storage directory: {err}"))?;
             Self::new(base_path, create_options)
         }
     }
@@ -492,7 +492,7 @@ impl<V: Blob> BlobStore<V> {
     }
 }
 
-impl<V> BlobStore<V> {
+impl<V> Gridstore<V> {
     /// The number of blocks needed for a given value bytes size
     fn blocks_for_value(value_size: usize, block_size: usize) -> u32 {
         value_size.div_ceil(block_size).try_into().unwrap()
@@ -852,7 +852,7 @@ mod tests {
         drop(storage);
 
         // reopen storage
-        let storage = BlobStore::<Payload>::open(dir.path().to_path_buf()).unwrap();
+        let storage = Gridstore::<Payload>::open(dir.path().to_path_buf()).unwrap();
         // assert same size
         assert_eq!(storage.get_storage_size_bytes(), before_size);
         // assert same length
@@ -929,7 +929,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
         {
-            let mut storage = BlobStore::new(path.clone(), Default::default()).unwrap();
+            let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
             storage.put_value(0, &payload, &hw_counter).unwrap();
             assert_eq!(storage.pages.len(), 1);
 
@@ -946,7 +946,7 @@ mod tests {
         }
 
         // reopen storage
-        let storage = BlobStore::<Payload>::open(path.clone()).unwrap();
+        let storage = Gridstore::<Payload>::open(path.clone()).unwrap();
         assert_eq!(storage.pages.len(), 1);
 
         let stored_payload = storage.get_value(0, &hw_counter);
@@ -959,7 +959,7 @@ mod tests {
     fn test_with_real_hm_data() {
         const EXPECTED_LEN: usize = 105_542;
 
-        fn write_data(storage: &mut BlobStore<Payload>, init_offset: u32) -> u32 {
+        fn write_data(storage: &mut Gridstore<Payload>, init_offset: u32) -> u32 {
             let csv_path = dataset::Dataset::HMArticles
                 .download()
                 .expect("download should succeed");
@@ -988,7 +988,7 @@ mod tests {
         }
 
         fn storage_double_pass_is_consistent(
-            storage: &BlobStore<Payload>,
+            storage: &Gridstore<Payload>,
             right_shift_offset: u32,
         ) {
             // validate storage value equality between the two writes
@@ -1041,7 +1041,7 @@ mod tests {
         drop(storage);
 
         // reopen storage
-        let mut storage = BlobStore::open(dir.path().to_path_buf()).unwrap();
+        let mut storage = Gridstore::open(dir.path().to_path_buf()).unwrap();
         assert_eq!(point_offset, EXPECTED_LEN as u32 * 2);
         assert_eq!(storage.pages.len(), 4);
         assert_eq!(storage.tracker.read().mapping_len(), EXPECTED_LEN * 2);
@@ -1102,7 +1102,7 @@ mod tests {
             block_size_bytes: Some(block_size_bytes),
             ..Default::default()
         };
-        let mut storage = BlobStore::new(dir.path().to_path_buf(), options).unwrap();
+        let mut storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
         let payload = minimal_payload();

@@ -1,4 +1,4 @@
-# blob_store
+# gridstore
 
 New storage for variable-sized values using mmap.
 

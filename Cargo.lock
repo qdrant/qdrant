@@ -826,31 +826,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "blob_store"
-version = "0.1.0"
-dependencies = [
- "bitvec",
- "bustle",
- "common",
- "criterion",
- "csv",
- "dataset",
- "io",
- "itertools 0.14.0",
- "lz4_flex",
- "memmap2",
- "memory",
- "parking_lot",
- "proptest",
- "rand 0.9.0",
- "rocksdb",
- "rstest",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "block-buffer"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2358,6 +2333,31 @@ dependencies = [
  "presser",
  "thiserror 1.0.69",
  "windows 0.57.0",
+]
+
+[[package]]
+name = "gridstore"
+version = "0.1.0"
+dependencies = [
+ "bitvec",
+ "bustle",
+ "common",
+ "criterion",
+ "csv",
+ "dataset",
+ "io",
+ "itertools 0.14.0",
+ "lz4_flex",
+ "memmap2",
+ "memory",
+ "parking_lot",
+ "proptest",
+ "rand 0.9.0",
+ "rocksdb",
+ "rstest",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -5719,7 +5719,6 @@ dependencies = [
  "bincode",
  "bitpacking",
  "bitvec",
- "blob_store",
  "byteorder",
  "cc",
  "cgroups-rs",
@@ -5736,6 +5735,7 @@ dependencies = [
  "geo",
  "geohash",
  "gpu",
+ "gridstore",
  "half 2.4.1",
  "http 1.2.0",
  "indexmap 2.7.1",
@@ -6153,11 +6153,11 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "bitpacking",
- "blob_store",
  "common",
  "criterion",
  "dataset",
  "generic-tests",
+ "gridstore",
  "half 2.4.1",
  "indicatif",
  "io",

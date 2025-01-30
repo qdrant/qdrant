@@ -5,7 +5,7 @@ use serde_json::Map;
 use tempfile::{Builder, TempDir};
 
 use crate::config::StorageOptions;
-use crate::{Blob, BlobStore};
+use crate::{Blob, Gridstore};
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Payload(pub Map<String, serde_json::Value>);
@@ -27,20 +27,20 @@ impl Blob for Payload {
 }
 
 /// Create an empty storage with the default configuration
-pub fn empty_storage() -> (TempDir, BlobStore<Payload>) {
+pub fn empty_storage() -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
-    let storage = BlobStore::new(dir.path().to_path_buf(), Default::default()).unwrap();
+    let storage = Gridstore::new(dir.path().to_path_buf(), Default::default()).unwrap();
     (dir, storage)
 }
 
 /// Create an empty storage with a specific page size
-pub fn empty_storage_sized(page_size: usize) -> (TempDir, BlobStore<Payload>) {
+pub fn empty_storage_sized(page_size: usize) -> (TempDir, Gridstore<Payload>) {
     let dir = Builder::new().prefix("test-storage").tempdir().unwrap();
     let options = StorageOptions {
         page_size_bytes: Some(page_size),
         ..Default::default()
     };
-    let storage = BlobStore::new(dir.path().to_path_buf(), options).unwrap();
+    let storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
     (dir, storage)
 }
 

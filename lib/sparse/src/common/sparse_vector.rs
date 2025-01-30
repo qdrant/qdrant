@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
-use blob_store::Blob;
+use gridstore::Blob;
 use common::types::ScoreType;
 use itertools::Itertools;
 use schemars::JsonSchema;
