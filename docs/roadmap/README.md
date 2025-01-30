@@ -12,7 +12,7 @@ Goals of the release:
 
 * **Maintain easy upgrades** - we plan to keep backward compatibility for at least one minor version back (this stays the same in 2025)
   * We plan to maintain forward client compatibility for multiple minor versions. Version incompatibility will be announced in the release notes. Also, we will track version compatibility between server and client automatically, and notify you if something is out of sync.
-  * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one minor version.
+  * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one or more minor versions.
   * Storage should be compatible between any two consequent versions, so you can upgrade Qdrant with automatic data migration between consecutive versions.
   * We plan to eventually migrate away from RocksDB, so at some point we might introduce data migration into the upgrade process.
 * **Continue to improve scalability** - Qdrant should be a go-to solution if you are running a billion-scale vector search. We already progressed a lot in this are, but there are a few places we can improve.
