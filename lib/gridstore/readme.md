@@ -27,6 +27,5 @@ New storage for variable-sized values using mmap.
 
 ## TODOs
 
-- [ ] test data consistency on panic
 - [ ] dictionary compression to optimize payload key repetition
 - [ ] validate the usage with a block storage via HTTP range requests
