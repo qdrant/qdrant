@@ -1,10 +1,10 @@
 //! Implements Bustle traits for comparing performance against other kv stores.
 #[cfg(feature = "bench_rocksdb")]
 use ::rocksdb::DB;
-use gridstore::fixtures::Payload;
-use gridstore::Gridstore;
 use bustle::{Mix, Workload};
 use fixture::ArcStorage;
+use gridstore::fixtures::Payload;
+use gridstore::Gridstore;
 
 mod fixture;
 mod payload_storage;

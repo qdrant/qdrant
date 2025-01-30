@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use gridstore::config::StorageOptions;
-use gridstore::{Blob, Gridstore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::config::StorageOptions;
+use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
 use serde_json::Value;
 

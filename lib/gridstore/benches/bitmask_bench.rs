@@ -1,7 +1,7 @@
 use bitvec::vec::BitVec;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use gridstore::bitmask::Bitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::Rng;
 
 pub fn bench_bitmask_ops(c: &mut Criterion) {

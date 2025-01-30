@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use bitvec::slice::BitSlice;
-use gridstore::config::{Compression, StorageOptions};
-use gridstore::Gridstore;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use gridstore::config::{Compression, StorageOptions};
+use gridstore::Gridstore;
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 

@@ -1,8 +1,8 @@
 pub mod bitmask;
 pub mod blob;
-mod gridstore;
 pub mod config;
 pub mod fixtures;
+mod gridstore;
 mod page;
 mod tracker;
 
