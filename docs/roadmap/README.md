@@ -15,7 +15,7 @@ Goals of the release:
   * That means that you can upgrade Qdrant without any downtime and without any changes in your client code within one or more minor versions.
   * Storage should be compatible between any two consequent versions, so you can upgrade Qdrant with automatic data migration between consecutive versions.
   * We plan to eventually migrate away from RocksDB, so at some point we might introduce data migration into the upgrade process.
-* **Continue to improve scalability** - Qdrant should be a go-to solution if you are running a billion-scale vector search. We already progressed a lot in this are, but there are a few places we can improve.
+* **Continue to improve scalability** - Qdrant should be a go-to solution if you are running a billion-scale vector search. We already progressed a lot in this area, but there are still a few places where we can improve.
 * **Focus on vector similarity** - we believe that vector similarity is not only about search. Vector similarity reveals the structure of your data, even if you don't have specific search queries. We plan to introduce more functions, demos and tutorials targeting this use-case.
 * **End-to-end processing** - We plan to introduce tighter integration with embedding providers, so close gap between local development and production deployment.
 * **Serverless** - In 2025 we plan to make Qdrant serverless-ready. Unlike other solutions, we don't plan to make a separate serverless product, but to make Qdrant itself serverless-ready. This means that you can run Qdrant in a serverless environment and pay only for the resources you use.
