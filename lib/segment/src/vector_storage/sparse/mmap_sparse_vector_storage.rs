@@ -4,11 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use bitvec::slice::BitSlice;
-use blob_store::config::{Compression, StorageOptions};
-use blob_store::BlobStore;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
+use gridstore::config::{Compression, StorageOptions};
+use gridstore::Gridstore;
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -30,7 +30,7 @@ const BITSLICE_GROWTH_SLACK: usize = 1024;
 /// Memory-mapped mutable sparse vector storage.
 #[derive(Debug)]
 pub struct MmapSparseVectorStorage {
-    storage: Arc<RwLock<BlobStore<StoredSparseVector>>>,
+    storage: Arc<RwLock<Gridstore<StoredSparseVector>>>,
     /// BitSlice for deleted flags. Grows dynamically upto last set flag.
     deleted: DynamicMmapFlags, // TODO currently eagerly flushed outside of the flushing sequence
     /// Current number of deleted vectors.
@@ -55,7 +55,7 @@ impl MmapSparseVectorStorage {
 
         // Storage
         let storage_dir = path.join(STORAGE_DIRNAME);
-        let storage = BlobStore::open(storage_dir).map_err(|err| {
+        let storage = Gridstore::open(storage_dir).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to open mmap sparse vector storage: {err}"
             ))
@@ -92,7 +92,7 @@ impl MmapSparseVectorStorage {
             ..Default::default()
         };
 
-        let storage = BlobStore::new(storage_dir, storage_config).map_err(|err| {
+        let storage = Gridstore::new(storage_dir, storage_config).map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to create storage for mmap sparse vectors: {err}"
             ))

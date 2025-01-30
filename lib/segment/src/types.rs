@@ -1092,7 +1092,7 @@ pub enum SparseVectorStorageType {
     // (rocksdb storage)
     OnDisk,
     /// Storage in memory maps
-    // (blob_store storage)
+    // (gridstore storage)
     #[default]
     Mmap,
 }
