@@ -685,7 +685,7 @@ impl ShardOperation for RemoteShard {
         _search_runtime_handle: &Handle,
         order_by: Option<&OrderBy>,
         timeout: Option<Duration>,
-        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement) fill this with response data
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "scroll")?;
         let scroll_points = ScrollPoints {
@@ -718,6 +718,16 @@ impl ShardOperation for RemoteShard {
 
         // We need the `____ordered_with____` value even if the user didn't request payload
         let parse_payload = with_payload_interface.is_required() || order_by.is_some();
+
+        if let Some(usage) = scroll_response.usage {
+            hw_measurement_acc.accumulate_request(
+                usage.cpu as usize,
+                usage.payload_io_read as usize,
+                usage.payload_io_write as usize,
+                usage.vector_io_read as usize,
+                usage.vector_io_write as usize,
+            );
+        }
 
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
             .result
@@ -793,6 +803,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
         }
@@ -863,6 +874,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
         }
@@ -884,7 +896,7 @@ impl ShardOperation for RemoteShard {
         with_vector: &WithVector,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement): uncomment below and use this parameter
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         let processed_timeout = Self::process_read_timeout(timeout, "retrieve")?;
         let get_points = GetPoints {
@@ -912,14 +924,15 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        // TODO(io_measurement) implement
-        // if let Some(usage) = usage {
-        //     hw_measurement_acc.accumulate_request(
-        //         usage.cpu as usize,
-        //         usage.io_read as usize,
-        //         usage.io_write as usize,
-        //     );
-        // }
+        if let Some(usage) = get_response.usage {
+            hw_measurement_acc.accumulate_request(
+                usage.cpu as usize,
+                usage.payload_io_read as usize,
+                usage.payload_io_write as usize,
+                usage.vector_io_read as usize,
+                usage.vector_io_write as usize,
+            );
+        }
 
         let result: Result<Vec<RecordInternal>, Status> = get_response
             .result
@@ -979,6 +992,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
         }

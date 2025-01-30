@@ -689,7 +689,7 @@ pub async fn scroll(
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
         result: points,
         time: timing.elapsed().as_secs_f64(),
-        // usage: request_hw_counter.to_grpc_api(), // TODO(io_measurement): add to API!
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -812,7 +812,7 @@ pub async fn get(
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),
         time: timing.elapsed().as_secs_f64(),
-        // usage: request_hw_counter.to_grpc_api(), // TODO(io_measurement): add to API!
+        usage: request_hw_counter.to_grpc_api(),
     };
 
     Ok(Response::new(response))
