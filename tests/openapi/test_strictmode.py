@@ -856,7 +856,10 @@ def test_strict_mode_read_rate_limiting(collection_name):
         if not response.ok:
             failed_count += 1
             assert response.status_code == 429
-            assert "Rate limiting exceeded: Read rate limit exceeded, retry later" in response.json()['status']['error']
+            assert "Rate limiting exceeded: Read rate limit exceeded" in response.json()['status']['error']
+            assert response.headers['Retry-After'] is not None
+            # need to wait 59s for the single token available to be replenished
+            assert int(response.headers['Retry-After']) is 59
 
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
@@ -1010,7 +1013,10 @@ def test_strict_mode_write_rate_limiting(collection_name):
         if not response.ok:
             failed_count += 1
             assert response.status_code == 429
-            assert "Rate limiting exceeded: Write rate limit exceeded, retry later" in response.json()['status']['error']
+            assert "Rate limiting exceeded: Write rate limit exceeded" in response.json()['status']['error']
+            assert response.headers['Retry-After'] is not None
+            # need to wait 59s for the single token available to be replenished
+            assert int(response.headers['Retry-After']) is 59
 
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
