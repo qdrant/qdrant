@@ -58,19 +58,18 @@ impl DatabaseColumnScheduledUpdateWrapper {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let pending_operations = mem::take(&mut *self.pending_operations.lock());
-        let ids_to_insert = pending_operations.inserted;
-        let ids_to_delete = pending_operations.deleted;
+        let PendingOperations { deleted, inserted } =
+            mem::take(&mut *self.pending_operations.lock());
         debug_assert!(
-            ids_to_insert.keys().all(|key| !ids_to_delete.contains(key)),
+            inserted.keys().all(|key| !deleted.contains(key)),
             "Key to marked for insertion is also marked for deletion!"
         );
         let wrapper = self.db.clone();
         Box::new(move || {
-            for id in ids_to_delete {
+            for id in deleted {
                 wrapper.remove(id)?;
             }
-            for (id, value) in ids_to_insert {
+            for (id, value) in inserted {
                 wrapper.put(id, value)?;
             }
             wrapper.flusher()()
