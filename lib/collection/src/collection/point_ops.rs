@@ -416,6 +416,9 @@ impl Collection {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
+        if request.ids.is_empty() {
+            return Ok(Vec::new());
+        }
         let with_payload_interface = request
             .with_payload
             .as_ref()
