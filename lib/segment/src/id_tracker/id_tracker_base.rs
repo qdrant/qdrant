@@ -162,6 +162,10 @@ pub trait IdTracker: fmt::Debug {
     fn cleanup_versions(&mut self) -> OperationResult<()>;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+        Vec::new()
+    }
 }
 
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;

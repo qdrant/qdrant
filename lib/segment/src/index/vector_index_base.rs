@@ -35,6 +35,10 @@ pub trait VectorIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
+    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+        Vec::new()
+    }
+
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;
 

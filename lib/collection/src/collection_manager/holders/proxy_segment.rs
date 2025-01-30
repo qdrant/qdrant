@@ -16,7 +16,7 @@ use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorInternal};
-use segment::entry::entry_point::SegmentEntry;
+use segment::entry::entry_point::{SegmentEntry, SegmentManifest};
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -1266,6 +1266,19 @@ impl SegmentEntry for ProxySegment {
         )?;
 
         Ok(())
+    }
+
+    fn take_partial_snapshot(
+        &self,
+        _temp_path: &Path,
+        _tar: &tar_ext::BuilderExt,
+        _manifest: &SegmentManifest,
+    ) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        todo!()
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {

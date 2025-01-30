@@ -75,6 +75,10 @@ pub trait PayloadStorage {
     /// RocksDB storages are captured outside of this trait.
     fn files(&self) -> Vec<PathBuf>;
 
+    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+        Vec::new()
+    }
+
     /// Return storage size in bytes
     fn get_storage_size_bytes(&self) -> OperationResult<usize>;
 }

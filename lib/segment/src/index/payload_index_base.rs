@@ -143,4 +143,8 @@ pub trait PayloadIndex {
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()>;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+        Vec::new()
+    }
 }
