@@ -1879,43 +1879,19 @@ mod tests {
     #[test]
     fn test_point_vector_count_multivec() {
         use segment::segment_constructor::build_segment;
-        use segment::types::{Distance, Indexes, VectorDataConfig, VectorStorageType};
+        use segment::segment_constructor::simple_segment_constructor::{
+            build_multivec_segment, VECTOR1_NAME, VECTOR2_NAME,
+        };
+        use segment::types::Distance;
 
         // Create proxied multivec segment
         let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
         let dim = 1;
-        let config = SegmentConfig {
-            vector_data: HashMap::from([
-                (
-                    "a".into(),
-                    VectorDataConfig {
-                        size: dim,
-                        distance: Distance::Dot,
-                        storage_type: VectorStorageType::Memory,
-                        index: Indexes::Plain {},
-                        quantization_config: None,
-                        multivector_config: None,
-                        datatype: None,
-                    },
-                ),
-                (
-                    "b".into(),
-                    VectorDataConfig {
-                        size: dim,
-                        distance: Distance::Dot,
-                        storage_type: VectorStorageType::Memory,
-                        index: Indexes::Plain {},
-                        quantization_config: None,
-                        multivector_config: None,
-                        datatype: None,
-                    },
-                ),
-            ]),
-            sparse_vector_data: Default::default(),
-            payload_storage_type: Default::default(),
-        };
-        let mut original_segment = build_segment(dir.path(), &config, true).unwrap();
-        let write_segment = build_segment(dir.path(), &config, true).unwrap();
+
+        let mut original_segment =
+            build_multivec_segment(dir.path(), dim, dim, Distance::Dot).unwrap();
+        let write_segment =
+            build_segment(dir.path(), &original_segment.segment_config, true).unwrap();
 
         let hw_cell = HardwareCounterCell::new();
 
@@ -1923,7 +1899,10 @@ mod tests {
             .upsert_point(
                 100,
                 4.into(),
-                NamedVectors::from_pairs([("a".into(), vec![0.4]), ("b".into(), vec![0.5])]),
+                NamedVectors::from_pairs([
+                    (VECTOR1_NAME.into(), vec![0.4]),
+                    (VECTOR2_NAME.into(), vec![0.5]),
+                ]),
                 &hw_cell,
             )
             .unwrap();
@@ -1931,7 +1910,10 @@ mod tests {
             .upsert_point(
                 101,
                 6.into(),
-                NamedVectors::from_pairs([("a".into(), vec![0.6]), ("b".into(), vec![0.7])]),
+                NamedVectors::from_pairs([
+                    (VECTOR1_NAME.into(), vec![0.6]),
+                    (VECTOR2_NAME.into(), vec![0.7]),
+                ]),
                 &hw_cell,
             )
             .unwrap();
@@ -1956,7 +1938,7 @@ mod tests {
             .upsert_point(
                 102,
                 8.into(),
-                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+                NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
                 &hw_cell,
             )
             .unwrap();
@@ -1964,7 +1946,7 @@ mod tests {
             .upsert_point(
                 103,
                 10.into(),
-                NamedVectors::from_pairs([("b".into(), vec![1.0])]),
+                NamedVectors::from_pairs([(VECTOR2_NAME.into(), vec![1.0])]),
                 &hw_cell,
             )
             .unwrap();
@@ -1986,7 +1968,7 @@ mod tests {
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
         proxy_segment
-            .delete_vector(106, 6.into(), "a", &hw_cell)
+            .delete_vector(106, 6.into(), VECTOR1_NAME, &hw_cell)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -1994,7 +1976,7 @@ mod tests {
 
         // Deleting it again shouldn't chain anything
         proxy_segment
-            .delete_vector(107, 6.into(), "a", &hw_cell)
+            .delete_vector(107, 6.into(), VECTOR1_NAME, &hw_cell)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -2005,7 +1987,7 @@ mod tests {
             .upsert_point(
                 108,
                 8.into(),
-                NamedVectors::from_pairs([("a".into(), vec![0.0])]),
+                NamedVectors::from_pairs([(VECTOR1_NAME.into(), vec![0.0])]),
                 &hw_cell,
             )
             .unwrap();
@@ -2018,7 +2000,10 @@ mod tests {
             .upsert_point(
                 109,
                 8.into(),
-                NamedVectors::from_pairs([("a".into(), vec![0.0]), ("b".into(), vec![0.0])]),
+                NamedVectors::from_pairs([
+                    (VECTOR1_NAME.into(), vec![0.0]),
+                    (VECTOR2_NAME.into(), vec![0.0]),
+                ]),
                 &hw_cell,
             )
             .unwrap();

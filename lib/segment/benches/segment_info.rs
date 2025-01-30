@@ -1,38 +1,18 @@
-use std::collections::HashMap;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{criterion_group, criterion_main, Criterion};
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
-use segment::segment_constructor::build_segment;
-use segment::types::{
-    Distance, Indexes, Payload, PayloadFieldSchema, PayloadSchemaType, SegmentConfig,
-    VectorDataConfig, VectorStorageType,
-};
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::types::{Distance, Payload, PayloadFieldSchema, PayloadSchemaType};
 use serde_json::{Map, Value};
 use tempfile::Builder;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let dim = 400;
-    let config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: dim,
-                distance: Distance::Dot,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+
+    let mut segment = build_simple_segment(dir.path(), dim, Distance::Dot).unwrap();
 
     let vector = vec![0.1f32; 400];
 
