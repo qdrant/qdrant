@@ -291,6 +291,7 @@ paths:
 
   /collections/{collection_name}/points/search:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Search points
@@ -327,6 +328,7 @@ paths:
 
   /collections/{collection_name}/points/search/batch:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Search batch points
@@ -363,6 +365,7 @@ paths:
 
   /collections/{collection_name}/points/search/groups:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Search point groups
@@ -399,6 +402,7 @@ paths:
 
   /collections/{collection_name}/points/recommend:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Recommend points
@@ -435,6 +439,7 @@ paths:
 
   /collections/{collection_name}/points/recommend/batch:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Recommend batch points
@@ -471,6 +476,7 @@ paths:
 
   /collections/{collection_name}/points/recommend/groups:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Recommend point groups
@@ -507,6 +513,7 @@ paths:
 
   /collections/{collection_name}/points/discover:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Discover points
@@ -558,6 +565,7 @@ paths:
 
   /collections/{collection_name}/points/discover/batch:
     post:
+      deprecated: true
       tags:
         - Search
       summary: Discover batch points
