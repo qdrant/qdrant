@@ -1,14 +1,17 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use super::hardware_counter::HardwareCounterCell;
+
 /// Data structure, that routes hardware measurement counters to specific location.
 /// Shared drain MUST NOT create its own counters, but only hold a reference to the existing one,
 /// as it doesn't provide any checks on drop.
 #[derive(Debug)]
 pub struct HwSharedDrain {
     pub(crate) cpu_counter: Arc<AtomicUsize>,
-    pub(crate) io_read_counter: Arc<AtomicUsize>,
-    pub(crate) io_write_counter: Arc<AtomicUsize>,
+    pub(crate) payload_io_read_counter: Arc<AtomicUsize>,
+    pub(crate) payload_io_write_counter: Arc<AtomicUsize>,
+    pub(crate) vector_io_write_counter: Arc<AtomicUsize>,
 }
 
 impl HwSharedDrain {
@@ -16,19 +19,29 @@ impl HwSharedDrain {
         self.cpu_counter.load(Ordering::Relaxed)
     }
 
-    pub fn get_io_read(&self) -> usize {
-        self.io_read_counter.load(Ordering::Relaxed)
+    pub fn get_payload_io_read(&self) -> usize {
+        self.payload_io_read_counter.load(Ordering::Relaxed)
     }
 
-    pub fn get_io_write(&self) -> usize {
-        self.io_write_counter.load(Ordering::Relaxed)
+    pub fn get_payload_io_write(&self) -> usize {
+        self.payload_io_write_counter.load(Ordering::Relaxed)
     }
 
-    fn new(cpu: Arc<AtomicUsize>, io_read: Arc<AtomicUsize>, io_write: Arc<AtomicUsize>) -> Self {
+    pub fn get_vector_io_write(&self) -> usize {
+        self.vector_io_write_counter.load(Ordering::Relaxed)
+    }
+
+    fn new(
+        cpu: Arc<AtomicUsize>,
+        payload_io_read: Arc<AtomicUsize>,
+        payload_io_write: Arc<AtomicUsize>,
+        vector_io_write: Arc<AtomicUsize>,
+    ) -> Self {
         Self {
             cpu_counter: cpu,
-            io_read_counter: io_read,
-            io_write_counter: io_write,
+            payload_io_read_counter: payload_io_read,
+            payload_io_write_counter: payload_io_write,
+            vector_io_write_counter: vector_io_write,
         }
     }
 }
@@ -37,8 +50,9 @@ impl Clone for HwSharedDrain {
     fn clone(&self) -> Self {
         Self::new(
             self.cpu_counter.clone(),
-            self.io_read_counter.clone(),
-            self.io_write_counter.clone(),
+            self.payload_io_read_counter.clone(),
+            self.payload_io_write_counter.clone(),
+            self.vector_io_write_counter.clone(),
         )
     }
 }
@@ -46,8 +60,9 @@ impl Default for HwSharedDrain {
     fn default() -> Self {
         Self {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
-            io_read_counter: Arc::new(AtomicUsize::new(0)),
-            io_write_counter: Arc::new(AtomicUsize::new(0)),
+            payload_io_read_counter: Arc::new(AtomicUsize::new(0)),
+            payload_io_write_counter: Arc::new(AtomicUsize::new(0)),
+            vector_io_write_counter: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -79,6 +94,11 @@ impl HwMeasurementAcc {
         }
     }
 
+    /// Returns a new `HardwareCounterCell` that accumulates it's measurements to the same parent than this `HwMeasurementAcc`.
+    pub fn get_counter_cell(&self) -> HardwareCounterCell {
+        HardwareCounterCell::new_with_accumulator(self.clone())
+    }
+
     pub fn new_with_metrics_drain(metrics_drain: HwSharedDrain) -> Self {
         Self {
             request_drain: HwSharedDrain::default(),
@@ -86,50 +106,63 @@ impl HwMeasurementAcc {
         }
     }
 
-    pub fn accumulate(&self, cpu: usize, io_read: usize, io_write: usize) {
-        let HwSharedDrain {
-            cpu_counter,
-            io_read_counter,
-            io_write_counter,
-        } = &self.request_drain;
-        cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
-        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
+    pub fn accumulate(
+        &self,
+        cpu: usize,
+        payload_io_read: usize,
+        payload_io_write: usize,
+        vector_io_write: usize,
+    ) {
+        self.accumulate_request(cpu, payload_io_read, payload_io_write, vector_io_write);
 
         let HwSharedDrain {
             cpu_counter,
-            io_read_counter,
-            io_write_counter,
+            payload_io_read_counter,
+            payload_io_write_counter,
+            vector_io_write_counter,
         } = &self.metrics_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
-        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
+        payload_io_read_counter.fetch_add(payload_io_read, Ordering::Relaxed);
+        payload_io_write_counter.fetch_add(payload_io_write, Ordering::Relaxed);
+        vector_io_write_counter.fetch_add(vector_io_write, Ordering::Relaxed);
     }
 
     /// Accumulate usage values for request drain only
     /// This is useful if we want to report usage, which happened on another machine
     /// So we don't want to accumulate the same usage on the current machine second time
-    pub fn accumulate_request(&self, cpu: usize, io_read: usize, io_write: usize) {
+    pub fn accumulate_request(
+        &self,
+        cpu: usize,
+        payload_io_read: usize,
+        payload_io_write: usize,
+        vector_io_write: usize,
+    ) {
         let HwSharedDrain {
             cpu_counter,
-            io_read_counter,
-            io_write_counter,
+            payload_io_read_counter,
+            payload_io_write_counter,
+            vector_io_write_counter,
         } = &self.request_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-        io_read_counter.fetch_add(io_read, Ordering::Relaxed);
-        io_write_counter.fetch_add(io_write, Ordering::Relaxed);
+        payload_io_read_counter.fetch_add(payload_io_read, Ordering::Relaxed);
+        payload_io_write_counter.fetch_add(payload_io_write, Ordering::Relaxed);
+        vector_io_write_counter.fetch_add(vector_io_write, Ordering::Relaxed);
     }
 
     pub fn get_cpu(&self) -> usize {
         self.request_drain.get_cpu()
     }
 
-    pub fn get_io_read(&self) -> usize {
-        self.request_drain.get_io_read()
+    pub fn get_payload_io_read(&self) -> usize {
+        self.request_drain.get_payload_io_read()
     }
 
-    pub fn get_io_write(&self) -> usize {
-        self.request_drain.get_io_write()
+    pub fn get_payload_io_write(&self) -> usize {
+        self.request_drain.get_payload_io_write()
+    }
+
+    pub fn get_vector_io_write(&self) -> usize {
+        self.request_drain.get_vector_io_write()
     }
 }
 

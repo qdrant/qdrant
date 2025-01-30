@@ -230,7 +230,7 @@ impl<V: Blob> BlobStore<V> {
 
         let raw = self.read_from_pages(page_id, block_offset, length);
 
-        hw_counter.io_read_counter().incr_delta(raw.len());
+        hw_counter.payload_io_read_counter().incr_delta(raw.len());
 
         let decompressed = self.decompress(raw);
         let value = V::from_bytes(&decompressed);
@@ -380,7 +380,7 @@ impl<V: Blob> BlobStore<V> {
         let comp_value = self.compress(value_bytes);
         let value_size = comp_value.len();
 
-        hw_counter.io_write_counter().incr_delta(value_size);
+        hw_counter.payload_io_write_counter().incr_delta(value_size);
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =

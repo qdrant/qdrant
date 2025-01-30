@@ -12446,8 +12446,9 @@
         "type": "object",
         "required": [
           "cpu",
-          "io_read",
-          "io_write"
+          "payload_io_read",
+          "payload_io_write",
+          "vector_io_write"
         ],
         "properties": {
           "cpu": {
@@ -12455,12 +12456,17 @@
             "format": "uint",
             "minimum": 0
           },
-          "io_read": {
+          "payload_io_read": {
             "type": "integer",
             "format": "uint",
             "minimum": 0
           },
-          "io_write": {
+          "payload_io_write": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "vector_io_write": {
             "type": "integer",
             "format": "uint",
             "minimum": 0

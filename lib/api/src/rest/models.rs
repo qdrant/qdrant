@@ -52,8 +52,9 @@ pub struct ApiResponse<D> {
 #[serde(rename_all = "snake_case")]
 pub struct HardwareUsage {
     pub cpu: usize,
-    pub io_read: usize,
-    pub io_write: usize,
+    pub payload_io_read: usize,
+    pub payload_io_write: usize,
+    pub vector_io_write: usize,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]

@@ -171,10 +171,9 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
     }
 
     fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): implement
         self.storage
             .read()
-            .get_value(key, &hw_counter)
+            .get_value(key, &HardwareCounterCell::disposable()) // Vector storage read IO not measured
             .map(SparseVector::try_from)
             .transpose()
     }

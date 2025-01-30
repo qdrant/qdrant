@@ -93,9 +93,7 @@ impl QueryContext {
         SegmentQueryContext {
             query_context: self,
             deleted_points: None,
-            hardware_counter: HardwareCounterCell::new_with_accumulator(
-                self.hardware_usage_accumulator.clone(),
-            ),
+            hardware_counter: self.hardware_usage_accumulator.get_counter_cell(),
         }
     }
 
