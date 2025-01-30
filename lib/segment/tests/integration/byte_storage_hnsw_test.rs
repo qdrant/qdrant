@@ -14,6 +14,7 @@ use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_p
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Range, SearchParams,
     SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
@@ -120,22 +121,6 @@ fn test_byte_storage_hnsw(
     let dir_byte = Builder::new().prefix("segment_dir_byte").tempdir().unwrap();
     let hnsw_dir_byte = Builder::new().prefix("hnsw_dir_byte").tempdir().unwrap();
 
-    let config_float = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: dim,
-                distance,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
     let config_byte = SegmentConfig {
         vector_data: HashMap::from([(
             DEFAULT_VECTOR_NAME.to_owned(),
@@ -155,7 +140,7 @@ fn test_byte_storage_hnsw(
 
     let int_key = "int";
 
-    let mut segment_float = build_segment(dir_float.path(), &config_float, true).unwrap();
+    let mut segment_float = build_simple_segment(dir_float.path(), dim, distance).unwrap();
     let mut segment_byte = build_segment(dir_byte.path(), &config_byte, true).unwrap();
     // check that `segment_byte` uses byte or half storage
     {

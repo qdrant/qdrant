@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -19,12 +19,13 @@ use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
     CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes,
     ProductQuantizationConfig, QuantizationConfig, QuantizationSearchParams,
-    ScalarQuantizationConfig, SearchParams, SegmentConfig, VectorDataConfig, VectorStorageType,
+    ScalarQuantizationConfig, SearchParams,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use tempfile::Builder;
@@ -62,26 +63,9 @@ fn hnsw_quantized_search_test(
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
 
-    let config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: dim,
-                distance,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
-
     let hw_counter = HardwareCounterCell::new();
 
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);

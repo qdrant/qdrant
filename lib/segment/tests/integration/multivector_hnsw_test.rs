@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -19,12 +18,13 @@ use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::VectorIndex;
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
+use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, MultiVectorConfig,
-    PayloadSchemaType, SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, MultiVectorConfig, PayloadSchemaType,
+    SeqNumberType,
 };
 use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use segment::vector_storage::VectorStorage;
@@ -41,26 +41,9 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
-    let config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: dim,
-                distance,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
-
     let int_key = "int";
 
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
     segment
         .create_field_index(

@@ -11,9 +11,9 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
-    build_multivec_segment, build_simple_segment,
+    build_multivec_segment, build_simple_segment, VECTOR1_NAME, VECTOR2_NAME,
 };
-use segment::types::{Distance, Payload, PointIdType, SeqNumberType, VectorName};
+use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::optimizers::indexing_optimizer::IndexingOptimizer;
@@ -22,9 +22,6 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
-
-pub const VECTOR1_NAME: &VectorName = "vector1";
-pub const VECTOR2_NAME: &VectorName = "vector2";
 
 pub fn empty_segment(path: &Path) -> Segment {
     build_simple_segment(path, 4, Distance::Dot).unwrap()

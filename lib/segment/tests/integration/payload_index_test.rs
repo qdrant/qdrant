@@ -36,6 +36,7 @@ use segment::payload_storage::PayloadStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::PayloadFieldSchema::{FieldParams, FieldType};
 use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
@@ -339,25 +340,8 @@ impl TestSegments {
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
     let mut rnd = StdRng::seed_from_u64(42);
 
-    let config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: DIM,
-                distance: Distance::Dot,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
-
-    let mut plain_segment = build_segment(path_plain, &config, true).unwrap();
-    let mut struct_segment = build_segment(path_struct, &config, true).unwrap();
+    let mut plain_segment = build_simple_segment(path_plain, DIM, Distance::Dot).unwrap();
+    let mut struct_segment = build_simple_segment(path_struct, DIM, Distance::Dot).unwrap();
 
     let num_points = 3000;
     let points_to_delete = 500;
