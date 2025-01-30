@@ -6,8 +6,12 @@ use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::segment::Segment;
 use crate::segment_constructor::build_segment;
 use crate::types::{
-    Distance, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorStorageType,
+    Distance, Indexes, PayloadStorageType, SegmentConfig, VectorDataConfig, VectorName,
+    VectorStorageType,
 };
+
+pub const VECTOR1_NAME: &VectorName = "vector1";
+pub const VECTOR2_NAME: &VectorName = "vector2";
 
 /// Build new segment with plain index in given directory
 ///
@@ -78,7 +82,7 @@ pub fn build_multivec_segment(
 ) -> OperationResult<Segment> {
     let mut vectors_config = HashMap::new();
     vectors_config.insert(
-        "vector1".into(),
+        VECTOR1_NAME.into(),
         VectorDataConfig {
             size: dim1,
             distance,
@@ -90,7 +94,7 @@ pub fn build_multivec_segment(
         },
     );
     vectors_config.insert(
-        "vector2".into(),
+        VECTOR2_NAME.into(),
         VectorDataConfig {
             size: dim2,
             distance,
