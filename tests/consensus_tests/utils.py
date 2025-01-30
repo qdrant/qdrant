@@ -112,7 +112,7 @@ def init_pytest_log_folder() -> str:
 
 
 # Starts a peer and returns its api_uri
-def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False) -> str:
+def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> str:
     if extra_env is None:
         extra_env = {}
     p2p_port = get_port() if port is None else port + 0
@@ -128,12 +128,20 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
+    args = [get_qdrant_exec()]
     env = {
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
 
-    args = [get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri]
+    if uris_in_env:
+        if "QDRANT_BOOTSTRAP" not in env:
+            env["QDRANT_BOOTSTRAP"] = bootstrap_uri
+        if "QDRANT_URI" not in env:
+            env["QDRANT_URI"] = this_peer_consensus_uri
+    else:
+        args.extend(["--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri])
+
     if reinit:
         args.append("--reinit")
 
@@ -143,7 +151,7 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
 
 
 # Starts a peer and returns its api_uri and p2p_uri
-def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, reinit=False) -> Tuple[str, str]:
+def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, reinit=False, uris_in_env=False) -> Tuple[str, str]:
     if extra_env is None:
         extra_env = {}
 
@@ -160,12 +168,18 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
+    args = [get_qdrant_exec()]
     env = {
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
 
-    args = [get_qdrant_exec(), "--uri", bootstrap_uri]
+    if uris_in_env:
+        if "QDRANT_URI" not in env:
+            env["QDRANT_URI"] = bootstrap_uri
+    else:
+        args.extend(["--uri", bootstrap_uri])
+
     if reinit:
         args.append("--reinit")
 
@@ -174,7 +188,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     return get_uri(http_port), bootstrap_uri
 
 
-def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}):
+def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={}, uris_in_env=False):
     assert_project_root()
     peer_dirs = make_peer_folders(tmp_path, num_peers)
 
@@ -183,7 +197,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
 
     # Start bootstrap
     (bootstrap_api_uri, bootstrap_uri) = start_first_peer(peer_dirs[0], "peer_0_0.log", port=port_seed,
-                                                          extra_env=extra_env)
+                                                          extra_env=extra_env, uris_in_env=uris_in_env)
     peer_api_uris.append(bootstrap_api_uri)
 
     # Wait for leader
@@ -194,7 +208,7 @@ def start_cluster(tmp_path, num_peers, port_seed=None, extra_env=None, headers={
     for i in range(1, len(peer_dirs)):
         if port_seed is not None:
             port = port_seed + i * 100
-        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env))
+        peer_api_uris.append(start_peer(peer_dirs[i], f"peer_0_{i}.log", bootstrap_uri, port=port, extra_env=extra_env, uris_in_env=uris_in_env))
 
     # Wait for cluster
     wait_for_uniform_cluster_status(peer_api_uris, leader, headers=headers)
