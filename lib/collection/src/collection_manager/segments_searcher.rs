@@ -4,7 +4,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoreType;
 use futures::stream::FuturesUnordered;
 use futures::{FutureExt, TryStreamExt};
@@ -409,7 +408,7 @@ impl SegmentsSearcher {
         let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
         let mut point_records: HashMap<PointIdType, RecordInternal> = Default::default();
 
-        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc);
+        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         segments
             .read()
@@ -478,7 +477,7 @@ impl SegmentsSearcher {
             .spawn_blocking(move || {
                 let is_stopped = stopping_guard.get_is_stopped();
                 let segments = segments.read();
-                let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc);
+                let hw_counter = hw_measurement_acc.get_counter_cell();
                 let all_points: BTreeSet<_> = segments
                     .non_appendable_then_appendable_segments()
                     .flat_map(|segment| {

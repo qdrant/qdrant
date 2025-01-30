@@ -37,7 +37,9 @@ impl OnDiskPayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let serialized = serde_cbor::to_vec(&point_id).unwrap();
-        hw_counter.io_write_counter().incr_delta(serialized.len());
+        hw_counter
+            .payload_io_write_counter()
+            .incr_delta(serialized.len());
         self.db_wrapper.remove(serialized)
     }
 
@@ -50,7 +52,7 @@ impl OnDiskPayloadStorage {
         let point_id_serialized = serde_cbor::to_vec(&point_id).unwrap();
         let payload_serialized = serde_cbor::to_vec(payload).unwrap();
         hw_counter
-            .io_write_counter()
+            .payload_io_write_counter()
             .incr_delta(point_id_serialized.len() + payload_serialized.len());
         self.db_wrapper.put(point_id_serialized, payload_serialized)
     }
@@ -63,7 +65,7 @@ impl OnDiskPayloadStorage {
         let key = serde_cbor::to_vec(&point_id).unwrap();
         self.db_wrapper
             .get_pinned(&key, |raw| {
-                hw_counter.io_read_counter().incr_delta(raw.len());
+                hw_counter.payload_io_read_counter().incr_delta(raw.len());
                 serde_cbor::from_slice(raw)
             })?
             .transpose()
