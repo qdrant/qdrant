@@ -295,13 +295,12 @@ mod tests {
     use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
     use segment::payload_json;
+    use segment::segment_constructor::simple_segment_constructor::{VECTOR1_NAME, VECTOR2_NAME};
     use segment::types::{Distance, PayloadSchemaType, VectorNameBuf};
     use tempfile::Builder;
 
     use super::*;
-    use crate::collection_manager::fixtures::{
-        random_multi_vec_segment, random_segment, VECTOR1_NAME, VECTOR2_NAME,
-    };
+    use crate::collection_manager::fixtures::{random_multi_vec_segment, random_segment};
     use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder};
     use crate::collection_manager::optimizers::config_mismatch_optimizer::ConfigMismatchOptimizer;
     use crate::collection_manager::segments_updater::{

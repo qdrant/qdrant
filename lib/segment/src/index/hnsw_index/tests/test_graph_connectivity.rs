@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -13,11 +12,9 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::hnsw_index::num_rayon_threads;
-use crate::segment_constructor::{build_segment, VectorIndexBuildArgs};
-use crate::types::{
-    Distance, HnswConfig, Indexes, SegmentConfig, SeqNumberType, VectorDataConfig,
-    VectorStorageType,
-};
+use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
+use crate::segment_constructor::VectorIndexBuildArgs;
+use crate::types::{Distance, HnswConfig, SeqNumberType};
 
 #[test]
 fn test_graph_connectivity() {
@@ -37,24 +34,7 @@ fn test_graph_connectivity() {
 
     let hw_counter = HardwareCounterCell::new();
 
-    let config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: dim,
-                distance,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        payload_storage_type: Default::default(),
-        sparse_vector_data: Default::default(),
-    };
-
-    let mut segment = build_segment(dir.path(), &config, true).unwrap();
+    let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
         let vector = random_vector(&mut rnd, dim);

@@ -11,8 +11,9 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
+use segment::segment_constructor::load_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
-use segment::segment_constructor::{build_segment, load_segment};
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Distance, HnswConfig, Indexes, PayloadFieldSchema, PayloadSchemaParams, PayloadStorageType,
     SegmentConfig, SnapshotFormat, VectorDataConfig, VectorStorageType,
@@ -39,24 +40,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     }"#;
 
     let segment_builder_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
-    let building_config = SegmentConfig {
-        vector_data: HashMap::from([(
-            DEFAULT_VECTOR_NAME.to_owned(),
-            VectorDataConfig {
-                size: 2,
-                distance: Distance::Dot,
-                storage_type: VectorStorageType::Memory,
-                index: Indexes::Plain {},
-                quantization_config: None,
-                multivector_config: None,
-                datatype: None,
-            },
-        )]),
-        sparse_vector_data: Default::default(),
-        payload_storage_type: Default::default(),
-    };
 
-    let mut segment = build_segment(segment_builder_dir.path(), &building_config, true).unwrap();
+    let mut segment = build_simple_segment(segment_builder_dir.path(), 2, Distance::Dot).unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
