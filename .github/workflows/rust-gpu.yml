@@ -32,10 +32,10 @@ jobs:
         sudo apt-get install mesa-vulkan-drivers libvulkan1 vulkan-tools vulkan-validationlayers
         /usr/bin/vulkaninfo --summary
     - name: Build
-      run: cargo build --tests --workspace --features gpu
+      run: cargo build --tests --workspace --features gpu --locked
     - name: Run tests
       # Profile "ci" is configured in .config/nextest.toml
-      run: cargo nextest run --workspace --features gpu --profile ci
+      run: cargo nextest run --workspace --features gpu --profile ci --locked
     - name: Upload test report
       uses: actions/upload-artifact@v4
       with:

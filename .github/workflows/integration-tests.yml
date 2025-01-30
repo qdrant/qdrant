@@ -35,7 +35,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check"
+        run: cargo build --features "service_debug data-consistency-check" --locked
       - name: Run integration tests
         run: poetry -C tests run ./tests/integration-tests.sh
         shell: bash
@@ -65,7 +65,7 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check"
+        run: cargo build --features "service_debug data-consistency-check" --locked
       - name: Run integration tests - 1 peer
         run: poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
@@ -308,7 +308,7 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get install clang jq
       - name: Build
-        run: cargo build --bin qdrant
+        run: cargo build --bin qdrant --locked
       - name: Run Shard Snapshot API Tests (local)
         shell: bash
         run: |
