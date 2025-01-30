@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use blob_store::config::StorageOptions;
-use blob_store::{Blob, BlobStore};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::config::StorageOptions;
+use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
 use serde_json::Value;
 
@@ -28,7 +28,7 @@ impl Blob for Payload {
 
 #[derive(Debug)]
 pub struct MmapPayloadStorage {
-    storage: Arc<RwLock<BlobStore<Payload>>>,
+    storage: Arc<RwLock<Gridstore<Payload>>>,
 }
 
 impl MmapPayloadStorage {
@@ -46,7 +46,7 @@ impl MmapPayloadStorage {
     }
 
     fn open(path: PathBuf) -> OperationResult<Self> {
-        let storage = BlobStore::open(path).map_err(|err| {
+        let storage = Gridstore::open(path).map_err(|err| {
             OperationError::service_error(format!("Failed to open mmap payload storage: {err}"))
         })?;
         let storage = Arc::new(RwLock::new(storage));
@@ -54,7 +54,7 @@ impl MmapPayloadStorage {
     }
 
     fn new(path: PathBuf) -> OperationResult<Self> {
-        let storage = BlobStore::new(path, StorageOptions::default())
+        let storage = Gridstore::new(path, StorageOptions::default())
             .map_err(OperationError::service_error)?;
         let storage = Arc::new(RwLock::new(storage));
         Ok(Self { storage })

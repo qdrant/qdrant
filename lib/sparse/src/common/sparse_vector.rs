@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 use std::hash::Hash;
 
-use blob_store::Blob;
 use common::types::ScoreType;
+use gridstore::Blob;
 use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

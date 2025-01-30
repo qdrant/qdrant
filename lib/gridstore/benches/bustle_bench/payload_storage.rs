@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use blob_store::fixtures::{empty_storage, Payload};
 use bustle::Collection;
 use common::counter::hardware_counter::HardwareCounterCell;
+use gridstore::fixtures::{empty_storage, Payload};
 use parking_lot::RwLock;
 
 use crate::fixture::{ArcStorage, SequentialCollectionHandle, StorageProxy};

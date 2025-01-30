@@ -1,14 +1,14 @@
 use std::fs::File;
 use std::path::Path;
 
-use blob_store::fixtures::{empty_storage, Payload, HM_FIELDS};
 use common::counter::hardware_counter::HardwareCounterCell;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use gridstore::fixtures::{empty_storage, Payload, HM_FIELDS};
 use rand::Rng;
 use serde_json::Value;
 
 /// Insert CSV data into the storage
-fn append_csv_data(storage: &mut blob_store::BlobStore<Payload>, csv_path: &Path) {
+fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path) {
     let csv_file = File::open(csv_path).expect("file should open");
     let mut rdr = csv::Reader::from_reader(csv_file);
     let mut point_offset = storage.max_point_id();
