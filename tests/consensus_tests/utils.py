@@ -122,22 +122,22 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     http_port = get_port() if port is None else port + 2
     _occupy_port(http_port)
 
+    test_log_folder = init_pytest_log_folder()
+    log_file = open(f"{test_log_folder}/{log_file}", "w")
+    this_peer_consensus_uri = get_uri(p2p_port)
+    print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
+          f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
+
     env = {
         **get_env(p2p_port, grpc_port, http_port),
         **extra_env
     }
-    test_log_folder = init_pytest_log_folder()
-    log_file = open(f"{test_log_folder}/{log_file}", "w")
-    print(f"Starting follower peer with bootstrap uri {bootstrap_uri},"
-          f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
-    this_peer_consensus_uri = get_uri(p2p_port)
+    args = [get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri]
     if reinit:
-        proc = Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri, "--reinit"], env=env,
-                     cwd=peer_dir, stdout=log_file)
-    else:
-        proc = Popen([get_qdrant_exec(), "--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri], env=env,
-                 cwd=peer_dir, stdout=log_file)
+        args.append("--reinit")
+
+    proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port)
 
@@ -154,20 +154,22 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     http_port = get_port() if port is None else port + 2
     _occupy_port(http_port)
 
-    env = {
-        **get_env(p2p_port, grpc_port, http_port),
-        **extra_env
-    }
     test_log_folder = init_pytest_log_folder()
     log_file = open(f"{test_log_folder}/{log_file}", "w")
     bootstrap_uri = get_uri(p2p_port)
     print(f"\nStarting first peer with uri {bootstrap_uri},"
           f" http: http://localhost:{http_port}/cluster, p2p: {p2p_port}")
 
+    env = {
+        **get_env(p2p_port, grpc_port, http_port),
+        **extra_env
+    }
+
+    args = [get_qdrant_exec(), "--uri", bootstrap_uri]
     if reinit:
-        proc = Popen([get_qdrant_exec(), "--uri", bootstrap_uri, "--reinit"], env=env, cwd=peer_dir, stdout=log_file)
-    else:
-        proc = Popen([get_qdrant_exec(), "--uri", bootstrap_uri], env=env, cwd=peer_dir, stdout=log_file)
+        args.append("--reinit")
+
+    proc = Popen(args, env=env, cwd=peer_dir, stdout=log_file)
     processes.append(PeerProcess(proc, http_port, grpc_port, p2p_port))
     return get_uri(http_port), bootstrap_uri
 
