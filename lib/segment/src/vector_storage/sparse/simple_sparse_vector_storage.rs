@@ -10,6 +10,7 @@ use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
 use crate::data_types::named_vectors::CowVector;
@@ -26,7 +27,8 @@ type StoredSparseVector = StoredRecord<SparseVector>;
 /// In-memory vector storage with on-update persistence using `store`
 #[derive(Debug)]
 pub struct SimpleSparseVectorStorage {
-    db_wrapper: DatabaseColumnWrapper,
+    /// Database wrapper which only persists on flush
+    db_wrapper: DatabaseColumnScheduledUpdateWrapper,
     /// BitVec for deleted flags. Grows dynamically upto last set flag.
     deleted: BitVec,
     /// Current number of deleted vectors.
@@ -43,7 +45,7 @@ pub fn open_simple_sparse_vector_storage(
 ) -> OperationResult<VectorStorageEnum> {
     let (mut deleted, mut deleted_count) = (BitVec::new(), 0);
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
-
+    let db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(db_wrapper);
     let mut total_vector_count = 0;
     let mut total_sparse_size = 0;
     db_wrapper.lock_db().iter()?;

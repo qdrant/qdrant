@@ -3,7 +3,7 @@ use std::mem;
 
 use parking_lot::Mutex;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
 use crate::common::Flusher;
 
@@ -76,5 +76,41 @@ impl DatabaseColumnScheduledUpdateWrapper {
 
     pub fn lock_db(&self) -> LockedDatabaseColumnWrapper {
         self.db.lock_db()
+    }
+
+    pub fn get<K>(&self, key: K) -> OperationResult<Vec<u8>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if let Some(value) = self.insert_pending_persistence.lock().get(key.as_ref()) {
+            return Ok(value.clone());
+        }
+        if self
+            .deleted_pending_persistence
+            .lock()
+            .contains(key.as_ref())
+        {
+            return Err(OperationError::service_error(
+                "RocksDB get_cf error: key not found",
+            ));
+        }
+        self.db.get(key)
+    }
+
+    pub fn get_opt<K>(&self, key: K) -> OperationResult<Option<Vec<u8>>>
+    where
+        K: AsRef<[u8]>,
+    {
+        if let Some(value) = self.insert_pending_persistence.lock().get(key.as_ref()) {
+            return Ok(Some(value.clone()));
+        }
+        if self
+            .deleted_pending_persistence
+            .lock()
+            .contains(key.as_ref())
+        {
+            return Ok(None);
+        }
+        self.db.get_opt(key)
     }
 }
