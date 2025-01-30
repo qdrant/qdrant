@@ -191,7 +191,7 @@ impl LocalShard {
             })
         };
 
-        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc.clone());
+        let hw_counter = hw_measurement_acc.get_counter_cell();
         let all_reads = tokio::time::timeout(
             timeout,
             try_join_all(
@@ -276,7 +276,7 @@ impl LocalShard {
             })
         };
 
-        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc.clone());
+        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
@@ -371,7 +371,7 @@ impl LocalShard {
             })
         };
 
-        let hw_counter = HardwareCounterCell::new_with_accumulator(hw_measurement_acc.clone());
+        let hw_counter = hw_measurement_acc.get_counter_cell();
 
         let all_reads = tokio::time::timeout(
             timeout,
