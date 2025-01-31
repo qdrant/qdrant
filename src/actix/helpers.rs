@@ -160,9 +160,11 @@ impl HttpError {
             } => {
                 if let Some(retry_after) = retry_after {
                     // Retry-After is expressed in seconds `https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After`
+                    // Ceil the value to the nearest second so clients don't retry too early
+                    let retry_after_sec = retry_after.as_secs_f32().ceil() as u32;
                     headers.insert(
                         header::RETRY_AFTER,
-                        header::HeaderValue::from(retry_after.as_secs()),
+                        header::HeaderValue::from(retry_after_sec),
                     );
                 }
             }
