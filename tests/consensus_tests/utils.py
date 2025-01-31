@@ -135,10 +135,8 @@ def start_peer(peer_dir: Path, log_file: str, bootstrap_uri: str, port=None, ext
     }
 
     if uris_in_env:
-        if "QDRANT_BOOTSTRAP" not in env:
-            env["QDRANT_BOOTSTRAP"] = bootstrap_uri
-        if "QDRANT_URI" not in env:
-            env["QDRANT_URI"] = this_peer_consensus_uri
+        env["QDRANT_BOOTSTRAP"] = bootstrap_uri
+        env["QDRANT_URI"] = this_peer_consensus_uri
     else:
         args.extend(["--bootstrap", bootstrap_uri, "--uri", this_peer_consensus_uri])
 
@@ -175,8 +173,7 @@ def start_first_peer(peer_dir: Path, log_file: str, port=None, extra_env=None, r
     }
 
     if uris_in_env:
-        if "QDRANT_URI" not in env:
-            env["QDRANT_URI"] = bootstrap_uri
+        env["QDRANT_URI"] = bootstrap_uri
     else:
         args.extend(["--uri", bootstrap_uri])
 
