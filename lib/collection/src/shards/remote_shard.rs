@@ -223,6 +223,7 @@ impl RemoteShard {
         operation: OperationWithClockTag,
         wait: bool,
         ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
 
@@ -232,6 +233,7 @@ impl RemoteShard {
             operation,
             wait,
             Some(ordering),
+            hw_measurement_acc,
         )
         .await
     }
@@ -246,6 +248,7 @@ impl RemoteShard {
         operation: OperationWithClockTag,
         wait: bool,
         ordering: Option<WriteOrdering>,
+        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement): propagate values
     ) -> CollectionResult<UpdateResult> {
         // Cancelling remote request should always be safe on the client side and update API
         // *should be* cancel safe on the server side, so this method is cancel safe.
@@ -665,14 +668,21 @@ impl ShardOperation for RemoteShard {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
-        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement) fill this with response data
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::execute_update_operation` is cancel safe, so this method is cancel safe.
 
         // targets the shard explicitly
         let shard_id = Some(self.id);
-        self.execute_update_operation(shard_id, self.collection_id.clone(), operation, wait, None)
-            .await
+        self.execute_update_operation(
+            shard_id,
+            self.collection_id.clone(),
+            operation,
+            wait,
+            None,
+            hw_measurement_acc,
+        )
+        .await
     }
 
     async fn scroll_by(
