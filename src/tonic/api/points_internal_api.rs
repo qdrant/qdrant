@@ -193,6 +193,10 @@ impl PointsInternal for PointsInternalService {
         let upsert_points =
             upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
 
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            upsert_points.collection_name.clone(),
+        );
+
         upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
@@ -200,6 +204,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             inference_token,
+            hw_data.get_counter(),
         )
         .await
     }
@@ -225,6 +230,10 @@ impl PointsInternal for PointsInternalService {
         let delete_points =
             delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            delete_points.collection_name.clone(),
+        );
+
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_points,
@@ -232,6 +241,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             inference_token,
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -256,6 +266,10 @@ impl PointsInternal for PointsInternalService {
             .update_vectors
             .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            update_point_vectors.collection_name.clone(),
+        );
+
         update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
@@ -263,6 +277,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             inference_token,
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -282,12 +297,17 @@ impl PointsInternal for PointsInternalService {
             .delete_vectors
             .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            delete_point_vectors.collection_name.clone(),
+        );
+
         delete_vectors(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_point_vectors,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -307,12 +327,17 @@ impl PointsInternal for PointsInternalService {
         let set_payload_points = set_payload_points
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            set_payload_points.collection_name.clone(),
+        );
+
         set_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -332,12 +357,17 @@ impl PointsInternal for PointsInternalService {
         let set_payload_points = set_payload_points
             .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            set_payload_points.collection_name.clone(),
+        );
+
         overwrite_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             set_payload_points,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -357,12 +387,17 @@ impl PointsInternal for PointsInternalService {
         let delete_payload_points = delete_payload_points
             .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            delete_payload_points.collection_name.clone(),
+        );
+
         delete_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
             delete_payload_points,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -382,12 +417,17 @@ impl PointsInternal for PointsInternalService {
         let clear_payload_points = clear_payload_points
             .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
 
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            clear_payload_points.collection_name.clone(),
+        );
+
         clear_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
             clear_payload_points,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
+            hw_metrics.get_counter(),
         )
         .await
     }

@@ -445,13 +445,20 @@ impl TableOfContent {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
         // `Collection::update_from_client` is cancel safe, so this method is cancel safe.
 
         let updates: FuturesUnordered<_> = shard_keys
             .into_iter()
             .map(|shard_key| {
-                collection.update_from_client(operation.clone(), wait, ordering, Some(shard_key))
+                collection.update_from_client(
+                    operation.clone(),
+                    wait,
+                    ordering,
+                    Some(shard_key),
+                    hw_measurement_acc.clone(),
+                )
             })
             .collect();
 
@@ -467,6 +474,7 @@ impl TableOfContent {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
+    #[allow(clippy::too_many_arguments)]
     pub async fn update(
         &self,
         collection_name: &str,
@@ -475,6 +483,7 @@ impl TableOfContent {
         ordering: WriteOrdering,
         shard_selector: ShardSelectorInternal,
         access: Access,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> StorageResult<UpdateResult> {
         let collection_pass = access.check_point_op(collection_name, &mut operation.operation)?;
 
@@ -532,7 +541,13 @@ impl TableOfContent {
         let res = match shard_selector {
             ShardSelectorInternal::Empty => {
                 collection
-                    .update_from_client(operation.operation, wait, ordering, None)
+                    .update_from_client(
+                        operation.operation,
+                        wait,
+                        ordering,
+                        None,
+                        hw_measurement_acc.clone(),
+                    )
                     .await?
             }
 
@@ -540,7 +555,13 @@ impl TableOfContent {
                 let shard_keys = collection.get_shard_keys().await;
                 if shard_keys.is_empty() {
                     collection
-                        .update_from_client(operation.operation, wait, ordering, None)
+                        .update_from_client(
+                            operation.operation,
+                            wait,
+                            ordering,
+                            None,
+                            hw_measurement_acc.clone(),
+                        )
                         .await?
                 } else {
                     Self::_update_shard_keys(
@@ -549,6 +570,7 @@ impl TableOfContent {
                         operation.operation,
                         wait,
                         ordering,
+                        hw_measurement_acc.clone(),
                     )
                     .await?
                 }
@@ -556,7 +578,13 @@ impl TableOfContent {
 
             ShardSelectorInternal::ShardKey(shard_key) => {
                 collection
-                    .update_from_client(operation.operation, wait, ordering, Some(shard_key))
+                    .update_from_client(
+                        operation.operation,
+                        wait,
+                        ordering,
+                        Some(shard_key),
+                        hw_measurement_acc.clone(),
+                    )
                     .await?
             }
 
@@ -567,13 +595,20 @@ impl TableOfContent {
                     operation.operation,
                     wait,
                     ordering,
+                    hw_measurement_acc.clone(),
                 )
                 .await?
             }
 
             ShardSelectorInternal::ShardId(shard_selection) => {
                 collection
-                    .update_from_peer(operation, shard_selection, wait, ordering)
+                    .update_from_peer(
+                        operation,
+                        shard_selection,
+                        wait,
+                        ordering,
+                        hw_measurement_acc.clone(),
+                    )
                     .await?
             }
         };

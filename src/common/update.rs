@@ -10,6 +10,7 @@ use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::operations::*;
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use segment::types::{PayloadFieldSchema, PayloadKeyType, StrictModeConfig};
@@ -196,6 +197,7 @@ pub async fn do_upsert_points(
     ordering: WriteOrdering,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let (shard_key, operation) = match operation {
         PointInsertOperations::PointsBatch(PointsBatch { batch, shard_key }) => (
@@ -224,6 +226,7 @@ pub async fn do_upsert_points(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -239,6 +242,7 @@ pub async fn do_delete_points(
     ordering: WriteOrdering,
     access: Access,
     _inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -258,6 +262,7 @@ pub async fn do_delete_points(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -273,6 +278,7 @@ pub async fn do_update_vectors(
     ordering: WriteOrdering,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
@@ -294,6 +300,7 @@ pub async fn do_update_vectors(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -308,6 +315,7 @@ pub async fn do_delete_vectors(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -337,6 +345,7 @@ pub async fn do_delete_vectors(
                 ordering,
                 shard_selector.clone(),
                 access.clone(),
+                hw_measurement_acc.clone(),
             )
             .await?,
         );
@@ -353,6 +362,7 @@ pub async fn do_delete_vectors(
                 ordering,
                 shard_selector,
                 access,
+                hw_measurement_acc,
             )
             .await?,
         );
@@ -371,6 +381,7 @@ pub async fn do_set_payload(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
         points,
@@ -397,6 +408,7 @@ pub async fn do_set_payload(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -411,6 +423,7 @@ pub async fn do_overwrite_payload(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
         points,
@@ -438,6 +451,7 @@ pub async fn do_overwrite_payload(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -452,6 +466,7 @@ pub async fn do_delete_payload(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let DeletePayload {
         keys,
@@ -476,6 +491,7 @@ pub async fn do_delete_payload(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -490,6 +506,7 @@ pub async fn do_clear_payload(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
@@ -511,6 +528,7 @@ pub async fn do_clear_payload(
         ordering,
         shard_selector,
         access,
+        hw_measurement_acc,
     )
     .await
 }
@@ -526,6 +544,7 @@ pub async fn do_batch_update_points(
     ordering: WriteOrdering,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Vec<UpdateResult>, StorageError> {
     let mut results = Vec::with_capacity(operations.len());
     for operation in operations {
@@ -541,6 +560,7 @@ pub async fn do_batch_update_points(
                     ordering,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -555,6 +575,7 @@ pub async fn do_batch_update_points(
                     ordering,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -568,6 +589,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -581,6 +603,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -594,6 +617,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -607,6 +631,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -621,6 +646,7 @@ pub async fn do_batch_update_points(
                     ordering,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -634,6 +660,7 @@ pub async fn do_batch_update_points(
                     wait,
                     ordering,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -653,6 +680,7 @@ pub async fn do_create_index(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -694,6 +722,7 @@ pub async fn do_create_index(
         shard_selection,
         wait,
         ordering,
+        hw_measurement_acc,
     )
     .await
 }
@@ -708,6 +737,7 @@ pub async fn do_create_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -729,6 +759,7 @@ pub async fn do_create_index_internal(
         ordering,
         shard_selector,
         Access::full("Internal API"),
+        hw_measurement_acc,
     )
     .await
 }
@@ -743,6 +774,7 @@ pub async fn do_delete_index(
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -772,6 +804,7 @@ pub async fn do_delete_index(
         shard_selection,
         wait,
         ordering,
+        hw_measurement_acc,
     )
     .await
 }
@@ -785,6 +818,7 @@ pub async fn do_delete_index_internal(
     shard_selection: Option<ShardId>,
     wait: bool,
     ordering: WriteOrdering,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -803,6 +837,7 @@ pub async fn do_delete_index_internal(
         ordering,
         shard_selector,
         Access::full("Internal API"),
+        hw_measurement_acc,
     )
     .await
 }

@@ -38,7 +38,7 @@ impl ShardOperation for LocalShard {
         &self,
         mut operation: OperationWithClockTag,
         wait: bool,
-        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement): propagate value!
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `LocalShard::update` only has a single cancel safe `await`, WAL operations are blocking,
         // and update is applied by a separate task, so, surprisingly, this method is cancel safe. :D
@@ -88,6 +88,7 @@ impl ShardOperation for LocalShard {
                 operation: operation.operation,
                 sender: callback_sender,
                 wait,
+                hw_measurements: hw_measurement_acc,
             }));
 
             operation_id

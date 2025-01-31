@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::CpuBudget;
 use common::panic;
@@ -55,6 +56,7 @@ pub struct OperationData {
     pub wait: bool,
     /// Callback notification channel
     pub sender: Option<oneshot::Sender<CollectionResult<usize>>>,
+    pub hw_measurements: HwMeasurementAcc,
 }
 
 /// Signal, used to inform Updater process
@@ -670,6 +672,7 @@ impl UpdateHandler {
                     operation,
                     sender,
                     wait,
+                    hw_measurements,
                 }) => {
                     let flush_res = if wait {
                         wal.lock().flush().map_err(|err| {
@@ -681,10 +684,13 @@ impl UpdateHandler {
                         Ok(())
                     };
 
-                    let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): implement!!
-
                     let operation_result = flush_res.and_then(|_| {
-                        CollectionUpdater::update(&segments, op_num, operation, &hw_counter)
+                        CollectionUpdater::update(
+                            &segments,
+                            op_num,
+                            operation,
+                            &hw_measurements.get_counter_cell(),
+                        )
                     });
 
                     let res = match operation_result {

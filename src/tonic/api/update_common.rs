@@ -21,6 +21,7 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
 use collection::shards::shard::ShardId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -43,6 +44,7 @@ pub async fn upsert(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -74,6 +76,7 @@ pub async fn upsert(
         write_ordering_from_proto(ordering)?,
         access,
         inference_token,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -88,6 +91,7 @@ pub async fn delete(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -117,6 +121,7 @@ pub async fn delete(
         write_ordering_from_proto(ordering)?,
         access,
         inference_token,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -131,6 +136,7 @@ pub async fn update_vectors(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
@@ -174,6 +180,7 @@ pub async fn update_vectors(
         write_ordering_from_proto(ordering)?,
         access,
         inference_token,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -187,6 +194,7 @@ pub async fn delete_vectors(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
@@ -224,6 +232,7 @@ pub async fn delete_vectors(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -237,6 +246,7 @@ pub async fn set_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -272,6 +282,7 @@ pub async fn set_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -285,6 +296,7 @@ pub async fn overwrite_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -320,6 +332,7 @@ pub async fn overwrite_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -333,6 +346,7 @@ pub async fn delete_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
         collection_name,
@@ -366,6 +380,7 @@ pub async fn delete_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -379,6 +394,7 @@ pub async fn clear_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
         collection_name,
@@ -407,6 +423,7 @@ pub async fn clear_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -421,6 +438,7 @@ pub async fn update_batch(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -455,6 +473,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -472,6 +491,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -497,6 +517,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -523,6 +544,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -546,6 +568,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -565,6 +588,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -587,6 +611,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -610,6 +635,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -626,6 +652,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -646,6 +673,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -667,6 +695,7 @@ pub async fn create_field_index(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -695,6 +724,7 @@ pub async fn create_field_index(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -730,6 +760,7 @@ pub async fn create_field_index_internal(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 
@@ -763,6 +794,7 @@ pub async fn delete_field_index(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 
@@ -794,6 +826,7 @@ pub async fn delete_field_index_internal(
         shard_selection,
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 
@@ -850,6 +883,7 @@ pub async fn sync(
             write_ordering_from_proto(ordering)?,
             shard_selector,
             access,
+            HwMeasurementAcc::disposable(), // API unmeasured
         )
         .await?;
 

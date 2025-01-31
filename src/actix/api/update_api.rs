@@ -7,6 +7,7 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointsSelector, WriteOrdering};
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
@@ -62,7 +63,6 @@ async fn upsert_points(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_upsert_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -73,6 +73,7 @@ async fn upsert_points(
         ordering,
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -117,6 +118,7 @@ async fn delete_points(
         ordering,
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -161,6 +163,7 @@ async fn update_vectors(
         ordering,
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -195,7 +198,6 @@ async fn delete_vectors(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure vector deletion io
     let response = do_delete_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -205,6 +207,7 @@ async fn delete_vectors(
         wait,
         ordering,
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -238,7 +241,6 @@ async fn set_payload(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_set_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -248,6 +250,7 @@ async fn set_payload(
         wait,
         ordering,
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -279,7 +282,6 @@ async fn overwrite_payload(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_overwrite_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -289,6 +291,7 @@ async fn overwrite_payload(
         wait,
         ordering,
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -320,7 +323,6 @@ async fn delete_payload(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_delete_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -330,6 +332,7 @@ async fn delete_payload(
         wait,
         ordering,
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -362,7 +365,6 @@ async fn clear_payload(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_clear_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -372,6 +374,7 @@ async fn clear_payload(
         wait,
         ordering,
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -418,7 +421,6 @@ async fn update_batch(
     let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
-    // TODO(io_measurement): Measure upsertion io
     let response = do_batch_update_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -429,6 +431,7 @@ async fn update_batch(
         ordering,
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
     process_response(response, timing, request_hw_counter.to_rest_api())
@@ -456,6 +459,7 @@ async fn create_field_index(
         wait,
         ordering,
         access,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await;
     process_response(response, timing, None)
@@ -482,6 +486,7 @@ async fn delete_field_index(
         wait,
         ordering,
         access,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await;
     process_response(response, timing, None)
