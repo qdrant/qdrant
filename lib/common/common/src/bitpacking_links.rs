@@ -58,75 +58,178 @@ pub fn pack_links(
     w.finish();
 }
 
-/// Iterate over packed links and apply a function to each value.
+/// Returns an iterator over packed links.
 /// See [`pack_links`] for parameter descriptions.
 #[inline]
-pub fn for_each_packed_link(
+pub fn iterate_packed_links(
     links: &[u8],
     bits_per_unsorted: u8,
     sorted_count: usize,
-    mut f: impl FnMut(u32),
-) {
-    if links.is_empty() {
-        return;
-    }
-
-    let mut r = BitReader::new(links);
+) -> PackedLinksIterator {
+    let mut reader = BitReader::new(links);
 
     let mut remaining_bits = links.len() * u8::BITS as usize;
-    if sorted_count != 0 {
+    let mut remaining_bits_target = remaining_bits;
+    if sorted_count != 0 && !links.is_empty() {
         // 1. Header.
-        r.set_bits(HEADER_BITS);
-        let bits_per_sorted = r.read::<u8>() + MIN_BITS_PER_VALUE;
+        reader.set_bits(HEADER_BITS);
+        let bits_per_sorted = reader.read::<u8>() + MIN_BITS_PER_VALUE;
         remaining_bits -= HEADER_BITS as usize;
 
-        // 2. First `sorted_count` values, sorted and delta-encoded.
-        r.set_bits(bits_per_sorted);
-        let remaining_bits_target = remaining_bits
-            - sorted_count.min(remaining_bits / bits_per_sorted as usize)
-                * bits_per_sorted as usize;
-        let mut value = 0;
-        while remaining_bits > remaining_bits_target {
-            value += r.read::<u32>();
-            f(value);
-            remaining_bits -= bits_per_sorted as usize;
-        }
+        // Prepare for reading sorted values.
+        reader.set_bits(bits_per_sorted);
+        let max_sorted = remaining_bits / bits_per_sorted as usize;
+        remaining_bits_target -= sorted_count.min(max_sorted) * bits_per_sorted as usize;
+    } else {
+        // Prepare for reading unsorted values.
+        reader.set_bits(bits_per_unsorted);
     }
 
-    // 3. The rest of the values, unsorted.
-    r.set_bits(bits_per_unsorted);
-    while remaining_bits >= bits_per_unsorted as usize {
-        f(r.read());
-        remaining_bits -= bits_per_unsorted as usize;
+    PackedLinksIterator {
+        reader,
+        bits_per_unsorted,
+        remaining_bits,
+        remaining_bits_target,
+        current_delta: 0,
     }
 }
+
+/// Iterator over links packed with [`pack_links`].
+/// Created by [`iterate_packed_links`].
+pub struct PackedLinksIterator<'a> {
+    reader: BitReader<'a>,
+    bits_per_unsorted: u8,
+    remaining_bits: usize,
+    remaining_bits_target: usize,
+    current_delta: u32,
+}
+
+impl PackedLinksIterator<'_> {
+    #[inline]
+    fn next_sorted(&mut self) -> u32 {
+        self.current_delta = self.current_delta.wrapping_add(self.reader.read::<u32>());
+        self.remaining_bits -= self.reader.bits() as usize;
+        self.current_delta
+    }
+
+    #[inline]
+    fn next_unsorted(&mut self) -> Option<u32> {
+        if let Some(rb) = self.remaining_bits.checked_sub(self.reader.bits() as usize) {
+            self.remaining_bits = rb;
+            Some(self.reader.read::<u32>())
+        } else {
+            None
+        }
+    }
+}
+
+impl Iterator for PackedLinksIterator<'_> {
+    type Item = u32;
+
+    #[inline]
+    fn next(&mut self) -> Option<u32> {
+        if self.remaining_bits > self.remaining_bits_target {
+            let value = self.next_sorted();
+            if self.remaining_bits <= self.remaining_bits_target {
+                // It was the last sorted value.
+                self.reader.set_bits(self.bits_per_unsorted);
+            }
+            return Some(value);
+        }
+
+        self.next_unsorted()
+    }
+
+    /// Optimized [`Iterator::fold()`]. Should be faster than calling
+    /// [`Iterator::next()`] in a loop.
+    ///
+    /// It is used in a hot loop during HNSW search, so performance is critical.
+    #[inline]
+    fn fold<Acc, F: FnMut(Acc, u32) -> Acc>(mut self, mut acc: Acc, mut f: F) -> Acc {
+        while self.remaining_bits > self.remaining_bits_target {
+            acc = f(acc, self.next_sorted());
+        }
+
+        self.reader.set_bits(self.bits_per_unsorted);
+        while let Some(value) = self.next_unsorted() {
+            acc = f(acc, value);
+        }
+
+        acc
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (sorted, unsorted);
+        if let Some(sorted_bits) = self.remaining_bits.checked_sub(self.remaining_bits_target) {
+            let sorted_bits = sorted_bits.next_multiple_of(self.reader.bits() as usize);
+            sorted = sorted_bits / self.reader.bits() as usize;
+            unsorted = (self.remaining_bits - sorted_bits) / self.bits_per_unsorted as usize;
+        } else {
+            sorted = 0;
+            unsorted = self.remaining_bits / self.reader.bits() as usize;
+        }
+        (sorted + unsorted, Some(sorted + unsorted))
+    }
+}
+
+impl ExactSizeIterator for PackedLinksIterator<'_> {}
 
 #[cfg(test)]
 mod tests {
     use itertools::Itertools as _;
     use rand::rngs::StdRng;
     use rand::{Rng as _, SeedableRng as _};
+    use rstest::rstest;
 
     use super::*;
+    use crate::iterator_ext::{check_exact_size_iterator_len, check_iterator_fold};
 
-    #[test]
-    fn test_random() {
-        let mut rng = StdRng::seed_from_u64(42);
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Cases {
+        OnlyUnsorted = 0,
+        OnlySorted = 1,
+        OnlySortedExact = 2,
+        Empty = 3,
+        Both = 4,
+    }
 
-        for _ in 0..100 {
-            let bits_per_unsorted = rng.random_range(7..=32);
-            let sorted_count = rng.random_range(0..100);
-            let unsorted_count = rng.random_range(0..100);
-            if 1 << bits_per_unsorted < sorted_count + unsorted_count {
-                continue;
+    #[rstest]
+    #[case::only_unsorted(Cases::OnlyUnsorted)]
+    #[case::only_sorted(Cases::OnlySorted)]
+    #[case::only_sorted_exact(Cases::OnlySortedExact)]
+    #[case::empty(Cases::Empty)]
+    #[case::both(Cases::Both)]
+    fn test_random(#[case] case: Cases) {
+        let mut rng = StdRng::seed_from_u64(42u64.wrapping_add(case as u64));
+
+        for _ in 0..1_000 {
+            let (sorted_count, total_count);
+            match case {
+                Cases::OnlyUnsorted => {
+                    sorted_count = 0;
+                    total_count = rng.random_range(1..100);
+                }
+                Cases::OnlySorted => {
+                    sorted_count = rng.random_range(2..100);
+                    total_count = rng.random_range(1..sorted_count);
+                }
+                Cases::OnlySortedExact => {
+                    sorted_count = rng.random_range(1..100);
+                    total_count = sorted_count;
+                }
+                Cases::Empty => {
+                    sorted_count = rng.random_range(0..100); // intentionally not 0
+                    total_count = 0;
+                }
+                Cases::Both => {
+                    sorted_count = rng.random_range(0..100);
+                    total_count = rng.random_range(sorted_count..sorted_count + 100);
+                }
             }
 
-            let mut raw_links =
-                std::iter::repeat_with(|| rng.random_range(0..1u64 << bits_per_unsorted) as u32)
-                    .unique()
-                    .take(sorted_count + unsorted_count)
-                    .collect::<Vec<u32>>();
+            let bits_per_unsorted = rng.random_range(MIN_BITS_PER_VALUE..=32);
 
+            let mut raw_links = gen_unique_values(&mut rng, total_count, bits_per_unsorted);
             let mut links = Vec::new();
             pack_links(
                 &mut links,
@@ -136,12 +239,27 @@ mod tests {
             );
 
             let mut unpacked = Vec::new();
-            for_each_packed_link(&links, bits_per_unsorted, sorted_count, |value| {
-                unpacked.push(value)
-            });
+            let iter = iterate_packed_links(&links, bits_per_unsorted, sorted_count);
+            iter.for_each(|value| unpacked.push(value));
 
-            raw_links[..sorted_count].sort_unstable();
+            raw_links[..sorted_count.min(total_count)].sort_unstable();
             assert_eq!(raw_links, unpacked);
+
+            check_iterator_fold(|| iterate_packed_links(&links, bits_per_unsorted, sorted_count));
+            check_exact_size_iterator_len(iterate_packed_links(
+                &links,
+                bits_per_unsorted,
+                sorted_count,
+            ));
         }
+    }
+
+    /// Generate `count` unique values in range `[0, 2^bits)`.
+    fn gen_unique_values(rng: &mut StdRng, count: usize, bits: u8) -> Vec<u32> {
+        assert!(count <= 1 << bits);
+        std::iter::repeat_with(|| rng.random_range(0..1u64 << bits) as u32)
+            .unique()
+            .take(count)
+            .collect::<Vec<u32>>()
     }
 }

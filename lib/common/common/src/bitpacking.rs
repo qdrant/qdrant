@@ -104,6 +104,14 @@ impl<'a> BitReader<'a> {
         self.mask = make_bitmask(bits);
     }
 
+    /// Returns the number of bits set with [`set_bits()`].
+    ///
+    /// [`set_bits()`]: Self::set_bits
+    #[inline]
+    pub fn bits(&self) -> u8 {
+        self.bits
+    }
+
     /// Read next `bits` bits from the input. The amount of bits must be set
     /// with [`set_bits()`] before calling this method.
     ///
