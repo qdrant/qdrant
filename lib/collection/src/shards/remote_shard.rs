@@ -248,7 +248,7 @@ impl RemoteShard {
         operation: OperationWithClockTag,
         wait: bool,
         ordering: Option<WriteOrdering>,
-        _hw_measurement_acc: HwMeasurementAcc, // TODO(io_measurement): propagate values
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // Cancelling remote request should always be safe on the client side and update API
         // *should be* cancel safe on the server side, so this method is cancel safe.
@@ -499,6 +499,17 @@ impl RemoteShard {
                 }
             },
         };
+
+        if let Some(hw_usage) = point_operation_response.usage {
+            hw_measurement_acc.accumulate_request(
+                hw_usage.cpu as usize,
+                hw_usage.payload_io_read as usize,
+                hw_usage.payload_io_write as usize,
+                hw_usage.vector_io_read as usize,
+                hw_usage.vector_io_write as usize,
+            );
+        }
+
         match point_operation_response.result {
             None => Err(CollectionError::service_error(
                 "Malformed UpdateResult type".to_string(),
@@ -766,6 +777,7 @@ impl ShardOperation for RemoteShard {
         let result: Result<CollectionInfo, Status> = get_collection_response.try_into();
         result.map_err(|e| e.into())
     }
+
     async fn core_search(
         &self,
         batch_request: Arc<CoreSearchRequestBatch>,
@@ -1037,7 +1049,7 @@ impl ShardOperation for RemoteShard {
         request: Arc<FacetParams>,
         _search_runtime_handle: &Handle,
         timeout: Option<Duration>,
-        _hw_measurement_acc: HwMeasurementAcc,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         let processed_timeout = Self::process_read_timeout(timeout, "facet")?;
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_search_durations);
@@ -1073,7 +1085,15 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        // TODO(io_measurement): measure remote io usage here!
+        if let Some(hw_usage) = response.usage {
+            hw_measurement_acc.accumulate_request(
+                hw_usage.cpu as usize,
+                hw_usage.payload_io_read as usize,
+                hw_usage.payload_io_write as usize,
+                hw_usage.vector_io_read as usize,
+                hw_usage.vector_io_write as usize,
+            );
+        }
 
         let hits = response
             .hits

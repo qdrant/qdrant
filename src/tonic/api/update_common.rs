@@ -7,8 +7,9 @@ use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointS
 use api::grpc::qdrant::{
     points_update_operation, ClearPayloadPoints, CreateFieldIndexCollection,
     DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType,
-    PayloadIndexParams, PointsOperationResponseInternal, PointsSelector, SetPayloadPoints,
-    SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    HardwareUsage, PayloadIndexParams, PointsOperationResponseInternal, PointsSelector,
+    SetPayloadPoints, SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors,
+    UpsertPoints,
 };
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
@@ -26,6 +27,7 @@ use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
 };
+use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
@@ -44,7 +46,7 @@ pub async fn upsert(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -76,11 +78,12 @@ pub async fn upsert(
         write_ordering_from_proto(ordering)?,
         access,
         inference_token,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -91,7 +94,7 @@ pub async fn delete(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -121,11 +124,12 @@ pub async fn delete(
         write_ordering_from_proto(ordering)?,
         access,
         inference_token,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -136,7 +140,7 @@ pub async fn update_vectors(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
@@ -180,11 +184,12 @@ pub async fn update_vectors(
         write_ordering_from_proto(ordering)?,
         access,
         inference_token,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -194,7 +199,7 @@ pub async fn delete_vectors(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
@@ -232,11 +237,12 @@ pub async fn delete_vectors(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -246,7 +252,7 @@ pub async fn set_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -282,11 +288,12 @@ pub async fn set_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -296,7 +303,7 @@ pub async fn overwrite_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -332,11 +339,12 @@ pub async fn overwrite_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -346,7 +354,7 @@ pub async fn delete_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
         collection_name,
@@ -380,11 +388,12 @@ pub async fn delete_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -394,7 +403,7 @@ pub async fn clear_payload(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
         collection_name,
@@ -423,11 +432,12 @@ pub async fn clear_payload(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -438,7 +448,7 @@ pub async fn update_batch(
     shard_selection: Option<ShardId>,
     access: Access,
     inference_token: InferenceToken,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -473,7 +483,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -491,7 +501,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -517,7 +527,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -544,7 +554,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -568,7 +578,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -588,7 +598,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -611,7 +621,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -635,7 +645,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -652,7 +662,7 @@ pub async fn update_batch(
                     clock_tag,
                     shard_selection,
                     access.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -673,7 +683,7 @@ pub async fn update_batch(
                     shard_selection,
                     access.clone(),
                     inference_token.clone(),
-                    hw_measurement_acc.clone(),
+                    request_hw_counter.clone(),
                 )
                 .await
             }
@@ -695,7 +705,7 @@ pub async fn create_field_index(
     clock_tag: Option<ClockTag>,
     shard_selection: Option<ShardId>,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -724,11 +734,12 @@ pub async fn create_field_index(
         wait.unwrap_or(false),
         write_ordering_from_proto(ordering)?,
         access,
-        hw_measurement_acc,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response =
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -764,7 +775,7 @@ pub async fn create_field_index_internal(
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response = points_operation_response_internal(timing, result, None);
     Ok(Response::new(response))
 }
 
@@ -798,7 +809,7 @@ pub async fn delete_field_index(
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response = points_operation_response_internal(timing, result, None);
     Ok(Response::new(response))
 }
 
@@ -830,7 +841,7 @@ pub async fn delete_field_index_internal(
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response = points_operation_response_internal(timing, result, None);
     Ok(Response::new(response))
 }
 
@@ -887,17 +898,20 @@ pub async fn sync(
         )
         .await?;
 
-    let response = points_operation_response_internal(timing, result);
+    let response = points_operation_response_internal(timing, result, None);
     Ok(Response::new(response))
 }
 
 pub fn points_operation_response_internal(
     timing: Instant,
     update_result: collection::operations::types::UpdateResult,
+    usage: Option<HardwareUsage>,
 ) -> PointsOperationResponseInternal {
     PointsOperationResponseInternal {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
+        usage,
+        // usage: Some(hw_measurement_acc.api)
     }
 }
 

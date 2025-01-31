@@ -1917,6 +1917,7 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
         Self {
             result: resp.result.map(Into::into),
             time: resp.time,
+            usage: resp.usage,
         }
     }
 }
@@ -1927,6 +1928,7 @@ impl From<PointsOperationResponse> for PointsOperationResponseInternal {
         Self {
             result: resp.result.map(Into::into),
             time: resp.time,
+            usage: resp.usage,
         }
     }
 }

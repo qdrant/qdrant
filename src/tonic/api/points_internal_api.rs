@@ -146,7 +146,7 @@ async fn facet_counts_internal(
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
         time: timing.elapsed().as_secs_f64(),
-        // TODO(io_measurement): add hw data
+        usage: request_hw_data.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -204,7 +204,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             inference_token,
-            hw_data.get_counter(),
+            hw_data,
         )
         .await
     }
@@ -241,7 +241,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -277,7 +277,7 @@ impl PointsInternal for PointsInternalService {
             shard_id,
             FULL_ACCESS.clone(),
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -307,7 +307,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -337,7 +337,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -367,7 +367,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -397,7 +397,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -427,7 +427,7 @@ impl PointsInternal for PointsInternalService {
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }

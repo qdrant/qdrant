@@ -72,7 +72,7 @@ impl Points for PointsService {
             None,
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -97,7 +97,7 @@ impl Points for PointsService {
             None,
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -144,7 +144,7 @@ impl Points for PointsService {
             None,
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -167,7 +167,7 @@ impl Points for PointsService {
             None,
             None,
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -190,7 +190,7 @@ impl Points for PointsService {
             None,
             None,
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -213,7 +213,7 @@ impl Points for PointsService {
             None,
             None,
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -236,7 +236,7 @@ impl Points for PointsService {
             None,
             None,
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -259,7 +259,7 @@ impl Points for PointsService {
             None,
             None,
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -284,7 +284,7 @@ impl Points for PointsService {
             None,
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -306,7 +306,7 @@ impl Points for PointsService {
             None,
             None,
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
