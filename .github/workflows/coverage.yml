@@ -4,6 +4,8 @@ on:
   workflow_dispatch: # Trigger from UI for selected branch
   schedule:
     - cron: "0 0 * * *"
+  push:
+    branches: [ dev ]
 
 jobs:
     coverage:
