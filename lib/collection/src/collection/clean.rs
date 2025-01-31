@@ -332,7 +332,10 @@ async fn clean_task(
             OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
                 crate::operations::point_ops::PointOperations::DeletePoints { ids },
             ));
-        if let Err(err) = shard.update_local(delete_operation, last_batch).await {
+        if let Err(err) = shard
+            .update_local(delete_operation, last_batch, HwMeasurementAcc::disposable())
+            .await
+        {
             return Err(CollectionError::service_error(format!(
                 "Failed to delete points from shard: {err}",
             )));

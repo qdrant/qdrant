@@ -31,6 +31,7 @@ impl ShardReplicaSet {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        hw_measurement: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
@@ -44,9 +45,6 @@ impl ShardReplicaSet {
         let Some(state) = self.peer_state(self.this_peer_id()) else {
             return Ok(None);
         };
-
-        // TODO(io_measurement): Propagate measurements to caller
-        let hw_measurement = HwMeasurementAcc::disposable();
 
         let result = match state {
             ReplicaState::Active => {

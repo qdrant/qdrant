@@ -28,6 +28,7 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
@@ -49,7 +50,11 @@ impl Collection {
                     //
                     // We update *all* shards with a single operation, but each shard has it's own clock,
                     // so it's *impossible* to assign any single clock tag to this operation.
-                    shard.update_local(OperationWithClockTag::from(operation.clone()), wait)
+                    shard.update_local(
+                        OperationWithClockTag::from(operation.clone()),
+                        wait,
+                        hw_measurement_acc.clone(),
+                    )
                 })
                 .collect();
 
@@ -98,7 +103,7 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, hw_measurement_acc.clone()).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
