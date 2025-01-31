@@ -13,10 +13,11 @@ N_REPLICA = 2
 N_SHARDS = 3
 
 
-def test_rejoin_cluster(tmp_path: pathlib.Path):
+@pytest.mark.parametrize("uris_in_env", [False, True])
+def test_rejoin_cluster(tmp_path: pathlib.Path, uris_in_env):
     assert_project_root()
     # Start cluster
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, port_seed=10000, uris_in_env=uris_in_env)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICA)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
@@ -55,7 +56,7 @@ def test_rejoin_cluster(tmp_path: pathlib.Path):
     )
 
     # Restart last node
-    new_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_uri, port=20000)
+    new_url = start_peer(peer_dirs[-1], "peer_0_restarted.log", bootstrap_uri, port=20000, uris_in_env=uris_in_env)
 
     peer_api_uris[-1] = new_url
 
