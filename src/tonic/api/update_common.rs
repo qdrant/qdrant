@@ -17,6 +17,7 @@ use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
 use collection::operations::vector_ops::DeleteVectors;
 use collection::operations::CollectionUpdateOperations;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -38,6 +39,7 @@ pub async fn upsert(
     internal_params: InternalUpdateParams,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpsertPoints {
         collection_name,
@@ -67,6 +69,7 @@ pub async fn upsert(
         UpdateParams::from_grpc(wait, ordering)?,
         access,
         inference_token,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -80,6 +83,7 @@ pub async fn delete(
     internal_params: InternalUpdateParams,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
         collection_name,
@@ -107,6 +111,7 @@ pub async fn delete(
         UpdateParams::from_grpc(wait, ordering)?,
         access,
         inference_token,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -120,6 +125,7 @@ pub async fn update_vectors(
     internal_params: InternalUpdateParams,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let UpdatePointVectors {
         collection_name,
@@ -161,6 +167,7 @@ pub async fn update_vectors(
         UpdateParams::from_grpc(wait, ordering)?,
         access,
         inference_token,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -173,6 +180,7 @@ pub async fn delete_vectors(
     delete_point_vectors: DeletePointVectors,
     internal_params: InternalUpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePointVectors {
         collection_name,
@@ -208,6 +216,7 @@ pub async fn delete_vectors(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -220,6 +229,7 @@ pub async fn set_payload(
     set_payload_points: SetPayloadPoints,
     internal_params: InternalUpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -253,6 +263,7 @@ pub async fn set_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -265,6 +276,7 @@ pub async fn overwrite_payload(
     set_payload_points: SetPayloadPoints,
     internal_params: InternalUpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let SetPayloadPoints {
         collection_name,
@@ -298,6 +310,7 @@ pub async fn overwrite_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -310,6 +323,7 @@ pub async fn delete_payload(
     delete_payload_points: DeletePayloadPoints,
     internal_params: InternalUpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePayloadPoints {
         collection_name,
@@ -341,6 +355,7 @@ pub async fn delete_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -353,6 +368,7 @@ pub async fn clear_payload(
     clear_payload_points: ClearPayloadPoints,
     internal_params: InternalUpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let ClearPayloadPoints {
         collection_name,
@@ -379,6 +395,7 @@ pub async fn clear_payload(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -392,6 +409,7 @@ pub async fn update_batch(
     internal_params: InternalUpdateParams,
     access: Access,
     inference_token: InferenceToken,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<UpdateBatchResponse>, Status> {
     let UpdateBatchPoints {
         collection_name,
@@ -425,6 +443,7 @@ pub async fn update_batch(
                     internal_params,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -441,6 +460,7 @@ pub async fn update_batch(
                     internal_params,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -465,6 +485,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -490,6 +511,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -512,6 +534,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -530,6 +553,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -551,6 +575,7 @@ pub async fn update_batch(
                     internal_params,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -573,6 +598,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -588,6 +614,7 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -607,6 +634,7 @@ pub async fn update_batch(
                     internal_params,
                     access.clone(),
                     inference_token.clone(),
+                    hw_measurement_acc.clone(),
                 )
                 .await
             }
@@ -627,6 +655,7 @@ pub async fn create_field_index(
     create_field_index_collection: CreateFieldIndexCollection,
     internal_params: InternalUpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -653,6 +682,7 @@ pub async fn create_field_index(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        hw_measurement_acc,
     )
     .await?;
 
@@ -685,6 +715,7 @@ pub async fn create_field_index_internal(
         field_schema,
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 
@@ -715,6 +746,7 @@ pub async fn delete_field_index(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 
@@ -743,6 +775,7 @@ pub async fn delete_field_index_internal(
         field_name,
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 
@@ -792,6 +825,7 @@ pub async fn sync(
         UpdateParams::from_grpc(wait, ordering)?,
         None,
         access,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await?;
 

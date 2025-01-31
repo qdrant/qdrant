@@ -63,12 +63,16 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         upsert(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
             inference_token,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -83,12 +87,16 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         delete(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
             inference_token,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -125,12 +133,16 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         update_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
             inference_token,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -144,11 +156,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         delete_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -162,11 +178,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         set_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -180,11 +200,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         overwrite_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -198,11 +222,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         delete_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -216,11 +244,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         clear_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -235,12 +267,16 @@ impl Points for PointsService {
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         update_batch(
             &self.dispatcher,
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
             inference_token,
+            hw_metrics.get_counter(),
         )
         .await
     }
@@ -253,11 +289,15 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
+        let hw_metrics =
+            self.get_request_collection_hw_usage_counter(request.get_ref().collection_name.clone());
+
         create_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
+            hw_metrics.get_counter(),
         )
         .await
         .map(|resp| resp.map(Into::into))

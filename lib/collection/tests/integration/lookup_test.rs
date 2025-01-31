@@ -69,8 +69,10 @@ async fn setup() -> Resources {
         PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
     );
 
+    let hw_counter = HwMeasurementAcc::new();
+
     collection
-        .update_from_client_simple(upsert_points, true, WriteOrdering::default())
+        .update_from_client_simple(upsert_points, true, WriteOrdering::default(), hw_counter)
         .await
         .unwrap();
 

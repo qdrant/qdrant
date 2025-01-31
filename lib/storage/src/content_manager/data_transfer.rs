@@ -131,8 +131,9 @@ async fn replicate_shard_data(
         let target_collection =
             handle_get_collection(collections_read.get(target_collection_name))?;
 
+        let hw_counter = HwMeasurementAcc::disposable(); // Internal operation
         target_collection
-            .update_from_client_simple(upsert_request, false, WriteOrdering::default())
+            .update_from_client_simple(upsert_request, false, WriteOrdering::default(), hw_counter)
             .await?;
 
         if offset.is_none() {
@@ -233,8 +234,9 @@ pub async fn transfer_indexes(
                 field_schema: Some(schema.try_into()?),
             }),
         );
+        let hw_counter = HwMeasurementAcc::disposable(); // Internal operation
         target_collection
-            .update_from_client_simple(request, false, WriteOrdering::default())
+            .update_from_client_simple(request, false, WriteOrdering::default(), hw_counter)
             .await?;
     }
 
