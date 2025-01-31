@@ -1120,7 +1120,10 @@ impl CollectionError {
                     tokens_available,
                     retry_after,
                 } = retry_error;
-                let description = format!("{rate_limiter_type} rate limit exceeded: Operation requires {cost} tokens but only {tokens_available} were available. Retry later");
+                let description = format!(
+                    "{rate_limiter_type} rate limit exceeded: Operation requires {cost} tokens but only {tokens_available} were available. Retry after {}s",
+                    retry_after.as_secs_f32().ceil() as u32,
+                );
                 (description, Some(retry_after))
             }
         };
