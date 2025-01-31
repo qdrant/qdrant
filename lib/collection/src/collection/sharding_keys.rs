@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::ShardKey;
 
 use crate::collection::Collection;
@@ -60,6 +61,8 @@ impl Collection {
         shard_key: ShardKey,
         placement: ShardsPlacement,
     ) -> Result<(), CollectionError> {
+        let hw_counter = HwMeasurementAcc::disposable(); // TODO(io_measurement): propagate value
+
         let state = self.state().await;
         match state.config.params.sharding_method.unwrap_or_default() {
             ShardingMethod::Auto => {
@@ -121,7 +124,11 @@ impl Collection {
                 );
 
                 replica_set
-                    .update_local(OperationWithClockTag::from(create_index_op), true) // TODO: Assign clock tag!? 🤔
+                    .update_local(
+                        OperationWithClockTag::from(create_index_op),
+                        true,
+                        hw_counter.clone(),
+                    ) // TODO: Assign clock tag!? 🤔
                     .await?;
             }
 

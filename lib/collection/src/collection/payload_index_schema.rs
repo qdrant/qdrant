@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
 use segment::problems::unindexed_field;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
@@ -66,7 +67,8 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(create_index_operation, wait).await
+        self.update_all_local(create_index_operation, wait, HwMeasurementAcc::disposable()) // Unmeasured API
+            .await
     }
 
     pub async fn drop_payload_index(
@@ -81,7 +83,13 @@ impl Collection {
             FieldIndexOperations::DeleteIndex(field_name),
         );
 
-        let result = self.update_all_local(delete_index_operation, false).await?;
+        let result = self
+            .update_all_local(
+                delete_index_operation,
+                false,
+                HwMeasurementAcc::disposable(), // Unmeasured API
+            )
+            .await?;
 
         Ok(result)
     }
