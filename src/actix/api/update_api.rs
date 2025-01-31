@@ -107,7 +107,6 @@ async fn delete_points(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure io of deletion
     let res = do_delete_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -152,7 +151,6 @@ async fn update_vectors(
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure update io
     let res = do_update_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
