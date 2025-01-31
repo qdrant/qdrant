@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use common::bitpacking::{BitReader, BitWriter};
-use common::bitpacking_links::{for_each_packed_link, pack_links};
+use common::bitpacking_links::{iterate_packed_links, pack_links};
 use common::bitpacking_ordered;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use itertools::Itertools as _;
@@ -94,7 +94,7 @@ pub fn bench_bitpacking_links(c: &mut Criterion) {
                 (&links[pos[idx - 1].0..pos[idx].0], pos[idx].1, pos[idx].2)
             },
             |(links, bits_per_unsorted, sorted_count)| {
-                for_each_packed_link(links, bits_per_unsorted, sorted_count, |x| {
+                iterate_packed_links(links, bits_per_unsorted, sorted_count).for_each(|x| {
                     black_box(x);
                 });
             },

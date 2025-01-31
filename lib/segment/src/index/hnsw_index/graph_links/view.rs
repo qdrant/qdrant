@@ -1,8 +1,10 @@
+use std::iter::Copied;
+
 use common::bitpacking::packed_bits;
-use common::bitpacking_links::{for_each_packed_link, MIN_BITS_PER_VALUE};
+use common::bitpacking_links::{iterate_packed_links, PackedLinksIterator, MIN_BITS_PER_VALUE};
 use common::bitpacking_ordered;
 use common::types::PointOffsetType;
-use itertools::Itertools as _;
+use itertools::{Either, Itertools as _};
 use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{FromBytes, Immutable};
 
@@ -22,6 +24,9 @@ pub(super) struct GraphLinksView<'a> {
     /// - Additional element is added during deserialization.
     pub(super) level_offsets: Vec<u64>,
 }
+
+/// An iterator type returned by [`GraphLinksView::links`].
+pub type LinksIterator<'a> = Either<Copied<std::slice::Iter<'a, u32>>, PackedLinksIterator<'a>>;
 
 #[derive(Debug)]
 pub(super) enum CompressionInfo<'a> {
@@ -94,12 +99,7 @@ impl GraphLinksView<'_> {
         })
     }
 
-    pub(super) fn for_each_link(
-        &self,
-        point_id: PointOffsetType,
-        level: usize,
-        f: impl FnMut(PointOffsetType),
-    ) {
+    pub(super) fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator {
         let idx = if level == 0 {
             point_id as usize
         } else {
@@ -109,7 +109,7 @@ impl GraphLinksView<'_> {
         match self.compression {
             CompressionInfo::Uncompressed { links, offsets } => {
                 let links_range = offsets[idx].get() as usize..offsets[idx + 1].get() as usize;
-                links[links_range].iter().copied().for_each(f)
+                Either::Left(links[links_range].iter().copied())
             }
             CompressionInfo::Compressed {
                 compressed_links,
@@ -120,12 +120,11 @@ impl GraphLinksView<'_> {
             } => {
                 let links_range =
                     offsets.get(idx).unwrap() as usize..offsets.get(idx + 1).unwrap() as usize;
-                for_each_packed_link(
+                Either::Right(iterate_packed_links(
                     &compressed_links[links_range],
                     bits_per_unsorted,
                     if level == 0 { m0 } else { m },
-                    f,
-                );
+                ))
             }
         }
     }

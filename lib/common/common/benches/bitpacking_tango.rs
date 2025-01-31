@@ -3,7 +3,7 @@ use std::hint::black_box;
 use std::rc::Rc;
 
 use common::bitpacking::{BitReader, BitWriter};
-use common::bitpacking_links::for_each_packed_link;
+use common::bitpacking_links::iterate_packed_links;
 use common::bitpacking_ordered;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
@@ -114,14 +114,14 @@ fn benchmarks_bitpacking_links() -> impl IntoBenchmarks {
         let mut rng = rand::rng();
         b.iter(move || {
             let idx = rng.random_range(1..state.items.len());
-            for_each_packed_link(
+            iterate_packed_links(
                 &state.links[state.items[idx - 1].offset..state.items[idx].offset],
                 state.items[idx].bits_per_unsorted,
                 state.items[idx].sorted_count,
-                |x| {
-                    black_box(x);
-                },
-            );
+            )
+            .for_each(|x| {
+                black_box(x);
+            });
         })
     })]
 }

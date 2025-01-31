@@ -86,11 +86,11 @@ fn test_graph_connectivity() {
     let mut reverse_links = vec![vec![]; num_vectors as usize];
 
     for point_id in 0..num_vectors {
-        let links = hnsw_index
+        for link in hnsw_index
             .graph()
             .links
-            .links_vec(point_id as PointOffsetType, 0);
-        for link in links {
+            .links(point_id as PointOffsetType, 0)
+        {
             reverse_links[link as usize].push(point_id);
         }
     }

@@ -14,7 +14,7 @@ mod serializer;
 mod view;
 
 pub use serializer::GraphLinksSerializer;
-use view::{CompressionInfo, GraphLinksView};
+use view::{CompressionInfo, GraphLinksView, LinksIterator};
 
 /*
 Links data for whole graph layers.
@@ -118,17 +118,16 @@ impl GraphLinks {
         level: usize,
         f: impl FnMut(PointOffsetType),
     ) {
-        self.view().for_each_link(point_id, level, f)
+        self.links(point_id, level).for_each(f);
+    }
+
+    #[inline]
+    pub fn links(&self, point_id: PointOffsetType, level: usize) -> LinksIterator {
+        self.view().links(point_id, level)
     }
 
     pub fn point_level(&self, point_id: PointOffsetType) -> usize {
         self.view().point_level(point_id)
-    }
-
-    pub fn links_vec(&self, point_id: PointOffsetType, level: usize) -> Vec<PointOffsetType> {
-        let mut links = Vec::new();
-        self.for_each_link(point_id, level, |link| links.push(link));
-        links
     }
 
     /// Convert the graph links to a vector of edges, suitable for passing into
@@ -139,7 +138,7 @@ impl GraphLinks {
             let num_levels = self.point_level(point_id as PointOffsetType) + 1;
             let mut levels = Vec::with_capacity(num_levels);
             for level in 0..num_levels {
-                levels.push(self.links_vec(point_id as PointOffsetType, level));
+                levels.push(self.links(point_id as PointOffsetType, level).collect());
             }
             edges.push(levels);
         }

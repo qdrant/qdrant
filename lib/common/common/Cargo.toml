@@ -39,6 +39,7 @@ log = { workspace = true }
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 itertools = { workspace = true }
+rstest = { workspace = true }
 self_cell = "1.1.0"
 tango-bench = "0.6.0"
 
