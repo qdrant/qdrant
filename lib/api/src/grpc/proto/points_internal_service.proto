@@ -100,6 +100,7 @@ message DeleteFieldIndexCollectionInternal {
 message PointsOperationResponseInternal {
   UpdateResultInternal result = 1;
   double time = 2; // Time spent to process
+  optional HardwareUsage usage = 3;
 }
 
 // Has to be backward compatible with `UpdateResult`!
@@ -318,4 +319,5 @@ message FacetHitInternal {
 message FacetResponseInternal {
     repeated FacetHitInternal hits = 1;
     double time = 2; // Time spent to process
+    optional HardwareUsage usage = 3;
 }

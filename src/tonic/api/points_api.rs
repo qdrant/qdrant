@@ -72,7 +72,7 @@ impl Points for PointsService {
             InternalUpdateParams::default(),
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -96,7 +96,7 @@ impl Points for PointsService {
             InternalUpdateParams::default(),
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -142,7 +142,7 @@ impl Points for PointsService {
             InternalUpdateParams::default(),
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -164,7 +164,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -186,7 +186,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -208,7 +208,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -230,7 +230,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -252,7 +252,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
@@ -276,7 +276,7 @@ impl Points for PointsService {
             InternalUpdateParams::default(),
             access,
             inference_token,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
     }
@@ -297,7 +297,7 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics.get_counter(),
+            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))

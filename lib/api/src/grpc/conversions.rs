@@ -2124,10 +2124,11 @@ pub fn into_named_vector_struct(
 
 impl From<PointsOperationResponseInternal> for PointsOperationResponse {
     fn from(resp: PointsOperationResponseInternal) -> Self {
-        let PointsOperationResponseInternal { result, time } = resp;
+        let PointsOperationResponseInternal { result, time, usage } = resp;
         Self {
             result: result.map(Into::into),
             time,
+            usage,
         }
     }
 }
@@ -2135,10 +2136,11 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
 // TODO: Make it explicit `from_operations_response` method instead of `impl From<PointsOperationResponse>`?
 impl From<PointsOperationResponse> for PointsOperationResponseInternal {
     fn from(resp: PointsOperationResponse) -> Self {
-        let PointsOperationResponse { result, time } = resp;
+        let PointsOperationResponse { result, time, usage } = resp;
         Self {
             result: result.map(Into::into),
             time,
+            usage,
         }
     }
 }
