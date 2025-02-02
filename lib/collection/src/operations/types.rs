@@ -1515,7 +1515,6 @@ impl Anonymize for VectorParams {
     }
 }
 
-
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum IdfModifierType {
@@ -1530,7 +1529,6 @@ pub struct IdfModifierParams {
     /// Define
     pub factor: Option<OrderedFloat<f32>>,
 }
-
 
 /// If used, include weight modification, which will be applied to sparse vectors at query time:
 /// None - no modification (default)
