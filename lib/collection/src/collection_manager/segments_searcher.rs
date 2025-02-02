@@ -18,7 +18,6 @@ use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
     VectorName, WithPayload, WithPayloadInterface, WithVector,
 };
-use tinyvec::TinyVec;
 use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 
@@ -179,25 +178,6 @@ impl SegmentsSearcher {
             .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB);
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
 
-        const DEFAULT_CAPACITY: usize = 3;
-        let mut idf_vectors: TinyVec<[&VectorName; DEFAULT_CAPACITY]> = Default::default();
-
-        // check vector names existing
-        for req in &batch_request.searches {
-            let vector_name = req.query.get_vector_name();
-            collection_config.params.get_distance(vector_name)?;
-            if let Some(sparse_vector_params) = collection_config
-                .params
-                .get_sparse_vector_params_opt(vector_name)
-            {
-                if sparse_vector_params.modifier == Some(Modifier::Idf)
-                    && !idf_vectors.contains(&vector_name)
-                {
-                    idf_vectors.push(vector_name);
-                }
-            }
-        }
-
         let mut query_context = QueryContext::new(
             indexing_threshold_kb.max(full_scan_threshold_kb),
             hw_measurement_acc,
@@ -208,8 +188,23 @@ impl SegmentsSearcher {
             search_request
                 .query
                 .iterate_sparse(|vector_name, sparse_vector| {
-                    if idf_vectors.contains(&vector_name) {
-                        query_context.init_idf(vector_name, &sparse_vector.indices);
+                    if let Some(sparse_vector_params) = collection_config
+                        .params
+                        .get_sparse_vector_params_opt(vector_name)
+                    {
+                        match sparse_vector_params.modifier {
+                            Some(Modifier::Idf) => {
+                                query_context.init_idf(vector_name, &sparse_vector.indices, None);
+                            }
+                            Some(Modifier::IdfParams(params)) => {
+                                query_context.init_idf(
+                                    vector_name,
+                                    &sparse_vector.indices,
+                                    params.factor.map(|f| f.0),
+                                );
+                            }
+                            Some(Modifier::None) | None => {}
+                        }
                     }
                 })
         }

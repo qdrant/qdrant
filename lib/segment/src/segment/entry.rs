@@ -873,7 +873,10 @@ impl SegmentEntry for Segment {
 
         for (vector_name, idf) in query_context.mut_idf().iter_mut() {
             if let Some(vector_data) = self.vector_data.get(vector_name) {
-                vector_data.vector_index.borrow().fill_idf_statistics(idf);
+                vector_data
+                    .vector_index
+                    .borrow()
+                    .fill_idf_statistics(idf.mut_frequency());
             }
         }
     }

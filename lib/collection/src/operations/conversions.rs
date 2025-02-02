@@ -687,6 +687,7 @@ impl From<Modifier> for api::grpc::qdrant::Modifier {
         match value {
             Modifier::None => api::grpc::qdrant::Modifier::None,
             Modifier::Idf => api::grpc::qdrant::Modifier::Idf,
+            Modifier::IdfParams(_) => api::grpc::qdrant::Modifier::Idf,
         }
     }
 }

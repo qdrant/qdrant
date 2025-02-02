@@ -19,6 +19,7 @@ use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
 use issues::IssueRecord;
 use merge::Merge;
+use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use segment::common::operation_error::OperationError;
@@ -1514,6 +1515,23 @@ impl Anonymize for VectorParams {
     }
 }
 
+
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum IdfModifierType {
+    #[default]
+    Idf,
+}
+
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
+#[serde(rename_all = "snake_case")]
+pub struct IdfModifierParams {
+    pub r#type: IdfModifierType,
+    /// Define
+    pub factor: Option<OrderedFloat<f32>>,
+}
+
+
 /// If used, include weight modification, which will be applied to sparse vectors at query time:
 /// None - no modification (default)
 /// Idf - inverse document frequency, based on statistics of the collection
@@ -1523,6 +1541,7 @@ pub enum Modifier {
     #[default]
     None,
     Idf,
+    IdfParams(IdfModifierParams),
 }
 
 /// Params of single sparse vector data storage

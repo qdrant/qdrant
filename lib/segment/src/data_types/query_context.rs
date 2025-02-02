@@ -11,6 +11,28 @@ use sparse::common::types::{DimId, DimWeight};
 use crate::data_types::tiny_map;
 use crate::types::{VectorName, VectorNameBuf};
 
+#[derive(Debug, Default)]
+pub struct IdfContext {
+    /// Statistics of how many documents contain each dimension.
+    frequency: HashMap<DimId, usize>,
+    /// How important is IDF relative to the other factors.
+    /// If None, defaults to 1.0. (same as in Bm25)
+    factor: Option<f32>,
+}
+
+impl IdfContext {
+    fn new(factor: Option<f32>) -> Self {
+        Self {
+            frequency: HashMap::default(),
+            factor,
+        }
+    }
+
+    pub fn mut_frequency(&mut self) -> &mut HashMap<DimId, usize> {
+        &mut self.frequency
+    }
+}
+
 #[derive(Debug)]
 pub struct QueryContext {
     /// Total amount of available points in the segment.
@@ -27,7 +49,7 @@ pub struct QueryContext {
     /// Statistics of the element frequency,
     /// collected over all segments.
     /// Required for processing sparse vector search with `idf-dot` similarity.
-    idf: tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>>,
+    idf: tiny_map::TinyMap<VectorNameBuf, IdfContext>,
 
     /// Structure to accumulate and report hardware usage.
     /// Holds reference to the shared drain, which is used to accumulate the values.
@@ -71,21 +93,22 @@ impl QueryContext {
 
     /// Fill indices of sparse vectors, which are required for `idf-dot` similarity
     /// with zeros, so the statistics can be collected.
-    pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId]) {
+    pub fn init_idf(&mut self, vector_name: &VectorName, indices: &[DimId], factor: Option<f32>) {
         // ToDo: Would be nice to have an implementation of `entry` for `TinyMap`.
         let idf = if let Some(idf) = self.idf.get_mut(vector_name) {
             idf
         } else {
-            self.idf.insert(vector_name.to_owned(), HashMap::default());
+            self.idf
+                .insert(vector_name.to_owned(), IdfContext::new(factor));
             self.idf.get_mut(vector_name).unwrap()
         };
 
         for index in indices {
-            idf.insert(*index, 0);
+            idf.frequency.insert(*index, 0);
         }
     }
 
-    pub fn mut_idf(&mut self) -> &mut tiny_map::TinyMap<VectorNameBuf, HashMap<DimId, usize>> {
+    pub fn mut_idf(&mut self) -> &mut tiny_map::TinyMap<VectorNameBuf, IdfContext> {
         &mut self.idf
     }
 
@@ -161,7 +184,7 @@ pub struct VectorQueryContext<'a> {
 
     is_stopped: Option<&'a AtomicBool>,
 
-    idf: Option<&'a HashMap<DimId, usize>>,
+    idf: Option<&'a IdfContext>,
 
     deleted_points: Option<&'a BitSlice>,
 
@@ -217,15 +240,26 @@ impl VectorQueryContext<'_> {
     pub fn remap_idf_weights(&self, indices: &[DimId], weights: &mut [DimWeight]) {
         // Number of documents
         let n = self.available_point_count as DimWeight;
+        let factor_opt = self.idf.and_then(|idf| idf.factor);
+
         for (weight, index) in weights.iter_mut().zip(indices) {
             // Document frequency
             let df = self
                 .idf
-                .and_then(|idf| idf.get(index))
+                .and_then(|idf| idf.frequency.get(index))
                 .copied()
                 .unwrap_or(0);
 
-            *weight *= Self::fancy_idf(n, df as DimWeight);
+            let idf = Self::fancy_idf(n, df as DimWeight);
+
+            let weighted_idf = if let Some(factor) = factor_opt {
+                // IDF is part of multiplication, so the factor should be applied as a power.
+                idf.powf(factor)
+            } else {
+                idf
+            };
+
+            *weight *= weighted_idf
         }
     }
 
