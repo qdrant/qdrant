@@ -22,6 +22,20 @@ pub enum CowMultiVector<'a, TElement: PrimitiveVectorElement> {
     Borrowed(TypedMultiDenseVectorRef<'a, TElement>),
 }
 
+impl<TElement> CowMultiVector<'_, TElement>
+where
+    TElement: PrimitiveVectorElement,
+{
+    pub fn dim(&self) -> usize {
+        match self {
+            CowMultiVector::Owned(typed_multi_dense_vector) => typed_multi_dense_vector.dim,
+            CowMultiVector::Borrowed(typed_multi_dense_vector_ref) => {
+                typed_multi_dense_vector_ref.dim
+            }
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum CowVector<'a> {
     Dense(Cow<'a, [VectorElementType]>),
@@ -35,11 +49,31 @@ impl Default for CowVector<'_> {
     }
 }
 
+impl CowVector<'_> {
+    pub fn dim(&self) -> usize {
+        match self {
+            CowVector::Dense(cow) => cow.len(),
+            CowVector::Sparse(cow) => cow.indices.len(),
+            CowVector::MultiDense(cow_multi_vector) => cow_multi_vector.dim(),
+        }
+    }
+
+    pub fn estimate_size_in_bytes(&self) -> usize {
+        self.dim() * size_of::<VectorElementType>()
+    }
+}
+
 type TinyMap<'a> = tiny_map::TinyMap<CowKey<'a>, CowVector<'a>>;
 
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct NamedVectors<'a> {
     map: TinyMap<'a>,
+}
+
+impl NamedVectors<'_> {
+    pub fn estimate_size_in_bytes(&self) -> usize {
+        self.map.iter().map(|i| i.1.estimate_size_in_bytes()).sum()
+    }
 }
 
 impl<'a, TElement: PrimitiveVectorElement> CowMultiVector<'a, TElement> {

@@ -2880,6 +2880,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | result | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
 
 
 
@@ -2929,6 +2930,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | cpu | [uint64](#uint64) |  |  |
 | payload_io_read | [uint64](#uint64) |  |  |
 | payload_io_write | [uint64](#uint64) |  |  |
+| vector_io_read | [uint64](#uint64) |  |  |
 | vector_io_write | [uint64](#uint64) |  |  |
 
 
@@ -4108,6 +4110,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | next_page_offset | [PointId](#qdrant-PointId) | optional | Use this offset for the next query |
 | result | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
 
 
 
