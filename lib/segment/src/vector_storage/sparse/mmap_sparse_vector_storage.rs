@@ -13,7 +13,7 @@ use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
@@ -240,6 +240,10 @@ impl VectorStorage for MmapSparseVectorStorage {
             let vector = (!other_deleted).then_some(other_vector);
             self.update_stored(new_id, vector, &hw_counter)?;
         }
+
+        // return cancelled error if stopped
+        check_process_stopped(stopped)?;
+
         Ok(start_index..self.next_point_offset as PointOffsetType)
     }
 
