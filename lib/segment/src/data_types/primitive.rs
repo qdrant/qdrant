@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 
+use bytemuck::must_cast_slice;
 use half::f16;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use zerocopy::IntoBytes;
 
 use super::named_vectors::CowMultiVector;
 use super::vectors::TypedMultiDenseVector;
@@ -33,6 +35,13 @@ pub trait PrimitiveVectorElement:
     fn into_float_multivector(
         multivector: CowMultiVector<Self>,
     ) -> CowMultiVector<VectorElementType>;
+
+    /// Cast elements to a byte slice. Typically a wrapper around [`zerocopy`]
+    /// or [`bytemuck`] methods.
+    ///
+    /// TODO: once [`half::f16`] support the latest [`zerocopy`], we could
+    /// remove this method in favor of using [`zerocopy::IntoBytes`] directly.
+    fn as_bytes(vector: &[Self]) -> &[u8];
 }
 
 impl PrimitiveVectorElement for VectorElementType {
@@ -66,6 +75,10 @@ impl PrimitiveVectorElement for VectorElementType {
         multivector: CowMultiVector<Self>,
     ) -> CowMultiVector<VectorElementType> {
         multivector
+    }
+
+    fn as_bytes(vector: &[Self]) -> &[u8] {
+        IntoBytes::as_bytes(vector)
     }
 }
 
@@ -116,6 +129,10 @@ impl PrimitiveVectorElement for VectorElementTypeHalf {
 
     fn datatype() -> VectorStorageDatatype {
         VectorStorageDatatype::Float16
+    }
+
+    fn as_bytes(vector: &[Self]) -> &[u8] {
+        must_cast_slice(vector)
     }
 }
 
@@ -194,5 +211,9 @@ impl PrimitiveVectorElement for VectorElementTypeByte {
                 .collect_vec(),
             multivector.as_vec_ref().dim,
         ))
+    }
+
+    fn as_bytes(vector: &[Self]) -> &[u8] {
+        IntoBytes::as_bytes(vector)
     }
 }

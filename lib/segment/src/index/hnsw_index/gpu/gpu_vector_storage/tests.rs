@@ -711,8 +711,7 @@ fn test_gpu_vector_storage_impl(
     context.run().unwrap();
     context.wait_finish(GPU_TIMEOUT).unwrap();
 
-    let mut gpu_scores = vec![0.0f32; num_vectors];
-    staging_buffer.download_slice(&mut gpu_scores, 0).unwrap();
+    let gpu_scores = staging_buffer.download_vec(0, num_vectors).unwrap();
 
     let stopped = false.into();
     let point_deleted = BitVec::repeat(false, num_vectors);
