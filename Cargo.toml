@@ -165,7 +165,7 @@ private_intra_doc_links = "allow"
 ahash = { version = "0.8.11", features = ["serde"] }
 atomicwrites = "0.4.4"
 bytemuck = { version = "1.21.0", features = ["extern_crate_alloc", "transparentwrapper_extra"] }
-bytes = "1.9.0"
+bytes = "1.10.0"
 chrono = { version = "0.4.39", features = ["serde"] }
 criterion = "0.5.1"
 data-encoding = "2.7.0"
