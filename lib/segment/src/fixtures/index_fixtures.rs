@@ -83,7 +83,7 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
 
     fn update_from<'a>(
         &mut self,
-        _other_ids: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
+        _other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         _stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         todo!()

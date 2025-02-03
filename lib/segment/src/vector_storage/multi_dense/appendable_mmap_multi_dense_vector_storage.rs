@@ -232,11 +232,11 @@ impl<
 
     fn update_from<'a>(
         &mut self,
-        other_ids: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
+        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.offsets.len() as PointOffsetType;
-        for (other_vector, other_deleted) in other_ids {
+        for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector: VectorRef = other_vector.as_vec_ref();

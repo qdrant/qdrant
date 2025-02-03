@@ -180,7 +180,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
 
     fn update_from<'a>(
         &mut self,
-        other_ids: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
+        other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let dim = self.vector_dim();
@@ -196,7 +196,7 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         // Extend vectors file, write other vectors into it
         let mut vectors_file = open_append(&self.vectors_path)?;
         let mut deleted_ids = vec![];
-        for (offset, (other_vector, other_deleted)) in other_ids.enumerate() {
+        for (offset, (other_vector, other_deleted)) in other_vectors.enumerate() {
             check_process_stopped(stopped)?;
             let vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let raw_bites = mmap_ops::transmute_to_u8_slice(vector.as_ref());
