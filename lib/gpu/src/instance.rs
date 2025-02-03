@@ -224,7 +224,7 @@ impl Instance {
                     _ => PhysicalDeviceType::Other,
                 };
 
-                log::info!("Foung GPU device: {device_name}");
+                log::info!("Found GPU device: {device_name}");
                 PhysicalDevice {
                     vk_physical_device,
                     name: device_name,
