@@ -16,7 +16,8 @@ if [ "$RUN_PER_PACKAGE" == "false" ]; then
 fi
 
 PACKAGES=($(cargo metadata --format-version 1 | jq -r '.workspace_members[] | split("/") | .[-1] | split("#")[0]' | sort))
-REPORT_DIR="target/llvm-cov/package-reports"
+# REPORT_DIR="target/llvm-cov/package-reports"
+REPORT_DIR="/tmp/llvm-cov-reports"
 
 echo "Workspace packages: ${PACKAGES[*]}"
 
@@ -25,9 +26,11 @@ mkdir -p "$REPORT_DIR"
 LCOV_COMMAND_ARGS=""
 
 for PACKAGE in "${PACKAGES[@]}"; do
-    echo "Testing PACKAGE with coverage: $PACKAGE"
+    echo "Testing package with coverage: $PACKAGE"
     # Profile "ci" is configured in .config/nextest.toml
-    cargo llvm-cov nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"
+    cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"
+    echo "Testing completed for package $PACKAGE. Cleaning artifacts"
+    cargo llvm-cov clean -p "$PACKAGE"
 
     LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$PACKAGE.info"
 done
