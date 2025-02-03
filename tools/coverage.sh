@@ -27,7 +27,7 @@ LCOV_COMMAND_ARGS=""
 for PACKAGE in "${PACKAGES[@]}"; do
     echo "Testing PACKAGE with coverage: $PACKAGE"
     # Profile "ci" is configured in .config/nextest.toml
-    cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"
+    cargo llvm-cov nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"
 
     LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$PACKAGE.info"
 done
