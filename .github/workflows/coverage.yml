@@ -6,6 +6,8 @@ on:
     - cron: "0 0 * * *"
   push:
     branches: [ dev ]
+  pull_requst:
+    branches: [ '**' ]
 
 jobs:
     coverage:
