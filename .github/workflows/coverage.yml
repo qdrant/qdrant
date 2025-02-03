@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *"
   push:
     branches: [ dev ]
-  pull_requst:
+  pull_request:
     branches: [ '**' ]
 
 jobs:
