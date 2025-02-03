@@ -49,6 +49,7 @@ async fn count_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
 
     let timing = Instant::now();

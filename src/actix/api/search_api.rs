@@ -60,6 +60,7 @@ async fn search_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
 
     let timing = Instant::now();
@@ -130,6 +131,7 @@ async fn batch_search_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
 
     let timing = Instant::now();
@@ -195,6 +197,7 @@ async fn search_point_groups(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -249,6 +252,7 @@ async fn search_points_matrix_pairs(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -304,6 +308,7 @@ async fn search_points_matrix_offsets(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
