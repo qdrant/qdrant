@@ -90,7 +90,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set Values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
@@ -98,10 +98,10 @@ impl SegmentEntry for Segment {
         let stored_internal_point = self.id_tracker.borrow().internal_id(point_id);
         self.handle_point_version_and_failure(op_num, stored_internal_point, |segment| {
             if let Some(existing_internal_id) = stored_internal_point {
-                segment.replace_all_vectors(existing_internal_id, &vectors)?;
+                segment.replace_all_vectors(existing_internal_id, &vectors, hw_counter)?;
                 Ok((true, Some(existing_internal_id)))
             } else {
-                let new_index = segment.insert_new_vectors(point_id, &vectors)?;
+                let new_index = segment.insert_new_vectors(point_id, &vectors, hw_counter)?;
                 Ok((false, Some(new_index)))
             }
         })
@@ -149,7 +149,7 @@ impl SegmentEntry for Segment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         mut vectors: NamedVectors,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Set Values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
         check_named_vectors(&vectors, &self.segment_config)?;
         vectors.preprocess(|name| self.config().vector_data.get(name).unwrap());
@@ -160,7 +160,7 @@ impl SegmentEntry for Segment {
             }),
             Some(internal_id) => {
                 self.handle_point_version_and_failure(op_num, Some(internal_id), |segment| {
-                    segment.update_vectors(internal_id, vectors)?;
+                    segment.update_vectors(internal_id, vectors, hw_counter)?;
                     Ok((true, Some(internal_id)))
                 })
             }

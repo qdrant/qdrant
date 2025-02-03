@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 
@@ -184,18 +185,19 @@ impl VectorIndex for PlainVectorIndex {
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut vector_storage = self.vector_storage.borrow_mut();
 
         if let Some(vector) = vector {
-            vector_storage.insert_vector(id, vector)?;
+            vector_storage.insert_vector(id, vector, hw_counter)?;
         } else {
             if id as usize >= vector_storage.total_vector_count() {
                 debug_assert!(id as usize == vector_storage.total_vector_count());
                 // Vector doesn't exist in the storage
                 // Insert default vector to keep the sequence
                 let default_vector = vector_storage.default_vector();
-                vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
+                vector_storage.insert_vector(id, VectorRef::from(&default_vector), hw_counter)?;
             }
             vector_storage.delete_vector(id)?;
         }
