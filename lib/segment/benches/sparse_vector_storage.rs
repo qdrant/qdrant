@@ -3,6 +3,7 @@ mod prof;
 
 use std::sync::atomic::AtomicBool;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
@@ -28,12 +29,14 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     let mut rocksdb_sparse_vector_storage =
         open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &stopped).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     group.bench_function("insert-rocksdb", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
                 let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
                 rocksdb_sparse_vector_storage
-                    .insert_vector(idx as PointOffsetType, vec.into())
+                    .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
             }
         })
@@ -59,7 +62,7 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
             for idx in 0..NUM_VECTORS {
                 let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
                 mmap_sparse_vector_storage
-                    .insert_vector(idx as PointOffsetType, vec.into())
+                    .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
             }
         })

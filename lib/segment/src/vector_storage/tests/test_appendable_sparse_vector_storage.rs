@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
@@ -34,10 +35,12 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert all points
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.into())
+            .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
             .unwrap();
     }
 
@@ -123,6 +126,8 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let borrowed_id_tracker = id_tracker.borrow_mut();
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
@@ -133,7 +138,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         points.iter().enumerate().for_each(|(i, opt_vec)| {
             if let Some(vec) = opt_vec {
                 storage2
-                    .insert_vector(i as PointOffsetType, vec.into())
+                    .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
             } else {
                 storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -212,9 +217,11 @@ fn do_test_persistence(open: impl Fn(&Path) -> VectorStorageEnum) {
     .map(|v| v.try_into().unwrap())
     .collect::<Vec<SparseVector>>();
 
+    let hw_counter = HardwareCounterCell::new();
+
     points.iter().enumerate().for_each(|(i, vec)| {
         storage
-            .insert_vector(i as PointOffsetType, vec.into())
+            .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
             .unwrap();
     });
 

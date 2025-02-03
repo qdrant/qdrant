@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::Rng;
@@ -36,11 +37,14 @@ fn init_vector_storage(
     let mut storage =
         open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, dist, &AtomicBool::new(false))
             .unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+
     {
         for i in 0..num {
             let vector: VectorInternal = random_vector(dim).into();
             storage
-                .insert_vector(i as PointOffsetType, VectorRef::from(&vector))
+                .insert_vector(i as PointOffsetType, VectorRef::from(&vector), &hw_counter)
                 .unwrap();
         }
     }

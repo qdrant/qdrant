@@ -49,13 +49,14 @@ impl Segment {
         &mut self,
         internal_id: PointOffsetType,
         vectors: &NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_named_vectors(vectors, &self.segment_config)?;
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(internal_id, vector)?;
+            vector_index.update_vector(internal_id, vector, hw_counter)?;
         }
         Ok(())
     }
@@ -78,13 +79,14 @@ impl Segment {
         &mut self,
         internal_id: PointOffsetType,
         vectors: NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         debug_assert!(self.is_appendable());
         check_named_vectors(&vectors, &self.segment_config)?;
         for (vector_name, new_vector) in vectors {
             let vector_data = &self.vector_data[vector_name.as_ref()];
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()))?;
+            vector_index.update_vector(internal_id, Some(new_vector.as_vec_ref()), hw_counter)?;
         }
         Ok(())
     }
@@ -98,6 +100,7 @@ impl Segment {
         &mut self,
         point_id: PointIdType,
         vectors: &NamedVectors,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<PointOffsetType> {
         debug_assert!(self.is_appendable());
         check_named_vectors(vectors, &self.segment_config)?;
@@ -105,7 +108,7 @@ impl Segment {
         for (vector_name, vector_data) in self.vector_data.iter_mut() {
             let vector_opt = vectors.get(vector_name);
             let mut vector_index = vector_data.vector_index.borrow_mut();
-            vector_index.update_vector(new_index, vector_opt)?;
+            vector_index.update_vector(new_index, vector_opt, hw_counter)?;
         }
         self.id_tracker.borrow_mut().set_link(point_id, new_index)?;
         Ok(new_index)

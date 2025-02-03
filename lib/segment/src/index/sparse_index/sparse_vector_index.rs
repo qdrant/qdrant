@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use io::storage_version::{StorageVersion as _, VERSION_FILE};
 use itertools::Itertools;
@@ -580,19 +581,24 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
         &mut self,
         id: PointOffsetType,
         vector: Option<VectorRef>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let (old_vector, new_vector) = {
             let mut vector_storage = self.vector_storage.borrow_mut();
             let old_vector = vector_storage.get_vector_opt(id).map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
-                vector_storage.insert_vector(id, vector)?;
+                vector_storage.insert_vector(id, vector, hw_counter)?;
                 vector.to_owned()
             } else {
                 let default_vector = vector_storage.default_vector();
                 if id as usize >= vector_storage.total_vector_count() {
                     // Vector doesn't exist in the storage
                     // Insert default vector to keep the sequence
-                    vector_storage.insert_vector(id, VectorRef::from(&default_vector))?;
+                    vector_storage.insert_vector(
+                        id,
+                        VectorRef::from(&default_vector),
+                        hw_counter,
+                    )?;
                 }
                 vector_storage.delete_vector(id)?;
                 default_vector
