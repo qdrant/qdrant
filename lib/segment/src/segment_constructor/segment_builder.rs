@@ -348,9 +348,10 @@ impl SegmentBuilder {
             match &new_internal_range {
                 Some(new_internal_range) => {
                     if new_internal_range != &internal_range {
-                        return Err(OperationError::service_error(
-                            "Internal ids range mismatch between self segment vectors and other segment vectors",
-                        ));
+                        return Err(OperationError::service_error( format!(
+                                "Internal ids range mismatch between self segment vectors and other segment vectors\n\
+                                vector_name: {vector_name}, self range: {new_internal_range:?}, other range: {internal_range:?}"
+                            )));
                     }
                 }
                 None => new_internal_range = Some(internal_range),
