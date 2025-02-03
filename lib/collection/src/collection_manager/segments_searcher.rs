@@ -439,7 +439,11 @@ impl SegmentsSearcher {
                         vector: {
                             match with_vector {
                                 WithVector::Bool(true) => {
-                                    Some(VectorStructInternal::from(segment.all_vectors(id)?))
+                                    let vectors = segment.all_vectors(id)?;
+                                    hw_counter
+                                        .vector_io_read()
+                                        .incr_delta(vectors.estimate_size_in_bytes());
+                                    Some(VectorStructInternal::from(vectors))
                                 }
                                 WithVector::Bool(false) => None,
                                 WithVector::Selector(vector_names) => {
@@ -449,6 +453,9 @@ impl SegmentsSearcher {
                                             selected_vectors.insert(vector_name.clone(), vector);
                                         }
                                     }
+                                    hw_counter
+                                        .vector_io_read()
+                                        .incr_delta(selected_vectors.estimate_size_in_bytes());
                                     Some(VectorStructInternal::from(selected_vectors))
                                 }
                             }

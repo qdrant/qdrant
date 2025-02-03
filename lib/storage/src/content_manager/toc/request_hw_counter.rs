@@ -36,6 +36,7 @@ impl RequestHwCounter {
                 cpu: self.counter.get_cpu(),
                 payload_io_read: self.counter.get_payload_io_read(),
                 payload_io_write: self.counter.get_payload_io_write(),
+                vector_io_read: self.counter.get_vector_io_read(),
                 vector_io_write: self.counter.get_vector_io_write(),
             })
         } else {
@@ -49,6 +50,7 @@ impl RequestHwCounter {
                 cpu: self.counter.get_cpu() as u64,
                 payload_io_read: self.counter.get_payload_io_read() as u64,
                 payload_io_write: self.counter.get_payload_io_write() as u64,
+                vector_io_read: self.counter.get_vector_io_read() as u64,
                 vector_io_write: self.counter.get_vector_io_write() as u64,
             })
         } else {

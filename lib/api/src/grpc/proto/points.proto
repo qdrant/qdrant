@@ -864,6 +864,7 @@ message ScrollResponse {
   optional PointId next_page_offset = 1; // Use this offset for the next query
   repeated RetrievedPoint result = 2;
   double time = 3; // Time spent to process
+  optional HardwareUsage usage = 4;
 }
 
 message CountResult {
@@ -882,6 +883,7 @@ message RetrievedPoint {
 message GetResponse {
   repeated RetrievedPoint result = 1;
   double time = 2; // Time spent to process
+  optional HardwareUsage usage = 3;
 }
 
 message RecommendResponse {
@@ -1100,5 +1102,6 @@ message HardwareUsage {
   uint64 cpu = 1;
   uint64 payload_io_read = 2;
   uint64 payload_io_write = 3;
-  uint64 vector_io_write = 4;
+  uint64 vector_io_read = 4;
+  uint64 vector_io_write = 5;
 }

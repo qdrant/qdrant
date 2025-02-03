@@ -5890,6 +5890,8 @@ pub struct ScrollResponse {
     /// Time spent to process
     #[prost(double, tag = "3")]
     pub time: f64,
+    #[prost(message, optional, tag = "4")]
+    pub usage: ::core::option::Option<HardwareUsage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5924,6 +5926,8 @@ pub struct GetResponse {
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
+    #[prost(message, optional, tag = "3")]
+    pub usage: ::core::option::Option<HardwareUsage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6367,6 +6371,8 @@ pub struct HardwareUsage {
     #[prost(uint64, tag = "3")]
     pub payload_io_write: u64,
     #[prost(uint64, tag = "4")]
+    pub vector_io_read: u64,
+    #[prost(uint64, tag = "5")]
     pub vector_io_write: u64,
 }
 #[derive(serde::Serialize)]
