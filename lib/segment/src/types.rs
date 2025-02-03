@@ -900,9 +900,9 @@ pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
     InMemory,
     // Store payload on disk only, read each time it is requested
-    #[default]
     OnDisk,
     // Store payload on disk and in memory, read from memory if possible
+    #[default]
     Mmap,
 }
 
@@ -1090,10 +1090,10 @@ impl VectorDataConfig {
 pub enum SparseVectorStorageType {
     /// Storage on disk
     // (rocksdb storage)
+    #[default]
     OnDisk,
     /// Storage in memory maps
     // (gridstore storage)
-    #[default]
     Mmap,
 }
 

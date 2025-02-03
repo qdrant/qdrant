@@ -114,7 +114,7 @@ pub struct CollectionParams {
 impl CollectionParams {
     pub fn payload_storage_type(&self) -> PayloadStorageType {
         if self.on_disk_payload {
-            PayloadStorageType::Mmap
+            PayloadStorageType::OnDisk
         } else {
             PayloadStorageType::InMemory
         }
