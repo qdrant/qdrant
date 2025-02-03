@@ -15,7 +15,9 @@ pub fn get_request_hardware_counter(
     dispatcher: &Dispatcher,
     collection_name: String,
     report_to_api: bool,
+    wait: Option<bool>, // Whether the client is awaiting the operation or `None` if function always waits.
 ) -> RequestHwCounter {
+    let report_to_api = report_to_api && wait != Some(false);
     RequestHwCounter::new(
         HwMeasurementAcc::new_with_metrics_drain(
             dispatcher.get_collection_hw_metrics(collection_name),

@@ -50,6 +50,7 @@ async fn get_points(
         &dispatcher,
         path.collection.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -107,6 +108,7 @@ async fn scroll_points(
         &dispatcher,
         path.collection.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -180,6 +182,7 @@ async fn count_points(
         &dispatcher,
         path.collection.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();

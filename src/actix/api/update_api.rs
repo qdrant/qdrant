@@ -60,6 +60,7 @@ async fn upsert_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        params.wait,
     );
     let timing = Instant::now();
 
@@ -104,6 +105,7 @@ async fn delete_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -148,6 +150,7 @@ async fn update_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -193,6 +196,7 @@ async fn delete_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -236,6 +240,7 @@ async fn set_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -277,6 +282,7 @@ async fn overwrite_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -318,6 +324,7 @@ async fn delete_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -360,6 +367,7 @@ async fn clear_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
     let timing = Instant::now();
 
@@ -408,15 +416,17 @@ async fn update_batch(
         return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None);
     };
 
+    let wait = params.wait.unwrap_or(false);
+
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(wait),
     );
 
     let timing = Instant::now();
 
-    let wait = params.wait.unwrap_or(false);
     let ordering = params.ordering.unwrap_or_default();
 
     let response = do_batch_update_points(
