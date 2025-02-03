@@ -51,6 +51,7 @@ async fn upsert_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -90,6 +91,7 @@ async fn delete_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -130,6 +132,7 @@ async fn update_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -170,6 +173,7 @@ async fn delete_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -208,6 +212,7 @@ async fn set_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -245,6 +250,7 @@ async fn overwrite_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -282,6 +288,7 @@ async fn delete_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -319,6 +326,7 @@ async fn clear_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
@@ -369,6 +377,7 @@ async fn update_batch(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
 
     let timing = Instant::now();

@@ -53,6 +53,7 @@ async fn query_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -119,6 +120,7 @@ async fn query_points_batch(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
@@ -198,6 +200,7 @@ async fn query_points_groups(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
