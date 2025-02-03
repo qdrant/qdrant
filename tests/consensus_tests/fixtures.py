@@ -51,9 +51,10 @@ def update_points_payload(
         peer_url,
         points,
         collection_name="test_collection",
+        wait="true",
 ):
     r_batch = requests.post(
-        f"{peer_url}/collections/{collection_name}/points/payload?wait=true",
+        f"{peer_url}/collections/{collection_name}/points/payload?wait={wait}",
         json={
             "points": points,
             "payload": {"city": random.choice(CITIES)},

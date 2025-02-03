@@ -15,11 +15,8 @@ COLLECTION_NAME = "test_collection_hw_counting"
 
 def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
-
     create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS)
-
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
-
     upsert_random_points(peer_urls[0], 200, collection_name=COLLECTION_NAME)
 
     peer_hw_infos = [get_telemetry_hw_info(x, COLLECTION_NAME) for x in peer_urls]
@@ -63,5 +60,30 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
 
     # Check that API response hardware data is equal to the data reported in telemetry!
     assert update_hw_data['payload_io_write'] == total_payload_io_write - total_payload_io_write_old
+    # TODO: also test vector updates when implemented
+
+
+def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
+    peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
+    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS)
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
+
+    check_collection_points_count(peer_urls[0], COLLECTION_NAME, 0)
+
+    upsert_vectors = 50
+    total_vectors = upsert_vectors * N_PEERS  # 200 vectors
+
+    # Upsert 200 points without waiting
+    upsert_random_points(peer_urls[0], total_vectors, collection_name=COLLECTION_NAME, wait="false")
+
+    wait_collection_points_count(peer_urls[0], COLLECTION_NAME, total_vectors)
+
+    # Check metrics getting collected on each node, despite `wait=false`.
+    for peer_idx in range(N_PEERS):
+        peer_url = peer_urls[peer_idx]
+        peer_hw = get_telemetry_hw_info(peer_url, COLLECTION_NAME)
+
+        # Assert that each nodes telemetry has been increased by some bytes
+        assert peer_hw["payload_io_write"] >= (upsert_vectors * 5)  # 50 vectors on this node with payload of ~5 bytes
 
     # TODO: also test vector updates when implemented
