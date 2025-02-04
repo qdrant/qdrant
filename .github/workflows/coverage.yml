@@ -30,7 +30,7 @@ jobs:
         - name: Run tests with coverage
           run: RUN_PER_PACKAGE=true tools/coverage.sh
         - name: Upload coverage data to Codecov
-          uses: codecov/codecov-action@v3
+          uses: codecov/codecov-action@v5
           with:
             files: lcov.info
             token: ${{ secrets.CODECOV_TOKEN }}
