@@ -165,6 +165,7 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
         key: PointOffsetType,
         deleted: bool,
         vector: Option<&[T]>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Write vector state to buffer record
         let record = &mut self.update_buffer;
@@ -173,11 +174,15 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
             record.vector.copy_from_slice(vector);
         }
 
+        let key_enc = bincode::serialize(&key).unwrap();
+        let record_enc = bincode::serialize(&record).unwrap();
+
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(key_enc.len() + record_enc.len());
+
         // Store updated record
-        self.db_wrapper.put(
-            bincode::serialize(&key).unwrap(),
-            bincode::serialize(&record).unwrap(),
-        )?;
+        self.db_wrapper.put(key_enc, record_enc)?;
 
         Ok(())
     }
@@ -225,14 +230,14 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         &mut self,
         key: PointOffsetType,
         vector: VectorRef,
-        hw_couner: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
         self.vectors
             .insert(key as VectorOffsetType, vector.as_ref())?;
         self.set_deleted(key, false);
-        self.update_stored(key, false, Some(vector.as_ref()))?;
+        self.update_stored(key, false, Some(vector.as_ref()), hw_counter)?;
         Ok(())
     }
 
@@ -242,13 +247,19 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
+        let dispose_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
             let new_id = self.vectors.push(other_vector.as_ref())? as PointOffsetType;
             self.set_deleted(new_id, other_deleted);
-            self.update_stored(new_id, other_deleted, Some(other_vector.as_ref()))?;
+            self.update_stored(
+                new_id,
+                other_deleted,
+                Some(other_vector.as_ref()),
+                &dispose_hw,
+            )?;
         }
         let end_index = self.vectors.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -265,7 +276,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
-            self.update_stored(key, true, None)?;
+            self.update_stored(key, true, None, &HardwareCounterCell::disposable())?;
+            // Not measuring deletions
         }
         Ok(is_deleted)
     }
