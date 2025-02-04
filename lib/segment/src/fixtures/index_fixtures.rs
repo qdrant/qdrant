@@ -76,7 +76,12 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.get_opt(key as _).map(|v| v.into())
     }
 
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: VectorRef,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.vectors.insert(key as _, vector.try_into()?)?;
         Ok(())
     }
