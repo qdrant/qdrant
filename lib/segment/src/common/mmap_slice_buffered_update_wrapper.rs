@@ -17,7 +17,7 @@ where
 {
     mmap_slice: Arc<RwLock<MmapSlice<T>>>,
     len: usize,
-    pending_updates: Mutex<HashMap<usize, T>>,
+    pending_updates: Arc<Mutex<HashMap<usize, T>>>,
 }
 
 impl<T> MmapSliceBufferedUpdateWrapper<T>
@@ -29,7 +29,7 @@ where
         Self {
             mmap_slice: Arc::new(RwLock::new(mmap_slice)),
             len,
-            pending_updates: Mutex::new(HashMap::new()),
+            pending_updates: Default::default(),
         }
     }
 
@@ -48,10 +48,11 @@ where
     T: 'static + Sync + Send,
 {
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = mem::take(&mut *self.pending_updates.lock());
+        let pending_updates = Arc::clone(&self.pending_updates);
         let slice = self.mmap_slice.clone();
         Box::new(move || {
             let mut mmap_slice_write = slice.write();
+            let pending_updates = mem::take(&mut *pending_updates.lock());
             for (index, value) in pending_updates {
                 mmap_slice_write[index] = value;
             }

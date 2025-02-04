@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -16,16 +17,16 @@ use crate::common::Flusher;
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledUpdateWrapper {
     db: DatabaseColumnWrapper,
-    deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
-    insert_pending_persistence: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
+    deleted_pending_persistence: Arc<Mutex<HashSet<Vec<u8>>>>,
+    insert_pending_persistence: Arc<Mutex<HashMap<Vec<u8>, Vec<u8>>>>,
 }
 
 impl DatabaseColumnScheduledUpdateWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            deleted_pending_persistence: Mutex::new(HashSet::new()),
-            insert_pending_persistence: Mutex::new(HashMap::new()),
+            deleted_pending_persistence: Default::default(),
+            insert_pending_persistence: Default::default(),
         }
     }
 
@@ -56,14 +57,18 @@ impl DatabaseColumnScheduledUpdateWrapper {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let ids_to_insert = mem::take(&mut *self.insert_pending_persistence.lock());
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
-        debug_assert!(
-            ids_to_insert.keys().all(|key| !ids_to_delete.contains(key)),
-            "Key to marked for insertion is also marked for deletion!"
-        );
+        let insert_pending_persistence = Arc::clone(&self.insert_pending_persistence);
+        let delete_pending_persistence = Arc::clone(&self.deleted_pending_persistence);
         let wrapper = self.db.clone();
+
         Box::new(move || {
+            let ids_to_insert = mem::take(&mut *insert_pending_persistence.lock());
+            let ids_to_delete = mem::take(&mut *delete_pending_persistence.lock());
+            debug_assert!(
+                ids_to_insert.keys().all(|key| !ids_to_delete.contains(key)),
+                "Key to marked for insertion is also marked for deletion!"
+            );
+
             for id in ids_to_delete {
                 wrapper.remove(id)?;
             }

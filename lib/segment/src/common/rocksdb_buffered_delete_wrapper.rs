@@ -68,9 +68,10 @@ impl DatabaseColumnScheduledDeleteWrapper {
     }
 
     pub fn flusher(&self) -> Flusher {
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
+        let deleted_pending_persistence = Arc::clone(&self.deleted_pending_persistence);
         let wrapper = self.db.clone();
         Box::new(move || {
+            let ids_to_delete = mem::take(&mut *deleted_pending_persistence.lock());
             for id in ids_to_delete {
                 wrapper.remove(id)?;
             }
