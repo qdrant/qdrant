@@ -229,8 +229,10 @@ impl<
             offset.offset as VectorOffsetType,
             multi_vector.flattened_vectors,
             multi_vector.vectors_count(),
+            hw_counter,
         )?;
-        self.offsets.insert(key as VectorOffsetType, &[offset])?;
+        self.offsets
+            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
         self.set_deleted(key, false)?;
 
         Ok(())
