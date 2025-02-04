@@ -30,7 +30,7 @@ jobs:
         - name: Install llvm-cov
           run: cargo install cargo-llvm-cov && sudo apt install -y lcov
         - name: Setup monitoring
-          run: tools/monitor.sh
+          run: ./tools/monitor.sh
         - name: Run tests with coverage
           run: |
             tail -f resource_usage.log &
