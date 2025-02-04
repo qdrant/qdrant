@@ -8,7 +8,7 @@ use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
-use memory::mmap_type::{self, MmapBitSlice};
+use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 
 use crate::config::StorageConfig;
 use crate::tracker::{BlockOffset, PageId};
@@ -127,11 +127,14 @@ impl Bitmask {
         dir.join(BITMASK_NAME)
     }
 
-    pub fn flush(&self) -> Result<(), mmap_type::Error> {
-        self.bitslice.flusher()()?;
-        self.regions_gaps.flush()?;
+    pub fn flusher(&self) -> MmapFlusher {
+        let bitslice_flusher = self.bitslice.flusher();
+        let regions_gaps_flusher = self.regions_gaps.flusher();
 
-        Ok(())
+        Box::new(move || {
+            bitslice_flusher()?;
+            regions_gaps_flusher()
+        })
     }
 
     /// Compute the size of the storage in bytes.

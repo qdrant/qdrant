@@ -501,7 +501,7 @@ impl<V> Gridstore<V> {
     /// Flush all mmaps and pending updates to disk
     pub fn flush(&self) -> std::result::Result<(), mmap_type::Error> {
         let mut bitmask_guard = self.bitmask.upgradable_read();
-        bitmask_guard.flush()?;
+        bitmask_guard.flusher()()?;
         for page in &self.pages {
             page.flush()?;
         }
@@ -519,7 +519,7 @@ impl<V> Gridstore<V> {
                 );
             }
         });
-        bitmask_guard.flush()?;
+        bitmask_guard.flusher()()?;
 
         Ok(())
     }
