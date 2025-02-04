@@ -177,7 +177,7 @@ generic-tests = "0.1.3"
 half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
 http = "1.2.0"
 indexmap = { version = "2", features = ["serde"] }
-indicatif = { version = "0.17.9", features = ["rayon"] }
+indicatif = { version = "0.17.11", features = ["rayon"] }
 itertools = "0.14.0"
 log = "0.4.25"
 memmap2 = "0.9.5"
