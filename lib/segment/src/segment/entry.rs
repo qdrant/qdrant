@@ -571,13 +571,15 @@ impl SegmentEntry for Segment {
     }
 
     fn flush(&self, sync: bool, force: bool) -> OperationResult<SeqNumberType> {
+        let state = self.get_state();
+
         let current_persisted_version: Option<SeqNumberType> = *self.persisted_version.lock();
         if !sync && self.is_background_flushing() {
             return Ok(current_persisted_version.unwrap_or(0));
         }
 
         let mut background_flush_lock = self.lock_flushing()?;
-        match (self.version, current_persisted_version) {
+        match (state.version, current_persisted_version) {
             (None, _) => {
                 // Segment is empty, nothing to flush
                 return Ok(current_persisted_version.unwrap_or(0));
@@ -591,14 +593,13 @@ impl SegmentEntry for Segment {
             (_, _) => {}
         }
 
+        let current_path = self.current_path.clone();
+        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
         let vector_storage_flushers: Vec<_> = self
             .vector_data
             .values()
             .map(|v| v.vector_storage.borrow().flusher())
             .collect();
-        let state = self.get_state();
-        let current_path = self.current_path.clone();
-        let id_tracker_mapping_flusher = self.id_tracker.borrow().mapping_flusher();
         let payload_index_flusher = self.payload_index.borrow().flusher();
         let id_tracker_versions_flusher = self.id_tracker.borrow().versions_flusher();
         let persisted_version = self.persisted_version.clone();
