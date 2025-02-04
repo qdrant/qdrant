@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use common::counter::hardware_counter::HardwareCounterCell;
 
 /// In case of simple vector storage, vector offset is the same as PointOffsetType.
 /// But in case of multivectors, it requires an additional lookup.
