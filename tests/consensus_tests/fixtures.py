@@ -47,6 +47,22 @@ def upsert_points(
     )
 
 
+def update_points_vector(
+        peer_url,
+        points,
+        collection_name="test_collection",
+        wait="true",
+):
+    r_batch = requests.put(
+        f"{peer_url}/collections/{collection_name}/points/vectors?wait={wait}",
+        json={
+            "points": [{"id": x, "vector": {"": random_dense_vector()}} for x in points],
+        },
+    )
+    assert_http_ok(r_batch)
+    return r_batch.json()
+
+
 def update_points_payload(
         peer_url,
         points,
