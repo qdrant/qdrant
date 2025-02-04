@@ -27,14 +27,15 @@ LCOV_COMMAND_ARGS=""
 
 for PACKAGE in "${PACKAGES[@]}"; do
     echo "Testing package with coverage: $PACKAGE"
+    PACKAGE_REPORT_PATH="$REPORT_DIR/$PACKAGE.info"
+
     # Profile "ci" is configured in .config/nextest.toml
-    cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"
-    test_run_return_code=$?
+    cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$PACKAGE_REPORT_PATH"
     echo "Testing completed for package $PACKAGE. Cleaning artifacts"
     cargo llvm-cov clean -p "$PACKAGE"
 
-    if [ "$test_run_return_code" == "0" ]; then
-        LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$PACKAGE.info"
+    if [ -e "$PACKAGE_REPORT_PATH" ]; then # If file exists
+        LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $PACKAGE_REPORT_PATH"
     fi
 done
 
