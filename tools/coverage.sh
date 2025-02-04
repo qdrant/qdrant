@@ -29,10 +29,13 @@ for PACKAGE in "${PACKAGES[@]}"; do
     echo "Testing package with coverage: $PACKAGE"
     # Profile "ci" is configured in .config/nextest.toml
     cargo llvm-cov --no-clean nextest --profile ci -p "$PACKAGE" --lcov --output-path "$REPORT_DIR/$PACKAGE.info"
+    test_run_return_code=$?
     echo "Testing completed for package $PACKAGE. Cleaning artifacts"
     cargo llvm-cov clean -p "$PACKAGE"
 
-    LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$PACKAGE.info"
+    if [ "$test_run_return_code" == "0" ]; then
+        LCOV_COMMAND_ARGS="${LCOV_COMMAND_ARGS} -a $REPORT_DIR/$PACKAGE.info"
+    fi
 done
 
 if [ -n "$LCOV_COMMAND_ARGS" ]; then
