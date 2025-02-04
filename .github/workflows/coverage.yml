@@ -13,8 +13,6 @@ jobs:
     coverage:
         runs-on: ubuntu-latest
         steps:
-        - name: Setup monitoring
-          run: ./monitor.sh
         - name: Install minimal stable
           uses: dtolnay/rust-toolchain@stable
           with:
@@ -31,6 +29,8 @@ jobs:
           uses: taiki-e/install-action@nextest
         - name: Install llvm-cov
           run: cargo install cargo-llvm-cov && sudo apt install -y lcov
+        - name: Setup monitoring
+          run: ./monitor.sh
         - name: Run tests with coverage
           run: |
             tail -f resource_usage.log &
