@@ -806,7 +806,7 @@ impl UpdateHandler {
     /// Returns an error on flush failure
     fn flush_segments(segments: LockedSegmentHolder) -> OperationResult<SeqNumberType> {
         let read_segments = segments.read();
-        let flushed_version = read_segments.flush_all(false, false)?;
+        let flushed_version = read_segments.flush_all(true, false)?;
         Ok(match read_segments.failed_operation.iter().cloned().min() {
             None => flushed_version,
             Some(failed_operation) => min(failed_operation, flushed_version),
