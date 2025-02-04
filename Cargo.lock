@@ -2658,7 +2658,7 @@ dependencies = [
  "http 1.2.0",
  "hyper 1.4.1",
  "hyper-util",
- "rustls 0.23.21",
+ "rustls 0.23.22",
  "rustls-native-certs 0.7.0",
  "rustls-pki-types",
  "tokio",
@@ -4794,7 +4794,7 @@ dependencies = [
  "rand 0.9.0",
  "reqwest",
  "rstack-self",
- "rustls 0.23.21",
+ "rustls 0.23.22",
  "rustls-pemfile",
  "rustls-pki-types",
  "rusty-hook",
@@ -4881,7 +4881,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 1.1.0",
- "rustls 0.23.21",
+ "rustls 0.23.22",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -4897,7 +4897,7 @@ dependencies = [
  "rand 0.8.5",
  "ring",
  "rustc-hash 2.0.0",
- "rustls 0.23.21",
+ "rustls 0.23.22",
  "slab",
  "thiserror 1.0.69",
  "tinyvec",
@@ -5210,7 +5210,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.21",
+ "rustls 0.23.22",
  "rustls-native-certs 0.8.0",
  "rustls-pemfile",
  "rustls-pki-types",
@@ -5449,9 +5449,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.21"
+version = "0.23.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f287924602bf649d949c63dc8ac8b235fa5387d394020705b80c4eb597ce5b8"
+checksum = "9fb9263ab4eb695e42321db096e3b8fbd715a59b154d5c88d82db2175b681ba7"
 dependencies = [
  "log",
  "once_cell",
@@ -6687,7 +6687,7 @@ version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c7bc40d0e5a97695bb96e27995cd3a08538541b0a846f65bba7a359f36700d4"
 dependencies = [
- "rustls 0.23.21",
+ "rustls 0.23.22",
  "rustls-pki-types",
  "tokio",
 ]
