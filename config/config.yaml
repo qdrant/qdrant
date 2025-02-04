@@ -1,5 +1,8 @@
 log_level: INFO
 
+# Configures the format of log lines, supported formats are `text` (default) and `json`
+log_format: text
+
 # Logging configuration
 # Qdrant logs to stdout. You may configure to also write logs to a file on disk.
 # Be aware that this file may grow indefinitely.
