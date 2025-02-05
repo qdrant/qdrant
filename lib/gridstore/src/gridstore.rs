@@ -34,7 +34,7 @@ pub struct Gridstore<V> {
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
     ///
     /// 0 is free, 1 is used.
-    bitmask: RwLock<Bitmask>,
+    bitmask: Arc<RwLock<Bitmask>>,
     /// Path of the directory where the storage files are stored
     base_path: PathBuf,
     _value_type: std::marker::PhantomData<V>,
@@ -128,7 +128,7 @@ impl<V: Blob> Gridstore<V> {
         let storage = Self {
             tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
             pages: Default::default(),
-            bitmask: RwLock::new(Bitmask::create(&base_path, config.clone())?),
+            bitmask: Arc::new(RwLock::new(Bitmask::create(&base_path, config.clone())?)),
             base_path,
             config: config.clone(),
             _value_type: std::marker::PhantomData,
@@ -172,7 +172,7 @@ impl<V: Blob> Gridstore<V> {
             tracker: Arc::new(RwLock::new(page_tracker)),
             config,
             pages: Arc::new(RwLock::new(Vec::with_capacity(num_pages))),
-            bitmask: RwLock::new(bitmask),
+            bitmask: Arc::new(RwLock::new(bitmask)),
             base_path: path.clone(),
             _value_type: std::marker::PhantomData,
         };
@@ -506,6 +506,42 @@ impl<V> Gridstore<V> {
     /// The number of blocks needed for a given value bytes size
     fn blocks_for_value(value_size: usize, block_size: usize) -> u32 {
         value_size.div_ceil(block_size).try_into().unwrap()
+    }
+
+    pub fn flusher(&self) -> mmap_type::MmapFlusher {
+        let bitmask = Arc::clone(&self.bitmask);
+        let bitmask_flusher = bitmask.read().flusher();
+        let pages = Arc::clone(&self.pages);
+        let tracker_flusher = self.tracker.read().flusher();
+
+        let config_block_size_bytes = self.config.block_size_bytes;
+
+        Box::new(move || {
+            bitmask_flusher()?;
+
+            for page in pages.read().as_slice() {
+                page.flush()?;
+            }
+
+            let old_pointers = tracker_flusher()?;
+
+            // update all free blocks in the bitmask
+            {
+                let mut bitmask_write = bitmask.write();
+                for pointer in old_pointers {
+                    // TODO: mark in batch? so that we update the gaps less times.
+                    bitmask_write.mark_blocks(
+                        pointer.page_id,
+                        pointer.block_offset,
+                        Self::blocks_for_value(pointer.length as usize, config_block_size_bytes),
+                        false,
+                    );
+                }
+                bitmask_write.flusher()()?;
+            }
+
+            Ok(())
+        })
     }
 
     /// Flush all mmaps and pending updates to disk
