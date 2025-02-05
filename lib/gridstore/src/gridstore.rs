@@ -250,7 +250,7 @@ impl<V: Blob> Gridstore<V> {
     /// If size is None, the page will have the default size
     ///
     /// Returns the new page id
-    fn create_new_page(&mut self) -> Result<u32> {
+    fn create_new_page(&self) -> Result<u32> {
         let new_page_id = self.next_page_id();
         let path = self.page_path(new_page_id);
         let page = Page::new(&path, self.config.page_size_bytes)?;
@@ -266,10 +266,7 @@ impl<V: Blob> Gridstore<V> {
         self.tracker.read().get(point_offset)
     }
 
-    fn find_or_create_available_blocks(
-        &mut self,
-        num_blocks: u32,
-    ) -> Result<(PageId, BlockOffset)> {
+    fn find_or_create_available_blocks(&self, num_blocks: u32) -> Result<(PageId, BlockOffset)> {
         debug_assert!(num_blocks > 0, "num_blocks must be greater than 0");
 
         let bitmask_guard = self.bitmask.read();
@@ -301,12 +298,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Write value into a new cell, considering that it can span more than one page
-    fn write_into_pages(
-        &mut self,
-        value: &[u8],
-        start_page_id: PageId,
-        mut block_offset: BlockOffset,
-    ) {
+    fn write_into_pages(&self, value: &[u8], start_page_id: PageId, mut block_offset: BlockOffset) {
         let value_size = value.len();
 
         // Track the number of bytes that still need to be written
@@ -790,7 +782,7 @@ mod tests {
     #[test]
     fn test_write_across_pages() {
         let page_size = DEFAULT_BLOCK_SIZE_BYTES * DEFAULT_REGION_SIZE_BLOCKS;
-        let (_dir, mut storage) = empty_storage_sized(page_size);
+        let (_dir, storage) = empty_storage_sized(page_size);
 
         storage.create_new_page().unwrap();
 

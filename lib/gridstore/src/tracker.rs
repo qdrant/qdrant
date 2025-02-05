@@ -53,9 +53,9 @@ impl PointerUpdate {
     }
 
     /// Set is Some, Unset is None
-    fn to_option(&self) -> Option<ValuePointer> {
+    fn to_option(self) -> Option<ValuePointer> {
         match self {
-            PointerUpdate::Set(pointer) => Some(*pointer),
+            PointerUpdate::Set(pointer) => Some(pointer),
             PointerUpdate::Unset(_) => None,
         }
     }
@@ -106,7 +106,7 @@ impl Tracker {
             .expect("Failed to open page tracker mmap");
         let header = TrackerHeader::default();
         let pending_updates = HashMap::new();
-        let mut page_tracker = Self {
+        let page_tracker = Self {
             path,
             header: Arc::new(RwLock::new(header)),
             mmap: Arc::new(RwLock::new(mmap)),
@@ -131,7 +131,7 @@ impl Tracker {
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
             path,
-            header: Arc::new(RwLock::new(header.clone())),
+            header: Arc::new(RwLock::new(*header)),
             mmap: Arc::new(RwLock::new(mmap)),
             pending_updates: Arc::new(RwLock::new(pending_updates)),
         })
@@ -204,7 +204,7 @@ impl Tracker {
     #[must_use = "The old pointers need to be freed in the bitmask"]
     pub fn write_pending_and_flush(&mut self) -> std::io::Result<Vec<ValuePointer>> {
         // Write pending updates from memory
-        let mut pending_updates = std::mem::take(&mut self.pending_updates);
+        let pending_updates = std::mem::take(&mut self.pending_updates);
         let mut old_pointers = Vec::new();
         for (point_offset, update) in pending_updates.write().drain() {
             match update {
@@ -243,7 +243,7 @@ impl Tracker {
     }
 
     /// Write the current page header to the memory map
-    fn write_header(&mut self) {
+    fn write_header(&self) {
         let mut mmap_write = self.mmap.write();
         Self::static_write_header(&mut mmap_write, &self.header.read());
     }
@@ -255,7 +255,7 @@ impl Tracker {
 
     /// Save the mapping at the given offset
     /// The file is resized if necessary
-    fn persist_pointer(&mut self, point_offset: PointOffset, pointer: Option<ValuePointer>) {
+    fn persist_pointer(&self, point_offset: PointOffset, pointer: Option<ValuePointer>) {
         let mmap_read = self.mmap.upgradable_read();
 
         if pointer.is_none() && point_offset as usize >= mmap_read.len() {
@@ -387,6 +387,7 @@ impl Tracker {
         self.pending_updates
             .read()
             .get(&point_offset)
+            .copied()
             .map(PointerUpdate::to_option)
             // if the value is not in the pending updates, check the mmap
             .or_else(|| self.get_raw(point_offset))
@@ -394,7 +395,7 @@ impl Tracker {
     }
 
     /// Increment the header count if the given point offset is larger than the current count
-    fn persist_pointer_count(&mut self) {
+    fn persist_pointer_count(&self) {
         self.header.write().next_pointer_offset = self.next_pointer_offset;
         self.write_header();
     }
@@ -406,7 +407,7 @@ impl Tracker {
         next_pointer_offset: u32,
     ) {
         header.next_pointer_offset = next_pointer_offset;
-        Self::static_write_header(mmap, &header);
+        Self::static_write_header(mmap, header);
     }
 
     pub fn has_pointer(&self, point_offset: PointOffset) -> bool {
@@ -421,7 +422,7 @@ impl Tracker {
     }
 
     /// Unset the value at the given point offset and return its previous value
-    pub fn unset(&mut self, point_offset: PointOffset) -> Option<ValuePointer> {
+    pub fn unset(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         let pointer_opt = self.get(point_offset);
 
         if let Some(pointer) = pointer_opt {
