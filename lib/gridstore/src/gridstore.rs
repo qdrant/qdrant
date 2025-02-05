@@ -28,7 +28,7 @@ pub struct Gridstore<V> {
     /// Holds mapping from `PointOffset` -> `ValuePointer`
     ///
     /// Stored in a separate file
-    tracker: RwLock<Tracker>,
+    tracker: Arc<RwLock<Tracker>>,
     /// Mapping from page_id -> mmap page
     pub(super) pages: Arc<RwLock<Vec<Page>>>,
     /// Bitmask to represent which "blocks" of data in the pages are used and which are free.
@@ -126,7 +126,7 @@ impl<V: Blob> Gridstore<V> {
         let config_path = base_path.join(CONFIG_FILENAME);
 
         let storage = Self {
-            tracker: RwLock::new(Tracker::new(&base_path, None)),
+            tracker: Arc::new(RwLock::new(Tracker::new(&base_path, None))),
             pages: Default::default(),
             bitmask: RwLock::new(Bitmask::create(&base_path, config.clone())?),
             base_path,
@@ -169,7 +169,7 @@ impl<V: Blob> Gridstore<V> {
         let num_pages = bitmask.infer_num_pages();
 
         let storage = Self {
-            tracker: RwLock::new(page_tracker),
+            tracker: Arc::new(RwLock::new(page_tracker)),
             config,
             pages: Arc::new(RwLock::new(Vec::with_capacity(num_pages))),
             bitmask: RwLock::new(bitmask),

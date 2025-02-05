@@ -34,7 +34,7 @@ use crate::madvise::{Advice, AdviceSetting};
 use crate::mmap_ops;
 
 /// Result for mmap errors.
-type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 pub type MmapFlusher = Box<dyn FnOnce() -> Result<()> + Send>;
 
