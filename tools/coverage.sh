@@ -16,7 +16,6 @@ if [ "$RUN_PER_PACKAGE" == "false" ]; then
 fi
 
 PACKAGES=($(cargo metadata --format-version 1 | jq -r '.workspace_members[] | split("/") | .[-1] | split("#")[0]' | sort))
-# REPORT_DIR="target/llvm-cov/package-reports"
 REPORT_DIR="/tmp/llvm-cov-reports"
 
 echo "Workspace packages: ${PACKAGES[*]}"
