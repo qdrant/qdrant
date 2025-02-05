@@ -1,8 +1,8 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, get_telemetry_hw_info, update_points_payload, \
-    update_points_vector
+from .fixtures import create_collection, get_telemetry_hw_info, update_points_payload, \
+    update_points_vector, upsert_random_points
 from .utils import *
 from math import ceil
 
@@ -13,6 +13,42 @@ N_PEERS = 4
 N_SHARDS = N_PEERS
 N_REPLICAS = 1
 COLLECTION_NAME = "test_collection_hw_counting"
+
+
+def test_no_local_shard(tmp_path: pathlib.Path):
+    peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, 2)
+
+    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=2, replication_factor=N_REPLICAS, sharding_method="custom")
+
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
+
+    collection_info = get_cluster_info(peer_urls[0])
+    targeted_node_id = 0  # Non leader node
+    for peer_id, peer_info in collection_info['peers'].items():
+        peer_id = int(peer_id)
+        if peer_id != int(collection_info['peer_id']):
+            targeted_node_id = peer_id
+            break
+
+    targeted_node_url = peer_urls[1]
+    create_shard_key("target_node", peer_urls[0], collection=COLLECTION_NAME, placement=[targeted_node_id])
+
+    hw_before = get_telemetry_hw_info(targeted_node_url, COLLECTION_NAME)
+    if hw_before is not None:
+        assert hw_before['payload_io_write'] == 0
+        assert hw_before['vector_io_write'] == 0
+
+    # Targeted non-leader node has captured all measurements
+    upsert_random_points(peer_urls[0], 1000, collection_name=COLLECTION_NAME, shard_key="target_node")
+    hw = get_telemetry_hw_info(targeted_node_url, COLLECTION_NAME)
+    assert hw['payload_io_write'] >= 1000 * 5  # 1k points times ~5 bytes avg payload size
+    assert hw['vector_io_write'] >= 1000 * 4 * 4  # 1k vectors of dim 4 where each dim is 4 bytes
+
+    # Leader still has no measurements
+    leader_hw = get_telemetry_hw_info(peer_urls[0], COLLECTION_NAME)
+    if hw_before is not None:
+        assert leader_hw['payload_io_write'] == 0
+        assert leader_hw['vector_io_write'] == 0
 
 
 def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
