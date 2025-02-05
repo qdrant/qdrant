@@ -227,4 +227,8 @@ def get_telemetry_hw_info(peer_url, collection):
         f"{peer_url}/telemetry", params="details_level=3"
     )
     assert_http_ok(r_search)
-    return r_search.json()["result"]["hardware"]["collection_data"][collection]
+    hw = r_search.json()["result"]["hardware"]["collection_data"]
+    if collection in hw:
+        return hw[collection]
+    else:
+        return None
