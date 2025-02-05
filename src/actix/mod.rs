@@ -115,7 +115,7 @@ pub fn init(
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
                     |auth_keys| Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
                 )))
-                // Normalize path to avoid path traversal attacks
+                // Normalize path
                 .wrap(NormalizePath::trim())
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
