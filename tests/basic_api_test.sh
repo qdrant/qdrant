@@ -148,7 +148,7 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
   }' | jq
 
 # test double forward slash handling
-curl -L -X POST "http://$QDRANT_HOST//collections/test_collection/points/search" \
+curl -L -X POST "http://$QDRANT_HOST//collections/test_collection/points/search/" \
   -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
   --fail -s \
   --data-raw '{
