@@ -817,6 +817,11 @@ impl<'s> SegmentHolder {
 
         drop(proxy_segments);
 
+        debug_assert!(
+            min_unsaved_version == SeqNumberType::MAX || min_unsaved_version <= max_persisted_version,
+            "min_unsaved_version cannot be greater than max_persisted_version ({min_unsaved_version:?} > {max_persisted_version:?})",
+        );
+
         if has_unsaved {
             log::trace!(
                 "Some segments have unsaved changes, lowest unsaved version: {min_unsaved_version}"
