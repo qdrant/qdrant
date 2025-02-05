@@ -6,8 +6,6 @@ on:
     - cron: "0 0 * * *"
   push:
     branches: [ dev ]
-  pull_request:
-    branches: [ '**' ] # temporarily run on all commits to PRs
 
 jobs:
     coverage:
@@ -18,8 +16,9 @@ jobs:
           with:
             components: llvm-tools-preview
         - uses: actions/checkout@v4
-          # with:
-          #   ref: dev # temporarily don't check dev branch
+          with:
+            # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
+            ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
         - uses: Swatinem/rust-cache@v2
         - name: Install Protoc
           uses: arduino/setup-protoc@v3
@@ -30,7 +29,7 @@ jobs:
         - name: Install llvm-cov
           run: cargo install cargo-llvm-cov && sudo apt install -y lcov
         - name: Setup monitoring
-          run: ./monitor.sh
+          run: ./tools/monitor.sh
         - name: Run tests with coverage
           run: |
             tail -f resource_usage.log &
