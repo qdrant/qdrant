@@ -171,9 +171,9 @@ impl PayloadStorage for MmapPayloadStorage {
     }
 
     fn flusher(&self) -> Flusher {
-        let storage = self.storage.clone();
+        let storage_flusher = self.storage.read().flusher();
         Box::new(move || {
-            storage.read().flush().map_err(|err| {
+            storage_flusher().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to flush mmap payload storage: {err}"
                 ))
