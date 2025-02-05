@@ -146,3 +146,22 @@ curl -L -X POST "http://$QDRANT_HOST/collections/test_collection/points/search" 
       "vector": [0.2, 0.1, 0.9, 0.7],
       "top": 3
   }' | jq
+
+# test double forward slash handling
+curl -L -X POST "http://$QDRANT_HOST//collections/test_collection/points/search" \
+  -H 'Content-Type: application/json' "${qdrant_host_headers[@]}" \
+  --fail -s \
+  --data-raw '{
+      "filter": {
+          "should": [
+              {
+                  "key": "city", 
+                  "match": {
+                      "value": "London"
+                  }
+              }
+          ]
+      },
+      "vector": [0.2, 0.1, 0.9, 0.7],
+      "top": 3
+  }' | jq
