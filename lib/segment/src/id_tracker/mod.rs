@@ -41,6 +41,9 @@ pub fn for_each_unique_point<'a>(
                 .filter_map(move |(external_id, internal_id)| {
                     let version = id_tracker.internal_version(internal_id);
                     // a point without a version had an interrupted flush sequence and should be discarded
+                    if version == Some(0) {
+                        return None;
+                    }
                     version.map(|version| MergedPointId {
                         external_id,
                         tracker_index: segment_index,

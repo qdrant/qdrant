@@ -236,7 +236,7 @@ impl IdTracker for SimpleIdTracker {
                 #[cfg(debug_assertions)]
                 {
                     if internal_id as usize > self.internal_to_version.len() + 1 {
-                        log::info!(
+                        log::warn!(
                             "Resizing versions is initializing larger range {} -> {}",
                             self.internal_to_version.len(),
                             internal_id + 1
