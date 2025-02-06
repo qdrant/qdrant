@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
@@ -181,12 +183,13 @@ impl GeoMapIndex {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
         match self {
             GeoMapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
-            GeoMapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
-            GeoMapIndex::Mmap(index) => index.check_values_any(idx, check_fn),
+            GeoMapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            GeoMapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }
 
@@ -503,12 +506,14 @@ impl PayloadFieldIndex for GeoMapIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_bounding_box.clone();
+            let hw_counter = hw_acc.get_counter_cell();
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
-                self.check_values_any(*point, |geo_point| {
+                self.check_values_any(*point, &hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
             })));
@@ -517,8 +522,9 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_radius.clone();
+            let hw_counter = hw_acc.get_counter_cell();
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
-                self.check_values_any(*point, |geo_point| {
+                self.check_values_any(*point, &hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
             })));
@@ -527,8 +533,9 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_polygon) = &condition.geo_polygon {
             let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_polygon.convert();
+            let hw_counter = hw_acc.get_counter_cell();
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
-                self.check_values_any(*point, |geo_point| {
+                self.check_values_any(*point, &hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
             })));
@@ -978,9 +985,10 @@ mod tests {
         {
             let (field_index, _, _) = build_random_index(1000, 5, index_type);
 
+            let hw_counter = HardwareCounterCell::new();
             let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
                 .filter_map(|idx| {
-                    if field_index.check_values_any(idx, check_fn.clone()) {
+                    if field_index.check_values_any(idx, &hw_counter, check_fn.clone()) {
                         Some(idx as PointOffsetType)
                     } else {
                         None
@@ -990,8 +998,11 @@ mod tests {
 
             assert!(!matched_points.is_empty());
 
-            let mut indexed_matched_points =
-                field_index.filter(&field_condition).unwrap().collect_vec();
+            let hw_counter = HwMeasurementAcc::new();
+            let mut indexed_matched_points = field_index
+                .filter(&field_condition, hw_counter)
+                .unwrap()
+                .collect_vec();
 
             matched_points.sort_unstable();
             indexed_matched_points.sort_unstable();
@@ -1044,7 +1055,11 @@ mod tests {
             .payload_blocks(100, JsonPath::new("test"))
             .collect_vec();
         blocks.iter().for_each(|block| {
-            let block_points = field_index.filter(&block.condition).unwrap().collect_vec();
+            let hw_counter = HwMeasurementAcc::new();
+            let block_points = field_index
+                .filter(&block.condition, hw_counter)
+                .unwrap()
+                .collect_vec();
             assert_eq!(block_points.len(), block.cardinality);
         });
     }
@@ -1212,13 +1227,21 @@ mod tests {
 
         // check with geo_radius
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
-        let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
+        let hw_counter = HwMeasurementAcc::new();
+        let point_offsets = new_index
+            .filter(&field_condition, hw_counter)
+            .unwrap()
+            .collect_vec();
         assert_eq!(point_offsets, vec![1]);
 
         // check with geo_polygon
         let field_condition =
             condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-        let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
+        let hw_counter = HwMeasurementAcc::new();
+        let point_offsets = new_index
+            .filter(&field_condition, hw_counter)
+            .unwrap()
+            .collect_vec();
         assert_eq!(point_offsets, vec![1]);
     }
 
@@ -1412,7 +1435,11 @@ mod tests {
 
         // check with geo_radius
         let field_condition = condition_for_geo_box("test", bounding_box);
-        let point_offsets = new_index.filter(&field_condition).unwrap().collect_vec();
+        let hw_counter = HwMeasurementAcc::new();
+        let point_offsets = new_index
+            .filter(&field_condition, hw_counter)
+            .unwrap()
+            .collect_vec();
         // Only LOS_ANGELES is in the bounding box
         assert_eq!(point_offsets, vec![2]);
     }

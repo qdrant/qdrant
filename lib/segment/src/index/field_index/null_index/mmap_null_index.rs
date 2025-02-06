@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -207,6 +208,7 @@ impl PayloadFieldIndex for MmapNullIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        _hw_counter: HwMeasurementAcc, // TODO(io_measurement): Collect values?
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let FieldCondition {
             key: _,

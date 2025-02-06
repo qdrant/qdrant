@@ -2,6 +2,7 @@ use std::fs::{create_dir_all, remove_dir};
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
@@ -201,10 +202,14 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> bool {
         if self.deleted.get(idx as usize) == Some(false) {
-            self.point_to_values
-                .check_values_any(idx, |v| check_fn(T::from_referenced(&v)))
+            self.point_to_values.check_values_any(
+                idx,
+                |v| check_fn(T::from_referenced(&v)),
+                hw_counter,
+            )
         } else {
             false
         }

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::MmapHashMap;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
@@ -256,8 +257,9 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str) -> Option<TokenId> {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Maybe propagate?
         self.vocab
-            .get(token)
+            .get(token, &hw_counter)
             .ok()
             .flatten()
             .and_then(<[TokenId]>::first)

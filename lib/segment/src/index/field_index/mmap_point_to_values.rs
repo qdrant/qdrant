@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::AdviceSetting;
@@ -280,12 +281,16 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         &self,
         point_id: PointOffsetType,
         check_fn: impl Fn(T::Referenced<'_>) -> bool,
+        hw_acc: &HardwareCounterCell,
     ) -> bool {
         self.get_range(point_id)
             .map(|range| {
                 let mut value_offset = range.start as usize;
                 for _ in 0..range.count {
                     let bytes = self.mmap.get(value_offset..).unwrap();
+                    hw_acc
+                        .payload_index_io_read_counter()
+                        .incr_delta(bytes.len());
                     let value = T::read_from_mmap(bytes).unwrap();
                     if check_fn(value.clone()) {
                         return true;
