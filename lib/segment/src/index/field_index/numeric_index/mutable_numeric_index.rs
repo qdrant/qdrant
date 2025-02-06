@@ -3,6 +3,8 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use parking_lot::RwLock;
@@ -70,10 +72,22 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         Ok(index)
     }
 
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         self.point_to_values
             .get(idx as usize)
-            .map(|values| values.iter().any(check_fn))
+            .map(|values| {
+                values.iter().any(|v| {
+                    hw_counter
+                        .payload_index_io_read_counter()
+                        .incr_delta(size_of_val(v));
+                    check_fn(v)
+                })
+            })
             .unwrap_or(false)
     }
 
@@ -97,9 +111,16 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
+        hw_acc: HwMeasurementAcc,
     ) -> impl Iterator<Item = PointOffsetType> + '_ {
+        let counter = hw_acc.get_counter_cell();
         self.map
             .range((start_bound, end_bound))
+            .inspect(move |i| {
+                counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(size_of_val(&i.val));
+            })
             .map(|point| point.idx)
     }
 
@@ -273,7 +294,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     delegate! {
         to self.in_memory_index {
             pub fn total_unique_values_count(&self) -> usize;
-            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool;
+            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool, hw_counter: &HardwareCounterCell) -> bool;
             pub fn get_points_count(&self) -> usize;
             pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
             pub fn values_count(&self, idx: PointOffsetType) -> Option<usize>;
@@ -281,6 +302,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
                 &self,
                 start_bound: Bound<Point<T>>,
                 end_bound: Bound<Point<T>>,
+                hw_counter: HwMeasurementAcc,
             ) -> impl Iterator<Item = PointOffsetType> + '_;
             pub fn orderable_values_range(
                 &self,

@@ -11,6 +11,7 @@ pub struct HwSharedDrain {
     pub(crate) cpu_counter: Arc<AtomicUsize>,
     pub(crate) payload_io_read_counter: Arc<AtomicUsize>,
     pub(crate) payload_io_write_counter: Arc<AtomicUsize>,
+    pub(crate) payload_index_io_read_counter: Arc<AtomicUsize>,
     pub(crate) vector_io_read_counter: Arc<AtomicUsize>,
     pub(crate) vector_io_write_counter: Arc<AtomicUsize>,
 }
@@ -28,6 +29,10 @@ impl HwSharedDrain {
         self.payload_io_write_counter.load(Ordering::Relaxed)
     }
 
+    pub fn get_payload_index_io_read(&self) -> usize {
+        self.payload_index_io_read_counter.load(Ordering::Relaxed)
+    }
+
     pub fn get_vector_io_write(&self) -> usize {
         self.vector_io_write_counter.load(Ordering::Relaxed)
     }
@@ -40,6 +45,7 @@ impl HwSharedDrain {
         cpu: Arc<AtomicUsize>,
         payload_io_read: Arc<AtomicUsize>,
         payload_io_write: Arc<AtomicUsize>,
+        payload_index_io_read: Arc<AtomicUsize>,
         vector_io_read: Arc<AtomicUsize>,
         vector_io_write: Arc<AtomicUsize>,
     ) -> Self {
@@ -47,6 +53,7 @@ impl HwSharedDrain {
             cpu_counter: cpu,
             payload_io_read_counter: payload_io_read,
             payload_io_write_counter: payload_io_write,
+            payload_index_io_read_counter: payload_index_io_read,
             vector_io_read_counter: vector_io_read,
             vector_io_write_counter: vector_io_write,
         }
@@ -59,6 +66,7 @@ impl Clone for HwSharedDrain {
             self.cpu_counter.clone(),
             self.payload_io_read_counter.clone(),
             self.payload_io_write_counter.clone(),
+            self.payload_index_io_read_counter.clone(),
             self.vector_io_read_counter.clone(),
             self.vector_io_write_counter.clone(),
         )
@@ -70,6 +78,7 @@ impl Default for HwSharedDrain {
             cpu_counter: Arc::new(AtomicUsize::new(0)),
             payload_io_read_counter: Arc::new(AtomicUsize::new(0)),
             payload_io_write_counter: Arc::new(AtomicUsize::new(0)),
+            payload_index_io_read_counter: Arc::new(AtomicUsize::new(0)),
             vector_io_read_counter: Arc::new(AtomicUsize::new(0)),
             vector_io_write_counter: Arc::new(AtomicUsize::new(0)),
         }
@@ -120,6 +129,7 @@ impl HwMeasurementAcc {
         cpu: usize,
         payload_io_read: usize,
         payload_io_write: usize,
+        payload_index_io_read: usize,
         vector_io_read: usize,
         vector_io_write: usize,
     ) {
@@ -127,6 +137,7 @@ impl HwMeasurementAcc {
             cpu,
             payload_io_read,
             payload_io_write,
+            payload_index_io_read,
             vector_io_read,
             vector_io_write,
         );
@@ -135,12 +146,14 @@ impl HwMeasurementAcc {
             cpu_counter,
             payload_io_read_counter,
             payload_io_write_counter,
+            payload_index_io_read_counter,
             vector_io_read_counter,
             vector_io_write_counter,
         } = &self.metrics_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
         payload_io_read_counter.fetch_add(payload_io_read, Ordering::Relaxed);
         payload_io_write_counter.fetch_add(payload_io_write, Ordering::Relaxed);
+        payload_index_io_read_counter.fetch_add(payload_index_io_read, Ordering::Relaxed);
         vector_io_read_counter.fetch_add(vector_io_read, Ordering::Relaxed);
         vector_io_write_counter.fetch_add(vector_io_write, Ordering::Relaxed);
     }
@@ -153,6 +166,7 @@ impl HwMeasurementAcc {
         cpu: usize,
         payload_io_read: usize,
         payload_io_write: usize,
+        payload_index_io_read: usize,
         vector_io_read: usize,
         vector_io_write: usize,
     ) {
@@ -160,12 +174,14 @@ impl HwMeasurementAcc {
             cpu_counter,
             payload_io_read_counter,
             payload_io_write_counter,
+            payload_index_io_read_counter,
             vector_io_read_counter,
             vector_io_write_counter,
         } = &self.request_drain;
         cpu_counter.fetch_add(cpu, Ordering::Relaxed);
         payload_io_read_counter.fetch_add(payload_io_read, Ordering::Relaxed);
         payload_io_write_counter.fetch_add(payload_io_write, Ordering::Relaxed);
+        payload_index_io_read_counter.fetch_add(payload_index_io_read, Ordering::Relaxed);
         vector_io_read_counter.fetch_add(vector_io_read, Ordering::Relaxed);
         vector_io_write_counter.fetch_add(vector_io_write, Ordering::Relaxed);
     }
@@ -180,6 +196,10 @@ impl HwMeasurementAcc {
 
     pub fn get_payload_io_write(&self) -> usize {
         self.request_drain.get_payload_io_write()
+    }
+
+    pub fn get_payload_index_io_read(&self) -> usize {
+        self.request_drain.get_payload_index_io_read()
     }
 
     pub fn get_vector_io_read(&self) -> usize {

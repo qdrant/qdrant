@@ -12,6 +12,7 @@ pub struct HardwareCounterCell {
     pub(super) cpu_counter: CounterCell,
     pub(super) payload_io_read_counter: CounterCell,
     pub(super) payload_io_write_counter: CounterCell,
+    pub(super) payload_index_io_read_counter: CounterCell,
     pub(super) vector_io_read_counter: CounterCell,
     pub(super) vector_io_write_counter: CounterCell,
     pub(super) accumulator: HwMeasurementAcc,
@@ -25,6 +26,7 @@ impl HardwareCounterCell {
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
             payload_io_write_counter: CounterCell::new(),
+            payload_index_io_read_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator: HwMeasurementAcc::new(),
@@ -40,6 +42,7 @@ impl HardwareCounterCell {
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
             payload_io_write_counter: CounterCell::new(),
+            payload_index_io_read_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator: HwMeasurementAcc::disposable(),
@@ -51,6 +54,7 @@ impl HardwareCounterCell {
         cpu: usize,
         payload_io_read: usize,
         payload_io_write: usize,
+        payload_index_io_read: usize,
         vector_io_read: usize,
         vector_io_write: usize,
     ) -> Self {
@@ -59,6 +63,7 @@ impl HardwareCounterCell {
             cpu_counter: CounterCell::new_with(cpu),
             payload_io_read_counter: CounterCell::new_with(payload_io_read),
             payload_io_write_counter: CounterCell::new_with(payload_io_write),
+            payload_index_io_read_counter: CounterCell::new_with(payload_index_io_read),
             vector_io_read_counter: CounterCell::new_with(vector_io_read),
             vector_io_write_counter: CounterCell::new_with(vector_io_write),
             accumulator: HwMeasurementAcc::new(),
@@ -71,10 +76,15 @@ impl HardwareCounterCell {
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
             payload_io_write_counter: CounterCell::new(),
+            payload_index_io_read_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator,
         }
+    }
+
+    pub fn new_accumulator(&self) -> HwMeasurementAcc {
+        self.accumulator.clone()
     }
 
     /// Create a copy of the current counter cell with the same accumulator and config,
@@ -86,6 +96,7 @@ impl HardwareCounterCell {
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
             payload_io_write_counter: CounterCell::new(),
+            payload_index_io_read_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator: self.accumulator.clone(),
@@ -114,6 +125,11 @@ impl HardwareCounterCell {
     #[inline]
     pub fn payload_io_read_counter_mut(&mut self) -> &mut CounterCell {
         &mut self.payload_io_read_counter
+    }
+
+    #[inline]
+    pub fn payload_index_io_read_counter(&self) -> &CounterCell {
+        &self.payload_index_io_read_counter
     }
 
     #[inline]
@@ -152,6 +168,7 @@ impl HardwareCounterCell {
             cpu_counter,
             payload_io_read_counter,
             payload_io_write_counter,
+            payload_index_io_read_counter,
             vector_io_read_counter,
             vector_io_write_counter,
             accumulator,
@@ -162,6 +179,7 @@ impl HardwareCounterCell {
             cpu_value,
             payload_io_read_counter.get(),
             payload_io_write_counter.get(),
+            payload_index_io_read_counter.get(),
             vector_io_read_counter.get(),
             vector_io_write_counter.get(),
         );

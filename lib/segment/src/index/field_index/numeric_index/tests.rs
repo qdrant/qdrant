@@ -95,6 +95,7 @@ fn random_index(
 fn cardinality_request(
     index: &NumericIndex<FloatPayloadType, FloatPayloadType>,
     query: Range<FloatPayloadType>,
+    hw_acc: HwMeasurementAcc,
 ) -> CardinalityEstimation {
     let estimation = index
         .inner()
@@ -102,7 +103,10 @@ fn cardinality_request(
 
     let result = index
         .inner()
-        .filter(&FieldCondition::new_range(JsonPath::new("unused"), query))
+        .filter(
+            &FieldCondition::new_range(JsonPath::new("unused"), query),
+            hw_acc,
+        )
         .unwrap()
         .unique()
         .collect_vec();
@@ -147,6 +151,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
     cardinality_request(
         &index,
@@ -156,6 +161,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
 
     let (_temp_dir, index) = random_index(1000, 2, index_type);
@@ -167,6 +173,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
     cardinality_request(
         &index,
@@ -176,6 +183,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
 
     cardinality_request(
@@ -186,6 +194,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
 
     cardinality_request(
@@ -196,6 +205,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
             gte: Some(110.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
 }
 
@@ -423,7 +433,11 @@ fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Defau
     result: Vec<u32>,
 ) {
     let condition = FieldCondition::new_range(JsonPath::new("unused"), rng);
-    let offsets = index.filter(&condition).unwrap().collect_vec();
+    let hw_counter = HwMeasurementAcc::new();
+    let offsets = index
+        .filter(&condition, hw_counter.clone())
+        .unwrap()
+        .collect_vec();
     assert_eq!(offsets, result);
 }
 
@@ -442,6 +456,7 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
 
     let (_temp_dir, index) = random_index(0, 0, index_type);
@@ -453,5 +468,6 @@ fn test_empty_cardinality(#[case] index_type: IndexType) {
             gte: Some(10.0),
             lte: None,
         },
+        HwMeasurementAcc::new(),
     );
 }

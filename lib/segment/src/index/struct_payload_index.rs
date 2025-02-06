@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Either;
@@ -85,6 +86,7 @@ impl StructPayloadIndex {
     fn query_field<'a>(
         &'a self,
         field_condition: &'a FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let indexes = self
             .field_indexes
@@ -92,7 +94,7 @@ impl StructPayloadIndex {
             .and_then(|indexes| {
                 indexes
                     .iter()
-                    .find_map(|field_index| field_index.filter(field_condition))
+                    .find_map(|field_index| field_index.filter(field_condition, hw_acc.clone()))
             });
         indexes
     }
@@ -390,13 +392,14 @@ impl StructPayloadIndex {
             // CPU-optimized strategy here: points are made unique before applying other filters.
             let mut visited_list = self.visited_pool.get(id_tracker.total_point_count());
 
+            let hw_acc = hw_counter.new_accumulator();
             let iter = query_cardinality
                 .primary_clauses
                 .iter()
-                .flat_map(|clause| {
+                .flat_map(move |clause| {
                     match clause {
                         PrimaryCondition::Condition(field_condition) => {
-                            self.query_field(field_condition).unwrap_or_else(
+                            self.query_field(field_condition, hw_acc.clone()).unwrap_or_else(
                                 || id_tracker.iter_ids(), /* index is not built */
                             )
                         }

@@ -3,6 +3,7 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -181,8 +182,14 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
     ) -> bool {
-        self.point_to_values.check_values_any(idx, check_fn)
+        self.point_to_values.check_values_any(idx, |v| {
+            hw_counter
+                .payload_io_read_counter()
+                .incr_delta(size_of_val(v));
+            check_fn(v)
+        })
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
