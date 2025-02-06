@@ -12,7 +12,7 @@ use ::api::rest::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
 use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
-use actix_web::middleware::{Compress, Condition, Logger};
+use actix_web::middleware::{Compress, Condition, Logger, NormalizePath};
 use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
 use actix_web_extras::middleware::Condition as ConditionEx;
 use api::facet_api::config_facet_api;
@@ -115,6 +115,8 @@ pub fn init(
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
                     |auth_keys| Auth::new(auth_keys.clone(), api_key_whitelist.clone()),
                 )))
+                // Normalize path
+                .wrap(NormalizePath::trim())
                 .wrap(Condition::new(settings.service.enable_cors, cors))
                 .wrap(
                     // Set up logger, but avoid logging hot status endpoints
