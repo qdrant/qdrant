@@ -57,7 +57,7 @@ impl SimplePayloadStorage {
             Some(payload) => {
                 let payload_serialized = serde_cbor::to_vec(payload).unwrap();
                 hw_counter
-                    .cpu_counter()
+                    .payload_io_write_counter()
                     .incr_delta(payload_serialized.len());
                 self.db_wrapper.put(point_id_serialized, payload_serialized)
             }
