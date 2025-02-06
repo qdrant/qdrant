@@ -208,10 +208,17 @@ fn main() -> anyhow::Result<()> {
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
 
+    let bootstrap = if args.bootstrap == args.uri {
+        log::warn!("Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.");
+        None
+    } else {
+        args.bootstrap
+    };
+
     // Saved state of the consensus.
     let persistent_consensus_state = Persistent::load_or_init(
         &settings.storage.storage_path,
-        args.bootstrap.is_none(),
+        bootstrap.is_none(),
         args.reinit,
     )?;
 
@@ -360,13 +367,13 @@ fn main() -> anyhow::Result<()> {
             consensus_state.clone(),
             &runtime_handle,
             // NOTE: `wait_for_bootstrap` should be calculated *before* starting `Consensus` thread
-            consensus_state.is_new_deployment() && args.bootstrap.is_some(),
+            consensus_state.is_new_deployment() && bootstrap.is_some(),
         ));
 
         let handle = Consensus::run(
             &slog_logger,
             consensus_state.clone(),
-            args.bootstrap,
+            bootstrap,
             args.uri.map(|uri| uri.to_string()),
             settings.clone(),
             channel_service,
