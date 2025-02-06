@@ -61,7 +61,7 @@ impl Collection {
         shard_key: ShardKey,
         placement: ShardsPlacement,
     ) -> Result<(), CollectionError> {
-        let hw_counter = HwMeasurementAcc::disposable(); // TODO(io_measurement): propagate value
+        let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
 
         let state = self.state().await;
         match state.config.params.sharding_method.unwrap_or_default() {
