@@ -526,6 +526,7 @@ impl<'s> SegmentHolder {
     /// A point may exist in multiple segments, having multiple versions. Depending on the kind of
     /// operation, it either needs to be applied to just the latest point version, or to all of
     /// them. This is controllable by the `all_point_versions` flag.
+    /// See: <https://github.com/qdrant/qdrant/pull/5956>
     ///
     /// In case of operations that may do a copy-on-write, we must only apply the operation to the
     /// latest point version. Otherwise our copy on write mechanism may repurpose old point data.
