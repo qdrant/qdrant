@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
@@ -182,7 +183,15 @@ impl MmapBoolIndex {
         usize::from(has_true) + usize::from(has_false)
     }
 
-    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        point_id: PointOffsetType,
+        is_true: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<bool>());
         if is_true {
             self.trues_slice.get(point_id as usize)
         } else {

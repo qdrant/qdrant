@@ -119,14 +119,18 @@ pub fn check_payload<'a, R>(
     query: &Filter,
     point_id: PointOffsetType,
     field_indexes: &HashMap<PayloadKeyType, R>,
+    hw_counter: &HardwareCounterCell,
 ) -> bool
 where
     R: AsRef<Vec<FieldIndex>>,
 {
     let checker = |condition: &Condition| match condition {
-        Condition::Field(field_condition) => {
-            check_field_condition(field_condition, get_payload().deref(), field_indexes)
-        }
+        Condition::Field(field_condition) => check_field_condition(
+            field_condition,
+            get_payload().deref(),
+            field_indexes,
+            hw_counter,
+        ),
         Condition::IsEmpty(is_empty) => check_is_empty_condition(is_empty, get_payload().deref()),
         Condition::IsNull(is_null) => check_is_null_condition(is_null, get_payload().deref()),
         Condition::HasId(has_id) => id_tracker
@@ -154,6 +158,7 @@ where
                         &nested.nested.filter,
                         point_id,
                         &nested_indexes,
+                        hw_counter,
                     )
                 })
         }
@@ -183,6 +188,7 @@ pub fn check_field_condition<R>(
     field_condition: &FieldCondition,
     payload: &impl PayloadContainer,
     field_indexes: &HashMap<PayloadKeyType, R>,
+    hw_counter: &HardwareCounterCell,
 ) -> bool
 where
     R: AsRef<Vec<FieldIndex>>,
@@ -199,7 +205,9 @@ where
         for p in field_values {
             let mut index_checked = false;
             for index in field_indexes.as_ref() {
-                if let Some(index_check_res) = index.special_check_condition(field_condition, p) {
+                if let Some(index_check_res) =
+                    index.special_check_condition(field_condition, p, hw_counter)
+                {
                     if index_check_res {
                         // If at least one object matches the condition, we can return true
                         return true;
@@ -308,6 +316,7 @@ impl ConditionChecker for SimpleConditionChecker {
             query,
             point_id,
             &IndexesMap::new(),
+            &HardwareCounterCell::new(),
         )
     }
 }

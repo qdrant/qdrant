@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -95,19 +96,23 @@ impl FullTextIndex {
         }
     }
 
-    fn get_token(&self, token: &str) -> Option<TokenId> {
+    fn get_token(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
         match self {
-            Self::Mutable(index) => index.inverted_index.get_token_id(token),
-            Self::Immutable(index) => index.inverted_index.get_token_id(token),
-            Self::Mmap(index) => index.inverted_index.get_token_id(token),
+            Self::Mutable(index) => index.inverted_index.get_token_id(token, hw_counter),
+            Self::Immutable(index) => index.inverted_index.get_token_id(token, hw_counter),
+            Self::Mmap(index) => index.inverted_index.get_token_id(token, hw_counter),
         }
     }
 
-    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter(
+        &self,
+        query: &ParsedQuery,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         match self {
-            Self::Mutable(index) => index.inverted_index.filter(query),
-            Self::Immutable(index) => index.inverted_index.filter(query),
-            Self::Mmap(index) => index.inverted_index.filter(query),
+            Self::Mutable(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Immutable(index) => index.inverted_index.filter(query, hw_counter),
+            Self::Mmap(index) => index.inverted_index.filter(query, hw_counter),
         }
     }
 
@@ -135,11 +140,22 @@ impl FullTextIndex {
         }
     }
 
-    pub fn check_match(&self, query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+    pub fn check_match(
+        &self,
+        query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         match self {
-            Self::Mutable(index) => index.inverted_index.check_match(query, point_id),
-            Self::Immutable(index) => index.inverted_index.check_match(query, point_id),
-            Self::Mmap(index) => index.inverted_index.check_match(query, point_id),
+            Self::Mutable(index) => index
+                .inverted_index
+                .check_match(query, point_id, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .check_match(query, point_id, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .check_match(query, point_id, hw_counter),
         }
     }
 
@@ -199,20 +215,20 @@ impl FullTextIndex {
         }
     }
 
-    pub fn parse_query(&self, text: &str) -> ParsedQuery {
+    pub fn parse_query(&self, text: &str, hw_counter: &HardwareCounterCell) -> ParsedQuery {
         let mut tokens = HashSet::new();
         Tokenizer::tokenize_query(text, self.config(), |token| {
-            tokens.insert(self.get_token(token));
+            tokens.insert(self.get_token(token, hw_counter));
         });
         ParsedQuery {
             tokens: tokens.into_iter().collect(),
         }
     }
 
-    pub fn parse_document(&self, text: &str) -> Document {
+    pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Document {
         let mut document_tokens = vec![];
         Tokenizer::tokenize_doc(text, self.config(), |token| {
-            if let Some(token_id) = self.get_token(token) {
+            if let Some(token_id) = self.get_token(token, hw_counter) {
                 document_tokens.push(token_id);
             }
         });
@@ -220,9 +236,13 @@ impl FullTextIndex {
     }
 
     #[cfg(test)]
-    pub fn query(&self, query: &str) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let parsed_query = self.parse_query(query);
-        self.filter(&parsed_query)
+    pub fn query(
+        &self,
+        query: &str,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+        let parsed_query = self.parse_query(query, hw_counter);
+        self.filter(&parsed_query, hw_counter)
     }
 }
 
@@ -315,18 +335,20 @@ impl PayloadFieldIndex for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
-        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Implement measurements
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        let hw_counter = hw_acc.get_counter_cell();
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text);
-            return Some(self.filter(&parsed_query));
+            let parsed_query = self.parse_query(&text_match.text, &hw_counter);
+            return Some(self.filter(&parsed_query, &hw_counter));
         }
         None
     }
 
     fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurements): maybe needs propagation?
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text);
+            let parsed_query = self.parse_query(&text_match.text, &hw_counter);
             return Some(self.estimate_cardinality(&parsed_query, condition));
         }
         None
