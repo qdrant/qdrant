@@ -7,7 +7,7 @@ use rand::rngs::StdRng;
 #[cfg(test)]
 use rand::Rng as _;
 
-use super::ensure_versions_len;
+use super::ensure_len_and_set_version;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::id_tracker::point_mappings::PointMappings;
@@ -54,8 +54,9 @@ impl IdTracker for InMemoryIdTracker {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
                 *old_version = version;
             } else {
-                ensure_versions_len(
+                ensure_len_and_set_version(
                     internal_id,
+                    version,
                     &mut self.internal_to_version,
                     &mut self.mappings.deleted,
                 );
