@@ -404,6 +404,68 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    /// Select what point IDs are in what segments.
+    ///
+    /// Depending on `only_latest_version`, we either pick all segments a point ID is in, or just
+    /// the segment which has the latest version of such point.
+    fn segments_points(
+        &self,
+        ids: &[PointIdType],
+        only_latest_version: bool,
+    ) -> AHashMap<SegmentId, Vec<PointIdType>> {
+        // If we don't care about the latest version, we just pick all points from all versions
+        if !only_latest_version {
+            return self
+                .iter()
+                .map(|(segment_id, segment)| {
+                    let segment_arc = segment.get();
+                    let segment_lock = segment_arc.read();
+                    let segment_points = Self::segment_points(ids, segment_lock.deref());
+                    (*segment_id, segment_points)
+                })
+                .collect();
+        }
+
+        // Find in which segments latest point versions are located
+        let mut points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
+            AHashMap::with_capacity(ids.len());
+        for (segment_id, segment) in self.iter() {
+            let segment_arc = segment.get();
+            let segment_lock = segment_arc.read();
+            let segment_points = Self::segment_points(ids, segment_lock.deref());
+            for segment_point in segment_points {
+                if let Some(point_version) = segment_lock.point_version(segment_point) {
+                    match points.entry(segment_point) {
+                        // First time we see the point, add it to the list
+                        Entry::Vacant(entry) => {
+                            entry.insert((point_version, *segment_id));
+                        }
+                        // Point we have seen before is older, replace it
+                        Entry::Occupied(mut entry) if entry.get().0 < point_version => {
+                            entry.insert((point_version, *segment_id));
+                        }
+                        // Point we have seen before is newer, do nothing
+                        Entry::Occupied(_) => {}
+                    }
+                }
+            }
+        }
+
+        // Map segment ID to points
+        let segment_count = self.len();
+        let mut segment_points: AHashMap<SegmentId, Vec<PointIdType>> =
+            AHashMap::with_capacity(segment_count);
+        for (point_id, (_point_version, segment_id)) in points {
+            segment_points
+                .entry(segment_id)
+                // Preallocate point IDs vector with rough estimate of size
+                .or_insert_with(|| Vec::with_capacity(ids.len() / max(segment_count / 2, 1)))
+                .push(point_id);
+        }
+
+        segment_points
+    }
+
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
     where
         F: FnMut(&RwLockReadGuard<dyn SegmentEntry + 'static>) -> OperationResult<bool>,
@@ -484,44 +546,10 @@ impl<'s> SegmentHolder {
     {
         let _update_guard = self.update_tracker.update();
 
-        // Find in which segments latest point versions are located
-        let mut points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
-            AHashMap::with_capacity(ids.len());
-        for (idx, segment) in self.iter() {
-            let segment_arc = segment.get();
-            let segment_lock = segment_arc.read();
-            let segment_points = Self::segment_points(ids, segment_lock.deref());
-            for segment_point in segment_points {
-                if let Some(point_version) = segment_lock.point_version(segment_point) {
-                    match points.entry(segment_point) {
-                        // First time we see the point, add it to the list
-                        Entry::Vacant(entry) => {
-                            entry.insert((point_version, *idx));
-                        }
-                        // Point we have seen before is older, replace it
-                        Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                            entry.insert((point_version, *idx));
-                        }
-                        // Point we have seen before is newer, do nothing
-                        Entry::Occupied(_) => {}
-                    }
-                }
-            }
-        }
+        // Select what points to update in what segments
+        let segment_points = self.segments_points(ids, true);
 
-        // Map segment ID to points to update
-        let segment_count = self.len();
-        let mut segment_points: AHashMap<SegmentId, Vec<PointIdType>> =
-            AHashMap::with_capacity(self.len());
-        for (point_id, (_point_version, segment_id)) in points {
-            segment_points
-                .entry(segment_id)
-                // Preallocate point IDs vector with rough estimate of size
-                .or_insert_with(|| Vec::with_capacity(ids.len() / max(segment_count / 2, 1)))
-                .push(point_id);
-        }
-
-        // Apply point operations to segments in which we found latest point version
+        // Apply point operations to selected segments
         let mut applied_points = 0;
         for (segment_id, point_ids) in segment_points {
             let segment = self.get(segment_id).unwrap();
