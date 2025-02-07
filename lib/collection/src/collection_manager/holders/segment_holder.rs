@@ -449,11 +449,12 @@ impl<'s> SegmentHolder {
         let segment_count = self.len();
         let mut segment_points: AHashMap<SegmentId, Vec<PointIdType>> =
             AHashMap::with_capacity(segment_count);
+        // Preallocate point IDs vector with rough estimate of size
+        let default_capacity = ids.len() / max(segment_count / 2, 1);
         for (point_id, (_point_version, segment_id)) in points {
             segment_points
                 .entry(segment_id)
-                // Preallocate point IDs vector with rough estimate of size
-                .or_insert_with(|| Vec::with_capacity(ids.len() / max(segment_count / 2, 1)))
+                .or_insert_with(|| Vec::with_capacity(default_capacity))
                 .push(point_id);
         }
 
