@@ -46,7 +46,7 @@ impl StructPayloadIndex {
                         payload_provider.with_payload(
                             point_id,
                             |payload| {
-                                check_field_condition(field_condition, &payload, field_indexes)
+                                check_field_condition(field_condition, &payload, field_indexes, &hw)
                             },
                             &hw,
                         )
@@ -145,6 +145,7 @@ impl StructPayloadIndex {
                                         &nested.nested.filter,
                                         point_id,
                                         &nested_indexes,
+                                        &hw,
                                     ) {
                                         // If at least one nested object matches, return true
                                         return true;
