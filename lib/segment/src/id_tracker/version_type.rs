@@ -4,6 +4,7 @@ use crate::types::SeqNumberType;
 ///
 /// The only special thing about this is that SeqNumberType::MAX means no version. Make sure to always use [VersionType::none()] as default when resizing.
 #[derive(Debug, Copy, Clone, PartialEq)]
+#[repr(transparent)]
 pub struct VersionType(SeqNumberType);
 
 impl VersionType {
