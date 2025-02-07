@@ -404,28 +404,22 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
+    /// Select all point occurrences in all segments, regardless of their version.
+    fn all_segments_points(&self, ids: &[PointIdType]) -> AHashMap<SegmentId, Vec<PointIdType>> {
+        self.iter()
+            .map(|(segment_id, segment)| {
+                let segment_arc = segment.get();
+                let segment_lock = segment_arc.read();
+                let segment_points = Self::segment_points(ids, segment_lock.deref());
+                (*segment_id, segment_points)
+            })
+            .collect()
+    }
+
     /// Select what point IDs are in what segments.
     ///
-    /// Depending on `all_point_versions`, we either pick all segments a point ID is in, or just
-    /// the segment which has the latest version of such point.
-    fn segments_points(
-        &self,
-        ids: &[PointIdType],
-        all_point_versions: bool,
-    ) -> AHashMap<SegmentId, Vec<PointIdType>> {
-        // If we apply to all point versions, simply pick all point occurrences in all segments
-        if all_point_versions {
-            return self
-                .iter()
-                .map(|(segment_id, segment)| {
-                    let segment_arc = segment.get();
-                    let segment_lock = segment_arc.read();
-                    let segment_points = Self::segment_points(ids, segment_lock.deref());
-                    (*segment_id, segment_points)
-                })
-                .collect();
-        }
-
+    /// For each external id, picks the segment which has the latest version of such point.
+    fn latest_segments_points(&self, ids: &[PointIdType]) -> AHashMap<SegmentId, Vec<PointIdType>> {
         // Find in which segments latest point versions are located
         let mut points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
             AHashMap::with_capacity(ids.len());
@@ -556,7 +550,11 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         // Select what points to update in what segments
-        let segment_points = self.segments_points(ids, all_point_versions);
+        let segment_points = if all_point_versions {
+            self.all_segments_points(ids)
+        } else {
+            self.latest_segments_points(ids)
+        };
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
