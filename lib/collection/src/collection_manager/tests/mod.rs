@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -9,10 +10,11 @@ use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::payload_json;
-use segment::types::{PointIdType, WithPayload, WithVector};
+use segment::types::{ExtendedPointId, PointIdType, WithPayload, WithVector};
 use tempfile::Builder;
 
 use super::holders::proxy_segment;
+use super::segments_updater::delete_points;
 use crate::collection_manager::fixtures::{build_segment_1, build_segment_2, empty_segment};
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::collection_manager::holders::segment_holder::{
@@ -21,6 +23,7 @@ use crate::collection_manager::holders::segment_holder::{
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::collection_manager::segments_updater::{set_payload, upsert_points};
 use crate::operations::point_ops::{PointStructPersisted, VectorStructPersisted};
+use crate::operations::types::RecordInternal;
 
 mod test_search_aggregation;
 
@@ -246,6 +249,103 @@ fn test_upsert_points_in_smallest_segment() {
             assert!(!segment3_read.has_point(point_id.into()));
         }
     }
+}
+
+/// Test that a delete operation deletes all point versions.
+///
+/// See: <https://github.com/qdrant/qdrant/pull/5956>
+#[test]
+fn test_delete_all_point_versions() {
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+    let hw_counter = HardwareCounterCell::new();
+
+    let point_id = ExtendedPointId::from(123);
+    let old_vector = vec![0.0, 1.0, 2.0, 3.0];
+    let new_vector = vec![3.0, 2.0, 1.0, 0.0];
+
+    let mut segment1 = empty_segment(dir.path());
+    let mut segment2 = empty_segment(dir.path());
+
+    // Insert point 123 in both segments, having version 100 and 101
+    segment1
+        .upsert_point(
+            100,
+            point_id,
+            segment::data_types::vectors::only_default_vector(&old_vector),
+            &hw_counter,
+        )
+        .unwrap();
+    segment2
+        .upsert_point(
+            101,
+            point_id,
+            segment::data_types::vectors::only_default_vector(&new_vector),
+            &hw_counter,
+        )
+        .unwrap();
+
+    // Set up locked segment holder
+    let mut holder = SegmentHolder::default();
+    let sid1 = holder.add_new(segment1);
+    let sid2 = holder.add_new(segment2);
+    let segments = Arc::new(RwLock::new(holder));
+
+    // We should be able to retrieve point 123
+    let retrieved = SegmentsSearcher::retrieve_blocking(
+        segments.clone(),
+        &[point_id],
+        &WithPayload::from(false),
+        &WithVector::from(true),
+        &AtomicBool::new(false),
+        HwMeasurementAcc::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        retrieved,
+        HashMap::from([(
+            point_id,
+            RecordInternal {
+                id: point_id,
+                vector: Some(VectorStructInternal::Single(new_vector)),
+                payload: None,
+                shard_key: None,
+                order_value: None,
+            }
+        )])
+    );
+
+    {
+        // Assert that point 123 is in both segments
+        let holder = segments.read();
+        assert!(holder.get(sid1).unwrap().get().read().has_point(point_id));
+        assert!(holder.get(sid2).unwrap().get().read().has_point(point_id));
+
+        // Delete point 123
+        delete_points(&holder, 102, &[123.into()], &hw_counter).unwrap();
+
+        // Assert that point 123 is deleted from both segments
+        // Note: before the bug fix the point was only deleted from segment 2
+        assert!(!holder.get(sid1).unwrap().get().read().has_point(point_id));
+        assert!(!holder.get(sid2).unwrap().get().read().has_point(point_id));
+    }
+
+    // Drop the last segment, only keep the first
+    // Pretend the segment was picked up by the optimizer, and was totally optimized away
+    let removed_segments = segments.write().remove(&[sid2]);
+    assert_eq!(removed_segments.len(), 1);
+
+    // We must not be able to retrieve point 123
+    // Note: before the bug fix we could retrieve the point again from segment 1
+    let retrieved = SegmentsSearcher::retrieve_blocking(
+        segments.clone(),
+        &[point_id],
+        &WithPayload::from(false),
+        &WithVector::from(false),
+        &AtomicBool::new(false),
+        HwMeasurementAcc::new(),
+    )
+    .unwrap();
+    assert!(retrieved.is_empty());
 }
 
 #[test]
