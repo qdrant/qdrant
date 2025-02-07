@@ -569,11 +569,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let sync_points =
-            sync_points.ok_or_else(|| Status::invalid_argument("SyncPoints is missing"))?;
         sync(
             self.toc.clone(),
-            sync_points,
+            extract_internal_request(sync_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
