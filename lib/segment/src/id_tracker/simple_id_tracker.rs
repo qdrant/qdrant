@@ -10,7 +10,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::ensure_versions_len;
+use super::ensure_len_and_set_version;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
@@ -159,8 +159,12 @@ impl SimpleIdTracker {
                 PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
             };
             if let Some(internal_id) = internal_id {
-                ensure_versions_len(internal_id, &mut internal_to_version, &mut deleted);
-                internal_to_version[internal_id as usize] = version;
+                ensure_len_and_set_version(
+                    internal_id,
+                    version,
+                    &mut internal_to_version,
+                    &mut deleted,
+                );
             } else {
                 log::debug!(
                     "Found version: {} without internal id, external id: {}",
@@ -231,12 +235,12 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if let Some(external_id) = self.external_id(internal_id) {
-            ensure_versions_len(
+            ensure_len_and_set_version(
                 internal_id,
+                version,
                 &mut self.internal_to_version,
                 &mut self.mappings.deleted,
             );
-            self.internal_to_version[internal_id as usize] = version;
             self.versions_db_wrapper.put(
                 Self::store_key(&external_id),
                 bincode::serialize(&version).unwrap(),
