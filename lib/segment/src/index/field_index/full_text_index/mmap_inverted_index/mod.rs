@@ -270,7 +270,7 @@ impl InvertedIndex for MmapInvertedIndex {
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab
-            .get(token, &hw_counter)
+            .get(token, hw_counter)
             .ok()
             .flatten()
             .and_then(<[TokenId]>::first)
