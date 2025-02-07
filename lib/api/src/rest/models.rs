@@ -64,7 +64,7 @@ pub struct CollectionDescription {
     pub name: String,
 }
 
-fn example_collectios_response() -> CollectionsResponse {
+fn example_collections_response() -> CollectionsResponse {
     CollectionsResponse {
         collections: vec![
             CollectionDescription {
@@ -85,7 +85,7 @@ fn example_collectios_response() -> CollectionsResponse {
 
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-#[schemars(example = "example_collectios_response")]
+#[schemars(example = "example_collections_response")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,
 }
