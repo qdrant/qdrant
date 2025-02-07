@@ -235,13 +235,14 @@ impl PointsInternal for PointsInternalService {
         validate_and_log(request.get_ref());
 
         let inference_token = extract_token(&request);
-        let request = request.into_inner();
 
-        let shard_id = request.shard_id;
-        let clock_tag = request.clock_tag;
+        let UpdateVectorsInternal {
+            update_vectors: update_vectors_req,
+            shard_id,
+            clock_tag,
+        } = request.into_inner();
 
-        let update_point_vectors = request
-            .update_vectors
+        let update_point_vectors = update_vectors_req
             .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
 
         update_vectors(
@@ -261,13 +262,13 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let request = request.into_inner();
+        let DeleteVectorsInternal {
+            delete_vectors: delete_vectors_req,
+            shard_id,
+            clock_tag,
+        } = request.into_inner();
 
-        let shard_id = request.shard_id;
-        let clock_tag = request.clock_tag;
-
-        let delete_point_vectors = request
-            .delete_vectors
+        let delete_point_vectors = delete_vectors_req
             .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
 
         delete_vectors(
