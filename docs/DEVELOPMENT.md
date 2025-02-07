@@ -153,6 +153,26 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 
 ![call-graph example](./imgs/call-graph-profile.png)
 
+### Coverage reports
+
+You can generate coverage tests locally with the following commands
+
+Note: These reports only cover the Rust unit tests (for now)
+
+```bash
+cd qdrant
+cargo install cargo-llvm-cov
+./tools/coverage.sh
+# Above command needs a lot of memory because of llvm
+# If you're facing OOM issues, use: RUN_PER_PACKAGE=true ./tools/coverage.sh
+
+cd target/llvm-cov/html
+python -m http.server
+open http://localhost:8000
+```
+
+![Local coverage report](./imgs/local-coverage-report.png)
+
 ### Tango.rs-based benchmarks
 
 Some benchmarks are implemented using the [Tango.rs](https://github.com/bazhenov/tango) framework.
