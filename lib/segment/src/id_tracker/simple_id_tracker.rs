@@ -10,6 +10,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::version_type::VersionType;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
@@ -87,7 +88,7 @@ fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
 
 #[derive(Debug)]
 pub struct SimpleIdTracker {
-    internal_to_version: Vec<SeqNumberType>,
+    internal_to_version: Vec<VersionType>,
     mapping_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
     versions_db_wrapper: DatabaseColumnScheduledUpdateWrapper,
     mappings: PointMappings,
@@ -146,7 +147,7 @@ impl SimpleIdTracker {
             }
         }
 
-        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
+        let mut internal_to_version: Vec<VersionType> = Default::default();
         let versions_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
         );
@@ -159,9 +160,9 @@ impl SimpleIdTracker {
             };
             if let Some(internal_id) = internal_id {
                 if internal_id as usize >= internal_to_version.len() {
-                    internal_to_version.resize(internal_id as usize + 1, 0);
+                    internal_to_version.resize(internal_id as usize + 1, VersionType::none());
                 }
-                internal_to_version[internal_id as usize] = version;
+                internal_to_version[internal_id as usize] = version.into();
             } else {
                 log::debug!(
                     "Found version: {} without internal id, external id: {}",
@@ -223,7 +224,10 @@ impl SimpleIdTracker {
 
 impl IdTracker for SimpleIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id as usize).copied()
+        self.internal_to_version
+            .get(internal_id as usize)
+            .copied()
+            .and_then(Option::from)
     }
 
     fn set_internal_version(
@@ -243,9 +247,10 @@ impl IdTracker for SimpleIdTracker {
                         );
                     }
                 }
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
+                self.internal_to_version
+                    .resize(internal_id as usize + 1, VersionType::none());
             }
-            self.internal_to_version[internal_id as usize] = version;
+            self.internal_to_version[internal_id as usize] = version.into();
             self.versions_db_wrapper.put(
                 Self::store_key(&external_id),
                 bincode::serialize(&version).unwrap(),

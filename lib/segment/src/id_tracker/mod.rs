@@ -3,6 +3,7 @@ pub mod immutable_id_tracker;
 pub mod in_memory_id_tracker;
 pub mod point_mappings;
 pub mod simple_id_tracker;
+pub mod version_type;
 
 use common::types::PointOffsetType;
 pub use id_tracker_base::*;

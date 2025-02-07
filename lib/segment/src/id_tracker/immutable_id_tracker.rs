@@ -13,6 +13,7 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use uuid::Uuid;
 
+use super::version_type::VersionType;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -64,8 +65,8 @@ pub struct ImmutableIdTracker {
 
     deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
 
-    internal_to_version: Vec<SeqNumberType>,
-    internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
+    internal_to_version: Vec<VersionType>,
+    internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<VersionType>,
 
     mappings: PointMappings,
 }
@@ -241,7 +242,7 @@ impl ImmutableIdTracker {
             AdviceSetting::Global,
             true,
         )?;
-        let internal_to_version_mapslice: MmapSlice<SeqNumberType> =
+        let internal_to_version_mapslice: MmapSlice<VersionType> =
             unsafe { MmapSlice::try_from(internal_to_version_map)? };
         let internal_to_version = internal_to_version_mapslice.to_vec();
         let internal_to_version_wrapper =
@@ -261,7 +262,7 @@ impl ImmutableIdTracker {
 
     pub fn new(
         path: &Path,
-        internal_to_version: &[SeqNumberType],
+        internal_to_version: &[VersionType],
         mappings: PointMappings,
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
@@ -360,7 +361,10 @@ fn bitmap_mmap_size(number_of_elements: usize) -> usize {
 
 impl IdTracker for ImmutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id as usize).copied()
+        self.internal_to_version
+            .get(internal_id as usize)
+            .copied()
+            .and_then(Option::from)
     }
 
     fn set_internal_version(
@@ -375,9 +379,9 @@ impl IdTracker for ImmutableIdTracker {
                 "Can't extend version list in immutable tracker"
             );
             if let Some(old_version) = old_version {
-                *old_version = version;
+                *old_version = version.into();
                 self.internal_to_version_wrapper
-                    .set(internal_id as usize, version);
+                    .set(internal_id as usize, version.into());
             }
         }
 
@@ -646,8 +650,8 @@ pub(super) mod test {
             let expect_version = custom_version.get(&internal_id).unwrap_or(&DEFAULT_VERSION);
 
             assert_eq!(
-                id_tracker.internal_to_version.get(internal_id as usize),
-                Some(expect_version)
+                id_tracker.internal_version(internal_id),
+                Some((*expect_version).into())
             );
 
             // Check that unmodified points still haven't changed.

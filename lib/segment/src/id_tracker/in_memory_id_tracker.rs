@@ -7,6 +7,7 @@ use rand::rngs::StdRng;
 #[cfg(test)]
 use rand::Rng as _;
 
+use super::version_type::VersionType;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::id_tracker::point_mappings::PointMappings;
@@ -16,7 +17,7 @@ use crate::types::{PointIdType, SeqNumberType};
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.
 #[derive(Debug, Default)]
 pub struct InMemoryIdTracker {
-    internal_to_version: Vec<SeqNumberType>,
+    internal_to_version: Vec<VersionType>,
     mappings: PointMappings,
 }
 
@@ -25,7 +26,7 @@ impl InMemoryIdTracker {
         Self::default()
     }
 
-    pub fn into_internal(self) -> (Vec<SeqNumberType>, PointMappings) {
+    pub fn into_internal(self) -> (Vec<VersionType>, PointMappings) {
         (self.internal_to_version, self.mappings)
     }
 
@@ -33,7 +34,7 @@ impl InMemoryIdTracker {
     #[cfg(test)]
     pub fn random(rand: &mut StdRng, size: u32, preserved_size: u32, bits_in_id: u8) -> Self {
         Self {
-            internal_to_version: vec![rand.random(); size as usize],
+            internal_to_version: vec![rand.random::<u64>().into(); size as usize],
             mappings: PointMappings::random_with_params(rand, size, preserved_size, bits_in_id),
         }
     }
@@ -41,7 +42,10 @@ impl InMemoryIdTracker {
 
 impl IdTracker for InMemoryIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id as usize).copied()
+        self.internal_to_version
+            .get(internal_id as usize)
+            .copied()
+            .and_then(Option::from)
     }
 
     fn set_internal_version(
@@ -51,10 +55,11 @@ impl IdTracker for InMemoryIdTracker {
     ) -> OperationResult<()> {
         if self.external_id(internal_id).is_some() {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
-                *old_version = version;
+                *old_version = version.into();
             } else {
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
-                self.internal_to_version[internal_id as usize] = version;
+                self.internal_to_version
+                    .resize(internal_id as usize + 1, VersionType::none());
+                self.internal_to_version[internal_id as usize] = version.into();
             }
         }
 
