@@ -168,12 +168,6 @@ cd qdrant
 cargo install cargo-llvm-cov
 ./tools/coverage.sh
 
-# Above command needs a lot of memory because of llvm
-# If you face OOM issues, use: 
-# sudo apt install -y lcov
-# RUN_PER_PACKAGE=true ./tools/coverage.sh
-# cargo llvm-cov report --html
-
 cd target/llvm-cov/html
 python -m http.server
 open http://localhost:8000
