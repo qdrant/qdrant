@@ -29,7 +29,7 @@ pub struct PointMappings {
     /// It is possible that `deleted` can be longer or shorter than `internal_to_external`.
     /// - if `deleted` is longer, then extra bits should be set to `false` and ignored.
     /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
-    deleted: BitVec,
+    pub(super) deleted: BitVec,
     internal_to_external: Vec<PointIdType>,
 
     // Having two separate maps allows us iterating only over one type at a time without having to filter.

@@ -10,6 +10,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::ensure_versions_len;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
@@ -158,9 +159,7 @@ impl SimpleIdTracker {
                 PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
             };
             if let Some(internal_id) = internal_id {
-                if internal_id as usize >= internal_to_version.len() {
-                    internal_to_version.resize(internal_id as usize + 1, 0);
-                }
+                ensure_versions_len(internal_id, &mut internal_to_version, &mut deleted);
                 internal_to_version[internal_id as usize] = version;
             } else {
                 log::debug!(
@@ -232,19 +231,11 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if let Some(external_id) = self.external_id(internal_id) {
-            if internal_id as usize >= self.internal_to_version.len() {
-                #[cfg(debug_assertions)]
-                {
-                    if internal_id as usize > self.internal_to_version.len() + 1 {
-                        log::info!(
-                            "Resizing versions is initializing larger range {} -> {}",
-                            self.internal_to_version.len(),
-                            internal_id + 1
-                        );
-                    }
-                }
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
-            }
+            ensure_versions_len(
+                internal_id,
+                &mut self.internal_to_version,
+                &mut self.mappings.deleted,
+            );
             self.internal_to_version[internal_id as usize] = version;
             self.versions_db_wrapper.put(
                 Self::store_key(&external_id),
