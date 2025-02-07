@@ -650,6 +650,15 @@ impl<'s> SegmentHolder {
     /// It's always safe to pass a closure that always returns false (i.e. `|_| false`).
     ///
     /// Returns set of point ids which were successfully (already) applied to segments.
+    ///
+    /// # Warning
+    ///
+    /// This function must not be used to apply point deletions, and [`apply_points`] must be used
+    /// instead. There are two reasons for this:
+    ///
+    /// 1. moving a point first and deleting it after is unnecessary overhead.
+    /// 2. this leaves older point versions in place, which may accidentally be revived by some
+    ///    other operation later.
     pub fn apply_points_with_conditional_move<F, G, H>(
         &self,
         op_num: SeqNumberType,
@@ -711,7 +720,7 @@ impl<'s> SegmentHolder {
                 applied_points.insert(point_id);
                 Ok(is_applied)
             },
-            // TODO: define whether to only apply to latest point versions
+            // Only apply operation to latest point versions, these are not delete operations
             true,
         )?;
         Ok(applied_points)
