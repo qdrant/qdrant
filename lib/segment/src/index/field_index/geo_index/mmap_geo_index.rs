@@ -1,6 +1,7 @@
 use std::fs::{create_dir_all, remove_dir};
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
@@ -238,12 +239,16 @@ impl MmapGeoMapIndex {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)
-            .map(|_| self.point_to_values.check_values_any(idx, |v| check_fn(&v)))
+            .map(|_| {
+                self.point_to_values
+                    .check_values_any(idx, |v| check_fn(&v), hw_counter)
+            })
             .unwrap_or(false)
     }
 

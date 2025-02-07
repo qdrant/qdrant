@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
@@ -367,15 +368,19 @@ impl PayloadFieldIndex for MmapBoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        let hw_counter = hw_acc.get_counter_cell();
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
-            })) => Some(Box::new(
-                self.get_slice_for(*value)
-                    .iter_ones()
-                    .map(|x| x as PointOffsetType),
-            )),
+            })) => {
+                let slice = self.get_slice_for(*value);
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(slice.len()); // We have to iterate over the whole slice
+                Some(Box::new(slice.iter_ones().map(|x| x as PointOffsetType)))
+            }
             _ => None,
         }
     }

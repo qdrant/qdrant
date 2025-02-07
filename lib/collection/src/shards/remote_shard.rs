@@ -505,6 +505,7 @@ impl RemoteShard {
                 hw_usage.cpu as usize,
                 hw_usage.payload_io_read as usize,
                 hw_usage.payload_io_write as usize,
+                hw_usage.payload_index_io_read as usize,
                 hw_usage.vector_io_read as usize,
                 hw_usage.vector_io_write as usize,
             );
@@ -745,6 +746,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.payload_index_io_read as usize,
                 usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
@@ -825,6 +827,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.payload_index_io_read as usize,
                 usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
@@ -896,6 +899,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.payload_index_io_read as usize,
                 usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
@@ -951,6 +955,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.payload_index_io_read as usize,
                 usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
@@ -1014,6 +1019,7 @@ impl ShardOperation for RemoteShard {
                 usage.cpu as usize,
                 usage.payload_io_read as usize,
                 usage.payload_io_write as usize,
+                usage.payload_index_io_read as usize,
                 usage.vector_io_read as usize,
                 usage.vector_io_write as usize,
             );
@@ -1090,6 +1096,7 @@ impl ShardOperation for RemoteShard {
                 hw_usage.cpu as usize,
                 hw_usage.payload_io_read as usize,
                 hw_usage.payload_io_write as usize,
+                hw_usage.payload_index_io_read as usize,
                 hw_usage.vector_io_read as usize,
                 hw_usage.vector_io_write as usize,
             );

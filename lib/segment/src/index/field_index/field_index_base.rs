@@ -1,6 +1,7 @@
 use std::fmt::Formatter;
 use std::path::PathBuf;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -47,6 +48,7 @@ pub trait PayloadFieldIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        hw_counter: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Return estimation of amount of points which satisfy given condition.
@@ -238,8 +240,9 @@ impl FieldIndex {
     pub fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.get_payload_field_index().filter(condition)
+        self.get_payload_field_index().filter(condition, hw_acc)
     }
 
     pub fn estimate_cardinality(
