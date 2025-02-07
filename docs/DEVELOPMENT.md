@@ -159,7 +159,9 @@ We generate coverage reports every day that can be accessed [here](https://app.c
 
 Note: These reports **only cover the Rust unit tests** (for now)
 
-You can generate coverage tests locally with the following commands
+![CI coverage report](./imgs/ci-coverage-report.png)
+
+You can also generate coverage reports locally with the following commands
 
 ```bash
 cd qdrant
