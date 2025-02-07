@@ -186,8 +186,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
         match self {
-            MapIndex::Mutable(index) => index.get_iterator(value),
-            MapIndex::Immutable(index) => index.get_iterator(value),
+            MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
             MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
         }
     }

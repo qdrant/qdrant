@@ -58,6 +58,8 @@ struct Header {
 
 const PADDING_SIZE: usize = 4096;
 
+pub const BUCKET_OFFSET_OVERHEAD: usize = size_of::<BucketOffset>();
+
 type BucketOffset = u64;
 
 impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout>
@@ -249,7 +251,7 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
         hw_counter
             .payload_index_io_read_counter()
-            .incr_delta(size_of::<BucketOffset>());
+            .incr_delta(BUCKET_OFFSET_OVERHEAD);
 
         let entry = self.get_entry(hash as usize)?;
 
