@@ -52,7 +52,7 @@ pub(crate) fn delete_points(
             |_| (),
             |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
             // Apply point delete to all point versions
-            false,
+            true,
         )?;
 
         total_deleted_points += deleted_points;
@@ -128,7 +128,7 @@ pub(crate) fn delete_vectors(
                 Ok(res)
             },
             // Apply delete to all point versions
-            false,
+            true,
         )?;
 
         total_deleted_points += deleted_points;

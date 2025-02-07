@@ -406,15 +406,15 @@ impl<'s> SegmentHolder {
 
     /// Select what point IDs are in what segments.
     ///
-    /// Depending on `only_latest_version`, we either pick all segments a point ID is in, or just
+    /// Depending on `all_point_versions`, we either pick all segments a point ID is in, or just
     /// the segment which has the latest version of such point.
     fn segments_points(
         &self,
         ids: &[PointIdType],
-        only_latest_version: bool,
+        all_point_versions: bool,
     ) -> AHashMap<SegmentId, Vec<PointIdType>> {
-        // If we don't care about the latest version, we just pick all points from all versions
-        if !only_latest_version {
+        // If we apply to all point versions, simply pick all point occurrences in all segments
+        if all_point_versions {
             return self
                 .iter()
                 .map(|(segment_id, segment)| {
@@ -525,7 +525,7 @@ impl<'s> SegmentHolder {
     ///
     /// A point may exist in multiple segments, having multiple versions. Depending on the kind of
     /// operation, it either needs to be applied to just the latest point version, or to all of
-    /// them. This is controllable by the `only_latest_version` flag.
+    /// them. This is controllable by the `all_point_versions` flag.
     ///
     /// In case of operations that may do a copy-on-write, we must only apply the operation to the
     /// latest point version. Otherwise our copy on write mechanism may repurpose old point data.
@@ -541,7 +541,7 @@ impl<'s> SegmentHolder {
         ids: &[PointIdType],
         mut segment_data: D,
         mut point_operation: O,
-        only_latest_version: bool,
+        all_point_versions: bool,
     ) -> OperationResult<usize>
     where
         D: FnMut(&dyn SegmentEntry) -> T,
@@ -555,7 +555,7 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         // Select what points to update in what segments
-        let segment_points = self.segments_points(ids, only_latest_version);
+        let segment_points = self.segments_points(ids, all_point_versions);
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
@@ -720,8 +720,8 @@ impl<'s> SegmentHolder {
                 applied_points.insert(point_id);
                 Ok(is_applied)
             },
-            // Only apply operation to latest point versions, these are not delete operations
-            true,
+            // Only apply operation to latest point versions, our operation might do copy-on-write and does not delete points
+            false,
         )?;
         Ok(applied_points)
     }
