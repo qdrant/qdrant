@@ -250,24 +250,16 @@ pub async fn do_upsert_points(
         ),
     };
 
-    let collection_operation =
+    let operation =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -290,23 +282,16 @@ pub async fn do_delete_points(
             (PointOperations::DeletePointsByFilter(filter), shard_key)
         }
     };
-    let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
+    let operation = CollectionUpdateOperations::PointOperation(point_operation);
 
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -326,27 +311,19 @@ pub async fn do_update_vectors(
     let persisted_points =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
-    let collection_operation = CollectionUpdateOperations::VectorOperation(
-        VectorOperations::UpdateVectors(UpdateVectorsOp {
+    let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
+        UpdateVectorsOp {
             points: persisted_points,
-        }),
-    );
+        },
+    ));
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -371,30 +348,22 @@ pub async fn do_delete_vectors(
 
     let vector_names: Vec<_> = vector.into_iter().collect();
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
     let mut result = None;
 
     if let Some(filter) = filter {
         let vectors_operation =
             VectorOperations::DeleteVectorsByFilter(filter, vector_names.clone());
 
-        let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+        let operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
 
         result = Some(
-            toc.update(
+            update(
+                &toc,
                 &collection_name,
-                OperationWithClockTag::new(collection_operation, clock_tag),
-                wait,
-                ordering,
-                shard_selector.clone(),
+                operation,
+                internal_params,
+                params,
+                shard_key.clone(),
                 access.clone(),
             )
             .await?,
@@ -403,14 +372,16 @@ pub async fn do_delete_vectors(
 
     if let Some(points) = points {
         let vectors_operation = VectorOperations::DeleteVectors(points.into(), vector_names);
-        let collection_operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+        let operation = CollectionUpdateOperations::VectorOperation(vectors_operation);
+
         result = Some(
-            toc.update(
+            update(
+                &toc,
                 &collection_name,
-                OperationWithClockTag::new(collection_operation, clock_tag),
-                wait,
-                ordering,
-                shard_selector,
+                operation,
+                internal_params,
+                params,
+                shard_key,
                 access,
             )
             .await?,
@@ -436,7 +407,7 @@ pub async fn do_set_payload(
         key,
     } = operation;
 
-    let collection_operation =
+    let operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::SetPayload(SetPayloadOp {
             payload,
             points,
@@ -444,21 +415,13 @@ pub async fn do_set_payload(
             key,
         }));
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -477,10 +440,10 @@ pub async fn do_overwrite_payload(
         payload,
         filter,
         shard_key,
-        ..
+        key: _,
     } = operation;
 
-    let collection_operation =
+    let operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::OverwritePayload(SetPayloadOp {
             payload,
             points,
@@ -489,21 +452,13 @@ pub async fn do_overwrite_payload(
             key: None,
         }));
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -524,28 +479,20 @@ pub async fn do_delete_payload(
         shard_key,
     } = operation;
 
-    let collection_operation =
+    let operation =
         CollectionUpdateOperations::PayloadOperation(PayloadOps::DeletePayload(DeletePayloadOp {
             keys,
             points,
             filter,
         }));
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -568,23 +515,15 @@ pub async fn do_clear_payload(
         }
     };
 
-    let collection_operation = CollectionUpdateOperations::PayloadOperation(point_operation);
+    let operation = CollectionUpdateOperations::PayloadOperation(point_operation);
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        shard_key,
         access,
     )
     .await
@@ -757,32 +696,20 @@ pub async fn do_create_index_internal(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
+    let operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
             field_name,
             field_schema,
         }),
     );
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = if let Some(shard_selection) = shard_id {
-        ShardSelectorInternal::ShardId(shard_selection)
-    } else {
-        ShardSelectorInternal::All
-    };
-
-    let UpdateParams { wait, ordering } = params;
-
-    toc.update(
+    update(
+        &toc,
         &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
-        wait,
-        ordering,
-        shard_selector,
+        operation,
+        internal_params,
+        params,
+        None,
         Access::full("Internal API"),
     )
     .await
@@ -826,30 +753,76 @@ pub async fn do_delete_index_internal(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
 ) -> Result<UpdateResult, StorageError> {
-    let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
+    let operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
     );
 
+    update(
+        &toc,
+        &collection_name,
+        operation,
+        internal_params,
+        params,
+        None,
+        Access::full("Internal API"),
+    )
+    .await
+}
+
+pub async fn update(
+    toc: &TableOfContent,
+    collection_name: &str,
+    operation: CollectionUpdateOperations,
+    internal_params: InternalUpdateParams,
+    params: UpdateParams,
+    shard_key: Option<ShardKeySelector>,
+    access: Access,
+) -> Result<UpdateResult, StorageError> {
     let InternalUpdateParams {
         shard_id,
         clock_tag,
     } = internal_params;
 
-    let shard_selector = if let Some(shard_selection) = shard_id {
-        ShardSelectorInternal::ShardId(shard_selection)
-    } else {
-        ShardSelectorInternal::All
-    };
-
     let UpdateParams { wait, ordering } = params;
 
+    let shard_selector = match operation {
+        CollectionUpdateOperations::PointOperation(point_ops::PointOperations::SyncPoints(_)) => {
+            debug_assert_eq!(
+                shard_key, None,
+                "Sync points operations can't specify shard key"
+            );
+
+            match shard_id {
+                Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+                None => {
+                    debug_assert!(false, "Sync operation is supposed to select shard directly");
+                    ShardSelectorInternal::Empty
+                }
+            }
+        }
+
+        CollectionUpdateOperations::FieldIndexOperation(_) => {
+            debug_assert_eq!(
+                shard_key, None,
+                "Field index operations can't specify shard key"
+            );
+
+            match shard_id {
+                Some(shard_id) => ShardSelectorInternal::ShardId(shard_id),
+                None => ShardSelectorInternal::All,
+            }
+        }
+
+        _ => get_shard_selector_for_update(shard_id, shard_key),
+    };
+
     toc.update(
-        &collection_name,
-        OperationWithClockTag::new(collection_operation, clock_tag),
+        collection_name,
+        OperationWithClockTag::new(operation, clock_tag),
         wait,
         ordering,
         shard_selector,
-        Access::full("Internal API"),
+        access,
     )
     .await
 }
