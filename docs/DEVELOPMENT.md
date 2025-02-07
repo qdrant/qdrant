@@ -155,9 +155,11 @@ Use [pprof](https://github.com/google/pprof) and the following command to genera
 
 ### Coverage reports
 
-You can generate coverage tests locally with the following commands
+We generate coverage reports every day that can be accessed [here](https://app.codecov.io/gh/qdrant/qdrant/tree/code-coverage)
 
 Note: These reports only cover the Rust unit tests (for now)
+
+You can generate coverage tests locally with the following commands
 
 ```bash
 cd qdrant
