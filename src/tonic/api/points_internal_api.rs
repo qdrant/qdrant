@@ -1,3 +1,4 @@
+use std::any;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -186,12 +187,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let upsert_points =
-            upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
-
         upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            upsert_points,
+            extract_internal_request(upsert_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -214,12 +212,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_points =
-            delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
-
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_points,
+            extract_internal_request(delete_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -242,12 +237,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let update_point_vectors = update_vectors_req
-            .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
-
         update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            update_point_vectors,
+            extract_internal_request(update_vectors_req)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -268,12 +260,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_point_vectors = delete_vectors_req
-            .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
-
         delete_vectors(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_point_vectors,
+            extract_internal_request(delete_vectors_req)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -293,12 +282,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
         set_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            set_payload_points,
+            extract_internal_request(set_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -318,12 +304,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
         overwrite_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            set_payload_points,
+            extract_internal_request(set_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -343,12 +326,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_payload_points = delete_payload_points
-            .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
-
         delete_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_payload_points,
+            extract_internal_request(delete_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -368,12 +348,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let clear_payload_points = clear_payload_points
-            .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
-
         clear_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            clear_payload_points,
+            extract_internal_request(clear_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -393,12 +370,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let create_field_index_collection = create_field_index_collection
-            .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
-
         create_field_index_internal(
             self.toc.clone(),
-            create_field_index_collection,
+            extract_internal_request(create_field_index_collection)?,
             clock_tag.map(Into::into),
             shard_id,
         )
@@ -417,12 +391,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_field_index_collection = delete_field_index_collection
-            .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
-
         delete_field_index_internal(
             self.toc.clone(),
-            delete_field_index_collection,
+            extract_internal_request(delete_field_index_collection)?,
             clock_tag.map(Into::into),
             shard_id,
         )
@@ -652,4 +623,10 @@ impl PointsInternal for PointsInternalService {
         );
         facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
     }
+}
+
+fn extract_internal_request<T>(request: Option<T>) -> Result<T, tonic::Status> {
+    request.ok_or_else(|| {
+        tonic::Status::invalid_argument(format!("{} is missing", any::type_name::<T>()))
+    })
 }
