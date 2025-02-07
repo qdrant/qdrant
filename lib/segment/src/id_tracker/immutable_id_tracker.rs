@@ -651,7 +651,7 @@ pub(super) mod test {
 
             assert_eq!(
                 id_tracker.internal_version(internal_id),
-                Some((*expect_version).into())
+                Some(*expect_version)
             );
 
             // Check that unmodified points still haven't changed.
