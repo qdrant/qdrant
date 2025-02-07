@@ -607,14 +607,10 @@ impl Segment {
                 {
                     let point_id = id_tracker.external_id(internal_id);
                     let point_version = id_tracker.internal_version(internal_id);
-                    // ignoring initial version because the WAL replay can resurrect un-flushed points by assigning them a new initial version
-                    // those points will be deleted by the next deduplication process
-                    if point_version != Some(0) {
-                        log::error!(
-                            "Vector storage '{vector_name}' is missing point {point_id:?} point_offset: {internal_id} version: {point_version:?}",
-                        );
-                        has_internal_ids_without_vector = true;
-                    }
+                    log::error!(
+                        "Vector storage '{vector_name}' is missing point {point_id:?} point_offset: {internal_id} version: {point_version:?}",
+                    );
+                    has_internal_ids_without_vector = true;
                 }
             }
         }
