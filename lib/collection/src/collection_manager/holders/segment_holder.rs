@@ -523,9 +523,16 @@ impl<'s> SegmentHolder {
 
     /// Apply an operation `point_operation` to a set of points `ids`.
     ///
-    /// Points can be in multiple segments having different versions. We must only apply the
-    /// operation to the latest point version, otherwise our copy on write mechanism may
-    /// repurpose old point data. See: <https://github.com/qdrant/qdrant/pull/5528>
+    /// A point may exist in multiple segments, having multiple versions. Depending on the kind of
+    /// operation, it either needs to be applied to just the latest point version, or to all of
+    /// them. This is controllable by the `only_latest_version` flag.
+    ///
+    /// In case of operations that may do a copy-on-write, we must only apply the operation to the
+    /// latest point version. Otherwise our copy on write mechanism may repurpose old point data.
+    /// See: <https://github.com/qdrant/qdrant/pull/5528>
+    ///
+    /// In case of delete operations, we must apply them to all versions of a point. Otherwise
+    /// future operations may revive deletions through older point versions.
     ///
     /// The `segment_data` function is called no more than once for each segment and its result is
     /// passed to `point_operation`.
@@ -534,6 +541,7 @@ impl<'s> SegmentHolder {
         ids: &[PointIdType],
         mut segment_data: D,
         mut point_operation: O,
+        only_latest_version: bool,
     ) -> OperationResult<usize>
     where
         D: FnMut(&dyn SegmentEntry) -> T,
@@ -547,7 +555,7 @@ impl<'s> SegmentHolder {
         let _update_guard = self.update_tracker.update();
 
         // Select what points to update in what segments
-        let segment_points = self.segments_points(ids, true);
+        let segment_points = self.segments_points(ids, only_latest_version);
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
@@ -703,6 +711,8 @@ impl<'s> SegmentHolder {
                 applied_points.insert(point_id);
                 Ok(is_applied)
             },
+            // TODO: define whether to only apply to latest point versions
+            true,
         )?;
         Ok(applied_points)
     }
