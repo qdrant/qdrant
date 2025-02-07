@@ -228,11 +228,18 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
         match self.value_to_points.get(value, hw_counter) {
-            Ok(Some(slice)) => Box::new(
-                slice
-                    .iter()
-                    .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
-            ),
+            Ok(Some(slice)) => {
+                // We're iterating over the whole (mmapped) slice
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(size_of_val(slice));
+
+                Box::new(
+                    slice
+                        .iter()
+                        .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
+                )
+            }
             Ok(None) => Box::new(iter::empty()),
             Err(err) => {
                 debug_assert!(

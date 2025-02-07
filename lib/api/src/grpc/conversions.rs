@@ -2738,6 +2738,7 @@ impl From<HardwareUsage> for HardwareData {
             cpu,
             payload_io_read,
             payload_io_write,
+            payload_index_io_read,
             vector_io_read,
             vector_io_write,
         } = value;
@@ -2746,6 +2747,7 @@ impl From<HardwareUsage> for HardwareData {
             cpu: RealCpuMeasurement::new(cpu as usize, 1), // Multiplier in API already applied.
             payload_io_read: payload_io_read as usize,
             payload_io_write: payload_io_write as usize,
+            payload_index_io_read: payload_index_io_read as usize,
             vector_io_read: vector_io_read as usize,
             vector_io_write: vector_io_write as usize,
         }

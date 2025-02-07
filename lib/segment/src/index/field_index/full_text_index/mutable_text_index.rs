@@ -175,11 +175,13 @@ mod tests {
             index.remove_point(3).unwrap();
 
             let filter_condition = filter_request("giant computer");
-            assert!(index
-                .filter(&filter_condition, hw_counter.clone())
-                .unwrap()
-                .next()
-                .is_none());
+            assert!(
+                index
+                    .filter(&filter_condition, hw_counter.clone())
+                    .unwrap()
+                    .next()
+                    .is_none()
+            );
 
             assert_eq!(index.count_indexed_points(), payloads.len() - 2);
 

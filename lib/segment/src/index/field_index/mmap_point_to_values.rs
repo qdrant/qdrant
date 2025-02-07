@@ -173,6 +173,9 @@ pub struct MmapPointToValues<T: MmapValue + ?Sized> {
     phantom: std::marker::PhantomData<T>,
 }
 
+/// Memory and IO overhead of accessing mmap index.
+pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, FromBytes, Immutable, IntoBytes, KnownLayout)]
 struct MmapRange {
@@ -283,6 +286,11 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         check_fn: impl Fn(T::Referenced<'_>) -> bool,
         hw_acc: &HardwareCounterCell,
     ) -> bool {
+        // Measure IO overhead of `self.get_range()`
+        hw_acc
+            .payload_index_io_read_counter()
+            .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
+
         self.get_range(point_id)
             .map(|range| {
                 let mut value_offset = range.start as usize;
