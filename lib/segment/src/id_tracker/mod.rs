@@ -82,7 +82,7 @@ fn ensure_len_and_set_version(
 ) {
     let internal_id = internal_id as usize;
     let versions_len = internal_to_version.len();
-    if internal_id as usize >= versions_len {
+    if internal_id >= versions_len {
         internal_to_version.resize(internal_id + 1, 0);
         // Make sure the deleted bitset considers the newly skipped range as deleted.
         // This will ensure that we don't have a synthetic version 0 for these points.
