@@ -2,6 +2,7 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use memmap2::Mmap;
@@ -91,9 +92,19 @@ impl MmapPostings {
     /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
     /// remainder_postings: &'a [PointOffsetType],
     /// ```
-    fn get_reader(&self, header: &PostingListHeader) -> Option<ChunkReader<'_>> {
+    fn get_reader(
+        &self,
+        header: &PostingListHeader,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ChunkReader<'_>> {
+        let counter = hw_counter.payload_index_io_read_counter();
+
         let bytes = self.mmap.get(header.offset as usize..)?;
+        counter.incr_delta(size_of::<PointOffsetType>());
+
         let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(bytes).ok()?;
+
+        counter.incr_delta(size_of::<CompressedPostingChunksIndex>());
         let (chunks, bytes) = <[CompressedPostingChunksIndex]>::ref_from_prefix_with_elems(
             bytes,
             header.chunks_count as usize,
@@ -101,6 +112,8 @@ impl MmapPostings {
         .ok()?;
         let (data, bytes) = bytes.split_at(header.data_bytes_count as usize);
         let bytes = bytes.get(header.alignment_bytes_count as usize..)?;
+
+        counter.incr_delta(size_of::<u32>() * header.remainder_count as usize);
         let (remainder_postings, _) =
             <[u32]>::ref_from_prefix_with_elems(bytes, header.remainder_count as usize).ok()?;
 
@@ -112,9 +125,18 @@ impl MmapPostings {
         ))
     }
 
-    pub fn get(&self, token_id: TokenId) -> Option<ChunkReader<'_>> {
+    pub fn get(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<ChunkReader<'_>> {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<PostingListHeader>());
+
         let header = self.get_header(token_id)?;
-        self.get_reader(header)
+
+        self.get_reader(header, hw_counter)
     }
 
     /// Given a vector of compressed posting lists, this function writes them to the `path` file.

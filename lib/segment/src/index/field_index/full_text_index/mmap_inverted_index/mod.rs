@@ -171,14 +171,18 @@ impl InvertedIndex for MmapInvertedIndex {
         true
     }
 
-    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter(
+        &self,
+        query: &ParsedQuery,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
             .map(|&token_id| match token_id {
                 None => None,
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                Some(idx) => self.postings.get(idx),
+                Some(idx) => self.postings.get(idx, hw_counter),
             })
             .collect();
         let Some(posting_readers) = postings_opt else {
@@ -198,18 +202,26 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
-        self.postings.get(token_id).map(|p| p.len())
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
+        self.postings.get(token_id, &hw_counter).map(|p| p.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
-        self.iter_vocab().filter_map(|(token, &token_id)| {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
+
+        self.iter_vocab().filter_map(move |(token, &token_id)| {
             self.postings
-                .get(token_id)
+                .get(token_id, &hw_counter)
                 .map(|posting| (token, posting.len()))
         })
     }
 
-    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool {
+    fn check_match(
+        &self,
+        parsed_query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         if parsed_query.tokens.contains(&None) {
             return false;
         }
@@ -224,7 +236,7 @@ impl InvertedIndex for MmapInvertedIndex {
             // unwrap safety: all tokens exist in the vocabulary if it passes the above check
             .all(|query_token| {
                 self.postings
-                    .get(query_token.unwrap())
+                    .get(query_token.unwrap(), hw_counter)
                     .unwrap()
                     .contains(point_id)
             })
@@ -256,10 +268,9 @@ impl InvertedIndex for MmapInvertedIndex {
         self.active_points_count
     }
 
-    fn get_token_id(&self, token: &str) -> Option<TokenId> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Maybe propagate?
+    fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab
-            .get(token, &hw_counter)
+            .get(token, hw_counter)
             .ok()
             .flatten()
             .and_then(<[TokenId]>::first)

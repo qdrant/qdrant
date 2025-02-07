@@ -192,6 +192,7 @@ mod tests {
             &query,
             0,
             &IndexesMap::new(),
+            &HardwareCounterCell::new(),
         );
     }
 

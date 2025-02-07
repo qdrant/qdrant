@@ -1,4 +1,5 @@
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use mmap_bool_index::MmapBoolIndex;
 use simple_bool_index::SimpleBoolIndex;
@@ -60,10 +61,15 @@ impl BoolIndex {
         }
     }
 
-    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        point_id: PointOffsetType,
+        is_true: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         match self {
-            BoolIndex::Simple(index) => index.check_values_any(point_id, is_true),
-            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true),
+            BoolIndex::Simple(index) => index.check_values_any(point_id, is_true, hw_counter),
+            BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true, hw_counter),
         }
     }
 
