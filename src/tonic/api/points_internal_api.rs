@@ -29,7 +29,7 @@ use tonic::{Request, Response, Status};
 use super::query_common::*;
 use super::update_common::*;
 use super::validate_and_log;
-use crate::common::inference::InferenceToken;
+use crate::common::inference::extract_token;
 use crate::settings::ServiceConfig;
 use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
 
@@ -178,11 +178,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
 
         let UpsertPointsInternal {
             upsert_points,
@@ -210,11 +206,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
 
         let DeletePointsInternal {
             delete_points,
@@ -242,11 +234,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
         let request = request.into_inner();
 
         let shard_id = request.shard_id;
@@ -601,11 +589,7 @@ impl PointsInternal for PointsInternalService {
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
 
         let SyncPointsInternal {
             sync_points,
