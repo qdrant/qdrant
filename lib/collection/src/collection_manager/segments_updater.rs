@@ -127,8 +127,8 @@ pub(crate) fn delete_vectors(
                 }
                 Ok(res)
             },
-            // Apply delete to all point versions
-            true,
+            // Only apply operation to latest point versions, operation does not delete points
+            false,
         )?;
 
         total_deleted_points += deleted_points;
