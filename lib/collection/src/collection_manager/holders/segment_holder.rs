@@ -482,6 +482,19 @@ impl<'s> SegmentHolder {
             debug_assert!(previous.is_none());
         });
 
+        // Assert each segment does not have overlapping updates and deletes
+        debug_assert!(
+            segment_points
+                .values()
+                .filter(|points| !points.to_update.is_empty() && !points.to_delete.is_empty())
+                .all(|points| {
+                    let updates: HashSet<&ExtendedPointId> = HashSet::from_iter(&points.to_update);
+                    let deletes = HashSet::from_iter(&points.to_delete);
+                    updates.is_disjoint(&deletes)
+                }),
+            "segments should not have overlapping updates and deletes",
+        );
+
         segment_points
     }
 
