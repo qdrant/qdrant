@@ -404,46 +404,46 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
-    /// Select what point IDs are in what segments.
+    /// Select what point IDs to update in each segment
     ///
-    /// For each external id, picks the segment which has the latest version of such point.
-    fn latest_segments_points(
-        &self,
-        ids: &[PointIdType],
-    ) -> (
-        AHashMap<SegmentId, Vec<PointIdType>>,
-        AHashMap<SegmentId, Vec<PointIdType>>,
-    ) {
-        // Find in which segments latest point versions are located
-        let mut points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
+    /// For each external id, pick the segment which has the latest version of such point.
+    /// Older point versions are also returned and marked to be deleted.
+    ///
+    /// Points that are already soft deleted are not included.
+    fn find_points_to_update(&self, ids: &[PointIdType]) -> AHashMap<SegmentId, PointsToUpdate> {
+        let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
+
+        // Find in which segments latest point versions are located, mark older points for deletion
+        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
             AHashMap::with_capacity(ids.len());
-        let mut segment_points_to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
             let segment_points = Self::segment_points(ids, segment_lock.deref());
             for segment_point in segment_points {
-                if let Some(point_version) = segment_lock.point_version(segment_point) {
-                    match points.entry(segment_point) {
-                        // First time we see the point, add it to the list
-                        Entry::Vacant(entry) => {
-                            entry.insert((point_version, *segment_id));
-                        }
-                        // Point we have seen before is older, replace it, delete older
-                        Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                            let (_, old_segment_id) = entry.insert((point_version, *segment_id));
-                            segment_points_to_delete
-                                .entry(old_segment_id)
-                                .or_default()
-                                .push(segment_point);
-                        }
-                        // Point we have seen before is newer, delete older
-                        Entry::Occupied(_) => {
-                            segment_points_to_delete
-                                .entry(*segment_id)
-                                .or_default()
-                                .push(segment_point);
-                        }
+                let Some(point_version) = segment_lock.point_version(segment_point) else {
+                    continue;
+                };
+
+                match latest_points.entry(segment_point) {
+                    // First time we see the point, add it
+                    Entry::Vacant(entry) => {
+                        entry.insert((point_version, *segment_id));
+                    }
+                    // Point we have seen before is older, replace it and mark older for deletion
+                    Entry::Occupied(mut entry) if entry.get().0 < point_version => {
+                        let (_, old_segment_id) = entry.insert((point_version, *segment_id));
+                        to_delete
+                            .entry(old_segment_id)
+                            .or_default()
+                            .push(segment_point);
+                    }
+                    // Point we have seen before is newer, mark this point for deletion
+                    Entry::Occupied(_) => {
+                        to_delete
+                            .entry(*segment_id)
+                            .or_default()
+                            .push(segment_point);
                     }
                 }
             }
@@ -451,18 +451,32 @@ impl<'s> SegmentHolder {
 
         // Map segment ID to points
         let segment_count = self.len();
-        let mut segment_points: AHashMap<SegmentId, Vec<PointIdType>> =
-            AHashMap::with_capacity(segment_count);
-        // Preallocate point IDs vector with rough estimate of size
+        let mut segment_points = AHashMap::with_capacity(segment_count);
         let default_capacity = ids.len() / max(segment_count / 2, 1);
-        for (point_id, (_point_version, segment_id)) in points {
+        for (point_id, (_point_version, segment_id)) in latest_points {
             segment_points
                 .entry(segment_id)
-                .or_insert_with(|| Vec::with_capacity(default_capacity))
+                .or_insert_with(|| PointsToUpdate {
+                    to_update: Vec::with_capacity(default_capacity),
+                    to_delete: to_delete.remove(&segment_id).unwrap_or_default(),
+                })
+                .to_update
                 .push(point_id);
         }
 
-        (segment_points, segment_points_to_delete)
+        // Add points marked for deletion in segments that don't get point updates
+        to_delete.drain().for_each(|(segment_id, to_delete)| {
+            let previous = segment_points.insert(
+                segment_id,
+                PointsToUpdate {
+                    to_update: vec![],
+                    to_delete,
+                },
+            );
+            debug_assert!(previous.is_none());
+        });
+
+        segment_points
     }
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
@@ -560,30 +574,25 @@ impl<'s> SegmentHolder {
     {
         let _update_guard = self.update_tracker.update();
 
-        let (segment_points, segment_points_to_delete) = self.latest_segments_points(ids);
+        let segment_points = self.find_points_to_update(ids);
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
-        for (segment_id, point_ids) in segment_points {
+        for (segment_id, points) in segment_points {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
             let segment_data = segment_data(write_segment.deref());
 
             // Update points
-            for point_id in point_ids {
+            for point_id in points.to_update {
                 let is_applied =
                     point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
                 applied_points += usize::from(is_applied);
             }
 
             // Delete points
-            for point_id in segment_points_to_delete
-                .get(&segment_id)
-                .into_iter()
-                .flatten()
-                .copied()
-            {
+            for point_id in points.to_delete {
                 point_delete_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
             }
         }
@@ -2017,4 +2026,10 @@ mod tests {
         // one archive produced per concrete segment in the SegmentHolder
         assert_eq!(archive_count, 2);
     }
+}
+
+/// Helper struct listing what points to update and delete
+struct PointsToUpdate {
+    to_update: Vec<PointIdType>,
+    to_delete: Vec<PointIdType>,
 }
