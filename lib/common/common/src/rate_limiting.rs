@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// A rate limiter based on the token bucket algorithm.
 /// Designed to limit the number of requests per minute.
@@ -32,11 +32,11 @@ impl RateLimiter {
     ///
     /// Returns:
     /// - `Ok(())` if allowed and consumes the tokens.
-    /// - `Err(RateLimitError)` if denied with either an explanation or token that were left but didn't suffice.
+    /// - `Err(RateLimitError)` if denied.
     pub fn try_consume(&mut self, tokens: f64) -> Result<(), RateLimitError> {
         // Consumer wants more than maximum capacity, that's impossible
         if tokens > self.capacity_per_minute as f64 {
-            return Err(RateLimitError::Message(
+            return Err(RateLimitError::AlwaysOverBudget(
                 "request larger than than rate limiter capacity, please try to split your request",
             ));
         }
@@ -55,19 +55,33 @@ impl RateLimiter {
             self.tokens -= tokens; // Consume `cost` tokens.
             Ok(()) // Request allowed.
         } else {
-            Err(RateLimitError::TokenLeft(self.tokens))
+            let missing_tokens = tokens - self.tokens;
+            let retry_after = Duration::from_secs_f64(missing_tokens / self.tokens_per_sec);
+            let retry_error = RetryError {
+                tokens_available: self.tokens,
+                retry_after,
+            };
+            Err(RateLimitError::Retry(retry_error))
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RetryError {
+    /// Number of tokens that were available at the time of the request but didn't suffice.
+    pub tokens_available: f64,
+    /// Estimated time to wait before retrying request
+    pub retry_after: Duration,
 }
 
 /// Error when too many tokens have been tried to consume from the rate limiter.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RateLimitError {
-    /// Detailed explanation of a failure.
-    Message(&'static str),
+    /// Operation that will always be over budget.
+    AlwaysOverBudget(&'static str),
 
-    /// Token that were available at the time of the request but didn't suffice.
-    TokenLeft(f64),
+    /// Operation that can be retried later.
+    Retry(RetryError),
 }
 
 #[cfg(test)]
