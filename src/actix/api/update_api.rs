@@ -7,7 +7,6 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointsSelector, WriteOrdering};
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
-use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_verification::check_strict_mode;
@@ -29,7 +28,7 @@ struct FieldPath {
     name: JsonPath,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
+#[derive(Deserialize, Serialize, Validate)]
 pub struct UpdateParams {
     #[serde(default)]
     pub wait: bool,
