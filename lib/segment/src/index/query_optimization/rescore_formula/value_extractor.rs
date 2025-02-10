@@ -96,8 +96,24 @@ fn number_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
             };
             Some(Box::new(extract_fn))
         }
-        FieldIndex::IntMapIndex(map_index) => todo!(),
-        FieldIndex::FloatIndex(numeric_index) => todo!(),
+        FieldIndex::IntMapIndex(map_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
+                map_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(|&value| VariableValue::Number(value as f64))
+            };
+            Some(Box::new(extract_fn))
+        },
+        FieldIndex::FloatIndex(numeric_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
+                numeric_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(VariableValue::Number)
+            };
+            Some(Box::new(extract_fn))
+        },
         // TODO: how to handle this?
         FieldIndex::DatetimeIndex(numeric_index) => todo!(),
         FieldIndex::KeywordIndex(_)
@@ -111,15 +127,26 @@ fn number_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
 
 fn geo_point_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
     match index {
-        FieldIndex::IntIndex(numeric_index) => todo!(),
-        FieldIndex::DatetimeIndex(numeric_index) => todo!(),
-        FieldIndex::IntMapIndex(map_index) => todo!(),
-        FieldIndex::KeywordIndex(map_index) => todo!(),
-        FieldIndex::FloatIndex(numeric_index) => todo!(),
-        FieldIndex::GeoIndex(geo_map_index) => todo!(),
-        FieldIndex::FullTextIndex(full_text_index) => todo!(),
-        FieldIndex::BoolIndex(bool_index) => todo!(),
-        FieldIndex::UuidIndex(numeric_index) => todo!(),
-        FieldIndex::UuidMapIndex(map_index) => todo!(),
+        FieldIndex::GeoIndex(geo_map_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
+                geo_map_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(|value| VariableValue::GeoPoint {
+                        lat: value.lat,
+                        lon: value.lon,
+                    })
+            };
+            Some(Box::new(extract_fn))
+        },
+        FieldIndex::IntIndex(_) |
+        FieldIndex::DatetimeIndex(_) |
+        FieldIndex::IntMapIndex(_) |
+        FieldIndex::KeywordIndex(_) |
+        FieldIndex::FloatIndex(_) |
+        FieldIndex::FullTextIndex(_) |
+        FieldIndex::BoolIndex(_) |
+        FieldIndex::UuidIndex(_) |
+        FieldIndex::UuidMapIndex(_) => None
     }
 }

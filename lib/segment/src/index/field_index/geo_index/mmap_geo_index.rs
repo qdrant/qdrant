@@ -247,6 +247,10 @@ impl MmapGeoMapIndex {
             .unwrap_or(false)
     }
 
+    pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = GeoPoint> + '_> {
+        self.point_to_values.get_values(idx)
+    }
+
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
         self.deleted
             .get(idx as usize)

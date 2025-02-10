@@ -198,6 +198,17 @@ impl GeoMapIndex {
         }
     }
 
+    pub fn get_values(
+        &self,
+        idx: PointOffsetType,
+    ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
+        match self {
+            GeoMapIndex::Mutable(index) => index.get_values(idx).map(|x| Box::new(x.cloned()) as _),
+            GeoMapIndex::Immutable(index) => index.get_values(idx).map(|x| Box::new(x.cloned()) as _),
+            GeoMapIndex::Mmap(index) => index.get_values(idx).map(|x| Box::new(x) as _),
+        }
+    }
+
     pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
