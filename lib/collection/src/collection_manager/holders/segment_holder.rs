@@ -22,7 +22,8 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
 use segment::types::{
-    Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType, SnapshotFormat,
+    ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
+    SnapshotFormat,
 };
 
 use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
@@ -404,13 +405,18 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
-    /// Select what point IDs to update in each segment
+    /// Select what point IDs to update and delete in each segment
     ///
-    /// For each external id, pick the segment which has the latest version of such point.
-    /// Older point versions are also returned and marked to be deleted.
+    /// Each external point ID might have multiple point versions across all segments.
+    ///
+    /// This finds all point versions and groups them per segment. The newest point versions are
+    /// selected to be updated, all older versions are marked to be deleted.
     ///
     /// Points that are already soft deleted are not included.
-    fn find_points_to_update(&self, ids: &[PointIdType]) -> AHashMap<SegmentId, PointsToUpdate> {
+    fn find_points_to_update_and_delete(
+        &self,
+        ids: &[PointIdType],
+    ) -> AHashMap<SegmentId, PointsToUpdate> {
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
@@ -449,7 +455,7 @@ impl<'s> SegmentHolder {
             }
         }
 
-        // Map segment ID to points
+        // Group points by segments
         let segment_count = self.len();
         let mut segment_points = AHashMap::with_capacity(segment_count);
         let default_capacity = ids.len() / max(segment_count / 2, 1);
@@ -550,12 +556,12 @@ impl<'s> SegmentHolder {
     ///
     /// The `segment_data` function is called no more than once for each segment and its result is
     /// passed to `point_operation`.
-    pub fn apply_points<T, O, J, D>(
+    pub fn apply_points<T, D, O, OD>(
         &self,
         ids: &[PointIdType],
         mut segment_data: D,
         mut point_operation: O,
-        mut point_delete_operation: J,
+        mut point_delete_operation: OD,
     ) -> OperationResult<usize>
     where
         D: FnMut(&dyn SegmentEntry) -> T,
@@ -565,16 +571,11 @@ impl<'s> SegmentHolder {
             &mut RwLockWriteGuard<dyn SegmentEntry>,
             &T,
         ) -> OperationResult<bool>,
-        J: FnMut(
-            PointIdType,
-            SegmentId,
-            &mut RwLockWriteGuard<dyn SegmentEntry>,
-            &T,
-        ) -> OperationResult<bool>,
+        OD: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         let _update_guard = self.update_tracker.update();
 
-        let segment_points = self.find_points_to_update(ids);
+        let segment_points = self.find_points_to_update_and_delete(ids);
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
@@ -584,16 +585,14 @@ impl<'s> SegmentHolder {
             let mut write_segment = segment_arc.write();
             let segment_data = segment_data(write_segment.deref());
 
-            // Update points
             for point_id in points.to_update {
                 let is_applied =
                     point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
                 applied_points += usize::from(is_applied);
             }
 
-            // Delete points
             for point_id in points.to_delete {
-                point_delete_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
+                point_delete_operation(point_id, &mut write_segment)?;
             }
         }
 
@@ -745,9 +744,7 @@ impl<'s> SegmentHolder {
                 applied_points.insert(point_id);
                 Ok(is_applied)
             },
-            |id, _idx, write_segment, _update_nonappendable| {
-                write_segment.delete_point(op_num, id, hw_counter)
-            },
+            |id, write_segment| write_segment.delete_point(op_num, id, hw_counter),
         )?;
         Ok(applied_points)
     }
@@ -1463,6 +1460,12 @@ impl<'s> SegmentHolder {
     }
 }
 
+/// Helper struct listing what points to update and delete
+struct PointsToUpdate {
+    to_update: Vec<PointIdType>,
+    to_delete: Vec<PointIdType>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -2026,10 +2029,4 @@ mod tests {
         // one archive produced per concrete segment in the SegmentHolder
         assert_eq!(archive_count, 2);
     }
-}
-
-/// Helper struct listing what points to update and delete
-struct PointsToUpdate {
-    to_update: Vec<PointIdType>,
-    to_delete: Vec<PointIdType>,
 }
