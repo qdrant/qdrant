@@ -46,7 +46,7 @@ use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 #[derive(Debug)]
 pub struct StructPayloadIndex {
     /// Payload storage
-    payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
+    pub(super) payload: Arc<AtomicRefCell<PayloadStorageEnum>>,
     /// Used for `has_id` condition and estimating cardinality
     pub(super) id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
     /// Vector storages for each field, used for `has_vector` condition
