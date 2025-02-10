@@ -856,7 +856,10 @@ def test_strict_mode_read_rate_limiting(collection_name):
         if not response.ok:
             failed_count += 1
             assert response.status_code == 429
-            assert "Rate limiting exceeded: Read rate limit exceeded, retry later" in response.json()['status']['error']
+            assert "Rate limiting exceeded: Read rate limit exceeded" in response.json()['status']['error']
+            assert response.headers['Retry-After'] is not None
+            # need to wait about 60s for the single token available to be replenished
+            assert 55 < int(response.headers['Retry-After']) <= 60
 
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
@@ -1010,7 +1013,10 @@ def test_strict_mode_write_rate_limiting(collection_name):
         if not response.ok:
             failed_count += 1
             assert response.status_code == 429
-            assert "Rate limiting exceeded: Write rate limit exceeded, retry later" in response.json()['status']['error']
+            assert "Rate limiting exceeded: Write rate limit exceeded" in response.json()['status']['error']
+            assert response.headers['Retry-After'] is not None
+            # need to wait about 60s for the single token available to be replenished
+            assert 55 < int(response.headers['Retry-After']) <= 60
 
     # loose check, as the rate limiting might not be exact
     assert failed_count > 5, "Rate limiting did not work"
@@ -1228,3 +1234,46 @@ def test_filter_nested_condition(collection_name):
     assert "condition" in search_fail.json()['status']['error']
     assert "limit" in search_fail.json()['status']['error']
     assert not search_fail.ok
+
+
+def test_strict_mode_read_rate_limiting_small_replenish(collection_name):
+    """
+    If our read rate limit capacity is larger, test that when exhausting it
+    we're only instructed to wait one more second rather than a full minute.
+    """
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 60,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['read_rate_limit'] == 60
+
+    for _ in range(120):
+        response = request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 4
+            }
+        )
+        if not response.ok:
+            assert response.status_code == 429
+            assert "Rate limiting exceeded: Read rate limit exceeded" in response.json()['status']['error']
+            assert response.headers['Retry-After'] is not None
+            # need to wait about a second for one out of 100 tokens to be replenished
+            assert 1 <= int(response.headers['Retry-After']) <= 5
+            return
+
+    assert False, "rate limiter was never triggered"

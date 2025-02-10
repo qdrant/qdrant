@@ -4,7 +4,7 @@ use std::error::Error as _;
 use std::fmt::{Debug, Write as _};
 use std::iter;
 use std::num::NonZeroU64;
-use std::time::SystemTimeError;
+use std::time::{Duration, SystemTimeError};
 
 use api::grpc::transport_channel_pool::RequestError;
 use api::rest::{
@@ -13,7 +13,7 @@ use api::rest::{
 };
 use common::defaults;
 use common::ext::OptionExt;
-use common::rate_limiting::RateLimitError;
+use common::rate_limiting::{RateLimitError, RetryError};
 use common::types::ScoreType;
 use common::validation::validate_range_generic;
 use io::file_operations::FileStorageError;
@@ -1020,7 +1020,10 @@ pub enum CollectionError {
     #[error("{description}")]
     InferenceError { description: String },
     #[error("Rate limiting exceeded: {description}")]
-    RateLimitExceeded { description: String },
+    RateLimitExceeded {
+        description: String,
+        retry_after: Option<Duration>,
+    },
 }
 
 impl CollectionError {
@@ -1100,31 +1103,34 @@ impl CollectionError {
         Self::StrictMode { description }
     }
 
-    pub fn rate_limit_exceeded(description: impl Into<String>) -> Self {
-        Self::RateLimitExceeded {
-            description: description.into(),
-        }
-    }
-
     pub fn rate_limit_error(
         rate_limit_error: RateLimitError,
-        cost: Option<usize>,
+        cost: usize,
         write_limit_type: bool, // false = read rate limit; true = write rate limit.
     ) -> Self {
         let rate_limiter_type = if write_limit_type { "Write" } else { "Read" };
-        let description = match rate_limit_error {
-            RateLimitError::Message(msg) => {
-                format!("{rate_limiter_type} rate limit exceeded, {msg}",)
+        let (description, retry_after) = match rate_limit_error {
+            RateLimitError::AlwaysOverBudget(msg) => {
+                let description = format!("{rate_limiter_type} rate limit exceeded, {msg}",);
+                // no point in retrying this one
+                (description, None)
             }
-            RateLimitError::TokenLeft(token_available) => {
-                if cost.is_some() && cost.unwrap() > 1 {
-                    format!("{rate_limiter_type} rate limit exceeded: Operation requires {} tokens but only {token_available} were available. Retry later", cost.unwrap())
-                } else {
-                    format!("{rate_limiter_type} rate limit exceeded, retry later")
-                }
+            RateLimitError::Retry(retry_error) => {
+                let RetryError {
+                    tokens_available,
+                    retry_after,
+                } = retry_error;
+                let description = format!(
+                    "{rate_limiter_type} rate limit exceeded: Operation requires {cost} tokens but only {tokens_available} were available. Retry after {}s",
+                    retry_after.as_secs_f32().ceil() as u32,
+                );
+                (description, Some(retry_after))
             }
         };
-        Self::RateLimitExceeded { description }
+        Self::RateLimitExceeded {
+            description,
+            retry_after,
+        }
     }
 
     /// Returns true if the error is transient and the operation can be retried.
@@ -1330,6 +1336,7 @@ impl From<tonic::Status> for CollectionError {
             },
             tonic::Code::ResourceExhausted => CollectionError::RateLimitExceeded {
                 description: format!("{err}"),
+                retry_after: None,
             },
             tonic::Code::Ok
             | tonic::Code::Unknown

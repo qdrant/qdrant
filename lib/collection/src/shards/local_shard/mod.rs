@@ -1150,7 +1150,7 @@ impl LocalShard {
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)
-                .map_err(|err| CollectionError::rate_limit_error(err, Some(cost), false))?;
+                .map_err(|err| CollectionError::rate_limit_error(err, cost, false))?;
         }
         Ok(())
     }

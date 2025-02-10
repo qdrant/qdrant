@@ -1,6 +1,8 @@
 use std::fmt::Debug;
 use std::future::Future;
 
+use actix_web::http::header;
+use actix_web::http::header::HeaderMap;
 use actix_web::rt::time::Instant;
 use actix_web::{http, HttpResponse, ResponseError};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage};
@@ -60,13 +62,20 @@ pub fn process_response_error(
     log_service_error(&err);
 
     let error = HttpError::from(err);
-
-    HttpResponse::build(error.status_code()).json(ApiResponse::<()> {
+    let http_code = error.status_code();
+    let headers = error.headers();
+    let json_body = ApiResponse::<()> {
         result: None,
         status: ApiStatus::Error(error.to_string()),
         time: timing.elapsed().as_secs_f64(),
         usage: hardware_usage,
-    })
+    };
+
+    let mut response_builder = HttpResponse::build(http_code);
+    for header_pair in headers {
+        response_builder.insert_header(header_pair);
+    }
+    response_builder.json(json_body)
 }
 
 /// Response wrapper for a `Future` returning `Result`.
@@ -140,6 +149,40 @@ fn log_service_error(err: &StorageError) {
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct HttpError(StorageError);
+
+impl HttpError {
+    fn headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        match &self.0 {
+            StorageError::RateLimitExceeded {
+                description: _,
+                retry_after,
+            } => {
+                if let Some(retry_after) = retry_after {
+                    // Retry-After is expressed in seconds `https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After`
+                    // Ceil the value to the nearest second so clients don't retry too early
+                    let retry_after_sec = retry_after.as_secs_f32().ceil() as u32;
+                    headers.insert(
+                        header::RETRY_AFTER,
+                        header::HeaderValue::from(retry_after_sec),
+                    );
+                }
+            }
+            StorageError::BadInput { .. } => {}
+            StorageError::AlreadyExists { .. } => {}
+            StorageError::NotFound { .. } => {}
+            StorageError::ServiceError { .. } => {}
+            StorageError::BadRequest { .. } => {}
+            StorageError::Locked { .. } => {}
+            StorageError::Timeout { .. } => {}
+            StorageError::ChecksumMismatch { .. } => {}
+            StorageError::Forbidden { .. } => {}
+            StorageError::PreconditionFailed { .. } => {}
+            StorageError::InferenceError { .. } => {}
+        }
+        headers
+    }
+}
 
 impl ResponseError for HttpError {
     fn status_code(&self) -> http::StatusCode {

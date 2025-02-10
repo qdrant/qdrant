@@ -115,7 +115,7 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
         if not r.ok:
             rate_limited = True
             assert r.status_code == 429, f"Failure body {r.json()}"
-            assert "Rate limiting exceeded: Write rate limit exceeded, retry later" in r.json()['status']['error']
+            assert "Rate limiting exceeded: Write rate limit exceeded" in r.json()['status']['error']
             break
 
     assert rate_limited, "Expected write rate limit to be reached"
