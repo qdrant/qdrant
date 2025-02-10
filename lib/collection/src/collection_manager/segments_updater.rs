@@ -51,8 +51,7 @@ pub(crate) fn delete_points(
             batch,
             |_| (),
             |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
-            // Apply point delete to all point versions
-            true,
+            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
         )?;
 
         total_deleted_points += deleted_points;
@@ -127,8 +126,7 @@ pub(crate) fn delete_vectors(
                 }
                 Ok(res)
             },
-            // Only apply operation to latest point versions, operation does not delete points
-            false,
+            |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
         )?;
 
         total_deleted_points += deleted_points;

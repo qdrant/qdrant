@@ -404,25 +404,20 @@ impl<'s> SegmentHolder {
             .collect()
     }
 
-    /// Select all point occurrences in all segments, regardless of their version.
-    fn all_segments_points(&self, ids: &[PointIdType]) -> AHashMap<SegmentId, Vec<PointIdType>> {
-        self.iter()
-            .map(|(segment_id, segment)| {
-                let segment_arc = segment.get();
-                let segment_lock = segment_arc.read();
-                let segment_points = Self::segment_points(ids, segment_lock.deref());
-                (*segment_id, segment_points)
-            })
-            .collect()
-    }
-
     /// Select what point IDs are in what segments.
     ///
     /// For each external id, picks the segment which has the latest version of such point.
-    fn latest_segments_points(&self, ids: &[PointIdType]) -> AHashMap<SegmentId, Vec<PointIdType>> {
+    fn latest_segments_points(
+        &self,
+        ids: &[PointIdType],
+    ) -> (
+        AHashMap<SegmentId, Vec<PointIdType>>,
+        AHashMap<SegmentId, Vec<PointIdType>>,
+    ) {
         // Find in which segments latest point versions are located
         let mut points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
             AHashMap::with_capacity(ids.len());
+        let mut segment_points_to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
             let segment_lock = segment_arc.read();
@@ -434,12 +429,21 @@ impl<'s> SegmentHolder {
                         Entry::Vacant(entry) => {
                             entry.insert((point_version, *segment_id));
                         }
-                        // Point we have seen before is older, replace it
+                        // Point we have seen before is older, replace it, delete older
                         Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                            entry.insert((point_version, *segment_id));
+                            let (_, old_segment_id) = entry.insert((point_version, *segment_id));
+                            segment_points_to_delete
+                                .entry(old_segment_id)
+                                .or_default()
+                                .push(segment_point);
                         }
-                        // Point we have seen before is newer, do nothing
-                        Entry::Occupied(_) => {}
+                        // Point we have seen before is newer, delete older
+                        Entry::Occupied(_) => {
+                            segment_points_to_delete
+                                .entry(*segment_id)
+                                .or_default()
+                                .push(segment_point);
+                        }
                     }
                 }
             }
@@ -458,7 +462,7 @@ impl<'s> SegmentHolder {
                 .push(point_id);
         }
 
-        segment_points
+        (segment_points, segment_points_to_delete)
     }
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
@@ -532,12 +536,12 @@ impl<'s> SegmentHolder {
     ///
     /// The `segment_data` function is called no more than once for each segment and its result is
     /// passed to `point_operation`.
-    pub fn apply_points<T, O, D>(
+    pub fn apply_points<T, O, J, D>(
         &self,
         ids: &[PointIdType],
         mut segment_data: D,
         mut point_operation: O,
-        all_point_versions: bool,
+        mut point_delete_operation: J,
     ) -> OperationResult<usize>
     where
         D: FnMut(&dyn SegmentEntry) -> T,
@@ -547,15 +551,16 @@ impl<'s> SegmentHolder {
             &mut RwLockWriteGuard<dyn SegmentEntry>,
             &T,
         ) -> OperationResult<bool>,
+        J: FnMut(
+            PointIdType,
+            SegmentId,
+            &mut RwLockWriteGuard<dyn SegmentEntry>,
+            &T,
+        ) -> OperationResult<bool>,
     {
         let _update_guard = self.update_tracker.update();
 
-        // Select what points to update in what segments
-        let segment_points = if all_point_versions {
-            self.all_segments_points(ids)
-        } else {
-            self.latest_segments_points(ids)
-        };
+        let (segment_points, segment_points_to_delete) = self.latest_segments_points(ids);
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
@@ -565,10 +570,21 @@ impl<'s> SegmentHolder {
             let mut write_segment = segment_arc.write();
             let segment_data = segment_data(write_segment.deref());
 
+            // Update points
             for point_id in point_ids {
                 let is_applied =
                     point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
                 applied_points += usize::from(is_applied);
+            }
+
+            // Delete points
+            for point_id in segment_points_to_delete
+                .get(&segment_id)
+                .into_iter()
+                .flatten()
+                .copied()
+            {
+                point_delete_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
             }
         }
 
@@ -720,8 +736,9 @@ impl<'s> SegmentHolder {
                 applied_points.insert(point_id);
                 Ok(is_applied)
             },
-            // Only apply operation to latest point versions, our operation might do copy-on-write and does not delete points
-            false,
+            |id, _idx, write_segment, _update_nonappendable| {
+                write_segment.delete_point(op_num, id, hw_counter)
+            },
         )?;
         Ok(applied_points)
     }
