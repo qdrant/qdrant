@@ -185,6 +185,8 @@ pub trait SegmentEntry {
     ) -> OperationResult<HashMap<FacetValue, usize>>;
 
     /// Check if there is point with `point_id` in this segment.
+    ///
+    /// Soft deleted points are excluded.
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Estimate available point count in this segment for given filter.
