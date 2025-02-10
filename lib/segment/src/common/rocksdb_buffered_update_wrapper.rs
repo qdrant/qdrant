@@ -16,16 +16,20 @@ use crate::common::Flusher;
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledUpdateWrapper {
     db: DatabaseColumnWrapper,
-    deleted_pending_persistence: Mutex<HashSet<Vec<u8>>>,
-    insert_pending_persistence: Mutex<HashMap<Vec<u8>, Vec<u8>>>,
+    pending_operations: Mutex<PendingOperations>, // in-flight operations persisted on flush
+}
+
+#[derive(Debug, Default)]
+struct PendingOperations {
+    deleted: HashSet<Vec<u8>>,
+    inserted: HashMap<Vec<u8>, Vec<u8>>,
 }
 
 impl DatabaseColumnScheduledUpdateWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            deleted_pending_persistence: Mutex::new(HashSet::new()),
-            insert_pending_persistence: Mutex::new(HashMap::new()),
+            pending_operations: Mutex::new(PendingOperations::default()),
         }
     }
 
@@ -34,11 +38,11 @@ impl DatabaseColumnScheduledUpdateWrapper {
         K: AsRef<[u8]>,
         V: AsRef<[u8]>,
     {
-        // keep `insert_pending_persistence` lock for atomicity
-        let mut insert_guard = self.insert_pending_persistence.lock();
-        insert_guard.insert(key.as_ref().to_vec(), value.as_ref().to_vec());
-        self.deleted_pending_persistence.lock().remove(key.as_ref());
-        drop(insert_guard);
+        let mut pending_guard = self.pending_operations.lock();
+        pending_guard
+            .inserted
+            .insert(key.as_ref().to_vec(), value.as_ref().to_vec());
+        pending_guard.deleted.remove(key.as_ref());
         Ok(())
     }
 
@@ -47,27 +51,25 @@ impl DatabaseColumnScheduledUpdateWrapper {
         K: AsRef<[u8]>,
     {
         let key = key.as_ref();
-        // keep `insert_pending_persistence` lock for atomicity
-        let mut insert_guard = self.insert_pending_persistence.lock();
-        insert_guard.remove(key);
-        self.deleted_pending_persistence.lock().insert(key.to_vec());
-        drop(insert_guard);
+        let mut pending_guard = self.pending_operations.lock();
+        pending_guard.inserted.remove(key);
+        pending_guard.deleted.insert(key.to_vec());
         Ok(())
     }
 
     pub fn flusher(&self) -> Flusher {
-        let ids_to_insert = mem::take(&mut *self.insert_pending_persistence.lock());
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
+        let PendingOperations { deleted, inserted } =
+            mem::take(&mut *self.pending_operations.lock());
         debug_assert!(
-            ids_to_insert.keys().all(|key| !ids_to_delete.contains(key)),
+            inserted.keys().all(|key| !deleted.contains(key)),
             "Key to marked for insertion is also marked for deletion!"
         );
         let wrapper = self.db.clone();
         Box::new(move || {
-            for id in ids_to_delete {
+            for id in deleted {
                 wrapper.remove(id)?;
             }
-            for (id, value) in ids_to_insert {
+            for (id, value) in inserted {
                 wrapper.put(id, value)?;
             }
             wrapper.flusher()()
@@ -82,14 +84,11 @@ impl DatabaseColumnScheduledUpdateWrapper {
     where
         K: AsRef<[u8]>,
     {
-        if let Some(value) = self.insert_pending_persistence.lock().get(key.as_ref()) {
+        let pending_guard = self.pending_operations.lock();
+        if let Some(value) = pending_guard.inserted.get(key.as_ref()) {
             return Ok(value.clone());
         }
-        if self
-            .deleted_pending_persistence
-            .lock()
-            .contains(key.as_ref())
-        {
+        if pending_guard.deleted.contains(key.as_ref()) {
             return Err(OperationError::service_error(
                 "RocksDB get_cf error: key not found",
             ));
@@ -101,14 +100,11 @@ impl DatabaseColumnScheduledUpdateWrapper {
     where
         K: AsRef<[u8]>,
     {
-        if let Some(value) = self.insert_pending_persistence.lock().get(key.as_ref()) {
+        let pending_guard = self.pending_operations.lock();
+        if let Some(value) = pending_guard.inserted.get(key.as_ref()) {
             return Ok(Some(value.clone()));
         }
-        if self
-            .deleted_pending_persistence
-            .lock()
-            .contains(key.as_ref())
-        {
+        if pending_guard.deleted.contains(key.as_ref()) {
             return Ok(None);
         }
         self.db.get_opt(key)
