@@ -153,7 +153,9 @@ impl SimpleIdTracker {
         );
         for (internal, external) in internal_to_external.iter().enumerate() {
             if deleted[internal] {
-                log::debug!("Adding synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}");
+                log::debug!(
+                    "Adding synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}"
+                );
                 internal_to_version.push(0);
                 continue;
             }
@@ -234,12 +236,18 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if let Some(external_id) = self.external_id(internal_id) {
-            ensure_len_and_set_version(
-                internal_id,
-                version,
-                &mut self.internal_to_version,
-                &mut self.mappings.deleted,
-            );
+            let skipped_offsets =
+                ensure_len_and_set_version(internal_id, version, &mut self.internal_to_version);
+
+            // Handle the case of having populated the skipped offsets with version 0.
+            // If they didn't have a version before, they should be removed from the tracker.
+            for skipped_internal_id in skipped_offsets {
+                if let Some(external_id) = self.external_id(skipped_internal_id as PointOffsetType)
+                {
+                    self.drop(external_id)?;
+                }
+            }
+
             self.versions_db_wrapper.put(
                 Self::store_key(&external_id),
                 bincode::serialize(&version).unwrap(),

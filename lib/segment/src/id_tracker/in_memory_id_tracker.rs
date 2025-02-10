@@ -54,12 +54,19 @@ impl IdTracker for InMemoryIdTracker {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
                 *old_version = version;
             } else {
-                ensure_len_and_set_version(
-                    internal_id,
-                    version,
-                    &mut self.internal_to_version,
-                    &mut self.mappings.deleted,
-                );
+                let skipped_offsets =
+                    ensure_len_and_set_version(internal_id, version, &mut self.internal_to_version);
+
+                // Handle the case of having populated the skipped offsets with version 0.
+                // If they didn't have a version before, they should be removed from the tracker.
+                for skipped_internal_id in skipped_offsets {
+                    if let Some(external_id) =
+                        self.external_id(skipped_internal_id as PointOffsetType)
+                    {
+                        self.drop(external_id)?;
+                    }
+                }
+
                 self.internal_to_version[internal_id as usize] = version;
             }
         }

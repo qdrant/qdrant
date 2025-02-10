@@ -5,7 +5,6 @@ pub mod in_memory_id_tracker;
 pub mod point_mappings;
 pub mod simple_id_tracker;
 
-use bitvec::vec::BitVec;
 use common::types::PointOffsetType;
 pub use id_tracker_base::*;
 use itertools::Itertools as _;
@@ -73,24 +72,25 @@ pub fn for_each_unique_point<'a>(
 /// Sets the version for the given internal_id.
 /// Makes sure the versions vec is long enough to store the given internal_id.
 ///
-/// If it grows, marks all skipped internal_ids as deleted.
+/// If it grows, the skipped internal ids are returned.
+#[must_use]
 fn ensure_len_and_set_version(
     internal_id: PointOffsetType,
     version: SeqNumberType,
     internal_to_version: &mut Vec<SeqNumberType>,
-    deleted: &mut BitVec,
-) {
+) -> std::ops::Range<usize> {
     let internal_id = internal_id as usize;
     let versions_len = internal_to_version.len();
+    // default to empty range if no internal ids are skipped
+    let mut skipped_internal_ids = versions_len..versions_len;
     if internal_id >= versions_len {
         internal_to_version.resize(internal_id + 1, 0);
-        // Make sure the deleted bitset considers the newly skipped range as deleted.
-        // This will ensure that we don't have a synthetic version 0 for these points.
-        let skipped_internal_ids = versions_len..internal_id;
-        deleted[skipped_internal_ids].fill(true);
+
+        skipped_internal_ids = versions_len..internal_id;
     }
     internal_to_version[internal_id] = version;
-    deleted.set(internal_id, false);
+
+    skipped_internal_ids
 }
 
 #[cfg(test)]
