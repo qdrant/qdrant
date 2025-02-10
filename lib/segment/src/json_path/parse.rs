@@ -22,8 +22,7 @@ impl FromStr for JsonPath {
 }
 
 pub fn key_needs_quoting(s: &str) -> bool {
-    let mut parser = all_consuming(raw_str);
-    parser.parse(s).is_err()
+    all_consuming(raw_str).parse(s).is_err()
 }
 
 fn json_path(input: &str) -> IResult<&str, JsonPath> {
