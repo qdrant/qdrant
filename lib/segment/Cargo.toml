@@ -115,7 +115,7 @@ gpu = { path = "../gpu" }
 
 tracing = { workspace = true, optional = true }
 macro_rules_attribute = "0.2.0"
-nom = "7.1.3"
+nom = "8.0.0"
 half = { workspace = true }
 merge = { workspace = true }
 
