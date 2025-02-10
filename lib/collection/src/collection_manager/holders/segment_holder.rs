@@ -438,12 +438,21 @@ impl<'s> SegmentHolder {
                     }
                     // Point we have seen before is older, replace it and mark older for deletion
                     Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                        let (_, old_segment_id) = entry.insert((point_version, *segment_id));
-                        to_delete
-                            .entry(old_segment_id)
-                            .or_default()
-                            .push(segment_point);
+                        let (old_version, old_segment_id) =
+                            entry.insert((point_version, *segment_id));
+
+                        // Mark other point for deletion if the version is older
+                        // TODO(timvisee): remove this check once deleting old points uses correct version
+                        if old_version < point_version {
+                            to_delete
+                                .entry(old_segment_id)
+                                .or_default()
+                                .push(segment_point);
+                        }
                     }
+                    // Ignore points with the same version, only update one of them
+                    // TODO(timvisee): remove this branch once deleting old points uses correct version
+                    Entry::Occupied(entry) if entry.get().0 == point_version => {}
                     // Point we have seen before is newer, mark this point for deletion
                     Entry::Occupied(_) => {
                         to_delete
