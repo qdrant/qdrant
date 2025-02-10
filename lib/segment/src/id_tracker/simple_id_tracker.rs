@@ -151,27 +151,26 @@ impl SimpleIdTracker {
         let versions_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
         );
-        for (key, val) in versions_db_wrapper.lock_db().iter()? {
-            let external_id = Self::restore_key(&key);
-            let version: SeqNumberType = bincode::deserialize(&val).unwrap();
-            let internal_id = match external_id {
-                PointIdType::NumId(idx) => external_to_internal_num.get(&idx).copied(),
-                PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
-            };
-            if let Some(internal_id) = internal_id {
-                ensure_len_and_set_version(
-                    internal_id,
-                    version,
-                    &mut internal_to_version,
-                    &mut deleted,
-                );
-            } else {
-                log::debug!(
-                    "Found version: {} without internal id, external id: {}",
-                    version,
-                    external_id
-                );
+        for (internal, external) in internal_to_external.iter().enumerate() {
+            if deleted[internal] {
+                log::debug!("Adding synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}");
+                internal_to_version.push(0);
+                continue;
             }
+            let external_key = Self::store_key(external);
+            let version: SeqNumberType = match versions_db_wrapper.get_opt(&external_key)? {
+                Some(val) => bincode::deserialize(&val).unwrap(),
+                None => {
+                    log::warn!(
+                        "Found point without version in version database, external id: {external}, internal id: {internal}\n\
+                        Marking as deleted and adding synthetic version 0",
+                    );
+                    deleted.set(internal, true);
+                    internal_to_version.push(0);
+                    continue;
+                }
+            };
+            internal_to_version.push(version);
         }
         #[cfg(debug_assertions)]
         {
