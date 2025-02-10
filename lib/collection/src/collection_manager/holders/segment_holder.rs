@@ -590,6 +590,17 @@ impl<'s> SegmentHolder {
 
         let segment_points = self.find_points_to_update_and_delete(ids);
 
+        // Delete old points first
+        for (&segment_id, points) in &segment_points {
+            let segment = self.get(segment_id).unwrap();
+            let segment_arc = segment.get();
+            let mut write_segment = segment_arc.write();
+
+            for &point_id in &points.to_delete {
+                point_delete_operation(point_id, &mut write_segment)?;
+            }
+        }
+
         // Apply point operations to selected segments
         let mut applied_points = 0;
         for (segment_id, points) in segment_points {
@@ -602,10 +613,6 @@ impl<'s> SegmentHolder {
                 let is_applied =
                     point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
                 applied_points += usize::from(is_applied);
-            }
-
-            for point_id in points.to_delete {
-                point_delete_operation(point_id, &mut write_segment)?;
             }
         }
 
