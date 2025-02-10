@@ -416,7 +416,10 @@ impl<'s> SegmentHolder {
     fn find_points_to_update_and_delete(
         &self,
         ids: &[PointIdType],
-    ) -> AHashMap<SegmentId, PointsToUpdate> {
+    ) -> (
+        AHashMap<SegmentId, Vec<PointIdType>>,
+        AHashMap<SegmentId, Vec<PointIdType>>,
+    ) {
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
@@ -464,47 +467,33 @@ impl<'s> SegmentHolder {
             }
         }
 
-        // Group points by segments
+        // Group points to update by segments
         let segment_count = self.len();
-        let mut segment_points = AHashMap::with_capacity(segment_count);
+        let mut to_update = AHashMap::with_capacity(segment_count);
         let default_capacity = ids.len() / max(segment_count / 2, 1);
         for (point_id, (_point_version, segment_id)) in latest_points {
-            segment_points
+            to_update
                 .entry(segment_id)
-                .or_insert_with(|| PointsToUpdate {
-                    to_update: Vec::with_capacity(default_capacity),
-                    to_delete: to_delete.remove(&segment_id).unwrap_or_default(),
-                })
-                .to_update
+                .or_insert_with(|| Vec::with_capacity(default_capacity))
                 .push(point_id);
         }
 
-        // Add points marked for deletion in segments that don't get point updates
-        to_delete.drain().for_each(|(segment_id, to_delete)| {
-            let previous = segment_points.insert(
-                segment_id,
-                PointsToUpdate {
-                    to_update: vec![],
-                    to_delete,
-                },
-            );
-            debug_assert!(previous.is_none());
-        });
-
         // Assert each segment does not have overlapping updates and deletes
         debug_assert!(
-            segment_points
-                .values()
-                .filter(|points| !points.to_update.is_empty() && !points.to_delete.is_empty())
-                .all(|points| {
-                    let updates: HashSet<&ExtendedPointId> = HashSet::from_iter(&points.to_update);
-                    let deletes = HashSet::from_iter(&points.to_delete);
+            to_update
+                .iter()
+                .filter_map(|(segment_id, updates)| {
+                    to_delete.get(segment_id).map(|deletes| (updates, deletes))
+                })
+                .all(|(updates, deletes)| {
+                    let updates: HashSet<&ExtendedPointId> = HashSet::from_iter(updates);
+                    let deletes = HashSet::from_iter(deletes);
                     updates.is_disjoint(&deletes)
                 }),
             "segments should not have overlapping updates and deletes",
         );
 
-        segment_points
+        (to_update, to_delete)
     }
 
     pub fn for_each_segment<F>(&self, mut f: F) -> OperationResult<usize>
@@ -597,28 +586,28 @@ impl<'s> SegmentHolder {
     {
         let _update_guard = self.update_tracker.update();
 
-        let segment_points = self.find_points_to_update_and_delete(ids);
+        let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
         // Delete old points first
-        for (&segment_id, points) in &segment_points {
+        for (segment_id, points) in to_delete {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
 
-            for &point_id in &points.to_delete {
+            for point_id in points {
                 point_delete_operation(point_id, &mut write_segment)?;
             }
         }
 
         // Apply point operations to selected segments
         let mut applied_points = 0;
-        for (segment_id, points) in segment_points {
+        for (segment_id, points) in to_update {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
             let mut write_segment = segment_arc.write();
             let segment_data = segment_data(write_segment.deref());
 
-            for point_id in points.to_update {
+            for point_id in points {
                 let is_applied =
                     point_operation(point_id, segment_id, &mut write_segment, &segment_data)?;
                 applied_points += usize::from(is_applied);
@@ -1490,12 +1479,6 @@ impl<'s> SegmentHolder {
 
         points_to_remove
     }
-}
-
-/// Helper struct listing what points to update and delete
-struct PointsToUpdate {
-    to_update: Vec<PointIdType>,
-    to_delete: Vec<PointIdType>,
 }
 
 #[cfg(test)]
