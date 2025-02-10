@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -363,7 +363,6 @@ fn test_proxy_shared_updates() {
 
     let old_payload = payload_json! {"size": vec!["small"]};
     let new_payload = payload_json! {"size": vec!["big"]};
-    // let newest_vec = vec![1.0, 1.0, 0.0, 0.0];
 
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
@@ -413,21 +412,37 @@ fn test_proxy_shared_updates() {
 
     let proxy_segment_2 = ProxySegment::new(
         locked_segment_2,
-        write_segment,
+        write_segment.clone(),
         deleted_points,
         changed_indexes,
     );
 
     let mut holder = SegmentHolder::default();
 
-    holder.add_new(proxy_segment_1);
-    holder.add_new(proxy_segment_2);
+    let proxy_1_id = holder.add_new(proxy_segment_1);
+    let proxy_2_id = holder.add_new(proxy_segment_2);
 
     let payload = payload_json! {"color": vec!["yellow"]};
 
     let ids = vec![idx1, idx2];
 
     set_payload(&holder, 30, &payload, &ids, &None, &hw_counter).unwrap();
+
+    // Points should still be accessible in both proxies through write segment
+    for &point_id in &ids {
+        assert!(holder
+            .get(proxy_1_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(point_id));
+        assert!(holder
+            .get(proxy_2_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(point_id));
+    }
 
     let locked_holder = Arc::new(RwLock::new(holder));
 
@@ -445,6 +460,12 @@ fn test_proxy_shared_updates() {
         HwMeasurementAcc::new(),
     )
     .unwrap();
+
+    assert_eq!(
+        result.keys().copied().collect::<HashSet<_>>(),
+        HashSet::from_iter(ids),
+        "must retrieve all point IDs",
+    );
 
     let expected_payload = payload_json! {"size": vec!["big"], "color": vec!["yellow"]};
 

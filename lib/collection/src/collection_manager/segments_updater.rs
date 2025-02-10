@@ -51,7 +51,10 @@ pub(crate) fn delete_points(
             batch,
             |_| (),
             |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
-            |id, write_segment| write_segment.delete_point(op_num, id, hw_counter),
+            |id, write_segment| {
+                let version = write_segment.point_version(id).unwrap_or(op_num);
+                write_segment.delete_point(version, id, hw_counter)
+            },
         )?;
 
         total_deleted_points += deleted_points;
@@ -126,7 +129,10 @@ pub(crate) fn delete_vectors(
                 }
                 Ok(res)
             },
-            |id, write_segment| write_segment.delete_point(op_num, id, hw_counter),
+            |id, write_segment| {
+                let version = write_segment.point_version(id).unwrap_or(op_num);
+                write_segment.delete_point(version, id, hw_counter)
+            },
         )?;
 
         total_deleted_points += deleted_points;

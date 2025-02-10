@@ -764,7 +764,10 @@ impl<'s> SegmentHolder {
                 applied_points.insert(point_id);
                 Ok(is_applied)
             },
-            |id, write_segment| write_segment.delete_point(op_num, id, hw_counter),
+            |id, write_segment| {
+                let version = write_segment.point_version(id).unwrap_or(op_num);
+                write_segment.delete_point(version, id, hw_counter)
+            },
         )?;
         Ok(applied_points)
     }
