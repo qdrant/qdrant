@@ -22,8 +22,7 @@ impl FromStr for JsonPath {
 }
 
 pub fn key_needs_quoting(s: &str) -> bool {
-    let mut parser = all_consuming(raw_str);
-    parser(s).is_err()
+    all_consuming(raw_str).parse(s).is_err()
 }
 
 fn json_path(input: &str) -> IResult<&str, JsonPath> {
@@ -34,7 +33,8 @@ fn json_path(input: &str) -> IResult<&str, JsonPath> {
         (preceded(char('.'), quoted_str).map(JsonPathItem::Key)),
         (delimited(char('['), number, char(']')).map(JsonPathItem::Index)),
         (tag("[]").map(|_| JsonPathItem::WildcardIndex)),
-    )))(input)?;
+    )))
+    .parse(input)?;
 
     Ok((input, JsonPath { first_key, rest }))
 }
@@ -48,13 +48,13 @@ fn raw_str(input: &str) -> IResult<&str, &str> {
 
 fn quoted_str(input: &str) -> IResult<&str, String> {
     let (input, _) = char('"')(input)?;
-    let (input, rest) = many0(none_of("\\\""))(input)?;
+    let (input, rest) = many0(none_of("\\\"")).parse(input)?;
     let (input, _) = char('"')(input)?;
     Ok((input, rest.iter().collect()))
 }
 
 fn number(input: &str) -> IResult<&str, usize> {
-    map_res(recognize(digit1), str::parse)(input)
+    map_res(recognize(digit1), str::parse).parse(input)
 }
 
 #[cfg(test)]
