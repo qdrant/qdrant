@@ -58,18 +58,20 @@ impl IdTracker for FixtureIdTracker {
     }
 
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType> {
-        Some(match external_id {
+        match external_id {
             PointIdType::NumId(id) => {
                 assert!(id < self.ids.len() as u64);
-                id as PointOffsetType
+                let internal_id = id as PointOffsetType;
+                (!self.is_deleted_point(internal_id)).then_some(internal_id)
             }
             PointIdType::Uuid(_) => unreachable!(),
-        })
+        }
     }
 
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
         assert!(internal_id < self.ids.len() as PointOffsetType);
-        Some(PointIdType::NumId(u64::from(internal_id)))
+        let external_id = PointIdType::NumId(u64::from(internal_id));
+        (!self.is_deleted_point(internal_id)).then_some(external_id)
     }
 
     fn set_link(
@@ -93,12 +95,18 @@ impl IdTracker for FixtureIdTracker {
             self.ids
                 .iter()
                 .copied()
-                .map(|id| PointIdType::NumId(u64::from(id))),
+                .filter(|internal_id| !self.is_deleted_point(*internal_id))
+                .map(|internal_id| PointIdType::NumId(u64::from(internal_id))),
         )
     }
 
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        Box::new(self.ids.iter().copied())
+        Box::new(
+            self.ids
+                .iter()
+                .copied()
+                .filter(|internal_id| !self.is_deleted_point(*internal_id)),
+        )
     }
 
     fn iter_from(
@@ -117,8 +125,9 @@ impl IdTracker for FixtureIdTracker {
             self.ids
                 .iter()
                 .copied()
-                .skip_while(move |x| *x < start)
-                .map(|x| (PointIdType::NumId(u64::from(x)), x)),
+                .skip_while(move |internal_id| *internal_id < start)
+                .filter(|internal_id| !self.is_deleted_point(*internal_id))
+                .map(|internal_id| (PointIdType::NumId(u64::from(internal_id)), internal_id)),
         )
     }
 

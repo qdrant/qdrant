@@ -34,9 +34,13 @@ pub trait IdTracker: fmt::Debug {
     ) -> OperationResult<()>;
 
     /// Returns internal ID of the point, which is used inside this segment
+    ///
+    /// Excludes soft deleted points.
     fn internal_id(&self, external_id: PointIdType) -> Option<PointOffsetType>;
 
     /// Return external ID for internal point, defined by user
+    ///
+    /// Excludes soft deleted points.
     fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType>;
 
     /// Set mapping
@@ -51,15 +55,17 @@ pub trait IdTracker: fmt::Debug {
 
     /// Iterate over all external IDs
     ///
-    /// Count should match `available_point_count`.
+    /// Count should match `available_point_count`, excludes soft deleted points.
     fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_>;
 
     /// Iterate over all internal IDs
     ///
-    /// Count should match `total_point_count`.
+    /// Count should match `total_point_count`, excludes soft deleted points.
     fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     /// Iterate starting from a given ID
+    ///
+    /// Excludes soft deleted points.
     fn iter_from(
         &self,
         external_id: Option<PointIdType>,
@@ -67,14 +73,17 @@ pub trait IdTracker: fmt::Debug {
 
     /// Iterate over internal IDs (offsets)
     ///
-    /// - excludes removed points
+    /// Excludes soft deleted points.
     fn iter_ids(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
+    /// Iterate over internal IDs in a random order
+    ///
+    /// Excludes soft deleted points.
     fn iter_random(&self) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_>;
 
     /// Iterate over internal IDs (offsets)
     ///
-    /// - excludes removed points
+    /// - excludes soft deleted points
     /// - excludes flagged items from `exclude_bitslice`
     fn iter_ids_excluding<'a>(
         &'a self,
