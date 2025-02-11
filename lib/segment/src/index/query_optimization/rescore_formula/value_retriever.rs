@@ -55,11 +55,7 @@ where
 {
     indices
         .get(json_path)
-        .and_then(|indices| {
-            indices
-                .iter()
-                .find_map(|index| indexed_variable_retriever(index))
-        })
+        .and_then(|indices| indices.iter().find_map(indexed_variable_retriever))
         // TODO(scoreboost): optimize by reusing the same payload for all variables?
         .unwrap_or_else(|| {
             // if the variable is not found in the index, try to find it in the payload
@@ -144,8 +140,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 geo_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| serde_json::to_value(value).ok())
-                    .flatten()
+                    .and_then(|value| serde_json::to_value(value).ok())
             };
             Some(Box::new(extract_fn))
         }
@@ -174,7 +169,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 uuid_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| UuidPayloadType::from_u128(value))
+                    .map(UuidPayloadType::from_u128)
                     .map(|value| Value::String(value.to_string()))
             };
             Some(Box::new(extract_fn))
