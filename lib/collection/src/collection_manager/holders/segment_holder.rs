@@ -423,7 +423,7 @@ impl<'s> SegmentHolder {
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
-        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
+        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, Vec<SegmentId>)> =
             AHashMap::with_capacity(ids.len());
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
@@ -437,25 +437,29 @@ impl<'s> SegmentHolder {
                 match latest_points.entry(segment_point) {
                     // First time we see the point, add it
                     Entry::Vacant(entry) => {
-                        entry.insert((point_version, *segment_id));
+                        entry.insert((point_version, vec![*segment_id]));
                     }
                     // Point we have seen before is older, replace it and mark older for deletion
                     Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                        let (old_version, old_segment_id) =
-                            entry.insert((point_version, *segment_id));
+                        let (old_version, old_segment_ids) =
+                            entry.insert((point_version, vec![*segment_id]));
 
                         // Mark other point for deletion if the version is older
                         // TODO(timvisee): remove this check once deleting old points uses correct version
                         if old_version < point_version {
-                            to_delete
-                                .entry(old_segment_id)
-                                .or_default()
-                                .push(segment_point);
+                            for old_segment_id in old_segment_ids {
+                                to_delete
+                                    .entry(old_segment_id)
+                                    .or_default()
+                                    .push(segment_point);
+                            }
                         }
                     }
                     // Ignore points with the same version, only update one of them
                     // TODO(timvisee): remove this branch once deleting old points uses correct version
-                    Entry::Occupied(entry) if entry.get().0 == point_version => {}
+                    Entry::Occupied(mut entry) if entry.get().0 == point_version => {
+                        entry.get_mut().1.push(*segment_id);
+                    }
                     // Point we have seen before is newer, mark this point for deletion
                     Entry::Occupied(_) => {
                         to_delete
@@ -471,11 +475,13 @@ impl<'s> SegmentHolder {
         let segment_count = self.len();
         let mut to_update = AHashMap::with_capacity(min(segment_count, latest_points.len()));
         let default_capacity = ids.len() / max(segment_count / 2, 1);
-        for (point_id, (_point_version, segment_id)) in latest_points {
-            to_update
-                .entry(segment_id)
-                .or_insert_with(|| Vec::with_capacity(default_capacity))
-                .push(point_id);
+        for (point_id, (_point_version, segment_ids)) in latest_points {
+            for segment_id in segment_ids {
+                to_update
+                    .entry(segment_id)
+                    .or_insert_with(|| Vec::with_capacity(default_capacity))
+                    .push(point_id);
+            }
         }
 
         // Assert each segment does not have overlapping updates and deletes
