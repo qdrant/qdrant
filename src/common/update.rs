@@ -25,6 +25,24 @@ use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::inference::InferenceToken;
 
+#[derive(Copy, Clone, Debug, Default)]
+pub struct InternalUpdateParams {
+    pub shard_id: Option<ShardId>,
+    pub clock_tag: Option<ClockTag>,
+}
+
+impl InternalUpdateParams {
+    pub fn from_grpc(
+        shard_id: Option<ShardId>,
+        clock_tag: Option<api::grpc::qdrant::ClockTag>,
+    ) -> Self {
+        Self {
+            shard_id,
+            clock_tag: clock_tag.map(ClockTag::from),
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct UpdateOperations {
     pub operations: Vec<UpdateOperation>,
@@ -185,13 +203,12 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: PointInsertOperations,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -215,7 +232,12 @@ pub async fn do_upsert_points(
     let collection_operation =
         CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
 
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -228,13 +250,12 @@ pub async fn do_upsert_points(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_delete_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
     points: PointsSelector,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -249,7 +270,13 @@ pub async fn do_delete_points(
         }
     };
     let collection_operation = CollectionUpdateOperations::PointOperation(point_operation);
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -262,13 +289,12 @@ pub async fn do_delete_points(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: UpdateVectors,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -285,7 +311,12 @@ pub async fn do_update_vectors(
         }),
     );
 
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -298,13 +329,11 @@ pub async fn do_update_vectors(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: DeleteVectors,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -319,7 +348,13 @@ pub async fn do_delete_vectors(
     } = operation;
 
     let vector_names: Vec<_> = vector.into_iter().collect();
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     let mut result = None;
 
@@ -361,13 +396,11 @@ pub async fn do_delete_vectors(
     result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_set_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: SetPayload,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -388,7 +421,12 @@ pub async fn do_set_payload(
             key,
         }));
 
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -401,13 +439,11 @@ pub async fn do_set_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_overwrite_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: SetPayload,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -429,7 +465,12 @@ pub async fn do_overwrite_payload(
             key: None,
         }));
 
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -442,13 +483,11 @@ pub async fn do_overwrite_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: DeletePayload,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -467,7 +506,12 @@ pub async fn do_delete_payload(
             filter,
         }));
 
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -480,13 +524,11 @@ pub async fn do_delete_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_clear_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
     points: PointsSelector,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -502,7 +544,12 @@ pub async fn do_clear_payload(
 
     let collection_operation = CollectionUpdateOperations::PayloadOperation(point_operation);
 
-    let shard_selector = get_shard_selector_for_update(shard_selection, shard_key);
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
     toc.update(
         &collection_name,
@@ -515,13 +562,12 @@ pub async fn do_clear_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operations: Vec<UpdateOperation>,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -535,8 +581,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.upsert,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -549,8 +594,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.delete,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -563,8 +607,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.set_payload,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -576,8 +619,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.overwrite_payload,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -589,8 +631,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.delete_payload,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -602,8 +643,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.clear_payload,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -615,8 +655,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.update_vectors,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -629,8 +668,7 @@ pub async fn do_batch_update_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.delete_vectors,
-                    clock_tag,
-                    shard_selection,
+                    internal_params,
                     wait,
                     ordering,
                     access.clone(),
@@ -643,13 +681,11 @@ pub async fn do_batch_update_points(
     Ok(results)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
     operation: CreateFieldIndex,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -690,22 +726,19 @@ pub async fn do_create_index(
         collection_name,
         operation.field_name,
         Some(field_schema),
-        clock_tag,
-        shard_selection,
+        internal_params,
         wait,
         ordering,
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
     field_name: PayloadKeyType,
     field_schema: Option<PayloadFieldSchema>,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
@@ -716,7 +749,12 @@ pub async fn do_create_index_internal(
         }),
     );
 
-    let shard_selector = if let Some(shard_selection) = shard_selection {
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = if let Some(shard_selection) = shard_id {
         ShardSelectorInternal::ShardId(shard_selection)
     } else {
         ShardSelectorInternal::All
@@ -733,13 +771,11 @@ pub async fn do_create_index_internal(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
     index_name: JsonPath,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
     access: Access,
@@ -768,21 +804,18 @@ pub async fn do_delete_index(
         toc,
         collection_name,
         index_name,
-        clock_tag,
-        shard_selection,
+        internal_params,
         wait,
         ordering,
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
     index_name: JsonPath,
-    clock_tag: Option<ClockTag>,
-    shard_selection: Option<ShardId>,
+    internal_params: InternalUpdateParams,
     wait: bool,
     ordering: WriteOrdering,
 ) -> Result<UpdateResult, StorageError> {
@@ -790,7 +823,12 @@ pub async fn do_delete_index_internal(
         FieldIndexOperations::DeleteIndex(index_name),
     );
 
-    let shard_selector = if let Some(shard_selection) = shard_selection {
+    let InternalUpdateParams {
+        shard_id,
+        clock_tag,
+    } = internal_params;
+
+    let shard_selector = if let Some(shard_selection) = shard_id {
         ShardSelectorInternal::ShardId(shard_selection)
     } else {
         ShardSelectorInternal::All

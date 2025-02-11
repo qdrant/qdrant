@@ -25,6 +25,7 @@ use super::query_common::*;
 use super::update_common::*;
 use super::validate;
 use crate::common::inference::extract_token;
+use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_access;
 use crate::tonic::verification::StrictModeCheckedTocProvider;
@@ -65,8 +66,7 @@ impl Points for PointsService {
         upsert(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
             inference_token,
         )
@@ -86,8 +86,7 @@ impl Points for PointsService {
         delete(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
             inference_token,
         )
@@ -129,8 +128,7 @@ impl Points for PointsService {
         update_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
             inference_token,
         )
@@ -149,8 +147,7 @@ impl Points for PointsService {
         delete_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await
@@ -168,8 +165,7 @@ impl Points for PointsService {
         set_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await
@@ -187,8 +183,7 @@ impl Points for PointsService {
         overwrite_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await
@@ -206,8 +201,7 @@ impl Points for PointsService {
         delete_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await
@@ -225,8 +219,7 @@ impl Points for PointsService {
         clear_payload(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await
@@ -245,8 +238,7 @@ impl Points for PointsService {
         update_batch(
             &self.dispatcher,
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
             inference_token,
         )
@@ -264,8 +256,7 @@ impl Points for PointsService {
         create_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await
@@ -283,8 +274,7 @@ impl Points for PointsService {
         delete_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
-            None,
-            None,
+            InternalUpdateParams::default(),
             access,
         )
         .await

@@ -31,6 +31,7 @@ use super::query_common::*;
 use super::update_common::*;
 use super::validate_and_log;
 use crate::common::inference::extract_token;
+use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
 
@@ -190,8 +191,7 @@ impl PointsInternal for PointsInternalService {
         upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             extract_internal_request(upsert_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
         )
@@ -215,8 +215,7 @@ impl PointsInternal for PointsInternalService {
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
             extract_internal_request(delete_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
         )
@@ -240,8 +239,7 @@ impl PointsInternal for PointsInternalService {
         update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             extract_internal_request(update_vectors_req)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
         )
@@ -263,8 +261,7 @@ impl PointsInternal for PointsInternalService {
         delete_vectors(
             UncheckedTocProvider::new_unchecked(&self.toc),
             extract_internal_request(delete_vectors_req)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
         )
         .await
@@ -285,8 +282,7 @@ impl PointsInternal for PointsInternalService {
         set_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             extract_internal_request(set_payload_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
         )
         .await
@@ -307,8 +303,7 @@ impl PointsInternal for PointsInternalService {
         overwrite_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             extract_internal_request(set_payload_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
         )
         .await
@@ -329,8 +324,7 @@ impl PointsInternal for PointsInternalService {
         delete_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
             extract_internal_request(delete_payload_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
         )
         .await
@@ -351,8 +345,7 @@ impl PointsInternal for PointsInternalService {
         clear_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
             extract_internal_request(clear_payload_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
         )
         .await
@@ -373,8 +366,7 @@ impl PointsInternal for PointsInternalService {
         create_field_index_internal(
             self.toc.clone(),
             extract_internal_request(create_field_index_collection)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
         )
         .await
     }
@@ -394,8 +386,7 @@ impl PointsInternal for PointsInternalService {
         delete_field_index_internal(
             self.toc.clone(),
             extract_internal_request(delete_field_index_collection)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
         )
         .await
     }
@@ -572,8 +563,7 @@ impl PointsInternal for PointsInternalService {
         sync(
             self.toc.clone(),
             extract_internal_request(sync_points)?,
-            clock_tag.map(Into::into),
-            shard_id,
+            InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
         )
