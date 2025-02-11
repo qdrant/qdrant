@@ -1301,10 +1301,7 @@ impl RaftMessageSender {
         let peer_id = message.to;
 
         let uri = self.uri(peer_id).await?;
-
-        let mut bytes = Vec::new();
-        <RaftMessage as prost_for_raft::Message>::encode(message, &mut bytes)
-            .context("failed to encode Raft message")?;
+        let bytes = <RaftMessage as prost_for_raft::Message>::encode_to_vec(message);
         let grpc_message = GrpcRaftMessage { message: bytes };
 
         let timeout = Duration::from_millis(
