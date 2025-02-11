@@ -66,27 +66,35 @@ fn variable_extractor<'index>(
         .unwrap_or_else(|| {
             // if the variable is not found in the index, try to find it in the payload
             let key = json_path.clone();
-            let extractor_fn = move |point_id: PointOffsetType| {
-                payload_provider.with_payload(
-                    point_id,
-                    |payload| {
-                        let values = payload.get_value(&key);
-                        let value = values.first()?;
-                        let var_value = match var_kind {
-                            VariableKind::Number => VariableValue::Number(value.as_f64()?),
-                            VariableKind::GeoPoint => {
-                                let lat = value.get("lat")?.as_f64()?;
-                                let lon = value.get("lon")?.as_f64()?;
-                                VariableValue::GeoPoint { lat, lon }
-                            }
-                        };
-                        Some(var_value)
-                    },
-                    &HardwareCounterCell::new(),
-                )
-            };
-            Box::new(extractor_fn)
+            payload_variable_extractor(payload_provider, key, var_kind)
         })
+}
+
+fn payload_variable_extractor(
+    payload_provider: PayloadProvider,
+    json_path: JsonPath,
+    var_kind: VariableKind,
+) -> ExtractVariableFn<'static> {
+    let extractor_fn = move |point_id: PointOffsetType| {
+        payload_provider.with_payload(
+            point_id,
+            |payload| {
+                let values = payload.get_value(&json_path);
+                let value = values.first()?;
+                let var_value = match var_kind {
+                    VariableKind::Number => VariableValue::Number(value.as_f64()?),
+                    VariableKind::GeoPoint => {
+                        let lat = value.get("lat")?.as_f64()?;
+                        let lon = value.get("lon")?.as_f64()?;
+                        VariableValue::GeoPoint { lat, lon }
+                    }
+                };
+                Some(var_value)
+            },
+            &HardwareCounterCell::new(),
+        )
+    };
+    Box::new(extractor_fn)
 }
 
 fn indexed_variable_extractor(
@@ -132,7 +140,7 @@ fn indexed_number_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
             Some(Box::new(extract_fn))
         }
         // TODO: how to handle this?
-        FieldIndex::DatetimeIndex(numeric_index) => todo!(),
+        FieldIndex::DatetimeIndex(_numeric_index) => todo!(),
         FieldIndex::KeywordIndex(_)
         | FieldIndex::GeoIndex(_)
         | FieldIndex::FullTextIndex(_)
