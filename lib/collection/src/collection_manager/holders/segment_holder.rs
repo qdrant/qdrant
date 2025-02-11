@@ -593,7 +593,7 @@ impl<'s> SegmentHolder {
 
         let (to_update, to_delete) = self.find_points_to_update_and_delete(ids);
 
-        // Delete old points first
+        // Delete old points first, because we want to handle copy-on-write in multiple proxy segments properly
         for (segment_id, points) in to_delete {
             let segment = self.get(segment_id).unwrap();
             let segment_arc = segment.get();
