@@ -147,7 +147,8 @@ impl SimpleIdTracker {
             }
         }
 
-        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
+        let mut internal_to_version: Vec<SeqNumberType> =
+            Vec::with_capacity(internal_to_external.len());
         let versions_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
         );
