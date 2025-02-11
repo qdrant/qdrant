@@ -204,7 +204,9 @@ impl GeoMapIndex {
     ) -> Option<Box<dyn Iterator<Item = GeoPoint> + '_>> {
         match self {
             GeoMapIndex::Mutable(index) => index.get_values(idx).map(|x| Box::new(x.cloned()) as _),
-            GeoMapIndex::Immutable(index) => index.get_values(idx).map(|x| Box::new(x.cloned()) as _),
+            GeoMapIndex::Immutable(index) => {
+                index.get_values(idx).map(|x| Box::new(x.cloned()) as _)
+            }
             GeoMapIndex::Mmap(index) => index.get_values(idx).map(|x| Box::new(x) as _),
         }
     }
