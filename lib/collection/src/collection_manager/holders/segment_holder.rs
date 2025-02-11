@@ -469,7 +469,7 @@ impl<'s> SegmentHolder {
 
         // Group points to update by segments
         let segment_count = self.len();
-        let mut to_update = AHashMap::with_capacity(segment_count);
+        let mut to_update = AHashMap::with_capacity(min(segment_count, latest_points.len()));
         let default_capacity = ids.len() / max(segment_count / 2, 1);
         for (point_id, (_point_version, segment_id)) in latest_points {
             to_update
