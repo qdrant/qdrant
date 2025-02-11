@@ -221,9 +221,10 @@ async fn check_collection_size_limit(
 ) -> Result<(), CollectionError> {
     let vector_limit = strict_mode_config.max_collection_vector_size_bytes;
     let payload_limit = strict_mode_config.max_collection_payload_size_bytes;
+    let point_limit = strict_mode_config.max_points_count;
 
     // If all configs are disabled/unset, don't need to check anything nor update cache for performance.
-    if (vector_limit, payload_limit) == (None, None) {
+    if (vector_limit, payload_limit, point_limit) == (None, None, None) {
         return Ok(());
     }
 
@@ -237,6 +238,24 @@ async fn check_collection_size_limit(
 
     if let Some(payload_storage_size_limit_bytes) = payload_limit {
         check_collection_payload_size_limit(payload_storage_size_limit_bytes, stats)?;
+    }
+
+    if let Some(points_count_limit) = point_limit {
+        check_collection_points_count_limit(points_count_limit, stats)?;
+    }
+
+    Ok(())
+}
+
+fn check_collection_points_count_limit(
+    points_count_limit: usize,
+    stats: &CollectionSizeAtomicStats,
+) -> Result<(), CollectionError> {
+    let points_count = stats.get_points_count();
+    if points_count >= points_count_limit {
+        return Err(CollectionError::bad_request(format!(
+            "Max points count limit of {points_count_limit} reached!",
+        )));
     }
 
     Ok(())

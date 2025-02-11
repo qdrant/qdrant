@@ -1127,16 +1127,19 @@ impl ShardReplicaSet {
                 Shard::Local(local) => {
                     let mut total_vector_size = 0;
                     let mut total_payload_size = 0;
+                    let mut total_points = 0;
 
                     for segment in local.segments.read().iter() {
                         let size_info = segment.1.get().read().size_info();
                         total_vector_size += size_info.vectors_size_bytes;
                         total_payload_size += size_info.payloads_size_bytes;
+                        total_points += size_info.num_points;
                     }
 
                     Some(CollectionSizeStats {
                         vector_storage_size: total_vector_size,
                         payload_storage_size: total_payload_size,
+                        points_count: total_points,
                     })
                 }
                 Shard::Proxy(_)

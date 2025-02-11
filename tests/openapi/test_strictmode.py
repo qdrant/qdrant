@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from .conftest import collection_name
@@ -969,6 +967,54 @@ def test_strict_mode_max_collection_payload_size_upsert_batch(collection_name):
         if failed_upsert.ok:
             continue
         assert "Max payload storage size" in failed_upsert.json()['status']['error']
+        assert not failed_upsert.ok
+        return
+
+    assert False, "Upserting should have failed but didn't"
+
+def test_strict_mode_max_collection_point_count_upsert_batch(collection_name):
+    basic_collection_setup(collection_name=collection_name, on_disk_payload=True)  # Clear collection to not depend on other tests
+
+    def upsert_points(ids: list[int]):
+        length = len(ids)
+        payloads = [{"city": "Berlin"} for _ in range(length)]
+        vectors = [[1, 2, 3, 5] for _ in range(length)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points/batch',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "operations": [
+                    {
+                        "upsert": {
+                            "batch": {
+                                "ids": ids,
+                                "payloads": payloads,
+                                "vectors": vectors
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+    for _ in range(32):
+        upsert_points([1, 2]).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_points_count": 10,
+    })
+
+    for i in range(32):
+        print(upsert_points([3, 4]).json())
+
+    # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
+    for i in range(32):
+        failed_upsert = upsert_points([5, 6, 7, 8, 9, 10])
+        if failed_upsert.ok:
+            continue
+        assert "Max points count limit of 10 reached!" in failed_upsert.json()['status']['error']
         assert not failed_upsert.ok
         return
 
