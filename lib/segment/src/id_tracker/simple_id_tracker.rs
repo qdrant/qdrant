@@ -152,9 +152,10 @@ impl SimpleIdTracker {
         let versions_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
         );
-        for (internal, external) in internal_to_external.iter().enumerate() {
+        for (internal, external) in internal_to_external.iter_mut().enumerate() {
             if deleted[internal] {
                 log::debug!("Adding synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}");
+                // Add synthetic version 0
                 internal_to_version.push(0);
                 continue;
             }
@@ -167,6 +168,12 @@ impl SimpleIdTracker {
                         Marking as deleted and adding synthetic version 0",
                     );
                     deleted.set(internal, true);
+                    // Drop mapping too
+                    match external {
+                        PointIdType::NumId(num) => external_to_internal_num.remove(&num),
+                        PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(&uuid),
+                    };
+                    // Add synthetic version 0
                     internal_to_version.push(0);
                     continue;
                 }
