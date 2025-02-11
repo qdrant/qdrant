@@ -1,3 +1,4 @@
+use std::any;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -29,7 +30,7 @@ use tonic::{Request, Response, Status};
 use super::query_common::*;
 use super::update_common::*;
 use super::validate_and_log;
-use crate::common::inference::InferenceToken;
+use crate::common::inference::extract_token;
 use crate::settings::ServiceConfig;
 use crate::tonic::verification::{StrictModeCheckedInternalTocProvider, UncheckedTocProvider};
 
@@ -178,11 +179,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
 
         let UpsertPointsInternal {
             upsert_points,
@@ -190,12 +187,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let upsert_points =
-            upsert_points.ok_or_else(|| Status::invalid_argument("UpsertPoints is missing"))?;
-
         upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            upsert_points,
+            extract_internal_request(upsert_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -210,11 +204,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
 
         let DeletePointsInternal {
             delete_points,
@@ -222,12 +212,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_points =
-            delete_points.ok_or_else(|| Status::invalid_argument("DeletePoints is missing"))?;
-
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_points,
+            extract_internal_request(delete_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -242,23 +229,17 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
-        let request = request.into_inner();
+        let inference_token = extract_token(&request);
 
-        let shard_id = request.shard_id;
-        let clock_tag = request.clock_tag;
-
-        let update_point_vectors = request
-            .update_vectors
-            .ok_or_else(|| Status::invalid_argument("UpdateVectors is missing"))?;
+        let UpdateVectorsInternal {
+            update_vectors: update_vectors_req,
+            shard_id,
+            clock_tag,
+        } = request.into_inner();
 
         update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            update_point_vectors,
+            extract_internal_request(update_vectors_req)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -273,18 +254,15 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let request = request.into_inner();
-
-        let shard_id = request.shard_id;
-        let clock_tag = request.clock_tag;
-
-        let delete_point_vectors = request
-            .delete_vectors
-            .ok_or_else(|| Status::invalid_argument("DeleteVectors is missing"))?;
+        let DeleteVectorsInternal {
+            delete_vectors: delete_vectors_req,
+            shard_id,
+            clock_tag,
+        } = request.into_inner();
 
         delete_vectors(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_point_vectors,
+            extract_internal_request(delete_vectors_req)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -304,12 +282,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
         set_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            set_payload_points,
+            extract_internal_request(set_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -329,12 +304,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let set_payload_points = set_payload_points
-            .ok_or_else(|| Status::invalid_argument("SetPayloadPoints is missing"))?;
-
         overwrite_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            set_payload_points,
+            extract_internal_request(set_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -354,12 +326,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_payload_points = delete_payload_points
-            .ok_or_else(|| Status::invalid_argument("DeletePayloadPoints is missing"))?;
-
         delete_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            delete_payload_points,
+            extract_internal_request(delete_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -379,12 +348,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let clear_payload_points = clear_payload_points
-            .ok_or_else(|| Status::invalid_argument("ClearPayloadPoints is missing"))?;
-
         clear_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            clear_payload_points,
+            extract_internal_request(clear_payload_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -404,12 +370,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let create_field_index_collection = create_field_index_collection
-            .ok_or_else(|| Status::invalid_argument("CreateFieldIndexCollection is missing"))?;
-
         create_field_index_internal(
             self.toc.clone(),
-            create_field_index_collection,
+            extract_internal_request(create_field_index_collection)?,
             clock_tag.map(Into::into),
             shard_id,
         )
@@ -428,12 +391,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let delete_field_index_collection = delete_field_index_collection
-            .ok_or_else(|| Status::invalid_argument("DeleteFieldIndexCollection is missing"))?;
-
         delete_field_index_internal(
             self.toc.clone(),
-            delete_field_index_collection,
+            extract_internal_request(delete_field_index_collection)?,
             clock_tag.map(Into::into),
             shard_id,
         )
@@ -601,11 +561,7 @@ impl PointsInternal for PointsInternalService {
         request: Request<SyncPointsInternal>,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
-        let inference_token = request
-            .extensions()
-            .get::<InferenceToken>()
-            .cloned()
-            .unwrap_or(InferenceToken(None));
+        let inference_token = extract_token(&request);
 
         let SyncPointsInternal {
             sync_points,
@@ -613,11 +569,9 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
-        let sync_points =
-            sync_points.ok_or_else(|| Status::invalid_argument("SyncPoints is missing"))?;
         sync(
             self.toc.clone(),
-            sync_points,
+            extract_internal_request(sync_points)?,
             clock_tag.map(Into::into),
             shard_id,
             FULL_ACCESS.clone(),
@@ -667,4 +621,10 @@ impl PointsInternal for PointsInternalService {
         );
         facet_counts_internal(self.toc.as_ref(), request_inner, hw_data).await
     }
+}
+
+fn extract_internal_request<T>(request: Option<T>) -> Result<T, tonic::Status> {
+    request.ok_or_else(|| {
+        tonic::Status::invalid_argument(format!("{} is missing", any::type_name::<T>()))
+    })
 }

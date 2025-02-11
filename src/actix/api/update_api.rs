@@ -7,7 +7,6 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::{PointsSelector, WriteOrdering};
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
-use schemars::JsonSchema;
 use segment::json_path::JsonPath;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::collection_verification::check_strict_mode;
@@ -29,10 +28,12 @@ struct FieldPath {
     name: JsonPath,
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Validate)]
-pub struct UpdateParam {
-    pub wait: Option<bool>,
-    pub ordering: Option<WriteOrdering>,
+#[derive(Deserialize, Serialize, Validate)]
+pub struct UpdateParams {
+    #[serde(default)]
+    pub wait: bool,
+    #[serde(default)]
+    pub ordering: WriteOrdering,
 }
 
 #[put("/collections/{name}/points")]
@@ -40,7 +41,7 @@ async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<PointInsertOperations>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -52,8 +53,7 @@ async fn upsert_points(
         };
 
     let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -84,7 +84,7 @@ async fn delete_points(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -96,8 +96,7 @@ async fn delete_points(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -128,14 +127,13 @@ async fn update_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<UpdateVectors>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
@@ -172,7 +170,7 @@ async fn delete_vectors(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<DeleteVectors>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -185,8 +183,7 @@ async fn delete_vectors(
             Err(err) => return process_response_error(err, timing, None),
         };
 
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -216,7 +213,7 @@ async fn set_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -228,8 +225,7 @@ async fn set_payload(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -259,7 +255,7 @@ async fn overwrite_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<SetPayload>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -269,8 +265,7 @@ async fn overwrite_payload(
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -300,7 +295,7 @@ async fn delete_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<DeletePayload>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -310,8 +305,7 @@ async fn delete_payload(
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -341,7 +335,7 @@ async fn clear_payload(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<PointsSelector>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
@@ -352,8 +346,7 @@ async fn clear_payload(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -383,7 +376,7 @@ async fn update_batch(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operations: Json<UpdateOperations>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
@@ -415,8 +408,7 @@ async fn update_batch(
 
     let timing = Instant::now();
 
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     // TODO(io_measurement): Measure upsertion io
     let response = do_batch_update_points(
@@ -439,13 +431,12 @@ async fn create_field_index(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let response = do_create_index(
         dispatcher.into_inner(),
@@ -466,12 +457,11 @@ async fn delete_field_index(
     dispatcher: web::Data<Dispatcher>,
     collection: Path<CollectionPath>,
     field: Path<FieldPath>,
-    params: Query<UpdateParam>,
+    params: Query<UpdateParams>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let wait = params.wait.unwrap_or(false);
-    let ordering = params.ordering.unwrap_or_default();
+    let UpdateParams { wait, ordering } = params.into_inner();
 
     let response = do_delete_index(
         dispatcher.into_inner(),
