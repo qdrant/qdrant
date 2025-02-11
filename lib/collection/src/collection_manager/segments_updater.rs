@@ -48,6 +48,7 @@ pub(crate) fn delete_points(
 
     for batch in ids.chunks(VECTOR_OP_BATCH_SIZE) {
         let deleted_points = segments.apply_points(
+            op_num,
             batch,
             |_| (),
             |id, _idx, write_segment, ()| write_segment.delete_point(op_num, id, hw_counter),
@@ -116,6 +117,7 @@ pub(crate) fn delete_vectors(
 
     for batch in points.chunks(VECTOR_OP_BATCH_SIZE) {
         let deleted_points = segments.apply_points(
+            op_num,
             batch,
             |_| (),
             |id, _idx, write_segment, ()| {

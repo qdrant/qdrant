@@ -164,11 +164,13 @@ impl ProxySegment {
                 return Ok(false);
             };
 
+            let local_version = cmp::max(local_version, op_num);
+
             // Equal or higher point version is already moved into write segment - delete from
             // wrapped segment and do not move it again
             if deleted_points_guard
                 .get(&point_id)
-                .is_some_and(|&deleted| deleted.local_version >= local_version)
+                .is_some_and(|&deleted| deleted.local_version > local_version)
             {
                 drop(deleted_points_guard);
                 self.set_deleted_offset(point_offset);

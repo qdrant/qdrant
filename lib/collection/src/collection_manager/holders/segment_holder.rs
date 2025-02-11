@@ -25,7 +25,6 @@ use segment::types::{
     ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
     SnapshotFormat,
 };
-use smallvec::{smallvec, SmallVec};
 
 use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -424,7 +423,7 @@ impl<'s> SegmentHolder {
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
-        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SmallVec<[SegmentId; 1]>)> =
+        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SegmentId)> =
             AHashMap::with_capacity(ids.len());
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
@@ -438,30 +437,19 @@ impl<'s> SegmentHolder {
                 match latest_points.entry(segment_point) {
                     // First time we see the point, add it
                     Entry::Vacant(entry) => {
-                        entry.insert((point_version, smallvec![*segment_id]));
+                        entry.insert((point_version, *segment_id));
                     }
                     // Point we have seen before is older, replace it and mark older for deletion
                     Entry::Occupied(mut entry) if entry.get().0 < point_version => {
-                        let (old_version, old_segment_ids) =
-                            entry.insert((point_version, smallvec![*segment_id]));
+                        let (_, old_segment_id) = entry.insert((point_version, *segment_id));
 
-                        // Mark other point for deletion if the version is older
-                        // TODO(timvisee): remove this check once deleting old points uses correct version
-                        if old_version < point_version {
-                            for old_segment_id in old_segment_ids {
-                                to_delete
-                                    .entry(old_segment_id)
-                                    .or_default()
-                                    .push(segment_point);
-                            }
-                        }
+                        // Mark other point for deletion
+                        to_delete
+                            .entry(old_segment_id)
+                            .or_default()
+                            .push(segment_point);
                     }
-                    // Ignore points with the same version, only update one of them
-                    // TODO(timvisee): remove this branch once deleting old points uses correct version
-                    Entry::Occupied(mut entry) if entry.get().0 == point_version => {
-                        entry.get_mut().1.push(*segment_id);
-                    }
-                    // Point we have seen before is newer, mark this point for deletion
+                    // Point we have seen before is equal or newer, mark this point for deletion
                     Entry::Occupied(_) => {
                         to_delete
                             .entry(*segment_id)
@@ -476,13 +464,11 @@ impl<'s> SegmentHolder {
         let segment_count = self.len();
         let mut to_update = AHashMap::with_capacity(min(segment_count, latest_points.len()));
         let default_capacity = ids.len() / max(segment_count / 2, 1);
-        for (point_id, (_point_version, segment_ids)) in latest_points {
-            for segment_id in segment_ids {
-                to_update
-                    .entry(segment_id)
-                    .or_insert_with(|| Vec::with_capacity(default_capacity))
-                    .push(point_id);
-            }
+        for (point_id, (_point_version, segment_id)) in latest_points {
+            to_update
+                .entry(segment_id)
+                .or_insert_with(|| Vec::with_capacity(default_capacity))
+                .push(point_id);
         }
 
         // Assert each segment does not have overlapping updates and deletes
@@ -576,6 +562,7 @@ impl<'s> SegmentHolder {
     /// passed to `point_operation`.
     pub fn apply_points<T, D, O>(
         &self,
+        op_num: SeqNumberType,
         ids: &[PointIdType],
         mut segment_data: D,
         mut point_operation: O,
@@ -600,9 +587,8 @@ impl<'s> SegmentHolder {
             let mut write_segment = segment_arc.write();
 
             for point_id in points {
-                let version = write_segment.point_version(point_id).unwrap_or_default();
                 write_segment.delete_point(
-                    version,
+                    op_num,
                     point_id,
                     &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
                 )?;
@@ -733,6 +719,7 @@ impl<'s> SegmentHolder {
         let mut applied_points: HashSet<PointIdType> = Default::default();
 
         let _applied_points_count = self.apply_points(
+            op_num,
             ids,
             update_nonappendable,
             |point_id, _idx, write_segment, &update_nonappendable| {
