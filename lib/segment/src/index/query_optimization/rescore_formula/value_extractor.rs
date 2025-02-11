@@ -62,8 +62,8 @@ fn variable_extractor<'index>(
                 .iter()
                 .find_map(|index| indexed_variable_extractor(index, var_kind))
         })
+        // TODO(scoreboost): optimize by reusing the same payload for all variables?
         .unwrap_or_else(|| {
-            // TODO: optimize by reusing the same payload for all variables
             // if the variable is not found in the index, try to find it in the payload
             let key = json_path.clone();
             let extractor_fn = move |point_id: PointOffsetType| {
