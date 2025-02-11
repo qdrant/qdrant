@@ -26,22 +26,29 @@ type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<VariableVal
 
 impl StructPayloadIndex {
     /// Prepares optimized functions to extract each of the variables, given a point id.
-    pub(super) fn retrievers_map(
-        &self,
+    pub(super) fn retrievers_map<'a, 'q>(
+        &'a self,
         variables: Vec<(JsonPath, VariableKind)>,
-    ) -> HashMap<JsonPath, VariableRetrieverFn> {
+        hw_counter: &'q HardwareCounterCell,
+    ) -> HashMap<JsonPath, VariableRetrieverFn<'q>>
+    where
+        'a: 'q,
+    {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
         // prepare extraction of the variables from field indices or payload.
         let mut var_retrievers = HashMap::new();
         for (key, var_kind) in variables {
             let payload_provider = payload_provider.clone();
+
             let retriever = variable_retriever(
                 &self.field_indexes,
                 &key,
                 var_kind,
                 payload_provider.clone(),
+                hw_counter,
             );
+
             var_retrievers.insert(key, retriever);
         }
 
@@ -49,12 +56,16 @@ impl StructPayloadIndex {
     }
 }
 
-fn variable_retriever<'index>(
-    indices: &'index HashMap<JsonPath, Vec<FieldIndex>>,
+fn variable_retriever<'a, 'q>(
+    indices: &'a HashMap<JsonPath, Vec<FieldIndex>>,
     json_path: &JsonPath,
     var_kind: VariableKind,
     payload_provider: PayloadProvider,
-) -> VariableRetrieverFn<'index> {
+    hw_counter: &'q HardwareCounterCell,
+) -> VariableRetrieverFn<'q>
+where
+    'a: 'q,
+{
     indices
         .get(json_path)
         .and_then(|indices| {
@@ -66,7 +77,7 @@ fn variable_retriever<'index>(
         .unwrap_or_else(|| {
             // if the variable is not found in the index, try to find it in the payload
             let key = json_path.clone();
-            payload_variable_retriever(payload_provider, key, var_kind)
+            payload_variable_retriever(payload_provider, key, var_kind, hw_counter)
         })
 }
 
@@ -74,7 +85,8 @@ fn payload_variable_retriever(
     payload_provider: PayloadProvider,
     json_path: JsonPath,
     var_kind: VariableKind,
-) -> VariableRetrieverFn<'static> {
+    hw_counter: &HardwareCounterCell,
+) -> VariableRetrieverFn {
     let retriever_fn = move |point_id: PointOffsetType| {
         payload_provider.with_payload(
             point_id,
@@ -91,7 +103,7 @@ fn payload_variable_retriever(
                 };
                 Some(var_value)
             },
-            &HardwareCounterCell::new(),
+            hw_counter,
         )
     };
     Box::new(retriever_fn)
@@ -244,12 +256,15 @@ mod tests {
 
         let no_indices = Default::default();
 
+        let hw_counter = Default::default();
+
         // Test retrieving a number from the payload.
         let retriever = variable_retriever(
             &no_indices,
             &"value".try_into().unwrap(),
             VariableKind::Number,
             payload_provider.clone(),
+            &hw_counter,
         );
         for id in 0..2 {
             let value = retriever(id);
@@ -267,6 +282,7 @@ mod tests {
             &"location".try_into().unwrap(),
             VariableKind::GeoPoint,
             payload_provider.clone(),
+            &hw_counter,
         );
         for id in 0..2 {
             let value = retriever(id);
@@ -325,12 +341,15 @@ mod tests {
         indices.insert("value".try_into().unwrap(), vec![numeric_index]);
         indices.insert("location".try_into().unwrap(), vec![geo_index]);
 
+        let hw_counter = Default::default();
+
         // Test retrieving a number from the index.
         let retriever = variable_retriever(
             &indices,
             &"value".try_into().unwrap(),
             VariableKind::Number,
             payload_provider.clone(),
+            &hw_counter,
         );
         for id in 0..2 {
             let value = retriever(id);
@@ -348,6 +367,7 @@ mod tests {
             &"location".try_into().unwrap(),
             VariableKind::GeoPoint,
             payload_provider.clone(),
+            &hw_counter,
         );
         for id in 0..2 {
             let value = retriever(id);
