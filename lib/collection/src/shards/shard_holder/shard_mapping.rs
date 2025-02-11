@@ -24,7 +24,7 @@ const USE_NEW_SHARD_KEY_MAPPING_FORMAT: bool = false;
 /// Hold the shard key mapping and persists in a different format to disk.
 /// See [`ShardKeyMappingWrapper`].
 pub(super) struct SaveOnDiskShardKeyMappingWrapper {
-    /// Persist mapping in a robust format that doesn't loose shard key type information
+    /// Persist mapping in a robust format that doesn't lose shard key type information
     persisted: SaveOnDisk<ShardKeyMappingWrapper>,
     /// Shard key mapping view in original format
     mapping: RwLock<ShardKeyMapping>,

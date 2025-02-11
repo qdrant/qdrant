@@ -127,7 +127,7 @@ impl SegmentEntry for Segment {
                     segment.id_tracker.borrow_mut().drop(point_id)?;
 
                     // Before, we propagated point deletions to also delete its vectors. This turns
-                    // out to be problematic because this sometimes makes us loose vector data
+                    // out to be problematic because this sometimes makes us lose vector data
                     // because we cannot control the order of segment flushes.
                     // Disabled until we properly fix it or find a better way to clean up old
                     // vectors.
