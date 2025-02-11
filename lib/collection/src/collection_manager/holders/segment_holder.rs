@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use smallvec::{smallvec, SmallVec};
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -423,7 +424,7 @@ impl<'s> SegmentHolder {
         let mut to_delete: AHashMap<SegmentId, Vec<PointIdType>> = AHashMap::new();
 
         // Find in which segments latest point versions are located, mark older points for deletion
-        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, Vec<SegmentId>)> =
+        let mut latest_points: AHashMap<PointIdType, (SeqNumberType, SmallVec<[SegmentId; 1]>)> =
             AHashMap::with_capacity(ids.len());
         for (segment_id, segment) in self.iter() {
             let segment_arc = segment.get();
@@ -437,12 +438,12 @@ impl<'s> SegmentHolder {
                 match latest_points.entry(segment_point) {
                     // First time we see the point, add it
                     Entry::Vacant(entry) => {
-                        entry.insert((point_version, vec![*segment_id]));
+                        entry.insert((point_version, smallvec![*segment_id]));
                     }
                     // Point we have seen before is older, replace it and mark older for deletion
                     Entry::Occupied(mut entry) if entry.get().0 < point_version => {
                         let (old_version, old_segment_ids) =
-                            entry.insert((point_version, vec![*segment_id]));
+                            entry.insert((point_version, smallvec![*segment_id]));
 
                         // Mark other point for deletion if the version is older
                         // TODO(timvisee): remove this check once deleting old points uses correct version
