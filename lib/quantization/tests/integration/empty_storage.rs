@@ -82,7 +82,7 @@ mod tests {
         )
         .unwrap();
     }
-    
+
     #[test]
     fn empty_data_bq() {
         let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
