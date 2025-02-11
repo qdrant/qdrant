@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use smallvec::{smallvec, SmallVec};
 use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -26,6 +25,7 @@ use segment::types::{
     ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
     SnapshotFormat,
 };
+use smallvec::{smallvec, SmallVec};
 
 use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -574,12 +574,11 @@ impl<'s> SegmentHolder {
     ///
     /// The `segment_data` function is called no more than once for each segment and its result is
     /// passed to `point_operation`.
-    pub fn apply_points<T, D, O, OD>(
+    pub fn apply_points<T, D, O>(
         &self,
         ids: &[PointIdType],
         mut segment_data: D,
         mut point_operation: O,
-        mut point_delete_operation: OD,
     ) -> OperationResult<usize>
     where
         D: FnMut(&dyn SegmentEntry) -> T,
@@ -589,7 +588,6 @@ impl<'s> SegmentHolder {
             &mut RwLockWriteGuard<dyn SegmentEntry>,
             &T,
         ) -> OperationResult<bool>,
-        OD: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
     {
         let _update_guard = self.update_tracker.update();
 
@@ -602,7 +600,12 @@ impl<'s> SegmentHolder {
             let mut write_segment = segment_arc.write();
 
             for point_id in points {
-                point_delete_operation(point_id, &mut write_segment)?;
+                let version = write_segment.point_version(point_id).unwrap_or_default();
+                write_segment.delete_point(
+                    version,
+                    point_id,
+                    &HardwareCounterCell::disposable(), // Internal operation: no need to measure.
+                )?;
             }
         }
 
@@ -768,10 +771,6 @@ impl<'s> SegmentHolder {
                 };
                 applied_points.insert(point_id);
                 Ok(is_applied)
-            },
-            |id, write_segment| {
-                let version = write_segment.point_version(id).unwrap_or(op_num);
-                write_segment.delete_point(version, id, hw_counter)
             },
         )?;
         Ok(applied_points)
