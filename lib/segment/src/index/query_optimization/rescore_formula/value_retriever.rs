@@ -22,60 +22,60 @@ pub(super) enum VariableValue {
     GeoPoint { lat: f64, lon: f64 },
 }
 
-type ExtractVariableFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<VariableValue> + 'a>;
+type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<VariableValue> + 'a>;
 
 impl StructPayloadIndex {
     /// Prepares optimized functions to extract each of the variables, given a point id.
-    pub(super) fn extractors_map(
+    pub(super) fn retrievers_map(
         &self,
         variables: Vec<(JsonPath, VariableKind)>,
-    ) -> HashMap<JsonPath, ExtractVariableFn> {
+    ) -> HashMap<JsonPath, VariableRetrieverFn> {
         let payload_provider = PayloadProvider::new(self.payload.clone());
 
         // prepare extraction of the variables from field indices or payload.
-        let mut var_extractors = HashMap::new();
+        let mut var_retrievers = HashMap::new();
         for (key, var_kind) in variables {
             let payload_provider = payload_provider.clone();
-            let extractor = variable_extractor(
+            let retriever = variable_retriever(
                 &self.field_indexes,
                 &key,
                 var_kind,
                 payload_provider.clone(),
             );
-            var_extractors.insert(key, extractor);
+            var_retrievers.insert(key, retriever);
         }
 
-        var_extractors
+        var_retrievers
     }
 }
 
-fn variable_extractor<'index>(
+fn variable_retriever<'index>(
     indices: &'index HashMap<JsonPath, Vec<FieldIndex>>,
     json_path: &JsonPath,
     var_kind: VariableKind,
     payload_provider: PayloadProvider,
-) -> ExtractVariableFn<'index> {
+) -> VariableRetrieverFn<'index> {
     indices
-        .get(&json_path)
+        .get(json_path)
         .and_then(|indices| {
             indices
                 .iter()
-                .find_map(|index| indexed_variable_extractor(index, var_kind))
+                .find_map(|index| indexed_variable_retriever(index, var_kind))
         })
         // TODO(scoreboost): optimize by reusing the same payload for all variables?
         .unwrap_or_else(|| {
             // if the variable is not found in the index, try to find it in the payload
             let key = json_path.clone();
-            payload_variable_extractor(payload_provider, key, var_kind)
+            payload_variable_retriever(payload_provider, key, var_kind)
         })
 }
 
-fn payload_variable_extractor(
+fn payload_variable_retriever(
     payload_provider: PayloadProvider,
     json_path: JsonPath,
     var_kind: VariableKind,
-) -> ExtractVariableFn<'static> {
-    let extractor_fn = move |point_id: PointOffsetType| {
+) -> VariableRetrieverFn<'static> {
+    let retriever_fn = move |point_id: PointOffsetType| {
         payload_provider.with_payload(
             point_id,
             |payload| {
@@ -94,23 +94,23 @@ fn payload_variable_extractor(
             &HardwareCounterCell::new(),
         )
     };
-    Box::new(extractor_fn)
+    Box::new(retriever_fn)
 }
 
-fn indexed_variable_extractor(
+fn indexed_variable_retriever(
     index: &FieldIndex,
     var_kind: VariableKind,
-) -> Option<ExtractVariableFn> {
+) -> Option<VariableRetrieverFn> {
     match var_kind {
-        VariableKind::Number => indexed_number_extractor(index),
-        VariableKind::GeoPoint => geo_point_extractor(index),
+        VariableKind::Number => indexed_number_retriever(index),
+        VariableKind::GeoPoint => geo_point_retriever(index),
     }
 }
 
 /// Returns function to extract the first number a point may have from the index
 ///
 /// If there is no appropriate index, returns None
-fn indexed_number_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
+fn indexed_number_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
     match index {
         FieldIndex::IntIndex(numeric_index) => {
             let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
@@ -150,7 +150,7 @@ fn indexed_number_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
     }
 }
 
-fn geo_point_extractor(index: &FieldIndex) -> Option<ExtractVariableFn> {
+fn geo_point_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
     match index {
         FieldIndex::GeoIndex(geo_map_index) => {
             let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
@@ -190,8 +190,8 @@ mod tests {
     use crate::index::field_index::numeric_index::NumericIndex;
     use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait};
     use crate::index::query_optimization::payload_provider::PayloadProvider;
-    use crate::index::query_optimization::rescore_formula::value_extractor::{
-        variable_extractor, VariableValue,
+    use crate::index::query_optimization::rescore_formula::value_retriever::{
+        variable_retriever, VariableValue,
     };
     use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
@@ -239,20 +239,20 @@ mod tests {
     }
 
     #[test]
-    fn test_variable_extractor_from_payload() {
+    fn test_variable_retriever_from_payload() {
         let payload_provider = fixture_payload_provider();
 
         let no_indices = Default::default();
 
-        // Test extracting a number from the payload.
-        let extractor = variable_extractor(
+        // Test retrieving a number from the payload.
+        let retriever = variable_retriever(
             &no_indices,
             &"value".try_into().unwrap(),
             VariableKind::Number,
             payload_provider.clone(),
         );
         for id in 0..2 {
-            let value = extractor(id);
+            let value = retriever(id);
             match id {
                 0 => assert_eq!(value, Some(VariableValue::Number(42.0))),
                 1 => assert_eq!(value, None),
@@ -261,15 +261,15 @@ mod tests {
             }
         }
 
-        // Test extracting a geo point from the payload.
-        let extractor = variable_extractor(
+        // Test retrieving a geo point from the payload.
+        let retriever = variable_retriever(
             &no_indices,
             &"location".try_into().unwrap(),
             VariableKind::GeoPoint,
             payload_provider.clone(),
         );
         for id in 0..2 {
-            let value = extractor(id);
+            let value = retriever(id);
             match id {
                 0 => assert_eq!(value, None),
                 1 => assert_eq!(
@@ -292,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn test_variable_extractor_from_index() {
+    fn test_variable_retriever_from_index() {
         // Empty payload provider.
         let payload_provider = PayloadProvider::new(Arc::new(AtomicRefCell::new(
             PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default()),
@@ -325,15 +325,15 @@ mod tests {
         indices.insert("value".try_into().unwrap(), vec![numeric_index]);
         indices.insert("location".try_into().unwrap(), vec![geo_index]);
 
-        // Test extracting a number from the index.
-        let extractor = variable_extractor(
+        // Test retrieving a number from the index.
+        let retriever = variable_retriever(
             &indices,
             &"value".try_into().unwrap(),
             VariableKind::Number,
             payload_provider.clone(),
         );
         for id in 0..2 {
-            let value = extractor(id);
+            let value = retriever(id);
             match id {
                 0 => assert_eq!(value, Some(VariableValue::Number(42.0))),
                 1 => assert_eq!(value, None),
@@ -342,15 +342,15 @@ mod tests {
             }
         }
 
-        // Test extracting a geo point from the index.
-        let extractor = variable_extractor(
+        // Test retrieving a geo point from the index.
+        let retriever = variable_retriever(
             &indices,
             &"location".try_into().unwrap(),
             VariableKind::GeoPoint,
             payload_provider.clone(),
         );
         for id in 0..2 {
-            let value = extractor(id);
+            let value = retriever(id);
             match id {
                 0 => assert_eq!(value, None),
                 1 => assert_eq!(
