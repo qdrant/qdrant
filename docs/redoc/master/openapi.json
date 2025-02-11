@@ -7339,7 +7339,7 @@
             "nullable": true
           },
           "max_points_count": {
-            "description": "Max number of points in a collection",
+            "description": "Max number of points estimated in a collection",
             "type": "integer",
             "format": "uint",
             "minimum": 1,

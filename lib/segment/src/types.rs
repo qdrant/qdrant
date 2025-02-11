@@ -807,7 +807,7 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_payload_size_bytes: Option<usize>,
 
-    /// Max number of points in a collection
+    /// Max number of points estimated in a collection
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
     pub max_points_count: Option<usize>,
