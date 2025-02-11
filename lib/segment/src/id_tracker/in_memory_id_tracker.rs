@@ -66,8 +66,6 @@ impl IdTracker for InMemoryIdTracker {
                         self.drop(external_id)?;
                     }
                 }
-
-                self.internal_to_version[internal_id as usize] = version;
             }
         }
 
