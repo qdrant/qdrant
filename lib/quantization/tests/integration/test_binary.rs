@@ -109,8 +109,8 @@ mod tests {
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point(&query_encoded, index as u32, &counter);
-            let orginal_score = -dot_similarity(&query, vector);
-            assert!((score - orginal_score).abs() <= error);
+            let original_score = -dot_similarity(&query, vector);
+            assert!((score - original_score).abs() <= error);
         }
     }
 
