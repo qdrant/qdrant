@@ -1140,7 +1140,7 @@ pub struct SegmentState {
 }
 
 /// Geo point payload schema
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Default)]
 #[serde(try_from = "GeoPointShadow")]
 pub struct GeoPoint {
     pub lon: f64,
@@ -1200,6 +1200,12 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
             lon: value.lon,
             lat: value.lat,
         })
+    }
+}
+
+impl From<GeoPoint> for geo::Point {
+    fn from(GeoPoint { lon, lat }: GeoPoint) -> Self {
+        Self::new(lon, lat)
     }
 }
 
@@ -1961,8 +1967,8 @@ pub struct GeoRadius {
 
 impl GeoRadius {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
-        let query_center = Point::new(self.center.lon, self.center.lat);
-        Haversine::distance(query_center, Point::new(point.lon, point.lat)) < self.radius
+        let query_center = self.center.into();
+        Haversine::distance(query_center, (*point).into()) < self.radius
     }
 }
 
