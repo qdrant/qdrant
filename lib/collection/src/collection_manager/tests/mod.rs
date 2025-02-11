@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -9,8 +9,9 @@ use itertools::Itertools;
 use parking_lot::RwLock;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
+use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::types::{ExtendedPointId, PointIdType, WithPayload, WithVector};
+use segment::types::{ExtendedPointId, PayloadContainer, PointIdType, WithPayload, WithVector};
 use tempfile::Builder;
 
 use super::holders::proxy_segment;
@@ -363,7 +364,6 @@ fn test_proxy_shared_updates() {
 
     let old_payload = payload_json! {"size": vec!["small"]};
     let new_payload = payload_json! {"size": vec!["big"]};
-    // let newest_vec = vec![1.0, 1.0, 0.0, 0.0];
 
     let write_segment = LockedSegment::new(empty_segment(dir.path()));
 
@@ -413,21 +413,37 @@ fn test_proxy_shared_updates() {
 
     let proxy_segment_2 = ProxySegment::new(
         locked_segment_2,
-        write_segment,
+        write_segment.clone(),
         deleted_points,
         changed_indexes,
     );
 
     let mut holder = SegmentHolder::default();
 
-    holder.add_new(proxy_segment_1);
-    holder.add_new(proxy_segment_2);
+    let proxy_1_id = holder.add_new(proxy_segment_1);
+    let proxy_2_id = holder.add_new(proxy_segment_2);
 
     let payload = payload_json! {"color": vec!["yellow"]};
 
     let ids = vec![idx1, idx2];
 
     set_payload(&holder, 30, &payload, &ids, &None, &hw_counter).unwrap();
+
+    // Points should still be accessible in both proxies through write segment
+    for &point_id in &ids {
+        assert!(holder
+            .get(proxy_1_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(point_id));
+        assert!(holder
+            .get(proxy_2_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(point_id));
+    }
 
     let locked_holder = Arc::new(RwLock::new(holder));
 
@@ -446,13 +462,162 @@ fn test_proxy_shared_updates() {
     )
     .unwrap();
 
+    assert_eq!(
+        result.keys().copied().collect::<HashSet<_>>(),
+        HashSet::from_iter(ids),
+        "must retrieve all point IDs",
+    );
+
     let expected_payload = payload_json! {"size": vec!["big"], "color": vec!["yellow"]};
 
     for (point_id, record) in result {
-        if let Some(payload) = record.payload {
-            assert_eq!(payload, expected_payload);
-        } else {
-            panic!("No payload for point_id = {point_id}");
-        }
+        let payload = record
+            .payload
+            .unwrap_or_else(|| panic!("No payload for point_id = {point_id}"));
+
+        assert_eq!(payload, expected_payload);
+    }
+}
+
+#[test]
+fn test_proxy_shared_updates_same_version() {
+    // Testing that multiple proxies that share point with the same id but the same versions
+    // are able to successfully apply and resolve update operation.
+    //
+    // It is undefined which instance of the point is picked if they have the exact same version.
+    // What we can check is that at least one instance of the point is selected, and that we don't
+    // accidentally lose points.
+    // This is especially important with merging <https://github.com/qdrant/qdrant/pull/5962>.
+
+    let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+    let mut segment1 = empty_segment(dir.path());
+    let mut segment2 = empty_segment(dir.path());
+
+    let old_vec = vec![1.0, 0.0, 0.0, 1.0];
+    let new_vec = vec![1.0, 0.0, 1.0, 0.0];
+
+    let old_payload = payload_json! {"size": "small"};
+    let new_payload = payload_json! {"size": "big"};
+
+    let write_segment = LockedSegment::new(empty_segment(dir.path()));
+
+    let idx1 = PointIdType::from(1);
+    let idx2 = PointIdType::from(2);
+
+    let hw_counter = HardwareCounterCell::new();
+
+    segment1
+        .upsert_point(10, idx1, only_default_vector(&old_vec), &hw_counter)
+        .unwrap();
+    segment1
+        .set_payload(10, idx1, &old_payload, &None, &hw_counter)
+        .unwrap();
+    segment1
+        .upsert_point(10, idx2, only_default_vector(&new_vec), &hw_counter)
+        .unwrap();
+    segment1
+        .set_payload(10, idx2, &new_payload, &None, &hw_counter)
+        .unwrap();
+
+    segment2
+        .upsert_point(10, idx1, only_default_vector(&new_vec), &hw_counter)
+        .unwrap();
+    segment2
+        .set_payload(10, idx1, &new_payload, &None, &hw_counter)
+        .unwrap();
+    segment2
+        .upsert_point(10, idx2, only_default_vector(&old_vec), &hw_counter)
+        .unwrap();
+    segment2
+        .set_payload(10, idx2, &old_payload, &None, &hw_counter)
+        .unwrap();
+
+    let deleted_points = proxy_segment::LockedRmSet::default();
+    let changed_indexes = proxy_segment::LockedIndexChanges::default();
+
+    let locked_segment_1 = LockedSegment::new(segment1);
+    let locked_segment_2 = LockedSegment::new(segment2);
+
+    let proxy_segment_1 = ProxySegment::new(
+        locked_segment_1,
+        write_segment.clone(),
+        Arc::clone(&deleted_points),
+        Arc::clone(&changed_indexes),
+    );
+
+    let proxy_segment_2 = ProxySegment::new(
+        locked_segment_2,
+        write_segment.clone(),
+        deleted_points,
+        changed_indexes,
+    );
+
+    let mut holder = SegmentHolder::default();
+
+    let proxy_1_id = holder.add_new(proxy_segment_1);
+    let proxy_2_id = holder.add_new(proxy_segment_2);
+
+    let payload = payload_json! {"color": "yellow"};
+
+    let ids = vec![idx1, idx2];
+
+    set_payload(&holder, 20, &payload, &ids, &None, &hw_counter).unwrap();
+
+    // Points should still be accessible in both proxies through write segment
+    for &point_id in &ids {
+        assert!(holder
+            .get(proxy_1_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(point_id));
+        assert!(holder
+            .get(proxy_2_id)
+            .unwrap()
+            .get()
+            .read()
+            .has_point(point_id));
+    }
+
+    let locked_holder = Arc::new(RwLock::new(holder));
+
+    let is_stopped = AtomicBool::new(false);
+
+    let with_payload = WithPayload::from(true);
+    let with_vector = WithVector::from(true);
+
+    let result = SegmentsSearcher::retrieve_blocking(
+        locked_holder.clone(),
+        &ids,
+        &with_payload,
+        &with_vector,
+        &is_stopped,
+        HwMeasurementAcc::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        result.keys().copied().collect::<HashSet<_>>(),
+        HashSet::from_iter(ids),
+        "must retrieve all point IDs",
+    );
+
+    for (point_id, record) in result {
+        let payload = record
+            .payload
+            .unwrap_or_else(|| panic!("No payload for point_id = {point_id}"));
+
+        dbg!(&payload);
+
+        let color = payload.get_value(&JsonPath::new("color"));
+        assert_eq!(color.len(), 1);
+        let color = color[0];
+        assert_eq!(color.as_str(), Some("yellow"));
+
+        let size = payload.get_value(&JsonPath::new("size"));
+        assert_eq!(size.len(), 1);
+        let size = size[0];
+        assert!(["small", "big"].contains(&size.as_str().unwrap()));
     }
 }
