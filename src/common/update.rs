@@ -203,7 +203,7 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -250,7 +250,7 @@ pub async fn do_upsert_points(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_delete_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -289,7 +289,7 @@ pub async fn do_delete_points(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -329,7 +329,6 @@ pub async fn do_update_vectors(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -397,7 +396,6 @@ pub async fn do_delete_vectors(
     result.ok_or_else(|| StorageError::bad_request("No filter or points provided"))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_set_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -441,7 +439,6 @@ pub async fn do_set_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_overwrite_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -486,7 +483,6 @@ pub async fn do_overwrite_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -528,7 +524,6 @@ pub async fn do_delete_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_clear_payload(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -567,7 +562,7 @@ pub async fn do_clear_payload(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -686,7 +681,6 @@ pub async fn do_batch_update_points(
     Ok(results)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -739,7 +733,6 @@ pub async fn do_create_index(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_create_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -778,7 +771,6 @@ pub async fn do_create_index_internal(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index(
     dispatcher: Arc<Dispatcher>,
     collection_name: String,
@@ -819,7 +811,6 @@ pub async fn do_delete_index(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn do_delete_index_internal(
     toc: Arc<TableOfContent>,
     collection_name: String,
