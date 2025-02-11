@@ -67,6 +67,12 @@ impl DateTimeWrapper {
     pub fn timestamp(&self) -> i64 {
         self.0.timestamp_micros()
     }
+
+    pub fn from_timestamp(ts: i64) -> Option<Self> {
+        Some(DateTimeWrapper(chrono::DateTime::from_timestamp_micros(
+            ts,
+        )?))
+    }
 }
 
 impl<'de> Deserialize<'de> for DateTimeWrapper {

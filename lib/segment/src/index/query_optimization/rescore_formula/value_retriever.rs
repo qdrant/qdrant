@@ -1,34 +1,23 @@
 #![allow(dead_code)] // TODO: remove this
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use serde_json::{Number, Value};
 
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
-use crate::types::PayloadContainer;
+use crate::types::{DateTimePayloadType, PayloadContainer, UuidPayloadType};
 
-#[derive(Clone, Copy)]
-pub(super) enum VariableKind {
-    Number,
-    GeoPoint,
-}
-
-#[derive(Debug, PartialEq)]
-pub(super) enum VariableValue {
-    Number(f64),
-    GeoPoint { lat: f64, lon: f64 },
-}
-
-type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<VariableValue> + 'a>;
+type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<Value> + 'a>;
 
 impl StructPayloadIndex {
     /// Prepares optimized functions to extract each of the variables, given a point id.
     pub(super) fn retrievers_map<'a, 'q>(
         &'a self,
-        variables: Vec<(JsonPath, VariableKind)>,
+        variables: HashSet<JsonPath>,
         hw_counter: &'q HardwareCounterCell,
     ) -> HashMap<JsonPath, VariableRetrieverFn<'q>>
     where
@@ -38,13 +27,12 @@ impl StructPayloadIndex {
 
         // prepare extraction of the variables from field indices or payload.
         let mut var_retrievers = HashMap::new();
-        for (key, var_kind) in variables {
+        for key in variables {
             let payload_provider = payload_provider.clone();
 
             let retriever = variable_retriever(
                 &self.field_indexes,
                 &key,
-                var_kind,
                 payload_provider.clone(),
                 hw_counter,
             );
@@ -59,7 +47,6 @@ impl StructPayloadIndex {
 fn variable_retriever<'a, 'q>(
     indices: &'a HashMap<JsonPath, Vec<FieldIndex>>,
     json_path: &JsonPath,
-    var_kind: VariableKind,
     payload_provider: PayloadProvider,
     hw_counter: &'q HardwareCounterCell,
 ) -> VariableRetrieverFn<'q>
@@ -71,20 +58,19 @@ where
         .and_then(|indices| {
             indices
                 .iter()
-                .find_map(|index| indexed_variable_retriever(index, var_kind))
+                .find_map(|index| indexed_variable_retriever(index))
         })
         // TODO(scoreboost): optimize by reusing the same payload for all variables?
         .unwrap_or_else(|| {
             // if the variable is not found in the index, try to find it in the payload
             let key = json_path.clone();
-            payload_variable_retriever(payload_provider, key, var_kind, hw_counter)
+            payload_variable_retriever(payload_provider, key, hw_counter)
         })
 }
 
 fn payload_variable_retriever(
     payload_provider: PayloadProvider,
     json_path: JsonPath,
-    var_kind: VariableKind,
     hw_counter: &HardwareCounterCell,
 ) -> VariableRetrieverFn {
     let retriever_fn = move |point_id: PointOffsetType| {
@@ -92,16 +78,8 @@ fn payload_variable_retriever(
             point_id,
             |payload| {
                 let values = payload.get_value(&json_path);
-                let value = values.first()?;
-                let var_value = match var_kind {
-                    VariableKind::Number => VariableValue::Number(value.as_f64()?),
-                    VariableKind::GeoPoint => {
-                        let lat = value.get("lat")?.as_f64()?;
-                        let lon = value.get("lon")?.as_f64()?;
-                        VariableValue::GeoPoint { lat, lon }
-                    }
-                };
-                Some(var_value)
+                let value = *values.first()?;
+                Some(value.clone())
             },
             hw_counter,
         )
@@ -109,82 +87,99 @@ fn payload_variable_retriever(
     Box::new(retriever_fn)
 }
 
-fn indexed_variable_retriever(
-    index: &FieldIndex,
-    var_kind: VariableKind,
-) -> Option<VariableRetrieverFn> {
-    match var_kind {
-        VariableKind::Number => indexed_number_retriever(index),
-        VariableKind::GeoPoint => geo_point_retriever(index),
-    }
-}
-
 /// Returns function to extract the first number a point may have from the index
 ///
 /// If there is no appropriate index, returns None
-fn indexed_number_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
+fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
     match index {
         FieldIndex::IntIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
                 numeric_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| VariableValue::Number(value as f64))
+                    .map(|value| Value::Number(value.into()))
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::IntMapIndex(map_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
                 map_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|&value| VariableValue::Number(value as f64))
+                    .map(|&value| Value::Number(value.into()))
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::FloatIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
                 numeric_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(VariableValue::Number)
+                    .and_then(Number::from_f64)
+                    .map(Value::Number)
             };
             Some(Box::new(extract_fn))
         }
-        // TODO: how to handle this?
-        FieldIndex::DatetimeIndex(_numeric_index) => todo!(),
-        FieldIndex::KeywordIndex(_)
-        | FieldIndex::GeoIndex(_)
-        | FieldIndex::FullTextIndex(_)
-        | FieldIndex::BoolIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
-    }
-}
-
-fn geo_point_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
-    match index {
-        FieldIndex::GeoIndex(geo_map_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<VariableValue> {
-                geo_map_index
+        FieldIndex::DatetimeIndex(numeric_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+                numeric_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| VariableValue::GeoPoint {
-                        lat: value.lat,
-                        lon: value.lon,
-                    })
+                    .and_then(DateTimePayloadType::from_timestamp)
+                    .and_then(|dt| serde_json::to_value(dt).ok())
             };
             Some(Box::new(extract_fn))
         }
-        FieldIndex::IntIndex(_)
-        | FieldIndex::DatetimeIndex(_)
-        | FieldIndex::IntMapIndex(_)
-        | FieldIndex::KeywordIndex(_)
-        | FieldIndex::FloatIndex(_)
-        | FieldIndex::FullTextIndex(_)
-        | FieldIndex::BoolIndex(_)
-        | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        FieldIndex::KeywordIndex(keyword_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+                keyword_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(|s| Value::String(s.to_owned()))
+            };
+            Some(Box::new(extract_fn))
+        }
+        FieldIndex::GeoIndex(geo_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+                geo_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(|value| serde_json::to_value(value).ok())
+                    .flatten()
+            };
+            Some(Box::new(extract_fn))
+        }
+
+        FieldIndex::BoolIndex(bool_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+                bool_index
+                    .get_point_values(point_id)
+                    .first()
+                    .map(|&value| Value::Bool(value))
+            };
+            Some(Box::new(extract_fn))
+        }
+        FieldIndex::UuidMapIndex(uuid_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+                uuid_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(|value| UuidPayloadType::from_u128(*value))
+                    .map(|value| Value::String(value.to_string()))
+            };
+            Some(Box::new(extract_fn))
+        }
+        FieldIndex::UuidIndex(uuid_index) => {
+            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+                uuid_index
+                    .get_values(point_id)
+                    .and_then(|mut values| values.next())
+                    .map(|value| UuidPayloadType::from_u128(value))
+                    .map(|value| Value::String(value.to_string()))
+            };
+            Some(Box::new(extract_fn))
+        }
+        FieldIndex::FullTextIndex(_) => None, // Better get it from the payload
     }
 }
 
@@ -197,14 +192,11 @@ mod tests {
     use atomic_refcell::AtomicRefCell;
     use serde_json::{from_value, json};
 
-    use super::VariableKind;
     use crate::index::field_index::geo_index::GeoMapIndex;
     use crate::index::field_index::numeric_index::NumericIndex;
     use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait};
     use crate::index::query_optimization::payload_provider::PayloadProvider;
-    use crate::index::query_optimization::rescore_formula::value_retriever::{
-        variable_retriever, VariableValue,
-    };
+    use crate::index::query_optimization::rescore_formula::value_retriever::variable_retriever;
     use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
     use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
     use crate::types::Payload;
@@ -262,16 +254,15 @@ mod tests {
         let retriever = variable_retriever(
             &no_indices,
             &"value".try_into().unwrap(),
-            VariableKind::Number,
             payload_provider.clone(),
             &hw_counter,
         );
         for id in 0..2 {
             let value = retriever(id);
             match id {
-                0 => assert_eq!(value, Some(VariableValue::Number(42.0))),
+                0 => assert_eq!(value, Some(json!(42))),
                 1 => assert_eq!(value, None),
-                2 => assert_eq!(value, Some(VariableValue::Number(99.0))),
+                2 => assert_eq!(value, Some(json!(99.0))),
                 _ => unreachable!(),
             }
         }
@@ -280,7 +271,6 @@ mod tests {
         let retriever = variable_retriever(
             &no_indices,
             &"location".try_into().unwrap(),
-            VariableKind::GeoPoint,
             payload_provider.clone(),
             &hw_counter,
         );
@@ -288,20 +278,8 @@ mod tests {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, None),
-                1 => assert_eq!(
-                    value,
-                    Some(VariableValue::GeoPoint {
-                        lat: 10.0,
-                        lon: 20.0
-                    })
-                ),
-                2 => assert_eq!(
-                    value,
-                    Some(VariableValue::GeoPoint {
-                        lat: 15.5,
-                        lon: 25.5
-                    })
-                ),
+                1 => assert_eq!(value, Some(json!({ "lat": 10.0, "lon": 20.0 }))),
+                2 => assert_eq!(value, Some(json!({ "lat": 15.5, "lon": 25.5 }))),
                 _ => unreachable!(),
             }
         }
@@ -347,16 +325,15 @@ mod tests {
         let retriever = variable_retriever(
             &indices,
             &"value".try_into().unwrap(),
-            VariableKind::Number,
             payload_provider.clone(),
             &hw_counter,
         );
         for id in 0..2 {
             let value = retriever(id);
             match id {
-                0 => assert_eq!(value, Some(VariableValue::Number(42.0))),
+                0 => assert_eq!(value, Some(json!(42))),
                 1 => assert_eq!(value, None),
-                2 => assert_eq!(value, Some(VariableValue::Number(99.0))),
+                2 => assert_eq!(value, Some(json!(99))),
                 _ => unreachable!(),
             }
         }
@@ -365,7 +342,6 @@ mod tests {
         let retriever = variable_retriever(
             &indices,
             &"location".try_into().unwrap(),
-            VariableKind::GeoPoint,
             payload_provider.clone(),
             &hw_counter,
         );
@@ -373,20 +349,8 @@ mod tests {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, None),
-                1 => assert_eq!(
-                    value,
-                    Some(VariableValue::GeoPoint {
-                        lat: 10.0,
-                        lon: 20.0
-                    })
-                ),
-                2 => assert_eq!(
-                    value,
-                    Some(VariableValue::GeoPoint {
-                        lat: 15.5,
-                        lon: 25.5
-                    })
-                ),
+                1 => assert_eq!(value, Some(json!({ "lat": 10.0, "lon": 20.0 }))),
+                2 => assert_eq!(value, Some(json!({ "lat": 15.5, "lon": 25.5 }))),
                 _ => unreachable!(),
             }
         }
