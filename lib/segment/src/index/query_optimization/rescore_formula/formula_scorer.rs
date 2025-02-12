@@ -185,13 +185,18 @@ mod tests {
     use super::*;
     use crate::json_path::JsonPath;
 
-    const FIELD_NAME: &str = "field_name";
-    const NO_VALUE_FIELD_NAME: &str = "no_value_field_name";
+    const FIELD_NAME: &str = "number";
+    const NO_VALUE_FIELD_NAME: &str = "no_number";
+    const GEO_FIELD_NAME: &str = "geo_point";
+    const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
 
     fn make_point_variables(defaults: &HashMap<VariableId, Value>) -> PointVariables {
-        let payload_values = [(JsonPath::new(FIELD_NAME), json!(85.0))]
-            .into_iter()
-            .collect();
+        let mut payload_values = HashMap::new();
+        payload_values.insert(JsonPath::new(FIELD_NAME), json!(85.0));
+        payload_values.insert(
+            JsonPath::new(GEO_FIELD_NAME),
+            json!({"lat": 25.628482424190565, "lon": -100.23881855976}),
+        );
 
         let conditions = [(0, true), (1, false)].into_iter().collect();
 
@@ -230,6 +235,11 @@ mod tests {
         by_zero_default: f32::INFINITY,
     }), 10.0 / 1.0)]
     #[case(Expression::new_neg(Expression::Constant(10.0)), -10.0)]
+    #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)), 21926.494)]
+    #[should_panic(
+        expected = r#"called `Result::unwrap()` on an `Err` value: VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point" }"#
+    )]
+    #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
     #[test]
     fn test_evaluation(#[case] expr: Expression, #[case] expected: ScoreType) {
         let defaults = HashMap::new();
@@ -248,6 +258,8 @@ mod tests {
     #[case(Expression::new_payload_id(NO_VALUE_FIELD_NAME), 85.0)]
     // missing value and no default value provided
     #[case(Expression::new_payload_id("missing_field"), DEFAULT_SCORE)]
+    // geo distance with default value
+    #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), 90951.3)]
     #[test]
     fn test_default_values(#[case] expr: Expression, #[case] expected: ScoreType) {
         let defaults = [
@@ -255,6 +267,10 @@ mod tests {
             (
                 VariableId::Payload(JsonPath::new(NO_VALUE_FIELD_NAME)),
                 json!(85.0),
+            ),
+            (
+                VariableId::Payload(JsonPath::new(NO_VALUE_GEO_POINT)),
+                json!({"lat": 25.0, "lon": -100.0}),
             ),
         ]
         .into_iter()
