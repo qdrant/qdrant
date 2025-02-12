@@ -1233,6 +1233,7 @@ impl From<OperationError> for CollectionError {
             },
             OperationError::MissingRangeIndexForOrderBy { .. } => Self::bad_input(format!("{err}")),
             OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(format!("{err}")),
+            OperationError::VariableTypeError { .. } => Self::bad_input(format!("{err}")),
         }
     }
 }
