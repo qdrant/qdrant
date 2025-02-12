@@ -23,12 +23,14 @@ impl PartialSnapshotEntry for Segment {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         manifests: &SegmentManifests,
+        snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
+        let segment_id = self.segment_id()?;
+
+        if !snapshotted_segments.insert(segment_id.into()) {
+            // Already snapshotted
+            return Ok(());
+        }
 
         let updated_manifest = self.get_segment_manifest()?;
 
@@ -62,18 +64,20 @@ impl PartialSnapshotEntry for Segment {
 }
 
 impl Segment {
-    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        let segment_id = self
-            .current_path
+    fn segment_id(&self) -> OperationResult<&str> {
+        self.current_path
             .file_stem()
-            .and_then(|dir| dir.to_str())
+            .and_then(|segment_dir| segment_dir.to_str())
             .ok_or_else(|| {
                 OperationError::service_error(format!(
                     "failed to extract segment ID from segment path {}",
                     self.current_path.display(),
                 ))
-            })?;
+            })
+    }
 
+    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        let segment_id = self.segment_id()?;
         let segment_version = self.version();
 
         let all_files = self.files();

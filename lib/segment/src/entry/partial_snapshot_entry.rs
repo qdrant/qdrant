@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 
 use common::tar_ext;
@@ -11,6 +12,7 @@ pub trait PartialSnapshotEntry {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         manifest: &SegmentManifests,
+        snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()>;
 
     fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()>;
