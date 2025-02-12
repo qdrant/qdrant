@@ -7,7 +7,7 @@ use ash::vk;
 /// Debug messenger is used to handle Vulkan debug messages.
 /// If presented, vulkan instance will be created with validation layers and debug messenger.
 /// Validation layer has a large performance cost, so it should be used only for tests and debugging.
-pub trait DebugMessenger {
+pub trait DebugMessenger: Sync + Send {
     fn callback(&self) -> vk::PFN_vkDebugUtilsMessengerCallbackEXT;
 
     fn severity_flags(&self) -> vk::DebugUtilsMessageSeverityFlagsEXT;

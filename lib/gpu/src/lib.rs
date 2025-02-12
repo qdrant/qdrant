@@ -1,6 +1,7 @@
 #![cfg(feature = "gpu")]
 
 pub mod allocation_callbacks;
+
 pub use allocation_callbacks::*;
 
 pub mod context;
@@ -33,6 +34,18 @@ pub use shader::*;
 
 #[cfg(test)]
 mod basic_test;
+
+#[cfg(test)]
+lazy_static::lazy_static! {
+    pub static ref GPU_PANIC_MESSENGER: Box<dyn DebugMessenger> = Box::new(PanicIfErrorMessenger{});
+    pub static ref GPU_TEST_INSTANCE: std::sync::Arc<Instance> = Instance::builder().with_debug_messenger(GPU_PANIC_MESSENGER.as_ref()).build().unwrap();
+    pub static ref GPU_TEST_PHYSICAL_DEVICE: &'static PhysicalDevice = &GPU_TEST_INSTANCE.physical_devices()[0];
+    pub static ref GPU_TEST_DEVICE: std::sync::Arc<Device> = Device::new(GPU_TEST_INSTANCE.clone(), &GPU_TEST_PHYSICAL_DEVICE).unwrap();
+
+    pub static ref GPU_TEST_INSTANCE_NO_F16: std::sync::Arc<Instance> = Instance::builder().with_debug_messenger(GPU_PANIC_MESSENGER.as_ref()).build().unwrap();
+    pub static ref GPU_TEST_PHYSICAL_DEVICE_NO_F16: &'static PhysicalDevice = &GPU_TEST_INSTANCE.physical_devices()[0];
+    pub static ref GPU_TEST_DEVICE_NO_F16: std::sync::Arc<Device> = Device::new(GPU_TEST_INSTANCE.clone(), &GPU_TEST_PHYSICAL_DEVICE).unwrap();
+}
 
 /// A trait for GPU resources.
 /// It's used keep GPU resources alive while they are in use by the GPU context.

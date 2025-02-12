@@ -2317,6 +2317,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "gpu-allocator",
+ "lazy_static",
  "log",
  "memory",
  "parking_lot",

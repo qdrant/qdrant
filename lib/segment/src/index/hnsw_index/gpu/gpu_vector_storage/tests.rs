@@ -604,13 +604,11 @@ fn test_gpu_vector_storage_impl(
             .unwrap()
     });
 
-    let debug_messenger = gpu::PanicIfErrorMessenger {};
-    let instance = gpu::Instance::builder()
-        .with_debug_messenger(&debug_messenger)
-        .with_skip_half_precision(skip_half_support)
-        .build()
-        .unwrap();
-    let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
+    let device = if skip_half_support {
+        gpu::GPU_TEST_DEVICE_NO_F16.clone()
+    } else {
+        gpu::GPU_TEST_DEVICE.clone()
+    };
 
     let gpu_vector_storage = GpuVectorStorage::new(
         device.clone(),

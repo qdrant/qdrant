@@ -20,18 +20,7 @@ void main() {
 #[test]
 fn basic_gpu_test() {
     // First step: initialize GPU device.
-
-    // Panic if case of wrong Vulkan API calls.
-    let debug_messenger = crate::PanicIfErrorMessenger {};
-    // Create Vulkan API instance.
-    let instance = crate::Instance::builder()
-        .with_debug_messenger(&debug_messenger)
-        .build()
-        .unwrap();
-    // Choose any GPU hardware to use.
-    let physical_device = &instance.physical_devices()[0];
-    // Create GPU device.
-    let device = crate::Device::new(instance.clone(), physical_device).unwrap();
+    let device = crate::GPU_TEST_DEVICE.clone();
 
     // Create gpu context that records command to GPU and runs them.
     let mut context = crate::Context::new(device.clone()).unwrap();
@@ -106,7 +95,7 @@ fn basic_gpu_test() {
     // Third step: create computation pipeline.
 
     // Compile shader code to SPIR-V.
-    let spirv = instance
+    let spirv = crate::GPU_TEST_INSTANCE
         .compile_shader(SHADER_CODE, "shader.glsl", None, None)
         .unwrap();
     // Create shader.
