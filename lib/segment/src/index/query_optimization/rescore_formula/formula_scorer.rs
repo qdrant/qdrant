@@ -24,7 +24,7 @@ pub struct FormulaScorer<'a> {
     defaults: HashMap<VariableId, Value>,
 }
 
-impl<'a> FormulaScorer<'a> {
+impl FormulaScorer<'_> {
     pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         let mut variables = HashMap::new();
         for (path, retriever) in &self.payload_retrievers {
@@ -51,7 +51,7 @@ impl<'a> FormulaScorer<'a> {
                         .and_then(|v| v.as_f64())
                         .map(|v| v as ScoreType)
                 })
-                .unwrap_or_else(|| DEFAULT_SCORE);
+                .unwrap_or(DEFAULT_SCORE);
             scores.push(score);
         }
 

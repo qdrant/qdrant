@@ -10,7 +10,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, PayloadContainer, UuidPayloadType};
 
-pub type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<Value> + 'a>;
+pub(super) type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<Value> + 'a>;
 
 impl StructPayloadIndex {
     /// Prepares optimized functions to extract each of the variables, given a point id.
@@ -54,11 +54,7 @@ where
 {
     indices
         .get(json_path)
-        .and_then(|indices| {
-            indices
-                .iter()
-                .find_map(|index| indexed_variable_retriever(index))
-        })
+        .and_then(|indices| indices.iter().find_map(indexed_variable_retriever))
         // TODO(scoreboost): optimize by reusing the same payload for all variables?
         .unwrap_or_else(|| {
             // if the variable is not found in the index, try to find it in the payload
@@ -143,8 +139,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 geo_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| serde_json::to_value(value).ok())
-                    .flatten()
+                    .and_then(|value| serde_json::to_value(value).ok())
             };
             Some(Box::new(extract_fn))
         }
@@ -173,7 +168,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 uuid_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| UuidPayloadType::from_u128(value))
+                    .map(UuidPayloadType::from_u128)
                     .map(|value| Value::String(value.to_string()))
             };
             Some(Box::new(extract_fn))
