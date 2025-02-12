@@ -1327,16 +1327,21 @@ impl PartialSnapshotEntry for ProxySegment {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         manifest: &SegmentManifests,
+        snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
-        self.wrapped_segment
-            .get()
-            .read()
-            .take_partial_snapshot(temp_path, tar, manifest)?;
+        self.wrapped_segment.get().read().take_partial_snapshot(
+            temp_path,
+            tar,
+            manifest,
+            snapshotted_segments,
+        )?;
 
-        self.write_segment
-            .get()
-            .read()
-            .take_partial_snapshot(temp_path, tar, manifest)?;
+        self.write_segment.get().read().take_partial_snapshot(
+            temp_path,
+            tar,
+            manifest,
+            snapshotted_segments,
+        )?;
 
         Ok(())
     }
