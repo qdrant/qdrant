@@ -14,6 +14,7 @@ use crate::types::GeoPoint;
 
 const DEFAULT_SCORE: ScoreType = 0.0;
 
+/// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
     /// The formula to evaluate
     formula: Expression,
@@ -27,6 +28,7 @@ pub struct FormulaScorer<'a> {
     defaults: HashMap<VariableId, Value>,
 }
 
+/// Ephemeral type to hold all formula variables for a single point
 struct PointVariables<'a> {
     /// The scores in each prefetch for the point.
     prefetch_scores: Vec<Option<ScoreType>>,
@@ -39,6 +41,7 @@ struct PointVariables<'a> {
 }
 
 impl FormulaScorer<'_> {
+    /// Evaluate the formula for the given point
     pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         // Collect all variables
         let mut payload_values = HashMap::new();
@@ -74,7 +77,7 @@ impl FormulaScorer<'_> {
 }
 
 impl Expression {
-    /// Evaluate the expression with the given scores, variables and conditions
+    /// Evaluate the expression with the given variables
     fn evaluate(&self, vars: &PointVariables) -> OperationResult<ScoreType> {
         match self {
             Expression::Constant(c) => Ok(*c),
@@ -118,14 +121,7 @@ impl Expression {
 }
 
 impl Operation {
-    /// Evaluate the operation with the given scores, variables and conditions
-    ///
-    /// # Arguments
-    ///
-    /// * `scores` - The scores in each prefetch for the point
-    /// * `variables` - The retrieved variables for the point. If a variable is not found, the default will be used.
-    /// * `conditions` - The evaluated conditions for the point. All conditions must be provided.
-    /// * `defaults` - The default values for all variables
+    /// Evaluate the operation with the given variables
     fn evaluate(&self, vars: &PointVariables) -> OperationResult<ScoreType> {
         match self {
             Operation::Mult(expressions) => expressions.iter().try_fold(1.0, |acc, expr| {
