@@ -4,11 +4,11 @@ use actix_web_validator::{Json, Path, Query};
 use api::rest::schema::PointInsertOperations;
 use api::rest::UpdateVectors;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
-use collection::operations::point_ops::{PointsSelector, WriteOrdering};
+use collection::operations::point_ops::PointsSelector;
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
 use segment::json_path::JsonPath;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use storage::content_manager::collection_verification::check_strict_mode;
 use storage::dispatcher::Dispatcher;
 use validator::Validate;
@@ -28,14 +28,6 @@ struct FieldPath {
     name: JsonPath,
 }
 
-#[derive(Deserialize, Serialize, Validate)]
-pub struct UpdateParams {
-    #[serde(default)]
-    pub wait: bool,
-    #[serde(default)]
-    pub ordering: WriteOrdering,
-}
-
 #[put("/collections/{name}/points")]
 async fn upsert_points(
     dispatcher: web::Data<Dispatcher>,
@@ -53,7 +45,6 @@ async fn upsert_points(
         };
 
     let operation = operation.into_inner();
-    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -68,8 +59,7 @@ async fn upsert_points(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
         inference_token,
     )
@@ -95,8 +85,6 @@ async fn delete_points(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let UpdateParams { wait, ordering } = params.into_inner();
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -110,8 +98,7 @@ async fn delete_points(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
         inference_token,
     )
@@ -131,7 +118,6 @@ async fn update_vectors(
     inference_token: InferenceToken,
 ) -> impl Responder {
     let operation = operation.into_inner();
-    let UpdateParams { wait, ordering } = params.into_inner();
 
     let pass =
         match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
@@ -152,8 +138,7 @@ async fn update_vectors(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
         inference_token,
     )
@@ -180,8 +165,6 @@ async fn delete_vectors(
             Err(err) => return process_response_error(err, timing, None),
         };
 
-    let UpdateParams { wait, ordering } = params.into_inner();
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -195,8 +178,7 @@ async fn delete_vectors(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
@@ -221,8 +203,6 @@ async fn set_payload(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let UpdateParams { wait, ordering } = params.into_inner();
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -236,8 +216,7 @@ async fn set_payload(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
@@ -260,7 +239,6 @@ async fn overwrite_payload(
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
-    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -275,8 +253,7 @@ async fn overwrite_payload(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
@@ -299,7 +276,6 @@ async fn delete_payload(
             Ok(pass) => pass,
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
-    let UpdateParams { wait, ordering } = params.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -314,8 +290,7 @@ async fn delete_payload(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
@@ -339,8 +314,6 @@ async fn clear_payload(
             Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let UpdateParams { wait, ordering } = params.into_inner();
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -354,8 +327,7 @@ async fn clear_payload(
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
@@ -400,16 +372,13 @@ async fn update_batch(
 
     let timing = Instant::now();
 
-    let UpdateParams { wait, ordering } = params.into_inner();
-
     // TODO(io_measurement): Measure upsertion io
     let response = do_batch_update_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operations.operations,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
         inference_token,
     )
@@ -427,15 +396,13 @@ async fn create_field_index(
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
-    let UpdateParams { wait, ordering } = params.into_inner();
 
     let response = do_create_index(
         dispatcher.into_inner(),
         collection.into_inner().name,
         operation,
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
@@ -451,15 +418,13 @@ async fn delete_field_index(
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
-    let UpdateParams { wait, ordering } = params.into_inner();
 
     let response = do_delete_index(
         dispatcher.into_inner(),
         collection.into_inner().name,
         field.name.clone(),
         InternalUpdateParams::default(),
-        wait,
-        ordering,
+        params.into_inner(),
         access,
     )
     .await;
