@@ -170,8 +170,8 @@ impl SimpleIdTracker {
                     deleted.set(internal, true);
                     // Drop mapping too
                     match external {
-                        PointIdType::NumId(num) => external_to_internal_num.remove(&num),
-                        PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(&uuid),
+                        PointIdType::NumId(num) => external_to_internal_num.remove(num),
+                        PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(uuid),
                     };
                     // Add synthetic version 0
                     internal_to_version.push(0);
