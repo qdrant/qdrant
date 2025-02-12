@@ -48,6 +48,17 @@ impl PartialSnapshotEntry for Segment {
     }
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        let segment_id = self
+            .current_path
+            .file_stem()
+            .and_then(|dir| dir.to_str())
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "failed to extract segment ID from segment path {}",
+                    self.current_path.display(),
+                ))
+            })?;
+
         let segment_version = self.version();
 
         let all_files = self.files();
@@ -131,6 +142,7 @@ impl PartialSnapshotEntry for Segment {
         );
 
         Ok(SegmentManifest {
+            segment_id: segment_id.into(),
             segment_version,
             file_versions,
         })
