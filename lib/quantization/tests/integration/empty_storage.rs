@@ -3,6 +3,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
 
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
+    use quantization::encoded_vectors_binary::EncodedVectorsBin;
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
     use quantization::EncodedVectorsPQ;
     use tempfile::Builder;
@@ -75,6 +76,42 @@ mod tests {
             .unwrap();
 
         EncodedVectorsPQ::<Vec<u8>>::load(
+            data_path.as_path(),
+            meta_path.as_path(),
+            &vector_parameters,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn empty_data_bq() {
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+
+        let vectors_count = 0;
+        let vector_dim = 8;
+        let vector_parameters = VectorParameters {
+            dim: vector_dim,
+            count: vectors_count,
+            distance_type: DistanceType::Dot,
+            invert: true,
+        };
+        let vector_data: Vec<Vec<f32>> = Default::default();
+
+        let encoded = EncodedVectorsBin::<u8, _>::encode(
+            vector_data.iter(),
+            Vec::<u8>::new(),
+            &vector_parameters,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+
+        let data_path = dir.path().join("data.bin");
+        let meta_path = dir.path().join("meta.json");
+        encoded
+            .save(data_path.as_path(), meta_path.as_path())
+            .unwrap();
+
+        EncodedVectorsBin::<u8, Vec<u8>>::load(
             data_path.as_path(),
             meta_path.as_path(),
             &vector_parameters,

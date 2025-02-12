@@ -58,11 +58,11 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_u8 = encoded.encode_query(&query);
+        let query_encoded = encoded.encode_query(&query);
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
+            let score = encoded.score_point(&query_encoded, index as u32, &counter);
             let orginal_score = dot_similarity(&query, vector);
             assert!((score - orginal_score).abs() <= error);
         }
@@ -104,13 +104,13 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_u8 = encoded.encode_query(&query);
+        let query_encoded = encoded.encode_query(&query);
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
-            let score = encoded.score_point(&query_u8, index as u32, &counter);
-            let orginal_score = -dot_similarity(&query, vector);
-            assert!((score - orginal_score).abs() <= error);
+            let score = encoded.score_point(&query_encoded, index as u32, &counter);
+            let original_score = -dot_similarity(&query, vector);
+            assert!((score - original_score).abs() <= error);
         }
     }
 
