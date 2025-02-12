@@ -12,9 +12,7 @@ use api::grpc::qdrant::{
 };
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
-use collection::operations::conversions::{
-    try_points_selector_from_grpc, write_ordering_from_proto,
-};
+use collection::operations::conversions::try_points_selector_from_grpc;
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -67,8 +65,7 @@ pub async fn upsert(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
         inference_token,
     )
@@ -108,8 +105,7 @@ pub async fn delete(
         collection_name,
         points_selector,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
         inference_token,
     )
@@ -163,8 +159,7 @@ pub async fn update_vectors(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
         inference_token,
     )
@@ -212,8 +207,7 @@ pub async fn delete_vectors(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -258,8 +252,7 @@ pub async fn set_payload(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -304,8 +297,7 @@ pub async fn overwrite_payload(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -348,8 +340,7 @@ pub async fn delete_payload(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -387,8 +378,7 @@ pub async fn clear_payload(
         collection_name,
         points_selector,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -662,8 +652,7 @@ pub async fn create_field_index(
         collection_name,
         operation,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -696,8 +685,7 @@ pub async fn create_field_index_internal(
         field_name,
         field_schema,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
     )
     .await?;
 
@@ -726,8 +714,7 @@ pub async fn delete_field_index(
         collection_name,
         field_name,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
         access,
     )
     .await?;
@@ -756,8 +743,7 @@ pub async fn delete_field_index_internal(
         collection_name,
         field_name,
         internal_params,
-        wait.unwrap_or(false),
-        write_ordering_from_proto(ordering)?,
+        UpdateParams::from_grpc(wait, ordering)?,
     )
     .await?;
 
@@ -810,12 +796,14 @@ pub async fn sync(
         ShardSelectorInternal::Empty
     };
 
+    let UpdateParams { wait, ordering } = UpdateParams::from_grpc(wait, ordering)?;
+
     let result = toc
         .update(
             &collection_name,
             OperationWithClockTag::new(collection_operation, clock_tag),
-            wait.unwrap_or(false),
-            write_ordering_from_proto(ordering)?,
+            wait,
+            ordering,
             shard_selector,
             access,
         )

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use api::rest::*;
 use collection::collection::Collection;
+use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::payload_ops::*;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -24,6 +25,28 @@ use validator::Validate;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
 use crate::common::inference::InferenceToken;
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
+pub struct UpdateParams {
+    #[serde(default)]
+    pub wait: bool,
+    #[serde(default)]
+    pub ordering: WriteOrdering,
+}
+
+impl UpdateParams {
+    pub fn from_grpc(
+        wait: Option<bool>,
+        ordering: Option<api::grpc::qdrant::WriteOrdering>,
+    ) -> tonic::Result<Self> {
+        let params = Self {
+            wait: wait.unwrap_or(false),
+            ordering: write_ordering_from_proto(ordering)?,
+        };
+
+        Ok(params)
+    }
+}
 
 #[derive(Copy, Clone, Debug, Default)]
 pub struct InternalUpdateParams {
@@ -203,14 +226,12 @@ pub struct CreateFieldIndex {
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: PointInsertOperations,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
     inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
@@ -239,6 +260,8 @@ pub async fn do_upsert_points(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -250,14 +273,12 @@ pub async fn do_upsert_points(
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_delete_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
     points: PointsSelector,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
     _inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
@@ -278,6 +299,8 @@ pub async fn do_delete_points(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -289,14 +312,12 @@ pub async fn do_delete_points(
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operation: UpdateVectors,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
     inference_token: InferenceToken,
 ) -> Result<UpdateResult, StorageError> {
@@ -318,6 +339,8 @@ pub async fn do_update_vectors(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -334,8 +357,7 @@ pub async fn do_delete_vectors(
     collection_name: String,
     operation: DeleteVectors,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
@@ -355,6 +377,8 @@ pub async fn do_delete_vectors(
     } = internal_params;
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
+
+    let UpdateParams { wait, ordering } = params;
 
     let mut result = None;
 
@@ -401,8 +425,7 @@ pub async fn do_set_payload(
     collection_name: String,
     operation: SetPayload,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
@@ -428,6 +451,8 @@ pub async fn do_set_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -444,8 +469,7 @@ pub async fn do_overwrite_payload(
     collection_name: String,
     operation: SetPayload,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     let SetPayload {
@@ -472,6 +496,8 @@ pub async fn do_overwrite_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -488,8 +514,7 @@ pub async fn do_delete_payload(
     collection_name: String,
     operation: DeletePayload,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     let DeletePayload {
@@ -513,6 +538,8 @@ pub async fn do_delete_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -529,8 +556,7 @@ pub async fn do_clear_payload(
     collection_name: String,
     points: PointsSelector,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
@@ -551,6 +577,8 @@ pub async fn do_clear_payload(
 
     let shard_selector = get_shard_selector_for_update(shard_id, shard_key);
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -562,14 +590,12 @@ pub async fn do_clear_payload(
     .await
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
     operations: Vec<UpdateOperation>,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
     inference_token: InferenceToken,
 ) -> Result<Vec<UpdateResult>, StorageError> {
@@ -582,8 +608,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.upsert,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                     inference_token.clone(),
                 )
@@ -595,8 +620,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.delete,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                     inference_token.clone(),
                 )
@@ -608,8 +632,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.set_payload,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                 )
                 .await
@@ -620,8 +643,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.overwrite_payload,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                 )
                 .await
@@ -632,8 +654,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.delete_payload,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                 )
                 .await
@@ -644,8 +665,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.clear_payload,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                 )
                 .await
@@ -656,8 +676,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.update_vectors,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                     inference_token.clone(),
                 )
@@ -669,8 +688,7 @@ pub async fn do_batch_update_points(
                     collection_name.clone(),
                     operation.delete_vectors,
                     internal_params,
-                    wait,
-                    ordering,
+                    params,
                     access.clone(),
                 )
                 .await
@@ -686,8 +704,7 @@ pub async fn do_create_index(
     collection_name: String,
     operation: CreateFieldIndex,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
@@ -727,8 +744,7 @@ pub async fn do_create_index(
         operation.field_name,
         Some(field_schema),
         internal_params,
-        wait,
-        ordering,
+        params,
     )
     .await
 }
@@ -739,8 +755,7 @@ pub async fn do_create_index_internal(
     field_name: PayloadKeyType,
     field_schema: Option<PayloadFieldSchema>,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::CreateIndex(CreateIndex {
@@ -760,6 +775,8 @@ pub async fn do_create_index_internal(
         ShardSelectorInternal::All
     };
 
+    let UpdateParams { wait, ordering } = params;
+
     toc.update(
         &collection_name,
         OperationWithClockTag::new(collection_operation, clock_tag),
@@ -776,8 +793,7 @@ pub async fn do_delete_index(
     collection_name: String,
     index_name: JsonPath,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
     access: Access,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
@@ -800,15 +816,7 @@ pub async fn do_delete_index(
         .submit_collection_meta_op(consensus_op, access, wait_timeout)
         .await?;
 
-    do_delete_index_internal(
-        toc,
-        collection_name,
-        index_name,
-        internal_params,
-        wait,
-        ordering,
-    )
-    .await
+    do_delete_index_internal(toc, collection_name, index_name, internal_params, params).await
 }
 
 pub async fn do_delete_index_internal(
@@ -816,8 +824,7 @@ pub async fn do_delete_index_internal(
     collection_name: String,
     index_name: JsonPath,
     internal_params: InternalUpdateParams,
-    wait: bool,
-    ordering: WriteOrdering,
+    params: UpdateParams,
 ) -> Result<UpdateResult, StorageError> {
     let collection_operation = CollectionUpdateOperations::FieldIndexOperation(
         FieldIndexOperations::DeleteIndex(index_name),
@@ -833,6 +840,8 @@ pub async fn do_delete_index_internal(
     } else {
         ShardSelectorInternal::All
     };
+
+    let UpdateParams { wait, ordering } = params;
 
     toc.update(
         &collection_name,
