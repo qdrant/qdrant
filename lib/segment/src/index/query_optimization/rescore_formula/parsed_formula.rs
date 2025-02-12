@@ -54,3 +54,42 @@ pub enum Operation {
         key: JsonPath,
     },
 }
+
+impl Expression {
+    pub fn new_sum(expressions: Vec<Expression>) -> Self {
+        Expression::Operation(Operation::Sum(expressions))
+    }
+
+    pub fn new_mult(expressions: Vec<Expression>) -> Self {
+        Expression::Operation(Operation::Mult(expressions))
+    }
+
+    pub fn new_div(left: Expression, right: Expression, by_zero_default: ScoreType) -> Self {
+        Expression::Operation(Operation::Div {
+            left: Box::new(left),
+            right: Box::new(right),
+            by_zero_default,
+        })
+    }
+
+    pub fn new_neg(expression: Expression) -> Self {
+        Expression::Operation(Operation::Neg(Box::new(expression)))
+    }
+
+    pub fn new_geo_distance(origin: GeoPoint, key: JsonPath) -> Self {
+        Expression::Operation(Operation::GeoDistance { origin, key })
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn new_payload_id(path: &str) -> Self {
+        Expression::Variable(VariableId::Payload(JsonPath::new(path)))
+    }
+
+    pub fn new_score_id(index: usize) -> Self {
+        Expression::Variable(VariableId::Score(index))
+    }
+
+    pub fn new_condition_id(index: ConditionId) -> Self {
+        Expression::Variable(VariableId::Condition(index))
+    }
+}

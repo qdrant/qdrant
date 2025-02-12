@@ -27,13 +27,24 @@ pub struct FormulaScorer<'a> {
     defaults: HashMap<VariableId, Value>,
 }
 
+struct PointVariables<'a> {
+    /// The scores in each prefetch for the point.
+    prefetch_scores: Vec<Option<ScoreType>>,
+    /// The retrieved values for the point. Not all jsonpaths in the formula may be present here.
+    payload_values: HashMap<JsonPath, Value>,
+    /// The evaluated conditions for the point. All conditions in the formula must be present.
+    conditions: HashMap<ConditionId, bool>,
+    /// The default values for all variables
+    defaults: &'a HashMap<VariableId, Value>,
+}
+
 impl FormulaScorer<'_> {
     pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         // Collect all variables
-        let mut variables = HashMap::new();
+        let mut payload_values = HashMap::new();
         for (path, retriever) in &self.payload_retrievers {
             if let Some(value) = retriever(point_id) {
-                variables.insert(path.clone(), value);
+                payload_values.insert(path.clone(), value);
             }
         }
 
@@ -45,67 +56,63 @@ impl FormulaScorer<'_> {
         }
 
         // Collect all scores for this point in the prefetch results
-        let mut scores = Vec::with_capacity(self.prefetches_scores.len());
+        let mut prefetch_scores = Vec::with_capacity(self.prefetches_scores.len());
         for score_map in self.prefetches_scores.iter() {
             let score = score_map.get(&point_id).copied();
-            scores.push(score);
+            prefetch_scores.push(score);
         }
 
-        self.formula
-            .evaluate(&scores, &variables, &conditions, &self.defaults)
+        let vars = PointVariables {
+            prefetch_scores,
+            payload_values,
+            conditions,
+            defaults: &self.defaults,
+        };
+
+        self.formula.evaluate(&vars)
     }
 }
 
 impl Expression {
     /// Evaluate the expression with the given scores, variables and conditions
-    ///
-    /// # Arguments
-    ///
-    /// * `scores` - The scores in each prefetch for the point
-    /// * `variables` - The retrieved variables for the point. If a variable is not found, the default will be used.
-    /// * `conditions` - The evaluated conditions for the point. All conditions must be provided.
-    /// * `defaults` - The default values for all variables
-    pub fn evaluate(
-        &self,
-        scores: &[Option<ScoreType>],
-        variables: &HashMap<JsonPath, Value>,
-        conditions: &HashMap<ConditionId, bool>,
-        defaults: &HashMap<VariableId, Value>,
-    ) -> OperationResult<ScoreType> {
+    fn evaluate(&self, vars: &PointVariables) -> OperationResult<ScoreType> {
         match self {
             Expression::Constant(c) => Ok(*c),
             Expression::Variable(v) => match v {
-                VariableId::Score(idx) => Ok(scores[*idx]
+                VariableId::Score(prefetch_idx) => Ok(vars
+                    .prefetch_scores
+                    .get(*prefetch_idx)
+                    .copied()
+                    .flatten()
                     .or_else(|| {
-                        defaults
-                            .get(&VariableId::Score(*idx))
+                        vars.defaults
+                            .get(&VariableId::Score(*prefetch_idx))
                             // if `as_f64` fails, we use the default score
                             .and_then(|v| v.as_f64())
                             .map(|v| v as ScoreType)
                     })
                     .unwrap_or(DEFAULT_SCORE)),
-                VariableId::Payload(path) => variables
+                VariableId::Payload(path) => Ok(vars
+                    .payload_values
                     .get(path)
                     .and_then(|value| value.as_f64())
                     .or_else(|| {
-                        defaults
+                        vars.defaults
                             .get(&VariableId::Payload(path.clone()))
                             .and_then(|value| value.as_f64())
                     })
-                    .ok_or_else(|| OperationError::VariableTypeError {
-                        field_name: path.clone(),
-                        expected_type: "number".into(),
-                    })
-                    .map(|v| v as ScoreType),
+                    .map(|v| v as ScoreType)
+                    .unwrap_or(DEFAULT_SCORE)),
                 VariableId::Condition(id) => {
-                    let value = conditions
+                    let value = vars
+                        .conditions
                         .get(id)
                         .expect("All conditions should be provided");
                     let score = if *value { 1.0 } else { 0.0 };
                     Ok(score)
                 }
             },
-            Expression::Operation(op) => op.evaluate(scores, variables, conditions, defaults),
+            Expression::Operation(op) => op.evaluate(vars),
         }
     }
 }
@@ -119,20 +126,14 @@ impl Operation {
     /// * `variables` - The retrieved variables for the point. If a variable is not found, the default will be used.
     /// * `conditions` - The evaluated conditions for the point. All conditions must be provided.
     /// * `defaults` - The default values for all variables
-    fn evaluate(
-        &self,
-        scores: &[Option<ScoreType>],
-        variables: &HashMap<JsonPath, Value>,
-        conditions: &HashMap<ConditionId, bool>,
-        defaults: &HashMap<VariableId, Value>,
-    ) -> OperationResult<ScoreType> {
+    fn evaluate(&self, vars: &PointVariables) -> OperationResult<ScoreType> {
         match self {
             Operation::Mult(expressions) => expressions.iter().try_fold(1.0, |acc, expr| {
-                let value = expr.evaluate(scores, variables, conditions, defaults)?;
+                let value = expr.evaluate(vars)?;
                 Ok(acc * value)
             }),
             Operation::Sum(expressions) => expressions.iter().try_fold(0.0, |acc, expr| {
-                let value = expr.evaluate(scores, variables, conditions, defaults)?;
+                let value = expr.evaluate(vars)?;
                 Ok(acc + value)
             }),
             Operation::Div {
@@ -140,8 +141,8 @@ impl Operation {
                 right,
                 by_zero_default,
             } => {
-                let left = left.evaluate(scores, variables, conditions, defaults)?;
-                let right = right.evaluate(scores, variables, conditions, defaults)?;
+                let left = left.evaluate(vars)?;
+                let right = right.evaluate(vars)?;
                 if right == 0.0 {
                     Ok(*by_zero_default)
                 } else {
@@ -149,15 +150,16 @@ impl Operation {
                 }
             }
             Operation::Neg(expr) => {
-                let value = expr.evaluate(scores, variables, conditions, defaults)?;
+                let value = expr.evaluate(vars)?;
                 Ok(value.neg())
             }
             Operation::GeoDistance { origin, key } => {
-                let value: GeoPoint = variables
+                let value: GeoPoint = vars
+                    .payload_values
                     .get(key)
                     .and_then(|value| serde_json::from_value(value.clone()).ok())
                     .or_else(|| {
-                        defaults
+                        vars.defaults
                             .get(&VariableId::Payload(key.clone()))
                             .and_then(|value| serde_json::from_value(value.clone()).ok())
                     })
@@ -169,5 +171,97 @@ impl Operation {
                 Ok(Haversine::distance((*origin).into(), value.into()) as ScoreType)
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "testing")]
+mod tests {
+    use std::collections::HashMap;
+
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+    use crate::json_path::JsonPath;
+
+    const FIELD_NAME: &str = "field_name";
+    const NO_VALUE_FIELD_NAME: &str = "no_value_field_name";
+
+    fn make_point_variables(defaults: &HashMap<VariableId, Value>) -> PointVariables {
+        let payload_values = [(JsonPath::new(FIELD_NAME), json!(85.0))]
+            .into_iter()
+            .collect();
+
+        let conditions = [(0, true), (1, false)].into_iter().collect();
+
+        PointVariables {
+            prefetch_scores: vec![Some(1.0), Some(2.0)],
+            payload_values,
+            conditions,
+            defaults,
+        }
+    }
+
+    #[rstest]
+    // Basic expressions, just variables
+    #[case(Expression::Constant(5.0), 5.0)]
+    #[case(Expression::new_score_id(0), 1.0)]
+    #[case(Expression::new_score_id(1), 2.0)]
+    #[case(Expression::new_payload_id(FIELD_NAME), 85.0)]
+    #[case(Expression::new_condition_id(0), 1.0)]
+    #[case(Expression::new_condition_id(1), 0.0)]
+    // Operations
+    #[case(Expression::new_sum(vec![
+        Expression::Constant(1.0),
+        Expression::new_score_id(0),
+        Expression::new_payload_id(FIELD_NAME),
+        Expression::new_condition_id(0),
+    ]), 1.0 + 1.0 + 85.0 + 1.0)]
+    #[case(Expression::new_mult(vec![
+        Expression::Constant(2.0),
+        Expression::new_score_id(0),
+        Expression::new_payload_id(FIELD_NAME),
+        Expression::new_condition_id(0),
+    ]), 2.0 * 1.0 * 85.0 * 1.0)]
+    #[case(Expression::Operation(Operation::Div {
+        left: Box::new(Expression::Constant(10.0)),
+        right: Box::new(Expression::new_score_id(0)),
+        by_zero_default: f32::INFINITY,
+    }), 10.0 / 1.0)]
+    #[case(Expression::new_neg(Expression::Constant(10.0)), -10.0)]
+    #[test]
+    fn test_evaluation(#[case] expr: Expression, #[case] expected: ScoreType) {
+        let defaults = HashMap::new();
+        let vars = make_point_variables(&defaults);
+
+        assert_eq!(expr.evaluate(&vars).unwrap(), expected);
+    }
+
+    // Default values
+    #[rstest]
+    // Defined default score
+    #[case(Expression::new_score_id(3), 1.5)]
+    // score idx not defined
+    #[case(Expression::new_score_id(10), DEFAULT_SCORE)]
+    // missing value in payload
+    #[case(Expression::new_payload_id(NO_VALUE_FIELD_NAME), 85.0)]
+    // missing value and no default value provided
+    #[case(Expression::new_payload_id("missing_field"), DEFAULT_SCORE)]
+    #[test]
+    fn test_default_values(#[case] expr: Expression, #[case] expected: ScoreType) {
+        let defaults = [
+            (VariableId::Score(3), json!(1.5)),
+            (
+                VariableId::Payload(JsonPath::new(NO_VALUE_FIELD_NAME)),
+                json!(85.0),
+            ),
+        ]
+        .into_iter()
+        .collect();
+
+        let vars = make_point_variables(&defaults);
+
+        assert_eq!(expr.evaluate(&vars).unwrap(), expected);
     }
 }
