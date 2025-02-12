@@ -60,6 +60,7 @@ impl CollectionSizeStatsCache {
 pub(crate) struct CollectionSizeAtomicStats {
     vector_storage_size: AtomicUsize,
     payload_storage_size: AtomicUsize,
+    points_count: AtomicUsize,
 }
 
 impl CollectionSizeAtomicStats {
@@ -73,15 +74,22 @@ impl CollectionSizeAtomicStats {
         self.payload_storage_size.load(Ordering::Relaxed)
     }
 
+    /// Get the points count.
+    pub fn get_points_count(&self) -> usize {
+        self.points_count.load(Ordering::Relaxed)
+    }
+
     fn new(data: CollectionSizeStats) -> Self {
         let CollectionSizeStats {
             vector_storage_size,
             payload_storage_size,
+            points_count,
         } = data;
 
         Self {
             vector_storage_size: AtomicUsize::new(vector_storage_size),
             payload_storage_size: AtomicUsize::new(payload_storage_size),
+            points_count: AtomicUsize::new(points_count),
         }
     }
 
@@ -89,11 +97,13 @@ impl CollectionSizeAtomicStats {
         let CollectionSizeStats {
             vector_storage_size,
             payload_storage_size,
+            points_count,
         } = new_stats;
         self.vector_storage_size
             .store(vector_storage_size, Ordering::Relaxed);
         self.payload_storage_size
             .store(payload_storage_size, Ordering::Relaxed);
+        self.points_count.store(points_count, Ordering::Relaxed);
     }
 }
 
@@ -104,6 +114,8 @@ pub struct CollectionSizeStats {
     pub vector_storage_size: usize,
     /// Estimated amount of payload storage size.
     pub payload_storage_size: usize,
+    /// Estimated amount of points.
+    pub points_count: usize,
 }
 
 impl CollectionSizeStats {
@@ -111,24 +123,29 @@ impl CollectionSizeStats {
         let CollectionSizeStats {
             vector_storage_size,
             payload_storage_size,
+            points_count,
         } = other;
 
         self.vector_storage_size += vector_storage_size;
         self.payload_storage_size += payload_storage_size;
+        self.points_count += points_count;
     }
 
     pub(crate) fn multiplied_with(self, factor: usize) -> Self {
         let CollectionSizeStats {
             mut vector_storage_size,
             mut payload_storage_size,
+            mut points_count,
         } = self;
 
         vector_storage_size *= factor;
         payload_storage_size *= factor;
+        points_count *= factor;
 
         Self {
             vector_storage_size,
             payload_storage_size,
+            points_count,
         }
     }
 }

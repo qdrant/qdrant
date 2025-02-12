@@ -1718,6 +1718,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
             max_collection_payload_size_bytes: value
                 .max_collection_payload_size_bytes
                 .map(|i| i as usize),
+            max_points_count: value.max_points_count.map(|i| i as usize),
             filter_max_conditions: value.filter_max_conditions.map(|i| i as usize),
             condition_max_size: value.condition_max_size.map(|i| i as usize),
             multivector_config: value
@@ -1813,6 +1814,7 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
                 .multivector_config
                 .map(StrictModeMultivectorConfig::from),
             sparse_config: value.sparse_config.map(StrictModeSparseConfig::from),
+            max_points_count: value.max_points_count.map(|i| i as u64),
         }
     }
 }

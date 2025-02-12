@@ -7338,6 +7338,13 @@
             "minimum": 0,
             "nullable": true
           },
+          "max_points_count": {
+            "description": "Max number of points estimated in a collection",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
           "filter_max_conditions": {
             "description": "Max conditions a filter can have.",
             "type": "integer",

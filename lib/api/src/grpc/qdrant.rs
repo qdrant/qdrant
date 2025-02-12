@@ -527,6 +527,8 @@ pub struct StrictModeConfig {
     pub multivector_config: ::core::option::Option<StrictModeMultivectorConfig>,
     #[prost(message, optional, tag = "17")]
     pub sparse_config: ::core::option::Option<StrictModeSparseConfig>,
+    #[prost(uint64, optional, tag = "18")]
+    pub max_points_count: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -95,6 +95,7 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
         max_collection_payload_size_bytes: value
             .max_collection_payload_size_bytes
             .map(|i| i as usize),
+        max_points_count: value.max_points_count.map(|i| i as usize),
         filter_max_conditions: value.filter_max_conditions.map(|i| i as usize),
         condition_max_size: value.condition_max_size.map(|i| i as usize),
         multivector_config: value
