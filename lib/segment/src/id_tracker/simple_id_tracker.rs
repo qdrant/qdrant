@@ -154,9 +154,9 @@ impl SimpleIdTracker {
         );
         for (internal, external) in internal_to_external.iter_mut().enumerate() {
             if deleted[internal] {
-                log::debug!("Adding synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}");
                 // Add synthetic version 0
                 internal_to_version.push(0);
+                log::debug!("Added synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}");
                 continue;
             }
             let external_key = Self::store_key(external);
@@ -165,7 +165,7 @@ impl SimpleIdTracker {
                 None => {
                     log::warn!(
                         "Found point without version in version database, external id: {external}, internal id: {internal}\n\
-                        Marking as deleted and adding synthetic version 0",
+                        \tThis point will be removed from the id tracker",
                     );
                     deleted.set(internal, true);
                     // Drop mapping too
@@ -173,6 +173,8 @@ impl SimpleIdTracker {
                         PointIdType::NumId(num) => external_to_internal_num.remove(num),
                         PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(uuid),
                     };
+                    // Persist mapping deletion
+                    mapping_db_wrapper.remove(&external_key)?;
                     // Add synthetic version 0
                     internal_to_version.push(0);
                     continue;
