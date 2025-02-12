@@ -807,6 +807,11 @@ pub struct StrictModeConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_collection_payload_size_bytes: Option<usize>,
 
+    /// Max number of points estimated in a collection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_points_count: Option<usize>,
+
     /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter_max_conditions: Option<usize>,
@@ -845,6 +850,7 @@ impl Hash for StrictModeConfig {
             read_rate_limit,
             write_rate_limit,
             max_collection_payload_size_bytes,
+            max_points_count,
             filter_max_conditions,
             condition_max_size,
             multivector_config,
@@ -859,7 +865,7 @@ impl Hash for StrictModeConfig {
             search_max_hnsw_ef,
             search_allow_exact,
             upsert_max_batchsize,
-            max_collection_vector_size_bytes,
+            (max_collection_vector_size_bytes, max_points_count),
             (read_rate_limit, write_rate_limit),
             (
                 max_collection_payload_size_bytes,
