@@ -156,7 +156,6 @@ impl SimpleIdTracker {
             if deleted[internal] {
                 // Add synthetic version 0
                 internal_to_version.push(0);
-                log::debug!("Added synthetic version 0 to a deleted point, external id: {external}, internal id: {internal}");
                 continue;
             }
             let external_key = Self::store_key(external);
