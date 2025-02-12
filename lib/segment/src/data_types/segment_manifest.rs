@@ -5,6 +5,7 @@ use crate::types::SeqNumberType;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SegmentManifest {
+    pub segment_id: String,
     pub segment_version: SeqNumberType,
     pub file_versions: HashMap<PathBuf, FileVersion>,
 }
