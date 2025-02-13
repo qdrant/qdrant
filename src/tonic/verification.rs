@@ -11,22 +11,22 @@ use tonic::Status;
 
 /// Trait for different ways of providing something with `toc` that may do additional checks eg. for Strict mode.
 pub trait CheckedTocProvider {
-    async fn check_strict_mode<'b>(
-        &'b self,
+    async fn check_strict_mode(
+        &self,
         request: &impl StrictModeVerification,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>;
+    ) -> Result<&Arc<TableOfContent>, Status>;
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification;
 }
@@ -42,26 +42,26 @@ impl<'a> UncheckedTocProvider<'a> {
     }
 }
 
-impl CheckedTocProvider for UncheckedTocProvider<'_> {
-    async fn check_strict_mode<'b>(
-        &'b self,
+impl<'a> CheckedTocProvider for UncheckedTocProvider<'a> {
+    async fn check_strict_mode(
+        &self,
         _request: &impl StrictModeVerification,
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status> {
+    ) -> Result<&Arc<TableOfContent>, Status> {
         // No checks here
         Ok(self.toc)
     }
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         _requests: &[I],
         _conv: impl Fn(&I) -> &R,
         _collection_name: &str,
         _timeout: Option<usize>,
         _access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification,
     {
@@ -81,7 +81,7 @@ impl<'a> StrictModeCheckedTocProvider<'a> {
     }
 }
 
-impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
+impl<'a> CheckedTocProvider for StrictModeCheckedTocProvider<'a> {
     async fn check_strict_mode(
         &self,
         request: &impl StrictModeVerification,
@@ -94,14 +94,14 @@ impl CheckedTocProvider for StrictModeCheckedTocProvider<'_> {
         Ok(self.dispatcher.toc(access, &pass))
     }
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification,
     {
@@ -131,7 +131,7 @@ impl<'a> StrictModeCheckedInternalTocProvider<'a> {
     }
 }
 
-impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
+impl<'a> CheckedTocProvider for StrictModeCheckedInternalTocProvider<'a> {
     async fn check_strict_mode(
         &self,
         request: &impl StrictModeVerification,
@@ -143,14 +143,14 @@ impl CheckedTocProvider for StrictModeCheckedInternalTocProvider<'_> {
         Ok(self.toc)
     }
 
-    async fn check_strict_mode_batch<'b, I, R>(
-        &'b self,
+    async fn check_strict_mode_batch<I, R>(
+        &self,
         requests: &[I],
         conv: impl Fn(&I) -> &R,
         collection_name: &str,
         timeout: Option<usize>,
         access: &Access,
-    ) -> Result<&'b Arc<TableOfContent>, Status>
+    ) -> Result<&Arc<TableOfContent>, Status>
     where
         R: StrictModeVerification,
     {
