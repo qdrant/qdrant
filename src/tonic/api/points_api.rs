@@ -26,10 +26,10 @@ use super::query_common::*;
 use super::update_common::*;
 use super::validate;
 use crate::common::inference::extract_token;
+use crate::common::strict_mode::*;
 use crate::common::update::InternalUpdateParams;
 use crate::settings::ServiceConfig;
 use crate::tonic::auth::extract_access;
-use crate::tonic::verification::StrictModeCheckedTocProvider;
 
 pub struct PointsService {
     dispatcher: Arc<Dispatcher>,

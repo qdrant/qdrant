@@ -34,8 +34,8 @@ use tonic::{Response, Status};
 use crate::common::inference::InferenceToken;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
+use crate::common::strict_mode::*;
 use crate::common::update::*;
-use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 
 pub async fn upsert(
     toc_provider: impl CheckedTocProvider,
