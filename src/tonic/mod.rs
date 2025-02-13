@@ -2,7 +2,6 @@ mod api;
 mod auth;
 mod logging;
 mod tonic_telemetry;
-pub(super) mod verification;
 
 use std::io;
 use std::net::{IpAddr, SocketAddr};
@@ -43,6 +42,7 @@ use tonic::{Request, Response, Status};
 use crate::common::auth::AuthKeys;
 use crate::common::helpers;
 use crate::common::http_client::HttpClient;
+pub(crate) use crate::common::strict_mode as verification;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
 use crate::tonic::api::collections_api::CollectionsService;

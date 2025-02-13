@@ -11,6 +11,7 @@ pub mod pyroscope_state;
 pub mod query;
 pub mod snapshots;
 pub mod stacktrace;
+pub mod strict_mode;
 pub mod strings;
 pub mod telemetry;
 pub mod telemetry_ops;
