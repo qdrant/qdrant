@@ -60,13 +60,9 @@ pub async fn upsert(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     });
 
-    let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let (result, inference_usage) = do_upsert_points(
-        toc.clone(),
+        toc_provider,
         collection_name,
         operation,
         internal_params,
@@ -106,13 +102,9 @@ pub async fn delete(
         Some(p) => try_points_selector_from_grpc(p, shard_key_selector)?,
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&points_selector, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let result = do_delete_points(
-        toc.clone(),
+        toc_provider,
         collection_name,
         points_selector,
         internal_params,
@@ -162,13 +154,9 @@ pub async fn update_vectors(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let (result, usage) = do_update_vectors(
-        toc.clone(),
+        toc_provider,
         collection_name,
         operation,
         internal_params,
@@ -217,13 +205,9 @@ pub async fn delete_vectors(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let result = do_delete_vectors(
-        toc.clone(),
+        toc_provider,
         collection_name,
         operation,
         internal_params,
@@ -265,13 +249,9 @@ pub async fn set_payload(
         key,
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let result = do_set_payload(
-        toc.clone(),
+        toc_provider,
         collection_name,
         operation,
         internal_params,
@@ -313,13 +293,9 @@ pub async fn overwrite_payload(
         key: None,
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let result = do_overwrite_payload(
-        toc.clone(),
+        toc_provider,
         collection_name,
         operation,
         internal_params,
@@ -359,13 +335,9 @@ pub async fn delete_payload(
         shard_key: shard_key_selector.map(ShardKeySelector::from),
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&operation, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let result = do_delete_payload(
-        toc.clone(),
+        toc_provider,
         collection_name,
         operation,
         internal_params,
@@ -400,13 +372,9 @@ pub async fn clear_payload(
         Some(p) => try_points_selector_from_grpc(p, shard_key_selector)?,
     };
 
-    let toc = toc_provider
-        .check_strict_mode(&points_selector, &collection_name, None, &access)
-        .await?;
-
     let timing = Instant::now();
     let result = do_clear_payload(
-        toc.clone(),
+        toc_provider,
         collection_name,
         points_selector,
         internal_params,

@@ -71,6 +71,7 @@ impl CheckedTocProvider for UncheckedTocProvider<'_> {
 }
 
 /// Provider for TableOfContent that requires Strict mode to be checked.
+#[derive(Clone)]
 pub struct StrictModeCheckedTocProvider<'a> {
     dispatcher: &'a Dispatcher,
 }

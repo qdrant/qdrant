@@ -27,6 +27,7 @@ use validator::Validate;
 use crate::common::inference::InferenceToken;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
+use crate::common::strict_mode::*;
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct UpdateParams {
@@ -231,7 +232,7 @@ pub struct CreateFieldIndex {
 
 #[expect(clippy::too_many_arguments)]
 pub async fn do_upsert_points(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     operation: PointInsertOperations,
     internal_params: InternalUpdateParams,
@@ -240,36 +241,33 @@ pub async fn do_upsert_points(
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
-    let (shard_key, internal_operation, usage_opt) = match operation {
-        PointInsertOperations::PointsBatch(batch_struct) => {
-            let (batch_persisted_data, usage) =
-                convert_batch(batch_struct.batch, inference_token).await?;
-            (
-                batch_struct.shard_key,
-                PointInsertOperationsInternal::PointsBatch(batch_persisted_data),
-                usage,
-            )
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
+    let (operation, shard_key, usage) = match operation {
+        PointInsertOperations::PointsBatch(batch) => {
+            let PointsBatch { batch, shard_key } = batch;
+            let (batch, usage) = convert_batch(batch, inference_token).await?;
+            let operation = PointInsertOperationsInternal::PointsBatch(batch);
+            (operation, shard_key, usage)
         }
-        PointInsertOperations::PointsList(list_struct) => {
-            let (points_persisted_data, usage) =
-                convert_point_struct(list_struct.points, InferenceType::Update, inference_token)
-                    .await?;
-            (
-                list_struct.shard_key,
-                PointInsertOperationsInternal::PointsList(points_persisted_data),
-                usage,
-            )
+        PointInsertOperations::PointsList(list) => {
+            let PointsList { points, shard_key } = list;
+            let (list, usage) =
+                convert_point_struct(points, InferenceType::Update, inference_token).await?;
+            let operation = PointInsertOperationsInternal::PointsList(list);
+            (operation, shard_key, usage)
         }
     };
 
-    let collection_operation = CollectionUpdateOperations::PointOperation(
-        PointOperations::UpsertPoints(internal_operation),
-    );
+    let operation =
+        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
 
-    let update_result = update(
-        &toc,
+    let result = update(
+        toc,
         &collection_name,
-        collection_operation,
+        operation,
         internal_params,
         params,
         shard_key,
@@ -278,11 +276,11 @@ pub async fn do_upsert_points(
     )
     .await?;
 
-    Ok((update_result, usage_opt))
+    Ok((result, usage))
 }
 
 pub async fn do_delete_points(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     points: PointsSelector,
     internal_params: InternalUpdateParams,
@@ -290,7 +288,11 @@ pub async fn do_delete_points(
     access: Access,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
-    let (point_operation, shard_key) = match points {
+    let toc = toc_provider
+        .check_strict_mode(&points, &collection_name, None, &access)
+        .await?;
+
+    let (operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
             (PointOperations::DeletePoints { ids: points }, shard_key)
         }
@@ -299,10 +301,10 @@ pub async fn do_delete_points(
         }
     };
 
-    let operation = CollectionUpdateOperations::PointOperation(point_operation);
+    let operation = CollectionUpdateOperations::PointOperation(operation);
 
     update(
-        &toc,
+        toc,
         &collection_name,
         operation,
         internal_params,
@@ -316,7 +318,7 @@ pub async fn do_delete_points(
 
 #[expect(clippy::too_many_arguments)]
 pub async fn do_update_vectors(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     operation: UpdateVectors,
     internal_params: InternalUpdateParams,
@@ -325,21 +327,23 @@ pub async fn do_update_vectors(
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let UpdateVectors { points, shard_key } = operation;
 
-    let (persisted_points, usage_opt) =
+    let (points, usage) =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
-    let collection_operation = CollectionUpdateOperations::VectorOperation(
-        VectorOperations::UpdateVectors(UpdateVectorsOp {
-            points: persisted_points,
-        }),
-    );
+    let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
+        UpdateVectorsOp { points },
+    ));
 
-    let update_result = update(
-        &toc,
+    let result = update(
+        toc,
         &collection_name,
-        collection_operation,
+        operation,
         internal_params,
         params,
         shard_key,
@@ -348,11 +352,11 @@ pub async fn do_update_vectors(
     )
     .await?;
 
-    Ok((update_result, usage_opt))
+    Ok((result, usage))
 }
 
 pub async fn do_delete_vectors(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     operation: DeleteVectors,
     internal_params: InternalUpdateParams,
@@ -361,6 +365,10 @@ pub async fn do_delete_vectors(
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
+
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
 
     let DeleteVectors {
         vector,
@@ -381,7 +389,7 @@ pub async fn do_delete_vectors(
 
         result = Some(
             update(
-                &toc,
+                toc,
                 &collection_name,
                 operation,
                 internal_params,
@@ -400,7 +408,7 @@ pub async fn do_delete_vectors(
 
         result = Some(
             update(
-                &toc,
+                toc,
                 &collection_name,
                 operation,
                 internal_params,
@@ -417,7 +425,7 @@ pub async fn do_delete_vectors(
 }
 
 pub async fn do_set_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     operation: SetPayload,
     internal_params: InternalUpdateParams,
@@ -425,6 +433,10 @@ pub async fn do_set_payload(
     access: Access,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let SetPayload {
         points,
         payload,
@@ -442,7 +454,7 @@ pub async fn do_set_payload(
         }));
 
     update(
-        &toc,
+        toc,
         &collection_name,
         operation,
         internal_params,
@@ -455,7 +467,7 @@ pub async fn do_set_payload(
 }
 
 pub async fn do_overwrite_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     operation: SetPayload,
     internal_params: InternalUpdateParams,
@@ -463,6 +475,10 @@ pub async fn do_overwrite_payload(
     access: Access,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let SetPayload {
         points,
         payload,
@@ -481,7 +497,7 @@ pub async fn do_overwrite_payload(
         }));
 
     update(
-        &toc,
+        toc,
         &collection_name,
         operation,
         internal_params,
@@ -494,7 +510,7 @@ pub async fn do_overwrite_payload(
 }
 
 pub async fn do_delete_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     operation: DeletePayload,
     internal_params: InternalUpdateParams,
@@ -502,6 +518,10 @@ pub async fn do_delete_payload(
     access: Access,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
+    let toc = toc_provider
+        .check_strict_mode(&operation, &collection_name, None, &access)
+        .await?;
+
     let DeletePayload {
         keys,
         points,
@@ -517,7 +537,7 @@ pub async fn do_delete_payload(
         }));
 
     update(
-        &toc,
+        toc,
         &collection_name,
         operation,
         internal_params,
@@ -530,7 +550,7 @@ pub async fn do_delete_payload(
 }
 
 pub async fn do_clear_payload(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider,
     collection_name: String,
     points: PointsSelector,
     internal_params: InternalUpdateParams,
@@ -538,6 +558,10 @@ pub async fn do_clear_payload(
     access: Access,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
+    let toc = toc_provider
+        .check_strict_mode(&points, &collection_name, None, &access)
+        .await?;
+
     let (point_operation, shard_key) = match points {
         PointsSelector::PointIdsSelector(PointIdsList { points, shard_key }) => {
             (PayloadOps::ClearPayload { points }, shard_key)
@@ -550,7 +574,7 @@ pub async fn do_clear_payload(
     let operation = CollectionUpdateOperations::PayloadOperation(point_operation);
 
     update(
-        &toc,
+        toc,
         &collection_name,
         operation,
         internal_params,
@@ -564,7 +588,7 @@ pub async fn do_clear_payload(
 
 #[expect(clippy::too_many_arguments)]
 pub async fn do_batch_update_points(
-    toc: Arc<TableOfContent>,
+    toc_provider: impl CheckedTocProvider + Clone,
     collection_name: String,
     operations: Vec<UpdateOperation>,
     internal_params: InternalUpdateParams,
@@ -579,8 +603,8 @@ pub async fn do_batch_update_points(
     for operation in operations {
         let current_update_result = match operation {
             UpdateOperation::Upsert(operation) => {
-                let (update_res, usage_opt) = do_upsert_points(
-                    toc.clone(),
+                let (result, usage) = do_upsert_points(
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.upsert,
                     internal_params,
@@ -590,12 +614,13 @@ pub async fn do_batch_update_points(
                     hw_measurement_acc.clone(),
                 )
                 .await?;
-                inference_usage.merge_opt(usage_opt);
-                update_res
+
+                inference_usage.merge_opt(usage);
+                result
             }
             UpdateOperation::Delete(operation) => {
                 do_delete_points(
-                    toc.clone(),
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.delete,
                     internal_params,
@@ -607,7 +632,7 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::SetPayload(operation) => {
                 do_set_payload(
-                    toc.clone(),
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.set_payload,
                     internal_params,
@@ -619,7 +644,7 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::OverwritePayload(operation) => {
                 do_overwrite_payload(
-                    toc.clone(),
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.overwrite_payload,
                     internal_params,
@@ -631,7 +656,7 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::DeletePayload(operation) => {
                 do_delete_payload(
-                    toc.clone(),
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.delete_payload,
                     internal_params,
@@ -643,7 +668,7 @@ pub async fn do_batch_update_points(
             }
             UpdateOperation::ClearPayload(operation) => {
                 do_clear_payload(
-                    toc.clone(),
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.clear_payload,
                     internal_params,
@@ -654,8 +679,8 @@ pub async fn do_batch_update_points(
                 .await?
             }
             UpdateOperation::UpdateVectors(operation) => {
-                let (update_res, usage_opt) = do_update_vectors(
-                    toc.clone(),
+                let (result, usage) = do_update_vectors(
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.update_vectors,
                     internal_params,
@@ -665,12 +690,13 @@ pub async fn do_batch_update_points(
                     hw_measurement_acc.clone(),
                 )
                 .await?;
-                inference_usage.merge_opt(usage_opt);
-                update_res
+
+                inference_usage.merge_opt(usage);
+                result
             }
             UpdateOperation::DeleteVectors(operation) => {
                 do_delete_vectors(
-                    toc.clone(),
+                    toc_provider.clone(),
                     collection_name.clone(),
                     operation.delete_vectors,
                     internal_params,
@@ -684,6 +710,7 @@ pub async fn do_batch_update_points(
 
         results.push(current_update_result);
     }
+
     Ok((results, inference_usage.into_non_empty()))
 }
 
