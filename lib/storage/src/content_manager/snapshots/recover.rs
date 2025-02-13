@@ -140,7 +140,9 @@ async fn _do_recover_from_snapshot(
     let snapshot_config = CollectionConfigInternal::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
-    let collection = match toc.get_collection(&collection_pass).await.ok() {
+    let collection = toc.get_collection(&collection_pass).await.ok();
+    let collection_did_not_exist = collection.is_none();
+    let collection = match collection {
         Some(collection) => collection,
         None => {
             log::debug!("Collection {collection_pass} does not exist, creating it");
@@ -220,7 +222,7 @@ async fn _do_recover_from_snapshot(
 
             // TODO:
             //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
-            //   but `recover_local_shard_from` requires `cancel::CanellationToken` argument *now*,
+            //   but `recover_local_shard_from` requires `cancel::CancellationToken` argument *now*,
             //   so we provide a token that is never triggered (in this case `recover_local_shard_from`
             //   works *exactly* as before the `cancel::CancellationToken` parameter was added to it)
             let recovered = collection
@@ -229,11 +231,28 @@ async fn _do_recover_from_snapshot(
                     *shard_id,
                     cancel::CancellationToken::new(),
                 )
-                .await?;
+                .await;
 
-            if !recovered {
-                log::debug!("Shard {} is not in snapshot", shard_id);
-                continue;
+            match recovered {
+                Ok(recovered) => {
+                    if !recovered {
+                        log::debug!("Shard {} is not in snapshot", shard_id);
+                        continue;
+                    }
+                }
+                Err(err) => {
+                    log::error!("Failed to recover shard {}: {err}", shard_id);
+                    // delete whole collection dir if it was created to not leave a valid config behind
+                    if collection_did_not_exist {
+                        let collection_path = toc.get_collection_path(&collection_pass.to_string());
+                        log::debug!(
+                            "Deleting collection directory for failed snapshot recovery: {:?}",
+                            collection_path
+                        );
+                        tokio::fs::remove_dir_all(&collection_path).await?;
+                    }
+                    return Err(err.into());
+                }
             }
 
             // If this is the only replica, we can activate it

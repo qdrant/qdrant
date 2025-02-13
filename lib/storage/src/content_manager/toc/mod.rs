@@ -641,7 +641,7 @@ impl TableOfContent {
         Ok(path)
     }
 
-    fn get_collection_path(&self, collection_name: &str) -> PathBuf {
+    pub fn get_collection_path(&self, collection_name: &str) -> PathBuf {
         Path::new(&self.storage_config.storage_path)
             .join(COLLECTIONS_DIR)
             .join(collection_name)
