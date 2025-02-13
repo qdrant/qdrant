@@ -32,6 +32,7 @@ pub trait CheckedTocProvider {
 }
 
 /// Simple provider for TableOfContent that doesn't do any checks.
+#[derive(Clone)]
 pub struct UncheckedTocProvider<'a> {
     toc: &'a Arc<TableOfContent>,
 }

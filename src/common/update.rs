@@ -597,6 +597,24 @@ pub async fn do_batch_update_points(
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
+    // Check strict mode for all batch operations, *before applying* them
+    let mut toc = None;
+
+    for operation in &operations {
+        toc = toc_provider
+            .check_strict_mode(operation, &collection_name, None, &access)
+            .await?
+            .into();
+    }
+
+    let Some(toc) = toc else {
+        // Batch is empty, return empty result vector
+        return Ok((Vec::new(), None));
+    };
+
+    // Pass unchecked ToC provider into `do_*` functions, because we already checked strict mode
+    let toc_provider = UncheckedTocProvider::new_unchecked(toc);
+
     let mut results = Vec::with_capacity(operations.len());
     let mut inference_usage = InferenceUsage::default();
 
