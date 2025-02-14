@@ -47,6 +47,14 @@ impl InvertedIndexBuilder {
 
     /// Consumes the builder and returns an InvertedIndexRam
     pub fn build(self) -> InvertedIndexRam {
+        if self.posting_builders.is_empty() {
+            return InvertedIndexRam {
+                postings: vec![],
+                total_sparse_size: self.total_sparse_size,
+                vector_count: self.vector_count,
+            };
+        }
+
         let num_posting_lists = self.posting_builders.len();
         debug!(
             "building inverted index with {} posting lists",
@@ -61,12 +69,10 @@ impl InvertedIndexBuilder {
             postings.push(posting_list);
         }
 
-        if new_vectors_count > 0 {
-            debug!(
-                "built inverted index for {} new sparse vectors and {} posting lists",
-                new_vectors_count, num_posting_lists
-            );
-        }
+        debug!(
+            "built inverted index for {} sparse vectors from {} posting lists",
+            new_vectors_count, num_posting_lists
+        );
 
         let vector_count = self.vector_count;
         let total_sparse_size = self.total_sparse_size;
