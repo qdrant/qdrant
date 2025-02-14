@@ -1,6 +1,7 @@
 use std::cmp::max;
 
 use common::types::PointOffsetType;
+use log::debug;
 
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
@@ -46,6 +47,20 @@ impl InvertedIndexBuilder {
 
     /// Consumes the builder and returns an InvertedIndexRam
     pub fn build(self) -> InvertedIndexRam {
+        if self.posting_builders.is_empty() {
+            return InvertedIndexRam {
+                postings: vec![],
+                total_sparse_size: self.total_sparse_size,
+                vector_count: self.vector_count,
+            };
+        }
+
+        debug!(
+            "building inverted index with {} sparse vectors in {} posting lists",
+            self.vector_count,
+            self.posting_builders.len(),
+        );
+
         let mut postings = Vec::with_capacity(self.posting_builders.len());
         for posting_builder in self.posting_builders {
             postings.push(posting_builder.build());
