@@ -424,6 +424,15 @@ impl ShardReplicaSet {
                         .collect()
                 } else {
                     failures
+                        .into_iter()
+                        .filter(|(peer_id, err)| {
+                            let not_partial_recovery = self
+                                .peer_state(*peer_id)
+                                .is_none_or(|state| !state.is_partial_or_recovery());
+                            let is_transient = err.is_transient();
+                            not_partial_recovery || is_transient
+                        })
+                        .collect()
                 };
 
                 let wait_for_deactivation = self.handle_failed_replicas(
