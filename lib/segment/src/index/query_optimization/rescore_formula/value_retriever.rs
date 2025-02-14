@@ -93,7 +93,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 numeric_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|value| Value::Number(value.into()))
+                    .map(|value| Value::Number(Number::from(value)))
             };
             Some(Box::new(extract_fn))
         }
@@ -102,7 +102,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 map_index
                     .get_values(point_id)
                     .and_then(|mut values| values.next())
-                    .map(|&value| Value::Number(value.into()))
+                    .map(|&value| Value::Number(Number::from(value)))
             };
             Some(Box::new(extract_fn))
         }
