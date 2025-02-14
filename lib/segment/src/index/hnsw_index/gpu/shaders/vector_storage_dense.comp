@@ -10,7 +10,7 @@
 #define ELEMENTS_PER_SUBGROUP 4
 #define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
 
-#define VECTOR_ITERATIONS_COUNT (DIM / (ELEMENTS_PER_SUBGROUP * SUBGROUP_SIZE))
+#define VECTOR_ITERATIONS_COUNT (DIM / (ELEMENTS_PER_SUBGROUP * WORKGROUP_SIZE))
 #if VECTOR_ITERATIONS_COUNT < 2
 // Define that describes that the whole vector is stored in a single subgroup.
 // For single subgroup vector we can avoid `for` loops.
@@ -55,27 +55,54 @@ VECTOR_STORAGE_DEFINE(2)
 VECTOR_STORAGE_DEFINE(3)
 
 // ----------- TARGET ------------
+// Target can be presented in shared memory or in registers. Control it using defines.
+//#define TARGET_CACHE_REGISTERS // Registers case
+#define TARGET_CACHE_SHARED // Shared memory case
 
+
+#ifdef TARGET_CACHE_REGISTERS // Registers case
 #ifdef VECTOR_SINGLE_ITERATION // Single iteration case
 
-#define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
-    target_cache = STORAGE(STORAGE_INDEX).data[index];
-
+#define TARGET_CACHE target_cache
 VECTOR_STORAGE_ELEMENT_TYPE target_cache;
 
 #else // Multiple iterations case
 
-#define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
-    for (uint i = 0; i < VECTOR_ITERATIONS_COUNT; i++, index += SUBGROUP_SIZE) { \
-        target_cache[i] = STORAGE(STORAGE_INDEX).data[index]; \
-    }
-
+#define TARGET_CACHE(INDEX) target_cache[INDEX]
 VECTOR_STORAGE_ELEMENT_TYPE target_cache[VECTOR_ITERATIONS_COUNT];
+
+#endif
+#endif
+
+#ifdef TARGET_CACHE_SHARED // Shared memory case
+
+shared VECTOR_STORAGE_ELEMENT_TYPE[DIM / ELEMENTS_PER_SUBGROUP] target_cache;
+
+#ifdef VECTOR_SINGLE_ITERATION // Single iteration case
+#define TARGET_CACHE target_cache[gl_LocalInvocationID.x]
+#else // Multiple iterations case
+#define TARGET_CACHE(INDEX) target_cache[INDEX * WORKGROUP_SIZE + gl_LocalInvocationID.x]
+#endif
+#endif
+
+
+// UPDATE TARGET
+#ifdef VECTOR_SINGLE_ITERATION // Single iteration case
+
+#define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
+    TARGET_CACHE = STORAGE(STORAGE_INDEX).data[index];
+
+#else // Multiple iterations case
+
+#define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
+    for (uint i = 0; i < VECTOR_ITERATIONS_COUNT; i++, index += WORKGROUP_SIZE) { \
+        TARGET_CACHE(i) = STORAGE(STORAGE_INDEX).data[index]; \
+    }
 
 #endif
 
 void set_target_dense(uint point_id) {
-    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_SubgroupInvocationID;
+    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_LocalInvocationID.x;
     uint storage_index = point_id % STORAGES_COUNT;
     switch (storage_index) {
     case 0:
@@ -104,16 +131,16 @@ void set_target_dense(uint point_id) {
 #define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
     result += VECTOR_STORAGE_SCORE_ELEMENT( \
         STORAGE(STORAGE_INDEX).data[index], \
-        target_cache \
+        TARGET_CACHE \
     );
 
 #else // Multiple iterations case
 
 #define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
-    for (uint i = 0; i < VECTOR_ITERATIONS_COUNT; i++, index += SUBGROUP_SIZE) { \
+    for (uint i = 0; i < VECTOR_ITERATIONS_COUNT; i++, index += WORKGROUP_SIZE) { \
         result += VECTOR_STORAGE_SCORE_ELEMENT( \
             STORAGE(STORAGE_INDEX).data[index], \
-            target_cache[i] \
+            TARGET_CACHE(i) \
         ); \
     }
 
@@ -125,7 +152,7 @@ float similarity_dense(uint point_id) {
 #endif
 
     VECTOR_STORAGE_SCORE_TYPE result = 0;
-    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_SubgroupInvocationID;
+    uint index = (point_id / STORAGES_COUNT) * (DIM / ELEMENTS_PER_SUBGROUP) + gl_LocalInvocationID.x;
     uint storage_index = point_id % STORAGES_COUNT;
     switch (storage_index) {
     case 0:
