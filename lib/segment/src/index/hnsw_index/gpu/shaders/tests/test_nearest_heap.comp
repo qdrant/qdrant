@@ -17,15 +17,15 @@ readonly uniform TestParams {
 } test_params;
 
 layout(set = 0, binding = 1) buffer ScoredPointsInput {
-    ScoredPoint data[];
+    readonly ScoredPoint data[];
 } input_points;
 
 layout(set = 0, binding = 2) buffer ScoresOuput {
-    float data[];
+    writeonly float data[];
 } scores_output;
 
 layout(set = 0, binding = 3) buffer SortedOuput {
-    uint data[];
+    writeonly uint data[];
 } sorted_output;
 
 uint nearest_count = 0;

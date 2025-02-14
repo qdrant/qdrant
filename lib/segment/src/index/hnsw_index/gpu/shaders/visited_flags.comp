@@ -15,13 +15,13 @@ readonly uniform VisitedFlagsParams {
 
 layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 1)
 buffer VisitedFlagsBuffer {
-    uint8_t data[];
+    coherent uint8_t data[];
 } visited_flags;
 
 #ifdef VISITED_FLAGS_REMAP
 layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 2)
 buffer VisitedFlagsRemapBuffer {
-    POINT_ID data[];
+    readonly POINT_ID data[];
 } visited_flags_remap;
 #endif
 
