@@ -74,7 +74,7 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
 
     let gpu_nearest_heap = GpuHeapTestConfig { ef, linear };
 
-    let shader = ShaderBuilder::new(device.clone())
+    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
         .with_shader_code(include_str!("shaders/tests/test_nearest_heap.comp"))
         .with_parameters(&gpu_nearest_heap)
         .build("tests/test_nearest_heap.comp")
@@ -281,7 +281,7 @@ fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
         linear,
     };
 
-    let shader = ShaderBuilder::new(device.clone())
+    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
         .with_shader_code(include_str!("shaders/tests/test_candidates_heap.comp"))
         .with_parameters(&gpu_candidates_heap)
         .build("tests/test_candidates_heap.comp")

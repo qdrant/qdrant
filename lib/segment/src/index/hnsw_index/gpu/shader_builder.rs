@@ -16,7 +16,7 @@ pub trait ShaderBuilderParameters {
 }
 
 impl ShaderBuilder {
-    pub fn new(device: Arc<gpu::Device>) -> Self {
+    pub fn new(device: Arc<gpu::Device>, workgroup_size: usize) -> Self {
         let includes = HashMap::from([
             (
                 "common.comp".to_string(),
@@ -32,6 +32,10 @@ impl ShaderBuilder {
         defines.insert(
             "SUBGROUP_SIZE".to_owned(),
             Some(device.subgroup_size().to_string()),
+        );
+        defines.insert(
+            "WORKGROUP_SIZE".to_owned(),
+            Some(workgroup_size.to_string()),
         );
 
         Self {

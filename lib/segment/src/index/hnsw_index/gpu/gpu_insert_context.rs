@@ -203,7 +203,7 @@ impl<'a> GpuInsertContext<'a> {
             visited_flags_factor_range,
         )?;
 
-        let greedy_search_shader = ShaderBuilder::new(device.clone())
+        let greedy_search_shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
             .with_shader_code(include_str!("shaders/run_greedy_search.comp"))
             .with_parameters(gpu_vector_storage)
             .with_parameters(&gpu_links)
@@ -211,7 +211,7 @@ impl<'a> GpuInsertContext<'a> {
             .with_parameters(&insert_resources)
             .build("run_greedy_search.comp")?;
 
-        let insert_shader = ShaderBuilder::new(device.clone())
+        let insert_shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
             .with_shader_code(include_str!("shaders/run_insert_vector.comp"))
             .with_parameters(gpu_vector_storage)
             .with_parameters(&gpu_links)
@@ -603,7 +603,7 @@ mod tests {
         )
         .unwrap();
 
-        let search_shader = ShaderBuilder::new(device.clone())
+        let search_shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
             .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
@@ -882,7 +882,7 @@ mod tests {
         .unwrap();
 
         // Create test pipeline
-        let shader = ShaderBuilder::new(device.clone())
+        let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
             .with_shader_code(include_str!("shaders/tests/test_heuristic.comp"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)

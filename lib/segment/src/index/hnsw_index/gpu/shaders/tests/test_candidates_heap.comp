@@ -3,7 +3,7 @@
 #include "extensions.comp"
 
 #include "common.comp"
-layout(local_size_x = SUBGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #define SHARED_BUFFER_CAPACITY EF
 #define CANDIDATES_HEAP_OFFSET 0
