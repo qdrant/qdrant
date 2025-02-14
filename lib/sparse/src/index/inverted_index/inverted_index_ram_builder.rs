@@ -55,24 +55,16 @@ impl InvertedIndexBuilder {
             };
         }
 
-        let num_posting_lists = self.posting_builders.len();
         debug!(
-            "building inverted index with {} posting lists",
-            num_posting_lists
+            "building inverted index with {} in {} posting lists",
+            self.vector_count,
+            self.posting_builders.len(),
         );
-        let mut new_vectors_count = 0;
 
         let mut postings = Vec::with_capacity(self.posting_builders.len());
         for posting_builder in self.posting_builders {
-            let posting_list = posting_builder.build();
-            new_vectors_count += posting_list.elements.len();
-            postings.push(posting_list);
+            postings.push(posting_builder.build());
         }
-
-        debug!(
-            "built inverted index for {} sparse vectors from {} posting lists",
-            new_vectors_count, num_posting_lists
-        );
 
         let vector_count = self.vector_count;
         let total_sparse_size = self.total_sparse_size;
