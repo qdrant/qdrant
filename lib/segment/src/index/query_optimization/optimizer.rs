@@ -110,7 +110,7 @@ impl StructPayloadIndex {
         )
     }
 
-    fn convert_conditions<'a>(
+    pub fn convert_conditions<'a>(
         &'a self,
         conditions: &'a [Condition],
         payload_provider: PayloadProvider,

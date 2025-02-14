@@ -31,7 +31,7 @@ pub fn check_optimized_filter(filter: &OptimizedFilter, point_id: PointOffsetTyp
         && check_must_not(&filter.must_not, point_id)
 }
 
-fn check_condition(condition: &OptimizedCondition, point_id: PointOffsetType) -> bool {
+pub fn check_condition(condition: &OptimizedCondition, point_id: PointOffsetType) -> bool {
     match condition {
         OptimizedCondition::Filter(filter) => check_optimized_filter(filter, point_id),
         OptimizedCondition::Checker(checker) => checker(point_id),
