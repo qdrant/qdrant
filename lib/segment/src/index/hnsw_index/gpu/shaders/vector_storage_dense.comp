@@ -10,11 +10,11 @@
 #define ELEMENTS_PER_SUBGROUP 4
 #define STORAGE(STORAGE_INDEX) CONCAT(vectors, STORAGE_INDEX)
 
-#define SUBGROUPS_COUNT_PER_VECTOR (DIM / (ELEMENTS_PER_SUBGROUP * SUBGROUP_SIZE))
-#if SUBGROUPS_COUNT_PER_VECTOR < 2
+#define VECTOR_ITERATIONS_COUNT (DIM / (ELEMENTS_PER_SUBGROUP * SUBGROUP_SIZE))
+#if VECTOR_ITERATIONS_COUNT < 2
 // Define that describes that the whole vector is stored in a single subgroup.
 // For single subgroup vector we can avoid `for` loops.
-#define SINGLE_SUBGROUP_PER_VECTOR
+#define VECTOR_SINGLE_ITERATION
 #endif
 
 #ifndef VECTOR_STORAGE_QUANTIZATION
@@ -54,35 +54,23 @@ VECTOR_STORAGE_DEFINE(1)
 VECTOR_STORAGE_DEFINE(2)
 VECTOR_STORAGE_DEFINE(3)
 
-#ifdef SINGLE_SUBGROUP_PER_VECTOR
+// ----------- TARGET ------------
 
-#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
-    result += VECTOR_STORAGE_SCORE_ELEMENT( \
-        STORAGE(STORAGE_INDEX).data[index], \
-        target_cache \
-    );
+#ifdef VECTOR_SINGLE_ITERATION // Single iteration case
 
 #define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
     target_cache = STORAGE(STORAGE_INDEX).data[index];
 
 VECTOR_STORAGE_ELEMENT_TYPE target_cache;
 
-#else
-
-#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
-    for (uint i = 0; i < SUBGROUPS_COUNT_PER_VECTOR; i++, index += SUBGROUP_SIZE) { \
-        result += VECTOR_STORAGE_SCORE_ELEMENT( \
-            STORAGE(STORAGE_INDEX).data[index], \
-            target_cache[i] \
-        ); \
-    }
+#else // Multiple iterations case
 
 #define VECTOR_STORAGE_SET_TARGET(STORAGE_INDEX) \
-    for (uint i = 0; i < SUBGROUPS_COUNT_PER_VECTOR; i++, index += SUBGROUP_SIZE) { \
+    for (uint i = 0; i < VECTOR_ITERATIONS_COUNT; i++, index += SUBGROUP_SIZE) { \
         target_cache[i] = STORAGE(STORAGE_INDEX).data[index]; \
     }
 
-VECTOR_STORAGE_ELEMENT_TYPE target_cache[SUBGROUPS_COUNT_PER_VECTOR];
+VECTOR_STORAGE_ELEMENT_TYPE target_cache[VECTOR_ITERATIONS_COUNT];
 
 #endif
 
@@ -108,6 +96,28 @@ void set_target_dense(uint point_id) {
     VECTOR_STORAGE_POSTPROCESS_SET_TARGET();
 #endif
 }
+
+// ----------- SCORE ------------
+
+#ifdef VECTOR_SINGLE_ITERATION // Single iteration case
+
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
+    result += VECTOR_STORAGE_SCORE_ELEMENT( \
+        STORAGE(STORAGE_INDEX).data[index], \
+        target_cache \
+    );
+
+#else // Multiple iterations case
+
+#define VECTOR_STORAGE_SCORE_SUBGROUP(STORAGE_INDEX) \
+    for (uint i = 0; i < VECTOR_ITERATIONS_COUNT; i++, index += SUBGROUP_SIZE) { \
+        result += VECTOR_STORAGE_SCORE_ELEMENT( \
+            STORAGE(STORAGE_INDEX).data[index], \
+            target_cache[i] \
+        ); \
+    }
+
+#endif
 
 float similarity_dense(uint point_id) {
 #ifdef VECTOR_STORAGE_PREPROCESS

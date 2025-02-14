@@ -52,7 +52,7 @@ float score_pq(u8vec4 a, u8vec4 b, uint i) {
     return score;
 }
 
-#ifdef SINGLE_SUBGROUP_PER_VECTOR
+#ifdef VECTOR_SINGLE_ITERATION
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, gl_SubgroupInvocationID)
 #else
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, i * SUBGROUP_SIZE + gl_SubgroupInvocationID) 
