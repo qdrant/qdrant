@@ -167,6 +167,13 @@ impl MutableGeoMapIndex {
         self.in_memory_index
     }
 
+    pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = &GeoPoint> + '_> {
+        self.in_memory_index
+            .point_to_values
+            .get(idx as usize)
+            .map(|v| v.iter())
+    }
+
     delegate! {
         to self.in_memory_index {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;

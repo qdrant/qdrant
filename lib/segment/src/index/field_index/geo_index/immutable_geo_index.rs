@@ -78,6 +78,10 @@ impl ImmutableGeoMapIndex {
         self.point_to_values.check_values_any(idx, check_fn)
     }
 
+    pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = &GeoPoint> + '_> {
+        self.point_to_values.get_values(idx)
+    }
+
     pub fn values_count(&self, idx: PointOffsetType) -> usize {
         self.point_to_values
             .get_values_count(idx)
