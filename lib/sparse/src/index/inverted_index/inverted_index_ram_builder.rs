@@ -47,7 +47,10 @@ impl InvertedIndexBuilder {
 
     /// Consumes the builder and returns an InvertedIndexRam
     pub fn build(self) -> InvertedIndexRam {
-        debug!("building inverted index for {} sparse vectors", self.vector_count);
+        debug!(
+            "building inverted index for {} sparse vectors",
+            self.vector_count
+        );
 
         let mut postings = Vec::with_capacity(self.posting_builders.len());
         for posting_builder in self.posting_builders {
