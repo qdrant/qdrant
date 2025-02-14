@@ -583,10 +583,7 @@ impl ShardReplicaSet {
             // Ignore missing point errors if replica is in partial or recovery state
             // Partial or recovery state indicates that the replica is receiving a shard transfer,
             // it might not have received all the points yet
-            let partial_or_recovery = self
-                .peer_state(*peer_id)
-                .is_some_and(|state| state.is_partial_or_recovery());
-            if partial_or_recovery && err.is_missing_point() {
+            if peer_state.is_partial_or_recovery() && err.is_missing_point() {
                 continue;
             }
 
