@@ -74,6 +74,7 @@ impl FormulaScorer<'_> {
         self.eval_expression(&self.formula, point_id)
     }
 
+    /// Evaluate the expression recursively
     fn eval_expression(
         &self,
         expression: &Expression,
@@ -113,10 +114,18 @@ impl FormulaScorer<'_> {
                     Ok(score)
                 }
             },
-            Expression::Mult(expressions) => expressions.iter().try_fold(1.0, |acc, expr| {
-                let value = self.eval_expression(expr, point_id)?;
-                Ok(acc * value)
-            }),
+            Expression::Mult(expressions) => {
+                let mut product = 1.0;
+                for expr in expressions {
+                    let value = self.eval_expression(expr, point_id)?;
+                    // shortcut on multiplication by zero
+                    if value == 0.0 {
+                        return Ok(0.0);
+                    }
+                    product *= value;
+                }
+                Ok(product)
+            }
             Expression::Sum(expressions) => expressions.iter().try_fold(0.0, |acc, expr| {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(acc + value)
@@ -127,7 +136,12 @@ impl FormulaScorer<'_> {
                 by_zero_default,
             } => {
                 let left = self.eval_expression(left, point_id)?;
+                // shortcut on numerator zero
+                if left == 0.0 {
+                    return Ok(0.0);
+                }
                 let right = self.eval_expression(right, point_id)?;
+                // avoid division by zero
                 if right == 0.0 {
                     Ok(*by_zero_default)
                 } else {
@@ -162,7 +176,6 @@ impl FormulaScorer<'_> {
 
 #[cfg(test)]
 #[cfg(feature = "testing")]
-
 mod tests {
     use std::collections::HashMap;
 
