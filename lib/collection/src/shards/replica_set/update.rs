@@ -424,15 +424,6 @@ impl ShardReplicaSet {
                         .collect()
                 } else {
                     failures
-                        .into_iter()
-                        .filter(|(peer_id, err)| {
-                            let not_partial_recovery = self
-                                .peer_state(*peer_id)
-                                .is_none_or(|state| !state.is_partial_or_recovery());
-                            let is_transient = err.is_transient();
-                            not_partial_recovery || is_transient
-                        })
-                        .collect()
                 };
 
                 let wait_for_deactivation = self.handle_failed_replicas(
@@ -586,6 +577,16 @@ impl ShardReplicaSet {
             // Handle a special case where transfer receiver is not in the expected replica state yet.
             // Data consistency will be handled by the shard transfer and the associated proxies.
             if peer_state.is_partial_or_recovery() && err.is_pre_condition_failed() {
+                continue;
+            }
+
+            // Ignore missing point errors if replica is in partial or recovery state
+            // Partial or recovery state indicates that the replica is receiving a shard transfer,
+            // it might not have received all the points yet
+            let partial_or_recovery = self
+                .peer_state(*peer_id)
+                .is_some_and(|state| state.is_partial_or_recovery());
+            if partial_or_recovery && err.is_missing_point() {
                 continue;
             }
 
