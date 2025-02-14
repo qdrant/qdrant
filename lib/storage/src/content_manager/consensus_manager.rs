@@ -980,6 +980,8 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
     fn snapshot(&self, request_index: u64, _to: u64) -> raft::Result<raft::eraftpb::Snapshot> {
         let collections_data = self.toc.collections_snapshot();
 
+        // Lock first WAL and then persistent to avoid deadlock
+        let wal_guard = self.wal.lock();
         // TODO: Should we lock `persistent` *before* calling `TableOfContent::collections_snapshot`!?
         let persistent = self.persistent.read();
 
@@ -1009,7 +1011,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
         let term = if index == persistent.latest_snapshot_meta.index {
             persistent.latest_snapshot_meta.term
         } else {
-            self.wal.lock().entry(index)?.term
+            wal_guard.entry(index)?.term
         };
 
         let meta = raft::eraftpb::SnapshotMetadata {
