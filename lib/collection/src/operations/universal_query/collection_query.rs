@@ -1,18 +1,22 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use api::rest::LookupLocation;
+use api::rest::{GeoDistance, LookupLocation};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     NamedQuery, NamedVectorStruct, VectorInternal, VectorRef, DEFAULT_VECTOR_NAME,
 };
-use segment::json_path::JsonPath;
+use segment::index::query_optimization::rescore_formula::parsed_formula::{
+    Expression, ParsedFormula, VariableId,
+};
+use segment::json_path::{JsonPath, JsonPathItem};
 use segment::types::{
-    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
-    VectorNameBuf, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, GeoPoint, HasIdCondition, PointIdType, SearchParams,
+    VectorName, VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
+use serde_json::Value;
 
 use super::shard_query::{
     FusionInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
@@ -22,6 +26,8 @@ use crate::lookup::WithLookup;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::recommendations::avg_vector_for_recommendation;
+
+const SCORE_KEYWORD: &str = "score";
 
 /// Internal representation of a query request, used to converge from REST and gRPC. This can have IDs referencing vectors.
 #[derive(Clone, Debug, PartialEq)]
@@ -91,8 +97,28 @@ pub enum Query {
     /// Order by a payload field
     OrderBy(OrderBy),
 
+    // TODO(score boosting): enable this
+    // /// Formula-based score fusion
+    // Formula(FormulaInternal),
     /// Sample points
     Sample(SampleInternal),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormulaInternal {
+    pub formula: ExpressionInternal,
+    pub defaults: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExpressionInternal {
+    Constant(f32),
+    Variable(String),
+    Condition(Box<Condition>),
+    Mult(Vec<ExpressionInternal>),
+    Sum(Vec<ExpressionInternal>),
+    Neg(Box<ExpressionInternal>),
+    GeoDistance { origin: GeoPoint, to: JsonPath },
 }
 
 impl Query {
@@ -114,12 +140,15 @@ impl Query {
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
+            // TODO(score boosting): enable this
+            // Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
         };
 
         Ok(scoring_query)
     }
 }
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorInputInternal {
     Id(PointIdType),
@@ -593,8 +622,118 @@ impl CollectionQueryRequest {
     }
 }
 
+fn parse_var(var_str: &str) -> CollectionResult<VariableId> {
+    let var_id = match var_str.strip_prefix("$") {
+        Some(score) => {
+            // parse as reserved word
+            let json_path = score.parse::<JsonPath>().map_err(|_| {
+                CollectionError::bad_input(format!("Invalid reserved variable: {var_str}"))
+            })?;
+            match json_path.first_key.as_str() {
+                SCORE_KEYWORD => match &json_path.rest[..] {
+                    // Default prefetch index, like "$score"
+                    [] => VariableId::Score(0),
+                    // Specifies prefetch index, like "$score[2]"
+                    [JsonPathItem::Index(idx)] => VariableId::Score(*idx),
+                    _ => {
+                        // Only direct index is supported
+                        return Err(CollectionError::bad_input(format!(
+                            "Invalid reserved variable: {var_str}"
+                        )));
+                    }
+                },
+                _ => {
+                    // No other reserved words are supported
+                    return Err(CollectionError::bad_input(format!(
+                        "Invalid reserved word: {var_str}"
+                    )));
+                }
+            }
+        }
+        None => {
+            // parse as regular payload variable
+            let parsed = var_str.parse().map_err(|_| {
+                CollectionError::bad_input(format!("Invalid payload variable: {var_str}"))
+            })?;
+            VariableId::Payload(parsed)
+        }
+    };
+    Ok(var_id)
+}
+
+impl TryFrom<FormulaInternal> for ParsedFormula {
+    type Error = CollectionError;
+    fn try_from(value: FormulaInternal) -> Result<Self, Self::Error> {
+        let FormulaInternal { formula, defaults } = value;
+
+        let mut payload_vars = HashSet::new();
+        let mut conditions = Vec::new();
+
+        let parsed_expression = formula.parse_and_convert(&mut payload_vars, &mut conditions)?;
+
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| {
+                let key = parse_var(key.as_str())?;
+                CollectionResult::Ok((key, value))
+            })
+            .try_collect()?;
+
+        Ok(ParsedFormula {
+            formula: parsed_expression,
+            payload_vars,
+            conditions,
+            defaults,
+        })
+    }
+}
+
+impl ExpressionInternal {
+    fn parse_and_convert(
+        self,
+        payload_vars: &mut HashSet<JsonPath>,
+        conditions: &mut Vec<Condition>,
+    ) -> CollectionResult<Expression> {
+        let expr = match self {
+            ExpressionInternal::Constant(c) => Expression::Constant(c),
+            ExpressionInternal::Variable(var) => {
+                let var = parse_var(&var)?;
+                if let VariableId::Payload(payload_var) = var.clone() {
+                    payload_vars.insert(payload_var);
+                }
+                Expression::Variable(var)
+            }
+            ExpressionInternal::Condition(condition) => {
+                let condition_id = conditions.len();
+                conditions.push(*condition);
+                Expression::new_condition_id(condition_id)
+            }
+            ExpressionInternal::Mult(internal_expressions) => Expression::Mult(
+                internal_expressions
+                    .into_iter()
+                    .map(|expr| expr.parse_and_convert(payload_vars, conditions))
+                    .try_collect()?,
+            ),
+            ExpressionInternal::Sum(expression_internals) => Expression::Sum(
+                expression_internals
+                    .into_iter()
+                    .map(|expr| expr.parse_and_convert(payload_vars, conditions))
+                    .try_collect()?,
+            ),
+            ExpressionInternal::Neg(expression_internal) => Expression::new_neg(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            ),
+            ExpressionInternal::GeoDistance { origin, to } => {
+                Expression::new_geo_distance(origin, to)
+            }
+        };
+
+        Ok(expr)
+    }
+}
+
 mod from_rest {
-    use api::rest::schema as rest;
+    use api::rest::{schema as rest, NegExpression};
 
     use super::*;
 
@@ -611,6 +750,43 @@ mod from_rest {
         fn from(value: rest::Sample) -> Self {
             match value {
                 rest::Sample::Random => SampleInternal::Random,
+            }
+        }
+    }
+
+    impl From<rest::FormulaInput> for FormulaInternal {
+        fn from(value: rest::FormulaInput) -> Self {
+            let rest::FormulaInput { formula, defaults } = value;
+
+            FormulaInternal {
+                formula: ExpressionInternal::from(formula),
+                defaults,
+            }
+        }
+    }
+
+    impl From<rest::Expression> for ExpressionInternal {
+        fn from(value: rest::Expression) -> Self {
+            match value {
+                rest::Expression::Constant(c) => ExpressionInternal::Constant(c),
+                rest::Expression::Variable(key) => ExpressionInternal::Variable(key),
+                rest::Expression::Condition(condition) => ExpressionInternal::Condition(condition),
+                rest::Expression::Mult(rest::MultiplyExpression { mult: exprs }) => {
+                    ExpressionInternal::Mult(
+                        exprs.into_iter().map(ExpressionInternal::from).collect(),
+                    )
+                }
+                rest::Expression::Sum(rest::SumExpression { sum: exprs }) => {
+                    ExpressionInternal::Sum(
+                        exprs.into_iter().map(ExpressionInternal::from).collect(),
+                    )
+                }
+                rest::Expression::Neg(NegExpression { neg: expr }) => {
+                    ExpressionInternal::Neg(Box::new(ExpressionInternal::from(*expr)))
+                }
+                rest::Expression::GeoDistance(GeoDistance { origin, to }) => {
+                    ExpressionInternal::GeoDistance { origin, to }
+                }
             }
         }
     }

@@ -24,6 +24,8 @@ pub type ShardQueryResponse = Vec<Vec<ScoredPoint>>;
 /// Internal representation of a universal query request.
 ///
 /// Direct translation of the user-facing request, but with all point ids substituted with their corresponding vectors.
+///
+/// For the case of formula queries, it collects conditions and variables too.
 #[derive(Clone, Debug)]
 pub struct ShardQueryRequest {
     pub prefetches: Vec<ShardPrefetch>,
@@ -73,6 +75,8 @@ pub enum ScoringQuery {
     /// Order by a payload field
     OrderBy(OrderBy),
 
+    // TODO(score boosting): Enable this
+    // Formula(ParsedFormula),
     /// Sample points
     Sample(SampleInternal),
 }

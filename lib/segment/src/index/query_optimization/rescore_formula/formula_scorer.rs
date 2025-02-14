@@ -234,20 +234,20 @@ mod tests {
     #[case(Expression::Constant(5.0), 5.0)]
     #[case(Expression::new_score_id(0), 1.0)]
     #[case(Expression::new_score_id(1), 2.0)]
-    #[case(Expression::new_payload_id(FIELD_NAME), 85.0)]
+    #[case(Expression::new_payload_id(JsonPath::new(FIELD_NAME)), 85.0)]
     #[case(Expression::new_condition_id(0), 1.0)]
     #[case(Expression::new_condition_id(1), 0.0)]
     // Operations
     #[case(Expression::Sum(vec![
         Expression::Constant(1.0),
         Expression::new_score_id(0),
-        Expression::new_payload_id(FIELD_NAME),
+        Expression::new_payload_id(JsonPath::new(FIELD_NAME)),
         Expression::new_condition_id(0),
     ]), 1.0 + 1.0 + 85.0 + 1.0)]
     #[case(Expression::Mult(vec![
         Expression::Constant(2.0),
         Expression::new_score_id(0),
-        Expression::new_payload_id(FIELD_NAME),
+        Expression::new_payload_id(JsonPath::new(FIELD_NAME)),
         Expression::new_condition_id(0),
     ]), 2.0 * 1.0 * 85.0 * 1.0)]
     #[case(Expression::Div {
@@ -278,9 +278,12 @@ mod tests {
     // score idx not defined
     #[case(Expression::new_score_id(10), DEFAULT_SCORE)]
     // missing value in payload
-    #[case(Expression::new_payload_id(NO_VALUE_FIELD_NAME), 85.0)]
+    #[case(Expression::new_payload_id(JsonPath::new(NO_VALUE_FIELD_NAME)), 85.0)]
     // missing value and no default value provided
-    #[case(Expression::new_payload_id("missing_field"), DEFAULT_SCORE)]
+    #[case(
+        Expression::new_payload_id(JsonPath::new("missing_field")),
+        DEFAULT_SCORE
+    )]
     // geo distance with default value
     #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), 90951.3)]
     #[test]

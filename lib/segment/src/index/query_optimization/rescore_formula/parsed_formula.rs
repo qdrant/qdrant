@@ -8,21 +8,22 @@ use crate::types::{Condition, GeoPoint};
 
 pub type ConditionId = usize;
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct ParsedFormula {
     /// Variables used in the formula
-    pub(super) payload_vars: HashSet<JsonPath>,
+    pub payload_vars: HashSet<JsonPath>,
 
     /// Conditions used in the formula. Their index in the array is used as a variable id
-    pub(super) conditions: Vec<Condition>,
+    pub conditions: Vec<Condition>,
 
     /// Defaults to use when variable is not found
-    pub(super) defaults: HashMap<VariableId, Value>,
+    pub defaults: HashMap<VariableId, Value>,
 
     /// Root of the formula expression
-    pub(super) formula: Expression,
+    pub formula: Expression,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     // Scalars
     Constant(ScoreType),
@@ -43,7 +44,7 @@ pub enum Expression {
     },
 }
 
-#[derive(Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum VariableId {
     /// Score index
     Score(usize),
@@ -70,9 +71,8 @@ impl Expression {
         Expression::GeoDistance { origin, key }
     }
 
-    #[cfg(feature = "testing")]
-    pub fn new_payload_id(path: &str) -> Self {
-        Expression::Variable(VariableId::Payload(JsonPath::new(path)))
+    pub fn new_payload_id(path: JsonPath) -> Self {
+        Expression::Variable(VariableId::Payload(path))
     }
 
     pub fn new_score_id(index: usize) -> Self {
