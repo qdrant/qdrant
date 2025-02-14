@@ -56,7 +56,7 @@ impl InvertedIndexBuilder {
         }
 
         debug!(
-            "building inverted index with {} in {} posting lists",
+            "building inverted index with {} sparse vectors in {} posting lists",
             self.vector_count,
             self.posting_builders.len(),
         );
