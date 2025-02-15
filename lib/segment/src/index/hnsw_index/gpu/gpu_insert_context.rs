@@ -187,6 +187,7 @@ impl<'a> GpuInsertContext<'a> {
         m0: usize,
         ef: usize,
         exact: bool,
+        allow_large_workgroups: bool,
         visited_flags_factor_range: std::ops::Range<usize>,
     ) -> OperationResult<Self> {
         let device = gpu_vector_storage.device();
@@ -203,7 +204,13 @@ impl<'a> GpuInsertContext<'a> {
             visited_flags_factor_range,
         )?;
 
-        let greedy_search_shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+        let workgroup_size = if allow_large_workgroups {
+            gpu_vector_storage.propose_workgroup_size()
+        } else {
+            device.subgroup_size()
+        };
+
+        let greedy_search_shader = ShaderBuilder::new(device.clone(), workgroup_size)
             .with_shader_code(include_str!("shaders/run_greedy_search.comp"))
             .with_parameters(gpu_vector_storage)
             .with_parameters(&gpu_links)
@@ -211,7 +218,7 @@ impl<'a> GpuInsertContext<'a> {
             .with_parameters(&insert_resources)
             .build("run_greedy_search.comp")?;
 
-        let insert_shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+        let insert_shader = ShaderBuilder::new(device.clone(), workgroup_size)
             .with_shader_code(include_str!("shaders/run_insert_vector.comp"))
             .with_parameters(gpu_vector_storage)
             .with_parameters(&gpu_links)
@@ -457,6 +464,7 @@ mod tests {
     use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rstest::rstest;
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
@@ -548,7 +556,7 @@ mod tests {
         }
     }
 
-    fn create_insert_context(test_data: &TestData) -> GpuInsertContext<'_> {
+    fn create_insert_context(test_data: &TestData, allow_large_workgroups: bool) -> GpuInsertContext<'_> {
         let total_num_vectors = test_data.gpu_vector_storage.num_vectors() + test_data.groups_count;
         let point_ids = (0..total_num_vectors as PointOffsetType).collect_vec();
 
@@ -560,6 +568,7 @@ mod tests {
             test_data.m,
             test_data.ef,
             true,
+            allow_large_workgroups,
             1..32,
         )
         .unwrap();
@@ -570,8 +579,8 @@ mod tests {
         gpu_insert_context
     }
 
-    #[test]
-    fn test_gpu_hnsw_search_on_level() {
+    #[rstest]
+    fn test_gpu_hnsw_search_on_level(#[values(false, true)] allow_large_workgroups: bool) {
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -579,13 +588,13 @@ mod tests {
 
         let num_vectors = 1024;
         let groups_count = 8;
-        let dim = 64;
+        let dim = 128;
         let m = 16;
         let ef = 32;
 
         let test = create_test_data(num_vectors, groups_count, dim, m, ef);
         let device = test.gpu_vector_storage.device();
-        let mut gpu_insert_context = create_insert_context(&test);
+        let mut gpu_insert_context = create_insert_context(&test, allow_large_workgroups);
 
         let search_responses_buffer = gpu::Buffer::new(
             device.clone(),
@@ -603,7 +612,13 @@ mod tests {
         )
         .unwrap();
 
-        let search_shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+        let workgroup_size = if allow_large_workgroups {
+            gpu_insert_context.gpu_vector_storage.propose_workgroup_size()
+        } else {
+            device.subgroup_size()
+        };
+
+        let search_shader = ShaderBuilder::new(device.clone(), workgroup_size)
             .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
@@ -762,8 +777,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_gpu_greedy_search() {
+    #[rstest]
+    fn test_gpu_greedy_search(#[values(false, true)] allow_large_workgroups: bool) {
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -771,12 +786,12 @@ mod tests {
 
         let num_vectors = 1024;
         let groups_count = 8;
-        let dim = 64;
+        let dim = 128;
         let m = 16;
         let ef = 32;
 
         let test = create_test_data(num_vectors, groups_count, dim, m, ef);
-        let mut gpu_insert_context = create_insert_context(&test);
+        let mut gpu_insert_context = create_insert_context(&test, allow_large_workgroups);
 
         // create request data
         let mut search_requests = vec![];
@@ -808,8 +823,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_gpu_heuristic() {
+    #[rstest]
+    fn test_gpu_heuristic(#[values(false, true)] allow_large_workgroups: bool) {
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
@@ -817,13 +832,13 @@ mod tests {
 
         let num_vectors = 1024;
         let groups_count = 8;
-        let dim = 64;
+        let dim = 128;
         let m = 16;
         let ef = 32;
 
         let test = create_test_data(num_vectors, groups_count, dim, m, ef);
         let device = test.gpu_vector_storage.device();
-        let mut gpu_insert_context = create_insert_context(&test);
+        let mut gpu_insert_context = create_insert_context(&test, allow_large_workgroups);
 
         // create request data
         let mut search_requests = vec![];
@@ -881,8 +896,14 @@ mod tests {
         )
         .unwrap();
 
+        let workgroup_size = if allow_large_workgroups {
+            gpu_insert_context.gpu_vector_storage.propose_workgroup_size()
+        } else {
+            device.subgroup_size()
+        };
+
         // Create test pipeline
-        let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+        let shader = ShaderBuilder::new(device.clone(), workgroup_size)
             .with_shader_code(include_str!("shaders/tests/test_heuristic.comp"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)

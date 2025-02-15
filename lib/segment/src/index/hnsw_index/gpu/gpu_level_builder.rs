@@ -157,6 +157,7 @@ mod tests {
             m0,
             ef,
             true,
+            false,
             visited_flags_factor..32,
         )
         .unwrap();

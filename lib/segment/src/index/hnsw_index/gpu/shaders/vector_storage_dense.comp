@@ -179,6 +179,8 @@ float similarity_dense(uint point_id) {
     if (subgroupElect()) {
         score_reduce_buffer[gl_SubgroupID] = result;
     }
+
+    memoryBarrierShared();
     barrier(); // now we can read score_reduce_buffer
 
     if (gl_SubgroupInvocationID == 0) {

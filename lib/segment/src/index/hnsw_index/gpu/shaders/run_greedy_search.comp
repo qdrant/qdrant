@@ -31,14 +31,14 @@ layout(set = 0, binding = 1) buffer SearchResults {
 
 void main() {
     search_context_init();
-    uint subgroup_index = SUBGROUP_ID;
-    SearchRequest search_request = search_requests.data[subgroup_index];
+    uint group_index = gl_WorkGroupID.x;
+    SearchRequest search_request = search_requests.data[group_index];
 
     set_target(search_request.id);
     float entry_score = similarity(search_request.entry);
     ScoredPoint result = greedy_search(search_request.id, ScoredPoint(search_request.entry, entry_score));
 
-    if (subgroupElect()) {
-        search_results.data[subgroup_index] = result.id;
+    if (gl_LocalInvocationID.x == 0) {
+        search_results.data[group_index] = result.id;
     }
 }

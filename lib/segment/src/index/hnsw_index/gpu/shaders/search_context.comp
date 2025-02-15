@@ -15,41 +15,6 @@
 uint nearest_count = 0;
 uint candidates_count = 0;
 
-void process_candidate(ScoredPoint scored_point) {
-    bool not_presented = bheap_top(NEAREST_HEAP_OFFSET).id != scored_point.id;
-    bool was_added = bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, scored_point);
-    if (was_added && not_presented) {
-        bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, scored_point);
-        subgroupMemoryBarrierShared();
-    }
-}
-
-void process_candidate(POINT_ID candidate_id) {
-    uint links_count = LINKS_COUNT(candidate_id);
-    uint subgroup_link = 0;
-    bool subgroup_is_visited = true;
-    uint invocation = gl_SubgroupInvocationID;
-
-    for (uint i = 0; i < links_count; i++) {
-        if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
-            subgroup_link = GET_LINK(candidate_id, i + invocation);
-            subgroup_is_visited = check_visited(subgroup_link);
-        }
-
-        uint link = subgroupShuffle(subgroup_link, i % SUBGROUP_SIZE);
-        bool is_visited = subgroupShuffle(subgroup_is_visited, i % SUBGROUP_SIZE);
-
-        if (!is_visited) {
-            float score = similarity(link);
-            ScoredPoint scored_point = ScoredPoint(link, score);
-            process_candidate(scored_point);
-        }
-    }
-
-    // flush all changed visited flags
-    subgroupMemoryBarrierBuffer();
-}
-
 ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
     bool changed = true;
     ScoredPoint result = entry;
@@ -78,18 +43,46 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
     return result;
 }
 
+void process_candidate(ScoredPoint scored_point) {
+    bool not_presented = bheap_top(NEAREST_HEAP_OFFSET).id != scored_point.id;
+    bool was_added = bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, scored_point);
+    if (was_added && not_presented) {
+        bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, scored_point);
+        MEMORY_BARRIER_SHARED;
+    }
+}
+
+void process_candidate(POINT_ID candidate_id) {
+    uint links_count = get_links_count(candidate_id);
+    for (uint i = 0; i < links_count; i++) {
+        POINT_ID link = iterate_link(candidate_id, i, links_count);
+        bool is_visited = check_visited(link);
+
+        if (!is_visited) {
+            float score = similarity(link);
+            ScoredPoint scored_point = ScoredPoint(link, score);
+            process_candidate(scored_point);
+        }
+    }
+
+    // flush all changed visited flags
+    MEMORY_BARRIER;
+}
+
 uint search(POINT_ID point_id, ScoredPoint entry) {
 #ifndef EXACT
     entry = greedy_search(point_id, entry);
 #endif
 
-    if (subgroupElect()) {
-        check_visited(point_id);
-        check_visited(entry.id);
-    }
+    check_visited(point_id);
+    check_visited(entry.id);
+    MEMORY_BARRIER;
+    BARRIER;
+
     bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, entry);
     bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, entry);
-    groupMemoryBarrier();
+    MEMORY_BARRIER_SHARED;
+    BARRIER;
     
     while (candidates_count > 0) {
         ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count, EF);
@@ -113,12 +106,24 @@ uint run_heuristic() {
             break;
         }
 
-        ScoredPoint current_closest = shared_buffer[NEAREST_HEAP_OFFSET + i];
+        ScoredPoint current_closest;
+        if (gl_SubgroupInvocationID == 0) {
+            current_closest = shared_buffer[NEAREST_HEAP_OFFSET + i];
+        }
+        current_closest.id = subgroupBroadcast(current_closest.id, 0);
+        current_closest.score = subgroupBroadcast(current_closest.score, 0);
+
         set_target(current_closest.id);
         bool is_good = true;
 
         for (uint j = 0; j < result_count; j++) {
-            ScoredPoint selected_point = shared_buffer[NEAREST_HEAP_OFFSET + j];
+            ScoredPoint selected_point;
+            if (gl_SubgroupInvocationID == 0) {
+                selected_point = shared_buffer[NEAREST_HEAP_OFFSET + j];
+            }
+            selected_point.id = subgroupBroadcast(selected_point.id, 0);
+            selected_point.score = subgroupBroadcast(selected_point.score, 0);
+
             float dist_to_already_selected = similarity(selected_point.id);
             if (dist_to_already_selected > current_closest.score) {
                 is_good = false;
@@ -127,10 +132,11 @@ uint run_heuristic() {
         }
 
         if (is_good) {
-            if (subgroupElect()) {
+            if (gl_LocalInvocationID.x == 0) {
                 shared_buffer[NEAREST_HEAP_OFFSET + result_count] = current_closest;
             }
-            subgroupMemoryBarrierShared();
+            MEMORY_BARRIER_SHARED;
+            BARRIER;
             result_count += 1;
         }
     }

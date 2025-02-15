@@ -19,11 +19,17 @@ struct ScoredPoint {
 };
 
 #if WORKGROUP_SIZE > SUBGROUP_SIZE
+
+shared uint sync_uint;
+shared float sync_float;
+
 #define BARRIER barrier()
-#define MEMORY_BARRIER memoryBarrierShared()
+#define MEMORY_BARRIER_SHARED memoryBarrierShared()
+#define MEMORY_BARRIER memoryBarrier()
 #else
 #define BARRIER
-#define MEMORY_BARRIER subgroupMemoryBarrierShared()
+#define MEMORY_BARRIER_SHARED subgroupMemoryBarrierShared()
+#define MEMORY_BARRIER subgroupMemoryBarrier()
 #endif
 
 #endif

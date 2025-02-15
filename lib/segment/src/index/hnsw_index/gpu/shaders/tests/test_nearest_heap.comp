@@ -43,6 +43,8 @@ void main() {
 
         float nearest_smaller_score_check = subgroupMin(bheap_top(NEAREST_HEAP_OFFSET).score);
         bool is_different = nearest_smaller_score_check != bheap_top(NEAREST_HEAP_OFFSET).score;
+
+        // TODO(gpu) check the whole workgroup
         if (subgroupAny(is_different)) {
             if (gl_LocalInvocationID.x == 0) {
                 scores_output.data[point_index] = positive_infinity;

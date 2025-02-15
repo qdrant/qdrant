@@ -31,18 +31,22 @@ layout(set = 0, binding = 1) buffer SearchResults {
 
 void main() {
     search_context_init();
-    uint subgroup_index = SUBGROUP_ID;
-    SearchRequest search_request = search_requests.data[subgroup_index];
+    uint group_index = gl_WorkGroupID.x;
+    SearchRequest search_request = search_requests.data[group_index];
 
     set_target(search_request.id);
     float entry_score = similarity(search_request.entry);
     search(search_request.id, ScoredPoint(search_request.entry, entry_score));
+
+    memoryBarrierShared();
+    barrier();
     uint count = run_heuristic();
 
+    memoryBarrierShared();
     barrier();
 
-    if (subgroupElect()) {
-        uint result_index_offset = EF * subgroup_index;
+    if (gl_LocalInvocationID.x == 0) {
+        uint result_index_offset = EF * group_index;
         for (uint i = 0; i < count; i++) {
             search_results.data[result_index_offset + i] = shared_buffer[NEAREST_HEAP_OFFSET + i];
         }

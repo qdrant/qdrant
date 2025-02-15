@@ -31,4 +31,48 @@ buffer Links {
 #define LINKS_SET_SIZE(ID, SIZE) \
     links.data[LINKS_CONTAINER_OFFSET(ID)] = SIZE
 
+uint get_links_count(POINT_ID id) {
+    uint links_count;
+    if (gl_LocalInvocationID.x == 0) {
+        links_count = LINKS_COUNT(id);
+    }
+
+#if WORKGROUP_SIZE > SUBGROUP_SIZE
+    if (gl_LocalInvocationID.x == 0) {
+        sync_uint = links_count;
+    }
+    memoryBarrierShared();
+    barrier();
+    if (gl_SubgroupInvocationID == 0 && gl_LocalInvocationID.x != 0) {
+        links_count = sync_uint;
+    }
+#endif
+
+    return subgroupBroadcast(links_count, 0);
+}
+
+uint cached_link;
+
+uint iterate_link(POINT_ID id, uint i, uint links_count) {
+    uint cached_i = i % WORKGROUP_SIZE;
+    if (cached_i == 0 && i + gl_LocalInvocationID.x < links_count) {
+        cached_link = GET_LINK(id, i + gl_LocalInvocationID.x);
+    }
+
+#if WORKGROUP_SIZE > SUBGROUP_SIZE
+    if (cached_i == gl_LocalInvocationID.x) {
+        sync_uint = cached_link;
+    }
+    memoryBarrierShared();
+    barrier();
+    uint link;
+    if (gl_SubgroupInvocationID == 0) {
+        link = sync_uint;
+    }
+    return subgroupBroadcast(link, 0);
+#else
+    return subgroupShuffle(cached_link, cached_i);
+#endif
+}
+
 #endif
