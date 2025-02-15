@@ -174,7 +174,7 @@ impl GpuInsertResources {
             .add_storage_buffer(0)
             .add_storage_buffer(1)
             .build(device.clone())?;
-    
+
         let search_descriptor_set =
             gpu::DescriptorSet::builder(search_descriptor_set_layout.clone())
                 .add_storage_buffer(0, requests_buffer.clone())
@@ -701,7 +701,10 @@ mod tests {
                 .bind_pipeline(
                     gpu_insert_context.search_pipeline.clone(),
                     &[
-                        gpu_insert_context.insert_resources.search_descriptor_set.clone(),
+                        gpu_insert_context
+                            .insert_resources
+                            .search_descriptor_set
+                            .clone(),
                         gpu_insert_context.gpu_vector_storage.descriptor_set(),
                         gpu_insert_context.gpu_links.descriptor_set(),
                         gpu_insert_context.gpu_visited_flags.descriptor_set(),
@@ -719,8 +722,14 @@ mod tests {
             gpu_insert_context
                 .context
                 .copy_gpu_buffer(
-                    gpu_insert_context.insert_resources.search_results_buffer.clone(),
-                    gpu_insert_context.insert_resources.search_results_staging_buffer.clone(),
+                    gpu_insert_context
+                        .insert_resources
+                        .search_results_buffer
+                        .clone(),
+                    gpu_insert_context
+                        .insert_resources
+                        .search_results_staging_buffer
+                        .clone(),
                     0,
                     0,
                     requests.len() * (ef + 1) * std::mem::size_of::<ScoredPointOffset>(),
