@@ -223,7 +223,12 @@ mod tests {
         let top = 10;
 
         let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
-        let graph_layers_builder = build_gpu_graph(&test, groups_count, visited_flags_factor, allow_large_workgroups);
+        let graph_layers_builder = build_gpu_graph(
+            &test,
+            groups_count,
+            visited_flags_factor,
+            allow_large_workgroups,
+        );
 
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
     }
