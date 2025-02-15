@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
@@ -5,16 +7,21 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     NamedQuery, NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME,
 };
+use segment::index::query_optimization::rescore_formula::parsed_formula::{
+    ParsedExpression, ParsedFormula, VariableId,
+};
+use segment::json_path::JsonPath;
 use segment::types::{
-    Filter, Order, ScoredPoint, SearchParams, VectorName, VectorNameBuf, WithPayloadInterface,
-    WithVector,
+    Condition, Filter, Order, ScoredPoint, SearchParams, VectorName, VectorNameBuf,
+    WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
+use super::collection_query::{ExpressionInternal, FormulaInternal};
 use crate::config::CollectionParams;
 use crate::operations::query_enum::QueryEnum;
-use crate::operations::types::CollectionResult;
+use crate::operations::types::{CollectionError, CollectionResult};
 
 /// Internal response type for a universal query request.
 ///
@@ -178,6 +185,77 @@ impl ShardPrefetch {
         }
 
         filters
+    }
+}
+
+impl ExpressionInternal {
+    fn parse_and_convert(
+        self,
+        payload_vars: &mut HashSet<JsonPath>,
+        conditions: &mut Vec<Condition>,
+    ) -> CollectionResult<ParsedExpression> {
+        let expr = match self {
+            ExpressionInternal::Constant(c) => ParsedExpression::Constant(c),
+            ExpressionInternal::Variable(var) => {
+                let var: VariableId = var.parse()?;
+                if let VariableId::Payload(payload_var) = var.clone() {
+                    payload_vars.insert(payload_var);
+                }
+                ParsedExpression::Variable(var)
+            }
+            ExpressionInternal::Condition(condition) => {
+                let condition_id = conditions.len();
+                conditions.push(*condition);
+                ParsedExpression::new_condition_id(condition_id)
+            }
+            ExpressionInternal::Mult(internal_expressions) => ParsedExpression::Mult(
+                internal_expressions
+                    .into_iter()
+                    .map(|expr| expr.parse_and_convert(payload_vars, conditions))
+                    .try_collect()?,
+            ),
+            ExpressionInternal::Sum(expression_internals) => ParsedExpression::Sum(
+                expression_internals
+                    .into_iter()
+                    .map(|expr| expr.parse_and_convert(payload_vars, conditions))
+                    .try_collect()?,
+            ),
+            ExpressionInternal::Neg(expression_internal) => ParsedExpression::new_neg(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            ),
+            ExpressionInternal::GeoDistance { origin, to } => {
+                ParsedExpression::new_geo_distance(origin, to)
+            }
+        };
+
+        Ok(expr)
+    }
+}
+
+impl TryFrom<FormulaInternal> for ParsedFormula {
+    type Error = CollectionError;
+    fn try_from(value: FormulaInternal) -> Result<Self, Self::Error> {
+        let FormulaInternal { formula, defaults } = value;
+
+        let mut payload_vars = HashSet::new();
+        let mut conditions = Vec::new();
+
+        let parsed_expression = formula.parse_and_convert(&mut payload_vars, &mut conditions)?;
+
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| {
+                let key = key.as_str().parse()?;
+                CollectionResult::Ok((key, value))
+            })
+            .try_collect()?;
+
+        Ok(ParsedFormula {
+            formula: parsed_expression,
+            payload_vars,
+            conditions,
+            defaults,
+        })
     }
 }
 
