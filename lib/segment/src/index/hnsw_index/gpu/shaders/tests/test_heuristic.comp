@@ -40,6 +40,11 @@ void main() {
 
     memoryBarrierShared();
     barrier();
+
+    nearest_count = bheap_into_array(NEAREST_HEAP_OFFSET, nearest_count);
+
+    memoryBarrierShared();
+    barrier();
     uint count = run_heuristic();
 
     memoryBarrierShared();

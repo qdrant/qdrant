@@ -93,8 +93,6 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
     }
 
     process_candidate(point_id);
-
-    nearest_count = bheap_into_array(NEAREST_HEAP_OFFSET, nearest_count);
     return nearest_count;
 }
 

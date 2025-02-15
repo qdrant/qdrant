@@ -99,6 +99,7 @@ void sort(uint offset, uint count) {
     }
 
 #if WORKGROUP_SIZE > SUBGROUP_SIZE
+    memoryBarrierShared();
     barrier();
 #endif
 }

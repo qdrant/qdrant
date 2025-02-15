@@ -42,6 +42,11 @@ void main() {
     float entry_score = similarity(request.entry);
     uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
 
+    nearest_count = bheap_into_array(NEAREST_HEAP_OFFSET, nearest_count);
+    
+    memoryBarrierShared();
+    barrier();
+
     if (gl_LocalInvocationID.x == 0) {
         if (search_count > 0) {
             new_entries.data[group_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
