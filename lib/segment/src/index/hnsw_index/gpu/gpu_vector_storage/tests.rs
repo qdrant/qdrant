@@ -665,7 +665,7 @@ fn test_gpu_vector_storage_impl(
         .build()
         .unwrap();
 
-    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+    let shader = ShaderBuilder::new(device.clone(), gpu_vector_storage.propose_workgroup_size())
         .with_shader_code(include_str!("../shaders/tests/test_vector_storage.comp"))
         .with_parameters(&gpu_vector_storage)
         .build("tests/test_vector_storage.comp")

@@ -13,10 +13,10 @@ layout(set = 0, binding = 0) buffer ScoresData {
 } scores;
 
 void main() {
-    uint idx = SUBGROUP_ID;
+    uint idx = gl_WorkGroupID.x;
     set_target(0);
     float score = similarity(idx);
-    if (subgroupElect()) {
+    if (gl_LocalInvocationID.x == 0) {
         scores.data[idx] = score;
     }
 }

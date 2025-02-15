@@ -3,39 +3,43 @@
 
 #define VECTOR_STORAGE_ELEMENT_SIZE 4
 #define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
-#define VECTOR_STORAGE_SCORE_TYPE uint
 
 #ifdef COSINE_DISTANCE
 
-uint dot_u8vec4(u8vec4 a, u8vec4 b, in out uint vector1Len, in out uint vector2Len) {
+#define VECTOR_STORAGE_SCORE_TYPE uvec3
+#define VECTOR_STORAGE_ZERO_SCORE uvec3(0, 0, 0)
+
+VECTOR_STORAGE_SCORE_TYPE dot_u8vec4(
+    VECTOR_STORAGE_ELEMENT_TYPE a,
+    VECTOR_STORAGE_ELEMENT_TYPE b
+) {
     uvec4 square1 = uvec4(a) * uvec4(a);
-    vector1Len += square1.x + square1.y + square1.z + square1.w;
+    uint vector1Len = square1.x + square1.y + square1.z + square1.w;
 
     uvec4 square2 = uvec4(b) * uvec4(b);
-    vector2Len += square2.x + square2.y + square2.z + square2.w;
+    uint vector2Len = square2.x + square2.y + square2.z + square2.w;
 
     uvec4 mul = uvec4(a) * uvec4(b);
-    return mul.x + mul.y + mul.z + mul.w;
+    uint dot = mul.x + mul.y + mul.z + mul.w;
+    return uvec3(dot, vector1Len, vector2Len);
 }
 
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b, vector1Len, vector2Len)
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
 
-float u8_postprocess_cosine_score(float result, uint vector1Len, uint vector2Len) {
-    float len1 = float(subgroupAdd(vector1Len));
-    float len2 = float(subgroupAdd(vector2Len));
-    if (len1 > 0 && len2 > 0) {
-        return float(result) / sqrt(len1 * len2);
+float u8_postprocess_cosine_score(VECTOR_STORAGE_SCORE_TYPE result) {
+    if (result.y > 0 && result.z > 0) {
+        return float(result.x) / sqrt(float(result.y) * float(result.z));
     } else {
         return 0;
     }
 }
 
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \
-    u8_postprocess_cosine_score(RESULT, vector1Len, vector2Len)
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) u8_postprocess_cosine_score(RESULT)
 
-#define VECTOR_STORAGE_PREPROCESS() \
-    uint vector1Len = 0; \
-    uint vector2Len = 0;
+#else
+
+#define VECTOR_STORAGE_SCORE_TYPE uint
+#define VECTOR_STORAGE_ZERO_SCORE 0
 
 #endif
 

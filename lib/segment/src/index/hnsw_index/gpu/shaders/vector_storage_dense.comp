@@ -147,12 +147,13 @@ void set_target_dense(uint point_id) {
 
 #endif
 
-float similarity_dense(uint point_id) {
-#ifdef VECTOR_STORAGE_PREPROCESS
-    VECTOR_STORAGE_PREPROCESS();
+// declare shared buffer for reduce
+#if WORKGROUP_SIZE > SUBGROUP_SIZE
+shared VECTOR_STORAGE_SCORE_TYPE score_reduce_buffer[WORKGROUP_SIZE / SUBGROUP_SIZE];
 #endif
 
-    VECTOR_STORAGE_SCORE_TYPE result = 0;
+float similarity_dense(uint point_id) {
+    VECTOR_STORAGE_SCORE_TYPE result = VECTOR_STORAGE_ZERO_SCORE;
     uint index = (point_id / STORAGES_COUNT) * (DIM / VECTOR_STORAGE_ELEMENT_SIZE) + gl_LocalInvocationID.x;
     uint storage_index = point_id % STORAGES_COUNT;
     switch (storage_index) {
@@ -171,6 +172,24 @@ float similarity_dense(uint point_id) {
     }
 
     result = subgroupAdd(result);
+
+// REDUCE
+#if WORKGROUP_SIZE > SUBGROUP_SIZE
+    barrier();
+    if (subgroupElect()) {
+        score_reduce_buffer[gl_SubgroupID] = result;
+    }
+    barrier(); // now we can read score_reduce_buffer
+
+    if (gl_SubgroupInvocationID == 0) {
+        for (uint i = 0; i < WORKGROUP_SIZE / SUBGROUP_SIZE; i++) {
+            if (i != gl_SubgroupID) {
+                result += score_reduce_buffer[i];
+            }
+        }
+    }
+    result = subgroupBroadcast(result, 0);
+#endif
 
     return VECTOR_STORAGE_POSTPROCESS_SCORE(result);
 }

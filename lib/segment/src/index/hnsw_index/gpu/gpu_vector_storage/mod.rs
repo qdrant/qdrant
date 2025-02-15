@@ -45,6 +45,8 @@ pub struct GpuVectorStorage {
     quantization: Option<GpuQuantization>,
     /// Additional multivectors data.
     multivectors: Option<GpuMultivectors>,
+    // size of one vector in bytes
+    gpu_vector_size: usize,
 }
 
 impl ShaderBuilderParameters for GpuVectorStorage {
@@ -718,6 +720,7 @@ impl GpuVectorStorage {
             distance,
             quantization,
             multivectors,
+            gpu_vector_size,
         })
     }
 
@@ -796,5 +799,16 @@ impl GpuVectorStorage {
 
     pub fn num_vectors(&self) -> usize {
         self.num_vectors
+    }
+
+    pub fn propose_workgroup_size(&self) -> usize {
+        let iterations_count = self.gpu_vector_size / (4 * self.device.subgroup_size());
+        if iterations_count % 4 == 0 {
+            4 * self.device.subgroup_size()
+        } else if iterations_count % 2 == 0 {
+            2 * self.device.subgroup_size()
+        } else {
+            self.device.subgroup_size()
+        }
     }
 }
