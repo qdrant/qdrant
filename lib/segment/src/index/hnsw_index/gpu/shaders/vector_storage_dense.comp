@@ -170,6 +170,8 @@ float similarity_dense(uint point_id) {
         break;
     }
 
+    result = subgroupAdd(result);
+
     return VECTOR_STORAGE_POSTPROCESS_SCORE(result);
 }
 

@@ -21,7 +21,7 @@ uint dot_u8vec4(u8vec4 a, u8vec4 b) {
 
 float sq_postprocess_score(VECTOR_STORAGE_SCORE_TYPE result, POINT_ID point_id, float target_offset) {
     float sq_offset = target_offset + vector_offsets.data[point_id] - SQ_DIFF;
-    return SQ_MULTIPLIER * float(subgroupAdd(result)) + sq_offset;
+    return SQ_MULTIPLIER * float(result) + sq_offset;
 }
 
 #define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) \

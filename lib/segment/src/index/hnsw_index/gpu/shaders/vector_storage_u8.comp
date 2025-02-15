@@ -24,7 +24,7 @@ float u8_postprocess_cosine_score(float result, uint vector1Len, uint vector2Len
     float len1 = float(subgroupAdd(vector1Len));
     float len2 = float(subgroupAdd(vector2Len));
     if (len1 > 0 && len2 > 0) {
-        return float(subgroupAdd(result)) / sqrt(len1 * len2);
+        return float(result) / sqrt(len1 * len2);
     } else {
         return 0;
     }
@@ -48,7 +48,7 @@ uint dot_u8vec4(u8vec4 a, u8vec4 b) {
 
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) dot_u8vec4(a, b)
 
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) float(subgroupAdd(RESULT))
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) float(RESULT)
 
 #endif
 
@@ -59,7 +59,7 @@ uint euclid_u8vec4(u8vec4 v1, u8vec4 v2) {
     return uint(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
 }
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) euclid_u8vec4(a, b)
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(subgroupAdd(RESULT))
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(RESULT)
 
 #endif
 
@@ -70,7 +70,7 @@ uint manhattan_u8vec4(u8vec4 v1, u8vec4 v2) {
 }
 
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_u8vec4(a, b)
-#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(subgroupAdd(RESULT))
+#define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) -float(RESULT)
 
 #endif
 

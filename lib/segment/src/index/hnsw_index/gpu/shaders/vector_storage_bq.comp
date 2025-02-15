@@ -9,7 +9,7 @@
 #define BITS_IN_UINT 32
 
 float bq_postprocess_score(uint result) {
-    float xor_product = float(subgroupAdd(result));
+    float xor_product = float(result);
     float zeros_count = float((DIM / VECTOR_STORAGE_ELEMENT_SIZE) * BITS_IN_UINT) - xor_product;
     return zeros_count - xor_product - BQ_SKIP_COUNT;
 }
