@@ -21,7 +21,7 @@ layout(set = 0, binding = 0) buffer Requests {
 } requests;
 
 layout(set = 0, binding = 1) buffer NewEntries {
-    uint data[];
+    coherent uint data[];
 } new_entries;
 
 layout(set = 0, binding = 2) buffer Atomics {

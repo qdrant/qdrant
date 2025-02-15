@@ -15,7 +15,7 @@ readonly uniform VisitedFlagsParams {
 
 layout(set = VISITED_FLAGS_LAYOUT_SET, binding = 1)
 buffer VisitedFlagsBuffer {
-    uint8_t data[];
+    coherent uint8_t data[];
 } visited_flags;
 
 #ifdef VISITED_FLAGS_REMAP
