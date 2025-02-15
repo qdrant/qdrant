@@ -57,8 +57,8 @@ VECTOR_STORAGE_DEFINE(3)
 
 // ----------- TARGET ------------
 // Target can be presented in shared memory or in registers. Control it using defines.
-//#define TARGET_CACHE_REGISTERS // Registers case
-#define TARGET_CACHE_SHARED // Shared memory case
+#define TARGET_CACHE_REGISTERS // Registers case
+//#define TARGET_CACHE_SHARED // Shared memory case
 
 
 #ifdef TARGET_CACHE_REGISTERS // Registers case

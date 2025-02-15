@@ -46,7 +46,10 @@ struct GpuHeapTestParams {
 }
 
 #[rstest]
-fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
+fn test_gpu_nearest_heap(
+    #[values(true, false)] linear: bool,
+    #[values(1, 4)] subgroups_count: usize,
+) {
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -74,7 +77,7 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
 
     let gpu_nearest_heap = GpuHeapTestConfig { ef, linear };
 
-    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size() * subgroups_count)
         .with_shader_code(include_str!("shaders/tests/test_nearest_heap.comp"))
         .with_parameters(&gpu_nearest_heap)
         .build("tests/test_nearest_heap.comp")
@@ -250,7 +253,10 @@ fn test_gpu_nearest_heap(#[values(true, false)] linear: bool) {
 }
 
 #[rstest]
-fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
+fn test_gpu_candidates_heap(
+    #[values(true, false)] linear: bool,
+    #[values(1, 4)] subgroups_count: usize,
+) {
     let _ = env_logger::builder()
         .is_test(true)
         .filter_level(log::LevelFilter::Trace)
@@ -281,7 +287,7 @@ fn test_gpu_candidates_heap(#[values(true, false)] linear: bool) {
         linear,
     };
 
-    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size())
+    let shader = ShaderBuilder::new(device.clone(), device.subgroup_size() * subgroups_count)
         .with_shader_code(include_str!("shaders/tests/test_candidates_heap.comp"))
         .with_parameters(&gpu_candidates_heap)
         .build("tests/test_candidates_heap.comp")

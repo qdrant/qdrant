@@ -27,28 +27,28 @@ layout(set = 0, binding = 2) buffer ScoresOuput {
 uint candidates_count = 0;
 
 void main() {
-    uint subgroup_index = SUBGROUP_ID;
+    uint group_index = gl_WorkGroupID.x;
 
     for (uint i = 0; i < test_params.input_counts; i++) {
-        uint point_index = subgroup_index * test_params.input_counts + i;
+        uint point_index = group_index * test_params.input_counts + i;
         ScoredPoint point = input_points.data[point_index];
         bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, point);
     }
 
     while (candidates_count > 0) {
-        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count);
+        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count, EF);
     }
 
     for (uint i = 0; i < test_params.input_counts; i++) {
-        uint point_index = subgroup_index * test_params.input_counts + i;
+        uint point_index = group_index * test_params.input_counts + i;
         ScoredPoint point = input_points.data[point_index];
         bheap_push(CANDIDATES_HEAP_OFFSET, candidates_count, EF, point);
     }
 
-    uint output_index = subgroup_index * test_params.input_counts;
+    uint output_index = group_index * test_params.input_counts;
     while (candidates_count > 0) {
-        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count);
-        if (subgroupElect()) {
+        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count, EF);
+        if (gl_LocalInvocationID.x == 0) {
             scores_output.data[output_index] = candidate;
         }
         output_index++;

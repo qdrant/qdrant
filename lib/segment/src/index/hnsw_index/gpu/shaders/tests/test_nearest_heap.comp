@@ -31,10 +31,10 @@ layout(set = 0, binding = 3) buffer SortedOuput {
 uint nearest_count = 0;
 
 void main() {
-    uint subgroup_index = SUBGROUP_ID;
+    uint group_index = gl_WorkGroupID.x;
 
     for (uint i = 0; i < test_params.input_counts; i++) {
-        uint point_index = subgroup_index * test_params.input_counts + i;
+        uint point_index = group_index * test_params.input_counts + i;
         ScoredPoint point = input_points.data[point_index];
         bheap_push(NEAREST_HEAP_OFFSET, nearest_count, EF, point);
 
@@ -44,18 +44,18 @@ void main() {
         float nearest_smaller_score_check = subgroupMin(bheap_top(NEAREST_HEAP_OFFSET).score);
         bool is_different = nearest_smaller_score_check != bheap_top(NEAREST_HEAP_OFFSET).score;
         if (subgroupAny(is_different)) {
-            if (subgroupElect()) {
+            if (gl_LocalInvocationID.x == 0) {
                 scores_output.data[point_index] = positive_infinity;
             }
-        } else if (subgroupElect()) {
+        } else if (gl_LocalInvocationID.x == 0) {
             scores_output.data[point_index] = bheap_top(NEAREST_HEAP_OFFSET).score;
         }
     }
 
     sort(NEAREST_HEAP_OFFSET, nearest_count);
-    if (subgroupElect()) {
+    if (gl_LocalInvocationID.x == 0) {
         for (uint i = 0; i < EF; i++) {
-            uint point_index = subgroup_index * EF + i;
+            uint point_index = group_index * EF + i;
             sorted_output.data[point_index] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
         }
     }

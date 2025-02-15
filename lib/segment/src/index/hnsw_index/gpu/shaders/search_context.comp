@@ -92,7 +92,7 @@ uint search(POINT_ID point_id, ScoredPoint entry) {
     groupMemoryBarrier();
     
     while (candidates_count > 0) {
-        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count);
+        ScoredPoint candidate = bheap_pop_max(CANDIDATES_HEAP_OFFSET, candidates_count, EF);
         if (candidate.score < bheap_top(NEAREST_HEAP_OFFSET).score) {
             continue;
         }
