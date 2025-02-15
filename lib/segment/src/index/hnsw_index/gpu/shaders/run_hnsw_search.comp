@@ -43,7 +43,7 @@ void main() {
 
     uint result_index_offset = (EF + 1) * group_index;
     if (gl_LocalInvocationID.x == 0) {
-        search_results.data[result_index_offset] = ScoredPoint(count, 0.0);
+        search_results.data[result_index_offset] = ScoredPoint(search_request.id, count);
     }
 
     for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {

@@ -189,7 +189,7 @@ impl GpuInsertResources {
 
         let insert_descriptor_set =
             gpu::DescriptorSet::builder(insert_descriptor_set_layout.clone())
-                .add_storage_buffer(0, requests_buffer.clone())
+                .add_storage_buffer(0, search_results_buffer.clone())
                 .add_storage_buffer(1, responses_buffer.clone())
                 .add_storage_buffer(2, insert_atomics_buffer.clone())
                 .build()?;
@@ -412,8 +412,6 @@ impl<'a> GpuInsertContext<'a> {
             return Err(OperationError::service_error("Too many gpu patch requests"));
         }
 
-        let timer = std::time::Instant::now();
-
         self.gpu_visited_flags.clear(&mut self.context)?;
 
         // upload requests
@@ -440,6 +438,26 @@ impl<'a> GpuInsertContext<'a> {
         }
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
+
+        let timer = std::time::Instant::now();
+
+        self.context.bind_pipeline(
+            self.search_pipeline.clone(),
+            &[
+                self.insert_resources.search_descriptor_set.clone(),
+                self.gpu_vector_storage.descriptor_set(),
+                self.gpu_links.descriptor_set(),
+                self.gpu_visited_flags.descriptor_set(),
+            ],
+        )?;
+        self.context.dispatch(requests.len(), 1, 1)?;
+        self.context.run()?;
+        self.context.wait_finish(GPU_TIMEOUT)?;
+
+        self.searches_timer += timer.elapsed();
+        self.searches_count += 1;
+
+        let timer = std::time::Instant::now();
 
         self.context.bind_pipeline(
             self.insert_pipeline.clone(),
@@ -747,7 +765,7 @@ mod tests {
             gpu_responses
                 .chunks(ef + 1)
                 .map(|r| {
-                    let mut r = r[1..r[0].idx as usize + 1].iter().cloned().collect_vec();
+                    let mut r = r[1..r[0].score as usize + 1].iter().cloned().collect_vec();
                     r.sort();
                     r.reverse();
                     r

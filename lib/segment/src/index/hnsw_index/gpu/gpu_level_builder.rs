@@ -91,7 +91,9 @@ fn gpu_batched_insert(
 fn gpu_batched_apply_entries(batch: &Batch, new_entries: Vec<PointOffsetType>) {
     assert_eq!(batch.points.len(), new_entries.len());
     for (linking_point, new_entry) in batch.points.iter().zip(new_entries) {
-        linking_point.entry.store(new_entry, Ordering::Relaxed);
+        if new_entry != PointOffsetType::MAX {
+            linking_point.entry.store(new_entry, Ordering::Relaxed);
+        }
     }
 }
 

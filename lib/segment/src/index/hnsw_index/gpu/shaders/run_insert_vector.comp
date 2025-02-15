@@ -16,13 +16,8 @@ layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 #include "search_context.comp"
 
-struct Request {
-    uint id;
-    uint entry;
-};
-
 layout(set = 0, binding = 0) buffer Requests {
-    Request data[];
+    ScoredPoint data[];
 } requests;
 
 layout(set = 0, binding = 1) buffer NewEntries {
@@ -36,14 +31,20 @@ layout(set = 0, binding = 2) buffer Atomics {
 void main() {
     search_context_init();
     uint group_index = gl_WorkGroupID.x;
-    Request request = requests.data[group_index];
+    ScoredPoint request = requests.data[group_index * (EF + 1)];
+    POINT_ID request_id = request.id;
+    uint search_count = uint(request.score);
+    nearest_count = search_count;
 
-    set_target(request.id);
-    float entry_score = similarity(request.entry);
-    uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
+    for (uint i = gl_LocalInvocationID.x; i < search_count; i += WORKGROUP_SIZE) {
+        shared_buffer[NEAREST_HEAP_OFFSET + i] = requests.data[group_index * (EF + 1) + i + 1];
+    }
+
+    memoryBarrierShared();
+    barrier();
 
     nearest_count = bheap_into_array(NEAREST_HEAP_OFFSET, nearest_count);
-    
+
     memoryBarrierShared();
     barrier();
 
@@ -51,7 +52,7 @@ void main() {
         if (search_count > 0) {
             new_entries.data[group_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
         } else {
-            new_entries.data[group_index] = request.entry;
+            new_entries.data[group_index] = UINT_MAX;
         }
     }
 
@@ -60,19 +61,19 @@ void main() {
     memoryBarrierShared();
     barrier();
 
-    // update request.id links
+    // update request_id links
     for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {
-        GET_LINK(request.id, i) = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
+        GET_LINK(request_id, i) = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
     }
     if (gl_LocalInvocationID.x == 0) {
-        LINKS_SET_SIZE(request.id, count);
+        LINKS_SET_SIZE(request_id, count);
     }
 
     memoryBarrier();
     barrier();
 
     for (uint i = 0; i < count; i++) {
-        uint other_id = iterate_link(request.id, i, count);
+        uint other_id = iterate_link(request_id, i, count);
 
         bool is_locked = false;
         if (gl_LocalInvocationID.x == 0) {
@@ -100,7 +101,7 @@ void main() {
         uint other_links_count = get_links_count(other_id);
         if (other_links_count < LEVEL_M) {
             if (gl_LocalInvocationID.x == 0) {
-                GET_LINK(other_id, other_links_count) = request.id;
+                GET_LINK(other_id, other_links_count) = request_id;
                 LINKS_SET_SIZE(other_id, other_links_count + 1);
             }
         } else {
@@ -115,8 +116,8 @@ void main() {
                 nearest_count++;
             }
             shared_buffer[NEAREST_HEAP_OFFSET + nearest_count] = ScoredPoint(
-                request.id,
-                similarity(request.id)
+                request_id,
+                similarity(request_id)
             );
             nearest_count++;
 

@@ -97,7 +97,7 @@ pub fn build_hnsw_on_gpu<'a>(
         m0,
         ef,
         exact,
-        true,
+        super::ALLOW_LARGE_WORKGROUPS,
         1..MAX_VISITED_FLAGS_FACTOR,
     )?;
 
