@@ -16,6 +16,7 @@ readonly buffer VectorDivisions { \
     PQRange data[]; \
 } vector_divisions;
 
+#define VECTOR_STORAGE_ELEMENT_SIZE 4
 #define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
 #define VECTOR_STORAGE_SCORE_TYPE float
 #define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) subgroupAdd(RESULT)
@@ -52,10 +53,10 @@ float score_pq(u8vec4 a, u8vec4 b, uint i) {
     return score;
 }
 
-#ifdef VECTOR_SINGLE_ITERATION
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, gl_SubgroupInvocationID)
+#if (DIM / (VECTOR_STORAGE_ELEMENT_SIZE * WORKGROUP_SIZE)) == 1
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, gl_LocalInvocationID.x)
 #else
-#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, i * SUBGROUP_SIZE + gl_SubgroupInvocationID) 
+#define VECTOR_STORAGE_SCORE_ELEMENT(a, b) score_pq(a, b, i * WORKGROUP_SIZE + gl_LocalInvocationID.x) 
 #endif
 
 #endif

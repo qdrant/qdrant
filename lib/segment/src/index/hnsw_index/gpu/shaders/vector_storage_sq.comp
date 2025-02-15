@@ -13,6 +13,7 @@ uint dot_u8vec4(u8vec4 a, u8vec4 b) {
     return sum.x + sum.y + sum.z + sum.w;
 }
 
+#define VECTOR_STORAGE_ELEMENT_SIZE 4
 #define VECTOR_STORAGE_ELEMENT_TYPE u8vec4
 #define VECTOR_STORAGE_SCORE_TYPE uint
 #define VECTOR_STORAGE_POSTPROCESS_SET_TARGET() \

@@ -2,6 +2,7 @@
 #define VECTOR_STORAGE_BQ_HEADER
 
 // uint = 4 * uint8_t, vec4 analogue for BQ
+#define VECTOR_STORAGE_ELEMENT_SIZE 4
 #define VECTOR_STORAGE_ELEMENT_TYPE uint
 #define VECTOR_STORAGE_SCORE_TYPE uint
 
@@ -9,7 +10,7 @@
 
 float bq_postprocess_score(uint result) {
     float xor_product = float(subgroupAdd(result));
-    float zeros_count = float((DIM / ELEMENTS_PER_SUBGROUP) * BITS_IN_UINT) - xor_product;
+    float zeros_count = float((DIM / VECTOR_STORAGE_ELEMENT_SIZE) * BITS_IN_UINT) - xor_product;
     return zeros_count - xor_product - BQ_SKIP_COUNT;
 }
 

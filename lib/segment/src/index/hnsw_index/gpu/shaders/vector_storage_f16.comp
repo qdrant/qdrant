@@ -1,7 +1,8 @@
 #ifndef VECTOR_STORAGE_F16_HEADER
 #define VECTOR_STORAGE_F16_HEADER
 
-#define VECTOR_STORAGE_ELEMENT_TYPE f16vec4
+#define VECTOR_STORAGE_ELEMENT_SIZE 2
+#define VECTOR_STORAGE_ELEMENT_TYPE f16vec2
 #define VECTOR_STORAGE_SCORE_TYPE float
 #define VECTOR_STORAGE_POSTPROCESS_SCORE(RESULT) subgroupAdd(RESULT)
 
@@ -14,17 +15,17 @@
 #endif
 
 #ifdef EUCLID_DISTANCE
-float euclid_metric_f16(f16vec4 v1, f16vec4 v2) {
-    f16vec4 v = v1 - v2;
-    return float(-v.x * v.x - v.y * v.y - v.z * v.z - v.w * v.w);
+float euclid_metric_f16(VECTOR_STORAGE_ELEMENT_TYPE v1, VECTOR_STORAGE_ELEMENT_TYPE v2) {
+    VECTOR_STORAGE_ELEMENT_TYPE v = v1 - v2;
+    return float(-v.x * v.x - v.y * v.y);
 }
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) euclid_metric_f16(a, b)
 #endif
 
 #ifdef MANHATTAN_DISTANCE
-float manhattan_metric_f16(f16vec4 v1, f16vec4 v2) {
-    f16vec4 v = abs(v1 - v2);
-    return float(-v.x - v.y - v.z - v.w);
+float manhattan_metric_f16(VECTOR_STORAGE_ELEMENT_TYPE v1, VECTOR_STORAGE_ELEMENT_TYPE v2) {
+    VECTOR_STORAGE_ELEMENT_TYPE v = abs(v1 - v2);
+    return float(-v.x - v.y);
 }
 #define VECTOR_STORAGE_SCORE_ELEMENT(a, b) manhattan_metric_f16(a, b)
 #endif
