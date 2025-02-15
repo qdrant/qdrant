@@ -41,14 +41,12 @@ void main() {
     memoryBarrierShared();
     barrier();
 
+    uint result_index_offset = (EF + 1) * group_index;
     if (gl_LocalInvocationID.x == 0) {
-        uint result_index_offset = EF * group_index;
-        uint i = 0;
-        for (; i < count; i++) {
-            search_results.data[result_index_offset + i] = shared_buffer[NEAREST_HEAP_OFFSET + i];
-        }
-        for (; i < EF; i++) {
-            search_results.data[result_index_offset + i] = ScoredPoint(UINT_MAX, 0.0);
-        }
+        search_results.data[result_index_offset] = ScoredPoint(count, 0.0);
+    }
+
+    for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {
+        search_results.data[result_index_offset + i + 1] = shared_buffer[NEAREST_HEAP_OFFSET + i];
     }
 }

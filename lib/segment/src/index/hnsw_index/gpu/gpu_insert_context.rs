@@ -603,7 +603,7 @@ mod tests {
             device.clone(),
             "Search responses buffer",
             gpu::BufferType::Storage,
-            groups_count * ef * std::mem::size_of::<ScoredPointOffset>(),
+            groups_count * (ef + 1) * std::mem::size_of::<ScoredPointOffset>(),
         )
         .unwrap();
 
@@ -624,7 +624,7 @@ mod tests {
         };
 
         let search_shader = ShaderBuilder::new(device.clone(), workgroup_size)
-            .with_shader_code(include_str!("shaders/tests/test_hnsw_search.comp"))
+            .with_shader_code(include_str!("shaders/run_hnsw_search.comp"))
             .with_parameters(gpu_insert_context.gpu_vector_storage)
             .with_parameters(&gpu_insert_context.gpu_links)
             .with_parameters(&gpu_insert_context.gpu_visited_flags)
@@ -727,23 +727,23 @@ mod tests {
                     download_staging_buffer.clone(),
                     0,
                     0,
-                    requests.len() * ef * std::mem::size_of::<ScoredPointOffset>(),
+                    requests.len() * (ef + 1) * std::mem::size_of::<ScoredPointOffset>(),
                 )
                 .unwrap();
             gpu_insert_context.context.run().unwrap();
             gpu_insert_context.context.wait_finish(GPU_TIMEOUT).unwrap();
 
-            let mut gpu_responses = vec![ScoredPointOffset::default(); requests.len() * ef];
+            let mut gpu_responses = vec![ScoredPointOffset::default(); requests.len() * (ef + 1)];
             download_staging_buffer
                 .download_slice(&mut gpu_responses, 0)
                 .unwrap();
             gpu_responses
-                .chunks(ef)
+                .chunks(ef + 1)
                 .map(|r| {
-                    r.iter()
-                        .take_while(|s| s.idx != PointOffsetType::MAX)
-                        .cloned()
-                        .collect_vec()
+                    let mut r = r[1..r[0].idx as usize + 1].iter().cloned().collect_vec();
+                    r.sort();
+                    r.reverse();
+                    r
                 })
                 .collect_vec()
         };
