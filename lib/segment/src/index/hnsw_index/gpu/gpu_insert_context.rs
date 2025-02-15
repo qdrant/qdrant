@@ -556,7 +556,10 @@ mod tests {
         }
     }
 
-    fn create_insert_context(test_data: &TestData, allow_large_workgroups: bool) -> GpuInsertContext<'_> {
+    fn create_insert_context(
+        test_data: &TestData,
+        allow_large_workgroups: bool,
+    ) -> GpuInsertContext<'_> {
         let total_num_vectors = test_data.gpu_vector_storage.num_vectors() + test_data.groups_count;
         let point_ids = (0..total_num_vectors as PointOffsetType).collect_vec();
 
@@ -613,7 +616,9 @@ mod tests {
         .unwrap();
 
         let workgroup_size = if allow_large_workgroups {
-            gpu_insert_context.gpu_vector_storage.propose_workgroup_size()
+            gpu_insert_context
+                .gpu_vector_storage
+                .propose_workgroup_size()
         } else {
             device.subgroup_size()
         };
@@ -897,7 +902,9 @@ mod tests {
         .unwrap();
 
         let workgroup_size = if allow_large_workgroups {
-            gpu_insert_context.gpu_vector_storage.propose_workgroup_size()
+            gpu_insert_context
+                .gpu_vector_storage
+                .propose_workgroup_size()
         } else {
             device.subgroup_size()
         };
