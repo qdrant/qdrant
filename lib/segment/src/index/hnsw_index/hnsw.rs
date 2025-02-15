@@ -156,7 +156,7 @@ impl HNSWIndex {
 
         let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
 
-        let graph = GraphLayers::load(path, !hnsw_config.on_disk.unwrap_or(false), do_convert)?;
+        let graph = GraphLayers::load(path, hnsw_config.on_disk.unwrap_or(false), do_convert)?;
 
         Ok(HNSWIndex {
             id_tracker,
