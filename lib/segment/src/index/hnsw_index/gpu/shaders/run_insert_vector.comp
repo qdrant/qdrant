@@ -35,52 +35,66 @@ layout(set = 0, binding = 2) buffer Atomics {
 
 void main() {
     search_context_init();
-    uint subgroup_index = SUBGROUP_ID;
-    Request request = requests.data[subgroup_index];
+    uint group_index = gl_WorkGroupID.x;
+    Request request = requests.data[group_index];
 
     set_target(request.id);
     float entry_score = similarity(request.entry);
     uint search_count = search(request.id, ScoredPoint(request.entry, entry_score));
 
-    if (subgroupElect()) {
+    if (gl_LocalInvocationID.x == 0) {
         if (search_count > 0) {
-            new_entries.data[subgroup_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
+            new_entries.data[group_index] = shared_buffer[NEAREST_HEAP_OFFSET].id;
         } else {
-            new_entries.data[subgroup_index] = request.entry;
+            new_entries.data[group_index] = request.entry;
         }
     }
 
     uint count = run_heuristic();
 
-    // sync all threads to make sure that we don't do search while updating links
+    memoryBarrierShared();
     barrier();
 
     // update request.id links
-    for (uint i = gl_SubgroupInvocationID; i < count; i += SUBGROUP_SIZE) {
+    for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {
         GET_LINK(request.id, i) = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
     }
-    if (subgroupElect()) {
+    if (gl_LocalInvocationID.x == 0) {
         LINKS_SET_SIZE(request.id, count);
     }
 
-    subgroupMemoryBarrier();
+    memoryBarrier();
+    barrier();
 
     for (uint i = 0; i < count; i++) {
-        uint other_id = GET_LINK(request.id, i);
+        uint other_id = iterate_link(request.id, i, count);
 
         bool is_locked = false;
-        if (gl_SubgroupInvocationID == 0) {
+        if (gl_LocalInvocationID.x == 0) {
             uint other_atomic = atomicExchange(atomics.data[other_id], 1);
             is_locked = other_atomic == 1;
         }
-        if (subgroupAny(is_locked)) {
-            // point is already being processed by another subgroup
+
+#if WORKGROUP_SIZE > SUBGROUP_SIZE
+        if (gl_LocalInvocationID.x == 0) {
+            sync_uint = is_locked ? 1 : 0;
+        }
+        memoryBarrierShared();
+        barrier();
+        if (gl_SubgroupInvocationID == 0 && gl_LocalInvocationID.x != 0) {
+            is_locked = sync_uint == 1;
+        }
+#endif
+        is_locked = subgroupAny(is_locked);
+
+        if (is_locked) {
+            // point is already being processed by another working group
             continue;
         }
 
-        uint other_links_count = LINKS_COUNT(other_id);
+        uint other_links_count = get_links_count(other_id);
         if (other_links_count < LEVEL_M) {
-            if (subgroupElect()) {
+            if (gl_LocalInvocationID.x == 0) {
                 GET_LINK(other_id, other_links_count) = request.id;
                 LINKS_SET_SIZE(other_id, other_links_count + 1);
             }
@@ -101,24 +115,27 @@ void main() {
             );
             nearest_count++;
 
-            subgroupMemoryBarrierShared();
+            MEMORY_BARRIER_SHARED;
             sort(NEAREST_HEAP_OFFSET, nearest_count);
 
-            subgroupMemoryBarrierShared();
+            MEMORY_BARRIER_SHARED;
             uint other_new_links_count = run_heuristic();
 
-            subgroupMemoryBarrierShared();
-            for (uint j = gl_SubgroupInvocationID; j < other_new_links_count; j += SUBGROUP_SIZE) {
+            MEMORY_BARRIER_SHARED;
+            BARRIER;
+
+            for (uint j = gl_LocalInvocationID.x; j < other_new_links_count; j += WORKGROUP_SIZE) {
                 GET_LINK(other_id, j) = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
             }
-            if (subgroupElect()) {
+            if (gl_LocalInvocationID.x == 0) {
                 LINKS_SET_SIZE(other_id, other_new_links_count);
             }
         }
 
-        subgroupMemoryBarrier();
+        MEMORY_BARRIER;
+        BARRIER;
 
-        if (gl_SubgroupInvocationID == 0) {
+        if (gl_LocalInvocationID.x == 0) {
             atomicExchange(atomics.data[other_id], 0);
         }
     }

@@ -117,6 +117,7 @@ mod tests {
         test: &GpuGraphTestData,
         groups_count: usize,
         visited_flags_factor: usize,
+        allow_large_workgroups: bool,
     ) -> GraphLayersBuilder {
         let num_vectors = test.graph_layers_builder.links_layers().len();
         let m = test.graph_layers_builder.m();
@@ -157,7 +158,7 @@ mod tests {
             m0,
             ef,
             true,
-            false,
+            allow_large_workgroups,
             visited_flags_factor..32,
         )
         .unwrap();
@@ -183,34 +184,37 @@ mod tests {
         graph_layers_builder
     }
 
-    #[test]
-    fn test_gpu_hnsw_level_equivalency() {
+    #[rstest]
+    fn test_gpu_hnsw_level_equivalency(#[values(false, true)] allow_large_workgroups: bool) {
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
             .try_init();
 
         let num_vectors = 1024;
-        let dim = 64;
+        let dim = 128;
         let m = 8;
         let m0 = 16;
         let ef = 32;
 
         let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, 0);
-        let graph_layers_builder = build_gpu_graph(&test, 1, 1);
+        let graph_layers_builder = build_gpu_graph(&test, 1, 1, allow_large_workgroups);
 
         compare_graph_layers_builders(&test.graph_layers_builder, &graph_layers_builder);
     }
 
     #[rstest]
-    fn test_gpu_hnsw_level_quality(#[values(1, 2)] visited_flags_factor: usize) {
+    fn test_gpu_hnsw_level_quality(
+        #[values(1, 2)] visited_flags_factor: usize,
+        #[values(false, true)] allow_large_workgroups: bool,
+    ) {
         let _ = env_logger::builder()
             .is_test(true)
             .filter_level(log::LevelFilter::Trace)
             .try_init();
 
         let num_vectors = 1024;
-        let dim = 64;
+        let dim = 128;
         let m = 8;
         let m0 = 16;
         let ef = 32;
@@ -219,7 +223,7 @@ mod tests {
         let top = 10;
 
         let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
-        let graph_layers_builder = build_gpu_graph(&test, groups_count, visited_flags_factor);
+        let graph_layers_builder = build_gpu_graph(&test, groups_count, visited_flags_factor, allow_large_workgroups);
 
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
     }
