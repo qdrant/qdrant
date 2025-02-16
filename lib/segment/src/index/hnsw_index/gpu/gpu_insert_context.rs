@@ -436,6 +436,11 @@ impl<'a> GpuInsertContext<'a> {
                 prev_results_count * std::mem::size_of::<PointOffsetType>(),
             )?;
         }
+
+        if super::VALIDATE_GPU_COHERENCE {
+            self.context.clear_buffer(self.insert_resources.search_results_buffer.clone())?;
+        }
+
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
 
@@ -456,6 +461,47 @@ impl<'a> GpuInsertContext<'a> {
 
         self.searches_timer += timer.elapsed();
         self.searches_count += 1;
+
+
+        if super::VALIDATE_GPU_COHERENCE {
+            self.context.copy_gpu_buffer(
+                self.insert_resources.search_results_buffer.clone(),
+                self.insert_resources.search_results_staging_buffer.clone(),
+                0,
+                0,
+                requests.len() * (self.insert_resources.ef + 1) * std::mem::size_of::<ScoredPointOffset>(),
+            )?;
+            self.context.run()?;
+            self.context.wait_finish(GPU_TIMEOUT)?;
+
+            let mut search_result = vec![ScoredPointOffset::default(); requests.len() * (self.insert_resources.ef + 1)];
+            self.insert_resources
+                .search_results_staging_buffer
+                .download_slice(&mut search_result, 0)?;
+        
+            for (i, r) in search_result.chunks(self.insert_resources.ef + 1).enumerate() {
+                let count = r[0].score as usize;
+                if count == 0 {
+                    log::error!("Empty search result for point_id={}", requests[i].id);
+                }
+                let mut wrong_pos = None;
+                for j in 1..count {
+                    if r[j].idx == 0 {
+                        if wrong_pos.is_none() {
+                            wrong_pos = Some(j);
+                        }
+                    } else {
+                        if wrong_pos.is_some() {
+                            log::error!("Wrong search result for point_id={} at range [{}..{}]", requests[i].id, wrong_pos.unwrap(), j);
+                        }
+                        wrong_pos = None;
+                    }
+                }
+                if wrong_pos.is_some() {
+                    log::error!("Wrong search result for point_id={} at range [{}..{count}(end)]", requests[i].id, wrong_pos.unwrap());
+                }
+            }
+        }
 
         let timer = std::time::Instant::now();
 
