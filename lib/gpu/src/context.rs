@@ -116,13 +116,12 @@ impl Context {
             .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
             .dst_access_mask(vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE);
         let memory_barriers = [memory_barrier];
-        let barrier_dependency_info = vk::DependencyInfoKHR::default()
-            .memory_barriers(&memory_barriers);
+        let barrier_dependency_info =
+            vk::DependencyInfoKHR::default().memory_barriers(&memory_barriers);
         unsafe {
-            self.device.vk_device().cmd_pipeline_barrier2(
-                self.vk_command_buffer,
-                &barrier_dependency_info,
-            );
+            self.device
+                .vk_device()
+                .cmd_pipeline_barrier2(self.vk_command_buffer, &barrier_dependency_info);
         }
 
         Ok(())
