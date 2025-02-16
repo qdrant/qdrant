@@ -79,7 +79,13 @@ impl Device {
         queue_index: usize,
     ) -> GpuResult<Arc<Device>> {
         #[allow(unused_mut)]
-        let mut extensions_cstr: Vec<CString> = vec![CString::from(ash::khr::maintenance1::NAME)];
+        let mut extensions_cstr: Vec<CString> = vec![
+            CString::from(ash::khr::maintenance1::NAME),
+            CString::from(ash::khr::maintenance2::NAME),
+            CString::from(ash::khr::maintenance3::NAME),
+            CString::from(ash::khr::maintenance4::NAME),
+            CString::from(ash::vk::KHR_VULKAN_MEMORY_MODEL_NAME),
+        ];
         #[cfg(target_os = "macos")]
         {
             extensions_cstr.push(CString::from(ash::khr::portability_subset::NAME));
@@ -153,10 +159,14 @@ impl Device {
         let mut physical_device_features_1_2 = vk::PhysicalDeviceVulkan12Features::default()
             .shader_int8(true)
             .shader_float16(has_half_precision)
-            .storage_buffer8_bit_access(true);
+            .storage_buffer8_bit_access(true)
+            .vulkan_memory_model(true)
+            .vulkan_memory_model_device_scope(true)
+            .vulkan_memory_model_availability_visibility_chains(true);
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
-        let mut physical_device_features_1_3 = vk::PhysicalDeviceVulkan13Features::default();
+        let mut physical_device_features_1_3 =
+            vk::PhysicalDeviceVulkan13Features::default().maintenance4(true);
 
         let max_compute_work_group_count;
         let max_buffer_size;

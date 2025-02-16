@@ -1,5 +1,6 @@
 static SHADER_CODE: &str = "
 #version 450
+#pragma use_vulkan_memory_model
 
 layout(set = 0, binding = 0) buffer Numbers {
     float data[];

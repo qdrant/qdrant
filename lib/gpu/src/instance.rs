@@ -36,6 +36,8 @@ pub struct Instance {
 
     /// Disable half precision support. It's useful for unit tests.
     skip_half_precision: bool,
+
+    log_spirv: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +64,7 @@ pub struct InstanceBuilder<'a> {
     allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
     dump_api: bool,
     skip_half_precision: bool,
+    log_spirv: bool,
 }
 
 impl<'a> InstanceBuilder<'a> {
@@ -96,12 +99,18 @@ impl<'a> InstanceBuilder<'a> {
         self
     }
 
+    pub fn log_spirv(mut self, log_spirv: bool) -> Self {
+        self.log_spirv = log_spirv;
+        self
+    }
+
     pub fn build(self) -> GpuResult<Arc<Instance>> {
         Instance::new(
             self.debug_messenger,
             self.allocation_callbacks,
             self.dump_api,
             self.skip_half_precision,
+            self.log_spirv,
         )
     }
 }
@@ -116,6 +125,7 @@ impl Instance {
         allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
         dump_api: bool,
         skip_half_precision: bool,
+        log_spirv: bool,
     ) -> GpuResult<Arc<Self>> {
         // Create a shader compiler before we start.
         // It's used to compile GLSL into SPIR-V.
@@ -277,6 +287,7 @@ impl Instance {
             vk_debug_utils_loader,
             vk_debug_messenger,
             skip_half_precision,
+            log_spirv,
             compiler,
         }))
     }
@@ -324,7 +335,7 @@ impl Instance {
             shaderc::TargetEnv::Vulkan,
             shaderc::EnvVersion::Vulkan1_3 as u32,
         );
-        options.set_target_spirv(shaderc::SpirvVersion::V1_3);
+        options.set_target_spirv(shaderc::SpirvVersion::V1_6);
 
         if let Some(defines) = defines {
             for (define, value) in defines {
@@ -353,6 +364,21 @@ impl Instance {
         }
 
         let compiler = self.compiler.lock();
+
+        if self.log_spirv {
+            let assembly = compiler
+                .compile_into_spirv_assembly(
+                    shader,
+                    shaderc::ShaderKind::Compute,
+                    shader_name,
+                    "main",
+                    Some(&options),
+                )
+                .unwrap();
+            let assembly = assembly.as_text();
+            log::debug!("Assembly:\n{assembly}");
+        }
+
         let result = compiler
             .compile_into_spirv(
                 shader,

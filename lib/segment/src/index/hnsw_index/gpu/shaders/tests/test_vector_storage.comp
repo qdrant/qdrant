@@ -1,4 +1,5 @@
 #version 450
+#pragma use_vulkan_memory_model
 
 #include "extensions.comp"
 
