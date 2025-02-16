@@ -166,7 +166,7 @@ impl Device {
 
         // From Vulkan 1.3 we need subgroup size control if it's dynamic.
         let mut physical_device_features_1_3 =
-            vk::PhysicalDeviceVulkan13Features::default().maintenance4(true);
+            vk::PhysicalDeviceVulkan13Features::default().maintenance4(true).synchronization2(true);
 
         let max_compute_work_group_count;
         let max_buffer_size;
