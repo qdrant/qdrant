@@ -6,6 +6,7 @@ use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
@@ -93,6 +94,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         current_runtime.clone(),
         CpuBudget::default(),
+        CancellationToken::new(),
     )
     .await
     .unwrap();
@@ -119,6 +121,7 @@ async fn test_delete_from_indexed_payload() {
         current_runtime.clone(),
         current_runtime,
         CpuBudget::default(),
+        CancellationToken::new(),
     )
     .await
     .unwrap();

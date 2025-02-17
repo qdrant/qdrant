@@ -21,6 +21,7 @@ use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::local_shard::LocalShard;
@@ -291,6 +292,7 @@ impl ShardReplicaSet {
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_cpu_budget.clone(),
+                    CancellationToken::new(),
                 )
                 .await;
 

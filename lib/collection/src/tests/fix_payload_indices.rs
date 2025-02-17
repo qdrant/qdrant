@@ -6,6 +6,7 @@ use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
@@ -91,6 +92,7 @@ async fn test_fix_payload_indices() {
         current_runtime.clone(),
         current_runtime,
         CpuBudget::default(),
+        CancellationToken::new(),
     )
     .await
     .unwrap();

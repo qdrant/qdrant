@@ -523,6 +523,7 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
+    check_process_stopped(stopped)?;
     let database = open_segment_db(segment_path, config)?;
     let payload_storage = sp(create_payload_storage(
         database.clone(),
@@ -680,6 +681,8 @@ fn create_segment(
     } else {
         SegmentType::Plain
     };
+
+    check_process_stopped(stopped)?;
 
     Ok(Segment {
         version,

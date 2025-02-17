@@ -231,9 +231,6 @@ impl Collection {
         Ok(())
     }
 
-    /// # Cancel safety
-    ///
-    /// This method is *not* cancel safe.
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
@@ -244,8 +241,6 @@ impl Collection {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
-        // (see `ShardReplicaSet::restore_local_replica_from`)
         self.shards_holder
             .read()
             .await

@@ -247,7 +247,11 @@ impl LocalShard {
         update_runtime: Handle,
         search_runtime: Handle,
         optimizer_cpu_budget: CpuBudget,
+        cancel: cancel::CancellationToken,
     ) -> CollectionResult<LocalShard> {
+        if cancel.is_cancelled() {
+            return Err(cancel::Error::Cancelled.into());
+        }
         let collection_config_read = collection_config.read().await;
 
         let wal_path = Self::wal_path(shard_path);
@@ -269,6 +273,18 @@ impl LocalShard {
 
         let mut load_handlers = vec![];
 
+        // bridge cancellation token with AtomicBool
+        let stopped = Arc::new(AtomicBool::new(false));
+
+        // Spawn a task to update the `stopped` AtomicBool on cancellation
+        let cancellation_task = {
+            let stopped = stopped.clone();
+            tokio::spawn(async move {
+                cancel.cancelled().await;
+                stopped.store(true, Ordering::Relaxed);
+            })
+        };
+
         // This semaphore is used to limit the number of threads that load segments concurrently.
         // Uncomment it if you need to debug segment loading.
         // let semaphore = Arc::new(parking_lot::Mutex::new(()));
@@ -277,12 +293,13 @@ impl LocalShard {
             let segments_path = entry.unwrap().path();
             let payload_index_schema = payload_index_schema.clone();
             // let semaphore_clone = semaphore.clone();
+            let stopped = stopped.clone();
             load_handlers.push(
                 thread::Builder::new()
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
                         // let _guard = semaphore_clone.lock();
-                        let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
+                        let mut res = load_segment(&segments_path, &stopped)?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                             segment.update_all_field_indices(
@@ -334,6 +351,9 @@ impl LocalShard {
 
             segment_holder.add_new(segment);
         }
+
+        // Stop sync cancellation bridge
+        cancellation_task.abort();
 
         let res = segment_holder.deduplicate_points().await?;
         if res > 0 {

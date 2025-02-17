@@ -19,6 +19,7 @@ use tokio::runtime::Handle;
 use tokio::sync::{broadcast, OwnedRwLockReadGuard, RwLock};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
+use tokio_util::sync::CancellationToken;
 
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardStage, ReshardState};
@@ -643,6 +644,7 @@ impl ShardHolder {
                             update_runtime.clone(),
                             search_runtime.clone(),
                             optimizer_cpu_budget.clone(),
+                            CancellationToken::new(),
                         )
                         .await
                         .unwrap();
@@ -671,6 +673,7 @@ impl ShardHolder {
                             update_runtime.clone(),
                             search_runtime.clone(),
                             optimizer_cpu_budget.clone(),
+                            CancellationToken::new(),
                         )
                         .await
                         .unwrap();
@@ -1036,8 +1039,6 @@ impl ShardHolder {
 
         task.await??;
 
-        // `ShardHolder::recover_local_shard_from` is *not* cancel safe
-        // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
             .recover_local_shard_from(snapshot_temp_dir.path(), shard_id, cancel)
             .await?;
@@ -1051,9 +1052,6 @@ impl ShardHolder {
         Ok(())
     }
 
-    /// # Cancel safety
-    ///
-    /// This method is *not* cancel safe.
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
@@ -1068,7 +1066,6 @@ impl ShardHolder {
             .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         replica_set
             .restore_local_replica_from(snapshot_shard_path, cancel)
             .await

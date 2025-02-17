@@ -75,9 +75,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    /// # Cancel safety
-    ///
-    /// This method is *not* cancel safe.
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
@@ -94,11 +91,6 @@ impl ShardReplicaSet {
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
-
-        // Check `cancel` token one last time before starting non-cancellable section
-        if cancel.is_cancelled() {
-            return Err(cancel::Error::Cancelled.into());
-        }
 
         // Drop `LocalShard` instance to free resources and clear shard data
         let clear = local.take().is_some();
@@ -122,6 +114,7 @@ impl ShardReplicaSet {
                 self.update_runtime.clone(),
                 self.search_runtime.clone(),
                 self.optimizer_cpu_budget.clone(),
+                cancel,
             )
             .await
         };
