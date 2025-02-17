@@ -15,8 +15,8 @@ use crate::segment::{
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 
-pub const ROCKS_DB_VIRT_FILE: &str = "__ROCKS_DB";
-pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "__PAYLOAD_INDEX_ROCKS_DB";
+pub const ROCKS_DB_VIRT_FILE: &str = "::ROCKS_DB";
+pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "::PAYLOAD_INDEX_ROCKS_DB";
 
 pub fn snapshot_files(
     segment: &Segment,

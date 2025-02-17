@@ -351,21 +351,6 @@ impl ProxySegment {
     }
 }
 
-impl PartialSnapshotEntry for ProxySegment {
-    fn take_partial_snapshot(
-        &self,
-        _temp_path: &Path,
-        _tar: &tar_ext::BuilderExt,
-        _manifest: &SegmentManifest,
-    ) -> OperationResult<()> {
-        todo!()
-    }
-
-    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        todo!()
-    }
-}
-
 impl SegmentEntry for ProxySegment {
     fn version(&self) -> SeqNumberType {
         cmp::max(
@@ -1295,6 +1280,21 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .fill_query_context(query_context)
+    }
+}
+
+impl PartialSnapshotEntry for ProxySegment {
+    fn take_partial_snapshot(
+        &self,
+        _temp_path: &Path,
+        _tar: &tar_ext::BuilderExt,
+        _manifest: &SegmentManifest,
+    ) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        todo!()
     }
 }
 

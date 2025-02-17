@@ -17,79 +17,6 @@ use crate::segment::Segment;
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 
-impl Segment {
-    fn files(&self) -> Vec<PathBuf> {
-        let mut files = Vec::new();
-
-        for vector_data in self.vector_data.values() {
-            files.extend(vector_data.vector_index.borrow().files());
-            files.extend(vector_data.vector_storage.borrow().files());
-
-            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
-                files.extend(quantized_vectors.files());
-            }
-        }
-
-        files.extend(self.payload_index.borrow().files());
-        files.extend(self.payload_storage.borrow().files());
-
-        files.extend(self.id_tracker.borrow().files());
-
-        files
-    }
-
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
-        let mut files = Vec::new();
-
-        for vector_data in self.vector_data.values() {
-            files.extend(vector_data.vector_index.borrow().versioned_files());
-            files.extend(vector_data.vector_storage.borrow().versioned_files());
-
-            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
-                files.extend(quantized_vectors.versioned_files());
-            }
-        }
-
-        files.extend(self.payload_index.borrow().versioned_files());
-        files.extend(self.payload_storage.borrow().versioned_files());
-
-        files.extend(self.id_tracker.borrow().versioned_files());
-
-        files
-    }
-}
-
-fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<PathBuf> {
-    // Compare two segment manifests, and return a list of files from `current` manifest, that
-    // should be included into partial snapshot.
-
-    let mut updated = HashSet::new();
-
-    for (path, &current_version) in &current.file_versions {
-        // Include file into partial snapshot if:
-        //
-        // 1. `old` manifest does not contain this file
-        let Some(old_version) = old.file_versions.get(path).copied() else {
-            updated.insert(path.clone());
-            continue;
-        };
-
-        // 2. if `old` manifest contains this file and file/segment in `current` manifest is *newer*:
-        //    - if file is `Unversioned` in both manifests, compare segment versions
-        //    - if file is versioned in *one* of the manifests only, compare *file* version against
-        //      other *segment* version
-        //    - if file is versioned in both manifests, compare file versions
-        let is_updated = old_version.or_segment_version(old.segment_version)
-            < current_version.or_segment_version(current.segment_version);
-
-        if is_updated {
-            updated.insert(path.clone());
-        }
-    }
-
-    updated
-}
-
 impl PartialSnapshotEntry for Segment {
     fn take_partial_snapshot(
         &self,
@@ -208,4 +135,77 @@ impl PartialSnapshotEntry for Segment {
             file_versions,
         })
     }
+}
+
+impl Segment {
+    fn files(&self) -> Vec<PathBuf> {
+        let mut files = Vec::new();
+
+        for vector_data in self.vector_data.values() {
+            files.extend(vector_data.vector_index.borrow().files());
+            files.extend(vector_data.vector_storage.borrow().files());
+
+            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
+                files.extend(quantized_vectors.files());
+            }
+        }
+
+        files.extend(self.payload_index.borrow().files());
+        files.extend(self.payload_storage.borrow().files());
+
+        files.extend(self.id_tracker.borrow().files());
+
+        files
+    }
+
+    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+        let mut files = Vec::new();
+
+        for vector_data in self.vector_data.values() {
+            files.extend(vector_data.vector_index.borrow().versioned_files());
+            files.extend(vector_data.vector_storage.borrow().versioned_files());
+
+            if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().deref() {
+                files.extend(quantized_vectors.versioned_files());
+            }
+        }
+
+        files.extend(self.payload_index.borrow().versioned_files());
+        files.extend(self.payload_storage.borrow().versioned_files());
+
+        files.extend(self.id_tracker.borrow().versioned_files());
+
+        files
+    }
+}
+
+fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<PathBuf> {
+    // Compare two segment manifests, and return a list of files from `current` manifest, that
+    // should be included into partial snapshot.
+
+    let mut updated = HashSet::new();
+
+    for (path, &current_version) in &current.file_versions {
+        // Include file into partial snapshot if:
+        //
+        // 1. `old` manifest does not contain this file
+        let Some(old_version) = old.file_versions.get(path).copied() else {
+            updated.insert(path.clone());
+            continue;
+        };
+
+        // 2. if `old` manifest contains this file and file/segment in `current` manifest is *newer*:
+        //    - if file is `Unversioned` in both manifests, compare segment versions
+        //    - if file is versioned in *one* of the manifests only, compare *file* version against
+        //      other *segment* version
+        //    - if file is versioned in both manifests, compare file versions
+        let is_updated = old_version.or_segment_version(old.segment_version)
+            < current_version.or_segment_version(current.segment_version);
+
+        if is_updated {
+            updated.insert(path.clone());
+        }
+    }
+
+    updated
 }

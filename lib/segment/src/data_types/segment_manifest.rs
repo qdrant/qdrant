@@ -39,13 +39,16 @@ impl From<SeqNumberType> for FileVersion {
 
 #[cfg(test)]
 mod test {
-    use crate::data_types::segment_manifest::FileVersion;
+    use super::*;
+
+    /// Tests that `FileVersion` variants are uniquely represented in JSON
     #[test]
     fn file_version_serde() {
         test_file_version_serde(FileVersion::Version(42), "42");
         test_file_version_serde(FileVersion::Unversioned, "null");
     }
 
+    /// Tests that `FileVersion` serializes into/deserializes from provided JSON representation
     fn test_file_version_serde(version: FileVersion, json: &str) {
         let serialized =
             serde_json::to_string(&version).expect("failed to serialize FileVersion to JSON");
