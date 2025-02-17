@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # Ignore all commits upto and including this commit hash on dev
-IGNORE_UPTO=83b585547ad2cdc6d920f2d5046ddcff5164b90d
+IGNORE_UPTO=36fd28a7224c5aa24406372ec4402a506fc51271
 
 # Fetch latest branch info from remote
 git fetch -q origin master
