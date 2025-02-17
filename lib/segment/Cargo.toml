@@ -12,6 +12,7 @@ edition = "2021"
 workspace = true
 
 [features]
+default = ["gpu"]
 multiling-chinese = [
     "charabia/chinese-segmentation",
     "charabia/chinese-normalization",
