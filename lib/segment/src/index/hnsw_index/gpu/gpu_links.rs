@@ -97,7 +97,7 @@ impl GpuLinks {
             0,
             std::mem::size_of::<GpuLinksParamsBuffer>(),
         )?;
-        upload_context.clear_buffer(links_buffer.clone())?;
+        upload_context.clear_buffer(links_buffer.clone(), 0)?;
         upload_context.run()?;
         upload_context.wait_finish(GPU_TIMEOUT)?;
 
@@ -157,7 +157,7 @@ impl GpuLinks {
         if !self.patched_points.is_empty() {
             self.patched_points.clear();
         }
-        gpu_context.clear_buffer(self.links_buffer.clone())?;
+        gpu_context.clear_buffer(self.links_buffer.clone(), 0)?;
         gpu_context.run()?;
         gpu_context.wait_finish(GPU_TIMEOUT)?;
         Ok(())

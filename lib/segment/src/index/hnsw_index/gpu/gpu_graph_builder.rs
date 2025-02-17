@@ -44,14 +44,6 @@ pub fn build_hnsw_on_gpu<'a>(
         + Sync,
     stopped: &AtomicBool,
 ) -> OperationResult<GraphLayersBuilder> {
-    let ids = if super::VALIDATE_GPU_COHERENCE {
-        let mut ids = ids;
-        ids.retain(|&id| id != 0);
-        ids
-    } else {
-        ids
-    };
-
     let num_vectors = reference_graph.links_layers().len();
     let m = reference_graph.m();
     let m0 = reference_graph.m0();

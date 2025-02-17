@@ -296,7 +296,7 @@ impl<'a> GpuInsertContext<'a> {
             .build(device.clone())?;
 
         let mut context = gpu::Context::new(device)?;
-        context.clear_buffer(insert_resources.insert_atomics_buffer.clone())?;
+        context.clear_buffer(insert_resources.insert_atomics_buffer.clone(), 0)?;
         context.run()?;
         context.wait_finish(GPU_TIMEOUT)?;
 
@@ -441,9 +441,9 @@ impl<'a> GpuInsertContext<'a> {
             )?;
         }
 
-        if super::VALIDATE_GPU_COHERENCE {
+        if super::VALIDATE_GPU_COHERENCE2 {
             self.context
-                .clear_buffer(self.insert_resources.search_results_buffer.clone())?;
+                .clear_buffer(self.insert_resources.search_results_buffer.clone(), u32::MAX)?;
         }
 
         self.context.run()?;
@@ -451,80 +451,40 @@ impl<'a> GpuInsertContext<'a> {
 
         let timer = std::time::Instant::now();
 
-        self.context.bind_pipeline(
-            self.search_pipeline.clone(),
-            &[
-                self.insert_resources.search_descriptor_set.clone(),
-                self.gpu_vector_storage.descriptor_set(),
-                self.gpu_links.descriptor_set(),
-                self.gpu_visited_flags.descriptor_set(),
-            ],
-        )?;
-        self.context.dispatch(requests.len(), 1, 1)?;
-
-        self.context
-            .barrier_buffer(self.insert_resources.search_results_buffer.clone())?;
-
-        self.context.run()?;
-        self.context.wait_finish(GPU_TIMEOUT)?;
-
-        self.searches_timer += timer.elapsed();
-        self.searches_count += 1;
-
-        if super::VALIDATE_GPU_COHERENCE {
-            self.context.copy_gpu_buffer(
-                self.insert_resources.search_results_buffer.clone(),
-                self.insert_resources.search_results_staging_buffer.clone(),
-                0,
-                0,
-                requests.len()
-                    * (self.insert_resources.ef + 1)
-                    * std::mem::size_of::<ScoredPointOffset>(),
+        let mut search_sucess = false;
+        let mut max_tries = 10;
+        while !search_sucess {
+            self.context.bind_pipeline(
+                self.search_pipeline.clone(),
+                &[
+                    self.insert_resources.search_descriptor_set.clone(),
+                    self.gpu_vector_storage.descriptor_set(),
+                    self.gpu_links.descriptor_set(),
+                    self.gpu_visited_flags.descriptor_set(),
+                ],
             )?;
+            self.context.dispatch(requests.len(), 1, 1)?;
+    
+            self.context
+                .barrier_buffer(self.insert_resources.search_results_buffer.clone())?;
+    
             self.context.run()?;
             self.context.wait_finish(GPU_TIMEOUT)?;
 
-            let mut search_result =
-                vec![ScoredPointOffset::default(); requests.len() * (self.insert_resources.ef + 1)];
-            self.insert_resources
-                .search_results_staging_buffer
-                .download_slice(&mut search_result, 0)?;
-
-            for (i, r) in search_result
-                .chunks(self.insert_resources.ef + 1)
-                .enumerate()
-            {
-                let count = r[0].score as usize;
-                if count == 0 {
-                    log::error!("Empty search result for point_id={}", requests[i].id);
-                }
-                let mut wrong_pos = None;
-                for j in 1..count {
-                    if r[j].idx == 0 {
-                        if wrong_pos.is_none() {
-                            wrong_pos = Some(j);
-                        }
-                    } else {
-                        if wrong_pos.is_some() {
-                            log::error!(
-                                "Wrong search result for point_id={} at range [{}..{}]",
-                                requests[i].id,
-                                wrong_pos.unwrap(),
-                                j
-                            );
-                        }
-                        wrong_pos = None;
-                    }
-                }
-                if wrong_pos.is_some() {
-                    log::error!(
-                        "Wrong search result for point_id={} at range [{}..{count}(end)]",
-                        requests[i].id,
-                        wrong_pos.unwrap()
-                    );
+            let is_valid = self.validate_search_result(requests)?;
+            if is_valid {
+                search_sucess = true;
+            } else {
+                self.context.clear_buffer(self.insert_resources.search_results_buffer.clone(), u32::MAX)?;
+                max_tries -= 1;
+                if max_tries == 0 {
+                    return Err(OperationError::service_error("Too many tries to validate search results"));
                 }
             }
         }
+
+        self.searches_timer += timer.elapsed();
+        self.searches_count += 1;
 
         let timer = std::time::Instant::now();
 
@@ -557,6 +517,80 @@ impl<'a> GpuInsertContext<'a> {
         } else {
             Ok(vec![])
         }
+    }
+
+    fn validate_search_result(
+        &mut self,
+        requests: &[GpuRequest],
+    ) -> OperationResult<bool> {
+        if super::VALIDATE_GPU_COHERENCE2 {
+            self.context.copy_gpu_buffer(
+                self.insert_resources.search_results_buffer.clone(),
+                self.insert_resources.search_results_staging_buffer.clone(),
+                0,
+                0,
+                requests.len()
+                    * (self.insert_resources.ef + 1)
+                    * std::mem::size_of::<ScoredPointOffset>(),
+            )?;
+            self.context.run()?;
+            self.context.wait_finish(GPU_TIMEOUT)?;
+
+            let mut search_result =
+                vec![ScoredPointOffset::default(); requests.len() * (self.insert_resources.ef + 1)];
+            self.insert_resources
+                .search_results_staging_buffer
+                .download_slice(&mut search_result, 0)?;
+
+            for (i, r) in search_result
+                .chunks(self.insert_resources.ef + 1)
+                .enumerate()
+            {
+                if r[0].score.is_nan() {
+                    log::warn!("Empty search result for point_id={}", requests[i].id);
+                    return Ok(false);
+                }
+
+                if requests[i].id != r[0].idx {
+                    log::warn!(
+                        "Wrong search result for point_id={}, wrong request id",
+                        requests[i].id
+                    );
+                    return Ok(false);
+                }
+
+                let count = r[0].score as usize;
+                let mut wrong_pos = None;
+                for j in 0..count {
+                    if r[j + 1].idx == u32::MAX || r[j + 1].score.is_nan() {
+                        if wrong_pos.is_none() {
+                            wrong_pos = Some(j);
+                        }
+                    } else {
+                        if wrong_pos.is_some() {
+                            log::warn!(
+                                "Wrong search result for point_id={} at range [{}..{}]",
+                                requests[i].id,
+                                wrong_pos.unwrap(),
+                                j
+                            );
+                            return Ok(false);
+                        }
+                        wrong_pos = None;
+                    }
+                }
+                if wrong_pos.is_some() {
+                    log::warn!(
+                        "Wrong search result for point_id={} at range [{}..{count}(end)]",
+                        requests[i].id,
+                        wrong_pos.unwrap()
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn upload_links(

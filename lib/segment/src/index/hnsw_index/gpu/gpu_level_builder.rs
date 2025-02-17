@@ -111,7 +111,7 @@ mod tests {
         check_graph_layers_builders_quality, compare_graph_layers_builders,
         create_gpu_graph_test_data, GpuGraphTestData,
     };
-    use crate::index::hnsw_index::gpu::{create_graph_layers_builder, VALIDATE_GPU_COHERENCE};
+    use crate::index::hnsw_index::gpu::create_graph_layers_builder;
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 
@@ -126,11 +126,9 @@ mod tests {
         let m0 = test.graph_layers_builder.m0();
         let ef = test.graph_layers_builder.ef_construct();
 
-        let start_id = if VALIDATE_GPU_COHERENCE { 1 } else { 0 };
-
         let batched_points = BatchedPoints::new(
             |point_id| test.graph_layers_builder.get_point_level(point_id),
-            (start_id..num_vectors as PointOffsetType).collect(),
+            (0..num_vectors as PointOffsetType).collect(),
             groups_count,
         )
         .unwrap();

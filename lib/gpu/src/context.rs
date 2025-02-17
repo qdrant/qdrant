@@ -252,7 +252,7 @@ impl Context {
     }
 
     /// Clear buffer with zeros command. It records command to run it on GPU after `run` call.
-    pub fn clear_buffer(&mut self, buffer: Arc<Buffer>) -> GpuResult<()> {
+    pub fn clear_buffer(&mut self, buffer: Arc<Buffer>, clear_value: u32) -> GpuResult<()> {
         if buffer.size() == 0 {
             return Ok(());
         }
@@ -273,7 +273,7 @@ impl Context {
                 buffer.vk_buffer(),
                 0,
                 buffer.size() as vk::DeviceSize,
-                0,
+                clear_value,
             );
         }
 
