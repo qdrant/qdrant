@@ -89,7 +89,7 @@ rustls-pki-types = "1.11.0"
 rustls-pemfile = "2.2.0"
 prometheus = { version = "0.13.4", default-features = false }
 validator = { workspace = true }
-jsonwebtoken = "9.3.0"
+jsonwebtoken = "9.3.1"
 
 # Consensus related crates
 raft = { version = "0.7.0", features = ["prost-codec"], default-features = false }
