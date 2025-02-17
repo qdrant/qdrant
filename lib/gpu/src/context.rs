@@ -110,6 +110,7 @@ impl Context {
             );
         }
 
+        /*
         let memory_barrier = vk::MemoryBarrier2::default()
             .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
             .src_access_mask(vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE)
@@ -123,6 +124,7 @@ impl Context {
                 .vk_device()
                 .cmd_pipeline_barrier2(self.vk_command_buffer, &barrier_dependency_info);
         }
+        */
 
         Ok(())
     }
@@ -137,17 +139,20 @@ impl Context {
         let buffer_memory_barrier = vk::BufferMemoryBarrier::default()
             .buffer(buffer.vk_buffer())
             .offset(0)
-            .size(vk::WHOLE_SIZE)
+            .size(buffer.size() as vk::DeviceSize)
+            .src_queue_family_index(self.device.compute_queue().vk_queue_family_index as u32)
+            .dst_queue_family_index(self.device.compute_queue().vk_queue_family_index as u32)
             .src_access_mask(vk::AccessFlags::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags::HOST_READ);
+            .dst_access_mask(vk::AccessFlags::TRANSFER_READ);
+        let buffer_memory_barriers = [buffer_memory_barrier];
         unsafe {
             self.device.vk_device().cmd_pipeline_barrier(
                 self.vk_command_buffer,
                 vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::PipelineStageFlags::HOST,
+                vk::PipelineStageFlags::ALL_COMMANDS,
                 vk::DependencyFlags::empty(),
                 &[],
-                &[buffer_memory_barrier],
+                &buffer_memory_barriers,
                 &[],
             );
         }

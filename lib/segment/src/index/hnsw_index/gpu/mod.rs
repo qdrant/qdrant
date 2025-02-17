@@ -20,7 +20,7 @@ use parking_lot::RwLock;
 
 use super::graph_layers_builder::GraphLayersBuilder;
 
-const ALLOW_LARGE_WORKGROUPS: bool = false;
+const ALLOW_LARGE_WORKGROUPS: bool = true;
 const VALIDATE_GPU_COHERENCE: bool = true;
 
 lazy_static! {
