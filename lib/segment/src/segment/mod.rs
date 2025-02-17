@@ -8,6 +8,8 @@ mod segment_ops;
 
 #[cfg(test)]
 mod tests;
+mod partial_snapshots;
+mod snapshot;
 
 use std::collections::HashMap;
 use std::fmt;

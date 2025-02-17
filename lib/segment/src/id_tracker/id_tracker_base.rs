@@ -163,7 +163,7 @@ pub trait IdTracker: fmt::Debug {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
 }

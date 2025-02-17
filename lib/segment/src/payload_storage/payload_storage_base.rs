@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::json_path::JsonPath;
-use crate::types::{Filter, Payload};
+use crate::types::{Filter, Payload, SeqNumberType};
 
 /// Trait for payload data storage. Should allow filter checks
 pub trait PayloadStorage {
@@ -75,7 +75,9 @@ pub trait PayloadStorage {
     /// RocksDB storages are captured outside of this trait.
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+    /// Returns a list of files, which have additional versioning information.
+    /// Versioned files should be a subset of `files()` result (with maybe exception of rocksdb).
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
 

@@ -11,9 +11,7 @@ use crate::common::Flusher;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
-use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, SeqNumberType};
 
 pub trait PayloadIndex {
     /// Get indexed fields
@@ -144,7 +142,7 @@ pub trait PayloadIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
         Vec::new()
     }
 }

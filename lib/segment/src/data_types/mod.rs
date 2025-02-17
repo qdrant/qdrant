@@ -7,3 +7,4 @@ pub mod primitive;
 pub mod query_context;
 pub mod tiny_map;
 pub mod vectors;
+pub mod segment_manifest;
