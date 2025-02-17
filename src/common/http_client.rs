@@ -65,7 +65,9 @@ fn https_client(
 
     // Configure TLS root certificate and validation
     if let Some(tls_config) = tls_config {
-        builder = builder.add_root_certificate(https_client_ca_cert(tls_config.ca_cert.as_ref())?);
+        if let Some(ca_cert) = tls_config.ca_cert.clone() {
+            builder = builder.add_root_certificate(https_client_ca_cert(ca_cert.as_ref())?);
+        }
 
         if verify_https_client_certificate {
             builder = builder.identity(https_client_identity(
