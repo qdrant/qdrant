@@ -580,6 +580,14 @@ impl ShardReplicaSet {
                 continue;
             }
 
+            // Ignore missing point errors if replica is in partial or recovery state
+            // Partial or recovery state indicates that the replica is receiving a shard transfer,
+            // it might not have received all the points yet
+            // See: <https://github.com/qdrant/qdrant/pull/5991>
+            if peer_state.is_partial_or_recovery() && err.is_missing_point() {
+                continue;
+            }
+
             if update_only_existing && err.is_missing_point() {
                 continue;
             }
