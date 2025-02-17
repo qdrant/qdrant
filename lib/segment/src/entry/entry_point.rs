@@ -322,4 +322,3 @@ pub trait SegmentEntry: PartialSnapshotEntry {
 
     fn fill_query_context(&self, query_context: &mut QueryContext);
 }
-

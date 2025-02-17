@@ -1,3 +1,11 @@
+use std::io::{Seek, Write};
+use std::path::Path;
+use std::{fs, thread};
+
+use common::tar_ext;
+use io::storage_version::VERSION_FILE;
+use uuid::Uuid;
+
 use crate::common::operation_error::OperationResult;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
@@ -6,12 +14,6 @@ use crate::segment::{
 };
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
-use common::tar_ext;
-use io::storage_version::VERSION_FILE;
-use std::io::{Seek, Write};
-use std::path::Path;
-use std::{fs, thread};
-use uuid::Uuid;
 
 pub const ROCKS_DB_VIRT_FILE: &str = "__ROCKS_DB";
 pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "__PAYLOAD_INDEX_ROCKS_DB";

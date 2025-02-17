@@ -11,7 +11,10 @@ use crate::common::Flusher;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
-use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, SeqNumberType};
+use crate::types::{
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    SeqNumberType,
+};
 
 pub trait PayloadIndex {
     /// Get indexed fields

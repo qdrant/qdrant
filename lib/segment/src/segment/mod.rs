@@ -6,10 +6,10 @@ mod scroll;
 mod search;
 mod segment_ops;
 
-#[cfg(test)]
-mod tests;
 mod partial_snapshots;
 mod snapshot;
+#[cfg(test)]
+mod tests;
 
 use std::collections::HashMap;
 use std::fmt;

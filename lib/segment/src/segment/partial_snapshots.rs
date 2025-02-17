@@ -1,17 +1,21 @@
+use std::collections::{HashMap, HashSet};
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+
+use common::tar_ext;
+
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::segment_manifest::{FileVersion, SegmentManifest};
 use crate::entry::entry_point::SegmentEntry;
 use crate::entry::partial_snapshot_entry::PartialSnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
-use crate::segment::snapshot::{snapshot_files, PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE, ROCKS_DB_VIRT_FILE};
+use crate::segment::snapshot::{
+    snapshot_files, PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE, ROCKS_DB_VIRT_FILE,
+};
 use crate::segment::Segment;
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
-use common::tar_ext;
-use std::collections::{HashMap, HashSet};
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
 
 impl Segment {
     fn files(&self) -> Vec<PathBuf> {
@@ -115,7 +119,6 @@ impl PartialSnapshotEntry for Segment {
         snapshot_files(self, temp_path, &tar, |path| updated_files.contains(path))?;
         Ok(())
     }
-
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
         let segment_version = self.version();
