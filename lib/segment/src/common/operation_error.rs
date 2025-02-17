@@ -56,6 +56,11 @@ pub enum OperationError {
     MissingRangeIndexForOrderBy { key: String },
     #[error("No appropriate index for faceting: `{key}`. Please create one to facet on this field. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Match conditions")]
     MissingMapIndexForFacet { key: String },
+    #[error("The variable nor the default value for {field_name} is a {expected_type}")]
+    VariableTypeError {
+        field_name: PayloadKeyType,
+        expected_type: String,
+    },
 }
 
 impl OperationError {

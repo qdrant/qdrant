@@ -24,23 +24,11 @@ pub struct ParsedFormula {
 
 #[derive(Clone)]
 pub enum Expression {
+    // Scalars
     Constant(ScoreType),
     Variable(VariableId),
-    Operation(Operation),
-}
 
-#[derive(Clone, Hash, Eq, PartialEq)]
-pub enum VariableId {
-    /// Score index
-    Score(usize),
-    /// Payload field
-    Payload(JsonPath),
-    /// Condition index
-    Condition(ConditionId),
-}
-
-#[derive(Clone)]
-pub enum Operation {
+    // Operations
     Mult(Vec<Expression>),
     Sum(Vec<Expression>),
     Div {
@@ -55,29 +43,31 @@ pub enum Operation {
     },
 }
 
+#[derive(Clone, Hash, Eq, PartialEq)]
+pub enum VariableId {
+    /// Score index
+    Score(usize),
+    /// Payload field
+    Payload(JsonPath),
+    /// Condition index
+    Condition(ConditionId),
+}
+
 impl Expression {
-    pub fn new_sum(expressions: Vec<Expression>) -> Self {
-        Expression::Operation(Operation::Sum(expressions))
-    }
-
-    pub fn new_mult(expressions: Vec<Expression>) -> Self {
-        Expression::Operation(Operation::Mult(expressions))
-    }
-
     pub fn new_div(left: Expression, right: Expression, by_zero_default: ScoreType) -> Self {
-        Expression::Operation(Operation::Div {
+        Expression::Div {
             left: Box::new(left),
             right: Box::new(right),
             by_zero_default,
-        })
+        }
     }
 
     pub fn new_neg(expression: Expression) -> Self {
-        Expression::Operation(Operation::Neg(Box::new(expression)))
+        Expression::Neg(Box::new(expression))
     }
 
     pub fn new_geo_distance(origin: GeoPoint, key: JsonPath) -> Self {
-        Expression::Operation(Operation::GeoDistance { origin, key })
+        Expression::GeoDistance { origin, key }
     }
 
     #[cfg(feature = "testing")]

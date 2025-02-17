@@ -127,7 +127,7 @@ impl MmapValue for GeoPoint {
     }
 
     fn as_referenced(&self) -> Self::Referenced<'_> {
-        self.clone()
+        *self
     }
 }
 
