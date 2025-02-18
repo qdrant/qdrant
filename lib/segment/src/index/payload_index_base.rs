@@ -13,6 +13,7 @@ use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    SeqNumberType,
 };
 
 pub trait PayloadIndex {
@@ -143,4 +144,8 @@ pub trait PayloadIndex {
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()>;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+        Vec::new()
+    }
 }
