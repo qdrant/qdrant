@@ -135,7 +135,7 @@ impl Default for ConsensusConfig {
 pub struct TlsConfig {
     pub cert: String,
     pub key: String,
-    pub ca_cert: String,
+    pub ca_cert: Option<String>,
     #[serde(default = "default_tls_cert_ttl")]
     #[validate(range(min = 1))]
     pub cert_ttl: Option<u64>,
