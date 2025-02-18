@@ -1,0 +1,5 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 50
