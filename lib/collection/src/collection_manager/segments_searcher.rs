@@ -507,6 +507,9 @@ impl SegmentsSearcher {
             .await?
     }
 
+    /// Rescore results with a formula that can reference payload values.
+    ///
+    /// Aggregates rescores from the segments.
     pub async fn rescore_with_formula(
         segments: LockedSegmentHolder,
         arc_ctx: Arc<FormulaContext>,
@@ -528,7 +531,7 @@ impl SegmentsSearcher {
                             segment
                                 .get()
                                 .read()
-                                .rescore_with_formula(arc_ctx, &hw_counter)
+                                .rescore_with_formula(arc_ctx, None, &hw_counter)
                         }
                     })
                 })

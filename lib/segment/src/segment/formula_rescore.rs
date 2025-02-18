@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::ScoredPointOffset;
@@ -13,10 +14,12 @@ use crate::types::{Order, ScoredPoint};
 
 impl Segment {
     /// Rescores points of the prefetches, and returns the internal ids with the scores.
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn do_rescore_with_formula(
         &self,
         formula: &ParsedFormula,
         prefetches_scores: &[Vec<ScoredPoint>],
+        wrapped_deleted: Option<&BitSlice>,
         order: Order,
         limit: usize,
         is_stopped: &AtomicBool,
@@ -32,9 +35,18 @@ impl Segment {
             .map(|scores| {
                 scores
                     .iter()
-                    // Discard points without internal ids
                     .filter_map(|point| {
+                        // Discard points without internal ids
                         let internal_id = self.get_internal_id(point.id)?;
+
+                        // Discard points that are marked as deleted in a wrapped segment
+                        if let Some(true) = wrapped_deleted.and_then(|slice| {
+                            slice
+                                .get(internal_id as usize)
+                                .map(|is_deleted| *is_deleted)
+                        }) {
+                            return None;
+                        }
 
                         // filter_map side effect: keep all uniquely seen point offsets.
                         points_to_rescore.insert(internal_id);

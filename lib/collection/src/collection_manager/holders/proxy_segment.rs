@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
@@ -453,19 +454,35 @@ impl SegmentEntry for ProxySegment {
     fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
+        _wrapped_deleted: Option<&BitSlice>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let mut wrapped_results = self
-            .wrapped_segment
-            .get()
-            .read()
-            .rescore_with_formula(formula_ctx.clone(), hw_counter)?;
-        let mut write_results = self
-            .write_segment
-            .get()
-            .read()
-            .rescore_with_formula(formula_ctx.clone(), hw_counter)?;
+        let deleted_points = self.deleted_points.read();
 
+        // Run rescore in wrapped segment with or without deleted points slice
+        let mut wrapped_results = if deleted_points.is_empty() {
+            self.wrapped_segment.get().read().rescore_with_formula(
+                formula_ctx.clone(),
+                None,
+                hw_counter,
+            )?
+        } else {
+            let deleted_slice = self.deleted_mask.as_deref();
+            self.wrapped_segment.get().read().rescore_with_formula(
+                formula_ctx.clone(),
+                deleted_slice,
+                hw_counter,
+            )?
+        };
+        
+        // Run rescore in write segment
+        let mut write_results = self.write_segment.get().read().rescore_with_formula(
+            formula_ctx.clone(),
+            None,
+            hw_counter,
+        )?;
+
+        // Just join both results, they will be top-k'd later
         write_results.append(&mut wrapped_results);
 
         Ok(wrapped_results)

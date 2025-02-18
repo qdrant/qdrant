@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
@@ -47,9 +48,13 @@ pub trait SegmentEntry: PartialSnapshotEntry {
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
+    /// Rescore results with a formula that can reference payload values.
+    /// 
+    /// A deleted bitslice is passed to exclude points from a wrapped segment.
     fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
+        wrapped_deleted: Option<&BitSlice>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>>;
 
