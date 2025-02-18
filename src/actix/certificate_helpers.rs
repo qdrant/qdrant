@@ -151,9 +151,10 @@ pub fn actix_tls_server_config(settings: &Settings) -> Result<ServerConfig> {
     // Verify client CA or not
     let config = if settings.service.verify_https_client_certificate {
         let mut root_cert_store = RootCertStore::empty();
-        let ca_certs: Vec<CertificateDer> = with_buf_read(&tls_config.ca_cert, |rd| {
-            rustls_pemfile::certs(rd).collect()
-        })?;
+
+        let ca_cert_path = tls_config.ca_cert.as_ref().ok_or(Error::NoCaCert)?;
+        let ca_certs: Vec<CertificateDer> =
+            with_buf_read(ca_cert_path, |rd| rustls_pemfile::certs(rd).collect())?;
         root_cert_store.add_parsable_certificates(ca_certs);
         let client_cert_verifier = WebPkiClientVerifier::builder(root_cert_store.into())
             .build()
@@ -200,4 +201,6 @@ pub enum Error {
     Sign(#[source] rustls::Error),
     #[error("client certificate verification")]
     ClientCertVerifier(#[source] VerifierBuilderError),
+    #[error("No ca_cert provided")]
+    NoCaCert,
 }

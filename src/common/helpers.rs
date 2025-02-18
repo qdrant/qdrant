@@ -113,7 +113,13 @@ fn load_identity(tls_config: &TlsConfig) -> io::Result<Identity> {
 }
 
 fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
-    let pem = fs::read_to_string(&tls_config.ca_cert)?;
+    let Some(ca_cert_path) = &tls_config.ca_cert else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "CA certificate is required for TLS configuration",
+        ));
+    };
+    let pem = fs::read_to_string(ca_cert_path)?;
     Ok(Certificate::from_pem(pem))
 }
 
