@@ -9,8 +9,8 @@ import requests
 from .utils import *
 
 N_PEERS = 3
-N_REPLICA = 2
-N_SHARDS = 3
+N_REPLICA = 1
+N_SHARDS = 1
 CONSENSUS_WAIT_SECONDS = 0.5
 
 
