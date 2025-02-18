@@ -299,7 +299,8 @@ impl UpdateHandler {
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = num_rayon_threads(max_indexing_threads);
                 let desired_io = 0; // ToDo: We need at least one IO thread for each optimization
-                let Some(permit) = optimizer_resource_budget.try_acquire(desired_cpus, desired_io) else {
+                let Some(permit) = optimizer_resource_budget.try_acquire(desired_cpus, desired_io)
+                else {
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
