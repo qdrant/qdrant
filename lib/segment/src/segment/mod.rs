@@ -1,7 +1,7 @@
 mod entry;
 mod facet;
+mod formula_rescore;
 mod order_by;
-mod rescore;
 mod sampling;
 mod scroll;
 mod search;

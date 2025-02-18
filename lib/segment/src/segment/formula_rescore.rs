@@ -45,22 +45,30 @@ impl Segment {
         let index_ref = self.payload_index.borrow();
         let scorer = index_ref.formula_scorer(formula, &prefetches_scores, hw_counter);
 
-        let rescored_points: Vec<_> = points_to_rescore
-            .into_iter()
-            // TODO(score boosting): Parallelize scoring?
-            .map(|internal_id| {
-                let score = scorer.score(internal_id)?;
-                OperationResult::Ok(ScoredPointOffset {
+        let mut errs = Vec::new();
+        let rescored_iter = points_to_rescore.into_iter().filter_map(|internal_id| {
+            match scorer.score(internal_id) {
+                Ok(new_score) => Some(ScoredPointOffset {
                     idx: internal_id,
-                    score,
-                })
-            })
-            .try_collect()?;
+                    score: new_score,
+                }),
+                Err(err) => {
+                    // in case there is an error, defer handling it and continue
+                    errs.push(err);
+                    None
+                }
+            }
+        });
 
         let res = match order {
-            Order::LargeBetter => rescored_points.into_iter().k_largest(limit).collect(),
-            Order::SmallBetter => rescored_points.into_iter().k_smallest(limit).collect(),
+            Order::LargeBetter => rescored_iter.k_largest(limit).collect(),
+            Order::SmallBetter => rescored_iter.k_smallest(limit).collect(),
         };
+
+        if let Some(err) = errs.pop() {
+            return Err(err);
+        }
+
         Ok(res)
     }
 }
