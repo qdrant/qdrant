@@ -15,9 +15,8 @@ use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, Vect
 use collection::operations::conversions::try_points_selector_from_grpc;
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
-use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::vector_ops::DeleteVectors;
-use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
+use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -781,33 +780,20 @@ pub async fn sync(
         from_id: from_id.map(|x| x.try_into()).transpose()?,
         to_id: to_id.map(|x| x.try_into()).transpose()?,
     };
-    let collection_operation =
+
+    let operation =
         CollectionUpdateOperations::PointOperation(PointOperations::SyncPoints(operation));
 
-    let InternalUpdateParams {
-        shard_id,
-        clock_tag,
-    } = internal_params;
-
-    let shard_selector = if let Some(shard_selection) = shard_id {
-        ShardSelectorInternal::ShardId(shard_selection)
-    } else {
-        debug_assert!(false, "Sync operation is supposed to select shard directly");
-        ShardSelectorInternal::Empty
-    };
-
-    let UpdateParams { wait, ordering } = UpdateParams::from_grpc(wait, ordering)?;
-
-    let result = toc
-        .update(
-            &collection_name,
-            OperationWithClockTag::new(collection_operation, clock_tag),
-            wait,
-            ordering,
-            shard_selector,
-            access,
-        )
-        .await?;
+    let result = update(
+        &toc,
+        &collection_name,
+        operation,
+        internal_params,
+        UpdateParams::from_grpc(wait, ordering)?,
+        None,
+        access,
+    )
+    .await?;
 
     let response = points_operation_response_internal(timing, result);
     Ok(Response::new(response))
