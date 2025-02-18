@@ -101,12 +101,15 @@ impl ResourceBudget {
         Some((num_io as usize, io_permit))
     }
 
-    /// Try to acquire CPU permit for optimization task from global CPU budget.
+    /// Try to acquire Resources permit for optimization task from global Resource budget.
     ///
     /// The given `desired_cpus` is not exact, but rather a hint on what we'd like to acquire.
     /// - it will prefer to acquire the maximum number of CPUs
     /// - it will never be higher than the total CPU budget
     /// - it will never be lower than `min_permits(desired_cpus)`
+    ///
+    /// Warn: only one Resource Permit per thread is allowed. Otherwise, it might lead to deadlocks.
+    ///
     pub fn try_acquire(&self, desired_cpus: usize, desired_io: usize) -> Option<ResourcePermit> {
         let (num_cpus, cpu_permit) = self.try_acquire_cpu(desired_cpus)?;
         let (num_io, io_permit) = self.try_acquire_io(desired_io)?;
@@ -117,26 +120,6 @@ impl ResourceBudget {
             num_io as u32,
             io_permit,
         ))
-    }
-
-    /// Try to add more resources to the permit.
-    pub fn extend_resource_acquisition(
-        &self,
-        mut permit: ResourcePermit,
-        desired_cpus: usize,
-        desired_io: usize,
-    ) -> Result<ResourcePermit, ResourcePermit> {
-        let cpu_result = self.try_acquire_cpu(desired_cpus);
-        let io_result = self.try_acquire_io(desired_io);
-
-        match (cpu_result, io_result) {
-            (Some((num_cpus, cpu_permit)), Some((num_io, io_permit))) => {
-                permit.add_cpu_permit(num_cpus, cpu_permit.unwrap());
-                permit.add_io_permit(num_io, io_permit.unwrap());
-                Ok(permit)
-            }
-            _ => Err(permit),
-        }
     }
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
@@ -261,25 +244,7 @@ impl ResourcePermit {
     pub fn release_io(&mut self) {
         self.io_permit.take();
     }
-
-    pub fn add_cpu_permit(&mut self, count: usize, permit: OwnedSemaphorePermit) {
-        if let Some(cpu_permit) = &mut self.cpu_permit {
-            cpu_permit.merge(permit);
-        } else {
-            self.cpu_permit = Some(permit);
-        }
-        self.num_cpus += count as u32;
-    }
-
-    pub fn add_io_permit(&mut self, count: usize, permit: OwnedSemaphorePermit) {
-        if let Some(io_permit) = &mut self.io_permit {
-            io_permit.merge(permit);
-        } else {
-            self.io_permit = Some(permit);
-        }
-        self.num_io += count as u32;
-    }
-
+    
     /// Partial release CPU permit, giving them back to the semaphore.
     pub fn release_cpu_count(&mut self, release_count: u32) {
         if self.num_cpus > release_count {
