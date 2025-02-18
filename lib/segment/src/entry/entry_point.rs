@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
@@ -10,7 +11,7 @@ use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
-use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
+use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::partial_snapshot_entry::PartialSnapshotEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -45,6 +46,12 @@ pub trait SegmentEntry: PartialSnapshotEntry {
         params: Option<&SearchParams>,
         query_context: &SegmentQueryContext,
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
+
+    fn rescore_with_formula(
+        &self,
+        formula_ctx: Arc<FormulaContext>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPoint>>;
 
     fn upsert_point(
         &mut self,

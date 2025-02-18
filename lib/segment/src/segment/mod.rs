@@ -1,6 +1,7 @@
 mod entry;
 mod facet;
 mod order_by;
+mod rescore;
 mod sampling;
 mod scroll;
 mod search;

@@ -14,7 +14,7 @@ use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
-use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
+use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_manifest::SegmentManifest;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
@@ -447,6 +447,27 @@ impl SegmentEntry for ProxySegment {
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
         }
+        Ok(wrapped_results)
+    }
+
+    fn rescore_with_formula(
+        &self,
+        formula_ctx: Arc<FormulaContext>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let mut wrapped_results = self
+            .wrapped_segment
+            .get()
+            .read()
+            .rescore_with_formula(formula_ctx.clone(), hw_counter)?;
+        let mut write_results = self
+            .write_segment
+            .get()
+            .read()
+            .rescore_with_formula(formula_ctx.clone(), hw_counter)?;
+
+        write_results.append(&mut wrapped_results);
+
         Ok(wrapped_results)
     }
 
