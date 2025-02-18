@@ -189,7 +189,7 @@ impl TableOfContent {
             search_runtime,
             update_runtime,
             general_runtime,
-            optimizer_resource_budget: optimizer_resource_budget,
+            optimizer_resource_budget,
             alias_persistence: RwLock::new(alias_persistence),
             this_peer_id,
             channel_service,

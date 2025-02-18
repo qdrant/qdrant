@@ -350,7 +350,7 @@ impl ShardReplicaSet {
             payload_index_schema,
             update_runtime,
             search_runtime,
-            optimizer_resource_budget: optimizer_resource_budget,
+            optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,

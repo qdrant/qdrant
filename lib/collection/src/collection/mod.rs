@@ -299,7 +299,7 @@ impl Collection {
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            optimizer_resource_budget: optimizer_resource_budget,
+            optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
         }
