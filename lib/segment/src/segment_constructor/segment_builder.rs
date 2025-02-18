@@ -553,7 +553,7 @@ impl SegmentBuilder {
             // If GPU is enabled, release all CPU cores except one.
             if let Some(_gpu_device) = &gpu_device {
                 if permit.num_cpus > 1 {
-                    permit.release_count(permit.num_cpus - 1);
+                    permit.release_cpu_count(permit.num_cpus - 1);
                 }
             }
 

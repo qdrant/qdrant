@@ -298,7 +298,8 @@ impl UpdateHandler {
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_cpus = num_rayon_threads(max_indexing_threads);
-                let Some(permit) = optimizer_resource_budget.try_acquire(desired_cpus) else {
+                let desired_io = 0; // ToDo: We need at least one IO thread for each optimization
+                let Some(permit) = optimizer_resource_budget.try_acquire(desired_cpus, desired_io) else {
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
@@ -618,14 +619,16 @@ impl UpdateHandler {
             // Otherwise skip now and start a task to trigger the optimizer again once CPU
             // budget becomes available
             let desired_cpus = num_rayon_threads(max_indexing_threads);
-            if !optimizer_resource_budget.has_budget(desired_cpus) {
+            let desired_io = 0; // TODO: We need at least one IO thread for each optimization
+            if !optimizer_resource_budget.has_budget(desired_cpus, desired_io) {
                 let trigger_active = cpu_available_trigger
                     .as_ref()
                     .is_some_and(|t| !t.is_finished());
                 if !trigger_active {
-                    cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
+                    cpu_available_trigger.replace(trigger_optimizers_on_resource_budget(
                         optimizer_resource_budget.clone(),
                         desired_cpus,
+                        desired_io,
                         sender.clone(),
                     ));
                 }
@@ -815,15 +818,16 @@ impl UpdateHandler {
 }
 
 /// Trigger optimizers when CPU budget is available
-fn trigger_optimizers_on_cpu_budget(
+fn trigger_optimizers_on_resource_budget(
     optimizer_resource_budget: ResourceBudget,
     desired_cpus: usize,
+    desired_io: usize,
     sender: Sender<OptimizerSignal>,
 ) -> JoinHandle<()> {
     task::spawn(async move {
         log::trace!("Skipping optimization checks, waiting for CPU budget to be available");
         optimizer_resource_budget
-            .notify_on_budget_available(desired_cpus)
+            .notify_on_budget_available(desired_cpus, desired_io)
             .await;
         log::trace!("Continue optimization checks, new CPU budget available");
 
