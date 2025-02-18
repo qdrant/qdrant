@@ -65,11 +65,9 @@ fn https_client(
 
     // Configure TLS root certificate and validation
     if let Some(tls_config) = tls_config {
-        if let Some(ca_cert) = tls_config.ca_cert.clone() {
-            match https_client_ca_cert(ca_cert.as_ref()) {
-                Ok(ca_cert) => {
-                    builder = builder.add_root_certificate(ca_cert);
-                }
+        if let Some(ca_cert) = &tls_config.ca_cert {
+            match https_client_ca_cert(ca_cert) {
+                Ok(ca_cert) => builder = builder.add_root_certificate(ca_cert),
                 Err(err) => {
                     // I think it might be Ok to not fail here, if root certificate is not found
                     // There are 2 possible scenarios:
@@ -82,7 +80,7 @@ fn https_client(
                     //
                     // So both scenarios work exactly the same way if we fail early or not.
                     // Warning message is needed for easier debugging in case of second scenario.
-                    log::warn!("Failed to load CA certificate, skipping HTTPS client CA certificate configuration: {}", err);
+                    log::warn!("Failed to load CA certificate, skipping HTTPS client CA certificate configuration: {err}");
                 }
             }
         }
@@ -109,9 +107,9 @@ fn https_client(
     Ok(client)
 }
 
-fn https_client_ca_cert(ca_cert: &Path) -> Result<reqwest::tls::Certificate> {
-    let ca_cert_pem =
-        fs::read(ca_cert).map_err(|err| Error::failed_to_read(err, "CA certificate", ca_cert))?;
+fn https_client_ca_cert(ca_cert: impl AsRef<Path>) -> Result<reqwest::tls::Certificate> {
+    let ca_cert_pem = fs::read(ca_cert.as_ref())
+        .map_err(|err| Error::failed_to_read(err, "CA certificate", ca_cert.as_ref()))?;
 
     let ca_cert = reqwest::Certificate::from_pem(&ca_cert_pem)?;
 
