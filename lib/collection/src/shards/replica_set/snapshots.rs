@@ -121,7 +121,7 @@ impl ShardReplicaSet {
                 self.payload_index_schema.clone(),
                 self.update_runtime.clone(),
                 self.search_runtime.clone(),
-                self.optimizer_cpu_budget.clone(),
+                self.optimizer_resource_budget.clone(),
             )
             .await
         };

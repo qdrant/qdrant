@@ -285,7 +285,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::cpu::CpuPermit;
+    use common::cpu::ResourcePermit;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::rng;
@@ -383,7 +383,7 @@ mod tests {
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         index_optimizer
             .optimize(
@@ -521,7 +521,7 @@ mod tests {
         .unwrap();
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize =
@@ -539,7 +539,7 @@ mod tests {
         eprintln!("Done");
 
         // ------ Plain -> Indexed payload
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&middle_segment_id));
@@ -666,7 +666,7 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
         index_optimizer.thresholds_config.indexing_threshold_kb = 20;
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
@@ -787,7 +787,7 @@ mod tests {
             }
             log::debug!("suggested_to_optimize = {:#?}", suggested_to_optimize);
 
-            let permit = CpuPermit::dummy(permit_cpu_count as u32);
+            let permit = ResourcePermit::dummy(permit_cpu_count as u32);
             index_optimizer
                 .optimize(
                     locked_holder.clone(),
@@ -949,7 +949,7 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build mmap
         let changed = index_optimizer

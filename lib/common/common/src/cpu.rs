@@ -58,16 +58,16 @@ pub fn get_cpu_budget(cpu_budget_param: isize) -> usize {
 /// Assigns CPU permits to tasks to limit overall resource utilization, making optimization
 /// workloads more predictable and efficient.
 #[derive(Debug, Clone)]
-pub struct CpuBudget {
-    semaphore: Arc<Semaphore>,
+pub struct ResourceBudget {
+    cpu_semaphore: Arc<Semaphore>,
     /// Total CPU budget, available and leased out.
     cpu_budget: usize,
 }
 
-impl CpuBudget {
+impl ResourceBudget {
     pub fn new(cpu_budget: usize) -> Self {
         Self {
-            semaphore: Arc::new(Semaphore::new(cpu_budget)),
+            cpu_semaphore: Arc::new(Semaphore::new(cpu_budget)),
             cpu_budget,
         }
     }
@@ -78,7 +78,7 @@ impl CpuBudget {
     }
 
     /// For the given desired number of CPUs, return the minimum number of required CPUs.
-    fn min_permits(&self, desired_cpus: usize) -> usize {
+    fn min_cpu_permits(&self, desired_cpus: usize) -> usize {
         desired_cpus.min(self.cpu_budget).div_ceil(2)
     }
 
@@ -88,23 +88,23 @@ impl CpuBudget {
     /// - it will prefer to acquire the maximum number of CPUs
     /// - it will never be higher than the total CPU budget
     /// - it will never be lower than `min_permits(desired_cpus)`
-    pub fn try_acquire(&self, desired_cpus: usize) -> Option<CpuPermit> {
+    pub fn try_acquire(&self, desired_cpus: usize) -> Option<ResourcePermit> {
         // Determine what number of CPUs to acquire based on available budget
-        let min_required = self.min_permits(desired_cpus) as u32;
-        let num_cpus = self.semaphore.available_permits().min(desired_cpus) as u32;
-        if desired_cpus == 0 || num_cpus < min_required {
+        let min_required_cpus = self.min_cpu_permits(desired_cpus) as u32;
+        let num_cpus = self.cpu_semaphore.available_permits().min(desired_cpus) as u32;
+        if desired_cpus == 0 || num_cpus < min_required_cpus {
             return None;
         }
 
         // Try to acquire selected number of CPUs
-        let result = Semaphore::try_acquire_many_owned(self.semaphore.clone(), num_cpus);
+        let result = Semaphore::try_acquire_many_owned(self.cpu_semaphore.clone(), num_cpus);
         let permit = match result {
             Ok(permit) => permit,
             Err(TryAcquireError::NoPermits) => return None,
             Err(TryAcquireError::Closed) => unreachable!("Cannot acquire CPU permit because CPU budget semaphore is closed, this should never happen"),
         };
 
-        Some(CpuPermit::new(num_cpus, permit))
+        Some(ResourcePermit::new(num_cpus, permit))
     }
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
@@ -114,14 +114,14 @@ impl CpuBudget {
     ///
     /// A desired CPU count of `0` will always return `true`.
     pub fn has_budget(&self, desired_cpus: usize) -> bool {
-        self.has_budget_exact(self.min_permits(desired_cpus))
+        self.has_budget_exact(self.min_cpu_permits(desired_cpus))
     }
 
     /// Check if there are at least `budget` available CPUs in this budget.
     ///
     /// A budget of `0` will always return `true`.
     pub fn has_budget_exact(&self, budget: usize) -> bool {
-        self.semaphore.available_permits() >= budget
+        self.cpu_semaphore.available_permits() >= budget
     }
 
     /// Notify when we have CPU budget available for the given number of desired CPUs.
@@ -130,14 +130,14 @@ impl CpuBudget {
     ///
     /// Waits for at least the minimum number of permits based on the given desired CPUs. For
     /// example, if `desired_cpus` is 8, this will wait for at least 4 to be available. See
-    /// [`Self::min_permits`].
+    /// [`Self::min_cpu_permits`].
     ///
     /// - `1` to wait for any CPU budget to be available.
     /// - `0` will always return immediately.
     ///
     /// Uses an exponential backoff strategy up to 10 seconds to avoid busy polling.
     pub async fn notify_on_budget_available(&self, desired_cpus: usize) {
-        let min_required = self.min_permits(desired_cpus);
+        let min_required = self.min_cpu_permits(desired_cpus);
         if self.has_budget_exact(min_required) {
             return;
         }
@@ -152,32 +152,34 @@ impl CpuBudget {
     }
 }
 
-impl Default for CpuBudget {
+impl Default for ResourceBudget {
     fn default() -> Self {
         Self::new(get_cpu_budget(0))
     }
 }
 
-/// CPU permit, used to limit number of concurrent CPU-intensive operations
+/// Resource permit, used to limit number of concurrent resource-intensive operations.
+/// For example HNSW indexing (which is CPU-bound) can be limited to a certain number of CPUs.
+/// Or an I/O-bound operations like segment moving can be limited by I/O permits.
 ///
-/// This permit represents the number of CPUs allocated for an operation, so that the operation can
-/// respect other parallel workloads. When dropped or `release()`-ed, the CPUs are given back for
+/// This permit represents the number of Resources allocated for an operation, so that the operation can
+/// respect other parallel workloads. When dropped or `release()`-ed, the Resources are given back for
 /// other tasks to acquire.
 ///
-/// These CPU permits are used to better balance and saturate resource utilization.
-pub struct CpuPermit {
+/// These Resource permits are used to better balance and saturate resource utilization.
+pub struct ResourcePermit {
     /// Number of CPUs acquired in this permit.
     pub num_cpus: u32,
     /// Semaphore permit.
-    permit: Option<OwnedSemaphorePermit>,
+    cpu_permit: Option<OwnedSemaphorePermit>,
 }
 
-impl CpuPermit {
+impl ResourcePermit {
     /// New CPU permit with given CPU count and permit semaphore.
-    pub fn new(count: u32, permit: OwnedSemaphorePermit) -> Self {
+    pub fn new(count: u32, cpu_permit: OwnedSemaphorePermit) -> Self {
         Self {
             num_cpus: count,
-            permit: Some(permit),
+            cpu_permit: Some(cpu_permit),
         }
     }
 
@@ -186,28 +188,28 @@ impl CpuPermit {
     pub fn dummy(count: u32) -> Self {
         Self {
             num_cpus: count,
-            permit: None,
+            cpu_permit: None,
         }
     }
 
     /// Release CPU permit, giving them back to the semaphore.
     pub fn release(&mut self) {
-        self.permit.take();
+        self.cpu_permit.take();
     }
 
     /// Partial release CPU permit, giving them back to the semaphore.
     pub fn release_count(&mut self, release_count: u32) {
         if self.num_cpus > release_count {
             self.num_cpus -= release_count;
-            let permit = self.permit.take();
-            self.permit = permit.and_then(|mut permit| permit.split(self.num_cpus as usize));
+            let permit = self.cpu_permit.take();
+            self.cpu_permit = permit.and_then(|mut permit| permit.split(self.num_cpus as usize));
         } else {
             self.release();
         }
     }
 }
 
-impl Drop for CpuPermit {
+impl Drop for ResourcePermit {
     fn drop(&mut self) {
         self.release();
     }

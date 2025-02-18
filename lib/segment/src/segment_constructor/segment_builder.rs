@@ -10,7 +10,7 @@ use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
+use common::cpu::ResourcePermit;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
@@ -441,7 +441,7 @@ impl SegmentBuilder {
 
     pub fn build(
         self,
-        mut permit: CpuPermit,
+        mut permit: ResourcePermit,
         stopped: &AtomicBool,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
@@ -637,7 +637,7 @@ impl SegmentBuilder {
         segment_config: &SegmentConfig,
         vector_storages: &HashMap<VectorNameBuf, VectorData>,
         temp_path: &Path,
-        permit: &CpuPermit,
+        permit: &ResourcePermit,
         stopped: &AtomicBool,
     ) -> OperationResult<HashMap<VectorNameBuf, QuantizedVectors>> {
         let config = segment_config.clone();

@@ -13,7 +13,7 @@ use collection::save_on_disk::SaveOnDisk;
 use collection::shards::local_shard::LocalShard;
 use collection::shards::shard_trait::ShardOperation;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
+use common::cpu::ResourceBudget;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::rng;
 use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
@@ -105,7 +105,7 @@ fn batch_search_bench(c: &mut Criterion) {
             payload_index_schema,
             handle.clone(),
             handle.clone(),
-            CpuBudget::default(),
+            ResourceBudget::default(),
             optimizers_config,
         ))
         .unwrap();

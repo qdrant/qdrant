@@ -258,7 +258,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use common::cpu::CpuPermit;
+    use common::cpu::ResourcePermit;
     use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
@@ -349,7 +349,7 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build index for HNSW mismatch test
         let changed = index_optimizer
@@ -379,7 +379,7 @@ mod tests {
         config_mismatch_optimizer.hnsw_config = changed_hnsw_config.clone();
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -485,7 +485,7 @@ mod tests {
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config_collection.max_indexing_threads);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -542,7 +542,7 @@ mod tests {
         }
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -674,7 +674,7 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         // Use indexing optimizer to build index for quantization mismatch test
         let changed = index_optimizer
@@ -715,7 +715,7 @@ mod tests {
         }
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);

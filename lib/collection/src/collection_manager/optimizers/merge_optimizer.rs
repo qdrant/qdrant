@@ -153,7 +153,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
-    use common::cpu::CpuPermit;
+    use common::cpu::ResourcePermit;
     use parking_lot::RwLock;
     use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;
@@ -239,7 +239,7 @@ mod tests {
             .collect_vec();
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         merge_optimizer
             .optimize(

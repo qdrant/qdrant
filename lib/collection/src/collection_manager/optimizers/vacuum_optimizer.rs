@@ -213,7 +213,7 @@ mod tests {
     use std::sync::Arc;
 
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::cpu::CpuPermit;
+    use common::cpu::ResourcePermit;
     use itertools::Itertools;
     use parking_lot::RwLock;
     use segment::entry::entry_point::SegmentEntry;
@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(suggested_to_optimize.len(), 1);
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         vacuum_optimizer
             .optimize(
@@ -458,7 +458,7 @@ mod tests {
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -595,7 +595,7 @@ mod tests {
             });
 
         // Run vacuum index optimizer, make sure it optimizes properly
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
         let suggested_to_optimize =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);

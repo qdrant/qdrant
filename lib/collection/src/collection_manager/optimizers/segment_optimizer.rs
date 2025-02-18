@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
+use common::cpu::ResourcePermit;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
@@ -398,7 +398,7 @@ pub trait SegmentOptimizer {
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: proxy_segment::LockedRmSet,
         proxy_changed_indexes: proxy_segment::LockedIndexChanges,
-        permit: CpuPermit,
+        permit: ResourcePermit,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
         let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
@@ -515,7 +515,7 @@ pub trait SegmentOptimizer {
         &self,
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
-        permit: CpuPermit,
+        permit: ResourcePermit,
         stopped: &AtomicBool,
     ) -> CollectionResult<usize> {
         check_process_stopped(stopped)?;
