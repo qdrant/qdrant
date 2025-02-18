@@ -54,6 +54,8 @@ pub struct SnapshotData {
     pub address_by_id: PeerAddressById,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub metadata_by_id: PeerMetadataById,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub cluster_metadata: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -533,13 +535,20 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     ) -> Result<Result<(), StorageError>, StorageError> {
         let meta = snapshot.get_metadata();
 
-        let data: SnapshotData = snapshot.get_data().try_into()?;
-        self.toc.apply_collections_snapshot(data.collections_data)?;
+        let SnapshotData {
+            collections_data,
+            address_by_id,
+            metadata_by_id,
+            cluster_metadata,
+        } = snapshot.get_data().try_into()?;
+
+        self.toc.apply_collections_snapshot(collections_data)?;
         self.wal.lock().clear()?;
         self.persistent.write().update_from_snapshot(
             meta,
-            data.address_by_id,
-            data.metadata_by_id,
+            address_by_id,
+            metadata_by_id,
+            cluster_metadata,
         )?;
 
         Ok(Ok(()))
@@ -996,6 +1005,7 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
             collections_data,
             address_by_id: persistent.peer_address_by_id(),
             metadata_by_id: persistent.peer_metadata_by_id(),
+            cluster_metadata: persistent.cluster_metadata.clone(),
         };
 
         let raft_state = persistent.state();
