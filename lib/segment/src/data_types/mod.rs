@@ -5,5 +5,6 @@ pub mod named_vectors;
 pub mod order_by;
 pub mod primitive;
 pub mod query_context;
+pub mod segment_manifest;
 pub mod tiny_map;
 pub mod vectors;

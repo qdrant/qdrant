@@ -15,8 +15,10 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
+use segment::data_types::segment_manifest::SegmentManifest;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
+use segment::entry::partial_snapshot_entry::PartialSnapshotEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -1278,6 +1280,21 @@ impl SegmentEntry for ProxySegment {
             .get()
             .read()
             .fill_query_context(query_context)
+    }
+}
+
+impl PartialSnapshotEntry for ProxySegment {
+    fn take_partial_snapshot(
+        &self,
+        _temp_path: &Path,
+        _tar: &tar_ext::BuilderExt,
+        _manifest: &SegmentManifest,
+    ) -> OperationResult<()> {
+        todo!()
+    }
+
+    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        todo!()
     }
 }
 

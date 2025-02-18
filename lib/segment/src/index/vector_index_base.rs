@@ -17,7 +17,7 @@ use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams};
+use crate::types::{Filter, SearchParams, SeqNumberType};
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -34,6 +34,10 @@ pub trait VectorIndex {
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> VectorIndexSearchesTelemetry;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+        Vec::new()
+    }
 
     /// The number of indexed vectors, currently accessible
     fn indexed_vector_count(&self) -> usize;

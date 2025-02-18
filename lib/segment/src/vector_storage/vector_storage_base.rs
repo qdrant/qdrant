@@ -21,7 +21,7 @@ use crate::data_types::vectors::{
     MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
     VectorElementTypeHalf, VectorInternal, VectorRef,
 };
-use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
+use crate::types::{Distance, MultiVectorConfig, SeqNumberType, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
@@ -77,6 +77,10 @@ pub trait VectorStorage {
     fn flusher(&self) -> Flusher;
 
     fn files(&self) -> Vec<PathBuf>;
+
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+        Vec::new()
+    }
 
     /// Flag the vector by the given key as deleted
     ///

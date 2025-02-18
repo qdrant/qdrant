@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::thread::{self};
@@ -8,8 +7,6 @@ use std::thread::{self};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
-use io::storage_version::VERSION_FILE;
-use uuid::Uuid;
 
 use super::Segment;
 use crate::common::operation_error::OperationError::TypeInferenceError;
@@ -25,16 +22,14 @@ use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
-use crate::segment::{
-    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
-};
+use crate::segment::snapshot::snapshot_files;
+use crate::segment::SNAPSHOT_PATH;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
     SnapshotFormat, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
-use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 
 /// This is a basic implementation of `SegmentEntry`,
@@ -837,12 +832,12 @@ impl SegmentEntry for Segment {
                 tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
                     let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
                     let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar)
+                    snapshot_files(self, temp_path, &tar, |_| true)
                 })??;
             }
             SnapshotFormat::Streamable => {
                 let tar = tar.descend(Path::new(&segment_id))?;
-                snapshot_files(self, temp_path, &tar)?;
+                snapshot_files(self, temp_path, &tar, |_| true)?;
             }
         }
 
@@ -877,79 +872,4 @@ impl SegmentEntry for Segment {
             }
         }
     }
-}
-
-fn snapshot_files(
-    segment: &Segment,
-    temp_path: &Path,
-    tar: &tar_ext::BuilderExt<impl Write + Seek>,
-) -> OperationResult<()> {
-    // use temp_path for intermediary files
-    let temp_path = temp_path.join(format!("segment-{}", Uuid::new_v4()));
-    let db_backup_path = temp_path.join(DB_BACKUP_PATH);
-    let payload_index_db_backup_path = temp_path.join(PAYLOAD_DB_BACKUP_PATH);
-
-    {
-        let db = segment.database.read();
-        crate::rocksdb_backup::create(&db, &db_backup_path)?;
-    }
-
-    segment
-        .payload_index
-        .borrow()
-        .take_database_snapshot(&payload_index_db_backup_path)?;
-
-    tar.blocking_append_dir_all(&temp_path, Path::new(""))?;
-
-    // remove tmp directory in background
-    let _ = thread::spawn(move || {
-        let res = fs::remove_dir_all(&temp_path);
-        if let Err(err) = res {
-            log::error!(
-                "Failed to remove tmp directory at {}: {err:?}",
-                temp_path.display(),
-            );
-        }
-    });
-
-    let tar = tar.descend(Path::new(SNAPSHOT_FILES_PATH))?;
-    for vector_data in segment.vector_data.values() {
-        for file in vector_data.vector_index.borrow().files() {
-            tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
-        }
-
-        for file in vector_data.vector_storage.borrow().files() {
-            tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
-        }
-
-        if let Some(quantized_vectors) = vector_data.quantized_vectors.borrow().as_ref() {
-            for file in quantized_vectors.files() {
-                tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
-            }
-        }
-    }
-
-    for file in segment.payload_index.borrow().files() {
-        tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
-    }
-
-    for file in segment.payload_storage.borrow().files() {
-        tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
-    }
-
-    for file in segment.id_tracker.borrow().files() {
-        tar.blocking_append_file(&file, strip_prefix(&file, &segment.current_path)?)?;
-    }
-
-    tar.blocking_append_file(
-        &segment.current_path.join(SEGMENT_STATE_FILE),
-        Path::new(SEGMENT_STATE_FILE),
-    )?;
-
-    tar.blocking_append_file(
-        &segment.current_path.join(VERSION_FILE),
-        Path::new(VERSION_FILE),
-    )?;
-
-    Ok(())
 }
