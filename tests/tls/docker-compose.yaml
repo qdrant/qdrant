@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   qdrant_node_1:
-    image: qdrant_tls:latest
+    image: qdrant/qdrant:v1.13.4
     hostname: node1.qdrant
     networks:
       - qdrant
@@ -11,7 +11,7 @@ services:
     - ./cert:/qdrant/tls
     - ./tls_config.yaml:/qdrant/config/tls_config.yaml
   qdrant_node_2:
-    image: qdrant_tls:latest
+    image: qdrant/qdrant:v1.13.4
     hostname: node2.qdrant
     networks:
       - qdrant
