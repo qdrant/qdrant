@@ -64,7 +64,7 @@ impl From<segment::types::ScoredPoint> for ScoredPoint {
             payload: value.payload,
             vector: value.vector.map(VectorStructOutput::from),
             shard_key: value.shard_key,
-            order_value: value.order_value.map(From::from),
+            order_value: value.order_value,
         }
     }
 }

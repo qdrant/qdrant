@@ -286,8 +286,8 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
         } = request;
 
         let collection_query_request = CollectionQueryRequest {
-            prefetch: prefetch.into_iter().map(From::from).collect(),
-            query: query.map(From::from),
+            prefetch: prefetch.into_iter().collect(),
+            query,
             using,
             filter,
             score_threshold,
@@ -304,7 +304,7 @@ impl From<CollectionQueryGroupsRequest> for GroupRequest {
             group_by,
             group_size,
             limit,
-            with_lookup: with_lookup_interface.map(Into::into),
+            with_lookup: with_lookup_interface,
         }
     }
 }

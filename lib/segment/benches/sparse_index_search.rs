@@ -229,9 +229,9 @@ fn sparse_vector_index_search_benchmark_impl(
     group.finish();
 }
 
-fn progress(name: &str, len: usize) -> ProgressBar {
+fn progress(name: &str, length: usize) -> ProgressBar {
     let pb =
-        ProgressBar::with_draw_target(Some(len as u64), ProgressDrawTarget::stderr_with_hz(12));
+        ProgressBar::with_draw_target(Some(length as u64), ProgressDrawTarget::stderr_with_hz(12));
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{msg} {wide_bar} {pos}/{len} (eta:{eta})")
