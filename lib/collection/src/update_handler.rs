@@ -296,16 +296,13 @@ impl UpdateHandler {
                 debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
 
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
-                let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
-                let desired_cpus = num_rayon_threads(max_indexing_threads);
-                let desired_io = 0; // ToDo: We need at least one IO thread for each optimization
-                let Some(permit) = optimizer_resource_budget.try_acquire(desired_cpus, desired_io)
-                else {
+                let desired_io = 1; // ToDo: We need at least one IO thread for each optimization
+                let Some(permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
                     log::trace!(
-                        "No available CPU permit for {} optimizer, postponing",
+                        "No available IO permit for {} optimizer, postponing",
                         optimizer.name(),
                     );
                     if handles.is_empty() {
@@ -314,8 +311,8 @@ impl UpdateHandler {
                     break 'outer;
                 };
                 log::trace!(
-                    "Acquired {} CPU permit for {} optimizer",
-                    permit.num_cpus,
+                    "Acquired {} IO permit for {} optimizer",
+                    permit.num_io,
                     optimizer.name(),
                 );
 
@@ -330,6 +327,7 @@ impl UpdateHandler {
                 let handle = spawn_stoppable(
                     // Stoppable task
                     {
+                        let resource_budget = optimizer_resource_budget.clone();
                         let segments = segments.clone();
                         move |stopped| {
                             // Track optimizer status
@@ -342,6 +340,7 @@ impl UpdateHandler {
                                 segments.clone(),
                                 nsi,
                                 permit,
+                                resource_budget,
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished

@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -122,6 +123,28 @@ impl ResourceBudget {
         ))
     }
 
+    /// Acquire Resources permit for optimization task from global Resource budget.
+    ///
+    /// This will wait until the required number of permits are available.
+    /// This function is blocking.
+    pub fn acquire(
+        &self,
+        desired_cpus: usize,
+        desired_io: usize,
+        stopped: &AtomicBool,
+    ) -> Option<ResourcePermit> {
+        let mut delay = Duration::from_micros(100);
+        while !stopped.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Some(permit) = self.try_acquire(desired_cpus, desired_io) {
+                return Some(permit);
+            } else {
+                std::thread::sleep(delay);
+                delay = (delay * 2).min(Duration::from_secs(10));
+            }
+        }
+        None
+    }
+
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
     ///
     /// This checks for the minimum number of required permits based on the given desired CPUs,
@@ -244,7 +267,7 @@ impl ResourcePermit {
     pub fn release_io(&mut self) {
         self.io_permit.take();
     }
-    
+
     /// Partial release CPU permit, giving them back to the semaphore.
     pub fn release_cpu_count(&mut self, release_count: u32) {
         if self.num_cpus > release_count {

@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use common::budget::ResourcePermit;
+use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
@@ -15,6 +15,7 @@ use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::entry_point::SegmentEntry;
+use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -398,7 +399,8 @@ pub trait SegmentOptimizer {
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: proxy_segment::LockedRmSet,
         proxy_changed_indexes: proxy_segment::LockedIndexChanges,
-        permit: ResourcePermit,
+        permit: ResourcePermit, // IO resources for copying data
+        resource_budget: ResourceBudget,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
         let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
@@ -454,7 +456,17 @@ pub trait SegmentOptimizer {
             }
         }
 
-        let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;
+        // At this stage workload shifts from IO to CPU, so we can release IO permit
+        drop(permit);
+        let max_indexing_threads = self.hnsw_config().max_indexing_threads;
+        let desired_cpus = num_rayon_threads(max_indexing_threads);
+        let indexing_permit = resource_budget.acquire(desired_cpus, 0, stopped).ok_or(
+            CollectionError::Cancelled {
+                description: "optimization cancelled while waiting for budget".to_string(),
+            },
+        )?;
+
+        let mut optimized_segment: Segment = segment_builder.build(indexing_permit, stopped)?;
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
@@ -516,6 +528,7 @@ pub trait SegmentOptimizer {
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
         permit: ResourcePermit,
+        resource_budget: ResourceBudget,
         stopped: &AtomicBool,
     ) -> CollectionResult<usize> {
         check_process_stopped(stopped)?;
@@ -606,6 +619,7 @@ pub trait SegmentOptimizer {
             Arc::clone(&proxy_deleted_points),
             Arc::clone(&proxy_index_changes),
             permit,
+            resource_budget,
             stopped,
         ) {
             Ok(segment) => segment,

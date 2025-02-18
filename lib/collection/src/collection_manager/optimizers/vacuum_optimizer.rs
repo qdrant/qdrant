@@ -212,7 +212,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
-    use common::budget::ResourcePermit;
+    use common::budget::ResourceBudget;
     use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
     use parking_lot::RwLock;
@@ -336,13 +336,15 @@ mod tests {
         assert_eq!(suggested_to_optimize.len(), 1);
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+        let budget = ResourceBudget::new(permit_cpu_count, 2);
+        let permit = budget.try_acquire(0, 1).unwrap();
 
         vacuum_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
+                budget.clone(),
                 &AtomicBool::new(false),
             )
             .unwrap();
@@ -458,7 +460,8 @@ mod tests {
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+        let budget = ResourceBudget::new(permit_cpu_count, 2);
+        let permit = budget.try_acquire(0, 1).unwrap();
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -487,6 +490,7 @@ mod tests {
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();
@@ -595,7 +599,7 @@ mod tests {
             });
 
         // Run vacuum index optimizer, make sure it optimizes properly
-        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+        let permit = budget.try_acquire(0, 1).unwrap();
         let suggested_to_optimize =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -604,6 +608,7 @@ mod tests {
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();

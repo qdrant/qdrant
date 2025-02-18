@@ -153,7 +153,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
-    use common::budget::ResourcePermit;
+    use common::budget::ResourceBudget;
     use parking_lot::RwLock;
     use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;
@@ -239,13 +239,15 @@ mod tests {
             .collect_vec();
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+        let budget = ResourceBudget::new(permit_cpu_count, 2);
+        let permit = budget.try_acquire(0, 1).unwrap();
 
         merge_optimizer
             .optimize(
                 locked_holder.clone(),
                 suggested_for_merge,
                 permit,
+                budget,
                 &AtomicBool::new(false),
             )
             .unwrap();
