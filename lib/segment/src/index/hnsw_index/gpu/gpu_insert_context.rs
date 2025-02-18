@@ -251,8 +251,14 @@ impl<'a> GpuInsertContext<'a> {
     ) -> OperationResult<Self> {
         let device = gpu_vector_storage.device();
         let points_count = gpu_vector_storage.num_vectors();
-        let insert_resources =
-            GpuInsertResources::new(gpu_vector_storage, groups_count, points_remap, ef, m0, exact)?;
+        let insert_resources = GpuInsertResources::new(
+            gpu_vector_storage,
+            groups_count,
+            points_remap,
+            ef,
+            m0,
+            exact,
+        )?;
 
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count)?;
 
@@ -464,10 +470,15 @@ impl<'a> GpuInsertContext<'a> {
         }
 
         if super::VALIDATE_GPU_COHERENCE2 {
-            self.context
-                .clear_buffer(self.insert_resources.search_results_buffer.clone(), u32::MAX)?;
+            self.context.clear_buffer(
+                self.insert_resources.search_results_buffer.clone(),
+                u32::MAX,
+            )?;
         }
-        self.context.clear_buffer(self.insert_resources.insert_results_buffer.clone(), u32::MAX)?;
+        self.context.clear_buffer(
+            self.insert_resources.insert_results_buffer.clone(),
+            u32::MAX,
+        )?;
 
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
@@ -487,10 +498,10 @@ impl<'a> GpuInsertContext<'a> {
                 ],
             )?;
             self.context.dispatch(requests.len(), 1, 1)?;
-    
+
             self.context
                 .barrier_buffer(self.insert_resources.search_results_buffer.clone())?;
-    
+
             self.context.run()?;
             self.context.wait_finish(GPU_TIMEOUT)?;
 
@@ -498,10 +509,15 @@ impl<'a> GpuInsertContext<'a> {
             if is_valid {
                 search_sucess = true;
             } else {
-                self.context.clear_buffer(self.insert_resources.search_results_buffer.clone(), u32::MAX)?;
+                self.context.clear_buffer(
+                    self.insert_resources.search_results_buffer.clone(),
+                    u32::MAX,
+                )?;
                 max_tries -= 1;
                 if max_tries == 0 {
-                    return Err(OperationError::service_error("Too many tries to validate search results"));
+                    return Err(OperationError::service_error(
+                        "Too many tries to validate search results",
+                    ));
                 }
             }
         }
@@ -535,10 +551,15 @@ impl<'a> GpuInsertContext<'a> {
             if is_valid {
                 insert_sucess = true;
             } else {
-                self.context.clear_buffer(self.insert_resources.insert_results_buffer.clone(), u32::MAX)?;
+                self.context.clear_buffer(
+                    self.insert_resources.insert_results_buffer.clone(),
+                    u32::MAX,
+                )?;
                 max_tries -= 1;
                 if max_tries == 0 {
-                    return Err(OperationError::service_error("Too many tries to validate insert results"));
+                    return Err(OperationError::service_error(
+                        "Too many tries to validate insert results",
+                    ));
                 }
             }
         }
@@ -557,10 +578,7 @@ impl<'a> GpuInsertContext<'a> {
         }
     }
 
-    fn apply_patches(
-        &mut self,
-        requests: &[GpuRequest],
-    ) -> OperationResult<bool> {
+    fn apply_patches(&mut self, requests: &[GpuRequest]) -> OperationResult<bool> {
         self.context.copy_gpu_buffer(
             self.insert_resources.insert_results_buffer.clone(),
             self.insert_resources.insert_results_staging_buffer.clone(),
@@ -571,7 +589,11 @@ impl<'a> GpuInsertContext<'a> {
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
 
-        let mut insert_result = vec![0u32; self.insert_resources.insert_results_buffer.size() / std::mem::size_of::<u32>()];
+        let mut insert_result = vec![
+            0u32;
+            self.insert_resources.insert_results_buffer.size()
+                / std::mem::size_of::<u32>()
+        ];
         self.insert_resources
             .insert_results_staging_buffer
             .download_slice(&mut insert_result, 0)?;
@@ -604,7 +626,7 @@ impl<'a> GpuInsertContext<'a> {
         }
 
         let mut updated_points = HashSet::new();
-    
+
         for r in insert_result.chunks(self.insert_resources.m0 + 2) {
             let id: PointOffsetType = r[0];
             if id != PointOffsetType::MAX && !updated_points.contains(&id) {
@@ -621,10 +643,7 @@ impl<'a> GpuInsertContext<'a> {
         Ok(true)
     }
 
-    fn validate_search_result(
-        &mut self,
-        requests: &[GpuRequest],
-    ) -> OperationResult<bool> {
+    fn validate_search_result(&mut self, requests: &[GpuRequest]) -> OperationResult<bool> {
         if super::VALIDATE_GPU_COHERENCE2 {
             self.context.copy_gpu_buffer(
                 self.insert_resources.search_results_buffer.clone(),
