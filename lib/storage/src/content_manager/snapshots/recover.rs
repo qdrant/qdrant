@@ -3,10 +3,9 @@ use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::shards::check_shard_path;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::shard_config::ShardType;
-use collection::shards::shard_versioning::latest_shard_paths;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
@@ -197,131 +196,116 @@ async fn _do_recover_from_snapshot(
 
     // Recover shards from the snapshot
     for (shard_id, shard_info) in &state.shards {
-        let shards = latest_shard_paths(tmp_collection_dir.path(), *shard_id).await?;
+        let snapshot_shard_path = check_shard_path(tmp_collection_dir.path(), *shard_id).await?;
+        log::debug!(
+            "Recovering shard {} from {}",
+            shard_id,
+            snapshot_shard_path.display()
+        );
 
-        let snapshot_shard_path =
-            shards
-                .into_iter()
-                .find_map(
-                    |(snapshot_shard_path, _version, shard_type)| match shard_type {
-                        ShardType::Local => Some(snapshot_shard_path),
-                        ShardType::ReplicaSet => Some(snapshot_shard_path),
-                        ShardType::Remote { .. } => None,
-                        ShardType::Temporary => None,
-                    },
+        // TODO:
+        //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
+        //   but `recover_local_shard_from` requires `cancel::CanellationToken` argument *now*,
+        //   so we provide a token that is never triggered (in this case `recover_local_shard_from`
+        //   works *exactly* as before the `cancel::CancellationToken` parameter was added to it)
+        let recovered = collection
+            .recover_local_shard_from(
+                &snapshot_shard_path,
+                *shard_id,
+                cancel::CancellationToken::new(),
+            )
+            .await?;
+
+        if !recovered {
+            log::debug!("Shard {} is not in snapshot", shard_id);
+            continue;
+        }
+
+        // If this is the only replica, we can activate it
+        // If not - de-sync is possible, so we need to run synchronization
+        let other_active_replicas: Vec<_> = shard_info
+            .replicas
+            .iter()
+            .filter(|&(&peer_id, &state)| {
+                // Check if there are *other* active replicas, after recovering collection snapshot.
+                // This should include `ReshardingScaleDown` replicas.
+
+                let is_active = matches!(
+                    state,
+                    ReplicaState::Active | ReplicaState::ReshardingScaleDown
                 );
 
-        if let Some(snapshot_shard_path) = snapshot_shard_path {
-            log::debug!(
-                "Recovering shard {} from {}",
-                shard_id,
-                snapshot_shard_path.display()
-            );
+                peer_id != this_peer_id && is_active
+            })
+            .collect();
 
-            // TODO:
-            //   `_do_recover_from_snapshot` is not *yet* analyzed/organized for cancel safety,
-            //   but `recover_local_shard_from` requires `cancel::CanellationToken` argument *now*,
-            //   so we provide a token that is never triggered (in this case `recover_local_shard_from`
-            //   works *exactly* as before the `cancel::CancellationToken` parameter was added to it)
-            let recovered = collection
-                .recover_local_shard_from(
-                    &snapshot_shard_path,
-                    *shard_id,
-                    cancel::CancellationToken::new(),
-                )
-                .await?;
+        if other_active_replicas.is_empty() {
+            // No other active replicas, we can activate this shard
+            // as there is no de-sync possible
+            activate_shard(toc, &collection, this_peer_id, shard_id).await?;
+        } else {
+            match priority {
+                SnapshotPriority::NoSync => {
+                    activate_shard(toc, &collection, this_peer_id, shard_id).await?;
+                }
 
-            if !recovered {
-                log::debug!("Shard {} is not in snapshot", shard_id);
-                continue;
-            }
+                SnapshotPriority::Snapshot => {
+                    // Snapshot is the source of truth, we need to remove all other replicas
+                    activate_shard(toc, &collection, this_peer_id, shard_id).await?;
 
-            // If this is the only replica, we can activate it
-            // If not - de-sync is possible, so we need to run synchronization
-            let other_active_replicas: Vec<_> = shard_info
-                .replicas
-                .iter()
-                .filter(|&(&peer_id, &state)| {
-                    // Check if there are *other* active replicas, after recovering collection snapshot.
-                    // This should include `ReshardingScaleDown` replicas.
+                    let replicas_to_keep = state.config.params.replication_factor.get() - 1;
+                    let mut replicas_to_remove = other_active_replicas
+                        .len()
+                        .saturating_sub(replicas_to_keep as usize);
 
-                    let is_active = matches!(
-                        state,
-                        ReplicaState::Active | ReplicaState::ReshardingScaleDown
-                    );
+                    for (peer_id, _) in other_active_replicas {
+                        if replicas_to_remove > 0 {
+                            // Keep this replica
+                            replicas_to_remove -= 1;
 
-                    peer_id != this_peer_id && is_active
-                })
-                .collect();
-
-            if other_active_replicas.is_empty() {
-                // No other active replicas, we can activate this shard
-                // as there is no de-sync possible
-                activate_shard(toc, &collection, this_peer_id, shard_id).await?;
-            } else {
-                match priority {
-                    SnapshotPriority::NoSync => {
-                        activate_shard(toc, &collection, this_peer_id, shard_id).await?;
-                    }
-
-                    SnapshotPriority::Snapshot => {
-                        // Snapshot is the source of truth, we need to remove all other replicas
-                        activate_shard(toc, &collection, this_peer_id, shard_id).await?;
-
-                        let replicas_to_keep = state.config.params.replication_factor.get() - 1;
-                        let mut replicas_to_remove = other_active_replicas
-                            .len()
-                            .saturating_sub(replicas_to_keep as usize);
-
-                        for (peer_id, _) in other_active_replicas {
-                            if replicas_to_remove > 0 {
-                                // Keep this replica
-                                replicas_to_remove -= 1;
-
-                                // Don't need more replicas, remove this one
-                                toc.request_remove_replica(
-                                    collection_pass.to_string(),
-                                    *shard_id,
-                                    *peer_id,
-                                )?;
-                            } else {
-                                toc.send_set_replica_state_proposal(
-                                    collection_pass.to_string(),
-                                    *peer_id,
-                                    *shard_id,
-                                    ReplicaState::Dead,
-                                    None,
-                                )?;
-                            }
+                            // Don't need more replicas, remove this one
+                            toc.request_remove_replica(
+                                collection_pass.to_string(),
+                                *shard_id,
+                                *peer_id,
+                            )?;
+                        } else {
+                            toc.send_set_replica_state_proposal(
+                                collection_pass.to_string(),
+                                *peer_id,
+                                *shard_id,
+                                ReplicaState::Dead,
+                                None,
+                            )?;
                         }
                     }
-
-                    SnapshotPriority::Replica => {
-                        // Replica is the source of truth, we need to sync recovered data with this replica
-                        let (replica_peer_id, _state) =
-                            other_active_replicas.into_iter().next().unwrap();
-                        log::debug!(
-                            "Running synchronization for shard {} of collection {} from {}",
-                            shard_id,
-                            collection_pass,
-                            replica_peer_id
-                        );
-
-                        // assume that if there is another peers, the server is distributed
-                        toc.request_shard_transfer(
-                            collection_pass.to_string(),
-                            *shard_id,
-                            *replica_peer_id,
-                            this_peer_id,
-                            true,
-                            None,
-                        )?;
-                    }
-
-                    // `ShardTransfer` is only used during snapshot *shard transfer*.
-                    // It is only exposed in internal gRPC API and only used for *shard* snapshot recovery.
-                    SnapshotPriority::ShardTransfer => unreachable!(),
                 }
+
+                SnapshotPriority::Replica => {
+                    // Replica is the source of truth, we need to sync recovered data with this replica
+                    let (replica_peer_id, _state) =
+                        other_active_replicas.into_iter().next().unwrap();
+                    log::debug!(
+                        "Running synchronization for shard {} of collection {} from {}",
+                        shard_id,
+                        collection_pass,
+                        replica_peer_id
+                    );
+
+                    // assume that if there is another peers, the server is distributed
+                    toc.request_shard_transfer(
+                        collection_pass.to_string(),
+                        *shard_id,
+                        *replica_peer_id,
+                        this_peer_id,
+                        true,
+                        None,
+                    )?;
+                }
+
+                // `ShardTransfer` is only used during snapshot *shard transfer*.
+                // It is only exposed in internal gRPC API and only used for *shard* snapshot recovery.
+                SnapshotPriority::ShardTransfer => unreachable!(),
             }
         }
     }
