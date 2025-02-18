@@ -39,13 +39,11 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
-use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_config::{ShardConfig, ShardType};
-use crate::shards::shard_versioning::latest_shard_paths;
+use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
-use crate::shards::CollectionId;
+use crate::shards::{check_shard_path, CollectionId};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -602,114 +600,48 @@ impl ShardHolder {
             }
         };
 
-        // ToDo: remove after version 0.11.0
         for shard_id in shard_ids_list {
-            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id).cloned();
+            // Validate that shard exists on disk
+            let shard_path = check_shard_path(collection_path, shard_id)
+                .await
+                .expect("Failed to check shard path");
 
-            for (path, _shard_version, shard_type) in
-                latest_shard_paths(collection_path, shard_id).await.unwrap()
-            {
-                let replica_set = ShardReplicaSet::load(
-                    shard_id,
-                    shard_key.clone(),
-                    collection_id.clone(),
-                    &path,
-                    collection_config.clone(),
-                    effective_optimizers_config.clone(),
-                    shared_storage_config.clone(),
-                    payload_index_schema.clone(),
-                    channel_service.clone(),
-                    on_peer_failure.clone(),
-                    abort_shard_transfer.clone(),
-                    this_peer_id,
-                    update_runtime.clone(),
-                    search_runtime.clone(),
-                    optimizer_cpu_budget.clone(),
-                )
-                .await;
+            // Load replica set
+            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
+            let replica_set = ShardReplicaSet::load(
+                shard_id,
+                shard_key.cloned(),
+                collection_id.clone(),
+                &shard_path,
+                collection_config.clone(),
+                effective_optimizers_config.clone(),
+                shared_storage_config.clone(),
+                payload_index_schema.clone(),
+                channel_service.clone(),
+                on_peer_failure.clone(),
+                abort_shard_transfer.clone(),
+                this_peer_id,
+                update_runtime.clone(),
+                search_runtime.clone(),
+                optimizer_cpu_budget.clone(),
+            )
+            .await;
 
-                let mut require_migration = true;
-                match shard_type {
-                    ShardType::Local => {
-                        // deprecated
-                        let local_shard = LocalShard::load(
-                            shard_id,
-                            collection_id.clone(),
-                            &path,
-                            collection_config.clone(),
-                            effective_optimizers_config.clone(),
-                            shared_storage_config.clone(),
-                            payload_index_schema.clone(),
-                            update_runtime.clone(),
-                            search_runtime.clone(),
-                            optimizer_cpu_budget.clone(),
-                        )
-                        .await
-                        .unwrap();
-                        replica_set
-                            .set_local(local_shard, Some(ReplicaState::Active))
-                            .await
-                            .unwrap();
-                    }
-                    ShardType::Remote { peer_id } => {
-                        // deprecated
-                        replica_set
-                            .add_remote(peer_id, ReplicaState::Active)
-                            .await
-                            .unwrap();
-                    }
-                    ShardType::Temporary => {
-                        // deprecated
-                        let temp_shard = LocalShard::load(
-                            shard_id,
-                            collection_id.clone(),
-                            &path,
-                            collection_config.clone(),
-                            effective_optimizers_config.clone(),
-                            shared_storage_config.clone(),
-                            payload_index_schema.clone(),
-                            update_runtime.clone(),
-                            search_runtime.clone(),
-                            optimizer_cpu_budget.clone(),
-                        )
-                        .await
-                        .unwrap();
-
-                        replica_set
-                            .set_local(temp_shard, Some(ReplicaState::Partial))
-                            .await
-                            .unwrap();
-                    }
-                    ShardType::ReplicaSet => {
-                        require_migration = false;
-                        // nothing to do, replicate set should be loaded already
-                    }
-                }
-                // Migrate shard config to replica set
-                // Override existing shard configuration
-                if require_migration {
-                    ShardConfig::new_replica_set()
-                        .save(&path)
-                        .map_err(|e| panic!("Failed to save shard config {path:?}: {e}"))
-                        .unwrap();
-                }
-
-                // Change local shards stuck in Initializing state to Active
-                let local_peer_id = replica_set.this_peer_id();
-                let not_distributed = !shared_storage_config.is_distributed;
-                let is_local =
-                    replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;
-                let is_initializing =
-                    replica_set.peer_state(local_peer_id) == Some(ReplicaState::Initializing);
-                if not_distributed && is_local && is_initializing {
-                    log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
-                    replica_set
-                        .set_replica_state(local_peer_id, ReplicaState::Active)
-                        .expect("Failed to set local shard state");
-                }
-                let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
-                self.add_shard(shard_id, replica_set, shard_key).unwrap();
+            // Change local shards stuck in Initializing state to Active
+            let local_peer_id = replica_set.this_peer_id();
+            let not_distributed = !shared_storage_config.is_distributed;
+            let is_local =
+                replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;
+            let is_initializing =
+                replica_set.peer_state(local_peer_id) == Some(ReplicaState::Initializing);
+            if not_distributed && is_local && is_initializing {
+                log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
+                replica_set
+                    .set_replica_state(local_peer_id, ReplicaState::Active)
+                    .expect("Failed to set local shard state");
             }
+            let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
+            self.add_shard(shard_id, replica_set, shard_key).unwrap();
         }
 
         // If resharding, rebuild the hash rings because they'll be messed up

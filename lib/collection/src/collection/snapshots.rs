@@ -25,7 +25,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{shard_not_found_error, ShardHolder, SHARD_KEY_MAPPING_FILE};
-use crate::shards::shard_versioning;
+use crate::shards::shard_path;
 
 impl Collection {
     pub fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
@@ -98,8 +98,7 @@ impl Collection {
             let shards_holder = self.shards_holder.read().await;
             // Create snapshot of each shard
             for (shard_id, replica_set) in shards_holder.get_shards() {
-                let shard_snapshot_path =
-                    shard_versioning::versioned_shard_path(Path::new(""), shard_id, 0);
+                let shard_snapshot_path = shard_path(Path::new(""), shard_id);
 
                 // If node is listener, we can save whatever currently is in the storage
                 let save_wal = self.shared_storage_config.node_type != NodeType::Listener;
@@ -203,7 +202,7 @@ impl Collection {
         );
 
         for shard_id in shard_ids_list {
-            let shard_path = shard_versioning::versioned_shard_path(target_dir, shard_id, 0);
+            let shard_path = shard_path(target_dir, shard_id);
             let shard_config_opt = ShardConfig::load(&shard_path)?;
             if let Some(shard_config) = shard_config_opt {
                 match shard_config.r#type {

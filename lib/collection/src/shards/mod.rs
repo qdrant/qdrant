@@ -14,7 +14,6 @@ pub mod shard;
 pub mod shard_config;
 pub mod shard_holder;
 pub mod shard_trait;
-pub mod shard_versioning;
 pub mod telemetry;
 pub mod transfer;
 pub mod update_tracker;
@@ -31,17 +30,41 @@ use tokio::time::{sleep_until, timeout_at};
 use transfer::ShardTransferConsensus;
 
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::shards::shard_versioning::versioned_shard_path;
+use crate::shards::shard_config::ShardConfig;
 
 pub type CollectionId = String;
 
 pub type ShardVersion = usize;
 
+/// Path to a shard directory
+pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
+    collection_path.join(format!("{shard_id}"))
+}
+
+/// Verify that a shard exists by loading its configuration.
+/// Returns the path to the shard if it exists.
+pub async fn check_shard_path(
+    collection_path: &Path,
+    shard_id: ShardId,
+) -> CollectionResult<PathBuf> {
+    let path = shard_path(collection_path, shard_id);
+    let shard_config_opt = ShardConfig::load(&path)?;
+    if shard_config_opt.is_some() {
+        Ok(path)
+    } else {
+        Err(CollectionError::service_error(format!(
+            "No shard found: {shard_id} at {collection_path}",
+            shard_id = shard_id,
+            collection_path = collection_path.display()
+        )))
+    }
+}
+
 pub async fn create_shard_dir(
     collection_path: &Path,
     shard_id: ShardId,
 ) -> CollectionResult<PathBuf> {
-    let shard_path = versioned_shard_path(collection_path, shard_id, 0);
+    let shard_path = shard_path(collection_path, shard_id);
     match tokio::fs::create_dir(&shard_path).await {
         Ok(_) => Ok(shard_path),
         // If the directory already exists, remove it and create it again
