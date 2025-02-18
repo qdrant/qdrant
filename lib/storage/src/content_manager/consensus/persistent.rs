@@ -69,17 +69,34 @@ impl Persistent {
         meta: &SnapshotMetadata,
         address_by_id: PeerAddressById,
         mut metadata_by_id: PeerMetadataById,
+        new_cluster_metadata: HashMap<String, serde_json::Value>,
     ) -> Result<(), StorageError> {
+        // IF YOU ADD NEW DATA INTO `PERSISTENT` STATE, DON'T FORGET TO ALSO ADD IT INTO RAFT SNAPSHOT!
+        let Self {
+            state,
+            latest_snapshot_meta,
+            apply_progress_queue,
+            first_voter: _,
+            peer_address_by_id,
+            peer_metadata_by_id,
+            cluster_metadata,
+            this_peer_id: _,
+            path: _,
+            dirty: _,
+        } = self;
+
+        state.conf_state = meta.get_conf_state().clone();
+        state.hard_state.term = cmp::max(state.hard_state.term, meta.term);
+        state.hard_state.commit = meta.index;
+
+        apply_progress_queue.set_from_snapshot(meta.index);
+        *latest_snapshot_meta = meta.into();
+
         metadata_by_id.retain(|peer_id, _| address_by_id.contains_key(peer_id));
 
-        *self.peer_address_by_id.write() = address_by_id;
-        *self.peer_metadata_by_id.write() = metadata_by_id;
-
-        self.state.conf_state = meta.get_conf_state().clone();
-        self.state.hard_state.term = cmp::max(self.state.hard_state.term, meta.term);
-        self.state.hard_state.commit = meta.index;
-        self.apply_progress_queue.set_from_snapshot(meta.index);
-        self.latest_snapshot_meta = meta.into();
+        *peer_address_by_id.write() = address_by_id;
+        *peer_metadata_by_id.write() = metadata_by_id;
+        *cluster_metadata = new_cluster_metadata;
 
         self.save()
     }
