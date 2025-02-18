@@ -211,8 +211,8 @@ impl<'a> Reader<'a> {
         let delta_offset_bits =
             self.base_bits as usize + (value_index - 1) * self.delta_bits as usize;
         // SAFETY: see the *delta* comment in `new()`.
-        let delta = unsafe { read_u64_le(chunk_ptr.add(delta_offset_bits / u8::BITS as usize)) }
-            >> (delta_offset_bits % u8::BITS as usize)
+        let delta = (unsafe { read_u64_le(chunk_ptr.add(delta_offset_bits / u8::BITS as usize)) }
+            >> (delta_offset_bits % u8::BITS as usize))
             & self.delta_mask;
         Some(base + delta)
     }

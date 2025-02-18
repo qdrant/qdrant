@@ -1609,7 +1609,7 @@ mod tests {
                 .filter(|clock_tag| {
                     cutoff
                         .current_tick(clock_tag.peer_id, clock_tag.clock_id)
-                        .map_or(true, |cutoff_tick| clock_tag.clock_tick >= cutoff_tick)
+                        .is_none_or(|cutoff_tick| clock_tag.clock_tick >= cutoff_tick)
                 })
                 .collect::<Vec<_>>()
         };

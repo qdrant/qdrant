@@ -1892,10 +1892,10 @@ impl<T: Copy> Range<T> {
 
 impl<T: Copy + PartialOrd> Range<T> {
     pub fn check_range(&self, number: T) -> bool {
-        self.lt.map_or(true, |x| number < x)
-            && self.gt.map_or(true, |x| number > x)
-            && self.lte.map_or(true, |x| number <= x)
-            && self.gte.map_or(true, |x| number >= x)
+        self.lt.is_none_or(|x| number < x)
+            && self.gt.is_none_or(|x| number > x)
+            && self.lte.is_none_or(|x| number <= x)
+            && self.gte.is_none_or(|x| number >= x)
     }
 }
 
@@ -1915,10 +1915,10 @@ pub struct ValuesCount {
 
 impl ValuesCount {
     pub fn check_count(&self, count: usize) -> bool {
-        self.lt.map_or(true, |x| count < x)
-            && self.gt.map_or(true, |x| count > x)
-            && self.lte.map_or(true, |x| count <= x)
-            && self.gte.map_or(true, |x| count >= x)
+        self.lt.is_none_or(|x| count < x)
+            && self.gt.is_none_or(|x| count > x)
+            && self.lte.is_none_or(|x| count <= x)
+            && self.gte.is_none_or(|x| count >= x)
     }
 
     pub fn check_count_from(&self, value: &Value) -> bool {
