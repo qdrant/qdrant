@@ -89,7 +89,7 @@ ahash = { workspace = true }
 http = { workspace = true }
 self_cell = "1.1.0"
 sha2 = { workspace = true }
-smallvec = "1.13.2"
+smallvec = "1.14.0"
 is_sorted = "0.1.1"
 strum = { workspace = true }
 byteorder = { workspace = true }
