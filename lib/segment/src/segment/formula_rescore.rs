@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
 
@@ -17,6 +19,7 @@ impl Segment {
         prefetches_scores: &[Vec<ScoredPoint>],
         order: Order,
         limit: usize,
+        is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Dedup point offsets into a hashset
@@ -45,21 +48,27 @@ impl Segment {
         let index_ref = self.payload_index.borrow();
         let scorer = index_ref.formula_scorer(formula, &prefetches_scores, hw_counter);
 
+        // Perform rescoring
         let mut errs = Vec::new();
-        let rescored_iter = points_to_rescore.into_iter().filter_map(|internal_id| {
-            match scorer.score(internal_id) {
-                Ok(new_score) => Some(ScoredPointOffset {
-                    idx: internal_id,
-                    score: new_score,
-                }),
-                Err(err) => {
-                    // in case there is an error, defer handling it and continue
-                    errs.push(err);
-                    None
+        let rescored_iter = points_to_rescore
+            .into_iter()
+            .check_stop(|| is_stopped.load(Ordering::Relaxed))
+            .filter_map(|internal_id| {
+                match scorer.score(internal_id) {
+                    Ok(new_score) => Some(ScoredPointOffset {
+                        idx: internal_id,
+                        score: new_score,
+                    }),
+                    Err(err) => {
+                        // in case there is an error, defer handling it and continue
+                        errs.push(err);
+                        is_stopped.store(true, Ordering::Relaxed);
+                        None
+                    }
                 }
-            }
-        });
+            });
 
+        // Keep only the top k results
         let res = match order {
             Order::LargeBetter => rescored_iter.k_largest(limit).collect(),
             Order::SmallBetter => rescored_iter.k_smallest(limit).collect(),

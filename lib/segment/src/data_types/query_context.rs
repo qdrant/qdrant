@@ -254,4 +254,5 @@ pub struct FormulaContext {
     pub with_vector: WithVector,
     pub order: Order,
     pub limit: usize,
+    pub is_stopped: AtomicBool,
 }

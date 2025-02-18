@@ -93,10 +93,17 @@ impl SegmentEntry for Segment {
             with_vector,
             order,
             limit,
+            is_stopped,
         } = &*ctx;
 
-        let internal_results =
-            self.do_rescore_with_formula(formula, prefetches_results, *order, *limit, hw_counter)?;
+        let internal_results = self.do_rescore_with_formula(
+            formula,
+            prefetches_results,
+            *order,
+            *limit,
+            is_stopped,
+            hw_counter,
+        )?;
 
         self.process_search_result(internal_results, with_payload, with_vector, hw_counter)
     }
