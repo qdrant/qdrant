@@ -28,11 +28,3 @@ storage:
     default_segment_number: 2
 
   handle_collection_load_errors: true
-
-
-tls:
-  # Certificate chain file
-  cert: ./tests/tls/cert/cert.pem
-
-  # Private key file
-  key: ./tests/tls/cert/key.pem
