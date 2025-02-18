@@ -297,7 +297,7 @@ impl StrictModeVerification for SearchParams {
 mod test {
     use std::sync::Arc;
 
-    use common::cpu::ResourceBudget;
+    use common::budget::ResourceBudget;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,

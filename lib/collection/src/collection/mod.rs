@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clean::ShardCleanTasks;
-use common::cpu::ResourceBudget;
+use common::budget::ResourceBudget;
 use common::types::TelemetryDetail;
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;

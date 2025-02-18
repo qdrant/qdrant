@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
-use common::cpu::ResourceBudget;
 use rand::rngs::ThreadRng;
 use rand::{rng, RngCore};
 use segment::data_types::vectors::{

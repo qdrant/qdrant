@@ -11,7 +11,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
 use collection::shards::CollectionId;
-use common::cpu::ResourceBudget;
+use common::budget::ResourceBudget;
 use segment::types::Distance;
 
 /// Test collections for this upper bound of shards.

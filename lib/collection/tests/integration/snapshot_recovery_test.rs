@@ -15,8 +15,8 @@ use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::ResourceBudget;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 

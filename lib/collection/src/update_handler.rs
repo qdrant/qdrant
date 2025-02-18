@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::ResourceBudget;
 use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};

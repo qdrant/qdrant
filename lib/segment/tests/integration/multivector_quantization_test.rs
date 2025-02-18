@@ -3,8 +3,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::ResourcePermit;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::prelude::StdRng;

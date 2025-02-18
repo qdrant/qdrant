@@ -16,9 +16,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::ResourceBudget;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use common::{panic, tar_ext};

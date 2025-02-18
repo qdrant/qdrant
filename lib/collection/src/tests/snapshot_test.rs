@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use common::cpu::ResourceBudget;
+use common::budget::ResourceBudget;
 use segment::types::Distance;
 use tempfile::Builder;
 

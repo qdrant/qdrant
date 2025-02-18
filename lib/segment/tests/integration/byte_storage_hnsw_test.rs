@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use common::cpu::ResourcePermit;
+use common::budget::ResourcePermit;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use itertools::Itertools;
 use rand::prelude::StdRng;

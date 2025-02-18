@@ -284,8 +284,8 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
+    use common::budget::ResourcePermit;
     use common::counter::hardware_counter::HardwareCounterCell;
-    use common::cpu::ResourcePermit;
     use itertools::Itertools;
     use parking_lot::lock_api::RwLock;
     use rand::rng;

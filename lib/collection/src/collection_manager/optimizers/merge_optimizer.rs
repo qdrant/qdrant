@@ -153,7 +153,7 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
 
-    use common::cpu::ResourcePermit;
+    use common::budget::ResourcePermit;
     use parking_lot::RwLock;
     use segment::index::hnsw_index::num_rayon_threads;
     use tempfile::Builder;

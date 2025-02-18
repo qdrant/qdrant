@@ -258,7 +258,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use common::cpu::ResourcePermit;
+    use common::budget::ResourcePermit;
     use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;

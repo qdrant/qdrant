@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::sync::atomic::AtomicBool;
 
-use common::cpu::ResourcePermit;
+use common::budget::ResourcePermit;
 use common::tar_ext;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};

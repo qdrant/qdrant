@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::ResourceBudget;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;

@@ -1410,7 +1410,7 @@ mod tests {
 
     use collection::operations::vector_params_builder::VectorParamsBuilder;
     use collection::shards::channel_service::ChannelService;
-    use common::cpu::ResourceBudget;
+    use common::budget::ResourceBudget;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::collection_meta_ops::{

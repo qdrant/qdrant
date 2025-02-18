@@ -4,8 +4,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::ResourcePermit;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;

@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::ResourcePermit;
 use common::types::PointOffsetType;
 use rand::rng;
 use tempfile::Builder;

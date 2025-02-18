@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::ResourcePermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::data_types::query_context::QueryContext;
