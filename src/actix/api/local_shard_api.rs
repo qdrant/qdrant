@@ -120,7 +120,7 @@ async fn scroll_points(
                 filter.expected_shard_id,
                 &pass,
             )
-            .map(|i| i.map(Filter::from).map(Some))
+            .map(|i| i.map(Some))
             .await
         }
 

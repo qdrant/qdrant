@@ -465,7 +465,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: RecordInternal) -> Self {
-        let vectors = record.vector.map(VectorStructInternal::from);
+        let vectors = record.vector;
 
         Self {
             id: Some(record.id.into()),

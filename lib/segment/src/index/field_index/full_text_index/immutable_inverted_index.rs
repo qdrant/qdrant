@@ -99,7 +99,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
         self.point_to_tokens_count
             .get(point_id as usize)
-            .map_or(true, |count| count.is_none())
+            .is_none_or(|count| count.is_none())
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {

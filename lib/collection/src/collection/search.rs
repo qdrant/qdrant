@@ -7,7 +7,6 @@ use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{future, TryFutureExt};
 use itertools::{Either, Itertools};
-use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,
 };
@@ -251,7 +250,7 @@ impl Collection {
                 // So we just filter out them.
                 records_map.remove(&scored_point.id).map(|record| {
                     scored_point.payload = record.payload;
-                    scored_point.vector = record.vector.map(VectorStructInternal::from);
+                    scored_point.vector = record.vector;
                     scored_point
                 })
             })

@@ -470,7 +470,7 @@ impl<W: Weight> Iterator for CompressedPostingListStdIterator<'_, W> {
 /// the first index `i` such that `data[i] > val`, or `data.len()` if all elements are less or equal
 /// to `val`.
 fn count_le_sorted<T: Copy + Eq + Ord>(val: T, data: &[T]) -> usize {
-    if data.last().map_or(true, |&x| x < val) {
+    if data.last().is_none_or(|&x| x < val) {
         // Happy case
         return data.len();
     }

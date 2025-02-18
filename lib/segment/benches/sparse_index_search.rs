@@ -229,6 +229,7 @@ fn sparse_vector_index_search_benchmark_impl(
     group.finish();
 }
 
+#[allow(clippy::literal_string_with_formatting_args)] //false positive
 fn progress(name: &str, len: usize) -> ProgressBar {
     let pb =
         ProgressBar::with_draw_target(Some(len as u64), ProgressDrawTarget::stderr_with_hz(12));
