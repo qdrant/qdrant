@@ -25,9 +25,9 @@ layout(set = 0, binding = 1) buffer NewEntries {
     coherent uint data[];
 } new_entries;
 
-layout(set = 0, binding = 2) buffer Atomics {
+layout(set = 0, binding = 2) buffer Patches {
     coherent uint data[];
-} atomics;
+} patches;
 
 void main() {
     search_context_init();
@@ -63,47 +63,32 @@ void main() {
     barrier();
 
     // update request_id links
-    for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {
-        GET_LINK(request_id, i) = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
-    }
+    uint patches_offset = group_index * (M0 + 2) * (M0 + 1);
     if (gl_LocalInvocationID.x == 0) {
-        LINKS_SET_SIZE(request_id, count);
+        patches.data[patches_offset] = request_id;
+        patches.data[patches_offset + 1] = count;
+    }
+    for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {
+        patches.data[patches_offset + 2 + i] = shared_buffer[NEAREST_HEAP_OFFSET + i].id;
+        shared_buffer[CANDIDATES_HEAP_OFFSET + i] = shared_buffer[NEAREST_HEAP_OFFSET + i];
     }
 
     memoryBarrier();
     barrier();
 
     for (uint i = 0; i < count; i++) {
-        uint other_id = iterate_link(request_id, i, count);
-
-        bool is_locked = false;
-        if (gl_LocalInvocationID.x == 0) {
-            uint other_atomic = atomicExchange(atomics.data[other_id], 1);
-            is_locked = other_atomic == 1;
-        }
-
-#if WORKGROUP_SIZE > SUBGROUP_SIZE
-        if (gl_LocalInvocationID.x == 0) {
-            sync_uint = is_locked ? 1 : 0;
-        }
-        memoryBarrierShared();
-        barrier();
-        if (gl_SubgroupInvocationID == 0 && gl_LocalInvocationID.x != 0) {
-            is_locked = sync_uint == 1;
-        }
-#endif
-        is_locked = subgroupAny(is_locked);
-
-        if (is_locked) {
-            // point is already being processed by another working group
-            continue;
-        }
-
+        uint insert_offset = patches_offset + (i + 1) * (M0 + 2);
+        uint other_id = shared_buffer[CANDIDATES_HEAP_OFFSET + i].id;
         uint other_links_count = get_links_count(other_id);
+
         if (other_links_count < LEVEL_M) {
             if (gl_LocalInvocationID.x == 0) {
-                GET_LINK(other_id, other_links_count) = request_id;
-                LINKS_SET_SIZE(other_id, other_links_count + 1);
+                patches.data[insert_offset] = other_id;
+                patches.data[insert_offset + 1] = other_links_count + 1;
+                patches.data[insert_offset + 2 + other_links_count] = request_id;
+            }
+            for (uint j = gl_LocalInvocationID.x; j < other_links_count; j += WORKGROUP_SIZE) {
+                patches.data[insert_offset + 2 + j] = GET_LINK(other_id, j);
             }
         } else {
             set_target(other_id);
@@ -131,19 +116,16 @@ void main() {
             MEMORY_BARRIER_SHARED;
             BARRIER;
 
-            for (uint j = gl_LocalInvocationID.x; j < other_new_links_count; j += WORKGROUP_SIZE) {
-                GET_LINK(other_id, j) = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
-            }
             if (gl_LocalInvocationID.x == 0) {
-                LINKS_SET_SIZE(other_id, other_new_links_count);
+                patches.data[insert_offset] = other_id;
+                patches.data[insert_offset + 1] = other_new_links_count;
+            }
+            for (uint j = gl_LocalInvocationID.x; j < other_new_links_count; j += WORKGROUP_SIZE) {
+                patches.data[insert_offset + 2 + j] = shared_buffer[NEAREST_HEAP_OFFSET + j].id;
             }
         }
 
         MEMORY_BARRIER;
         BARRIER;
-
-        if (gl_LocalInvocationID.x == 0) {
-            atomicExchange(atomics.data[other_id], 0);
-        }
     }
 }

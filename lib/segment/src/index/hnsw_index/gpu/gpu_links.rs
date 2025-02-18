@@ -12,7 +12,7 @@ use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 
 /// Size of transfer buffer for links.
-const LINKS_TRANSFER_BUFFER_SIZE: usize = 32 * 1024 * 1024;
+const LINKS_TRANSFER_BUFFER_SIZE: usize = 64 * 1024 * 1024;
 
 #[repr(C)]
 struct GpuLinksParamsBuffer {
@@ -291,7 +291,7 @@ impl GpuLinks {
         self.descriptor_set.clone()
     }
 
-    fn apply_gpu_patches(&mut self, gpu_context: &mut gpu::Context) -> OperationResult<()> {
+    pub fn apply_gpu_patches(&mut self, gpu_context: &mut gpu::Context) -> OperationResult<()> {
         for (i, &(patched_point_id, patched_links_count)) in self.patched_points.iter().enumerate()
         {
             let patch_start_index =
@@ -312,7 +312,7 @@ impl GpuLinks {
         Ok(())
     }
 
-    fn set_links(
+    pub fn set_links(
         &mut self,
         point_id: PointOffsetType,
         links: &[PointOffsetType],

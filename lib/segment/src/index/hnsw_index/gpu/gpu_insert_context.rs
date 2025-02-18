@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -54,6 +54,9 @@ struct GpuInsertResources {
     search_results_buffer: Arc<gpu::Buffer>,
     search_results_staging_buffer: Arc<gpu::Buffer>,
 
+    insert_results_buffer: Arc<gpu::Buffer>,
+    insert_results_staging_buffer: Arc<gpu::Buffer>,
+
     responses_buffer: Arc<gpu::Buffer>,
     responses_staging_buffer: Arc<gpu::Buffer>,
     insert_atomics_buffer: Arc<gpu::Buffer>,
@@ -69,6 +72,7 @@ struct GpuInsertResources {
 
     exact: bool,
     ef: usize,
+    m0: usize,
 }
 
 impl ShaderBuilderParameters for GpuInsertResources {
@@ -92,6 +96,7 @@ impl ShaderBuilderParameters for GpuInsertResources {
     fn shader_defines(&self) -> HashMap<String, Option<String>> {
         let mut defines = HashMap::new();
         defines.insert("EF".to_owned(), Some(self.ef.to_string()));
+        defines.insert("M0".to_owned(), Some(self.m0.to_string()));
         if self.exact {
             defines.insert("EXACT".to_owned(), None);
         }
@@ -109,6 +114,7 @@ impl GpuInsertResources {
         groups_count: usize,
         points_remap: &[PointOffsetType],
         ef: usize,
+        m0: usize,
         exact: bool,
     ) -> OperationResult<Self> {
         let device = gpu_vector_storage.device();
@@ -152,6 +158,19 @@ impl GpuInsertResources {
             search_results_buffer.size(),
         )?;
 
+        let insert_results_buffer = gpu::Buffer::new(
+            device.clone(),
+            "Search results buffer",
+            gpu::BufferType::Storage,
+            groups_count * (m0 + 2) * (m0 + 1) * std::mem::size_of::<u32>(),
+        )?;
+        let insert_results_staging_buffer = gpu::Buffer::new(
+            device.clone(),
+            "Search results context download staging buffer",
+            gpu::BufferType::GpuToCpu,
+            insert_results_buffer.size(),
+        )?;
+
         let insert_atomics_buffer = gpu::Buffer::new(
             device.clone(),
             "Insert atomics buffer",
@@ -191,7 +210,7 @@ impl GpuInsertResources {
             gpu::DescriptorSet::builder(insert_descriptor_set_layout.clone())
                 .add_storage_buffer(0, search_results_buffer.clone())
                 .add_storage_buffer(1, responses_buffer.clone())
-                .add_storage_buffer(2, insert_atomics_buffer.clone())
+                .add_storage_buffer(2, insert_results_buffer.clone())
                 .build()?;
 
         Ok(Self {
@@ -199,6 +218,8 @@ impl GpuInsertResources {
             requests_staging_buffer,
             search_results_buffer,
             search_results_staging_buffer,
+            insert_results_buffer,
+            insert_results_staging_buffer,
             responses_buffer,
             responses_staging_buffer,
             insert_atomics_buffer,
@@ -210,6 +231,7 @@ impl GpuInsertResources {
             insert_descriptor_set,
             exact,
             ef,
+            m0,
         })
     }
 }
@@ -230,7 +252,7 @@ impl<'a> GpuInsertContext<'a> {
         let device = gpu_vector_storage.device();
         let points_count = gpu_vector_storage.num_vectors();
         let insert_resources =
-            GpuInsertResources::new(gpu_vector_storage, groups_count, points_remap, ef, exact)?;
+            GpuInsertResources::new(gpu_vector_storage, groups_count, points_remap, ef, m0, exact)?;
 
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count)?;
 
@@ -445,6 +467,7 @@ impl<'a> GpuInsertContext<'a> {
             self.context
                 .clear_buffer(self.insert_resources.search_results_buffer.clone(), u32::MAX)?;
         }
+        self.context.clear_buffer(self.insert_resources.insert_results_buffer.clone(), u32::MAX)?;
 
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
@@ -488,22 +511,37 @@ impl<'a> GpuInsertContext<'a> {
 
         let timer = std::time::Instant::now();
 
-        self.context.bind_pipeline(
-            self.insert_pipeline.clone(),
-            &[
-                self.insert_resources.insert_descriptor_set.clone(),
-                self.gpu_vector_storage.descriptor_set(),
-                self.gpu_links.descriptor_set(),
-                self.gpu_visited_flags.descriptor_set(),
-            ],
-        )?;
-        self.context.dispatch(requests.len(), 1, 1)?;
+        let mut insert_sucess = false;
+        let mut max_tries = 10;
+        while !insert_sucess {
+            self.context.bind_pipeline(
+                self.insert_pipeline.clone(),
+                &[
+                    self.insert_resources.insert_descriptor_set.clone(),
+                    self.gpu_vector_storage.descriptor_set(),
+                    self.gpu_links.descriptor_set(),
+                    self.gpu_visited_flags.descriptor_set(),
+                ],
+            )?;
+            self.context.dispatch(requests.len(), 1, 1)?;
 
-        self.context
-            .barrier_buffer(self.insert_resources.responses_buffer.clone())?;
+            self.context
+                .barrier_buffer(self.insert_resources.insert_results_buffer.clone())?;
 
-        self.context.run()?;
-        self.context.wait_finish(GPU_TIMEOUT)?;
+            self.context.run()?;
+            self.context.wait_finish(GPU_TIMEOUT)?;
+
+            let is_valid = self.apply_patches(requests)?;
+            if is_valid {
+                insert_sucess = true;
+            } else {
+                self.context.clear_buffer(self.insert_resources.insert_results_buffer.clone(), u32::MAX)?;
+                max_tries -= 1;
+                if max_tries == 0 {
+                    return Err(OperationError::service_error("Too many tries to validate insert results"));
+                }
+            }
+        }
 
         self.patches_timer += timer.elapsed();
         self.patches_count += 1;
@@ -517,6 +555,70 @@ impl<'a> GpuInsertContext<'a> {
         } else {
             Ok(vec![])
         }
+    }
+
+    fn apply_patches(
+        &mut self,
+        requests: &[GpuRequest],
+    ) -> OperationResult<bool> {
+        self.context.copy_gpu_buffer(
+            self.insert_resources.insert_results_buffer.clone(),
+            self.insert_resources.insert_results_staging_buffer.clone(),
+            0,
+            0,
+            self.insert_resources.insert_results_buffer.size(),
+        )?;
+        self.context.run()?;
+        self.context.wait_finish(GPU_TIMEOUT)?;
+
+        let mut insert_result = vec![0u32; self.insert_resources.insert_results_buffer.size() / std::mem::size_of::<u32>()];
+        self.insert_resources
+            .insert_results_staging_buffer
+            .download_slice(&mut insert_result, 0)?;
+
+        for (i, r) in insert_result
+            .chunks(self.insert_resources.m0 + 2)
+            .enumerate()
+        {
+            if r[0] == u32::MAX {
+                continue;
+            }
+
+            if r[0] == u32::MAX || r[1] == u32::MAX {
+                log::warn!(
+                    "Empty insert result for point_id={:?}",
+                    requests.get(i / (self.insert_resources.m0 + 1)),
+                );
+                return Ok(false);
+            }
+            for link in &r[2..2 + r[1] as usize] {
+                if *link == u32::MAX {
+                    log::warn!(
+                        "Empty insert link result for point_id={:?}: {:?}",
+                        requests.get(i / (self.insert_resources.m0 + 1)),
+                        &r[2..2 + r[1] as usize],
+                    );
+                    return Ok(false);
+                }
+            }
+        }
+
+        let mut updated_points = HashSet::new();
+    
+        for r in insert_result.chunks(self.insert_resources.m0 + 2) {
+            let id: PointOffsetType = r[0];
+            if id != PointOffsetType::MAX && !updated_points.contains(&id) {
+                updated_points.insert(id);
+                let count = r[1] as usize;
+                // TODO(gpu): apply patches when needed, buffer may overflow
+                self.gpu_links.set_links(id, &r[2..2 + count])?;
+            }
+        }
+        self.gpu_links.apply_gpu_patches(&mut self.context)?;
+        self.context.run()?;
+        self.context.wait_finish(GPU_TIMEOUT)?;
+
+        Ok(true)
     }
 
     fn validate_search_result(
