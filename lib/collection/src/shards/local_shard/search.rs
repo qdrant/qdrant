@@ -12,7 +12,7 @@ use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult, CoreSearchRequestBatch};
 
 impl LocalShard {
-    pub async fn do_search(
+    pub(super) async fn do_search(
         &self,
         core_request: Arc<CoreSearchRequestBatch>,
         search_runtime_handle: &Handle,

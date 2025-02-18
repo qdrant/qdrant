@@ -82,7 +82,7 @@ async fn test_hw_metrics_cancellation() {
     {
         let hw_counter = HwMeasurementAcc::new_with_metrics_drain(outer_hw.clone());
         let search_res = shard
-            .do_search(
+            .core_search(
                 Arc::new(req),
                 &current_runtime,
                 Some(Duration::from_millis(10)), // Very short duration to hit timeout before the search finishes

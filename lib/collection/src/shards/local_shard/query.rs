@@ -25,6 +25,7 @@ use crate::operations::universal_query::planned_query::{
 use crate::operations::universal_query::shard_query::{
     FusionInternal, SampleInternal, ScoringQuery, ShardQueryResponse,
 };
+use crate::shards::shard_trait::ShardOperation;
 
 pub enum FetchedSource {
     Search(usize),
@@ -64,7 +65,7 @@ impl LocalShard {
         let start_time = std::time::Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
 
-        let searches_f = self.do_search(
+        let searches_f = self.core_search(
             Arc::new(CoreSearchRequestBatch {
                 searches: request.searches,
             }),
@@ -300,7 +301,7 @@ impl LocalShard {
                     searches: vec![search_request],
                 };
 
-                self.do_search(
+                self.core_search(
                     Arc::new(rescoring_core_search_request),
                     search_runtime_handle,
                     Some(timeout),
