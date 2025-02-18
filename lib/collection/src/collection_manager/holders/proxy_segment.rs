@@ -474,7 +474,7 @@ impl SegmentEntry for ProxySegment {
                 hw_counter,
             )?
         };
-        
+
         // Run rescore in write segment
         let mut write_results = self.write_segment.get().read().rescore_with_formula(
             formula_ctx.clone(),

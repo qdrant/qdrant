@@ -93,7 +93,6 @@ impl SegmentEntry for Segment {
             prefetches_results,
             with_payload,
             with_vector,
-            order,
             limit,
             is_stopped,
         } = &*ctx;
@@ -102,7 +101,6 @@ impl SegmentEntry for Segment {
             formula,
             prefetches_results,
             wrapped_deleted,
-            *order,
             *limit,
             is_stopped,
             hw_counter,

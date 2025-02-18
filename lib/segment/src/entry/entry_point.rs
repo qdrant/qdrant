@@ -49,7 +49,7 @@ pub trait SegmentEntry: PartialSnapshotEntry {
     ) -> OperationResult<Vec<Vec<ScoredPoint>>>;
 
     /// Rescore results with a formula that can reference payload values.
-    /// 
+    ///
     /// A deleted bitslice is passed to exclude points from a wrapped segment.
     fn rescore_with_formula(
         &self,

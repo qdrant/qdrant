@@ -10,17 +10,15 @@ use itertools::Itertools;
 use super::Segment;
 use crate::common::operation_error::OperationResult;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::types::{Order, ScoredPoint};
+use crate::types::ScoredPoint;
 
 impl Segment {
     /// Rescores points of the prefetches, and returns the internal ids with the scores.
-    #[expect(clippy::too_many_arguments)]
     pub(super) fn do_rescore_with_formula(
         &self,
         formula: &ParsedFormula,
         prefetches_scores: &[Vec<ScoredPoint>],
         wrapped_deleted: Option<&BitSlice>,
-        order: Order,
         limit: usize,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
@@ -62,7 +60,7 @@ impl Segment {
 
         // Perform rescoring
         let mut errs = Vec::new();
-        let rescored_iter = points_to_rescore
+        let rescored = points_to_rescore
             .into_iter()
             .check_stop(|| is_stopped.load(Ordering::Relaxed))
             .filter_map(|internal_id| {
@@ -78,18 +76,15 @@ impl Segment {
                         None
                     }
                 }
-            });
-
-        // Keep only the top k results
-        let res = match order {
-            Order::LargeBetter => rescored_iter.k_largest(limit).collect(),
-            Order::SmallBetter => rescored_iter.k_smallest(limit).collect(),
-        };
+            })
+            // Keep only the top k results
+            .k_largest(limit)
+            .collect();
 
         if let Some(err) = errs.pop() {
             return Err(err);
         }
 
-        Ok(res)
+        Ok(rescored)
     }
 }
