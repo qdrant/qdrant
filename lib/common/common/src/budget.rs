@@ -55,23 +55,16 @@ impl ResourceBudget {
         desired_io.min(self.io_budget) // Use as much IO as requested, not less
     }
 
-    /// Try to acquire CPU permit for optimization task from global CPU budget.
-    ///
-    /// The given `desired_cpus` is not exact, but rather a hint on what we'd like to acquire.
-    /// - it will prefer to acquire the maximum number of CPUs
-    /// - it will never be higher than the total CPU budget
-    /// - it will never be lower than `min_permits(desired_cpus)`
-    pub fn try_acquire(&self, desired_cpus: usize, desired_io: usize) -> Option<ResourcePermit> {
-        // Determine what number of CPUs to acquire based on available budget
+    fn try_acquire_cpu(
+        &self,
+        desired_cpus: usize,
+    ) -> Option<(usize, Option<OwnedSemaphorePermit>)> {
         let min_required_cpus = self.min_cpu_permits(desired_cpus) as u32;
-        let min_required_io = self.min_io_permits(desired_io) as u32;
         let num_cpus = self.cpu_semaphore.available_permits().min(desired_cpus) as u32;
-        let num_io = self.io_semaphore.available_permits().min(desired_io) as u32;
-        if num_cpus < min_required_cpus || num_io < min_required_io {
+        if num_cpus < min_required_cpus {
             return None;
         }
 
-        // Try to acquire selected number of CPUs
         let cpu_permit = if num_cpus > 0 {
             let cpu_result =
                 Semaphore::try_acquire_many_owned(self.cpu_semaphore.clone(), num_cpus);
@@ -84,6 +77,16 @@ impl ResourceBudget {
             None
         };
 
+        Some((num_cpus as usize, cpu_permit))
+    }
+
+    fn try_acquire_io(&self, desired_io: usize) -> Option<(usize, Option<OwnedSemaphorePermit>)> {
+        let min_required_io = self.min_io_permits(desired_io) as u32;
+        let num_io = self.io_semaphore.available_permits().min(desired_io) as u32;
+        if num_io < min_required_io {
+            return None;
+        }
+
         let io_permit = if num_io > 0 {
             let io_result = Semaphore::try_acquire_many_owned(self.io_semaphore.clone(), num_io);
             match io_result {
@@ -95,7 +98,45 @@ impl ResourceBudget {
             None
         };
 
-        Some(ResourcePermit::new(num_cpus, cpu_permit, num_io, io_permit))
+        Some((num_io as usize, io_permit))
+    }
+
+    /// Try to acquire CPU permit for optimization task from global CPU budget.
+    ///
+    /// The given `desired_cpus` is not exact, but rather a hint on what we'd like to acquire.
+    /// - it will prefer to acquire the maximum number of CPUs
+    /// - it will never be higher than the total CPU budget
+    /// - it will never be lower than `min_permits(desired_cpus)`
+    pub fn try_acquire(&self, desired_cpus: usize, desired_io: usize) -> Option<ResourcePermit> {
+        let (num_cpus, cpu_permit) = self.try_acquire_cpu(desired_cpus)?;
+        let (num_io, io_permit) = self.try_acquire_io(desired_io)?;
+
+        Some(ResourcePermit::new(
+            num_cpus as u32,
+            cpu_permit,
+            num_io as u32,
+            io_permit,
+        ))
+    }
+
+    /// Try to add more resources to the permit.
+    pub fn extend_resource_acquisition(
+        &self,
+        mut permit: ResourcePermit,
+        desired_cpus: usize,
+        desired_io: usize,
+    ) -> Result<ResourcePermit, ResourcePermit> {
+        let cpu_result = self.try_acquire_cpu(desired_cpus);
+        let io_result = self.try_acquire_io(desired_io);
+
+        match (cpu_result, io_result) {
+            (Some((num_cpus, cpu_permit)), Some((num_io, io_permit))) => {
+                permit.add_cpu_permit(num_cpus, cpu_permit.unwrap());
+                permit.add_io_permit(num_io, io_permit.unwrap());
+                Ok(permit)
+            }
+            _ => Err(permit),
+        }
     }
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
@@ -219,6 +260,24 @@ impl ResourcePermit {
     /// Release IO permit, giving them back to the semaphore.
     pub fn release_io(&mut self) {
         self.io_permit.take();
+    }
+
+    pub fn add_cpu_permit(&mut self, count: usize, permit: OwnedSemaphorePermit) {
+        if let Some(cpu_permit) = &mut self.cpu_permit {
+            cpu_permit.merge(permit);
+        } else {
+            self.cpu_permit = Some(permit);
+        }
+        self.num_cpus += count as u32;
+    }
+
+    pub fn add_io_permit(&mut self, count: usize, permit: OwnedSemaphorePermit) {
+        if let Some(io_permit) = &mut self.io_permit {
+            io_permit.merge(permit);
+        } else {
+            self.io_permit = Some(permit);
+        }
+        self.num_io += count as u32;
     }
 
     /// Partial release CPU permit, giving them back to the semaphore.
