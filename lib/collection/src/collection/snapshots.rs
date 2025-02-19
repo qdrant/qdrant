@@ -244,6 +244,7 @@ impl Collection {
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
         // set shard_id initialization flag
+        // the file is removed after full recovery to indicate a well-formed shard
         let shard_flag = shard_initialized_flag_path(&self.path, shard_id);
         tokio::fs::write(&shard_flag, b"").await?;
 

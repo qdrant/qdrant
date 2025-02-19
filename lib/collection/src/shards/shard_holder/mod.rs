@@ -610,6 +610,7 @@ impl ShardHolder {
                 .await
                 .unwrap_or(false)
             {
+                log::error!("Shard {collection_id}:{} is not fully initialized - replacing with dummy shard", shard_id);
                 let shard_path = shard_path(collection_path, shard_id);
                 // Add dummy shard replica set for this shard id
                 let dummy_replica_set = ShardReplicaSet::dummy_shard_replica_set(
