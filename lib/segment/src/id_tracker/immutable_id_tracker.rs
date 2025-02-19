@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
@@ -18,6 +17,7 @@ use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWr
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
 use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
@@ -99,8 +99,8 @@ impl ImmutableIdTracker {
         deleted.truncate(len);
 
         let mut internal_to_external = CompressedInternalToExternal::with_capacity(len);
-        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
-        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
+        let mut external_to_internal_num: Vec<(u64, PointOffsetType)> = Vec::new();
+        let mut external_to_internal_uuid: Vec<(Uuid, PointOffsetType)> = Vec::new();
 
         // Deserialize the list entries
         for i in 0..len {
@@ -122,10 +122,10 @@ impl ImmutableIdTracker {
 
             match external_id {
                 ExtendedPointId::NumId(num) => {
-                    external_to_internal_num.insert(num, internal_id);
+                    external_to_internal_num.push((num, internal_id));
                 }
                 ExtendedPointId::Uuid(uuid) => {
-                    external_to_internal_uuid.insert(uuid, internal_id);
+                    external_to_internal_uuid.push((uuid, internal_id));
                 }
             }
         }
@@ -136,11 +136,15 @@ impl ImmutableIdTracker {
             debug_assert_eq!(reader.bytes().map(Result::unwrap).count(), 0,);
         }
 
+        let external_to_internal = CompressedExternalToInternal::from_vectors(
+            external_to_internal_num,
+            external_to_internal_uuid,
+        );
+
         Ok(CompressedPointMappings::new(
             deleted,
             internal_to_external,
-            external_to_internal_num,
-            external_to_internal_uuid,
+            external_to_internal,
         ))
     }
 
