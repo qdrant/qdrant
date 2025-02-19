@@ -249,15 +249,9 @@ impl ResourcePermit {
         io_count: u32,
         io_permit: Option<OwnedSemaphorePermit>,
     ) -> Self {
-        // Debug assert that if cpu_count is not 0, cpu_permit should be Some
-        #[cfg(debug_assertions)]
-        if cpu_count > 0 {
-            assert!(cpu_permit.is_some());
-        }
-        #[cfg(debug_assertions)]
-        if io_count > 0 {
-            assert!(io_permit.is_some());
-        }
+        // Debug assert that cpu/io count and permit counts match
+        debug_assert!(cpu_permit.as_ref().map_or(0, |p| p.num_permits()) == cpu_count as usize);
+        debug_assert!(io_permit.as_ref().map_or(0, |p| p.num_permits()) == io_count as usize);
 
         Self {
             num_cpus: cpu_count,
