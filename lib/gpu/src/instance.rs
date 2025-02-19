@@ -38,6 +38,8 @@ pub struct Instance {
     skip_half_precision: bool,
 
     log_spirv: bool,
+
+    timers: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,6 +67,7 @@ pub struct InstanceBuilder<'a> {
     dump_api: bool,
     skip_half_precision: bool,
     log_spirv: bool,
+    timers: bool,
 }
 
 impl<'a> InstanceBuilder<'a> {
@@ -104,6 +107,11 @@ impl<'a> InstanceBuilder<'a> {
         self
     }
 
+    pub fn with_timers(mut self, timers: bool) -> Self {
+        self.timers = timers;
+        self
+    }
+
     pub fn build(self) -> GpuResult<Arc<Instance>> {
         Instance::new(
             self.debug_messenger,
@@ -111,6 +119,7 @@ impl<'a> InstanceBuilder<'a> {
             self.dump_api,
             self.skip_half_precision,
             self.log_spirv,
+            self.timers,
         )
     }
 }
@@ -126,6 +135,7 @@ impl Instance {
         dump_api: bool,
         skip_half_precision: bool,
         log_spirv: bool,
+        timers: bool,
     ) -> GpuResult<Arc<Self>> {
         // Create a shader compiler before we start.
         // It's used to compile GLSL into SPIR-V.
@@ -288,6 +298,7 @@ impl Instance {
             vk_debug_messenger,
             skip_half_precision,
             log_spirv,
+            timers,
             compiler,
         }))
     }
@@ -318,6 +329,10 @@ impl Instance {
 
     pub fn skip_half_precision(&self) -> bool {
         self.skip_half_precision
+    }
+
+    pub fn timers(&self) -> bool {
+        self.timers
     }
 
     pub fn compile_shader(

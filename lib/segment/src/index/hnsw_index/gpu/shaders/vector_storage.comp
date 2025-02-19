@@ -3,6 +3,10 @@
 
 #include "vector_storage_dense.comp"
 
+#ifdef TIMERS
+uint64_t scoring_time = 0;
+#endif
+
 #ifdef MULTIVECTORS
 
 struct MultivectorOffset {
@@ -50,7 +54,18 @@ void set_target(uint point_id) {
 }
 
 float similarity(uint point_id) {
-    return similarity_dense(point_id);
+#ifdef TIMERS
+    uint64_t start_time = clockARB();
+#endif
+
+    float score = similarity_dense(point_id);
+
+#ifdef TIMERS
+    uint64_t end_time = clockARB();
+    scoring_time += end_time - start_time;
+#endif
+
+    return score;
 }
 
 #endif

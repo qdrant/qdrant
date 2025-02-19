@@ -248,6 +248,15 @@ impl Device {
             .push_next(&mut physical_device_features_1_2)
             .push_next(&mut physical_device_features_1_3);
 
+        let mut clock_feature = vk::PhysicalDeviceShaderClockFeaturesKHR::default()
+            .shader_device_clock(true)
+            .shader_subgroup_clock(true);
+        let device_create_info = if instance.timers() {
+            device_create_info.push_next(&mut clock_feature)
+        } else {
+            device_create_info
+        };
+
         let vk_device_result = unsafe {
             instance.vk_instance().create_device(
                 vk_physical_device.vk_physical_device,

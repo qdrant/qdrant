@@ -30,7 +30,21 @@ layout(set = 0, binding = 1) buffer SearchResults {
     coherent ScoredPoint data[];
 } search_results;
 
+#ifdef TIMERS
+struct SearchTimers {
+    uint64_t search_time;
+    uint64_t scoring_time;
+};
+layout(set = 0, binding = 2) buffer SearchResults {
+    coherent SearchTimers data[];
+} search_results;
+#endif
+
 void main() {
+#ifdef TIMERS
+    uint64_t start_time = clockARB();
+#endif
+
     search_context_init();
     uint group_index = gl_WorkGroupID.x;
     SearchRequest search_request = search_requests.data[group_index];
@@ -50,4 +64,9 @@ void main() {
     for (uint i = gl_LocalInvocationID.x; i < count; i += WORKGROUP_SIZE) {
         search_results.data[result_index_offset + i + 1] = shared_buffer[NEAREST_HEAP_OFFSET + i];
     }
+
+#ifdef TIMERS
+    uint64_t end_time = clockARB();
+    search_time += end_time - start_time;
+#endif
 }
