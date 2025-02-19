@@ -8,8 +8,14 @@ use tokio::time;
 use crate::cpu;
 
 /// Get IO budget to use for optimizations as number of parallel IO operations.
-pub fn get_io_budget() -> usize {
-    2 // TODO: Make a better guess based on experiments or something like that
+pub fn get_io_budget(io_budget: usize, cpu_budget: usize) -> usize {
+    if io_budget == 0 {
+        // we have to guess
+        // Assume we have 8 indexing threads per optimization task (which is default)
+        (cpu_budget / 8).max(1)
+    } else {
+        io_budget
+    }
 }
 
 /// Structure managing global CPU/IO/... budget for optimization tasks.
@@ -139,10 +145,20 @@ impl ResourceBudget {
                 return Some(permit);
             } else {
                 std::thread::sleep(delay);
-                delay = (delay * 2).min(Duration::from_secs(10));
+                delay = (delay * 2).min(Duration::from_secs(2));
             }
         }
         None
+    }
+
+    pub fn replace_with(
+        &self,
+        resource_permit: ResourcePermit,
+        new_desired_cpus: usize,
+        new_desired_io: usize,
+        stopped: &AtomicBool,
+    ) -> Result<ResourcePermit, ResourcePermit> {
+        self.acquire(new_desired_cpus, new_desired_io, stopped).ok_or(resource_permit)
     }
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
@@ -197,7 +213,9 @@ impl ResourceBudget {
 
 impl Default for ResourceBudget {
     fn default() -> Self {
-        Self::new(cpu::get_cpu_budget(0), get_io_budget())
+        let cpu_budget = cpu::get_cpu_budget(0);
+        let io_budget = get_io_budget(0, cpu_budget);
+        Self::new(cpu_budget, io_budget)
     }
 }
 

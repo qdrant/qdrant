@@ -39,6 +39,11 @@ pub struct PerformanceConfig {
     /// If positive - use this absolute number of CPUs.
     #[serde(default)]
     pub optimizer_cpu_budget: isize,
+    /// IO budget, how many parallel IO operations to allow for an optimization job.
+    /// If 0 - auto selection, one IO operation per each indexation job (1 / 8 CPU)
+    /// Otherwise - use this exact number of IO operations.
+    #[serde(default)]
+    pub optimizer_io_budget: usize,
     #[serde(default = "default_io_shard_transfers_limit")]
     pub incoming_shard_transfers_limit: Option<usize>,
     #[serde(default = "default_io_shard_transfers_limit")]

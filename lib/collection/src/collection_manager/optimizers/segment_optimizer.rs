@@ -456,15 +456,48 @@ pub trait SegmentOptimizer {
             }
         }
 
+        // 000 - acquired
+        // +++ - blocked on waiting
+        //
+        // Case: 1 indexation job at a time, long indexing
+        //
+        //  IO limit = 1
+        // CPU limit = 2                         Next optimization
+        //                                       │            loop
+        //                                       │
+        //                                       ▼
+        //  IO 0  00000000000000                  000000000
+        // CPU 1              00000000000000000
+        //     2              00000000000000000
+        //
+        //
+        //  IO 0  ++++++++++++++00000000000000000
+        // CPU 1                       ++++++++0000000000
+        //     2                       ++++++++0000000000
+        //
+        //
+        //  Case: 1 indexing j0b at a time, short indexation
+        //
+        //
+        //   IO limit = 1
+        //  CPU limit = 2
+        //
+        //
+        //   IO 0  000000000000   ++++++++0000000000
+        //  CPU 1            00000
+        //      2            00000
+        //
+        //   IO 0  ++++++++++++00000000000   +++++++
+        //  CPU 1                       00000
+        //      2                       00000
         // At this stage workload shifts from IO to CPU, so we can release IO permit
-        drop(permit);
         let max_indexing_threads = self.hnsw_config().max_indexing_threads;
         let desired_cpus = num_rayon_threads(max_indexing_threads);
-        let indexing_permit = resource_budget.acquire(desired_cpus, 0, stopped).ok_or(
-            CollectionError::Cancelled {
+        let indexing_permit = resource_budget
+            .replace_with(permit, desired_cpus, 0, stopped)
+            .map_err(|_| CollectionError::Cancelled {
                 description: "optimization cancelled while waiting for budget".to_string(),
-            },
-        )?;
+            })?;
 
         let mut optimized_segment: Segment = segment_builder.build(indexing_permit, stopped)?;
 
