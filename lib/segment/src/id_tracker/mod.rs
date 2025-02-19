@@ -1,4 +1,4 @@
-mod compressed;
+pub mod compressed;
 pub mod id_tracker_base;
 pub mod immutable_id_tracker;
 pub mod in_memory_id_tracker;

@@ -60,6 +60,10 @@ impl CompressedVersions {
         self.lower_bytes.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.lower_bytes.is_empty()
+    }
+
     /// Create version store from the given slice of versions
     ///
     /// # Panics

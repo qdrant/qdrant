@@ -17,9 +17,10 @@ use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUp
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::point_mappings::{FileEndianess, PointMappings};
+use crate::id_tracker::point_mappings::FileEndianess;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
@@ -68,7 +69,7 @@ pub struct ImmutableIdTracker {
     internal_to_version: CompressedVersions,
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
 
-    mappings: PointMappings,
+    mappings: CompressedPointMappings,
 }
 
 impl ImmutableIdTracker {
@@ -77,18 +78,18 @@ impl ImmutableIdTracker {
         path: &Path,
     ) -> OperationResult<Self> {
         let (internal_to_version, mappings) = in_memory_tracker.into_internal();
-
-        let id_tracker = Self::new(path, &internal_to_version, mappings)?;
+        let compressed_mappings = CompressedPointMappings::from_mappings(mappings);
+        let id_tracker = Self::new(path, &internal_to_version, compressed_mappings)?;
 
         Ok(id_tracker)
     }
 
-    /// Loads a `PointMappings` from the given reader. Applies an optional filter of deleted items
+    /// Loads a `CompressedPointMappings` from the given reader. Applies an optional filter of deleted items
     /// to prevent allocating unneeded data.
     fn load_mapping<R: Read>(
         mut reader: R,
         deleted: Option<BitVec>,
-    ) -> OperationResult<PointMappings> {
+    ) -> OperationResult<CompressedPointMappings> {
         // Deserialize the header
         let len = reader.read_u64::<FileEndianess>()? as usize;
 
@@ -134,7 +135,7 @@ impl ImmutableIdTracker {
             debug_assert_eq!(reader.bytes().map(Result::unwrap).count(), 0,);
         }
 
-        Ok(PointMappings::new(
+        Ok(CompressedPointMappings::new(
             deleted,
             internal_to_external,
             external_to_internal_num,
@@ -186,7 +187,10 @@ impl ImmutableIdTracker {
     /// +-----------------+-----------------------+------------------+
     /// A single entry is thus either 1+8+4=13 or 1+16+4=21 bytes in size depending
     /// on the PointIdType.
-    fn store_mapping<W: Write>(mappings: &PointMappings, mut writer: W) -> OperationResult<()> {
+    fn store_mapping<W: Write>(
+        mappings: &CompressedPointMappings,
+        mut writer: W,
+    ) -> OperationResult<()> {
         let number_of_entries = mappings.total_point_count();
 
         // Serialize the header (=length).
@@ -263,7 +267,7 @@ impl ImmutableIdTracker {
     pub fn new(
         path: &Path,
         internal_to_version: &[SeqNumberType],
-        mappings: PointMappings,
+        mappings: CompressedPointMappings,
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
         let deleted_filepath = Self::deleted_file_path(path);
@@ -748,7 +752,7 @@ pub(super) mod test {
 
             let size = 2usize.pow(size_exp);
 
-            let mappings = PointMappings::random(&mut rng, size as u32);
+            let mappings = CompressedPointMappings::random(&mut rng, size as u32);
 
             ImmutableIdTracker::store_mapping(&mappings, &mut buf).unwrap();
 
@@ -767,7 +771,7 @@ pub(super) mod test {
     #[test]
     fn test_point_mappings_de_serialization_empty() {
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let mappings = PointMappings::random(&mut rng, 0);
+        let mappings = CompressedPointMappings::random(&mut rng, 0);
 
         let mut buf = vec![];
 
@@ -789,7 +793,7 @@ pub(super) mod test {
 
         const SIZE: usize = 400_000;
 
-        let mappings = PointMappings::random(&mut rng, SIZE as u32);
+        let mappings = CompressedPointMappings::random(&mut rng, SIZE as u32);
 
         for i in 0..SIZE {
             let mut buf = vec![];
