@@ -18,6 +18,7 @@ use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWr
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::FileEndianess;
@@ -97,7 +98,7 @@ impl ImmutableIdTracker {
 
         deleted.truncate(len);
 
-        let mut internal_to_external = Vec::with_capacity(len);
+        let mut internal_to_external = CompressedInternalToExternal::with_capacity(len);
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
 
@@ -111,7 +112,7 @@ impl ImmutableIdTracker {
                 internal_to_external.resize(internal_id as usize + 1, PointIdType::NumId(0));
             }
 
-            internal_to_external[internal_id as usize] = external_id;
+            internal_to_external.set(internal_id, external_id);
 
             let point_deleted = deleted.get(i).as_deref().copied().unwrap_or(false);
 
@@ -129,7 +130,7 @@ impl ImmutableIdTracker {
             }
         }
 
-        // Check that the file has ben fully read.
+        // Check that the file has been fully read.
         #[cfg(debug_assertions)] // Only for dev builds
         {
             debug_assert_eq!(reader.bytes().map(Result::unwrap).count(), 0,);

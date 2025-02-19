@@ -18,6 +18,7 @@ use rand::seq::SliceRandom as _;
 use rand::Rng as _;
 use uuid::Uuid;
 
+use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::PointIdType;
 
@@ -30,7 +31,7 @@ pub struct CompressedPointMappings {
     // It is possible that `deleted` can be longer or shorter than `internal_to_external`.
     // - if `deleted` is longer, then extra bits should be set to `false` and ignored.
     deleted: BitVec,
-    internal_to_external: Vec<PointIdType>,
+    internal_to_external: CompressedInternalToExternal,
 
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
     external_to_internal_num: BTreeMap<u64, PointOffsetType>,
@@ -40,7 +41,7 @@ pub struct CompressedPointMappings {
 impl CompressedPointMappings {
     pub fn new(
         deleted: BitVec,
-        internal_to_external: Vec<PointIdType>,
+        internal_to_external: CompressedInternalToExternal,
         external_to_internal_num: BTreeMap<u64, PointOffsetType>,
         external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
     ) -> Self {
@@ -55,9 +56,12 @@ impl CompressedPointMappings {
     pub fn from_mappings(mapping: PointMappings) -> Self {
         let (deleted, internal_to_external, external_to_internal_num, external_to_internal_uuid) =
             mapping.deconstruct();
+
+        let compressed_internal_to_external =
+            CompressedInternalToExternal::from_slice(&internal_to_external);
         Self {
             deleted,
-            internal_to_external,
+            internal_to_external: compressed_internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
         }
@@ -84,9 +88,7 @@ impl CompressedPointMappings {
             return None;
         }
 
-        self.internal_to_external
-            .get(internal_id as usize)
-            .map(|i| i.into())
+        self.internal_to_external.get(internal_id)
     }
 
     pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {
@@ -125,7 +127,11 @@ impl CompressedPointMappings {
                 if self.deleted[i] {
                     None
                 } else {
-                    Some((self.internal_to_external[i], i as PointOffsetType))
+                    let point_offset = i as PointOffsetType;
+                    Some((
+                        self.internal_to_external.get(point_offset).unwrap(),
+                        point_offset,
+                    ))
                 }
             });
 
@@ -207,7 +213,7 @@ impl CompressedPointMappings {
         self.internal_to_external
             .iter()
             .enumerate()
-            .map(|(offset, point_id)| (offset as PointOffsetType, *point_id))
+            .map(|(offset, point_id)| (offset as PointOffsetType, point_id))
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
@@ -261,7 +267,7 @@ impl CompressedPointMappings {
             deleted.set(*id as usize, false);
         }
 
-        let internal_to_external = (0..total_size)
+        let internal_to_external: Vec<_> = (0..total_size)
             .map(|pos| loop {
                 if rand.random_bool(UUID_LIKELYNESS) {
                     let uuid = Uuid::from_u128(rand.random_range(0..=mask));
@@ -279,9 +285,12 @@ impl CompressedPointMappings {
             })
             .collect();
 
+        let compressed_internal_to_external =
+            CompressedInternalToExternal::from_slice(&internal_to_external);
+
         Self {
             deleted,
-            internal_to_external,
+            internal_to_external: compressed_internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
         }
