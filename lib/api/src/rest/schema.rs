@@ -641,14 +641,14 @@ pub enum Expression {
     Constant(f32),
     Variable(String),
     Condition(Box<Condition>),
-    Mult(MultiplyExpression),
+    Mult(MultExpression),
     Sum(SumExpression),
     Neg(NegExpression),
     GeoDistance(GeoDistance),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct MultiplyExpression {
+pub struct MultExpression {
     pub mult: Vec<Expression>,
 }
 

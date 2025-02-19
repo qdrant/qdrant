@@ -656,7 +656,7 @@ mod from_rest {
                 rest::Expression::Constant(c) => ExpressionInternal::Constant(c),
                 rest::Expression::Variable(key) => ExpressionInternal::Variable(key),
                 rest::Expression::Condition(condition) => ExpressionInternal::Condition(condition),
-                rest::Expression::Mult(rest::MultiplyExpression { mult: exprs }) => {
+                rest::Expression::Mult(rest::MultExpression { mult: exprs }) => {
                     ExpressionInternal::Mult(
                         exprs.into_iter().map(ExpressionInternal::from).collect(),
                     )
