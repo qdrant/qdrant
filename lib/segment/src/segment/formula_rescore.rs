@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use ahash::{AHashMap, AHashSet};
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
@@ -25,7 +25,7 @@ impl Segment {
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         // Dedup point offsets into a hashset
         let mut points_to_rescore =
-            HashSet::with_capacity(prefetches_scores.first().map_or(0, |scores| scores.len()));
+            AHashSet::with_capacity(prefetches_scores.first().map_or(0, |scores| scores.len()));
 
         // Transform prefetches results into a hashmap for faster lookup,
         let prefetches_scores = prefetches_scores
@@ -51,7 +51,7 @@ impl Segment {
 
                         Some((internal_id, point.score))
                     })
-                    .collect::<HashMap<_, _>>()
+                    .collect::<AHashMap<_, _>>()
             })
             .collect::<Vec<_>>();
 

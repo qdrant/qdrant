@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ops::Neg;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
@@ -22,7 +23,7 @@ pub struct FormulaScorer<'a> {
     /// The formula to evaluate
     formula: Expression,
     /// One hashmap for each prefetch results
-    prefetches_scores: &'a [HashMap<PointOffsetType, ScoreType>],
+    prefetches_scores: &'a [AHashMap<PointOffsetType, ScoreType>],
     /// Payload key -> retriever function
     payload_retrievers: HashMap<JsonPath, VariableRetrieverFn<'a>>,
     /// Condition id -> checker function
@@ -35,7 +36,7 @@ impl StructPayloadIndex {
     pub fn formula_scorer<'s, 'q>(
         &'s self,
         parsed_formula: &'q ParsedFormula,
-        prefetches_scores: &'q [HashMap<PointOffsetType, ScoreType>],
+        prefetches_scores: &'q [AHashMap<PointOffsetType, ScoreType>],
         hw_counter: &'q HardwareCounterCell,
     ) -> FormulaScorer<'q>
     where
@@ -193,7 +194,7 @@ mod tests {
     // self_cell just to be able to create FormulaScorer with a "reference" to fixture scores
     self_cell::self_cell!(
         struct ScorerFixture {
-            owner: Vec<HashMap<u32, f32>>,
+            owner: Vec<AHashMap<u32, f32>>,
             #[covariant]
             dependent: FormulaScorer,
         }
