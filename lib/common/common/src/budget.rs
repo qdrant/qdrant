@@ -153,13 +153,26 @@ impl ResourceBudget {
 
     pub fn replace_with(
         &self,
-        resource_permit: ResourcePermit,
+        mut permit: ResourcePermit,
         new_desired_cpus: usize,
         new_desired_io: usize,
         stopped: &AtomicBool,
     ) -> Result<ResourcePermit, ResourcePermit> {
-        self.acquire(new_desired_cpus, new_desired_io, stopped)
-            .ok_or(resource_permit)
+        // Acquire extra resources we don't have yet
+        let Some(extra_acquired) = self.acquire(
+            new_desired_cpus.saturating_sub(permit.num_cpus as usize),
+            new_desired_io.saturating_sub(permit.num_io as usize),
+            stopped,
+        ) else {
+            return Err(permit);
+        };
+        permit.merge(extra_acquired);
+
+        // Release excess resources we now have
+        permit.release_cpu_count(permit.num_cpus.saturating_sub(new_desired_cpus as u32));
+        permit.release_io_count(permit.num_io.saturating_sub(new_desired_io as u32));
+
+        Ok(permit)
     }
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.
@@ -261,6 +274,38 @@ impl ResourcePermit {
         }
     }
 
+    /// Merge the other resource permit into this one
+    pub fn merge(&mut self, mut other: Self) {
+        self.num_cpus += other.num_cpus;
+        self.num_io += other.num_io;
+
+        // Merge optional semaphore permits
+        self.cpu_permit = match (self.cpu_permit.take(), other.cpu_permit.take()) {
+            (Some(mut permit), Some(other_permit)) => {
+                permit.merge(other_permit);
+                Some(permit)
+            }
+            (permit @ Some(_), None) | (None, permit @ Some(_)) => permit,
+            (None, None) => None,
+        };
+        self.io_permit = match (self.io_permit.take(), other.io_permit.take()) {
+            (Some(mut permit), Some(other_permit)) => {
+                permit.merge(other_permit);
+                Some(permit)
+            }
+            (permit @ Some(_), None) | (None, permit @ Some(_)) => permit,
+            (None, None) => None,
+        };
+
+        // Debug assert that cpu/io count and permit counts match
+        debug_assert!(
+            self.cpu_permit.as_ref().map_or(0, |p| p.num_permits()) == self.num_cpus as usize,
+        );
+        debug_assert!(
+            self.io_permit.as_ref().map_or(0, |p| p.num_permits()) == self.num_io as usize,
+        );
+    }
+
     /// New CPU permit with given CPU count without a backing semaphore for a shared pool.
     #[cfg(feature = "testing")]
     pub fn dummy(count: u32) -> Self {
@@ -284,6 +329,10 @@ impl ResourcePermit {
 
     /// Partial release CPU permit, giving them back to the semaphore.
     pub fn release_cpu_count(&mut self, release_count: u32) {
+        if release_count == 0 {
+            return;
+        }
+
         if self.num_cpus > release_count {
             self.num_cpus -= release_count;
             let permit = self.cpu_permit.take();
@@ -295,6 +344,10 @@ impl ResourcePermit {
 
     /// Partial release IO permit, giving them back to the semaphore.
     pub fn release_io_count(&mut self, release_count: u32) {
+        if release_count == 0 {
+            return;
+        }
+
         if self.num_io > release_count {
             self.num_io -= release_count;
             let permit = self.io_permit.take();
