@@ -482,7 +482,7 @@ impl SegmentEntry for ProxySegment {
             hw_counter,
         )?;
 
-        // Just join both results, they will be top-k'd later
+        // Just join both results, they will be deduplicated and top-k'd later
         write_results.append(&mut wrapped_results);
 
         Ok(wrapped_results)
