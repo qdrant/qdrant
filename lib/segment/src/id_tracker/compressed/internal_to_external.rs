@@ -100,3 +100,69 @@ impl CompressedInternalToExternal {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn create_uuid() -> Uuid {
+        Uuid::new_v4()
+    }
+
+    #[test]
+    fn with_capacity_creates_empty_struct() {
+        let compressed = CompressedInternalToExternal::with_capacity(10);
+        assert_eq!(compressed.len(), 0);
+        assert!(compressed.is_empty());
+    }
+
+    #[test]
+    fn resize_changes_length_and_fills_with_value() {
+        let mut compressed = CompressedInternalToExternal::with_capacity(0);
+        let uuid = create_uuid();
+        compressed.resize(5, PointIdType::Uuid(uuid));
+        assert_eq!(compressed.len(), 5);
+        for i in 0..5 {
+            assert_eq!(
+                compressed.get(i as PointOffsetType),
+                Some(PointIdType::Uuid(uuid))
+            );
+        }
+    }
+
+    #[test]
+    fn set_updates_value_at_index() {
+        let mut compressed = CompressedInternalToExternal::with_capacity(1);
+        let uuid = create_uuid();
+        compressed.resize(1, PointIdType::NumId(42));
+        compressed.set(0, PointIdType::Uuid(uuid));
+        assert_eq!(compressed.get(0), Some(PointIdType::Uuid(uuid)));
+    }
+
+    #[test]
+    fn from_slice_creates_struct_from_slice() {
+        let uuid = create_uuid();
+        let slice = vec![PointIdType::NumId(42), PointIdType::Uuid(uuid)];
+        let compressed = CompressedInternalToExternal::from_slice(&slice);
+        assert_eq!(compressed.len(), 2);
+        assert_eq!(compressed.get(0), Some(PointIdType::NumId(42)));
+        assert_eq!(compressed.get(1), Some(PointIdType::Uuid(uuid)));
+    }
+
+    #[test]
+    fn get_returns_none_for_out_of_bounds() {
+        let compressed = CompressedInternalToExternal::with_capacity(0);
+        assert_eq!(compressed.get(0), None);
+    }
+
+    #[test]
+    fn iter_returns_all_elements() {
+        let uuid = create_uuid();
+        let slice = vec![PointIdType::NumId(42), PointIdType::Uuid(uuid)];
+        let compressed = CompressedInternalToExternal::from_slice(&slice);
+        let collected: Vec<PointIdType> = compressed.iter().collect();
+        assert_eq!(collected, slice);
+    }
+}
