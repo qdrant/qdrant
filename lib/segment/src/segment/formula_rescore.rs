@@ -59,7 +59,7 @@ impl Segment {
         let scorer = index_ref.formula_scorer(formula, &prefetches_scores, hw_counter);
 
         // Perform rescoring
-        let mut errs = Vec::new();
+        let mut error = None;
         let rescored = points_to_rescore
             .into_iter()
             .check_stop(|| is_stopped.load(Ordering::Relaxed))
@@ -71,7 +71,7 @@ impl Segment {
                     }),
                     Err(err) => {
                         // in case there is an error, defer handling it and continue
-                        errs.push(err);
+                        error = Some(err);
                         is_stopped.store(true, Ordering::Relaxed);
                         None
                     }
@@ -81,7 +81,7 @@ impl Segment {
             .k_largest(limit)
             .collect();
 
-        if let Some(err) = errs.pop() {
+        if let Some(err) = error {
             return Err(err);
         }
 
