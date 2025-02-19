@@ -158,7 +158,8 @@ impl ResourceBudget {
         new_desired_io: usize,
         stopped: &AtomicBool,
     ) -> Result<ResourcePermit, ResourcePermit> {
-        self.acquire(new_desired_cpus, new_desired_io, stopped).ok_or(resource_permit)
+        self.acquire(new_desired_cpus, new_desired_io, stopped)
+            .ok_or(resource_permit)
     }
 
     /// Check if there is enough CPU budget available for the given `desired_cpus`.

@@ -265,14 +265,8 @@ fn main() -> anyhow::Result<()> {
 
     // Use global CPU budget for optimizations based on settings
     let cpu_budget = get_cpu_budget(settings.storage.performance.optimizer_cpu_budget);
-    let io_budget = get_io_budget(
-        settings.storage.performance.optimizer_io_budget,
-        cpu_budget
-    );
-    let optimizer_resource_budget = ResourceBudget::new(
-        cpu_budget,
-        io_budget,
-    );
+    let io_budget = get_io_budget(settings.storage.performance.optimizer_io_budget, cpu_budget);
+    let optimizer_resource_budget = ResourceBudget::new(cpu_budget, io_budget);
 
     // Create a signal sender and receiver. It is used to communicate with the consensus thread.
     let (propose_sender, propose_receiver) = std::sync::mpsc::channel();
