@@ -64,8 +64,10 @@ impl BatchResultAggregator {
     ) {
         for point in all_searches_results {
             let point_id = point.id;
-            let point_version = self.point_versions.entry(point_id).or_insert(point.version);
-            *point_version = max(*point_version, point.version);
+            self.point_versions
+                .entry(point_id)
+                .and_modify(|version| *version = max(*version, point.version))
+                .or_insert(point.version);
         }
     }
 
