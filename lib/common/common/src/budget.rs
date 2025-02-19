@@ -158,6 +158,10 @@ impl ResourceBudget {
         new_desired_io: usize,
         stopped: &AtomicBool,
     ) -> Result<ResourcePermit, ResourcePermit> {
+        // Make sure we don't exceed the budget, otherwise we might deadlock
+        let new_desired_cpus = new_desired_cpus.min(self.cpu_budget);
+        let new_desired_io = new_desired_io.min(self.io_budget);
+
         // Acquire extra resources we don't have yet
         let Some(extra_acquired) = self.acquire(
             new_desired_cpus.saturating_sub(permit.num_cpus as usize),

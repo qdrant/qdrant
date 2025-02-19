@@ -40,7 +40,8 @@ pub struct PerformanceConfig {
     #[serde(default)]
     pub optimizer_cpu_budget: isize,
     /// IO budget, how many parallel IO operations to allow for an optimization job.
-    /// If 0 - auto selection, one IO operation per each indexation job (1 / 8 CPU)
+    /// IO usage per optimization job is equivalent to number of indexing threads.
+    /// If 0 - auto selection, one IO operation per each CPU.
     /// Otherwise - use this exact number of IO operations.
     #[serde(default)]
     pub optimizer_io_budget: usize,

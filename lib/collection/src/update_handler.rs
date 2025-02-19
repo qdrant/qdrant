@@ -553,7 +553,7 @@ impl UpdateHandler {
             .unwrap_or_default();
 
         // Asynchronous task to trigger optimizers once CPU budget is available again
-        let mut cpu_available_trigger: Option<JoinHandle<()>> = None;
+        let mut resource_available_trigger: Option<JoinHandle<()>> = None;
 
         loop {
             let result = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv()).await;
@@ -617,17 +617,17 @@ impl UpdateHandler {
                 continue;
             }
 
-            // Continue if we have enough CPU budget available to start an optimization
-            // Otherwise skip now and start a task to trigger the optimizer again once CPU
+            // Continue if we have enough resource budget available to start an optimization
+            // Otherwise skip now and start a task to trigger the optimizer again once resource
             // budget becomes available
-            let desired_cpus = num_rayon_threads(max_indexing_threads);
-            let desired_io = 0; // TODO: We need at least one IO thread for each optimization
+            let desired_cpus = 0;
+            let desired_io = num_rayon_threads(max_indexing_threads);
             if !optimizer_resource_budget.has_budget(desired_cpus, desired_io) {
-                let trigger_active = cpu_available_trigger
+                let trigger_active = resource_available_trigger
                     .as_ref()
                     .is_some_and(|t| !t.is_finished());
                 if !trigger_active {
-                    cpu_available_trigger.replace(trigger_optimizers_on_resource_budget(
+                    resource_available_trigger.replace(trigger_optimizers_on_resource_budget(
                         optimizer_resource_budget.clone(),
                         desired_cpus,
                         desired_io,
