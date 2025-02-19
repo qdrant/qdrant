@@ -112,6 +112,45 @@ impl Context {
         Ok(())
     }
 
+    pub fn barrier_buffers(&mut self, buffers: &[Arc<Buffer>]) -> GpuResult<()> {
+        if self.vk_command_buffer == vk::CommandBuffer::null() {
+            self.init_command_buffer()?;
+        }
+
+        let buffer_memory_barriers = buffers
+            .iter()
+            .map(|buffer| {
+                self.resources.push(buffer.clone() as Arc<dyn Resource>);
+                vk::BufferMemoryBarrier::default()
+                    .buffer(buffer.vk_buffer())
+                    .offset(0)
+                    .size(buffer.size() as vk::DeviceSize)
+                    .src_queue_family_index(
+                        self.device.compute_queue().vk_queue_family_index as u32,
+                    )
+                    .dst_queue_family_index(
+                        self.device.compute_queue().vk_queue_family_index as u32,
+                    )
+                    .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+                    .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+            })
+            .collect::<Vec<_>>();
+
+        unsafe {
+            self.device.vk_device().cmd_pipeline_barrier(
+                self.vk_command_buffer,
+                vk::PipelineStageFlags::COMPUTE_SHADER,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+                vk::DependencyFlags::empty(),
+                &[],
+                &buffer_memory_barriers,
+                &[],
+            );
+        }
+
+        Ok(())
+    }
+
     /// Bind pipeline to the context.
     /// It means which shader and binded resources to shader will be used.
     /// It records command to run it on GPU after `run` call.
