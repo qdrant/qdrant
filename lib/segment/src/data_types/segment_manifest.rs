@@ -3,8 +3,44 @@ use std::path::PathBuf;
 
 use crate::types::SeqNumberType;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default)]
+pub struct SegmentManifests {
+    manifests: HashMap<String, SegmentManifest>,
+}
+
+impl SegmentManifests {
+    pub fn version(&self, segment_id: &str) -> Option<SeqNumberType> {
+        self.manifests
+            .get(segment_id)
+            .map(|manifest| manifest.segment_version)
+    }
+
+    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
+        self.manifests.get(segment_id)
+    }
+
+    pub fn add(&mut self, new_manifest: SegmentManifest) -> bool {
+        let Some(current_manifest) = self.manifests.get_mut(&new_manifest.segment_id) else {
+            self.manifests
+                .insert(new_manifest.segment_id.clone(), new_manifest);
+
+            return true;
+        };
+
+        debug_assert_eq!(current_manifest.segment_id, new_manifest.segment_id);
+
+        if current_manifest.segment_version < new_manifest.segment_version {
+            *current_manifest = new_manifest;
+            return true;
+        }
+
+        false
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SegmentManifest {
+    pub segment_id: String,
     pub segment_version: SeqNumberType,
     pub file_versions: HashMap<PathBuf, FileVersion>,
 }

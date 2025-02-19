@@ -3,9 +3,10 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use common::tar_ext;
+use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::data_types::segment_manifest::{FileVersion, SegmentManifest};
+use crate::data_types::segment_manifest::{FileVersion, SegmentManifest, SegmentManifests};
 use crate::entry::entry_point::SegmentEntry;
 use crate::entry::partial_snapshot_entry::PartialSnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
@@ -22,18 +23,17 @@ impl PartialSnapshotEntry for Segment {
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
-        manifest: &SegmentManifest,
+        manifests: &SegmentManifests,
+        snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
+        let segment_id = self.segment_id()?;
+
+        if !snapshotted_segments.insert(segment_id.into()) {
+            // Already snapshotted
+            return Ok(());
+        }
 
         let updated_manifest = self.get_segment_manifest()?;
-        let updated_files = updated_files(manifest, &updated_manifest);
-
-        let tar = tar.descend(Path::new(&segment_id))?;
 
         let updated_manifest_json = serde_json::to_vec(&updated_manifest).map_err(|err| {
             OperationError::service_error(format!(
@@ -41,13 +41,52 @@ impl PartialSnapshotEntry for Segment {
             ))
         })?;
 
+        let tar = tar.descend(Path::new(&segment_id))?;
         tar.blocking_append_data(&updated_manifest_json, Path::new("segment_manifest.json"))?;
 
-        snapshot_files(self, temp_path, &tar, |path| updated_files.contains(path))?;
+        match manifests.get(segment_id) {
+            Some(manifest) => {
+                let updated_files = updated_files(manifest, &updated_manifest);
+                snapshot_files(self, temp_path, &tar, |path| updated_files.contains(path))?;
+            }
+
+            None => {
+                snapshot_files(self, temp_path, &tar, |_| true)?;
+            }
+        }
+
         Ok(())
     }
 
+    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()> {
+        manifests.add(self.get_segment_manifest()?);
+        Ok(())
+    }
+}
+
+impl Segment {
+    fn segment_id(&self) -> OperationResult<&str> {
+        let id = self
+            .current_path
+            .file_stem()
+            .and_then(|segment_dir| segment_dir.to_str())
+            .ok_or_else(|| {
+                OperationError::service_error(format!(
+                    "failed to extract segment ID from segment path {}",
+                    self.current_path.display(),
+                ))
+            })?;
+
+        debug_assert!(
+            Uuid::try_parse(id).is_ok(),
+            "segment ID {id} is not a valid UUID",
+        );
+
+        Ok(id)
+    }
+
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+        let segment_id = self.segment_id()?;
         let segment_version = self.version();
 
         let all_files = self.files();
@@ -131,13 +170,12 @@ impl PartialSnapshotEntry for Segment {
         );
 
         Ok(SegmentManifest {
+            segment_id: segment_id.into(),
             segment_version,
             file_versions,
         })
     }
-}
 
-impl Segment {
     fn files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
 
