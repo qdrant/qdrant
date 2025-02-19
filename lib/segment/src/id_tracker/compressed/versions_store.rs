@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+
 use crate::types::SeqNumberType;
 
 /// Compressed representation of Vec<SeqNumberType>
@@ -20,7 +21,6 @@ pub struct CompressedVersionsStore {
 const U32_BITS: u32 = 32;
 
 impl CompressedVersionsStore {
-
     fn version_from_parts(lower: u32, upper: u32) -> SeqNumberType {
         u64::from(upper) << U32_BITS | u64::from(lower)
     }
@@ -66,6 +66,9 @@ impl CompressedVersionsStore {
             }
         }
 
-        Self { lower_bytes, upper_bytes }
+        Self {
+            lower_bytes,
+            upper_bytes,
+        }
     }
 }

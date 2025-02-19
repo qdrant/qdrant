@@ -586,7 +586,10 @@ pub(super) mod test {
 
         // We may extend the length of deleted bitvec as memory maps need to be aligned to
         // a multiple of `usize-width`.
-        assert_eq!(old_versions.len(), loaded_id_tracker.internal_to_version.len());
+        assert_eq!(
+            old_versions.len(),
+            loaded_id_tracker.internal_to_version.len()
+        );
         for i in 0..old_versions.len() {
             assert_eq!(
                 old_versions.get(i),
@@ -652,7 +655,10 @@ pub(super) mod test {
             }
 
             // Check version
-            let expect_version = custom_version.get(&internal_id).copied().unwrap_or(DEFAULT_VERSION);
+            let expect_version = custom_version
+                .get(&internal_id)
+                .copied()
+                .unwrap_or(DEFAULT_VERSION);
 
             assert_eq!(
                 id_tracker.internal_to_version.get(internal_id as usize),
