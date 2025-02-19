@@ -3,8 +3,6 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::iter;
 
-use crate::id_tracker::point_mappings::PointMappings;
-use crate::types::PointIdType;
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::LittleEndian;
 #[cfg(test)]
@@ -19,6 +17,9 @@ use rand::seq::SliceRandom as _;
 #[cfg(test)]
 use rand::Rng as _;
 use uuid::Uuid;
+
+use crate::id_tracker::point_mappings::PointMappings;
+use crate::types::PointIdType;
 
 /// Used endianness for storing PointMapping-files.
 pub type FileEndianess = LittleEndian;
