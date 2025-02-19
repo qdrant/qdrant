@@ -6,7 +6,7 @@ mod payload_index_base;
 pub mod plain_payload_index;
 pub mod plain_vector_index;
 pub mod query_estimator;
-mod query_optimization;
+pub mod query_optimization;
 mod sample_estimation;
 pub mod sparse_index;
 mod struct_filter_context;
