@@ -9,7 +9,9 @@ use futures::FutureExt;
 use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{score_fusion, ScoreFusion};
-use segment::types::{Filter, HasIdCondition, ScoredPoint, WithPayloadInterface, WithVector};
+use segment::types::{
+    Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
+};
 use tokio::runtime::Handle;
 use tokio::time::error::Elapsed;
 
@@ -314,6 +316,18 @@ impl LocalShard {
                         "Rescoring with vector(s) query didn't return expected batch of results",
                     )
                 })
+            }
+            ScoringQuery::Formula(formula) => {
+                self.rescore_with_formula(
+                    formula,
+                    sources,
+                    WithPayload::from(&with_payload),
+                    with_vector,
+                    limit,
+                    timeout,
+                    hw_counter_acc,
+                )
+                .await
             }
             ScoringQuery::Sample(sample) => match sample {
                 SampleInternal::Random => {

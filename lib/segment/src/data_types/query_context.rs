@@ -253,5 +253,5 @@ pub struct FormulaContext {
     pub with_payload: WithPayload,
     pub with_vector: WithVector,
     pub limit: usize,
-    pub is_stopped: AtomicBool,
+    pub is_stopped: Arc<AtomicBool>,
 }

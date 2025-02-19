@@ -32,9 +32,9 @@ pub enum ExpressionInternal {
     },
 }
 
-impl From<rest::FormulaInput> for FormulaInternal {
-    fn from(value: rest::FormulaInput) -> Self {
-        let rest::FormulaInput { formula, defaults } = value;
+impl From<rest::FormulaQuery> for FormulaInternal {
+    fn from(value: rest::FormulaQuery) -> Self {
+        let rest::FormulaQuery { formula, defaults } = value;
 
         FormulaInternal {
             formula: ExpressionInternal::from(formula),

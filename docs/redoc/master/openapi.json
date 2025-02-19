@@ -14081,6 +14081,9 @@
             "$ref": "#/components/schemas/FusionQuery"
           },
           {
+            "$ref": "#/components/schemas/FormulaQuery"
+          },
+          {
             "$ref": "#/components/schemas/SampleQuery"
           }
         ]
@@ -14250,6 +14253,103 @@
           "rrf",
           "dbsf"
         ]
+      },
+      "FormulaQuery": {
+        "type": "object",
+        "required": [
+          "defaults",
+          "formula"
+        ],
+        "properties": {
+          "formula": {
+            "$ref": "#/components/schemas/Expression"
+          },
+          "defaults": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Expression": {
+        "anyOf": [
+          {
+            "type": "number",
+            "format": "float"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/Condition"
+          },
+          {
+            "$ref": "#/components/schemas/MultiplyExpression"
+          },
+          {
+            "$ref": "#/components/schemas/SumExpression"
+          },
+          {
+            "$ref": "#/components/schemas/NegExpression"
+          },
+          {
+            "$ref": "#/components/schemas/GeoDistance"
+          }
+        ]
+      },
+      "MultiplyExpression": {
+        "type": "object",
+        "required": [
+          "mult"
+        ],
+        "properties": {
+          "mult": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "SumExpression": {
+        "type": "object",
+        "required": [
+          "sum"
+        ],
+        "properties": {
+          "sum": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "NegExpression": {
+        "type": "object",
+        "required": [
+          "neg"
+        ],
+        "properties": {
+          "neg": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "GeoDistance": {
+        "type": "object",
+        "required": [
+          "origin",
+          "to"
+        ],
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "to": {
+            "description": "Payload field with the destination geo point",
+            "type": "string"
+          }
+        }
       },
       "SampleQuery": {
         "type": "object",
