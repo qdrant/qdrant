@@ -1,1 +1,1 @@
-mod versions_store;
+pub mod versions_store;
