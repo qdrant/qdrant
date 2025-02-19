@@ -28,6 +28,7 @@ impl Collection {
         &self,
         operation: CollectionUpdateOperations,
         wait: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
@@ -49,7 +50,11 @@ impl Collection {
                     //
                     // We update *all* shards with a single operation, but each shard has it's own clock,
                     // so it's *impossible* to assign any single clock tag to this operation.
-                    shard.update_local(OperationWithClockTag::from(operation.clone()), wait)
+                    shard.update_local(
+                        OperationWithClockTag::from(operation.clone()),
+                        wait,
+                        hw_measurement_acc.clone(),
+                    )
                 })
                 .collect();
 
@@ -85,6 +90,7 @@ impl Collection {
         shard_selection: ShardId,
         wait: bool,
         ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
@@ -97,7 +103,7 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, hw_measurement_acc.clone()).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(
@@ -108,7 +114,7 @@ impl Collection {
                     }
 
                     shard
-                        .update_with_consistency(operation.operation, wait, ordering, false)
+                        .update_with_consistency(operation.operation, wait, ordering, false, hw_measurement_acc)
                         .await
                         .map(Some)
                 }
@@ -136,6 +142,7 @@ impl Collection {
         wait: bool,
         ordering: WriteOrdering,
         shard_keys_selection: Option<ShardKey>,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         let update_lock = self.updates_lock.clone().read_owned().await;
         let shard_holder = self.shards_holder.clone().read_owned().await;
@@ -149,6 +156,7 @@ impl Collection {
             for (shard, operation) in operations {
                 let operation = shard_holder.split_by_mode(shard.shard_id, operation);
 
+                let hw_acc = hw_measurement_acc.clone();
                 updates.push(async move {
                     let mut result = UpdateResult {
                         operation_id: None,
@@ -158,13 +166,25 @@ impl Collection {
 
                     for operation in operation.update_all {
                         result = shard
-                            .update_with_consistency(operation, wait, ordering, false)
+                            .update_with_consistency(
+                                operation,
+                                wait,
+                                ordering,
+                                false,
+                                hw_acc.clone(),
+                            )
                             .await?;
                     }
 
                     for operation in operation.update_only_existing {
                         let res = shard
-                            .update_with_consistency(operation, wait, ordering, true)
+                            .update_with_consistency(
+                                operation,
+                                wait,
+                                ordering,
+                                true,
+                                hw_acc.clone(),
+                            )
                             .await;
 
                         if let Err(err) = &res {
@@ -228,8 +248,9 @@ impl Collection {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
-        self.update_from_client(operation, wait, ordering, None)
+        self.update_from_client(operation, wait, ordering, None, hw_measurement_acc)
             .await
     }
 

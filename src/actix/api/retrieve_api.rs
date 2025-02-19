@@ -100,6 +100,7 @@ async fn get_point(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -158,6 +159,7 @@ async fn get_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
@@ -218,6 +220,7 @@ async fn scroll_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 

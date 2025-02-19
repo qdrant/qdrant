@@ -148,7 +148,7 @@ async fn facet_counts_internal(
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
         time: timing.elapsed().as_secs_f64(),
-        // TODO(io_measurement): add hw data
+        usage: request_hw_data.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -188,12 +188,19 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let upsert_points = extract_internal_request(upsert_points)?;
+
+        let hw_data = self.get_request_collection_hw_usage_counter_for_internal(
+            upsert_points.collection_name.clone(),
+        );
+
         upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            extract_internal_request(upsert_points)?,
+            upsert_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
+            hw_data,
         )
         .await
     }
@@ -212,12 +219,19 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let delete_points = extract_internal_request(delete_points)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            delete_points.collection_name.clone(),
+        );
+
         delete(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            extract_internal_request(delete_points)?,
+            delete_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
+            hw_metrics,
         )
         .await
     }
@@ -236,12 +250,19 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let update_point_vectors = extract_internal_request(update_vectors_req)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            update_point_vectors.collection_name.clone(),
+        );
+
         update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            extract_internal_request(update_vectors_req)?,
+            update_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
+            hw_metrics,
         )
         .await
     }
@@ -258,11 +279,18 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let delete_point_vectors = extract_internal_request(delete_vectors_req)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            delete_point_vectors.collection_name.clone(),
+        );
+
         delete_vectors(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            extract_internal_request(delete_vectors_req)?,
+            delete_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
+            hw_metrics,
         )
         .await
     }
@@ -279,11 +307,18 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let set_payload_points = extract_internal_request(set_payload_points)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            set_payload_points.collection_name.clone(),
+        );
+
         set_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            extract_internal_request(set_payload_points)?,
+            set_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
+            hw_metrics,
         )
         .await
     }
@@ -300,11 +335,18 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let set_payload_points = extract_internal_request(set_payload_points)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            set_payload_points.collection_name.clone(),
+        );
+
         overwrite_payload(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
-            extract_internal_request(set_payload_points)?,
+            set_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
+            hw_metrics,
         )
         .await
     }
@@ -321,11 +363,18 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let delete_payload_points = extract_internal_request(delete_payload_points)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            delete_payload_points.collection_name.clone(),
+        );
+
         delete_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            extract_internal_request(delete_payload_points)?,
+            delete_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
+            hw_metrics,
         )
         .await
     }
@@ -342,11 +391,18 @@ impl PointsInternal for PointsInternalService {
             clock_tag,
         } = request.into_inner();
 
+        let clear_payload_points = extract_internal_request(clear_payload_points)?;
+
+        let hw_metrics = self.get_request_collection_hw_usage_counter_for_internal(
+            clear_payload_points.collection_name.clone(),
+        );
+
         clear_payload(
             UncheckedTocProvider::new_unchecked(&self.toc),
-            extract_internal_request(clear_payload_points)?,
+            clear_payload_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
+            hw_metrics,
         )
         .await
     }

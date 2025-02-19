@@ -11,6 +11,7 @@ impl TableOfContent {
     }
 }
 
+#[derive(Clone)]
 pub struct RequestHwCounter {
     counter: HwMeasurementAcc,
     /// If this flag is set, RequestHwCounter will be converted into non-None API representation.

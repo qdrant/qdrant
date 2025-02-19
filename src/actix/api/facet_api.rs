@@ -54,6 +54,7 @@ async fn facet(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
 
     let response = dispatcher

@@ -80,8 +80,14 @@ mod group_by {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
         );
 
+        let hw_counter = HwMeasurementAcc::new();
         let insert_result = collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(
+                insert_points,
+                true,
+                WriteOrdering::default(),
+                hw_counter.clone(),
+            )
             .await
             .expect("insert failed");
 
@@ -514,6 +520,8 @@ mod group_by_builder {
         let collection_dir = tempfile::Builder::new().prefix("chunks").tempdir().unwrap();
         let collection = simple_collection_fixture(collection_dir.path(), 1).await;
 
+        let hw_counter = HwMeasurementAcc::new();
+
         // insert chunk points
         {
             let batch = BatchPersisted {
@@ -536,7 +544,12 @@ mod group_by_builder {
             );
 
             let insert_result = collection
-                .update_from_client_simple(insert_points, true, WriteOrdering::default())
+                .update_from_client_simple(
+                    insert_points,
+                    true,
+                    WriteOrdering::default(),
+                    hw_counter.clone(),
+                )
                 .await
                 .expect("insert failed");
 
@@ -565,7 +578,12 @@ mod group_by_builder {
                 PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
             );
             let insert_result = lookup_collection
-                .update_from_client_simple(insert_points, true, WriteOrdering::default())
+                .update_from_client_simple(
+                    insert_points,
+                    true,
+                    WriteOrdering::default(),
+                    hw_counter.clone(),
+                )
                 .await
                 .expect("insert failed");
 
