@@ -23,6 +23,8 @@ storage:
   snapshots_config:
     # "local" or "s3" - where to store snapshots
     snapshots_storage: local
+    # Maximum number of concurrent snapshot uploads. If null - no explicit limit.
+    snapshot_upload_concurrency: null
     # s3_config:
     #   bucket: ""
     #   region: ""

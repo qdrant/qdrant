@@ -6,6 +6,7 @@ use common::cpu::CpuBudget;
 use futures::StreamExt;
 use object_store::WriteMultipart;
 use tokio::io::AsyncWriteExt;
+use crate::operations::shared_storage_config::SharedStorageConfig;
 
 use super::snapshot_ops::SnapshotDescription;
 use super::types::{CollectionError, CollectionResult};
@@ -114,9 +115,16 @@ pub async fn multipart_upload(
     let mut reader = BufReader::new(file);
     let mut buffer = vec![0u8; chunk_size];
 
-    // Initialize CpuBudget to manage concurrency
-    let cpu_budget = CpuBudget::default();
-    let max_concurrency = cpu_budget.available_cpu_budget();
+    // Max concurrency either based on user defined value or available cpu budget
+
+    let storage_config = SharedStorageConfig::default();
+    let max_concurrency = storage_config
+        .snapshots_config
+        .snapshot_upload_concurrency
+        .unwrap_or_else(|| {
+            let cpu_budget = CpuBudget::default();
+            cpu_budget.available_cpu_budget()
+        });
 
     // Note:
     //  1. write.write() is sync but a worker thread is spawned internally.
