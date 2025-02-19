@@ -82,7 +82,7 @@ mod tests {
     use crate::types::SeqNumberType;
 
     fn model_test_range() -> Range<SeqNumberType> {
-        0..SeqNumberType::max_value()
+        0..SeqNumberType::MAX
     }
 
     proptest! {
@@ -93,12 +93,13 @@ mod tests {
             let mut compressed = CompressedVersionsStore::from_slice(&model);
 
             // Check get()
-            for i in 0..model.len() {
-                assert_eq!(model[i], compressed.get(i).unwrap());
+            for (i, model_value) in model.iter().enumerate() {
+                assert_eq!(*model_value, compressed.get(i).unwrap());
             }
 
             // Check set()
             let mut rng = rand::rng();
+            #[expect(clippy::needless_range_loop)]
             for i in 0..model.len() {
                 let new_value = rng.random_range(model_test_range());
                 model[i] = new_value;
