@@ -9,6 +9,8 @@ use crate::*;
 
 static APPLICATION_NAME: &std::ffi::CStr = c"qdrant";
 
+static VALIDATION_LAYER_NAME: &std::ffi::CStr = c"VK_LAYER_KHRONOS_validation";
+
 /// `Instance` is a Vulkan instance wrapper.
 /// It's a root structure for all Vulkan operations and provides access the API.
 /// It also manages all Vulkan API layers and API extensions.
@@ -174,6 +176,15 @@ impl Instance {
 
         if let Some(debug_utils_create_info) = &mut debug_utils_create_info {
             create_info = create_info.push_next(debug_utils_create_info);
+        }
+
+        let mut settings = LayerSettingsBuilder::default();
+        let mut settings_create_info;
+        if layers.contains(&VALIDATION_LAYER_NAME) {
+            Self::set_validation_settings(&mut settings);
+            settings_create_info =
+                vk::LayerSettingsCreateInfoEXT::default().settings(settings.settings());
+            create_info = create_info.push_next(&mut settings_create_info);
         }
 
         // Get CPU allocation callbacks if they are provided.
@@ -357,7 +368,7 @@ impl Instance {
     fn layers_list(validation: bool, dump_api: bool) -> Vec<&'static CStr> {
         let mut result = Vec::new();
         if validation {
-            result.push(c"VK_LAYER_KHRONOS_validation");
+            result.push(VALIDATION_LAYER_NAME);
         }
         if dump_api {
             result.push(c"VK_LAYER_LUNARG_api_dump");
@@ -377,6 +388,22 @@ impl Instance {
             extensions_list.push(ash::khr::get_physical_device_properties2::NAME);
         }
         extensions_list
+    }
+
+    /// Sets validation settings to enable the `debugPrintfEXT()` GLSL function.
+    ///
+    /// References:
+    /// - <https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/vulkan-sdk-1.4.304.1/docs/debug_printf.md>
+    /// - <https://github.com/KhronosGroup/GLSL/blob/9618e893003113a715a06094cf187cef865f8565/extensions/ext/GLSL_EXT_debug_printf.txt>
+    fn set_validation_settings(settings: &mut LayerSettingsBuilder) {
+        settings.str(
+            VALIDATION_LAYER_NAME,
+            c"validate_gpu_based",
+            c"GPU_BASED_DEBUG_PRINTF",
+        );
+        settings.bool(VALIDATION_LAYER_NAME, c"printf_to_stdout", true);
+        settings.bool(VALIDATION_LAYER_NAME, c"printf_verbose", false);
+        settings.uint32(VALIDATION_LAYER_NAME, c"printf_buffer_size", 16384);
     }
 
     fn check_extensions_list(entry: &ash::Entry, extensions: &[&CStr]) -> GpuResult<()> {
@@ -425,5 +452,92 @@ impl Drop for Instance {
             // Last step after all drops of all GPU resources: destroy vulkan instance.
             self.vk_instance.destroy_instance(allocation_callbacks);
         }
+    }
+}
+
+/// A builder for a slice of [`vk::LayerSettingEXT`], to be used in
+/// [`vk::LayerSettingsCreateInfoEXT`].
+///
+/// Using the Vulkan API is not the only way to set these settings. See
+/// <https://vulkan.lunarg.com/doc/view/1.4.304.1/linux/layer_configuration.html>.
+#[derive(Default)]
+pub struct LayerSettingsBuilder {
+    /// Setting values are copied into this arena.
+    bump: bumpalo::Bump,
+    /// It is marked as 'static to make appeasing the borrow checker less
+    /// miserable, but the actual pointers point to the [`Self::bump`] arena.
+    ///
+    /// We just need make sure that LayerSettingEXT<'static> is not exposed in
+    /// the public API.
+    settings: Vec<vk::LayerSettingEXT<'static>>,
+}
+
+impl LayerSettingsBuilder {
+    #[expect(
+        clippy::needless_lifetimes,
+        reason = "Make it clear that values are borrowed, not 'static."
+    )]
+    pub fn settings<'a>(&'a self) -> &'a [vk::LayerSettingEXT<'a>] {
+        &self.settings
+    }
+
+    /// Adds a [`BOOL32`](vk::LayerSettingTypeEXT::BOOL32) setting.
+    pub fn bool(&mut self, layer_name: &CStr, setting_name: &CStr, value: bool) {
+        self.add_setting(
+            layer_name,
+            setting_name,
+            vk::LayerSettingTypeEXT::BOOL32,
+            &[vk::Bool32::from(value)],
+        );
+    }
+
+    /// Adds an [`UINT32`](vk::LayerSettingTypeEXT::UINT32) setting.
+    pub fn uint32(&mut self, layer_name: &CStr, setting_name: &CStr, value: u32) {
+        self.add_setting(
+            layer_name,
+            setting_name,
+            vk::LayerSettingTypeEXT::UINT32,
+            &[value],
+        );
+    }
+
+    /// Adds a [`STRING`](vk::LayerSettingTypeEXT::STRING) setting.
+    pub fn str(&mut self, layer_name: &CStr, setting_name: &CStr, value: &CStr) {
+        let value = self.copy_str(value);
+        self.add_setting(
+            layer_name,
+            setting_name,
+            vk::LayerSettingTypeEXT::STRING,
+            &[value],
+        );
+    }
+
+    fn add_setting<T: Copy>(
+        &mut self,
+        layer_name: &CStr,
+        setting_name: &CStr,
+        ty: vk::LayerSettingTypeEXT,
+        values: &[T],
+    ) {
+        let p_layer_name = self.copy_str(layer_name);
+        let p_setting_name = self.copy_str(setting_name);
+        let p_values = self.bump.alloc_slice_copy(values).as_ptr().cast();
+        // Can't use builder methods, see https://github.com/ash-rs/ash/issues/986
+        self.settings.push(vk::LayerSettingEXT {
+            p_layer_name,
+            p_setting_name,
+            ty,
+            value_count: values.len() as u32,
+            p_values,
+            _marker: std::marker::PhantomData,
+        });
+    }
+
+    fn copy_str(&self, value: &CStr) -> *const i8 {
+        // Not a bottleneck, so don't bother with string interning.
+        self.bump
+            .alloc_slice_copy(value.to_bytes_with_nul())
+            .as_ptr()
+            .cast()
     }
 }

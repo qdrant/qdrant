@@ -1,5 +1,7 @@
-static SHADER_CODE: &str = "
+static SHADER_CODE: &str = r#"
 #version 450
+
+#extension GL_EXT_debug_printf : enable
 
 layout(set = 0, binding = 0) buffer Numbers {
     float data[];
@@ -12,8 +14,12 @@ layout(set = 0, binding = 1) uniform Param {
 void main() {
     uint index = gl_GlobalInvocationID.x;
     numbers.data[index] += param.param;
+
+    if (gl_GlobalInvocationID.x == 0) {
+        debugPrintfEXT("Hello from shader! Param is %f.\n", param.param);
+    }
 }
-";
+"#;
 
 // Basic GPU test.
 // It takes list of numbers and adds parameter to each number.
