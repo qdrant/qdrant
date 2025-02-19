@@ -43,7 +43,7 @@ use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
-use crate::shards::{check_shard_path, CollectionId};
+use crate::shards::{check_shard_path, shard_initialized_flag_path, shard_path, CollectionId};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -601,13 +601,45 @@ impl ShardHolder {
         };
 
         for shard_id in shard_ids_list {
+            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
+
+            // Check if shard is fully initialized on disk
+            // The initialization flag should be absent for a well-formed replica set
+            let initialized_flag = shard_initialized_flag_path(collection_path, shard_id);
+            if tokio::fs::try_exists(initialized_flag)
+                .await
+                .unwrap_or(false)
+            {
+                let shard_path = shard_path(collection_path, shard_id);
+                // Add dummy shard replica set for this shard id
+                let dummy_replica_set = ShardReplicaSet::dummy_shard_replica_set(
+                    "Not fully initialized following a snapshot restore",
+                    shard_id,
+                    shard_key.cloned(),
+                    collection_id.clone(),
+                    &shard_path,
+                    collection_config.clone(),
+                    effective_optimizers_config.clone(),
+                    shared_storage_config.clone(),
+                    payload_index_schema.clone(),
+                    channel_service.clone(),
+                    on_peer_failure.clone(),
+                    abort_shard_transfer.clone(),
+                    update_runtime.clone(),
+                    search_runtime.clone(),
+                    optimizer_cpu_budget.clone(),
+                );
+                self.add_shard(shard_id, dummy_replica_set, shard_key.cloned())
+                    .unwrap();
+                continue;
+            };
+
             // Validate that shard exists on disk
             let shard_path = check_shard_path(collection_path, shard_id)
                 .await
                 .expect("Failed to check shard path");
 
             // Load replica set
-            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
             let replica_set = ShardReplicaSet::load(
                 shard_id,
                 shard_key.cloned(),

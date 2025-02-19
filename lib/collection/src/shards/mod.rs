@@ -41,6 +41,11 @@ pub fn shard_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
     collection_path.join(format!("{shard_id}"))
 }
 
+/// Path to a shard directory
+pub fn shard_initialized_flag_path(collection_path: &Path, shard_id: ShardId) -> PathBuf {
+    collection_path.join(format!("shard_{shard_id}.initialized"))
+}
+
 /// Verify that a shard exists by loading its configuration.
 /// Returns the path to the shard if it exists.
 pub async fn check_shard_path(

@@ -367,6 +367,53 @@ impl ShardReplicaSet {
         replica_set
     }
 
+    /// Create a shard replica set with a local dummy shard
+    #[allow(clippy::too_many_arguments)]
+    pub fn dummy_shard_replica_set(
+        reason: &str,
+        shard_id: ShardId,
+        shard_key: Option<ShardKey>,
+        collection_id: CollectionId,
+        shard_path: &Path,
+        collection_config: Arc<RwLock<CollectionConfigInternal>>,
+        effective_optimizers_config: OptimizersConfig,
+        shared_storage_config: Arc<SharedStorageConfig>,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
+        channel_service: ChannelService,
+        on_peer_failure: ChangePeerFromState,
+        abort_shard_transfer: AbortShardTransfer,
+        update_runtime: Handle,
+        search_runtime: Handle,
+        optimizer_cpu_budget: CpuBudget,
+    ) -> Self {
+        let local_dummy = Shard::Dummy(DummyShard::new(reason));
+        let replica_state: SaveOnDisk<ReplicaSetState> =
+            SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
+        ShardReplicaSet {
+            local: RwLock::new(Some(local_dummy)),
+            remotes: Default::default(),
+            replica_state: Arc::new(replica_state),
+            locally_disabled_peers: Default::default(),
+            shard_path: shard_path.to_path_buf(),
+            shard_id,
+            shard_key,
+            notify_peer_failure_cb: on_peer_failure,
+            abort_shard_transfer_cb: abort_shard_transfer,
+            channel_service,
+            collection_id,
+            collection_config,
+            optimizers_config: effective_optimizers_config,
+            shared_storage_config,
+            payload_index_schema,
+            update_runtime,
+            search_runtime,
+            optimizer_cpu_budget,
+            write_ordering_lock: Default::default(),
+            clock_set: Default::default(),
+            write_rate_limiter: None,
+        }
+    }
+
     pub fn this_peer_id(&self) -> PeerId {
         self.replica_state.read().this_peer_id
     }
