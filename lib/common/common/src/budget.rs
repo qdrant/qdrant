@@ -250,11 +250,12 @@ impl ResourcePermit {
         io_permit: Option<OwnedSemaphorePermit>,
     ) -> Self {
         // Debug assert that if cpu_count is not 0, cpu_permit should be Some
-        if cfg!(debug_assertions) && cpu_count > 0 {
+        #[cfg(debug_assertions)]
+        if cpu_count > 0 {
             assert!(cpu_permit.is_some());
         }
-
-        if cfg!(debug_assertions) && io_count > 0 {
+        #[cfg(debug_assertions)]
+        if io_count > 0 {
             assert!(io_permit.is_some());
         }
 

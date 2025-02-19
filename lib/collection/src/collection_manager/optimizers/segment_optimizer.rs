@@ -476,7 +476,7 @@ pub trait SegmentOptimizer {
         //     2                       ++++++++0000000000
         //
         //
-        //  Case: 1 indexing j0b at a time, short indexation
+        //  Case: 1 indexing job at a time, short indexation
         //
         //
         //   IO limit = 1
