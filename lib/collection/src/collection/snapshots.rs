@@ -250,7 +250,8 @@ impl Collection {
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
-        self.shards_holder
+        let res = self
+            .shards_holder
             .read()
             .await
             .recover_local_shard_from(snapshot_shard_path, shard_id, cancel)
@@ -259,7 +260,7 @@ impl Collection {
         // remove shard_id initialization flag because shard is fully recovered
         tokio::fs::remove_file(&shard_flag).await?;
 
-        Ok(true)
+        Ok(res)
     }
 
     pub async fn list_shard_snapshots(

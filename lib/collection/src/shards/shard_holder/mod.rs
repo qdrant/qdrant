@@ -601,8 +601,6 @@ impl ShardHolder {
         };
 
         for shard_id in shard_ids_list {
-            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
-
             // Check if shard is fully initialized on disk
             // The initialization flag should be absent for a well-formed replica set
             let initialized_flag = shard_initialized_flag_path(collection_path, shard_id);
@@ -612,6 +610,7 @@ impl ShardHolder {
             {
                 log::error!("Shard {collection_id}:{} is not fully initialized - replacing with dummy shard", shard_id);
                 let shard_path = shard_path(collection_path, shard_id);
+                let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
                 // Add dummy shard replica set for this shard id
                 let dummy_replica_set = ShardReplicaSet::dummy_shard_replica_set(
                     "Not fully initialized following a snapshot restore",
@@ -641,6 +640,7 @@ impl ShardHolder {
                 .expect("Failed to check shard path");
 
             // Load replica set
+            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
             let replica_set = ShardReplicaSet::load(
                 shard_id,
                 shard_key.cloned(),
