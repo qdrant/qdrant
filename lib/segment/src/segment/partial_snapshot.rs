@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use common::tar_ext;
+use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::segment_manifest::{FileVersion, SegmentManifest, SegmentManifests};
@@ -65,7 +66,8 @@ impl PartialSnapshotEntry for Segment {
 
 impl Segment {
     fn segment_id(&self) -> OperationResult<&str> {
-        self.current_path
+        let id = self
+            .current_path
             .file_stem()
             .and_then(|segment_dir| segment_dir.to_str())
             .ok_or_else(|| {
@@ -73,7 +75,14 @@ impl Segment {
                     "failed to extract segment ID from segment path {}",
                     self.current_path.display(),
                 ))
-            })
+            })?;
+
+        debug_assert!(
+            Uuid::try_parse(id).is_ok(),
+            "segment ID {id} is not a valid UUID",
+        );
+
+        Ok(id)
     }
 
     fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
