@@ -11,7 +11,7 @@ use itertools::Itertools;
 use ordered_float::Float;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
+use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorStructInternal};
 use segment::types::{
     Filter, Indexes, PointIdType, ScoredPoint, SearchParams, SegmentConfig, SeqNumberType,
@@ -47,7 +47,7 @@ type SegmentSearchExecutedResult = CollectionResult<(SegmentBatchSearchResult, V
 /// Simple implementation of segment manager
 ///  - rebuild segment for memory optimization purposes
 #[derive(Default)]
-pub struct SegmentsSearcher {}
+pub struct SegmentsSearcher;
 
 impl SegmentsSearcher {
     /// Execute searches in parallel and return results in the same order as the searches were provided
@@ -105,7 +105,7 @@ impl SegmentsSearcher {
 
         // Initialize result aggregators for each batched request
         let mut result_aggregator = BatchResultAggregator::new(limits.iter().copied());
-        result_aggregator.update_point_versions(&search_result);
+        result_aggregator.update_point_versions(search_result.iter().flatten().flatten());
 
         // Therefore we need to track the lowest scored element per segment for each batch
         let mut lowest_scores_per_request: Vec<Vec<ScoreType>> = vec![
@@ -340,7 +340,12 @@ impl SegmentsSearcher {
             let (secondary_search_results_per_segment, _) =
                 Self::execute_searches(secondary_searches).await?;
 
-            result_aggregator.update_point_versions(&secondary_search_results_per_segment);
+            result_aggregator.update_point_versions(
+                secondary_search_results_per_segment
+                    .iter()
+                    .flatten()
+                    .flatten(),
+            );
 
             for ((_segment_id, batch_ids), segments_result) in searches_to_rerun
                 .into_iter()
@@ -500,6 +505,54 @@ impl SegmentsSearcher {
                 Ok(all_points)
             })
             .await?
+    }
+
+    /// Rescore results with a formula that can reference payload values.
+    ///
+    /// Aggregates rescores from the segments.
+    pub async fn rescore_with_formula(
+        segments: LockedSegmentHolder,
+        arc_ctx: Arc<FormulaContext>,
+        runtime_handle: &Handle,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<ScoredPoint>> {
+        let limit = arc_ctx.limit;
+
+        let mut futures = {
+            let segments_guard = segments.read();
+            segments_guard
+                .non_appendable_then_appendable_segments()
+                .map(|segment| {
+                    runtime_handle.spawn_blocking({
+                        let segment = segment.clone();
+                        let arc_ctx = arc_ctx.clone();
+                        let hw_counter = hw_measurement_acc.get_counter_cell();
+                        move || {
+                            segment
+                                .get()
+                                .read()
+                                .rescore_with_formula(arc_ctx, None, &hw_counter)
+                        }
+                    })
+                })
+                .collect::<FuturesUnordered<_>>()
+        };
+
+        let mut segments_results = Vec::with_capacity(futures.len());
+        while let Some(result) = futures.try_next().await? {
+            segments_results.push(result?)
+        }
+
+        // use aggregator with only one "batch"
+        let mut aggregator = BatchResultAggregator::new(std::iter::once(limit));
+        aggregator.update_point_versions(segments_results.iter().flatten());
+        aggregator.update_batch_results(0, segments_results.into_iter().flatten());
+        let top =
+            aggregator.into_topk().into_iter().next().ok_or_else(|| {
+                OperationError::service_error("expected first result of aggregator")
+            })?;
+
+        Ok(top)
     }
 }
 

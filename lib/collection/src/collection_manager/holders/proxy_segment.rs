@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use bitvec::prelude::BitVec;
+use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
@@ -14,7 +15,7 @@ use segment::common::operation_error::{OperationResult, SegmentFailedState};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
-use segment::data_types::query_context::{QueryContext, SegmentQueryContext};
+use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use segment::data_types::segment_manifest::SegmentManifest;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
@@ -447,6 +448,43 @@ impl SegmentEntry for ProxySegment {
         for (index, write_result) in write_results.iter_mut().enumerate() {
             wrapped_results[index].append(write_result)
         }
+        Ok(wrapped_results)
+    }
+
+    fn rescore_with_formula(
+        &self,
+        formula_ctx: Arc<FormulaContext>,
+        _wrapped_deleted: Option<&BitSlice>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let deleted_points = self.deleted_points.read();
+
+        // Run rescore in wrapped segment with or without deleted points slice
+        let mut wrapped_results = if deleted_points.is_empty() {
+            self.wrapped_segment.get().read().rescore_with_formula(
+                formula_ctx.clone(),
+                None,
+                hw_counter,
+            )?
+        } else {
+            let deleted_slice = self.deleted_mask.as_deref();
+            self.wrapped_segment.get().read().rescore_with_formula(
+                formula_ctx.clone(),
+                deleted_slice,
+                hw_counter,
+            )?
+        };
+
+        // Run rescore in write segment
+        let mut write_results = self.write_segment.get().read().rescore_with_formula(
+            formula_ctx.clone(),
+            None,
+            hw_counter,
+        )?;
+
+        // Just join both results, they will be deduplicated and top-k'd later
+        write_results.append(&mut wrapped_results);
+
         Ok(wrapped_results)
     }
 

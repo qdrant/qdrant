@@ -250,7 +250,7 @@ impl Distance {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Order {
     LargeBetter,
     SmallBetter,

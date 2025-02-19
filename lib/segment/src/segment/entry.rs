@@ -2,8 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::thread::{self};
 
+use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
@@ -15,7 +17,7 @@ use crate::common::{check_named_vectors, check_query_vectors, check_stopped, che
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
-use crate::data_types::query_context::{QueryContext, SegmentQueryContext};
+use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::SegmentEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
@@ -78,6 +80,33 @@ impl SegmentEntry for Segment {
                 self.process_search_result(internal_result, with_payload, with_vector, &hw_counter)
             })
             .collect()
+    }
+
+    fn rescore_with_formula(
+        &self,
+        ctx: Arc<FormulaContext>,
+        wrapped_deleted: Option<&BitSlice>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Vec<ScoredPoint>> {
+        let FormulaContext {
+            formula,
+            prefetches_results,
+            with_payload,
+            with_vector,
+            limit,
+            is_stopped,
+        } = &*ctx;
+
+        let internal_results = self.do_rescore_with_formula(
+            formula,
+            prefetches_results,
+            wrapped_deleted,
+            *limit,
+            is_stopped,
+            hw_counter,
+        )?;
+
+        self.process_search_result(internal_results, with_payload, with_vector, hw_counter)
     }
 
     fn upsert_point(
