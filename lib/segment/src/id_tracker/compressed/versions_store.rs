@@ -18,16 +18,14 @@ pub struct CompressedVersionsStore {
     upper_bytes: HashMap<u32, u32>,
 }
 
-const U32_BITS: u32 = 32;
-
 impl CompressedVersionsStore {
     fn version_from_parts(lower: u32, upper: u32) -> SeqNumberType {
-        u64::from(upper) << U32_BITS | u64::from(lower)
+        u64::from(upper) << u32::BITS | u64::from(lower)
     }
 
     fn version_to_parts(value: SeqNumberType) -> (u32, u32) {
         let lower = value as u32;
-        let upper = (value >> U32_BITS) as u32;
+        let upper = (value >> u32::BITS) as u32;
         (lower, upper)
     }
 
