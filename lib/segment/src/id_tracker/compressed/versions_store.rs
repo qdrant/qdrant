@@ -72,3 +72,44 @@ impl CompressedVersionsStore {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Range;
+
+    use proptest::prelude::*;
+    use rand::Rng;
+
+    use super::*;
+    use crate::types::SeqNumberType;
+
+    fn model_test_range() -> Range<SeqNumberType> {
+        0..SeqNumberType::max_value()
+    }
+
+    proptest! {
+        #[test]
+        fn compare_with_vec_model(
+            mut model in prop::collection::vec(model_test_range(), 0..1000)
+        ) {
+            let mut compressed = CompressedVersionsStore::from_slice(&model);
+
+            // Check get()
+            for i in 0..model.len() {
+                assert_eq!(model[i], compressed.get(i).unwrap());
+            }
+
+            // Check set()
+            let mut rng = rand::rng();
+            for i in 0..model.len() {
+                let new_value = rng.random_range(model_test_range());
+                model[i] = new_value;
+                compressed.set(i, new_value);
+                assert_eq!(model[i], compressed.get(i).unwrap());
+            }
+
+            // Check len()
+            assert_eq!(model.len(), compressed.len());
+        }
+    }
+}
