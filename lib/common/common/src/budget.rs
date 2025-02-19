@@ -357,9 +357,3 @@ impl ResourcePermit {
         }
     }
 }
-
-impl Drop for ResourcePermit {
-    fn drop(&mut self) {
-        self.release_cpu();
-    }
-}
