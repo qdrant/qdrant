@@ -336,8 +336,8 @@ mod tests {
         assert_eq!(suggested_to_optimize.len(), 1);
 
         let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         vacuum_optimizer
             .optimize(
@@ -460,8 +460,8 @@ mod tests {
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -599,7 +599,7 @@ mod tests {
             });
 
         // Run vacuum index optimizer, make sure it optimizes properly
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);

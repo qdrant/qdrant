@@ -10,9 +10,9 @@ use crate::cpu;
 /// Get IO budget to use for optimizations as number of parallel IO operations.
 pub fn get_io_budget(io_budget: usize, cpu_budget: usize) -> usize {
     if io_budget == 0 {
-        // we have to guess
-        // Assume we have 8 indexing threads per optimization task (which is default)
-        (cpu_budget / 8).max(1)
+        // By default, we will use same IO budget as CPU budget
+        // This will ensure that we will allocate one IO task ahead of one CPU task
+        cpu_budget
     } else {
         io_budget
     }

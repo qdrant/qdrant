@@ -296,7 +296,9 @@ impl UpdateHandler {
                 debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
 
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
-                let desired_io = 1; // ToDo: We need at least one IO thread for each optimization
+                // And use same amount of IO threads as CPUs
+                let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
+                let desired_io = num_rayon_threads(max_indexing_threads);
                 let Some(permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up

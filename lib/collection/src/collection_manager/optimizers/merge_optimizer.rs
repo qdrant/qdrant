@@ -239,8 +239,8 @@ mod tests {
             .collect_vec();
 
         let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         merge_optimizer
             .optimize(

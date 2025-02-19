@@ -383,8 +383,8 @@ mod tests {
         assert!(suggested_to_optimize.contains(&large_segment_id));
 
         let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         index_optimizer
             .optimize(
@@ -523,8 +523,8 @@ mod tests {
         .unwrap();
 
         let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // ------ Plain -> Mmap & Indexed payload
         let suggested_to_optimize =
@@ -543,7 +543,7 @@ mod tests {
         eprintln!("Done");
 
         // ------ Plain -> Indexed payload
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &excluded_ids);
         assert!(suggested_to_optimize.contains(&middle_segment_id));
@@ -671,7 +671,7 @@ mod tests {
         // ---- New appendable segment should be created if none left
 
         // Index even the smallest segment
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         index_optimizer.thresholds_config.indexing_threshold_kb = 20;
         let suggested_to_optimize =
             index_optimizer.check_condition(locked_holder.clone(), &Default::default());
@@ -782,7 +782,7 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
 
         // Index until all segments are indexed
         let mut numer_of_optimizations = 0;
@@ -794,7 +794,7 @@ mod tests {
             }
             log::debug!("suggested_to_optimize = {:#?}", suggested_to_optimize);
 
-            let permit = budget.try_acquire(0, 1).unwrap();
+            let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
             index_optimizer
                 .optimize(
                     locked_holder.clone(),
@@ -957,8 +957,8 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(0);
-        let budget = ResourceBudget::new(permit_cpu_count, 2);
-        let permit = budget.try_acquire(0, 1).unwrap();
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // Use indexing optimizer to build mmap
         let changed = index_optimizer

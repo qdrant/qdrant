@@ -15,7 +15,6 @@ use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
 use segment::entry::entry_point::SegmentEntry;
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::sparse_index::sparse_index_config::SparseIndexType;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -491,8 +490,10 @@ pub trait SegmentOptimizer {
         //  CPU 1                       00000
         //      2                       00000
         // At this stage workload shifts from IO to CPU, so we can release IO permit
-        let max_indexing_threads = self.hnsw_config().max_indexing_threads;
-        let desired_cpus = num_rayon_threads(max_indexing_threads);
+
+        // Use same number of threads for indexing as for IO.
+        // This ensures that IO is equally distributed between optimization jobs.
+        let desired_cpus = permit.num_io as usize;
         let indexing_permit = resource_budget
             .replace_with(permit, desired_cpus, 0, stopped)
             .map_err(|_| CollectionError::Cancelled {
