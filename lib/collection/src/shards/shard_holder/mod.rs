@@ -43,7 +43,7 @@ use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
-use crate::shards::{check_shard_path, shard_initialized_flag_path, shard_path, CollectionId};
+use crate::shards::{check_shard_path, shard_initialized_flag_path, CollectionId};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -608,28 +608,32 @@ impl ShardHolder {
                 .await
                 .unwrap_or(false)
             {
-                log::error!("Shard {collection_id}:{} is not fully initialized - replacing with dummy shard", shard_id);
-                let shard_path = shard_path(collection_path, shard_id);
+                log::error!("Shard {collection_id}:{} is not fully initialized - replacing with empty shard", shard_id);
                 let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
-                // Add dummy shard replica set for this shard id
-                let dummy_replica_set = ShardReplicaSet::dummy_shard_replica_set(
-                    "Not fully initialized following a snapshot restore",
+                // Add empty dead shard replica set for this shard id
+                let empty_replica_set = ShardReplicaSet::build(
                     shard_id,
                     shard_key.cloned(),
                     collection_id.clone(),
-                    &shard_path,
+                    this_peer_id,
+                    true,
+                    HashSet::new(), // no remotes
+                    on_peer_failure.clone(),
+                    abort_shard_transfer.clone(),
+                    collection_path,
                     collection_config.clone(),
                     effective_optimizers_config.clone(),
                     shared_storage_config.clone(),
                     payload_index_schema.clone(),
                     channel_service.clone(),
-                    on_peer_failure.clone(),
-                    abort_shard_transfer.clone(),
                     update_runtime.clone(),
                     search_runtime.clone(),
                     optimizer_cpu_budget.clone(),
-                );
-                self.add_shard(shard_id, dummy_replica_set, shard_key.cloned())
+                    Some(ReplicaState::Dead), // mark as dead
+                )
+                .await
+                .unwrap();
+                self.add_shard(shard_id, empty_replica_set, shard_key.cloned())
                     .unwrap();
                 continue;
             };
