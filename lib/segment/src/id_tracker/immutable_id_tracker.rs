@@ -739,8 +739,15 @@ pub(super) mod test {
         let id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
         assert_eq!(id_tracker.internal_id(point_to_delete), None);
 
-        // Old mappings should be the same as newly loaded one.
-        assert_eq!(old_mappings, id_tracker.mappings);
+        old_mappings
+            .iter_internal_raw()
+            .zip(id_tracker.mappings.iter_internal_raw())
+            .for_each(
+                |((old_internal, old_external), (new_internal, new_external))| {
+                    assert_eq!(old_internal, new_internal);
+                    assert_eq!(old_external, new_external);
+                },
+            );
     }
 
     /// Tests de/serializing of whole `PointMappings`.
