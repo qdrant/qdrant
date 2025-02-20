@@ -7,7 +7,7 @@ use crate::types::PointIdType;
 /// A compressed representation of `internal_to_external: Vec<PointIdType>`.
 ///
 /// The main idea is instead of `PointIdType` enum (which is 24 bytes) we use one
-/// Vec<u128> and bitmask which defines if the id is u64 or UUID.
+/// Vec<u128> and bitmask which defines if the id is u64 or UUID (which is ~16 bytes).
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct CompressedInternalToExternal {
     data: Vec<u128>,
@@ -83,6 +83,10 @@ impl CompressedInternalToExternal {
         if is_uuid {
             Some(PointIdType::Uuid(Uuid::from_u128(*data)))
         } else {
+            debug_assert!(
+                *data <= u128::from(u64::MAX),
+                "type mismatch, external ID does not fit u64",
+            );
             Some(PointIdType::NumId(*data as u64))
         }
     }
@@ -95,6 +99,10 @@ impl CompressedInternalToExternal {
                 if *is_uuid {
                     PointIdType::Uuid(Uuid::from_u128(*data))
                 } else {
+                    debug_assert!(
+                        *data <= u128::from(u64::MAX),
+                        "type mismatch, external ID does not fit u64",
+                    );
                     PointIdType::NumId(*data as u64)
                 }
             })
