@@ -42,10 +42,14 @@ pub struct CompressedPointMappings {
 
 impl CompressedPointMappings {
     pub fn new(
-        deleted: BitVec,
+        mut deleted: BitVec,
         internal_to_external: CompressedInternalToExternal,
         external_to_internal: CompressedExternalToInternal,
     ) -> Self {
+        // Resize deleted to have the same number of elements as internal_to_external
+        // Not all structures we may source this from enforce the same size
+        deleted.resize(internal_to_external.len(), false);
+
         Self {
             deleted,
             internal_to_external,
