@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::CString;
+use std::ffi::CStr;
 use std::sync::Arc;
 
 use ash::vk;
@@ -144,11 +144,7 @@ impl Instance {
         let extensions = Self::extensions_list(debug_messenger.is_some());
         // Check presence of all required extensions.
         Self::check_extensions_list(&entry, &extensions)?;
-        let extensions_cstr: Vec<CString> = extensions
-            .iter()
-            .filter_map(|s| CString::new(s.clone().into_bytes()).ok())
-            .collect();
-        let extension_names_raw: Vec<*const i8> = extensions_cstr
+        let extension_names_raw: Vec<*const i8> = extensions
             .iter()
             .map(|raw_name| raw_name.as_ptr())
             .collect();
@@ -157,14 +153,7 @@ impl Instance {
         let layers = Self::layers_list(debug_messenger.is_some(), dump_api);
         // Check presence of all required layers.
         Self::check_layers_list(&entry, &layers)?;
-        let layers_cstr: Vec<CString> = layers
-            .iter()
-            .filter_map(|s| CString::new(s.clone().into_bytes()).ok())
-            .collect();
-        let layers_raw: Vec<*const i8> = layers_cstr
-            .iter()
-            .map(|raw_name| raw_name.as_ptr())
-            .collect();
+        let layers_raw: Vec<*const i8> = layers.iter().map(|raw_name| raw_name.as_ptr()).collect();
 
         // If we provide debug messenger, we need to create a debug messenger info.
         let mut debug_utils_create_info = debug_messenger.map(Self::debug_messenger_create_info);
@@ -365,60 +354,54 @@ impl Instance {
         Ok(result.as_binary_u8().to_owned())
     }
 
-    fn layers_list(validation: bool, dump_api: bool) -> Vec<String> {
+    fn layers_list(validation: bool, dump_api: bool) -> Vec<&'static CStr> {
         let mut result = Vec::new();
         if validation {
-            result.push("VK_LAYER_KHRONOS_validation".to_owned());
+            result.push(c"VK_LAYER_KHRONOS_validation");
         }
         if dump_api {
-            result.push("VK_LAYER_LUNARG_api_dump".to_owned());
+            result.push(c"VK_LAYER_LUNARG_api_dump");
         }
         result
     }
 
-    fn extensions_list(validation: bool) -> Vec<String> {
+    fn extensions_list(validation: bool) -> Vec<&'static CStr> {
         let mut extensions_list = Vec::new();
         if validation {
-            if let Ok(ext) = ash::ext::debug_utils::NAME.to_str() {
-                extensions_list.push(ext.to_string());
-            }
+            extensions_list.push(ash::ext::debug_utils::NAME);
         }
 
         #[cfg(target_os = "macos")]
         {
-            if let Ok(ext) = ash::khr::portability_enumeration::NAME.to_str() {
-                extensions_list.push(ext.to_string());
-            }
-            if let Ok(ext) = ash::khr::get_physical_device_properties2::NAME.to_str() {
-                extensions_list.push(ext.to_string());
-            }
+            extensions_list.push(ash::khr::portability_enumeration::NAME);
+            extensions_list.push(ash::khr::get_physical_device_properties2::NAME);
         }
         extensions_list
     }
 
-    fn check_extensions_list(entry: &ash::Entry, extensions: &[String]) -> GpuResult<()> {
+    fn check_extensions_list(entry: &ash::Entry, extensions: &[&CStr]) -> GpuResult<()> {
         let extension_properties = unsafe { entry.enumerate_instance_extension_properties(None)? };
         for extension in extensions {
-            let extension_found = extension_properties.iter().any(|ep| {
-                let name = unsafe { ::std::ffi::CStr::from_ptr(ep.extension_name.as_ptr()) };
-                name.to_str().unwrap_or("") == extension
-            });
+            let extension_found = extension_properties
+                .iter()
+                .any(|ep| ep.extension_name_as_c_str() == Ok(extension));
             if !extension_found {
-                return Err(GpuError::Other(format!("Extension {extension} not found")));
+                return Err(GpuError::Other(format!(
+                    "Extension {extension:?} not found"
+                )));
             }
         }
         Ok(())
     }
 
-    fn check_layers_list(entry: &ash::Entry, layers: &[String]) -> GpuResult<()> {
+    fn check_layers_list(entry: &ash::Entry, layers: &[&CStr]) -> GpuResult<()> {
         let layer_properties = unsafe { entry.enumerate_instance_layer_properties()? };
         for layer in layers {
-            let layer_found = layer_properties.iter().any(|lp| {
-                let name = unsafe { ::std::ffi::CStr::from_ptr(lp.layer_name.as_ptr()) };
-                name.to_str().unwrap_or("") == layer
-            });
+            let layer_found = layer_properties
+                .iter()
+                .any(|lp| lp.layer_name_as_c_str() == Ok(layer));
             if !layer_found {
-                return Err(GpuError::Other(format!("Layer {layer} not found")));
+                return Err(GpuError::Other(format!("Layer {layer:?} not found")));
             }
         }
         Ok(())
