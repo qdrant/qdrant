@@ -19,8 +19,12 @@ void main() {
 // It takes list of numbers and adds parameter to each number.
 #[test]
 fn basic_gpu_test() {
-    // First step: initialize GPU device.
-    let device = crate::GPU_TEST_DEVICE.clone();
+    // Get Vulkan API instance.
+    let instance = crate::GPU_TEST_INSTANCE.clone();
+    // Choose any GPU hardware to use.
+    let physical_device = &instance.physical_devices()[0];
+    // Create GPU device.
+    let device = crate::Device::new(instance.clone(), physical_device).unwrap();
 
     // Create gpu context that records command to GPU and runs them.
     let mut context = crate::Context::new(device.clone()).unwrap();
