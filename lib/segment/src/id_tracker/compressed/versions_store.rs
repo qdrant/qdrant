@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use ahash::AHashMap;
 
 use crate::types::SeqNumberType;
 
@@ -15,7 +15,7 @@ use crate::types::SeqNumberType;
 #[derive(Debug)]
 pub struct CompressedVersions {
     lower_bytes: Vec<u32>,
-    upper_bytes: HashMap<u32, u32>,
+    upper_bytes: AHashMap<u32, u32>,
 }
 
 impl CompressedVersions {
@@ -58,7 +58,7 @@ impl CompressedVersions {
 
     pub fn from_slice(slice: &[SeqNumberType]) -> Self {
         let mut lower_bytes = Vec::with_capacity(slice.len());
-        let mut upper_bytes = HashMap::new();
+        let mut upper_bytes = AHashMap::new();
 
         for (index, &value) in slice.iter().enumerate() {
             let (lower, upper) = Self::version_to_parts(value);
