@@ -4,8 +4,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
@@ -110,7 +110,7 @@ fn hnsw_quantized_search_test(
     };
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
@@ -412,7 +412,7 @@ fn test_build_hnsw_using_quantization() {
     });
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let mut builder = SegmentBuilder::new(dir.path(), temp_dir.path(), &config).unwrap();
 

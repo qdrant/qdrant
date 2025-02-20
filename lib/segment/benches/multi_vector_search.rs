@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
@@ -76,7 +76,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
         payload_m: None,
     };
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;
     let hnsw_index = HNSWIndex::build(

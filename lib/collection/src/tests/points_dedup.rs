@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use api::rest::OrderByInterface;
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
 use rand::{rng, Rng};
 use segment::data_types::vectors::NamedVectorStruct;
 use segment::types::{
@@ -87,7 +87,7 @@ async fn fixture() -> Collection {
         dummy_abort_shard_transfer(),
         None,
         None,
-        CpuBudget::default(),
+        ResourceBudget::default(),
         None,
     )
     .await

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
-use common::cpu::CpuBudget;
+use common::budget::ResourceBudget;
 use segment::types::Distance;
 use tempfile::Builder;
 
@@ -86,7 +86,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_abort_shard_transfer(),
         None,
         None,
-        CpuBudget::default(),
+        ResourceBudget::default(),
         None,
     )
     .await
@@ -141,7 +141,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         dummy_abort_shard_transfer(),
         None,
         None,
-        CpuBudget::default(),
+        ResourceBudget::default(),
         None,
     )
     .await;

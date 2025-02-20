@@ -5,8 +5,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
@@ -247,7 +247,7 @@ impl TestSegments {
         .unwrap();
 
         builder.update(&[plain_segment], &stopped).unwrap();
-        let permit = CpuPermit::dummy(1);
+        let permit = ResourcePermit::dummy(1);
 
         let mut segment = builder.build(permit, &stopped).unwrap();
         let opnum = segment.version() + 1;

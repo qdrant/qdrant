@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;
@@ -108,7 +108,7 @@ pub struct ShardReplicaSet {
     payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     update_runtime: Handle,
     search_runtime: Handle,
-    optimizer_cpu_budget: CpuBudget,
+    optimizer_resource_budget: ResourceBudget,
     /// Lock to serialized write operations on the replicaset when a write ordering is used.
     write_ordering_lock: Mutex<()>,
     /// Local clock set, used to tag new operations on this shard.
@@ -142,7 +142,7 @@ impl ShardReplicaSet {
         channel_service: ChannelService,
         update_runtime: Handle,
         search_runtime: Handle,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         init_state: Option<ReplicaState>,
     ) -> CollectionResult<Self> {
         let shard_path = super::create_shard_dir(collection_path, shard_id).await?;
@@ -156,7 +156,7 @@ impl ShardReplicaSet {
                 payload_index_schema.clone(),
                 update_runtime.clone(),
                 search_runtime.clone(),
-                optimizer_cpu_budget.clone(),
+                optimizer_resource_budget.clone(),
                 effective_optimizers_config.clone(),
             )
             .await?;
@@ -219,7 +219,7 @@ impl ShardReplicaSet {
             payload_index_schema,
             update_runtime,
             search_runtime,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
@@ -247,7 +247,7 @@ impl ShardReplicaSet {
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
     ) -> Self {
         let replica_state: SaveOnDisk<ReplicaSetState> =
             SaveOnDisk::load_or_init_default(shard_path.join(REPLICA_STATE_FILE)).unwrap();
@@ -290,7 +290,7 @@ impl ShardReplicaSet {
                     payload_index_schema.clone(),
                     update_runtime.clone(),
                     search_runtime.clone(),
-                    optimizer_cpu_budget.clone(),
+                    optimizer_resource_budget.clone(),
                 )
                 .await;
 
@@ -350,7 +350,7 @@ impl ShardReplicaSet {
             payload_index_schema,
             update_runtime,
             search_runtime,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
@@ -530,7 +530,7 @@ impl ShardReplicaSet {
             self.payload_index_schema.clone(),
             self.update_runtime.clone(),
             self.search_runtime.clone(),
-            self.optimizer_cpu_budget.clone(),
+            self.optimizer_resource_budget.clone(),
             self.optimizers_config.clone(),
         )
         .await;
@@ -716,7 +716,7 @@ impl ShardReplicaSet {
                     self.payload_index_schema.clone(),
                     self.update_runtime.clone(),
                     self.search_runtime.clone(),
-                    self.optimizer_cpu_budget.clone(),
+                    self.optimizer_resource_budget.clone(),
                     self.optimizers_config.clone(),
                 )
                 .await?;

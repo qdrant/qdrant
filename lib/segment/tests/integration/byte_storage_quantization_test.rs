@@ -3,7 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::CpuPermit;
+use common::budget::ResourcePermit;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -345,7 +345,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     };
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
     let hnsw_index_byte = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir_byte.path(),

@@ -4,8 +4,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
@@ -398,7 +398,8 @@ pub trait SegmentOptimizer {
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: proxy_segment::LockedRmSet,
         proxy_changed_indexes: proxy_segment::LockedIndexChanges,
-        permit: CpuPermit,
+        permit: ResourcePermit, // IO resources for copying data
+        resource_budget: ResourceBudget,
         stopped: &AtomicBool,
     ) -> CollectionResult<Segment> {
         let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
@@ -454,7 +455,52 @@ pub trait SegmentOptimizer {
             }
         }
 
-        let mut optimized_segment: Segment = segment_builder.build(permit, stopped)?;
+        // 000 - acquired
+        // +++ - blocked on waiting
+        //
+        // Case: 1 indexation job at a time, long indexing
+        //
+        //  IO limit = 1
+        // CPU limit = 2                         Next optimization
+        //                                       │            loop
+        //                                       │
+        //                                       ▼
+        //  IO 0  00000000000000                  000000000
+        // CPU 1              00000000000000000
+        //     2              00000000000000000
+        //
+        //
+        //  IO 0  ++++++++++++++00000000000000000
+        // CPU 1                       ++++++++0000000000
+        //     2                       ++++++++0000000000
+        //
+        //
+        //  Case: 1 indexing job at a time, short indexation
+        //
+        //
+        //   IO limit = 1
+        //  CPU limit = 2
+        //
+        //
+        //   IO 0  000000000000   ++++++++0000000000
+        //  CPU 1            00000
+        //      2            00000
+        //
+        //   IO 0  ++++++++++++00000000000   +++++++
+        //  CPU 1                       00000
+        //      2                       00000
+        // At this stage workload shifts from IO to CPU, so we can release IO permit
+
+        // Use same number of threads for indexing as for IO.
+        // This ensures that IO is equally distributed between optimization jobs.
+        let desired_cpus = permit.num_io as usize;
+        let indexing_permit = resource_budget
+            .replace_with(permit, desired_cpus, 0, stopped)
+            .map_err(|_| CollectionError::Cancelled {
+                description: "optimization cancelled while waiting for budget".to_string(),
+            })?;
+
+        let mut optimized_segment: Segment = segment_builder.build(indexing_permit, stopped)?;
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
@@ -515,7 +561,8 @@ pub trait SegmentOptimizer {
         &self,
         segments: LockedSegmentHolder,
         ids: Vec<SegmentId>,
-        permit: CpuPermit,
+        permit: ResourcePermit,
+        resource_budget: ResourceBudget,
         stopped: &AtomicBool,
     ) -> CollectionResult<usize> {
         check_process_stopped(stopped)?;
@@ -606,6 +653,7 @@ pub trait SegmentOptimizer {
             Arc::clone(&proxy_deleted_points),
             Arc::clone(&proxy_index_changes),
             permit,
+            resource_budget,
             stopped,
         ) {
             Ok(segment) => segment,

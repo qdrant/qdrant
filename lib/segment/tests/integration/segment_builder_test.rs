@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
@@ -71,7 +71,7 @@ fn test_building_new_segment() {
     // Now we finalize building
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
 
@@ -146,7 +146,7 @@ fn test_building_new_defragmented_segment() {
     // Now we finalize building
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
 
@@ -270,7 +270,7 @@ fn test_building_new_sparse_segment() {
     // Now we finalize building
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
 
@@ -336,7 +336,7 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
     }
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let res = builder.build(permit, &stopped);
 
@@ -396,7 +396,7 @@ fn test_building_new_segment_bug_5614() {
     builder.update(&[&segment1, &segment2], &stopped).unwrap();
 
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
 
@@ -534,7 +534,7 @@ fn test_building_new_segment_with_mmap_payload() {
 
     // Now we finalize building
     let permit_cpu_count = num_rayon_threads(0);
-    let permit = CpuPermit::dummy(permit_cpu_count as u32);
+    let permit = ResourcePermit::dummy(permit_cpu_count as u32);
 
     let new_segment: Segment = builder.build(permit, &stopped).unwrap();
     assert_eq!(

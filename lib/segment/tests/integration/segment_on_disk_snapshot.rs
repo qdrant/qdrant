@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::sync::atomic::AtomicBool;
 
-use common::cpu::CpuPermit;
+use common::budget::ResourcePermit;
 use common::tar_ext;
 use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
@@ -132,7 +132,10 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     .unwrap();
     segment_builder.update(&[&segment], &false.into()).unwrap();
     let segment = segment_builder
-        .build(CpuPermit::dummy(num_rayon_threads(0) as u32), &false.into())
+        .build(
+            ResourcePermit::dummy(num_rayon_threads(0) as u32),
+            &false.into(),
+        )
         .unwrap();
 
     let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();

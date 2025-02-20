@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::cpu::CpuBudget;
+use common::budget::ResourceBudget;
 use common::tar_ext::BuilderExt;
 use futures::{stream, Future, StreamExt, TryStreamExt as _};
 use itertools::Itertools;
@@ -573,7 +573,7 @@ impl ShardHolder {
         this_peer_id: PeerId,
         update_runtime: Handle,
         search_runtime: Handle,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
     ) {
         let shard_number = collection_config.read().await.params.shard_number.get();
 
@@ -623,7 +623,7 @@ impl ShardHolder {
                 this_peer_id,
                 update_runtime.clone(),
                 search_runtime.clone(),
-                optimizer_cpu_budget.clone(),
+                optimizer_resource_budget.clone(),
             )
             .await;
 

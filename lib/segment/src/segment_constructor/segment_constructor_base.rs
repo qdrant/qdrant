@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
-use common::cpu::CpuPermit;
+use common::budget::ResourcePermit;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
@@ -373,7 +373,7 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
 }
 
 pub struct VectorIndexBuildArgs<'a> {
-    pub permit: Arc<CpuPermit>,
+    pub permit: Arc<ResourcePermit>,
     /// Vector indices from other segments, used to speed up index building.
     /// May or may not contain the same vectors.
     pub old_indices: &'a [Arc<AtomicRefCell<VectorIndexEnum>>],

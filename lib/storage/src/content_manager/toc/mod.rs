@@ -27,8 +27,9 @@ use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{replica_set, CollectionId};
 use collection::telemetry::CollectionTelemetry;
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
-use common::cpu::{get_num_cpus, CpuBudget};
+use common::cpu::get_num_cpus;
 use common::types::TelemetryDetail;
 use dashmap::DashMap;
 use tokio::runtime::Runtime;
@@ -61,7 +62,7 @@ pub struct TableOfContent {
     general_runtime: Runtime,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
-    optimizer_cpu_budget: CpuBudget,
+    optimizer_resource_budget: ResourceBudget,
     alias_persistence: RwLock<AliasPersistence>,
     pub this_peer_id: PeerId,
     channel_service: ChannelService,
@@ -92,7 +93,7 @@ impl TableOfContent {
         search_runtime: Runtime,
         update_runtime: Runtime,
         general_runtime: Runtime,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
@@ -156,7 +157,7 @@ impl TableOfContent {
                 ),
                 Some(search_runtime.handle().clone()),
                 Some(update_runtime.handle().clone()),
-                optimizer_cpu_budget.clone(),
+                optimizer_resource_budget.clone(),
                 storage_config.optimizers_overwrite.clone(),
             ));
 
@@ -189,7 +190,7 @@ impl TableOfContent {
             search_runtime,
             update_runtime,
             general_runtime,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             alias_persistence: RwLock::new(alias_persistence),
             this_peer_id,
             channel_service,

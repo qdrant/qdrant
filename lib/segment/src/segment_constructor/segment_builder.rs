@@ -9,8 +9,8 @@ use std::sync::Arc;
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use common::small_uint::U24;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
@@ -441,7 +441,7 @@ impl SegmentBuilder {
 
     pub fn build(
         self,
-        mut permit: CpuPermit,
+        mut permit: ResourcePermit,
         stopped: &AtomicBool,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
@@ -553,7 +553,7 @@ impl SegmentBuilder {
             // If GPU is enabled, release all CPU cores except one.
             if let Some(_gpu_device) = &gpu_device {
                 if permit.num_cpus > 1 {
-                    permit.release_count(permit.num_cpus - 1);
+                    permit.release_cpu_count(permit.num_cpus - 1);
                 }
             }
 
@@ -637,7 +637,7 @@ impl SegmentBuilder {
         segment_config: &SegmentConfig,
         vector_storages: &HashMap<VectorNameBuf, VectorData>,
         temp_path: &Path,
-        permit: &CpuPermit,
+        permit: &ResourcePermit,
         stopped: &AtomicBool,
     ) -> OperationResult<HashMap<VectorNameBuf, QuantizedVectors>> {
         let config = segment_config.clone();

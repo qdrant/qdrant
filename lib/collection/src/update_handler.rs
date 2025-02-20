@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuBudget;
 use common::panic;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
@@ -93,7 +93,7 @@ pub struct UpdateHandler {
     total_optimized_points: Arc<AtomicUsize>,
     /// Global CPU budget in number of cores for all optimization tasks.
     /// Assigns CPU permits to tasks to limit overall resource utilization.
-    optimizer_cpu_budget: CpuBudget,
+    optimizer_resource_budget: ResourceBudget,
     /// How frequent can we flush data
     /// This parameter depends on the optimizer config and should be updated accordingly.
     pub flush_interval_sec: u64,
@@ -133,7 +133,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         runtime_handle: Handle,
         segments: LockedSegmentHolder,
         wal: LockedWal,
@@ -151,7 +151,7 @@ impl UpdateHandler {
             optimizer_worker: None,
             optimizers_log,
             total_optimized_points,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             flush_worker: None,
             flush_stop: None,
             runtime_handle,
@@ -177,7 +177,7 @@ impl UpdateHandler {
             self.optimization_handles.clone(),
             self.optimizers_log.clone(),
             self.total_optimized_points.clone(),
-            self.optimizer_cpu_budget.clone(),
+            self.optimizer_resource_budget.clone(),
             self.max_optimization_threads,
             self.has_triggered_optimizers.clone(),
             self.payload_index_schema.clone(),
@@ -268,7 +268,7 @@ impl UpdateHandler {
         optimizers: Arc<Vec<Arc<Optimizer>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
-        optimizer_cpu_budget: &CpuBudget,
+        optimizer_resource_budget: &ResourceBudget,
         segments: LockedSegmentHolder,
         callback: F,
         limit: Option<usize>,
@@ -296,14 +296,15 @@ impl UpdateHandler {
                 debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
 
                 // Determine how many CPUs we prefer for optimization task, acquire permit for it
+                // And use same amount of IO threads as CPUs
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
-                let desired_cpus = num_rayon_threads(max_indexing_threads);
-                let Some(permit) = optimizer_cpu_budget.try_acquire(desired_cpus) else {
+                let desired_io = num_rayon_threads(max_indexing_threads);
+                let Some(permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
                     // If there is no CPU budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
                     log::trace!(
-                        "No available CPU permit for {} optimizer, postponing",
+                        "No available IO permit for {} optimizer, postponing",
                         optimizer.name(),
                     );
                     if handles.is_empty() {
@@ -312,8 +313,8 @@ impl UpdateHandler {
                     break 'outer;
                 };
                 log::trace!(
-                    "Acquired {} CPU permit for {} optimizer",
-                    permit.num_cpus,
+                    "Acquired {} IO permit for {} optimizer",
+                    permit.num_io,
                     optimizer.name(),
                 );
 
@@ -328,6 +329,7 @@ impl UpdateHandler {
                 let handle = spawn_stoppable(
                     // Stoppable task
                     {
+                        let resource_budget = optimizer_resource_budget.clone();
                         let segments = segments.clone();
                         move |stopped| {
                             // Track optimizer status
@@ -340,6 +342,7 @@ impl UpdateHandler {
                                 segments.clone(),
                                 nsi,
                                 permit,
+                                resource_budget,
                                 stopped,
                             ) {
                                 // Perform some actions when optimization if finished
@@ -472,7 +475,7 @@ impl UpdateHandler {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
-        optimizer_cpu_budget: &CpuBudget,
+        optimizer_resource_budget: &ResourceBudget,
         sender: Sender<OptimizerSignal>,
         limit: usize,
     ) {
@@ -480,7 +483,7 @@ impl UpdateHandler {
             optimizers.clone(),
             optimizers_log,
             total_optimized_points,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             segments.clone(),
             move |_optimization_result| {
                 // After optimization is finished, we still need to check if there are
@@ -538,7 +541,7 @@ impl UpdateHandler {
         optimization_handles: Arc<TokioMutex<Vec<StoppableTaskHandle<bool>>>>,
         optimizers_log: Arc<Mutex<TrackerLog>>,
         total_optimized_points: Arc<AtomicUsize>,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         max_handles: Option<usize>,
         has_triggered_optimizers: Arc<AtomicBool>,
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
@@ -550,7 +553,7 @@ impl UpdateHandler {
             .unwrap_or_default();
 
         // Asynchronous task to trigger optimizers once CPU budget is available again
-        let mut cpu_available_trigger: Option<JoinHandle<()>> = None;
+        let mut resource_available_trigger: Option<JoinHandle<()>> = None;
 
         loop {
             let result = timeout(OPTIMIZER_CLEANUP_INTERVAL, receiver.recv()).await;
@@ -614,18 +617,20 @@ impl UpdateHandler {
                 continue;
             }
 
-            // Continue if we have enough CPU budget available to start an optimization
-            // Otherwise skip now and start a task to trigger the optimizer again once CPU
+            // Continue if we have enough resource budget available to start an optimization
+            // Otherwise skip now and start a task to trigger the optimizer again once resource
             // budget becomes available
-            let desired_cpus = num_rayon_threads(max_indexing_threads);
-            if !optimizer_cpu_budget.has_budget(desired_cpus) {
-                let trigger_active = cpu_available_trigger
+            let desired_cpus = 0;
+            let desired_io = num_rayon_threads(max_indexing_threads);
+            if !optimizer_resource_budget.has_budget(desired_cpus, desired_io) {
+                let trigger_active = resource_available_trigger
                     .as_ref()
                     .is_some_and(|t| !t.is_finished());
                 if !trigger_active {
-                    cpu_available_trigger.replace(trigger_optimizers_on_cpu_budget(
-                        optimizer_cpu_budget.clone(),
+                    resource_available_trigger.replace(trigger_optimizers_on_resource_budget(
+                        optimizer_resource_budget.clone(),
                         desired_cpus,
+                        desired_io,
                         sender.clone(),
                     ));
                 }
@@ -649,7 +654,7 @@ impl UpdateHandler {
                 optimization_handles.clone(),
                 optimizers_log.clone(),
                 total_optimized_points.clone(),
-                &optimizer_cpu_budget,
+                &optimizer_resource_budget,
                 sender.clone(),
                 limit,
             )
@@ -815,15 +820,16 @@ impl UpdateHandler {
 }
 
 /// Trigger optimizers when CPU budget is available
-fn trigger_optimizers_on_cpu_budget(
-    optimizer_cpu_budget: CpuBudget,
+fn trigger_optimizers_on_resource_budget(
+    optimizer_resource_budget: ResourceBudget,
     desired_cpus: usize,
+    desired_io: usize,
     sender: Sender<OptimizerSignal>,
 ) -> JoinHandle<()> {
     task::spawn(async move {
         log::trace!("Skipping optimization checks, waiting for CPU budget to be available");
-        optimizer_cpu_budget
-            .notify_on_budget_available(desired_cpus)
+        optimizer_resource_budget
+            .notify_on_budget_available(desired_cpus, desired_io)
             .await;
         log::trace!("Continue optimization checks, new CPU budget available");
 
