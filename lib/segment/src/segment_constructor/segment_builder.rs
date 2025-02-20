@@ -26,6 +26,7 @@ use super::{
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::entry::entry_point::SegmentEntry;
+use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::{for_each_unique_point, IdTracker, IdTrackerEnum};
@@ -465,8 +466,9 @@ impl SegmentBuilder {
             let id_tracker = match id_tracker {
                 IdTrackerEnum::InMemoryIdTracker(in_memory_id_tracker) => {
                     let (versions, mappings) = in_memory_id_tracker.into_internal();
+                    let compressed_mapping = CompressedPointMappings::from_mappings(mappings);
                     let immutable_id_tracker =
-                        ImmutableIdTracker::new(temp_dir.path(), &versions, mappings)?;
+                        ImmutableIdTracker::new(temp_dir.path(), &versions, compressed_mapping)?;
                     IdTrackerEnum::ImmutableIdTracker(immutable_id_tracker)
                 }
                 IdTrackerEnum::MutableIdTracker(_) => id_tracker,

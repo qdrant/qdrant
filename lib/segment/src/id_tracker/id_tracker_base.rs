@@ -171,6 +171,7 @@ pub trait IdTracker: fmt::Debug {
 pub type IdTrackerSS = dyn IdTracker + Sync + Send;
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum IdTrackerEnum {
     MutableIdTracker(SimpleIdTracker),
     ImmutableIdTracker(ImmutableIdTracker),
