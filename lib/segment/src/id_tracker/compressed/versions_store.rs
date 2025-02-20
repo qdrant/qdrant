@@ -36,6 +36,11 @@ impl CompressedVersions {
         })
     }
 
+    /// Set the point version at the given internal index
+    ///
+    /// # Panics
+    ///
+    /// Panics if `index` is out of bounds. The internal structure will not grow.
     pub fn set(&mut self, index: usize, value: SeqNumberType) {
         let (lower, upper) = Self::version_to_parts(value);
 
@@ -73,7 +78,7 @@ impl CompressedVersions {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Range;
+    use std::ops::RangeInclusive;
 
     use proptest::prelude::*;
     use rand::Rng;
@@ -81,8 +86,8 @@ mod tests {
     use super::*;
     use crate::types::SeqNumberType;
 
-    fn model_test_range() -> Range<SeqNumberType> {
-        0..SeqNumberType::MAX
+    const fn model_test_range() -> RangeInclusive<SeqNumberType> {
+        0..=SeqNumberType::MAX
     }
 
     proptest! {
