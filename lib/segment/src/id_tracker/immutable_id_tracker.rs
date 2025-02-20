@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
@@ -17,9 +16,12 @@ use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUp
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
+use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
+use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::point_mappings::{FileEndianess, PointMappings};
+use crate::id_tracker::point_mappings::FileEndianess;
 use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
@@ -68,7 +70,7 @@ pub struct ImmutableIdTracker {
     internal_to_version: CompressedVersions,
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
 
-    mappings: PointMappings,
+    mappings: CompressedPointMappings,
 }
 
 impl ImmutableIdTracker {
@@ -77,18 +79,18 @@ impl ImmutableIdTracker {
         path: &Path,
     ) -> OperationResult<Self> {
         let (internal_to_version, mappings) = in_memory_tracker.into_internal();
-
-        let id_tracker = Self::new(path, &internal_to_version, mappings)?;
+        let compressed_mappings = CompressedPointMappings::from_mappings(mappings);
+        let id_tracker = Self::new(path, &internal_to_version, compressed_mappings)?;
 
         Ok(id_tracker)
     }
 
-    /// Loads a `PointMappings` from the given reader. Applies an optional filter of deleted items
+    /// Loads a `CompressedPointMappings` from the given reader. Applies an optional filter of deleted items
     /// to prevent allocating unneeded data.
     fn load_mapping<R: Read>(
         mut reader: R,
         deleted: Option<BitVec>,
-    ) -> OperationResult<PointMappings> {
+    ) -> OperationResult<CompressedPointMappings> {
         // Deserialize the header
         let len = reader.read_u64::<FileEndianess>()? as usize;
 
@@ -96,9 +98,9 @@ impl ImmutableIdTracker {
 
         deleted.truncate(len);
 
-        let mut internal_to_external = Vec::with_capacity(len);
-        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = BTreeMap::new();
-        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = BTreeMap::new();
+        let mut internal_to_external = CompressedInternalToExternal::with_capacity(len);
+        let mut external_to_internal_num: Vec<(u64, PointOffsetType)> = Vec::new();
+        let mut external_to_internal_uuid: Vec<(Uuid, PointOffsetType)> = Vec::new();
 
         // Deserialize the list entries
         for i in 0..len {
@@ -110,7 +112,7 @@ impl ImmutableIdTracker {
                 internal_to_external.resize(internal_id as usize + 1, PointIdType::NumId(0));
             }
 
-            internal_to_external[internal_id as usize] = external_id;
+            internal_to_external.set(internal_id, external_id);
 
             let point_deleted = deleted.get(i).as_deref().copied().unwrap_or(false);
 
@@ -120,25 +122,29 @@ impl ImmutableIdTracker {
 
             match external_id {
                 ExtendedPointId::NumId(num) => {
-                    external_to_internal_num.insert(num, internal_id);
+                    external_to_internal_num.push((num, internal_id));
                 }
                 ExtendedPointId::Uuid(uuid) => {
-                    external_to_internal_uuid.insert(uuid, internal_id);
+                    external_to_internal_uuid.push((uuid, internal_id));
                 }
             }
         }
 
-        // Check that the file has ben fully read.
+        // Check that the file has been fully read.
         #[cfg(debug_assertions)] // Only for dev builds
         {
             debug_assert_eq!(reader.bytes().map(Result::unwrap).count(), 0,);
         }
 
-        Ok(PointMappings::new(
-            deleted,
-            internal_to_external,
+        let external_to_internal = CompressedExternalToInternal::from_vectors(
             external_to_internal_num,
             external_to_internal_uuid,
+        );
+
+        Ok(CompressedPointMappings::new(
+            deleted,
+            internal_to_external,
+            external_to_internal,
         ))
     }
 
@@ -186,7 +192,10 @@ impl ImmutableIdTracker {
     /// +-----------------+-----------------------+------------------+
     /// A single entry is thus either 1+8+4=13 or 1+16+4=21 bytes in size depending
     /// on the PointIdType.
-    fn store_mapping<W: Write>(mappings: &PointMappings, mut writer: W) -> OperationResult<()> {
+    fn store_mapping<W: Write>(
+        mappings: &CompressedPointMappings,
+        mut writer: W,
+    ) -> OperationResult<()> {
         let number_of_entries = mappings.total_point_count();
 
         // Serialize the header (=length).
@@ -263,7 +272,7 @@ impl ImmutableIdTracker {
     pub fn new(
         path: &Path,
         internal_to_version: &[SeqNumberType],
-        mappings: PointMappings,
+        mappings: CompressedPointMappings,
     ) -> OperationResult<Self> {
         // Create mmap file for deleted bitvec
         let deleted_filepath = Self::deleted_file_path(path);
@@ -730,8 +739,15 @@ pub(super) mod test {
         let id_tracker = ImmutableIdTracker::open(dir.path()).unwrap();
         assert_eq!(id_tracker.internal_id(point_to_delete), None);
 
-        // Old mappings should be the same as newly loaded one.
-        assert_eq!(old_mappings, id_tracker.mappings);
+        old_mappings
+            .iter_internal_raw()
+            .zip(id_tracker.mappings.iter_internal_raw())
+            .for_each(
+                |((old_internal, old_external), (new_internal, new_external))| {
+                    assert_eq!(old_internal, new_internal);
+                    assert_eq!(old_external, new_external);
+                },
+            );
     }
 
     /// Tests de/serializing of whole `PointMappings`.
@@ -748,7 +764,7 @@ pub(super) mod test {
 
             let size = 2usize.pow(size_exp);
 
-            let mappings = PointMappings::random(&mut rng, size as u32);
+            let mappings = CompressedPointMappings::random(&mut rng, size as u32);
 
             ImmutableIdTracker::store_mapping(&mappings, &mut buf).unwrap();
 
@@ -767,7 +783,7 @@ pub(super) mod test {
     #[test]
     fn test_point_mappings_de_serialization_empty() {
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
-        let mappings = PointMappings::random(&mut rng, 0);
+        let mappings = CompressedPointMappings::random(&mut rng, 0);
 
         let mut buf = vec![];
 
@@ -789,7 +805,7 @@ pub(super) mod test {
 
         const SIZE: usize = 400_000;
 
-        let mappings = PointMappings::random(&mut rng, SIZE as u32);
+        let mappings = CompressedPointMappings::random(&mut rng, SIZE as u32);
 
         for i in 0..SIZE {
             let mut buf = vec![];

@@ -1,5 +1,6 @@
 #[cfg(test)]
 use std::collections::btree_map::Entry;
+#[cfg(test)]
 use std::collections::BTreeMap;
 use std::iter;
 
@@ -16,61 +17,67 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
 #[cfg(test)]
 use rand::Rng as _;
+#[cfg(test)]
 use uuid::Uuid;
 
+use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
+use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::PointIdType;
 
 /// Used endianness for storing PointMapping-files.
 pub type FileEndianess = LittleEndian;
 
 #[derive(Clone, PartialEq, Default, Debug)]
-pub struct PointMappings {
+pub struct CompressedPointMappings {
     // `deleted` specifies which points of internal_to_external was deleted.
     // It is possible that `deleted` can be longer or shorter than `internal_to_external`.
     // - if `deleted` is longer, then extra bits should be set to `false` and ignored.
     deleted: BitVec,
-    internal_to_external: Vec<PointIdType>,
+    internal_to_external: CompressedInternalToExternal,
 
     // Having two separate maps allows us iterating only over one type at a time without having to filter.
-    external_to_internal_num: BTreeMap<u64, PointOffsetType>,
-    external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+    external_to_internal: CompressedExternalToInternal,
 }
 
-impl PointMappings {
+impl CompressedPointMappings {
     pub fn new(
-        deleted: BitVec,
-        internal_to_external: Vec<PointIdType>,
-        external_to_internal_num: BTreeMap<u64, PointOffsetType>,
-        external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType>,
+        mut deleted: BitVec,
+        internal_to_external: CompressedInternalToExternal,
+        external_to_internal: CompressedExternalToInternal,
     ) -> Self {
+        // Resize deleted to have the same number of elements as internal_to_external
+        // Not all structures we may source this from enforce the same size
+        deleted.resize(internal_to_external.len(), false);
+
         Self {
             deleted,
             internal_to_external,
-            external_to_internal_num,
-            external_to_internal_uuid,
+            external_to_internal,
         }
     }
 
-    /// ToDo: this function is temporary and should be removed before PR is merged
-    pub fn deconstruct(
-        self,
-    ) -> (
-        BitVec,
-        Vec<PointIdType>,
-        BTreeMap<u64, PointOffsetType>,
-        BTreeMap<Uuid, PointOffsetType>,
-    ) {
-        (
-            self.deleted,
-            self.internal_to_external,
-            self.external_to_internal_num,
-            self.external_to_internal_uuid,
-        )
+    pub fn from_mappings(mapping: PointMappings) -> Self {
+        let (deleted, internal_to_external, external_to_internal_num, external_to_internal_uuid) =
+            mapping.deconstruct();
+
+        let compressed_internal_to_external =
+            CompressedInternalToExternal::from_slice(&internal_to_external);
+
+        let compressed_external_to_internal = CompressedExternalToInternal::from_maps(
+            external_to_internal_num,
+            external_to_internal_uuid,
+        );
+        Self {
+            deleted,
+            internal_to_external: compressed_internal_to_external,
+            external_to_internal: compressed_external_to_internal,
+        }
     }
 
     /// Number of points, excluding deleted ones.
     pub(crate) fn available_point_count(&self) -> usize {
-        self.external_to_internal_num.len() + self.external_to_internal_uuid.len()
+        self.external_to_internal.len()
     }
 
     pub(crate) fn deleted(&self) -> &BitSlice {
@@ -78,10 +85,7 @@ impl PointMappings {
     }
 
     pub(crate) fn internal_id(&self, external_id: &PointIdType) -> Option<PointOffsetType> {
-        match external_id {
-            PointIdType::NumId(num) => self.external_to_internal_num.get(num).copied(),
-            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.get(uuid).copied(),
-        }
+        self.external_to_internal.get(external_id)
     }
 
     pub(crate) fn external_id(&self, internal_id: PointOffsetType) -> Option<PointIdType> {
@@ -89,18 +93,11 @@ impl PointMappings {
             return None;
         }
 
-        self.internal_to_external
-            .get(internal_id as usize)
-            .map(|i| i.into())
+        self.internal_to_external.get(internal_id)
     }
 
     pub(crate) fn drop(&mut self, external_id: PointIdType) -> Option<PointOffsetType> {
-        let internal_id = match external_id {
-            // We "temporarily" remove existing points from the BTreeMaps without writing them to disk
-            // because we remove deleted points of a previous load directly when loading.
-            PointIdType::NumId(num) => self.external_to_internal_num.remove(&num),
-            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(&uuid),
-        };
+        let internal_id = self.external_to_internal.remove(&external_id);
 
         if let Some(internal_id) = &internal_id {
             self.deleted.set(*internal_id as usize, true);
@@ -130,7 +127,11 @@ impl PointMappings {
                 if self.deleted[i] {
                     None
                 } else {
-                    Some((self.internal_to_external[i], i as PointOffsetType))
+                    let point_offset = i as PointOffsetType;
+                    Some((
+                        self.internal_to_external.get(point_offset).unwrap(),
+                        point_offset,
+                    ))
                 }
             });
 
@@ -141,62 +142,18 @@ impl PointMappings {
         &self,
         external_id: Option<PointIdType>,
     ) -> Box<dyn Iterator<Item = (PointIdType, PointOffsetType)> + '_> {
-        let full_num_iter = || {
-            self.external_to_internal_num
-                .iter()
-                .map(|(k, v)| (PointIdType::NumId(*k), *v))
-        };
-        let offset_num_iter = |offset: u64| {
-            self.external_to_internal_num
-                .range(offset..)
-                .map(|(k, v)| (PointIdType::NumId(*k), *v))
-        };
-        let full_uuid_iter = || {
-            self.external_to_internal_uuid
-                .iter()
-                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
-        };
-        let offset_uuid_iter = |offset: Uuid| {
-            self.external_to_internal_uuid
-                .range(offset..)
-                .map(|(k, v)| (PointIdType::Uuid(*k), *v))
-        };
-
         match external_id {
-            None => {
-                let iter_num = full_num_iter();
-                let iter_uuid = full_uuid_iter();
-                // order is important here, we want to iterate over the u64 ids first
-                Box::new(iter_num.chain(iter_uuid))
-            }
-            Some(offset) => match offset {
-                PointIdType::NumId(idx) => {
-                    // Because u64 keys are less that uuid key, we can just use the full iterator for uuid
-                    let iter_num = offset_num_iter(idx);
-                    let iter_uuid = full_uuid_iter();
-                    // order is important here, we want to iterate over the u64 ids first
-                    Box::new(iter_num.chain(iter_uuid))
-                }
-                PointIdType::Uuid(uuid) => {
-                    // if offset is a uuid, we can only iterate over uuids
-                    Box::new(offset_uuid_iter(uuid))
-                }
-            },
+            None => Box::new(self.external_to_internal.iter()),
+            Some(point_id) => Box::new(self.external_to_internal.iter_from(point_id)),
         }
     }
 
     pub(crate) fn iter_external(&self) -> Box<dyn Iterator<Item = PointIdType> + '_> {
-        let iter_num = self
-            .external_to_internal_num
-            .keys()
-            .map(|i| PointIdType::NumId(*i));
-
-        let iter_uuid = self
-            .external_to_internal_uuid
-            .keys()
-            .map(|i| PointIdType::Uuid(*i));
-        // order is important here, we want to iterate over the u64 ids first
-        Box::new(iter_num.chain(iter_uuid))
+        Box::new(
+            self.external_to_internal
+                .iter()
+                .map(|(point_id, _)| point_id),
+        )
     }
 
     pub(crate) fn iter_internal(&self) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
@@ -206,46 +163,21 @@ impl PointMappings {
         )
     }
 
+    pub(crate) fn iter_internal_raw(
+        &self,
+    ) -> impl Iterator<Item = (PointOffsetType, PointIdType)> + '_ {
+        self.internal_to_external
+            .iter()
+            .enumerate()
+            .map(|(offset, point_id)| (offset as PointOffsetType, point_id))
+    }
+
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
         let key = key as usize;
         if key >= self.deleted.len() {
             return true;
         }
         self.deleted[key]
-    }
-
-    /// Sets the link between an external and internal id.
-    /// Returns the previous internal id if it existed.
-    pub(crate) fn set_link(
-        &mut self,
-        external_id: PointIdType,
-        internal_id: PointOffsetType,
-    ) -> Option<PointOffsetType> {
-        let old_internal_id = match external_id {
-            PointIdType::NumId(idx) => self.external_to_internal_num.insert(idx, internal_id),
-            PointIdType::Uuid(uuid) => self.external_to_internal_uuid.insert(uuid, internal_id),
-        };
-
-        let internal_id = internal_id as usize;
-        if internal_id >= self.internal_to_external.len() {
-            self.internal_to_external
-                .resize(internal_id + 1, PointIdType::NumId(u64::MAX));
-        }
-        if internal_id >= self.deleted.len() {
-            self.deleted.resize(internal_id + 1, true);
-        }
-
-        if let Some(old_internal_id) = &old_internal_id {
-            let old_internal_id = *old_internal_id as usize;
-            if old_internal_id != internal_id {
-                self.deleted.set(old_internal_id, true);
-            }
-        }
-
-        self.internal_to_external[internal_id] = external_id;
-        self.deleted.set(internal_id, false);
-
-        old_internal_id
     }
 
     pub(crate) fn total_point_count(&self) -> usize {
@@ -291,7 +223,7 @@ impl PointMappings {
             deleted.set(*id as usize, false);
         }
 
-        let internal_to_external = (0..total_size)
+        let internal_to_external: Vec<_> = (0..total_size)
             .map(|pos| loop {
                 if rand.random_bool(UUID_LIKELYNESS) {
                     let uuid = Uuid::from_u128(rand.random_range(0..=mask));
@@ -309,11 +241,18 @@ impl PointMappings {
             })
             .collect();
 
-        Self {
-            deleted,
-            internal_to_external,
+        let compressed_internal_to_external =
+            CompressedInternalToExternal::from_slice(&internal_to_external);
+
+        let external_to_internal = CompressedExternalToInternal::from_maps(
             external_to_internal_num,
             external_to_internal_uuid,
+        );
+
+        Self {
+            deleted,
+            internal_to_external: compressed_internal_to_external,
+            external_to_internal,
         }
     }
 }
