@@ -113,7 +113,15 @@ pub enum ExpressionInternal {
     Mult(Vec<ExpressionInternal>),
     Sum(Vec<ExpressionInternal>),
     Neg(Box<ExpressionInternal>),
-    GeoDistance { origin: GeoPoint, to: JsonPath },
+    Div {
+        left: Box<ExpressionInternal>,
+        right: Box<ExpressionInternal>,
+        by_zero_default: ScoreType,
+    },
+    GeoDistance {
+        origin: GeoPoint,
+        to: JsonPath,
+    },
 }
 
 impl Query {
@@ -618,7 +626,7 @@ impl CollectionQueryRequest {
 }
 
 mod from_rest {
-    use api::rest::{schema as rest, NegExpression};
+    use api::rest::{schema as rest, DivExpression, DivParams, GeoDistanceParams, NegExpression};
 
     use super::*;
 
@@ -669,9 +677,25 @@ mod from_rest {
                 rest::Expression::Neg(NegExpression { neg: expr }) => {
                     ExpressionInternal::Neg(Box::new(ExpressionInternal::from(*expr)))
                 }
-                rest::Expression::GeoDistance(GeoDistance { origin, to }) => {
-                    ExpressionInternal::GeoDistance { origin, to }
+                rest::Expression::Div(DivExpression {
+                    div:
+                        DivParams {
+                            left,
+                            right,
+                            by_zero_default,
+                        },
+                }) => {
+                    let left = Box::new((*left).into());
+                    let right = Box::new((*right).into());
+                    ExpressionInternal::Div {
+                        left,
+                        right,
+                        by_zero_default,
+                    }
                 }
+                rest::Expression::GeoDistance(GeoDistance {
+                    geo_distance: GeoDistanceParams { origin, to },
+                }) => ExpressionInternal::GeoDistance { origin, to },
             }
         }
     }

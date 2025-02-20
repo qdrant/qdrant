@@ -644,6 +644,7 @@ pub enum Expression {
     Mult(MultExpression),
     Sum(SumExpression),
     Neg(NegExpression),
+    Div(DivExpression),
     GeoDistance(GeoDistance),
 }
 
@@ -663,7 +664,24 @@ pub struct NegExpression {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DivExpression {
+    pub div: DivParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DivParams {
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
+    pub by_zero_default: ScoreType,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct GeoDistance {
+    pub geo_distance: GeoDistanceParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GeoDistanceParams {
     /// The origin geo point to measure from
     pub origin: GeoPoint,
     /// Payload field with the destination geo point

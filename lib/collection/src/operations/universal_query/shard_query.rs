@@ -223,6 +223,15 @@ impl ExpressionInternal {
             ExpressionInternal::Neg(expression_internal) => ParsedExpression::new_neg(
                 expression_internal.parse_and_convert(payload_vars, conditions)?,
             ),
+            ExpressionInternal::Div {
+                left,
+                right,
+                by_zero_default,
+            } => ParsedExpression::new_div(
+                left.parse_and_convert(payload_vars, conditions)?,
+                right.parse_and_convert(payload_vars, conditions)?,
+                by_zero_default,
+            ),
             ExpressionInternal::GeoDistance { origin, to } => {
                 ParsedExpression::new_geo_distance(origin, to)
             }
