@@ -20,7 +20,7 @@ pub struct CompressedVersions {
 
 impl CompressedVersions {
     fn version_from_parts(lower: u32, upper: u32) -> SeqNumberType {
-        u64::from(upper) << u32::BITS | u64::from(lower)
+        (u64::from(upper) << u32::BITS) | u64::from(lower)
     }
 
     fn version_to_parts(value: SeqNumberType) -> (u32, u32) {
