@@ -604,10 +604,10 @@ impl ShardHolder {
             // Check if shard is fully initialized on disk
             // The initialization flag should be absent for a well-formed replica set
             let initialized_flag = shard_initialized_flag_path(collection_path, shard_id);
-            if tokio::fs::try_exists(initialized_flag)
+            let flag_exists = tokio::fs::try_exists(&initialized_flag)
                 .await
-                .unwrap_or(false)
-            {
+                .unwrap_or(false);
+            if flag_exists {
                 log::error!("Shard {collection_id}:{} is not fully initialized - replacing with empty shard", shard_id);
                 let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
                 // Add empty dead shard replica set for this shard id
@@ -628,62 +628,67 @@ impl ShardHolder {
                     channel_service.clone(),
                     update_runtime.clone(),
                     search_runtime.clone(),
-                    optimizer_cpu_budget.clone(),
+                    optimizer_resource_budget.clone(),
                     Some(ReplicaState::Dead), // mark as dead
                 )
                 .await
                 .unwrap();
                 self.add_shard(shard_id, empty_replica_set, shard_key.cloned())
                     .unwrap();
-                continue;
-            };
+                // Delete the initialized flag
+                tokio::fs::remove_file(&initialized_flag)
+                    .await
+                    .unwrap_or_else(|e| {
+                        log::error!("Failed to remove initialized flag for shard {collection_id}:{shard_id}: {e}");
+                    });
+            } else {
+                // Validate that shard exists on disk
+                let shard_path = check_shard_path(collection_path, shard_id)
+                    .await
+                    .expect("Failed to check shard path");
 
-            // Validate that shard exists on disk
-            let shard_path = check_shard_path(collection_path, shard_id)
-                .await
-                .expect("Failed to check shard path");
+                // Load replica set
+                let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
+                let replica_set = ShardReplicaSet::load(
+                    shard_id,
+                    shard_key.cloned(),
+                    collection_id.clone(),
+                    &shard_path,
+                    collection_config.clone(),
+                    effective_optimizers_config.clone(),
+                    shared_storage_config.clone(),
+                    payload_index_schema.clone(),
+                    channel_service.clone(),
+                    on_peer_failure.clone(),
+                    abort_shard_transfer.clone(),
+                    this_peer_id,
+                    update_runtime.clone(),
+                    search_runtime.clone(),
+                    optimizer_resource_budget.clone(),
+                )
+                .await;
 
-            // Load replica set
-            let shard_key = self.get_shard_id_to_key_mapping().get(&shard_id);
-            let replica_set = ShardReplicaSet::load(
-                shard_id,
-                shard_key.cloned(),
-                collection_id.clone(),
-                &shard_path,
-                collection_config.clone(),
-                effective_optimizers_config.clone(),
-                shared_storage_config.clone(),
-                payload_index_schema.clone(),
-                channel_service.clone(),
-                on_peer_failure.clone(),
-                abort_shard_transfer.clone(),
-                this_peer_id,
-                update_runtime.clone(),
-                search_runtime.clone(),
-                optimizer_resource_budget.clone(),
-            )
-            .await;
-
-            // Change local shards stuck in Initializing state to Active
-            let local_peer_id = replica_set.this_peer_id();
-            let not_distributed = !shared_storage_config.is_distributed;
-            let is_local =
-                replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;
-            let is_initializing =
-                replica_set.peer_state(local_peer_id) == Some(ReplicaState::Initializing);
-            if not_distributed && is_local && is_initializing {
-                log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
-                replica_set
-                    .set_replica_state(local_peer_id, ReplicaState::Active)
-                    .expect("Failed to set local shard state");
+                // Change local shards stuck in Initializing state to Active
+                let local_peer_id = replica_set.this_peer_id();
+                let not_distributed = !shared_storage_config.is_distributed;
+                let is_local =
+                    replica_set.this_peer_id() == local_peer_id && replica_set.is_local().await;
+                let is_initializing =
+                    replica_set.peer_state(local_peer_id) == Some(ReplicaState::Initializing);
+                if not_distributed && is_local && is_initializing {
+                    log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
+                    replica_set
+                        .set_replica_state(local_peer_id, ReplicaState::Active)
+                        .expect("Failed to set local shard state");
+                }
+                let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
+                self.add_shard(shard_id, replica_set, shard_key).unwrap();
             }
-            let shard_key = shard_id_to_key_mapping.get(&shard_id).cloned();
-            self.add_shard(shard_id, replica_set, shard_key).unwrap();
-        }
 
-        // If resharding, rebuild the hash rings because they'll be messed up
-        if self.resharding_state.read().is_some() {
-            self.rebuild_rings();
+            // If resharding, rebuild the hash rings because they'll be messed up
+            if self.resharding_state.read().is_some() {
+                self.rebuild_rings();
+            }
         }
     }
 
