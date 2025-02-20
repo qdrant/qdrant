@@ -13,12 +13,12 @@ use crate::types::SeqNumberType;
 /// * len
 /// * push
 #[derive(Debug)]
-pub struct CompressedVersionsStore {
+pub struct CompressedVersions {
     lower_bytes: Vec<u32>,
     upper_bytes: HashMap<u32, u32>,
 }
 
-impl CompressedVersionsStore {
+impl CompressedVersions {
     fn version_from_parts(lower: u32, upper: u32) -> SeqNumberType {
         u64::from(upper) << u32::BITS | u64::from(lower)
     }
@@ -90,7 +90,7 @@ mod tests {
         fn compare_with_vec_model(
             mut model in prop::collection::vec(model_test_range(), 0..1000)
         ) {
-            let mut compressed = CompressedVersionsStore::from_slice(&model);
+            let mut compressed = CompressedVersions::from_slice(&model);
 
             // Check get()
             for (i, model_value) in model.iter().enumerate() {

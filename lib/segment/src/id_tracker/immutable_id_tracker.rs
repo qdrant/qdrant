@@ -17,7 +17,7 @@ use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUp
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::id_tracker::compressed::versions_store::CompressedVersionsStore;
+use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::{FileEndianess, PointMappings};
 use crate::id_tracker::IdTracker;
@@ -65,7 +65,7 @@ pub struct ImmutableIdTracker {
 
     deleted_wrapper: MmapBitSliceBufferedUpdateWrapper,
 
-    internal_to_version: CompressedVersionsStore,
+    internal_to_version: CompressedVersions,
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
 
     mappings: PointMappings,
@@ -244,8 +244,7 @@ impl ImmutableIdTracker {
         )?;
         let internal_to_version_mapslice: MmapSlice<SeqNumberType> =
             unsafe { MmapSlice::try_from(internal_to_version_map)? };
-        let internal_to_version =
-            CompressedVersionsStore::from_slice(&internal_to_version_mapslice);
+        let internal_to_version = CompressedVersions::from_slice(&internal_to_version_mapslice);
         let internal_to_version_wrapper =
             MmapSliceBufferedUpdateWrapper::new(internal_to_version_mapslice);
 
@@ -310,7 +309,7 @@ impl ImmutableIdTracker {
 
         internal_to_version_wrapper[..internal_to_version.len()]
             .copy_from_slice(internal_to_version);
-        let internal_to_version = CompressedVersionsStore::from_slice(&internal_to_version_wrapper);
+        let internal_to_version = CompressedVersions::from_slice(&internal_to_version_wrapper);
 
         debug_assert_eq!(internal_to_version.len(), mappings.total_point_count());
 
