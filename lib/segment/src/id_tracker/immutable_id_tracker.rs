@@ -370,12 +370,12 @@ impl IdTracker for ImmutableIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if self.external_id(internal_id).is_some() {
-            let old_version = self.internal_to_version.get(internal_id as usize);
+            let has_version = self.internal_to_version.has(internal_id as usize);
             debug_assert!(
-                old_version.is_some(),
-                "Can't extend version list in immutable tracker"
+                has_version,
+                "Can't extend version list in immutable tracker",
             );
-            if old_version.is_some() {
+            if has_version {
                 self.internal_to_version.set(internal_id as usize, version);
                 self.internal_to_version_wrapper
                     .set(internal_id as usize, version);

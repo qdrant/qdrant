@@ -29,6 +29,10 @@ impl CompressedVersions {
         (lower, upper)
     }
 
+    pub fn has(&self, index: usize) -> bool {
+        index < self.len()
+    }
+
     pub fn get(&self, index: usize) -> Option<SeqNumberType> {
         self.lower_bytes.get(index).map(|&lower| {
             let upper = *self.upper_bytes.get(&(index as u32)).unwrap_or(&0);
