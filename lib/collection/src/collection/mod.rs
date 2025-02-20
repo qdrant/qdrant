@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clean::ShardCleanTasks;
-use common::cpu::CpuBudget;
+use common::budget::ResourceBudget;
 use common::types::TelemetryDetail;
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
@@ -82,7 +82,7 @@ pub struct Collection {
     update_runtime: Handle,
     // Search runtime handle.
     search_runtime: Handle,
-    optimizer_cpu_budget: CpuBudget,
+    optimizer_resource_budget: ResourceBudget,
     // Cached statistics of collection size, may be outdated.
     collection_stats_cache: CollectionSizeStatsCache,
     // Background tasks to clean shards
@@ -110,7 +110,7 @@ impl Collection {
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Result<Self, CollectionError> {
         let start_time = std::time::Instant::now();
@@ -147,7 +147,7 @@ impl Collection {
                 channel_service.clone(),
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
-                optimizer_cpu_budget.clone(),
+                optimizer_resource_budget.clone(),
                 None,
             )
             .await?;
@@ -185,7 +185,7 @@ impl Collection {
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
         })
@@ -204,7 +204,7 @@ impl Collection {
         abort_shard_transfer: replica_set::AbortShardTransfer,
         search_runtime: Option<Handle>,
         update_runtime: Option<Handle>,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
     ) -> Self {
         let start_time = std::time::Instant::now();
@@ -269,7 +269,7 @@ impl Collection {
                 this_peer_id,
                 update_runtime.clone().unwrap_or_else(Handle::current),
                 search_runtime.clone().unwrap_or_else(Handle::current),
-                optimizer_cpu_budget.clone(),
+                optimizer_resource_budget.clone(),
             )
             .await;
 
@@ -299,7 +299,7 @@ impl Collection {
             updates_lock: Default::default(),
             update_runtime: update_runtime.unwrap_or_else(Handle::current),
             search_runtime: search_runtime.unwrap_or_else(Handle::current),
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             collection_stats_cache,
             shard_clean_tasks: Default::default(),
         }

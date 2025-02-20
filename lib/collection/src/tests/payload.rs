@@ -1,8 +1,8 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
 use segment::json_path::JsonPath;
 use segment::types::{
     Condition, FieldCondition, Filter, GeoPoint, GeoRadius, PayloadFieldSchema, PayloadSchemaType,
@@ -43,7 +43,7 @@ async fn test_payload_missing_index_check() {
         payload_index_schema.clone(),
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
         config.optimizer_config.clone(),
     )
     .await

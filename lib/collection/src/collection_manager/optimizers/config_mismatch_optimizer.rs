@@ -258,7 +258,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use common::cpu::CpuPermit;
+    use common::budget::ResourceBudget;
     use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::entry::entry_point::SegmentEntry;
@@ -349,7 +349,8 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // Use indexing optimizer to build index for HNSW mismatch test
         let changed = index_optimizer
@@ -357,6 +358,7 @@ mod tests {
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();
@@ -379,7 +381,7 @@ mod tests {
         config_mismatch_optimizer.hnsw_config = changed_hnsw_config.clone();
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -388,6 +390,7 @@ mod tests {
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();
@@ -485,7 +488,8 @@ mod tests {
         };
 
         let permit_cpu_count = num_rayon_threads(hnsw_config_collection.max_indexing_threads);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // Optimizers used in test
         let index_optimizer = IndexingOptimizer::new(
@@ -512,6 +516,7 @@ mod tests {
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();
@@ -542,7 +547,7 @@ mod tests {
         }
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -551,6 +556,7 @@ mod tests {
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();
@@ -674,7 +680,8 @@ mod tests {
         );
 
         let permit_cpu_count = num_rayon_threads(0);
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let budget = ResourceBudget::new(permit_cpu_count, permit_cpu_count);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
 
         // Use indexing optimizer to build index for quantization mismatch test
         let changed = index_optimizer
@@ -682,6 +689,7 @@ mod tests {
                 locked_holder.clone(),
                 vec![segment_id],
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();
@@ -715,7 +723,7 @@ mod tests {
         }
 
         // Run mismatch optimizer again, make sure it optimizes now
-        let permit = CpuPermit::dummy(permit_cpu_count as u32);
+        let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
         let suggested_to_optimize =
             config_mismatch_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 1);
@@ -724,6 +732,7 @@ mod tests {
                 locked_holder.clone(),
                 suggested_to_optimize,
                 permit,
+                budget.clone(),
                 &false.into(),
             )
             .unwrap();

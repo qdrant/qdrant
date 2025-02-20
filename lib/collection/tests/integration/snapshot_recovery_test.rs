@@ -15,8 +15,8 @@ use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
 use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
@@ -80,7 +80,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         dummy_abort_shard_transfer(),
         None,
         None,
-        CpuBudget::default(),
+        ResourceBudget::default(),
         None,
     )
     .await
@@ -139,7 +139,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         dummy_abort_shard_transfer(),
         None,
         None,
-        CpuBudget::default(),
+        ResourceBudget::default(),
         None,
     )
     .await;

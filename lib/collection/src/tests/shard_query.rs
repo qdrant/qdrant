@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
 use segment::data_types::vectors::{NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tempfile::Builder;
@@ -42,7 +42,7 @@ async fn test_shard_query_rrf_rescoring() {
         payload_index_schema,
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
         config.optimizer_config.clone(),
     )
     .await
@@ -234,7 +234,7 @@ async fn test_shard_query_vector_rescoring() {
         payload_index_schema,
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
         config.optimizer_config.clone(),
     )
     .await
@@ -372,7 +372,7 @@ async fn test_shard_query_payload_vector() {
         payload_index_schema,
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
         config.optimizer_config.clone(),
     )
     .await

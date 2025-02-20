@@ -5,7 +5,7 @@ use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
-use common::cpu::CpuBudget;
+use common::budget::ResourceBudget;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -53,6 +53,7 @@ fn test_alias_operation() {
             max_search_threads: 1,
             max_optimization_threads: 1,
             optimizer_cpu_budget: 0,
+            optimizer_io_budget: 0,
             update_rate_limit: None,
             search_timeout_sec: None,
             incoming_shard_transfers_limit: Some(1),
@@ -86,7 +87,7 @@ fn test_alias_operation() {
         search_runtime,
         update_runtime,
         general_runtime,
-        CpuBudget::default(),
+        ResourceBudget::default(),
         ChannelService::new(6333, None),
         0,
         Some(propose_operation_sender),

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::cpu::CpuBudget;
 use segment::types::{PayloadFieldSchema, PayloadSchemaType};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -36,7 +36,7 @@ async fn test_delete_from_indexed_payload() {
         payload_index_schema.clone(),
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
         config.optimizer_config.clone(),
     )
     .await
@@ -92,7 +92,7 @@ async fn test_delete_from_indexed_payload() {
         payload_index_schema.clone(),
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
     )
     .await
     .unwrap();
@@ -118,7 +118,7 @@ async fn test_delete_from_indexed_payload() {
         payload_index_schema,
         current_runtime.clone(),
         current_runtime,
-        CpuBudget::default(),
+        ResourceBudget::default(),
     )
     .await
     .unwrap();

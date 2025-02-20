@@ -1410,7 +1410,7 @@ mod tests {
 
     use collection::operations::vector_params_builder::VectorParamsBuilder;
     use collection::shards::channel_service::ChannelService;
-    use common::cpu::CpuBudget;
+    use common::budget::ResourceBudget;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::collection_meta_ops::{
@@ -1453,7 +1453,7 @@ mod tests {
             search_runtime,
             update_runtime,
             general_runtime,
-            CpuBudget::default(),
+            ResourceBudget::default(),
             ChannelService::new(settings.service.http_port, None),
             persistent_state.this_peer_id(),
             Some(operation_sender.clone()),

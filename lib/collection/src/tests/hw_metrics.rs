@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
-use common::cpu::CpuBudget;
 use rand::rngs::ThreadRng;
 use rand::{rng, RngCore};
 use segment::data_types::vectors::{
@@ -48,7 +48,7 @@ async fn test_hw_metrics_cancellation() {
         payload_index_schema.clone(),
         current_runtime.clone(),
         current_runtime.clone(),
-        CpuBudget::default(),
+        ResourceBudget::default(),
         config.optimizer_config.clone(),
     )
     .await

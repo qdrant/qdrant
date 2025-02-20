@@ -2,8 +2,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
@@ -128,7 +128,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
     };
 
     // single threaded mode to guarantee equivalency between single and multi hnsw
-    let permit = Arc::new(CpuPermit::dummy(1));
+    let permit = Arc::new(ResourcePermit::dummy(1));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
     let quantized_vectors = &segment.vector_data[DEFAULT_VECTOR_NAME].quantized_vectors;

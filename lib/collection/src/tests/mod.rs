@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuBudget;
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
@@ -73,7 +73,7 @@ async fn test_optimization_process() {
         optimizers.clone(),
         optimizers_log.clone(),
         total_optimized_points.clone(),
-        &CpuBudget::default(),
+        &ResourceBudget::default(),
         segments.clone(),
         |_| {},
         None,
@@ -116,7 +116,7 @@ async fn test_optimization_process() {
         optimizers.clone(),
         optimizers_log.clone(),
         total_optimized_points.clone(),
-        &CpuBudget::default(),
+        &ResourceBudget::default(),
         segments.clone(),
         |_| {},
         None,
@@ -173,7 +173,7 @@ async fn test_cancel_optimization() {
         optimizers.clone(),
         optimizers_log.clone(),
         total_optimized_points.clone(),
-        &CpuBudget::default(),
+        &ResourceBudget::default(),
         segments.clone(),
         |_| {},
         None,

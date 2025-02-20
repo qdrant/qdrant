@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuPermit;
 use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
 use rand::prelude::StdRng;
@@ -181,7 +181,7 @@ fn _test_filterable_hnsw(
     );
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
-    let permit = Arc::new(CpuPermit::dummy(permit_cpu_count as u32));
+    let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
             path: hnsw_dir.path(),

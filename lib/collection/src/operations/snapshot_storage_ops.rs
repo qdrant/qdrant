@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
-use common::cpu::CpuBudget;
+use common::budget::ResourceBudget;
 use futures::StreamExt;
 use object_store::WriteMultipart;
 use tokio::io::AsyncWriteExt;
@@ -115,7 +115,7 @@ pub async fn multipart_upload(
     let mut buffer = vec![0u8; chunk_size];
 
     // Initialize CpuBudget to manage concurrency
-    let cpu_budget = CpuBudget::default();
+    let cpu_budget = ResourceBudget::default();
     let max_concurrency = cpu_budget.available_cpu_budget();
 
     // Note:

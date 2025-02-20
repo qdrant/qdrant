@@ -17,9 +17,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
+use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::cpu::CpuBudget;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
@@ -158,7 +158,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         wal: SerdeWal<OperationWithClockTag>,
         optimizers: Arc<Vec<Arc<Optimizer>>>,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         shard_path: &Path,
         clocks: LocalShardClocks,
         update_runtime: Handle,
@@ -186,7 +186,7 @@ impl LocalShard {
             optimizers.clone(),
             optimizers_log.clone(),
             total_optimized_points.clone(),
-            optimizer_cpu_budget.clone(),
+            optimizer_resource_budget.clone(),
             update_runtime.clone(),
             segment_holder.clone(),
             locked_wal.clone(),
@@ -247,7 +247,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         search_runtime: Handle,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
     ) -> CollectionResult<LocalShard> {
         let collection_config_read = collection_config.read().await;
 
@@ -378,7 +378,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             shard_path,
             clocks,
             update_runtime,
@@ -435,7 +435,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         search_runtime: Handle,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         // initialize local shard config file
@@ -449,7 +449,7 @@ impl LocalShard {
             payload_index_schema,
             update_runtime,
             search_runtime,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             effective_optimizers_config,
         )
         .await?;
@@ -468,7 +468,7 @@ impl LocalShard {
         payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         update_runtime: Handle,
         search_runtime: Handle,
-        optimizer_cpu_budget: CpuBudget,
+        optimizer_resource_budget: ResourceBudget,
         effective_optimizers_config: OptimizersConfig,
     ) -> CollectionResult<LocalShard> {
         let config = collection_config.read().await;
@@ -548,7 +548,7 @@ impl LocalShard {
             payload_index_schema,
             wal,
             optimizers,
-            optimizer_cpu_budget,
+            optimizer_resource_budget,
             shard_path,
             LocalShardClocks::default(),
             update_runtime,
