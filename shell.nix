@@ -76,12 +76,14 @@ mkShell {
     pkgs.cargo-nextest # mentioned in .github/workflows/rust.yml
     pkgs.ccache # mentioned in shellHook
     pkgs.curl # used in ./tests
+    pkgs.glsl_analyzer # language server for editing *.comp files
     pkgs.gnuplot # optional runtime dep for criterion
     pkgs.jq # used in ./tests and ./tools
     pkgs.nixfmt-rfc-style # to format this file
     pkgs.npins # used in tools/nix/update.py
     pkgs.poetry # used to update poetry.lock
     pkgs.sccache # mentioned in shellHook
+    pkgs.vulkan-tools # mentioned in .github/workflows/rust-gpu.yml
     pkgs.wget # used in tests/storage-compat
     pkgs.yq-go # used in tools/generate_openapi_models.sh
     pkgs.ytt # used in tools/generate_openapi_models.sh
@@ -109,9 +111,20 @@ mkShell {
       export MACOSX_DEPLOYMENT_TARGET="10.13"
     fi
 
-    # GPU bindings require libvulkan.so.1 during runtime
-    export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.vulkan-loader ]}\
-    ''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+    export LD_LIBRARY_PATH=${
+      pkgs.lib.makeLibraryPath [
+        pkgs.vulkan-loader # GPU bindings require libvulkan.so.1 during runtime
+        pkgs.vulkan-tools-lunarg # Used by VK_LAYER_PATH (see below)
+      ]
+    }''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
+    # GPU debugging
+    export VK_LAYER_PATH=${
+      pkgs.lib.makeSearchPathOutput "lib" "share/vulkan/explicit_layer.d" [
+        pkgs.vulkan-tools-lunarg # For VK_LAYER_LUNARG_api_dump
+        pkgs.vulkan-validation-layers # For VK_LAYER_KHRONOS_validation
+      ]
+    }''${VK_LAYER_PATH:+:$VK_LAYER_PATH}
 
     # https://qdrant.tech/documentation/guides/common-errors/#too-many-files-open-os-error-24
     [ "$(ulimit -n)" -ge 10000 ] || ulimit -n 10000
