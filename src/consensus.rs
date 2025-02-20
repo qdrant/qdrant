@@ -900,10 +900,11 @@ impl Consensus {
 
         if !ready.snapshot().is_empty() {
             // This is a snapshot, we need to apply the snapshot at first.
-            log::debug!("Applying snapshot");
+            let snapshot = ready.snapshot().clone();
+            log::debug!("Applying snapshot {:?}", snapshot.get_metadata());
             is_idle = false;
 
-            if let Err(err) = store.apply_snapshot(&ready.snapshot().clone())? {
+            if let Err(err) = store.apply_snapshot(&snapshot)? {
                 log::error!("Failed to apply snapshot: {err}");
             }
         }
