@@ -275,7 +275,32 @@ impl LocalShard {
         // let semaphore = Arc::new(parking_lot::Mutex::new(()));
 
         for entry in segment_dirs {
-            let segments_path = entry.unwrap().path();
+            let entry = entry.map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't list segment path in segments directory: {err}"
+                ))
+            })?;
+
+            let segment_path = entry.path();
+
+            // Ignore files starting with a period
+            if entry.file_name().as_encoded_bytes().starts_with(b".") {
+                log::debug!(
+                    "Segments path entry prefixed with a period, ignoring: {}",
+                    segment_path.display(),
+                );
+                continue;
+            }
+
+            // Segment path must be a directory
+            if !segment_path.is_dir() {
+                log::warn!(
+                    "Segments path entry is not a directory, skipping: {}",
+                    segment_path.display(),
+                );
+                continue;
+            }
+
             let payload_index_schema = payload_index_schema.clone();
             // let semaphore_clone = semaphore.clone();
             load_handlers.push(
@@ -283,17 +308,17 @@ impl LocalShard {
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
                         // let _guard = semaphore_clone.lock();
-                        let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
+                        let mut res = load_segment(&segment_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                             segment.update_all_field_indices(
                                 &payload_index_schema.read().schema.clone(),
                             )?;
                         } else {
-                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
+                            std::fs::remove_dir_all(&segment_path).map_err(|err| {
                                 CollectionError::service_error(format!(
                                     "Can't remove leftover segment {}, due to {err}",
-                                    segments_path.to_str().unwrap(),
+                                    segment_path.to_str().unwrap(),
                                 ))
                             })?;
                         }
