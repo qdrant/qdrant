@@ -56,7 +56,17 @@ impl CompressedVersions {
         self.lower_bytes.len()
     }
 
+    /// Create version store from the given slice of versions
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slice is larger than `u32::MAX` elements
     pub fn from_slice(slice: &[SeqNumberType]) -> Self {
+        assert!(
+            slice.len() <= u32::MAX as usize,
+            "version slice cannot be larger than u32::MAX",
+        );
+
         let mut lower_bytes = Vec::with_capacity(slice.len());
         let mut upper_bytes = AHashMap::new();
 
