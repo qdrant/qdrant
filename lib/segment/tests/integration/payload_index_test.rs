@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs::create_dir;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
@@ -158,7 +158,7 @@ impl TestSegments {
             .create_field_index(opnum, &JsonPath::new(FLICKING_KEY), Some(&Integer.into()))
             .unwrap();
 
-        // Make mmap segment after inserting the points, but after deleting some of them
+        // Make mmap segment after inserting the points, but before deleting some of them
         let mut mmap_segment =
             Self::make_mmap_segment(&base_dir.path().join("mmap"), &plain_segment);
 
@@ -335,6 +335,13 @@ impl TestSegments {
 
         segment
     }
+}
+
+/// Fixture for read operations, so that multiple tests can reuse it without expensive segment creation.
+fn get_read_only_segments() -> &'static TestSegments {
+    static SEGMENTS: OnceLock<TestSegments> = OnceLock::new();
+
+    SEGMENTS.get_or_init(TestSegments::new)
 }
 
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
@@ -1172,6 +1179,21 @@ fn test_any_matcher_cardinality_estimation() {
     assert!(exact >= estimation.min);
 }
 
+/// FacetParams fixture without a filter
+fn keyword_facet_request() -> FacetParams {
+    let limit = 1000;
+    let key: JsonPath = STR_KEY.try_into().unwrap();
+    let exact = false; // This is only used at local shard level
+
+    // *** Without filter ***
+    FacetParams {
+        key: key.clone(),
+        limit,
+        filter: None,
+        exact,
+    }
+}
+
 /// Checks that the counts are the same as counting each value exactly.
 fn validate_facet_result(
     segment: &Segment,
@@ -1186,7 +1208,7 @@ fn validate_facet_result(
 
         let count_filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(STR_KEY),
-            Match::from(value),
+            Match::from(value.clone()),
         )));
         let count_filter = Filter::merge_opts(Some(count_filter), filter.clone());
 
@@ -1200,77 +1222,79 @@ fn validate_facet_result(
             )
             .len();
 
-        assert_eq!(*count, exact);
+        assert_eq!(*count, exact, "Facet value: {value:?}");
     }
 }
 
 #[test]
-fn test_keyword_facet() {
-    let test_segments = TestSegments::new();
+fn test_struct_keyword_facet() {
+    let test_segments = get_read_only_segments();
 
-    let limit = 100;
-    let key: JsonPath = STR_KEY.try_into().unwrap();
-    let exact = false; // This is only used at local shard level
-
-    // *** Without filter ***
-    let request = FacetParams {
-        key: key.clone(),
-        limit,
-        filter: None,
-        exact,
-    };
-
-    let hw_counter = HardwareCounterCell::new();
+    let request = keyword_facet_request();
 
     // Plain segment should fail, as it does not have a keyword index
     assert!(test_segments
         .plain_segment
-        .facet(&request, &Default::default(), &hw_counter)
+        .facet(&request, &Default::default(), &Default::default())
         .is_err());
 
     // Struct segment
     let facet_hits = test_segments
         .struct_segment
-        .facet(&request, &Default::default(), &hw_counter)
+        .facet(&request, &Default::default(), &Default::default())
         .unwrap();
 
     validate_facet_result(&test_segments.struct_segment, facet_hits, None);
+}
 
-    // Mmap segment
+#[test]
+fn test_mmap_keyword_facet() {
+    let test_segments = get_read_only_segments();
+
+    let request = keyword_facet_request();
+
     let facet_hits = test_segments
         .mmap_segment
-        .facet(&request, &Default::default(), &hw_counter)
+        .facet(&request, &Default::default(), &Default::default())
         .unwrap();
 
     validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
+}
 
-    // *** With filter ***
-    let mut rng = rand::rng();
-    let filter = random_filter(&mut rng, 3);
-    let request = FacetParams {
-        key,
-        limit,
-        filter: Some(filter.clone()),
-        exact,
-    };
+#[test]
+fn test_struct_keyword_facet_filtered() {
+    let test_segments = get_read_only_segments();
 
-    // Struct segment
-    let facet_hits = test_segments
-        .struct_segment
-        .facet(&request, &Default::default(), &hw_counter)
-        .unwrap();
+    let mut request = keyword_facet_request();
 
-    validate_facet_result(
-        &test_segments.struct_segment,
-        facet_hits,
-        Some(filter.clone()),
-    );
+    for _ in 0..10 {
+        let filter = random_filter(&mut rand::rng(), 3);
+        request.filter = Some(filter.clone());
 
-    // Mmap segment
-    let facet_hits = test_segments
-        .mmap_segment
-        .facet(&request, &Default::default(), &hw_counter)
-        .unwrap();
+        let facet_hits = test_segments
+            .struct_segment
+            .facet(&request, &Default::default(), &Default::default())
+            .unwrap();
 
-    validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter));
+        validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter));
+    }
+}
+
+#[test]
+fn test_mmap_keyword_facet_filtered() {
+    let test_segments = get_read_only_segments();
+
+    let mut request = keyword_facet_request();
+
+    for _ in 0..10 {
+        let filter = random_filter(&mut rand::rng(), 3);
+        request.filter = Some(filter.clone());
+
+        let facet_hits = test_segments
+            .mmap_segment
+            .facet(&request, &Default::default(), &Default::default())
+            .unwrap();
+
+        validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter));
+    }
 }
