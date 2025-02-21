@@ -7,6 +7,7 @@ use rand::rngs::StdRng;
 #[cfg(test)]
 use rand::Rng as _;
 
+use super::ensure_len_and_set_version;
 use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
 use crate::id_tracker::point_mappings::PointMappings;
@@ -53,8 +54,18 @@ impl IdTracker for InMemoryIdTracker {
             if let Some(old_version) = self.internal_to_version.get_mut(internal_id as usize) {
                 *old_version = version;
             } else {
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
-                self.internal_to_version[internal_id as usize] = version;
+                let skipped_offsets =
+                    ensure_len_and_set_version(internal_id, version, &mut self.internal_to_version);
+
+                // Handle the case of having populated the skipped offsets with version 0.
+                // If they didn't have a version before, they should be removed from the tracker.
+                for skipped_internal_id in skipped_offsets {
+                    if let Some(external_id) =
+                        self.external_id(skipped_internal_id as PointOffsetType)
+                    {
+                        self.drop(external_id)?;
+                    }
+                }
             }
         }
 

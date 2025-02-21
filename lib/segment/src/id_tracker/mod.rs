@@ -9,7 +9,7 @@ use common::types::PointOffsetType;
 pub use id_tracker_base::*;
 use itertools::Itertools as _;
 
-use crate::types::ExtendedPointId;
+use crate::types::{ExtendedPointId, SeqNumberType};
 
 /// Calling [`for_each_unique_point`] will yield this struct for each unique
 /// point.
@@ -67,6 +67,30 @@ pub fn for_each_unique_point<'a>(
         }
     }
     f(best_item);
+}
+
+/// Sets the version for the given internal_id.
+/// Makes sure the versions vec is long enough to store the given internal_id.
+///
+/// If it grows, the skipped internal ids are returned.
+#[must_use]
+fn ensure_len_and_set_version(
+    internal_id: PointOffsetType,
+    version: SeqNumberType,
+    internal_to_version: &mut Vec<SeqNumberType>,
+) -> std::ops::Range<usize> {
+    let internal_id = internal_id as usize;
+    let versions_len = internal_to_version.len();
+    // default to empty range if no internal ids are skipped
+    let mut skipped_internal_ids = versions_len..versions_len;
+    if internal_id >= versions_len {
+        internal_to_version.resize(internal_id + 1, 0);
+
+        skipped_internal_ids = versions_len..internal_id;
+    }
+    internal_to_version[internal_id] = version;
+
+    skipped_internal_ids
 }
 
 #[cfg(test)]

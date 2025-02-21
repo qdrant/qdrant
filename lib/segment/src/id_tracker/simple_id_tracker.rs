@@ -10,6 +10,7 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::ensure_len_and_set_version;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
@@ -146,29 +147,39 @@ impl SimpleIdTracker {
             }
         }
 
-        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
+        let mut internal_to_version: Vec<SeqNumberType> =
+            Vec::with_capacity(internal_to_external.len());
         let versions_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
         );
-        for (key, val) in versions_db_wrapper.lock_db().iter()? {
-            let external_id = Self::restore_key(&key);
-            let version: SeqNumberType = bincode::deserialize(&val).unwrap();
-            let internal_id = match external_id {
-                PointIdType::NumId(idx) => external_to_internal_num.get(&idx).copied(),
-                PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
-            };
-            if let Some(internal_id) = internal_id {
-                if internal_id as usize >= internal_to_version.len() {
-                    internal_to_version.resize(internal_id as usize + 1, 0);
-                }
-                internal_to_version[internal_id as usize] = version;
-            } else {
-                log::debug!(
-                    "Found version: {} without internal id, external id: {}",
-                    version,
-                    external_id
-                );
+        for (internal, external) in internal_to_external.iter_mut().enumerate() {
+            if deleted[internal] {
+                // Add synthetic version 0
+                internal_to_version.push(0);
+                continue;
             }
+            let external_key = Self::store_key(external);
+            let version: SeqNumberType = match versions_db_wrapper.get_opt(&external_key)? {
+                Some(val) => bincode::deserialize(&val).unwrap(),
+                None => {
+                    log::warn!(
+                        "Found point without version in version database, external id: {external}, internal id: {internal}\n\
+                        \tThis point will be removed from the id tracker",
+                    );
+                    deleted.set(internal, true);
+                    // Drop mapping too
+                    match external {
+                        PointIdType::NumId(num) => external_to_internal_num.remove(num),
+                        PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(uuid),
+                    };
+                    // Persist mapping deletion
+                    mapping_db_wrapper.remove(&external_key)?;
+                    // Add synthetic version 0
+                    internal_to_version.push(0);
+                    continue;
+                }
+            };
+            internal_to_version.push(version);
         }
         #[cfg(debug_assertions)]
         {
@@ -232,20 +243,18 @@ impl IdTracker for SimpleIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if let Some(external_id) = self.external_id(internal_id) {
-            if internal_id as usize >= self.internal_to_version.len() {
-                #[cfg(debug_assertions)]
+            let skipped_offsets =
+                ensure_len_and_set_version(internal_id, version, &mut self.internal_to_version);
+
+            // Handle the case of having populated the skipped offsets with version 0.
+            // If they didn't have a version before, they should be removed from the tracker.
+            for skipped_internal_id in skipped_offsets {
+                if let Some(external_id) = self.external_id(skipped_internal_id as PointOffsetType)
                 {
-                    if internal_id as usize > self.internal_to_version.len() + 1 {
-                        log::info!(
-                            "Resizing versions is initializing larger range {} -> {}",
-                            self.internal_to_version.len(),
-                            internal_id + 1
-                        );
-                    }
+                    self.drop(external_id)?;
                 }
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
-            self.internal_to_version[internal_id as usize] = version;
+
             self.versions_db_wrapper.put(
                 Self::store_key(&external_id),
                 bincode::serialize(&version).unwrap(),
