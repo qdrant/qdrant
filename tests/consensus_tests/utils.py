@@ -719,3 +719,14 @@ def move_shard(source_uri, collection_name, shard_id, source_peer_id, target_pee
             }
         })
     assert_http_ok(r)
+
+def replicate_shard(source_uri, collection_name, shard_id, source_peer_id, target_peer_id):
+    r = requests.post(
+        f"{source_uri}/collections/{collection_name}/cluster", json={
+            "replicate_shard": {
+                "shard_id": shard_id,
+                "from_peer_id": source_peer_id,
+                "to_peer_id": target_peer_id
+            }
+        })
+    assert_http_ok(r)

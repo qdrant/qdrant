@@ -106,6 +106,7 @@ impl ShardReplicaSet {
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             if clear {
+                // Remove shard data but not configuration files
                 LocalShard::clear(&self.shard_path).await?;
             }
 
@@ -138,8 +139,6 @@ impl ShardReplicaSet {
                     "Failed to restore local replica",
                 )));
 
-                // TODO: Handle single-node mode!? (How!? 😰)
-
                 // Mark this peer as "locally disabled"...
                 //
                 // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
@@ -161,8 +160,9 @@ impl ShardReplicaSet {
                     }
                 }
 
-                // Remove shard directory, so we don't leave empty directory/corrupted data
-                match tokio::fs::remove_dir_all(&self.shard_path).await {
+                // Remove inner shard data but keep the shard folder with its configuration files.
+                // This way the shard can be read on startup and the user can decide what to do next.
+                match LocalShard::clear(&self.shard_path).await {
                     Ok(()) => Err(restore_err),
 
                     Err(cleanup_err) => {
