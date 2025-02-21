@@ -708,6 +708,12 @@ impl Collection {
             // Try to find a replica to transfer from
             //
             // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
+            if replica_set.active_remote_shards().is_empty() {
+                log::debug!(
+                    "No active remote replicas for shard {shard_id} on peer {this_peer_id} to recover from",
+                );
+                continue;
+            }
             for replica_id in replica_set.active_remote_shards() {
                 let transfer = ShardTransfer {
                     from: replica_id,
