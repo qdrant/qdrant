@@ -126,7 +126,8 @@ pub fn init(
                         .exclude("/telemetry")
                         .exclude("/healthz")
                         .exclude("/readyz")
-                        .exclude("/livez"),
+                        .exclude("/livez")
+                        .exclude("/debug/pprof/heap"),
                 )
                 .wrap(actix_telemetry::ActixTelemetryTransform::new(
                     actix_telemetry_collector.clone(),
