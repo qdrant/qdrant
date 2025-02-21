@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -13,7 +14,6 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use rstest::{fixture, rstest};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
@@ -48,6 +48,21 @@ use segment::types::{
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tempfile::{Builder, TempDir};
+
+macro_rules! here {
+    () => {
+        format!("at {}:{}", file!(), line!())
+    };
+}
+
+/// `anyhow::ensure!` but with location, as what `assert!` would do
+macro_rules! ensure {
+    ($($arg:tt)*) => {
+        (|| Ok(anyhow::ensure!($($arg)*)))().map_err(|e| {
+            e.context(here!())
+        })?
+    };
+}
 
 const DIM: usize = 5;
 const ATTEMPTS: usize = 100;
@@ -338,13 +353,6 @@ impl TestSegments {
     }
 }
 
-/// Fixture for read operations, so that multiple tests can reuse it without expensive segment creation.
-#[fixture]
-#[once]
-fn read_only_segments() -> TestSegments {
-    TestSegments::new()
-}
-
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
     let mut rnd = StdRng::seed_from_u64(42);
 
@@ -438,7 +446,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     (struct_segment, plain_segment)
 }
 
-fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) {
+fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Result<()> {
     let mut rnd = rand::rng();
     let query = random_vector(&mut rnd, DIM).into();
 
@@ -462,9 +470,9 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) {
             .borrow()
             .estimate_cardinality(&query_filter);
 
-        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
-        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
-        assert!(
+        ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
+        ensure!(estimation.exp <= estimation.max, "{estimation:#?}");
+        ensure!(
             estimation.max
                 <= test_segments
                     .struct_segment
@@ -493,9 +501,9 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) {
             .borrow()
             .estimate_cardinality(&query_filter);
 
-        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
-        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
-        assert!(
+        ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
+        ensure!(estimation.exp <= estimation.max, "{estimation:#?}");
+        ensure!(
             estimation.max
                 <= test_segments
                     .struct_segment
@@ -505,18 +513,36 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) {
             "{estimation:#?}",
         );
 
-        plain_result
-            .iter()
-            .zip(struct_result.iter())
-            .for_each(|(r1, r2)| {
-                assert_eq!(r1.id, r2.id);
-                assert!((r1.score - r2.score) < 0.0001)
-            });
+        for (r1, r2) in plain_result.iter().zip(struct_result.iter()) {
+            ensure!(r1.id == r2.id);
+            ensure!((r1.score - r2.score) < 0.0001)
+        }
     }
+
+    Ok(())
 }
 
-#[rstest]
-fn test_is_empty_conditions(#[from(read_only_segments)] test_segments: &TestSegments) {
+#[test]
+fn test_read_operations() -> Result<()> {
+    let test_segments = &TestSegments::new();
+
+    test_is_empty_conditions(test_segments)?;
+    test_integer_index_types(test_segments)?;
+    test_cardinality_estimation(test_segments)?;
+    test_struct_payload_index(test_segments)?;
+    test_struct_payload_geo_boundingbox_index(test_segments)?;
+    test_struct_payload_geo_radius_index(test_segments)?;
+    test_struct_payload_geo_polygon_index(test_segments)?;
+    test_any_matcher_cardinality_estimation(test_segments)?;
+    test_struct_keyword_facet(test_segments)?;
+    test_mmap_keyword_facet(test_segments)?;
+    test_struct_keyword_facet_filtered(test_segments)?;
+    test_mmap_keyword_facet_filtered(test_segments)?;
+
+    Ok(())
+}
+
+fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
             key: JsonPath::new(FLICKING_KEY),
@@ -551,26 +577,27 @@ fn test_is_empty_conditions(#[from(read_only_segments)] test_segments: &TestSegm
         .borrow()
         .query_points(&filter, &hw_counter);
 
-    assert_eq!(plain_result, struct_result);
+    ensure!(plain_result == struct_result);
 
     eprintln!("estimation_plain = {estimation_plain:#?}");
     eprintln!("estimation_struct = {estimation_struct:#?}");
     eprintln!("real_number = {real_number:#?}");
 
-    assert!(estimation_plain.max >= real_number);
-    assert!(estimation_plain.min <= real_number);
+    ensure!(estimation_plain.max >= real_number);
+    ensure!(estimation_plain.min <= real_number);
 
-    assert!(estimation_struct.max >= real_number);
-    assert!(estimation_struct.min <= real_number);
+    ensure!(estimation_struct.max >= real_number);
+    ensure!(estimation_struct.min <= real_number);
 
-    assert!(
+    ensure!(
         (estimation_struct.exp as f64 - real_number as f64).abs()
             <= (estimation_plain.exp as f64 - real_number as f64).abs()
     );
+
+    Ok(())
 }
 
-#[rstest]
-fn test_integer_index_types(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_integer_index_types(test_segments: &TestSegments) -> Result<()> {
     for (kind, indexes) in [
         (
             "struct",
@@ -579,7 +606,7 @@ fn test_integer_index_types(#[from(read_only_segments)] test_segments: &TestSegm
         ("mmap", &test_segments.mmap_segment.payload_index.borrow()),
     ] {
         eprintln!("Checking {kind}_segment");
-        assert!(matches!(
+        ensure!(matches!(
             indexes
                 .field_indexes
                 .get(&JsonPath::new(INT_KEY))
@@ -587,7 +614,7 @@ fn test_integer_index_types(#[from(read_only_segments)] test_segments: &TestSegm
                 .as_slice(),
             [FieldIndex::IntMapIndex(_), FieldIndex::IntIndex(_)],
         ));
-        assert!(matches!(
+        ensure!(matches!(
             indexes
                 .field_indexes
                 .get(&JsonPath::new(INT_KEY_2))
@@ -595,7 +622,7 @@ fn test_integer_index_types(#[from(read_only_segments)] test_segments: &TestSegm
                 .as_slice(),
             [FieldIndex::IntMapIndex(_)],
         ));
-        assert!(matches!(
+        ensure!(matches!(
             indexes
                 .field_indexes
                 .get(&JsonPath::new(INT_KEY_3))
@@ -604,10 +631,10 @@ fn test_integer_index_types(#[from(read_only_segments)] test_segments: &TestSegm
             [FieldIndex::IntIndex(_)],
         ));
     }
+    Ok(())
 }
 
-#[rstest]
-fn test_cardinality_estimation(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
         JsonPath::new(INT_KEY),
         Range {
@@ -640,8 +667,10 @@ fn test_cardinality_estimation(#[from(read_only_segments)] test_segments: &TestS
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
 
-    assert!(exact <= estimation.max);
-    assert!(exact >= estimation.min);
+    ensure!(exact <= estimation.max);
+    ensure!(exact >= estimation.min);
+
+    Ok(())
 }
 
 #[test]
@@ -767,8 +796,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 }
 
 /// Compare search with plain, struct, and mmap indices.
-#[rstest]
-fn test_struct_payload_index(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
     let mut rnd = rand::rng();
 
     for _i in 0..ATTEMPTS {
@@ -818,9 +846,9 @@ fn test_struct_payload_index(#[from(read_only_segments)] test_segments: &TestSeg
             .borrow()
             .estimate_cardinality(&query_filter);
 
-        assert!(estimation.min <= estimation.exp, "{estimation:#?}");
-        assert!(estimation.exp <= estimation.max, "{estimation:#?}");
-        assert!(
+        ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
+        ensure!(estimation.exp <= estimation.max, "{estimation:#?}");
+        ensure!(
             estimation.max
                 <= test_segments
                     .struct_segment
@@ -843,56 +871,52 @@ fn test_struct_payload_index(#[from(read_only_segments)] test_segments: &TestSeg
             mmap_result.iter().map(|x| x.into()).collect_vec();
         mmap_result_sorted_ties.sort();
 
-        assert_eq!(
-            plain_result_sorted_ties.len(),
-            struct_result_sorted_ties.len(),
+        ensure!(
+            plain_result_sorted_ties.len() == struct_result_sorted_ties.len(),
             "query vector {query_vector:?}\n\
             query filter {query_filter:?}\n\
             plain result {plain_result:?}\n\
             struct result{struct_result:?}",
         );
-        assert_eq!(
-            plain_result_sorted_ties.len(),
-            mmap_result_sorted_ties.len(),
+        ensure!(
+            plain_result_sorted_ties.len() == mmap_result_sorted_ties.len(),
             "query vector {query_vector:?}\n\
             query filter {query_filter:?}\n\
             plain result {plain_result:?}\n\
             mmap result  {mmap_result:?}",
         );
 
-        itertools::izip!(
+        for (r1, r2, r3) in itertools::izip!(
             plain_result_sorted_ties,
             struct_result_sorted_ties,
             mmap_result_sorted_ties,
         )
         .map(|(r1, r2, r3)| (r1.0, r2.0, r3.0))
-        .for_each(|(r1, r2, r3)| {
-            assert_eq!(
-                r1.id, r2.id,
+        {
+            ensure!(
+                r1.id == r2.id,
                 "got different ScoredPoint {r1:?} and {r2:?} for\n\
                 query vector {query_vector:?}\n\
                 query filter {query_filter:?}\n\
                 plain result {plain_result:?}\n\
-                struct result{struct_result:?}",
+                struct result{struct_result:?}"
             );
-            assert!((r1.score - r2.score) < 0.0001);
-            assert_eq!(
-                r1.id, r3.id,
+            ensure!((r1.score - r2.score) < 0.0001);
+            ensure!(
+                r1.id == r3.id,
                 "got different ScoredPoint {r1:?} and {r3:?} for\n\
                 query vector {query_vector:?}\n\
                 query filter {query_filter:?}\n\
                 plain result {plain_result:?}\n\
                 mmap result  {mmap_result:?}",
             );
-            assert!((r1.score - r3.score) < 0.0001);
-        });
+            ensure!((r1.score - r3.score) < 0.0001);
+        }
     }
+    Ok(())
 }
 
-#[rstest]
-fn test_struct_payload_geo_boundingbox_index(
-    #[from(read_only_segments)] test_segments: &TestSegments,
-) {
+fn test_struct_payload_geo_boundingbox_index(test_segments: &TestSegments) -> Result<()> {
     let mut rnd = rand::rng();
 
     let geo_bbox = GeoBoundingBox {
@@ -913,11 +937,10 @@ fn test_struct_payload_geo_boundingbox_index(
 
     let query_filter = Filter::new_must(condition);
 
-    validate_geo_filter(test_segments, query_filter)
+    validate_geo_filter(test_segments, query_filter).context(here!())
 }
 
-#[rstest]
-fn test_struct_payload_geo_radius_index(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_struct_payload_geo_radius_index(test_segments: &TestSegments) -> Result<()> {
     let mut rnd = rand::rng();
 
     let r_meters = rnd.random_range(1.0..10000.0);
@@ -936,11 +959,10 @@ fn test_struct_payload_geo_radius_index(#[from(read_only_segments)] test_segment
 
     let query_filter = Filter::new_must(condition);
 
-    validate_geo_filter(test_segments, query_filter)
+    validate_geo_filter(test_segments, query_filter).context(here!())
 }
 
-#[rstest]
-fn test_struct_payload_geo_polygon_index(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_struct_payload_geo_polygon_index(test_segments: &TestSegments) -> Result<()> {
     let polygon_edge = 5;
     let interiors_num = 3;
 
@@ -977,7 +999,7 @@ fn test_struct_payload_geo_polygon_index(#[from(read_only_segments)] test_segmen
 
     let query_filter = Filter::new_must(condition);
 
-    validate_geo_filter(test_segments, query_filter)
+    validate_geo_filter(test_segments, query_filter).context(here!())
 }
 
 #[test]
@@ -1120,10 +1142,7 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 }
 
-#[rstest]
-fn test_any_matcher_cardinality_estimation(
-    #[from(read_only_segments)] test_segments: &TestSegments,
-) {
+fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
         .map(|&i| i.to_string())
@@ -1141,13 +1160,13 @@ fn test_any_matcher_cardinality_estimation(
         .borrow()
         .estimate_cardinality(&filter);
 
-    assert_eq!(estimation.primary_clauses.len(), 1);
+    ensure!(estimation.primary_clauses.len() == 1);
     for clause in estimation.primary_clauses.iter() {
         let expected_primary_clause = any_match.clone();
 
         match clause {
             PrimaryCondition::Condition(field_condition) => {
-                assert_eq!(*field_condition, Box::new(expected_primary_clause));
+                ensure!(*field_condition == Box::new(expected_primary_clause));
             }
             o => panic!("unexpected primary clause: {o:?}"),
         }
@@ -1169,8 +1188,10 @@ fn test_any_matcher_cardinality_estimation(
     eprintln!("exact = {exact:#?}");
     eprintln!("estimation = {estimation:#?}");
 
-    assert!(exact <= estimation.max);
-    assert!(exact >= estimation.min);
+    ensure!(exact <= estimation.max);
+    ensure!(exact >= estimation.min);
+
+    Ok(())
 }
 
 /// FacetParams fixture without a filter
@@ -1193,7 +1214,7 @@ fn validate_facet_result(
     segment: &Segment,
     facet_hits: HashMap<FacetValue, usize>,
     filter: Option<Filter>,
-) {
+) -> Result<()> {
     let hw_counter = HardwareCounterCell::new();
 
     for (value, count) in facet_hits.iter() {
@@ -1216,12 +1237,13 @@ fn validate_facet_result(
             )
             .len();
 
-        assert_eq!(*count, exact, "Facet value: {value:?}");
+        ensure!(*count == exact, "Facet value: {value:?}");
     }
+
+    Ok(())
 }
 
-#[rstest]
-fn test_struct_keyword_facet(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_struct_keyword_facet(test_segments: &TestSegments) -> Result<()> {
     let request = keyword_facet_request();
 
     // Plain segment should fail, as it does not have a keyword index
@@ -1236,11 +1258,10 @@ fn test_struct_keyword_facet(#[from(read_only_segments)] test_segments: &TestSeg
         .facet(&request, &Default::default(), &Default::default())
         .unwrap();
 
-    validate_facet_result(&test_segments.struct_segment, facet_hits, None);
+    validate_facet_result(&test_segments.struct_segment, facet_hits, None).context(here!())
 }
 
-#[rstest]
-fn test_mmap_keyword_facet(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_mmap_keyword_facet(test_segments: &TestSegments) -> Result<()> {
     let request = keyword_facet_request();
 
     let facet_hits = test_segments
@@ -1248,11 +1269,10 @@ fn test_mmap_keyword_facet(#[from(read_only_segments)] test_segments: &TestSegme
         .facet(&request, &Default::default(), &Default::default())
         .unwrap();
 
-    validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
+    validate_facet_result(&test_segments.mmap_segment, facet_hits, None).context(here!())
 }
 
-#[rstest]
-fn test_struct_keyword_facet_filtered(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_struct_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> {
     let mut request = keyword_facet_request();
 
     for _ in 0..10 {
@@ -1264,12 +1284,12 @@ fn test_struct_keyword_facet_filtered(#[from(read_only_segments)] test_segments:
             .facet(&request, &Default::default(), &Default::default())
             .unwrap();
 
-        validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter));
+        validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter)).context(here!())?
     }
+    Ok(())
 }
 
-#[rstest]
-fn test_mmap_keyword_facet_filtered(#[from(read_only_segments)] test_segments: &TestSegments) {
+fn test_mmap_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> {
     let mut request = keyword_facet_request();
 
     for _ in 0..10 {
@@ -1281,6 +1301,7 @@ fn test_mmap_keyword_facet_filtered(#[from(read_only_segments)] test_segments: &
             .facet(&request, &Default::default(), &Default::default())
             .unwrap();
 
-        validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter));
+        validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter)).context(here!())?
     }
+    Ok(())
 }
