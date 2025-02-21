@@ -2643,7 +2643,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | left | [Expression](#qdrant-Expression) |  |  |
 | right | [Expression](#qdrant-Expression) |  |  |
-| by_zero_default | [float](#float) |  |  |
+| by_zero_default | [float](#float) | optional |  |
 
 
 
@@ -2692,7 +2692,7 @@ The JSON representation for `Value` is a JSON value.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | constant | [float](#float) |  |  |
-| variable | [string](#string) |  |  |
+| variable | [string](#string) |  | Payload key or reference to score. |
 | condition | [Condition](#qdrant-Condition) |  | Payload condition. If true, becomes 1.0; otherwise 0.0 |
 | geo_distance | [GeoDistance](#qdrant-GeoDistance) |  | Geographic distance in meters |
 | mult | [MultExpression](#qdrant-MultExpression) |  | Multiply |

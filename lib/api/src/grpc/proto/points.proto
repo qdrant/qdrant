@@ -580,7 +580,7 @@ message Formula {
 message Expression {
     oneof variant {
         float constant = 1;
-        string variable = 2;
+        string variable = 2; // Payload key or reference to score.
         Condition condition = 3; // Payload condition. If true, becomes 1.0; otherwise 0.0
         GeoDistance geo_distance = 4; // Geographic distance in meters
         MultExpression mult = 5; // Multiply
@@ -606,7 +606,7 @@ message SumExpression {
 message DivExpression {
     Expression left = 1;
     Expression right = 2;
-    float by_zero_default = 3;
+    optional float by_zero_default = 3;
 }
 
 message Query {

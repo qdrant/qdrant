@@ -5196,6 +5196,7 @@ pub mod expression {
     pub enum Variant {
         #[prost(float, tag = "1")]
         Constant(f32),
+        /// Payload key or reference to score.
         #[prost(string, tag = "2")]
         Variable(::prost::alloc::string::String),
         /// Payload condition. If true, becomes 1.0; otherwise 0.0
@@ -5249,8 +5250,8 @@ pub struct DivExpression {
     pub left: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     #[prost(message, optional, boxed, tag = "2")]
     pub right: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
-    #[prost(float, tag = "3")]
-    pub by_zero_default: f32,
+    #[prost(float, optional, tag = "3")]
+    pub by_zero_default: ::core::option::Option<f32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
