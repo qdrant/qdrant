@@ -80,10 +80,11 @@ impl GpuDevicesMaganer {
                     .filter_map(|&device_index| filtered_physical_devices.get(device_index))
                     // Try to create a gpu device.
                     .filter_map(|physical_device| {
-                        match gpu::Device::new_with_queue_index(
+                        match gpu::Device::new_with_params(
                             instance.clone(),
                             physical_device,
                             queue_index,
+                            false,
                         ) {
                             Ok(device) => {
                                 log::info!("Initialized GPU device: {:?}", &physical_device.name);

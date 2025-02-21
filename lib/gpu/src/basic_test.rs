@@ -19,15 +19,8 @@ void main() {
 // It takes list of numbers and adds parameter to each number.
 #[test]
 fn basic_gpu_test() {
-    // First step: initialize GPU device.
-
-    // Panic if case of wrong Vulkan API calls.
-    let debug_messenger = crate::PanicIfErrorMessenger {};
-    // Create Vulkan API instance.
-    let instance = crate::Instance::builder()
-        .with_debug_messenger(&debug_messenger)
-        .build()
-        .unwrap();
+    // Get Vulkan API instance.
+    let instance = crate::GPU_TEST_INSTANCE.clone();
     // Choose any GPU hardware to use.
     let physical_device = &instance.physical_devices()[0];
     // Create GPU device.
@@ -106,7 +99,7 @@ fn basic_gpu_test() {
     // Third step: create computation pipeline.
 
     // Compile shader code to SPIR-V.
-    let spirv = instance
+    let spirv = crate::GPU_TEST_INSTANCE
         .compile_shader(SHADER_CODE, "shader.glsl", None, None)
         .unwrap();
     // Create shader.

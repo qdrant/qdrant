@@ -19,7 +19,7 @@ multiling-chinese = [
 ]
 multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
-testing = ["common/testing", "sparse/testing"]
+testing = ["common/testing", "sparse/testing", "gpu/testing"]
 gpu = ["gpu/gpu"]
 
 [build-dependencies]
