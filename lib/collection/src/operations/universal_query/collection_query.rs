@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use api::rest::{GeoDistance, LookupLocation};
+use api::rest::LookupLocation;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
@@ -9,11 +9,10 @@ use segment::data_types::vectors::{
 };
 use segment::json_path::JsonPath;
 use segment::types::{
-    Condition, ExtendedPointId, Filter, GeoPoint, HasIdCondition, PointIdType, SearchParams,
-    VectorName, VectorNameBuf, WithPayloadInterface, WithVector,
+    Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, SearchParams, VectorName,
+    VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
-use serde_json::Value;
 
 use super::shard_query::{
     FusionInternal, SampleInternal, ScoringQuery, ShardPrefetch, ShardQueryRequest,
@@ -97,31 +96,6 @@ pub enum Query {
     // Formula(FormulaInternal),
     /// Sample points
     Sample(SampleInternal),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FormulaInternal {
-    pub formula: ExpressionInternal,
-    pub defaults: HashMap<String, Value>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExpressionInternal {
-    Constant(f32),
-    Variable(String),
-    Condition(Box<Condition>),
-    Mult(Vec<ExpressionInternal>),
-    Sum(Vec<ExpressionInternal>),
-    Neg(Box<ExpressionInternal>),
-    Div {
-        left: Box<ExpressionInternal>,
-        right: Box<ExpressionInternal>,
-        by_zero_default: ScoreType,
-    },
-    GeoDistance {
-        origin: GeoPoint,
-        to: JsonPath,
-    },
 }
 
 impl Query {
@@ -626,7 +600,7 @@ impl CollectionQueryRequest {
 }
 
 mod from_rest {
-    use api::rest::{schema as rest, DivExpression, DivParams, GeoDistanceParams, NegExpression};
+    use api::rest::schema as rest;
 
     use super::*;
 
@@ -643,59 +617,6 @@ mod from_rest {
         fn from(value: rest::Sample) -> Self {
             match value {
                 rest::Sample::Random => SampleInternal::Random,
-            }
-        }
-    }
-
-    impl From<rest::FormulaInput> for FormulaInternal {
-        fn from(value: rest::FormulaInput) -> Self {
-            let rest::FormulaInput { formula, defaults } = value;
-
-            FormulaInternal {
-                formula: ExpressionInternal::from(formula),
-                defaults,
-            }
-        }
-    }
-
-    impl From<rest::Expression> for ExpressionInternal {
-        fn from(value: rest::Expression) -> Self {
-            match value {
-                rest::Expression::Constant(c) => ExpressionInternal::Constant(c),
-                rest::Expression::Variable(key) => ExpressionInternal::Variable(key),
-                rest::Expression::Condition(condition) => ExpressionInternal::Condition(condition),
-                rest::Expression::Mult(rest::MultExpression { mult: exprs }) => {
-                    ExpressionInternal::Mult(
-                        exprs.into_iter().map(ExpressionInternal::from).collect(),
-                    )
-                }
-                rest::Expression::Sum(rest::SumExpression { sum: exprs }) => {
-                    ExpressionInternal::Sum(
-                        exprs.into_iter().map(ExpressionInternal::from).collect(),
-                    )
-                }
-                rest::Expression::Neg(NegExpression { neg: expr }) => {
-                    ExpressionInternal::Neg(Box::new(ExpressionInternal::from(*expr)))
-                }
-                rest::Expression::Div(DivExpression {
-                    div:
-                        DivParams {
-                            left,
-                            right,
-                            by_zero_default,
-                        },
-                }) => {
-                    let left = Box::new((*left).into());
-                    let right = Box::new((*right).into());
-                    ExpressionInternal::Div {
-                        left,
-                        right,
-                        by_zero_default,
-                    }
-                }
-                rest::Expression::GeoDistance(GeoDistance {
-                    geo_distance: GeoDistanceParams { origin, to },
-                }) => ExpressionInternal::GeoDistance { origin, to },
             }
         }
     }

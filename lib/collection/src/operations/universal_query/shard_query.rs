@@ -18,10 +18,10 @@ use segment::types::{
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
-use super::collection_query::{ExpressionInternal, FormulaInternal};
 use crate::config::CollectionParams;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::universal_query::formula::{ExpressionInternal, FormulaInternal};
 
 /// Internal response type for a universal query request.
 ///
