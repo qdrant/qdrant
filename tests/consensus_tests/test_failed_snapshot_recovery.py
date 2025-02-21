@@ -109,8 +109,8 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     query_city = "London"
 
     dense_query_vector = random_dense_vector()
-    dense_search_result = search(peer_api_uris[0], dense_query_vector, query_city)
-    assert len(dense_search_result) > 0
+    initial_dense_search_result = search(peer_api_uris[0], dense_query_vector, query_city)
+    assert len(initial_dense_search_result) > 0
 
     snapshot_name = create_snapshot(peer_api_uris[-1])
     assert snapshot_name is not None
@@ -170,3 +170,36 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     assert local_shards[0]["state"] == "Dead"
     assert local_shards[0]["points_count"] == 0
 
+    # There are two other replicas, try moving shards into broken state
+    local_shards = get_local_shards(peer_api_uris[-0])
+    assert len(local_shards) == 1
+    assert local_shards[0]["shard_id"] == 0
+    assert local_shards[0]["state"] == "Active"
+    assert local_shards[0]["points_count"] == 1000
+
+    # Trigger replication to fix the broken shard
+    from_peer_id = get_peer_id(peer_api_uris[0])
+    to_peer_id = get_peer_id(peer_api_uris[-1])
+    replicate_shard(peer_api_uris[0], COLLECTION_NAME, 0, from_peer_id, to_peer_id)
+
+    # Wait for end of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+
+    # Assert that the local shard is active and not empty
+    local_shards = get_local_shards(peer_api_uris[-1])
+    assert len(local_shards) == 1
+    assert local_shards[0]["shard_id"] == 0
+    assert local_shards[0]["state"] == "Active"
+    assert local_shards[0]["points_count"] == 1000
+
+    # Assert that the remote shards are active and not empty
+    remote_shards = get_remote_shards(peer_api_uris[0])
+    assert len(remote_shards) == 2
+    for shard in remote_shards:
+        assert shard["state"] == "Active"
+
+    # Check that 'search' returns the same results after recovery
+    new_dense_search_result = search(peer_api_uris[-1], dense_query_vector, query_city)
+    assert len(new_dense_search_result) == len(initial_dense_search_result)
+    for i in range(len(new_dense_search_result)):
+        assert new_dense_search_result[i]["id"] == initial_dense_search_result[i]["id"]
