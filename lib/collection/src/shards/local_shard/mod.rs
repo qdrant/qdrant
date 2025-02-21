@@ -260,13 +260,49 @@ impl LocalShard {
         )
         .map_err(|e| CollectionError::service_error(format!("Wal error: {e}")))?;
 
-        let segment_dirs = std::fs::read_dir(&segments_path).map_err(|err| {
-            CollectionError::service_error(format!(
-                "Can't read segments directory due to {}\nat {}",
-                err,
-                segments_path.to_str().unwrap()
-            ))
-        })?;
+        // Walk over segments directory and collect all directory entries now
+        // Collect now and error early to prevent errors while we've already spawned load threads
+        let segment_paths = std::fs::read_dir(&segments_path)
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Can't read segments directory due to {err}\nat {}",
+                    segments_path.display(),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| {
+                CollectionError::service_error(format!(
+                    "Failed to read segment path in segment directory: {err}",
+                ))
+            })?;
+
+        // Grab segment paths, filter out hidden entries and non-directories
+        let segment_paths = segment_paths
+            .into_iter()
+            .filter(|entry| {
+                let is_hidden = entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|s| s.starts_with('.'));
+                if is_hidden {
+                    log::debug!(
+                        "Segments path entry prefixed with a period, ignoring: {}",
+                        entry.path().display(),
+                    );
+                }
+                !is_hidden
+            })
+            .filter(|entry| {
+                let is_dir = entry.path().is_dir();
+                if !is_dir {
+                    log::warn!(
+                        "Segments path entry is not a directory, skipping: {}",
+                        entry.path().display(),
+                    );
+                }
+                is_dir
+            })
+            .map(|entry| entry.path());
 
         let mut load_handlers = vec![];
 
@@ -274,8 +310,7 @@ impl LocalShard {
         // Uncomment it if you need to debug segment loading.
         // let semaphore = Arc::new(parking_lot::Mutex::new(()));
 
-        for entry in segment_dirs {
-            let segments_path = entry.unwrap().path();
+        for segment_path in segment_paths {
             let payload_index_schema = payload_index_schema.clone();
             // let semaphore_clone = semaphore.clone();
             load_handlers.push(
@@ -283,17 +318,17 @@ impl LocalShard {
                     .name(format!("shard-load-{collection_id}-{id}"))
                     .spawn(move || {
                         // let _guard = semaphore_clone.lock();
-                        let mut res = load_segment(&segments_path, &AtomicBool::new(false))?;
+                        let mut res = load_segment(&segment_path, &AtomicBool::new(false))?;
                         if let Some(segment) = &mut res {
                             segment.check_consistency_and_repair()?;
                             segment.update_all_field_indices(
                                 &payload_index_schema.read().schema.clone(),
                             )?;
                         } else {
-                            std::fs::remove_dir_all(&segments_path).map_err(|err| {
+                            std::fs::remove_dir_all(&segment_path).map_err(|err| {
                                 CollectionError::service_error(format!(
                                     "Can't remove leftover segment {}, due to {err}",
-                                    segments_path.to_str().unwrap(),
+                                    segment_path.to_str().unwrap(),
                                 ))
                             })?;
                         }
