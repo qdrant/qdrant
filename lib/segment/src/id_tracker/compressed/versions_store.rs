@@ -123,11 +123,11 @@ mod tests {
             // Check set()
             let mut rng = rand::rng();
             #[expect(clippy::needless_range_loop)]
-            for i in 0..model.len() as u32 {
+            for i in 0..model.len() {
                 let new_value = rng.random_range(model_test_range());
                 model[i] = new_value;
-                compressed.set(i, new_value);
-                assert_eq!(model[i], compressed.get(i).unwrap());
+                compressed.set(i as u32, new_value);
+                assert_eq!(model[i], compressed.get(i as u32).unwrap());
             }
 
             // Check len()
