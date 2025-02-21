@@ -440,7 +440,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 fn validate_geo_filter(query_filter: Filter) {
     let mut rnd = rand::rng();
     let query = random_vector(&mut rnd, DIM).into();
-    let test_segments = TestSegments::new();
+    let test_segments = get_read_only_segments();
 
     for _i in 0..ATTEMPTS {
         let plain_result = test_segments
@@ -517,7 +517,7 @@ fn validate_geo_filter(query_filter: Filter) {
 
 #[test]
 fn test_is_empty_conditions() {
-    let test_segments = TestSegments::new();
+    let test_segments = get_read_only_segments();
 
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
@@ -573,7 +573,7 @@ fn test_is_empty_conditions() {
 
 #[test]
 fn test_integer_index_types() {
-    let test_segments = TestSegments::new();
+    let test_segments = get_read_only_segments();
 
     for (kind, indexes) in [
         (
@@ -612,7 +612,7 @@ fn test_integer_index_types() {
 
 #[test]
 fn test_cardinality_estimation() {
-    let test_segments = TestSegments::new();
+    let test_segments = get_read_only_segments();
 
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
         JsonPath::new(INT_KEY),
@@ -777,7 +777,7 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 fn test_struct_payload_index() {
     let mut rnd = rand::rng();
 
-    let test_segments = TestSegments::new();
+    let test_segments = get_read_only_segments();
 
     for _i in 0..ATTEMPTS {
         let query_vector = random_vector(&mut rnd, DIM).into();
@@ -1128,7 +1128,7 @@ fn test_update_payload_index_type() {
 
 #[test]
 fn test_any_matcher_cardinality_estimation() {
-    let test_segments = TestSegments::new();
+    let test_segments = get_read_only_segments();
 
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
