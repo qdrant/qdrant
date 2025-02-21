@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "points.proto";
+import "google/protobuf/timestamp.proto";
 
 package qdrant;
 option csharp_namespace = "Qdrant.Client.Grpc";
@@ -40,60 +41,70 @@ message SyncPointsInternal {
   SyncPoints sync_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message UpsertPointsInternal {
   UpsertPoints upsert_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message DeletePointsInternal {
   DeletePoints delete_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message UpdateVectorsInternal {
   UpdatePointVectors update_vectors = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message DeleteVectorsInternal {
   DeletePointVectors delete_vectors = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message SetPayloadPointsInternal {
   SetPayloadPoints set_payload_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message DeletePayloadPointsInternal {
   DeletePayloadPoints delete_payload_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message ClearPayloadPointsInternal {
   ClearPayloadPoints clear_payload_points = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message CreateFieldIndexCollectionInternal {
   CreateFieldIndexCollection create_field_index_collection = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 message DeleteFieldIndexCollectionInternal {
   DeleteFieldIndexCollection delete_field_index_collection = 1;
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
+  optional DebugMetadata debug_metadata = 4;
 }
 
 // Has to be backward compatible with `PointsOperationResponse`!
@@ -115,6 +126,24 @@ message ClockTag {
   uint64 clock_tick = 3;
   uint64 token = 4;
   bool force = 5;
+}
+
+message DebugMetadata {
+  bytes uuid = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  Reason reason = 3;
+  optional uint64 sender = 4;
+}
+
+enum Reason {
+  ReasonUnknown = 0;
+  ReasonClient = 1;
+  ReasonPeer = 2;
+  ReasonForwardProxy = 3;
+  ReasonQueueProxy = 4;
+  ReasonStreamRecordsTransfer = 5;
+  ReasonWalDeltaTransfer = 6;
+  ReasonResharding = 7;
 }
 
 message SearchPointsInternal {
