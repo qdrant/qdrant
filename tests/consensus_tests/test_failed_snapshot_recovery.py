@@ -193,6 +193,14 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     assert local_shards[0]["points_count"] == 1000
 
     # Assert that the remote shards are active and not empty
+    # The peer used as source for the transfer is used as remote to have at least one
+    remote_shards = get_remote_shards(peer_api_uris[-1])
+    assert len(remote_shards) == 1
+    for shard in remote_shards:
+        assert shard["state"] == "Active"
+
+
+    # Assert that the remote shards are active and not empty
     remote_shards = get_remote_shards(peer_api_uris[0])
     assert len(remote_shards) == 2
     for shard in remote_shards:
