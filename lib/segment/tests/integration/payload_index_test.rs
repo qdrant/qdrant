@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs::create_dir;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
@@ -13,6 +13,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use rstest::{fixture, rstest};
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
@@ -338,10 +339,10 @@ impl TestSegments {
 }
 
 /// Fixture for read operations, so that multiple tests can reuse it without expensive segment creation.
-fn get_read_only_segments() -> &'static TestSegments {
-    static SEGMENTS: OnceLock<TestSegments> = OnceLock::new();
-
-    SEGMENTS.get_or_init(TestSegments::new)
+#[fixture]
+#[once]
+fn read_only_segments() -> TestSegments {
+    TestSegments::new()
 }
 
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
@@ -437,10 +438,9 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     (struct_segment, plain_segment)
 }
 
-fn validate_geo_filter(query_filter: Filter) {
+fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) {
     let mut rnd = rand::rng();
     let query = random_vector(&mut rnd, DIM).into();
-    let test_segments = get_read_only_segments();
 
     for _i in 0..ATTEMPTS {
         let plain_result = test_segments
@@ -515,10 +515,8 @@ fn validate_geo_filter(query_filter: Filter) {
     }
 }
 
-#[test]
-fn test_is_empty_conditions() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_is_empty_conditions(#[from(read_only_segments)] test_segments: &TestSegments) {
     let filter = Filter::new_must(Condition::IsEmpty(IsEmptyCondition {
         is_empty: PayloadField {
             key: JsonPath::new(FLICKING_KEY),
@@ -571,10 +569,8 @@ fn test_is_empty_conditions() {
     );
 }
 
-#[test]
-fn test_integer_index_types() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_integer_index_types(#[from(read_only_segments)] test_segments: &TestSegments) {
     for (kind, indexes) in [
         (
             "struct",
@@ -610,10 +606,8 @@ fn test_integer_index_types() {
     }
 }
 
-#[test]
-fn test_cardinality_estimation() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_cardinality_estimation(#[from(read_only_segments)] test_segments: &TestSegments) {
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
         JsonPath::new(INT_KEY),
         Range {
@@ -773,11 +767,9 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 }
 
 /// Compare search with plain, struct, and mmap indices.
-#[test]
-fn test_struct_payload_index() {
+#[rstest]
+fn test_struct_payload_index(#[from(read_only_segments)] test_segments: &TestSegments) {
     let mut rnd = rand::rng();
-
-    let test_segments = get_read_only_segments();
 
     for _i in 0..ATTEMPTS {
         let query_vector = random_vector(&mut rnd, DIM).into();
@@ -897,8 +889,10 @@ fn test_struct_payload_index() {
     }
 }
 
-#[test]
-fn test_struct_payload_geo_boundingbox_index() {
+#[rstest]
+fn test_struct_payload_geo_boundingbox_index(
+    #[from(read_only_segments)] test_segments: &TestSegments,
+) {
     let mut rnd = rand::rng();
 
     let geo_bbox = GeoBoundingBox {
@@ -919,11 +913,11 @@ fn test_struct_payload_geo_boundingbox_index() {
 
     let query_filter = Filter::new_must(condition);
 
-    validate_geo_filter(query_filter)
+    validate_geo_filter(test_segments, query_filter)
 }
 
-#[test]
-fn test_struct_payload_geo_radius_index() {
+#[rstest]
+fn test_struct_payload_geo_radius_index(#[from(read_only_segments)] test_segments: &TestSegments) {
     let mut rnd = rand::rng();
 
     let r_meters = rnd.random_range(1.0..10000.0);
@@ -942,11 +936,11 @@ fn test_struct_payload_geo_radius_index() {
 
     let query_filter = Filter::new_must(condition);
 
-    validate_geo_filter(query_filter)
+    validate_geo_filter(test_segments, query_filter)
 }
 
-#[test]
-fn test_struct_payload_geo_polygon_index() {
+#[rstest]
+fn test_struct_payload_geo_polygon_index(#[from(read_only_segments)] test_segments: &TestSegments) {
     let polygon_edge = 5;
     let interiors_num = 3;
 
@@ -983,7 +977,7 @@ fn test_struct_payload_geo_polygon_index() {
 
     let query_filter = Filter::new_must(condition);
 
-    validate_geo_filter(query_filter)
+    validate_geo_filter(test_segments, query_filter)
 }
 
 #[test]
@@ -1126,10 +1120,10 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 }
 
-#[test]
-fn test_any_matcher_cardinality_estimation() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_any_matcher_cardinality_estimation(
+    #[from(read_only_segments)] test_segments: &TestSegments,
+) {
     let keywords: IndexSet<String, FnvBuildHasher> = ["value1", "value2"]
         .iter()
         .map(|&i| i.to_string())
@@ -1226,10 +1220,8 @@ fn validate_facet_result(
     }
 }
 
-#[test]
-fn test_struct_keyword_facet() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_struct_keyword_facet(#[from(read_only_segments)] test_segments: &TestSegments) {
     let request = keyword_facet_request();
 
     // Plain segment should fail, as it does not have a keyword index
@@ -1247,10 +1239,8 @@ fn test_struct_keyword_facet() {
     validate_facet_result(&test_segments.struct_segment, facet_hits, None);
 }
 
-#[test]
-fn test_mmap_keyword_facet() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_mmap_keyword_facet(#[from(read_only_segments)] test_segments: &TestSegments) {
     let request = keyword_facet_request();
 
     let facet_hits = test_segments
@@ -1261,10 +1251,8 @@ fn test_mmap_keyword_facet() {
     validate_facet_result(&test_segments.mmap_segment, facet_hits, None);
 }
 
-#[test]
-fn test_struct_keyword_facet_filtered() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_struct_keyword_facet_filtered(#[from(read_only_segments)] test_segments: &TestSegments) {
     let mut request = keyword_facet_request();
 
     for _ in 0..10 {
@@ -1280,10 +1268,8 @@ fn test_struct_keyword_facet_filtered() {
     }
 }
 
-#[test]
-fn test_mmap_keyword_facet_filtered() {
-    let test_segments = get_read_only_segments();
-
+#[rstest]
+fn test_mmap_keyword_facet_filtered(#[from(read_only_segments)] test_segments: &TestSegments) {
     let mut request = keyword_facet_request();
 
     for _ in 0..10 {
