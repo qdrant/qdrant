@@ -7,7 +7,7 @@ use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 
-use super::parsed_formula::{Expression, ParsedFormula, VariableId};
+use super::parsed_formula::{ParsedExpression, ParsedFormula, VariableId};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::query_optimization::optimized_filter::{check_condition, OptimizedCondition};
@@ -21,7 +21,7 @@ const DEFAULT_SCORE: ScoreType = 0.0;
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
     /// The formula to evaluate
-    formula: Expression,
+    formula: ParsedExpression,
     /// One hashmap for each prefetch results
     prefetches_scores: &'a [AHashMap<PointOffsetType, ScoreType>],
     /// Payload key -> retriever function
@@ -78,12 +78,12 @@ impl FormulaScorer<'_> {
     /// Evaluate the expression recursively
     fn eval_expression(
         &self,
-        expression: &Expression,
+        expression: &ParsedExpression,
         point_id: PointOffsetType,
     ) -> OperationResult<ScoreType> {
         match expression {
-            Expression::Constant(c) => Ok(*c),
-            Expression::Variable(v) => match v {
+            ParsedExpression::Constant(c) => Ok(*c),
+            ParsedExpression::Variable(v) => match v {
                 VariableId::Score(prefetch_idx) => Ok(self
                     .prefetches_scores
                     .get(*prefetch_idx)
@@ -115,7 +115,7 @@ impl FormulaScorer<'_> {
                     Ok(score)
                 }
             },
-            Expression::Mult(expressions) => {
+            ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
                 for expr in expressions {
                     let value = self.eval_expression(expr, point_id)?;
@@ -127,11 +127,11 @@ impl FormulaScorer<'_> {
                 }
                 Ok(product)
             }
-            Expression::Sum(expressions) => expressions.iter().try_fold(0.0, |acc, expr| {
+            ParsedExpression::Sum(expressions) => expressions.iter().try_fold(0.0, |acc, expr| {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(acc + value)
             }),
-            Expression::Div {
+            ParsedExpression::Div {
                 left,
                 right,
                 by_zero_default,
@@ -149,11 +149,11 @@ impl FormulaScorer<'_> {
                     Ok(left / right)
                 }
             }
-            Expression::Neg(expr) => {
+            ParsedExpression::Neg(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.neg())
             }
-            Expression::GeoDistance { origin, key } => {
+            ParsedExpression::GeoDistance { origin, key } => {
                 let value: GeoPoint = self
                     .payload_retrievers
                     .get(key)
@@ -220,7 +220,7 @@ mod tests {
             ];
 
             FormulaScorer {
-                formula: Expression::Constant(0.0),
+                formula: ParsedExpression::Constant(0.0),
                 prefetches_scores,
                 payload_retrievers,
                 condition_checkers,
@@ -231,38 +231,38 @@ mod tests {
 
     #[rstest]
     // Basic expressions, just variables
-    #[case(Expression::Constant(5.0), 5.0)]
-    #[case(Expression::new_score_id(0), 1.0)]
-    #[case(Expression::new_score_id(1), 2.0)]
-    #[case(Expression::new_payload_id(FIELD_NAME), 85.0)]
-    #[case(Expression::new_condition_id(0), 1.0)]
-    #[case(Expression::new_condition_id(1), 0.0)]
+    #[case(ParsedExpression::Constant(5.0), 5.0)]
+    #[case(ParsedExpression::new_score_id(0), 1.0)]
+    #[case(ParsedExpression::new_score_id(1), 2.0)]
+    #[case(ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)), 85.0)]
+    #[case(ParsedExpression::new_condition_id(0), 1.0)]
+    #[case(ParsedExpression::new_condition_id(1), 0.0)]
     // Operations
-    #[case(Expression::Sum(vec![
-        Expression::Constant(1.0),
-        Expression::new_score_id(0),
-        Expression::new_payload_id(FIELD_NAME),
-        Expression::new_condition_id(0),
+    #[case(ParsedExpression::Sum(vec![
+        ParsedExpression::Constant(1.0),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
     ]), 1.0 + 1.0 + 85.0 + 1.0)]
-    #[case(Expression::Mult(vec![
-        Expression::Constant(2.0),
-        Expression::new_score_id(0),
-        Expression::new_payload_id(FIELD_NAME),
-        Expression::new_condition_id(0),
+    #[case(ParsedExpression::Mult(vec![
+        ParsedExpression::Constant(2.0),
+        ParsedExpression::new_score_id(0),
+        ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
+        ParsedExpression::new_condition_id(0),
     ]), 2.0 * 1.0 * 85.0 * 1.0)]
-    #[case(Expression::Div {
-        left: Box::new(Expression::Constant(10.0)),
-        right: Box::new(Expression::new_score_id(0)),
+    #[case(ParsedExpression::Div {
+        left: Box::new(ParsedExpression::Constant(10.0)),
+        right: Box::new(ParsedExpression::new_score_id(0)),
         by_zero_default: f32::INFINITY,
     }, 10.0 / 1.0)]
-    #[case(Expression::new_neg(Expression::Constant(10.0)), -10.0)]
-    #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)), 21926.494)]
+    #[case(ParsedExpression::new_neg(ParsedExpression::Constant(10.0)), -10.0)]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)), 21926.494)]
     #[should_panic(
         expected = r#"called `Result::unwrap()` on an `Err` value: VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point" }"#
     )]
-    #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
     #[test]
-    fn test_evaluation(#[case] expr: Expression, #[case] expected: ScoreType) {
+    fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
         let defaults = HashMap::new();
         let scorer_fixture = make_formula_scorer(&defaults);
 
@@ -274,17 +274,23 @@ mod tests {
     // Default values
     #[rstest]
     // Defined default score
-    #[case(Expression::new_score_id(3), 1.5)]
+    #[case(ParsedExpression::new_score_id(3), 1.5)]
     // score idx not defined
-    #[case(Expression::new_score_id(10), DEFAULT_SCORE)]
+    #[case(ParsedExpression::new_score_id(10), DEFAULT_SCORE)]
     // missing value in payload
-    #[case(Expression::new_payload_id(NO_VALUE_FIELD_NAME), 85.0)]
+    #[case(
+        ParsedExpression::new_payload_id(JsonPath::new(NO_VALUE_FIELD_NAME)),
+        85.0
+    )]
     // missing value and no default value provided
-    #[case(Expression::new_payload_id("missing_field"), DEFAULT_SCORE)]
+    #[case(
+        ParsedExpression::new_payload_id(JsonPath::new("missing_field")),
+        DEFAULT_SCORE
+    )]
     // geo distance with default value
-    #[case(Expression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), 90951.3)]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), 90951.3)]
     #[test]
-    fn test_default_values(#[case] expr: Expression, #[case] expected: ScoreType) {
+    fn test_default_values(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
         let defaults = [
             (VariableId::Score(3), json!(1.5)),
             (

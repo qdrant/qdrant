@@ -21,5 +21,6 @@
 //! [`QueryShardPoints`]: api::grpc::qdrant::QueryShardPoints
 
 pub mod collection_query;
+pub mod formula;
 pub mod planned_query;
 pub mod shard_query;

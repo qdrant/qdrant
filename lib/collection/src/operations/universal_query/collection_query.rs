@@ -91,6 +91,9 @@ pub enum Query {
     /// Order by a payload field
     OrderBy(OrderBy),
 
+    // TODO(score boosting): enable this
+    // /// Formula-based score fusion
+    // Formula(FormulaInternal),
     /// Sample points
     Sample(SampleInternal),
 }
@@ -114,12 +117,15 @@ impl Query {
             }
             Query::Fusion(fusion) => ScoringQuery::Fusion(fusion),
             Query::OrderBy(order_by) => ScoringQuery::OrderBy(order_by),
+            // TODO(score boosting): enable this
+            // Query::Formula(formula) => ScoringQuery::Formula(ParsedFormula::try_from(formula)?),
             Query::Sample(sample) => ScoringQuery::Sample(sample),
         };
 
         Ok(scoring_query)
     }
 }
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorInputInternal {
     Id(PointIdType),
