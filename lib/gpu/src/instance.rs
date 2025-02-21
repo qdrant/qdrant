@@ -33,9 +33,6 @@ pub struct Instance {
 
     /// Shader compiler.
     compiler: Mutex<shaderc::Compiler>,
-
-    /// Disable half precision support. It's useful for unit tests.
-    skip_half_precision: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,7 +58,6 @@ pub struct InstanceBuilder<'a> {
     debug_messenger: Option<&'a dyn DebugMessenger>,
     allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
     dump_api: bool,
-    skip_half_precision: bool,
 }
 
 impl<'a> InstanceBuilder<'a> {
@@ -90,18 +86,11 @@ impl<'a> InstanceBuilder<'a> {
         self
     }
 
-    /// Disable half precision support. It's useful for unit tests.
-    pub fn with_skip_half_precision(mut self, skip_half_precision: bool) -> Self {
-        self.skip_half_precision = skip_half_precision;
-        self
-    }
-
     pub fn build(self) -> GpuResult<Arc<Instance>> {
         Instance::new(
             self.debug_messenger,
             self.allocation_callbacks,
             self.dump_api,
-            self.skip_half_precision,
         )
     }
 }
@@ -115,7 +104,6 @@ impl Instance {
         debug_messenger: Option<&dyn DebugMessenger>,
         allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
         dump_api: bool,
-        skip_half_precision: bool,
     ) -> GpuResult<Arc<Self>> {
         // Create a shader compiler before we start.
         // It's used to compile GLSL into SPIR-V.
@@ -276,7 +264,6 @@ impl Instance {
             allocation_callbacks,
             vk_debug_utils_loader,
             vk_debug_messenger,
-            skip_half_precision,
             compiler,
         }))
     }
@@ -303,10 +290,6 @@ impl Instance {
 
     pub fn physical_devices(&self) -> &[PhysicalDevice] {
         &self.vk_physical_devices
-    }
-
-    pub fn skip_half_precision(&self) -> bool {
-        self.skip_half_precision
     }
 
     pub fn compile_shader(

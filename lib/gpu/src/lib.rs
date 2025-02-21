@@ -1,7 +1,9 @@
 #![cfg(feature = "gpu")]
 
-pub mod allocation_callbacks;
+#[cfg(any(test, feature = "testing"))]
+use std::sync::LazyLock;
 
+pub mod allocation_callbacks;
 pub use allocation_callbacks::*;
 
 pub mod context;
@@ -36,11 +38,16 @@ pub use shader::*;
 mod basic_test;
 
 #[cfg(any(test, feature = "testing"))]
-lazy_static::lazy_static! {
-    pub static ref GPU_PANIC_MESSENGER: Box<dyn DebugMessenger> = Box::new(PanicIfErrorMessenger{});
-    pub static ref GPU_TEST_INSTANCE: std::sync::Arc<Instance> = Instance::builder().with_debug_messenger(GPU_PANIC_MESSENGER.as_ref()).build().unwrap();
-    pub static ref GPU_TEST_INSTANCE_NO_F16: std::sync::Arc<Instance> = Instance::builder().with_debug_messenger(GPU_PANIC_MESSENGER.as_ref()).build().unwrap();
-}
+pub static GPU_PANIC_MESSENGER: LazyLock<Box<dyn DebugMessenger>> =
+    LazyLock::new(|| Box::new(PanicIfErrorMessenger {}));
+
+#[cfg(any(test, feature = "testing"))]
+pub static GPU_TEST_INSTANCE: LazyLock<std::sync::Arc<Instance>> = LazyLock::new(|| {
+    Instance::builder()
+        .with_debug_messenger(GPU_PANIC_MESSENGER.as_ref())
+        .build()
+        .unwrap()
+});
 
 /// A trait for GPU resources.
 /// It's used keep GPU resources alive while they are in use by the GPU context.
