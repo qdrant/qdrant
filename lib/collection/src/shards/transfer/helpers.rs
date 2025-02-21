@@ -111,11 +111,13 @@ pub fn validate_transfer(
         )));
     }
 
-    // We allow transfers *from* `ReshardingScaleDown` replicas, because they contain a *superset*
-    // of points in a regular replica
+    // We allow transfers *from*:
+    // - `Active` replicas
+    // - `ReshardingScaleDown` replicas, because they contain a *superset* of points in a regular replica
+    // - Unknown replicas, because the local replica state might be outdated
     let is_active = matches!(
         source_replicas.get(&transfer.from),
-        Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown),
+        Some(ReplicaState::Active | ReplicaState::ReshardingScaleDown) | None,
     );
 
     if !is_active {

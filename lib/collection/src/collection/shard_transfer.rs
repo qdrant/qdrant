@@ -255,6 +255,15 @@ impl Collection {
 
                 if transfer.to == self.this_peer_id {
                     replica_set.set_replica_state(transfer.to, state)?;
+                    // Make sure the receiving shard has at least one remote shard in case of sync transfer
+                    if !is_resharding_transfer
+                        && transfer.sync
+                        && !replica_set.has_remote_shard().await
+                    {
+                        replica_set
+                            .add_remote(transfer.from, ReplicaState::Active)
+                            .await?;
+                    }
                 } else {
                     replica_set.add_remote(transfer.to, state).await?;
                 }
