@@ -465,6 +465,9 @@ pub enum Query {
     /// Fuse the results of multiple prefetches.
     Fusion(FusionQuery),
 
+    /// Score boosting via an arbitrary formula
+    Formula(FormulaQuery),
+
     /// Sample points from the collection, non-deterministically.
     Sample(SampleQuery),
 }
@@ -507,7 +510,8 @@ pub struct FusionQuery {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct FormulaQuery {
-    pub formula: FormulaInput,
+    pub formula: Expression,
+    pub defaults: HashMap<String, Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -626,13 +630,6 @@ impl ContextPair {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
         std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
     }
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct FormulaInput {
-    pub formula: Expression,
-    // TODO(score boosting): Validate defaults, particularly for score references
-    pub defaults: HashMap<String, Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

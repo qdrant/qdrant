@@ -14081,6 +14081,9 @@
             "$ref": "#/components/schemas/FusionQuery"
           },
           {
+            "$ref": "#/components/schemas/FormulaQuery"
+          },
+          {
             "$ref": "#/components/schemas/SampleQuery"
           }
         ]
@@ -14250,6 +14253,148 @@
           "rrf",
           "dbsf"
         ]
+      },
+      "FormulaQuery": {
+        "type": "object",
+        "required": [
+          "defaults",
+          "formula"
+        ],
+        "properties": {
+          "formula": {
+            "$ref": "#/components/schemas/Expression"
+          },
+          "defaults": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "Expression": {
+        "anyOf": [
+          {
+            "type": "number",
+            "format": "float"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/Condition"
+          },
+          {
+            "$ref": "#/components/schemas/MultExpression"
+          },
+          {
+            "$ref": "#/components/schemas/SumExpression"
+          },
+          {
+            "$ref": "#/components/schemas/NegExpression"
+          },
+          {
+            "$ref": "#/components/schemas/DivExpression"
+          },
+          {
+            "$ref": "#/components/schemas/GeoDistance"
+          }
+        ]
+      },
+      "MultExpression": {
+        "type": "object",
+        "required": [
+          "mult"
+        ],
+        "properties": {
+          "mult": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "SumExpression": {
+        "type": "object",
+        "required": [
+          "sum"
+        ],
+        "properties": {
+          "sum": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Expression"
+            }
+          }
+        }
+      },
+      "NegExpression": {
+        "type": "object",
+        "required": [
+          "neg"
+        ],
+        "properties": {
+          "neg": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "DivExpression": {
+        "type": "object",
+        "required": [
+          "div"
+        ],
+        "properties": {
+          "div": {
+            "$ref": "#/components/schemas/DivParams"
+          }
+        }
+      },
+      "DivParams": {
+        "type": "object",
+        "required": [
+          "by_zero_default",
+          "left",
+          "right"
+        ],
+        "properties": {
+          "left": {
+            "$ref": "#/components/schemas/Expression"
+          },
+          "right": {
+            "$ref": "#/components/schemas/Expression"
+          },
+          "by_zero_default": {
+            "type": "number",
+            "format": "float"
+          }
+        }
+      },
+      "GeoDistance": {
+        "type": "object",
+        "required": [
+          "geo_distance"
+        ],
+        "properties": {
+          "geo_distance": {
+            "$ref": "#/components/schemas/GeoDistanceParams"
+          }
+        }
+      },
+      "GeoDistanceParams": {
+        "type": "object",
+        "required": [
+          "origin",
+          "to"
+        ],
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "to": {
+            "description": "Payload field with the destination geo point",
+            "type": "string"
+          }
+        }
       },
       "SampleQuery": {
         "type": "object",
