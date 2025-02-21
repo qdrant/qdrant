@@ -185,6 +185,11 @@ impl PlannedQuery {
 
                     vec![Source::ScrollsIdx(idx)]
                 }
+                Some(ScoringQuery::Formula(_formula)) => {
+                    return Err(CollectionError::bad_request(
+                        "cannot apply Formula without prefetches".to_string(),
+                    ))
+                }
                 Some(ScoringQuery::Sample(SampleInternal::Random)) => {
                     // Everything should come from 1 scroll
                     let scroll = QueryScrollRequestInternal {
@@ -328,6 +333,11 @@ fn recurse_prefetches(
                     scrolls.push(scroll);
 
                     Source::ScrollsIdx(idx)
+                }
+                Some(ScoringQuery::Formula(_)) => {
+                    return Err(CollectionError::bad_request(
+                        "cannot apply Formula without prefetches".to_string(),
+                    ))
                 }
                 Some(ScoringQuery::Sample(SampleInternal::Random)) => {
                     let scroll = QueryScrollRequestInternal {

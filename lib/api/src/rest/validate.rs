@@ -1,12 +1,13 @@
 use std::borrow::Cow;
 
 use common::validation::validate_multi_vector;
+use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::schema::BatchVectorStruct;
 use super::{
-    Batch, ContextInput, Fusion, OrderByInterface, PointVectors, Query, QueryInterface,
-    RecommendInput, Sample, VectorInput,
+    Batch, ContextInput, FormulaQuery, Fusion, OrderByInterface, PointVectors, Query,
+    QueryInterface, RecommendInput, Sample, VectorInput,
 };
 use crate::rest::NamedVectorStruct;
 
@@ -37,6 +38,7 @@ impl Validate for Query {
             Query::Discover(discover) => discover.discover.validate(),
             Query::Context(context) => context.context.validate(),
             Query::Fusion(fusion) => fusion.fusion.validate(),
+            Query::Formula(formula) => formula.validate(),
             Query::OrderBy(order_by) => order_by.order_by.validate(),
             Query::Sample(sample) => sample.sample.validate(),
         }
@@ -96,6 +98,40 @@ impl Validate for Fusion {
         match self {
             Fusion::Rrf | Fusion::Dbsf => Ok(()),
         }
+    }
+}
+
+impl Validate for FormulaQuery {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let Self {
+            // Formula validation will happen when parsing
+            formula: _formula,
+            defaults,
+        } = self;
+
+        let mut errors = validator::ValidationErrors::new();
+
+        for (key, value) in defaults.iter() {
+            let var_id = match key.parse() {
+                Ok(var_id) => var_id,
+                Err(err) => {
+                    let validation =
+                        ValidationError::new("Invalid variable name").with_message(Cow::Owned(err));
+                    errors.add("defaults", validation);
+                    continue;
+                }
+            };
+
+            match var_id {
+                VariableId::Score(_) if value.as_number().is_none() => {
+                    let validation = ValidationError::new("Score default must be a number");
+                    errors.add("defaults", validation);
+                }
+                _ => (),
+            }
+        }
+
+        Ok(())
     }
 }
 

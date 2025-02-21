@@ -98,7 +98,7 @@ fn collect_query(query: &Query, batch: &mut BatchAccum) {
                 }
             }
         }
-        Query::OrderBy(_) | Query::Fusion(_) | Query::Sample(_) => {}
+        Query::OrderBy(_) | Query::Fusion(_) | Query::Formula(_) | Query::Sample(_) => {}
     }
 }
 

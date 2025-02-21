@@ -82,20 +82,26 @@ pub enum ScoringQuery {
     /// Order by a payload field
     OrderBy(OrderBy),
 
-    // TODO(score boosting): Enable this
-    // Formula(ParsedFormula),
+    /// Score boosting via an arbitrary formula
+    Formula(ParsedFormula),
+
     /// Sample points
     Sample(SampleInternal),
 }
 
 impl ScoringQuery {
+    /// Whether the query needs the prefetches results from all shards to compute the final score
+    ///
+    /// If false, there is a single list of scored points which contain the final score.
     pub fn needs_intermediate_results(&self) -> bool {
         match self {
             Self::Fusion(fusion) => match fusion {
+                // We need the ranking information of each prefetch
                 FusionInternal::Rrf => true,
+                // We need the score distribution information of each prefetch
                 FusionInternal::Dbsf => true,
             },
-            Self::Vector(_) | Self::OrderBy(_) | Self::Sample(_) => false,
+            Self::Vector(_) | Self::OrderBy(_) | Self::Formula(_) | Self::Sample(_) => false,
         }
     }
 
@@ -128,6 +134,9 @@ impl ScoringQuery {
                 ScoringQuery::Fusion(fusion) => match fusion {
                     FusionInternal::Rrf | FusionInternal::Dbsf => Some(Order::LargeBetter),
                 },
+                // Score boosting formulas are always have descending order,
+                // euclidean scores can be negated within the formula
+                ScoringQuery::Formula(_formula) => Some(Order::LargeBetter),
                 ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
                 // Random sample does not require ordering
                 ScoringQuery::Sample(SampleInternal::Random) => None,
@@ -513,6 +522,8 @@ impl From<ScoringQuery> for grpc::query_shard_points::Query {
             ScoringQuery::OrderBy(order_by) => Self {
                 score: Some(Score::OrderBy(grpc::OrderBy::from(order_by))),
             },
+            // TODO(score boosting): Implement conversion
+            ScoringQuery::Formula(_formula) => todo!(),
             ScoringQuery::Sample(sample) => Self {
                 score: Some(Score::Sample(api::grpc::qdrant::Sample::from(sample) as i32)),
             },
