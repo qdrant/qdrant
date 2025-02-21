@@ -8,8 +8,8 @@ use segment::common::utils::MaybeOneOrMany;
 use segment::data_types::order_by::OrderBy;
 use segment::json_path::JsonPath;
 use segment::types::{
-    Filter, IntPayloadType, Payload, PointIdType, SearchParams, ShardKey, VectorNameBuf,
-    WithPayloadInterface, WithVector,
+    Condition, Filter, GeoPoint, IntPayloadType, Payload, PointIdType, SearchParams, ShardKey,
+    VectorNameBuf, WithPayloadInterface, WithVector,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -506,6 +506,11 @@ pub struct FusionQuery {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FormulaQuery {
+    pub formula: FormulaInput,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct SampleQuery {
     pub sample: Sample,
@@ -621,6 +626,66 @@ impl ContextPair {
     pub fn iter(&self) -> impl Iterator<Item = &VectorInput> {
         std::iter::once(&self.positive).chain(std::iter::once(&self.negative))
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct FormulaInput {
+    pub formula: Expression,
+    // TODO(score boosting): Validate defaults, particularly for score references
+    pub defaults: HashMap<String, Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Expression {
+    Constant(f32),
+    Variable(String),
+    Condition(Box<Condition>),
+    Mult(MultExpression),
+    Sum(SumExpression),
+    Neg(NegExpression),
+    Div(DivExpression),
+    GeoDistance(GeoDistance),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct MultExpression {
+    pub mult: Vec<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SumExpression {
+    pub sum: Vec<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct NegExpression {
+    pub neg: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DivExpression {
+    pub div: DivParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DivParams {
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
+    pub by_zero_default: ScoreType,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GeoDistance {
+    pub geo_distance: GeoDistanceParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GeoDistanceParams {
+    /// The origin geo point to measure from
+    pub origin: GeoPoint,
+    /// Payload field with the destination geo point
+    pub to: JsonPath,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
