@@ -1,11 +1,8 @@
 use common::types::PointOffsetType;
-use itertools::Itertools;
 
 use super::bool_index::BoolIndex;
 use super::map_index::{IdIter, MapIndex};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
-use crate::index::struct_filter_context::StructFilterContext;
-use crate::payload_storage::FilterContext;
 use crate::types::{IntPayloadType, UuidIntType};
 
 pub trait FacetIndex {
@@ -56,30 +53,13 @@ impl<'a> FacetIndexEnum<'a> {
         }
     }
 
-    fn iter_values_map(&self) -> Box<dyn Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_> {
+    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_> {
         match self {
             FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values_map(*index)),
             FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values_map(*index)),
             FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values_map(*index)),
             FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values_map(*index)),
         }
-    }
-
-    pub fn iter_filtered_counts_per_value<'c>(
-        &'a self,
-        context: &'c StructFilterContext,
-    ) -> impl Iterator<Item = FacetHit<FacetValueRef<'a>>> + 'c
-    where
-        'a: 'c,
-    {
-        self.iter_values_map()
-            .map(|(value, internal_ids_iter)| FacetHit {
-                value,
-                count: internal_ids_iter
-                    .unique()
-                    .filter(|&point_id| context.check(point_id))
-                    .count(),
-            })
     }
 
     pub fn iter_counts_per_value(

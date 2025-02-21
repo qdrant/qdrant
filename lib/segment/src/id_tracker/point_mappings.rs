@@ -25,9 +25,10 @@ pub type FileEndianess = LittleEndian;
 
 #[derive(Clone, PartialEq, Default, Debug)]
 pub struct PointMappings {
-    // `deleted` specifies which points of internal_to_external was deleted.
-    // It is possible that `deleted` can be longer or shorter than `internal_to_external`.
-    // - if `deleted` is longer, then extra bits should be set to `false` and ignored.
+    /// `deleted` specifies which points of internal_to_external was deleted.
+    /// It is possible that `deleted` can be longer or shorter than `internal_to_external`.
+    /// - if `deleted` is longer, then extra bits should be set to `false` and ignored.
+    /// - if `deleted` is shorter, then extra indices are as if the bits were set to `true`.
     deleted: BitVec,
     internal_to_external: Vec<PointIdType>,
 

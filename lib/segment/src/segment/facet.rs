@@ -11,6 +11,7 @@ use crate::data_types::facets::{FacetHit, FacetParams, FacetValue};
 use crate::entry::entry_point::SegmentEntry;
 use crate::index::PayloadIndex;
 use crate::json_path::JsonPath;
+use crate::payload_storage::FilterContext;
 use crate::types::Filter;
 
 impl Segment {
@@ -75,9 +76,16 @@ impl Segment {
                 context = payload_index.struct_filtered_context(filter, hw_counter);
 
                 let iter = facet_index
-                    .iter_filtered_counts_per_value(&context)
+                    .iter_values_map()
                     .check_stop(|| is_stopped.load(Ordering::Relaxed))
-                    .filter(|hit| hit.count > 0);
+                    .filter_map(|(value, iter)| {
+                        let count = iter
+                            .unique()
+                            .filter(|&point_id| context.check(point_id))
+                            .count();
+
+                        (count > 0).then_some(FacetHit { value, count })
+                    });
 
                 Either::Right(iter)
             };
