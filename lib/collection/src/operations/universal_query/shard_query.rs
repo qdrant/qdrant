@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use api::conversions::json::proto_to_json;
+use api::grpc::conversions::grpc_condition_into_condition;
 use api::grpc::qdrant as grpc;
 use common::types::ScoreType;
 use itertools::Itertools;
@@ -421,6 +423,102 @@ impl TryFrom<i32> for SampleInternal {
         })?;
 
         Ok(SampleInternal::from(sample))
+    }
+}
+
+impl TryFrom<api::grpc::qdrant::Formula> for FormulaInternal {
+    type Error = tonic::Status;
+
+    fn try_from(formula: api::grpc::qdrant::Formula) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::Formula {
+            expression,
+            defaults,
+        } = formula;
+
+        let expression = expression
+            .ok_or_else(|| tonic::Status::invalid_argument("missing field: expression"))?;
+
+        let expression = ExpressionInternal::try_from(expression)?;
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| {
+                let value = proto_to_json(value)?;
+                Result::<_, tonic::Status>::Ok((key, value))
+            })
+            .try_collect()?;
+
+        Ok(Self {
+            formula: expression,
+            defaults,
+        })
+    }
+}
+
+impl TryFrom<grpc::Expression> for ExpressionInternal {
+    type Error = tonic::Status;
+
+    fn try_from(expression: grpc::Expression) -> Result<Self, Self::Error> {
+        use grpc::expression::Variant;
+
+        let variant = expression
+            .variant
+            .ok_or_else(|| tonic::Status::invalid_argument("missing field: variant"))?;
+
+        let expression = match variant {
+            Variant::Constant(constant) => ExpressionInternal::Constant(constant),
+            Variant::Variable(variable) => ExpressionInternal::Variable(variable),
+            Variant::Condition(condition) => {
+                let condition = grpc_condition_into_condition(condition)?
+                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: condition"))?;
+                ExpressionInternal::Condition(Box::new(condition))
+            }
+            Variant::GeoDistance(grpc::GeoDistance { origin, to }) => {
+                let origin = origin
+                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: origin"))?
+                    .into();
+                let to = to
+                    .parse()
+                    .map_err(|_| tonic::Status::invalid_argument("invalid payload key"))?;
+                ExpressionInternal::GeoDistance { origin, to }
+            }
+            Variant::Mult(grpc::MultExpression { mult }) => {
+                let mult = mult
+                    .into_iter()
+                    .map(ExpressionInternal::try_from)
+                    .try_collect()?;
+                ExpressionInternal::Mult(mult)
+            }
+            Variant::Sum(grpc::SumExpression { sum }) => {
+                let sum = sum
+                    .into_iter()
+                    .map(ExpressionInternal::try_from)
+                    .try_collect()?;
+                ExpressionInternal::Sum(sum)
+            }
+            Variant::Div(div) => {
+                let grpc::DivExpression {
+                    left,
+                    right,
+                    by_zero_default,
+                } = *div;
+
+                let left =
+                    *left.ok_or_else(|| tonic::Status::invalid_argument("missing field: left"))?;
+                let right = *right
+                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: right"))?;
+
+                ExpressionInternal::Div {
+                    left: Box::new(left.try_into()?),
+                    right: Box::new(right.try_into()?),
+                    by_zero_default,
+                }
+            }
+            Variant::Neg(expression) => {
+                ExpressionInternal::Neg(Box::new((*expression).try_into()?))
+            }
+        };
+
+        Ok(expression)
     }
 }
 

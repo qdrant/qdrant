@@ -1059,7 +1059,7 @@ impl From<segment::types::Filter> for Filter {
 /// Convert a gRPC into an internal condition
 ///
 /// Returns `Ok(None)` if the condition is empty.
-fn grpc_condition_into_condition(
+pub fn grpc_condition_into_condition(
     value: Condition,
 ) -> Result<Option<segment::types::Condition>, Status> {
     let Some(condition) = value.condition_one_of else {

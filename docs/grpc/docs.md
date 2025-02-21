@@ -148,15 +148,20 @@
     - [DiscoverInput](#qdrant-DiscoverInput)
     - [DiscoverPoints](#qdrant-DiscoverPoints)
     - [DiscoverResponse](#qdrant-DiscoverResponse)
+    - [DivExpression](#qdrant-DivExpression)
     - [Document](#qdrant-Document)
     - [Document.OptionsEntry](#qdrant-Document-OptionsEntry)
+    - [Expression](#qdrant-Expression)
     - [FacetCounts](#qdrant-FacetCounts)
     - [FacetHit](#qdrant-FacetHit)
     - [FacetResponse](#qdrant-FacetResponse)
     - [FacetValue](#qdrant-FacetValue)
     - [FieldCondition](#qdrant-FieldCondition)
     - [Filter](#qdrant-Filter)
+    - [Formula](#qdrant-Formula)
+    - [Formula.DefaultsEntry](#qdrant-Formula-DefaultsEntry)
     - [GeoBoundingBox](#qdrant-GeoBoundingBox)
+    - [GeoDistance](#qdrant-GeoDistance)
     - [GeoLineString](#qdrant-GeoLineString)
     - [GeoPoint](#qdrant-GeoPoint)
     - [GeoPolygon](#qdrant-GeoPolygon)
@@ -177,6 +182,7 @@
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [MinShould](#qdrant-MinShould)
+    - [MultExpression](#qdrant-MultExpression)
     - [MultiDenseVector](#qdrant-MultiDenseVector)
     - [NamedVectors](#qdrant-NamedVectors)
     - [NamedVectors.VectorsEntry](#qdrant-NamedVectors-VectorsEntry)
@@ -251,6 +257,7 @@
     - [SparseIndices](#qdrant-SparseIndices)
     - [SparseVector](#qdrant-SparseVector)
     - [StartFrom](#qdrant-StartFrom)
+    - [SumExpression](#qdrant-SumExpression)
     - [TargetVector](#qdrant-TargetVector)
     - [UpdateBatchPoints](#qdrant-UpdateBatchPoints)
     - [UpdateBatchResponse](#qdrant-UpdateBatchResponse)
@@ -2626,6 +2633,23 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-DivExpression"></a>
+
+### DivExpression
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| left | [Expression](#qdrant-Expression) |  |  |
+| right | [Expression](#qdrant-Expression) |  |  |
+| by_zero_default | [float](#float) | optional |  |
+
+
+
+
+
+
 <a name="qdrant-Document"></a>
 
 ### Document
@@ -2653,6 +2677,28 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | key | [string](#string) |  |  |
 | value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
+<a name="qdrant-Expression"></a>
+
+### Expression
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| constant | [float](#float) |  |  |
+| variable | [string](#string) |  | Payload key or reference to score. |
+| condition | [Condition](#qdrant-Condition) |  | Payload condition. If true, becomes 1.0; otherwise 0.0 |
+| geo_distance | [GeoDistance](#qdrant-GeoDistance) |  | Geographic distance in meters |
+| mult | [MultExpression](#qdrant-MultExpression) |  | Multiply |
+| sum | [SumExpression](#qdrant-SumExpression) |  | Sum |
+| div | [DivExpression](#qdrant-DivExpression) |  | Divide |
+| neg | [Expression](#qdrant-Expression) |  | Negate |
 
 
 
@@ -2770,6 +2816,38 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-Formula"></a>
+
+### Formula
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| expression | [Expression](#qdrant-Expression) |  |  |
+| defaults | [Formula.DefaultsEntry](#qdrant-Formula-DefaultsEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-Formula-DefaultsEntry"></a>
+
+### Formula.DefaultsEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [Value](#qdrant-Value) |  |  |
+
+
+
+
+
+
 <a name="qdrant-GeoBoundingBox"></a>
 
 ### GeoBoundingBox
@@ -2780,6 +2858,22 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | top_left | [GeoPoint](#qdrant-GeoPoint) |  | north-west corner |
 | bottom_right | [GeoPoint](#qdrant-GeoPoint) |  | south-east corner |
+
+
+
+
+
+
+<a name="qdrant-GeoDistance"></a>
+
+### GeoDistance
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| origin | [GeoPoint](#qdrant-GeoPoint) |  |  |
+| to | [string](#string) |  |  |
 
 
 
@@ -3114,6 +3208,21 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | conditions | [Condition](#qdrant-Condition) | repeated |  |
 | min_count | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="qdrant-MultExpression"></a>
+
+### MultExpression
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| mult | [Expression](#qdrant-Expression) | repeated |  |
 
 
 
@@ -3653,6 +3762,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | order_by | [OrderBy](#qdrant-OrderBy) |  | Order the points by a payload field. |
 | fusion | [Fusion](#qdrant-Fusion) |  | Fuse the results of multiple prefetches. |
 | sample | [Sample](#qdrant-Sample) |  | Sample points from the collection. |
+| formula | [Formula](#qdrant-Formula) |  | Score boosting via an arbitrary formula |
 
 
 
@@ -4464,6 +4574,21 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | integer | [int64](#int64) |  |  |
 | timestamp | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  |  |
 | datetime | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="qdrant-SumExpression"></a>
+
+### SumExpression
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| sum | [Expression](#qdrant-Expression) | repeated |  |
 
 
 

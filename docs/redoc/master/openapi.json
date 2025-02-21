@@ -14352,7 +14352,6 @@
       "DivParams": {
         "type": "object",
         "required": [
-          "by_zero_default",
           "left",
           "right"
         ],
@@ -14365,7 +14364,8 @@
           },
           "by_zero_default": {
             "type": "number",
-            "format": "float"
+            "format": "float",
+            "nullable": true
           }
         }
       },

@@ -24,7 +24,7 @@ pub enum ExpressionInternal {
     Div {
         left: Box<ExpressionInternal>,
         right: Box<ExpressionInternal>,
-        by_zero_default: ScoreType,
+        by_zero_default: Option<ScoreType>,
     },
     GeoDistance {
         origin: GeoPoint,

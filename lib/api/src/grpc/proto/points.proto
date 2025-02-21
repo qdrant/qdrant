@@ -572,6 +572,43 @@ enum Sample {
     Random = 0;
 }
 
+message Formula {
+    Expression expression = 1;
+    map<string, Value> defaults = 2;
+}
+
+message Expression {
+    oneof variant {
+        float constant = 1;
+        string variable = 2; // Payload key or reference to score.
+        Condition condition = 3; // Payload condition. If true, becomes 1.0; otherwise 0.0
+        GeoDistance geo_distance = 4; // Geographic distance in meters
+        MultExpression mult = 5; // Multiply
+        SumExpression sum = 6; // Sum
+        DivExpression div = 7; // Divide
+        Expression neg = 8; // Negate
+    }
+}
+
+message GeoDistance {
+    GeoPoint origin = 1;
+    string to = 2;
+}
+
+message MultExpression {
+    repeated Expression mult = 1;
+}
+
+message SumExpression {
+    repeated Expression sum = 1;
+}
+
+message DivExpression {
+    Expression left = 1;
+    Expression right = 2;
+    optional float by_zero_default = 3;
+}
+
 message Query {
   oneof variant {
     VectorInput nearest = 1; // Find the nearest neighbors to this vector.
@@ -581,6 +618,7 @@ message Query {
     OrderBy order_by = 5; // Order the points by a payload field.
     Fusion fusion = 6; // Fuse the results of multiple prefetches.
     Sample sample = 7; // Sample points from the collection.
+    Formula formula = 8; // Score boosting via an arbitrary formula
   }
 }
 

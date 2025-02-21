@@ -58,15 +58,20 @@ pub enum VariableId {
 }
 
 impl ParsedExpression {
+    /// Default value for division by zero
+    const fn by_zero_default() -> ScoreType {
+        f32::INFINITY
+    }
+
     pub fn new_div(
         left: ParsedExpression,
         right: ParsedExpression,
-        by_zero_default: ScoreType,
+        by_zero_default: Option<ScoreType>,
     ) -> Self {
         ParsedExpression::Div {
             left: Box::new(left),
             right: Box::new(right),
-            by_zero_default,
+            by_zero_default: by_zero_default.unwrap_or(Self::by_zero_default()),
         }
     }
 
