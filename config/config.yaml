@@ -13,6 +13,8 @@ log_level: INFO
 #     # Logging format, supports `text` and `json`
 #     format: text
 
+init_file_path: .qdrant-initialized
+
 storage:
   # Where to store all the data
   storage_path: ./storage
