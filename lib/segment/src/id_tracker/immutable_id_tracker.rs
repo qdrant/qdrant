@@ -370,7 +370,7 @@ fn bitmap_mmap_size(number_of_elements: usize) -> usize {
 
 impl IdTracker for ImmutableIdTracker {
     fn internal_version(&self, internal_id: PointOffsetType) -> Option<SeqNumberType> {
-        self.internal_to_version.get(internal_id as usize)
+        self.internal_to_version.get(internal_id)
     }
 
     fn set_internal_version(
@@ -379,13 +379,13 @@ impl IdTracker for ImmutableIdTracker {
         version: SeqNumberType,
     ) -> OperationResult<()> {
         if self.external_id(internal_id).is_some() {
-            let has_version = self.internal_to_version.has(internal_id as usize);
+            let has_version = self.internal_to_version.has(internal_id);
             debug_assert!(
                 has_version,
                 "Can't extend version list in immutable tracker",
             );
             if has_version {
-                self.internal_to_version.set(internal_id as usize, version);
+                self.internal_to_version.set(internal_id, version);
                 self.internal_to_version_wrapper
                     .set(internal_id as usize, version);
             }
@@ -598,7 +598,7 @@ pub(super) mod test {
             old_versions.len(),
             loaded_id_tracker.internal_to_version.len()
         );
-        for i in 0..old_versions.len() {
+        for i in 0..old_versions.len() as u32 {
             assert_eq!(
                 old_versions.get(i),
                 loaded_id_tracker.internal_to_version.get(i),
@@ -669,7 +669,7 @@ pub(super) mod test {
                 .unwrap_or(DEFAULT_VERSION);
 
             assert_eq!(
-                id_tracker.internal_to_version.get(internal_id as usize),
+                id_tracker.internal_to_version.get(internal_id),
                 Some(expect_version)
             );
 

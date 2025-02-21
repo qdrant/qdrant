@@ -29,13 +29,13 @@ impl CompressedVersions {
         (lower, upper)
     }
 
-    pub fn has(&self, index: usize) -> bool {
-        index < self.len()
+    pub fn has(&self, index: u32) -> bool {
+        index < self.len() as u32
     }
 
-    pub fn get(&self, index: usize) -> Option<SeqNumberType> {
-        self.lower_bytes.get(index).map(|&lower| {
-            let upper = *self.upper_bytes.get(&(index as u32)).unwrap_or(&0);
+    pub fn get(&self, index: u32) -> Option<SeqNumberType> {
+        self.lower_bytes.get(index as usize).map(|&lower| {
+            let upper = *self.upper_bytes.get(&index).unwrap_or(&0);
             Self::version_from_parts(lower, upper)
         })
     }
@@ -45,14 +45,14 @@ impl CompressedVersions {
     /// # Panics
     ///
     /// Panics if `index` is out of bounds. The internal structure will not grow.
-    pub fn set(&mut self, index: usize, value: SeqNumberType) {
+    pub fn set(&mut self, index: u32, value: SeqNumberType) {
         let (lower, upper) = Self::version_to_parts(value);
 
-        self.lower_bytes[index] = lower;
+        self.lower_bytes[index as usize] = lower;
         if upper > 0 {
-            self.upper_bytes.insert(index as u32, upper);
+            self.upper_bytes.insert(index, upper);
         } else {
-            self.upper_bytes.remove(&(index as u32));
+            self.upper_bytes.remove(&index);
         }
     }
 
@@ -117,7 +117,7 @@ mod tests {
 
             // Check get()
             for (i, model_value) in model.iter().enumerate() {
-                assert_eq!(*model_value, compressed.get(i).unwrap());
+                assert_eq!(*model_value, compressed.get(i as u32).unwrap());
             }
 
             // Check set()
@@ -126,8 +126,8 @@ mod tests {
             for i in 0..model.len() {
                 let new_value = rng.random_range(model_test_range());
                 model[i] = new_value;
-                compressed.set(i, new_value);
-                assert_eq!(model[i], compressed.get(i).unwrap());
+                compressed.set(i as u32, new_value);
+                assert_eq!(model[i], compressed.get(i as u32).unwrap());
             }
 
             // Check len()
