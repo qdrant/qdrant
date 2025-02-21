@@ -164,6 +164,7 @@ private_intra_doc_links = "allow"
 [workspace.dependencies]
 ahash = { version = "0.8.11", features = ["serde"] }
 atomicwrites = "0.4.4"
+bumpalo = "3.17.0"
 bytemuck = { version = "1.21.0", features = ["extern_crate_alloc", "transparentwrapper_extra"] }
 bytes = "1.10.0"
 chrono = { version = "0.4.39", features = ["serde"] }

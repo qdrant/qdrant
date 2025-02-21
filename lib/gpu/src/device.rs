@@ -1,4 +1,4 @@
-use std::ffi::CString;
+use std::ffi::CStr;
 use std::sync::Arc;
 
 use ash::vk;
@@ -79,10 +79,10 @@ impl Device {
         queue_index: usize,
     ) -> GpuResult<Arc<Device>> {
         #[allow(unused_mut)]
-        let mut extensions_cstr: Vec<CString> = vec![CString::from(ash::khr::maintenance1::NAME)];
+        let mut extensions_cstr = vec![ash::khr::maintenance1::NAME];
         #[cfg(target_os = "macos")]
         {
-            extensions_cstr.push(CString::from(ash::khr::portability_subset::NAME));
+            extensions_cstr.push(ash::khr::portability_subset::NAME);
         }
 
         let vk_queue_families = unsafe {
@@ -384,7 +384,7 @@ impl Device {
     fn check_extensions_list(
         instance: &Instance,
         vk_physical_device: vk::PhysicalDevice,
-        required_extensions: &[CString],
+        required_extensions: &[&CStr],
     ) -> GpuResult<()> {
         let available_extensions = unsafe {
             instance
@@ -393,11 +393,9 @@ impl Device {
         };
 
         for required_extension in required_extensions {
-            let is_extension_available = available_extensions.iter().any(|extension| {
-                let extension_name =
-                    unsafe { std::ffi::CStr::from_ptr(extension.extension_name.as_ptr()) };
-                extension_name == required_extension.as_c_str()
-            });
+            let is_extension_available = available_extensions
+                .iter()
+                .any(|extension| extension.extension_name_as_c_str() == Ok(required_extension));
 
             if !is_extension_available {
                 return Err(GpuError::NotSupported(format!(
