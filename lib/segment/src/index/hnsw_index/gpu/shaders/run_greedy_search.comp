@@ -22,11 +22,11 @@ struct SearchRequest {
 };
 
 layout(set = 0, binding = 0) buffer SearchRequests {
-    SearchRequest data[];
+    readonly SearchRequest data[];
 } search_requests;
 
 layout(set = 0, binding = 1) buffer SearchResults {
-    uint data[];
+    writeonly uint data[];
 } search_results;
 
 void main() {

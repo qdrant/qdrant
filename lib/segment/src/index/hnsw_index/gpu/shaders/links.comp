@@ -14,7 +14,7 @@ readonly uniform LinksParams {
 
 layout(set = LINKS_LAYOUT_SET, binding = 1)
 buffer Links {
-    POINT_ID data[];
+    coherent POINT_ID data[];
 } links;
 
 #define LEVEL_M links_params.m
