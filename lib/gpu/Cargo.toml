@@ -21,6 +21,7 @@ gpu = [
 ash = { version = "0.38.0", optional = true, default-features = false, features = ["loaded", "debug"] }
 gpu-allocator = { version = "0.27.0", optional = true }
 shaderc = { version = "0.8.3", optional = true, features = ["build-from-source"]}
+zerocopy = { workspace = true }
 
 log = { workspace = true }
 parking_lot = { workspace = true }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use quantization::EncodedVectors;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::gpu_quantization::MAX_QUANTIZATION_BINDINGS;
 use super::STORAGES_COUNT;
@@ -19,6 +20,7 @@ use crate::vector_storage::MultiVectorStorage;
 const START_MULTIVECTORS_BINDING: usize = STORAGES_COUNT + MAX_QUANTIZATION_BINDINGS;
 
 /// Shader struct for multivector offsets with start id and count of vectors in multivector.
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct GpuMultivectorOffset {
     start: u32,

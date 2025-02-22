@@ -364,7 +364,7 @@ impl GpuProductQuantization {
 
         let mut centroids_offset = 0;
         for centroids in &quantized_storage.get_metadata().centroids {
-            centroids_staging_buffer.upload_slice(centroids, centroids_offset)?;
+            centroids_staging_buffer.upload(centroids.as_slice(), centroids_offset)?;
             centroids_offset += centroids.len() * std::mem::size_of::<f32>();
         }
 
@@ -382,7 +382,7 @@ impl GpuProductQuantization {
             .iter()
             .flat_map(|range| [range.start as u32, range.end as u32].into_iter())
             .collect();
-        vector_division_staging_buffer.upload_slice(&vector_division, 0)?;
+        vector_division_staging_buffer.upload(vector_division.as_slice(), 0)?;
 
         upload_context.copy_gpu_buffer(
             vector_division_staging_buffer,

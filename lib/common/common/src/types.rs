@@ -1,13 +1,15 @@
 use std::cmp::Ordering;
 
 use ordered_float::OrderedFloat;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// Type of vector matching score
 pub type ScoreType = f32;
 /// Type of point index inside a segment
 pub type PointOffsetType = u32;
 
-#[derive(Copy, Clone, PartialEq, Debug, Default)]
+#[derive(Copy, Clone, PartialEq, Debug, Default, FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[repr(C)]
 pub struct ScoredPointOffset {
     pub idx: PointOffsetType,
     pub score: ScoreType,

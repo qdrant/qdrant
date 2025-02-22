@@ -76,7 +76,7 @@ fn basic_gpu_test() {
     )
     .unwrap();
     // Copy numbers.
-    upload_buffer.upload_slice(&numbers, 0).unwrap();
+    upload_buffer.upload(numbers.as_slice(), 0).unwrap();
     // Copy parameter to the end.
     upload_buffer.upload(&param, storage_buffer.size()).unwrap();
 
@@ -166,8 +166,9 @@ fn basic_gpu_test() {
     context.wait_finish(context_timeout).unwrap();
 
     // Download data from intermediate buffer.
-    let mut result = vec![0f32; numbers_count];
-    download_buffer.download_slice(&mut result, 0).unwrap();
+    let result = download_buffer
+        .download_vec::<f32>(0, numbers_count)
+        .unwrap();
 
     // Check results.
     for i in 0..numbers_count {

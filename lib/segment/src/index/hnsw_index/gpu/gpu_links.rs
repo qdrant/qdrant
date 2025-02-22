@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::shader_builder::ShaderBuilderParameters;
 use crate::common::check_stopped;
@@ -14,6 +15,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 /// Size of transfer buffer for links.
 const LINKS_TRANSFER_BUFFER_SIZE: usize = 32 * 1024 * 1024;
 
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct GpuLinksParamsBuffer {
     m: u32,
@@ -245,9 +247,8 @@ impl GpuLinks {
             gpu_context.run()?;
             gpu_context.wait_finish(GPU_TIMEOUT)?;
 
-            let mut links =
-                vec![PointOffsetType::default(); chunk_size * (self.links_capacity + 1)];
-            download_buffer.download_slice(&mut links, 0)?;
+            let links = download_buffer
+                .download_vec::<PointOffsetType>(0, chunk_size * (self.links_capacity + 1))?;
 
             for (index, chunk) in links.chunks(self.links_capacity + 1).enumerate() {
                 let point_id = points[start + index] as usize;
@@ -327,7 +328,7 @@ impl GpuLinks {
         self.patch_buffer
             .upload(&(links.len() as u32), patch_start_index)?;
         patch_start_index += std::mem::size_of::<PointOffsetType>();
-        self.patch_buffer.upload_slice(links, patch_start_index)?;
+        self.patch_buffer.upload(links, patch_start_index)?;
         self.patched_points.push((point_id, links.len()));
 
         Ok(())

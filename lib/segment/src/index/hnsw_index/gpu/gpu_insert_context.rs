@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::gpu_links::GpuLinks;
 use super::gpu_vector_storage::GpuVectorStorage;
@@ -16,7 +17,7 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 /// If EF is less than this value, we use linear search instead of binary heap.
 const MIN_POINTS_FOR_BINARY_HEAP: usize = 512;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 pub struct GpuRequest {
     pub id: PointOffsetType,
@@ -267,12 +268,10 @@ impl<'a> GpuInsertContext<'a> {
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
 
-        let mut gpu_responses = vec![PointOffsetType::default(); count];
-        self.insert_resources
+        Ok(self
+            .insert_resources
             .responses_staging_buffer
-            .download_slice(&mut gpu_responses, 0)?;
-
-        Ok(gpu_responses)
+            .download_vec::<PointOffsetType>(0, count)?)
     }
 
     pub fn greedy_search(
@@ -291,7 +290,7 @@ impl<'a> GpuInsertContext<'a> {
         // upload requests
         self.insert_resources
             .requests_staging_buffer
-            .upload_slice(requests, 0)?;
+            .upload(requests, 0)?;
         self.context.copy_gpu_buffer(
             self.insert_resources.requests_staging_buffer.clone(),
             self.insert_resources.requests_buffer.clone(),
@@ -330,11 +329,10 @@ impl<'a> GpuInsertContext<'a> {
         self.updates_count += 1;
 
         if prev_results_count > 0 {
-            let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
-            self.insert_resources
+            Ok(self
+                .insert_resources
                 .responses_staging_buffer
-                .download_slice(&mut gpu_responses, 0)?;
-            Ok(gpu_responses)
+                .download_vec::<PointOffsetType>(0, prev_results_count)?)
         } else {
             Ok(vec![])
         }
@@ -356,7 +354,7 @@ impl<'a> GpuInsertContext<'a> {
         // upload requests
         self.insert_resources
             .requests_staging_buffer
-            .upload_slice(requests, 0)?;
+            .upload(requests, 0)?;
         self.context.copy_gpu_buffer(
             self.insert_resources.requests_staging_buffer.clone(),
             self.insert_resources.requests_buffer.clone(),
@@ -395,10 +393,10 @@ impl<'a> GpuInsertContext<'a> {
         self.patches_count += 1;
 
         if prev_results_count > 0 {
-            let mut gpu_responses = vec![PointOffsetType::default(); prev_results_count];
-            self.insert_resources
+            let gpu_responses = self
+                .insert_resources
                 .responses_staging_buffer
-                .download_slice(&mut gpu_responses, 0)?;
+                .download_vec::<PointOffsetType>(0, prev_results_count)?;
             Ok(gpu_responses)
         } else {
             Ok(vec![])
@@ -457,6 +455,7 @@ mod tests {
     use itertools::Itertools;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
     use super::*;
     use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
@@ -470,6 +469,7 @@ mod tests {
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
     use crate::vector_storage::VectorStorage;
 
+    #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]
     struct TestSearchRequest {
         id: PointOffsetType,
@@ -662,7 +662,7 @@ mod tests {
             gpu_insert_context
                 .insert_resources
                 .requests_staging_buffer
-                .upload_slice(requests, 0)
+                .upload(requests, 0)
                 .unwrap();
             gpu_insert_context
                 .context
@@ -713,11 +713,9 @@ mod tests {
             gpu_insert_context.context.run().unwrap();
             gpu_insert_context.context.wait_finish(GPU_TIMEOUT).unwrap();
 
-            let mut gpu_responses = vec![ScoredPointOffset::default(); requests.len() * ef];
             download_staging_buffer
-                .download_slice(&mut gpu_responses, 0)
-                .unwrap();
-            gpu_responses
+                .download_vec::<ScoredPointOffset>(0, requests.len() * ef)
+                .unwrap()
                 .chunks(ef)
                 .map(|r| {
                     r.iter()
@@ -850,7 +848,7 @@ mod tests {
         )
         .unwrap();
         upload_staging_buffer
-            .upload_slice(&search_requests, 0)
+            .upload(search_requests.as_slice(), 0)
             .unwrap();
         gpu_insert_context
             .context
@@ -953,11 +951,9 @@ mod tests {
         gpu_insert_context.context.run().unwrap();
         gpu_insert_context.context.wait_finish(GPU_TIMEOUT).unwrap();
 
-        let mut gpu_responses = vec![ScoredPointOffset::default(); groups_count * ef];
-        responses_staging_buffer
-            .download_slice(&mut gpu_responses, 0)
-            .unwrap();
-        let gpu_responses = gpu_responses
+        let gpu_responses = responses_staging_buffer
+            .download_vec::<ScoredPointOffset>(0, groups_count * ef)
+            .unwrap()
             .chunks_exact(ef)
             .map(|r| r.to_owned())
             .collect_vec();
