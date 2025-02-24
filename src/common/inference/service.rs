@@ -158,7 +158,7 @@ impl InferenceService {
             .config
             .address
             .as_ref()
-            .map_or(true, |url| url.is_empty())
+            .is_none_or(|url| url.is_empty())
         {
             return Err(StorageError::service_error(
                 "InferenceService configuration error: address is missing or empty",
