@@ -37,7 +37,7 @@ pub fn web_ui_folder(settings: &Settings) -> Option<String> {
     }
 }
 
-pub fn web_ui_factory(static_folder: &str) -> impl HttpServiceFactory {
+pub fn web_ui_factory(static_folder: &str) -> impl HttpServiceFactory + use<> {
     web::scope(WEB_UI_PATH)
         .wrap(DefaultHeaders::new().add(("X-Frame-Options", HeaderValue::from_static("DENY"))))
         .service(actix_files::Files::new("/", static_folder).index_file("index.html"))
