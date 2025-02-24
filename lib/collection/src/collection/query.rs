@@ -2,6 +2,18 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::ScoreType;
+use futures::{future, TryFutureExt};
+use itertools::{Either, Itertools};
+use rand::Rng;
+use segment::common::reciprocal_rank_fusion::rrf_scoring;
+use segment::common::score_fusion::{score_fusion, ScoreFusion};
+use segment::types::{Order, ScoredPoint};
+use segment::utils::scored_point_ties::ScoredPointTies;
+use tokio::sync::RwLockReadGuard;
+use tokio::time::Instant;
+
 use super::Collection;
 use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::batching::batch_requests;
@@ -17,17 +29,6 @@ use crate::operations::universal_query::collection_query::CollectionQueryRequest
 use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::ScoreType;
-use futures::{future, TryFutureExt};
-use itertools::{Either, Itertools};
-use rand::Rng;
-use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{score_fusion, ScoreFusion};
-use segment::types::{Order, ScoredPoint};
-use segment::utils::scored_point_ties::ScoredPointTies;
-use tokio::sync::RwLockReadGuard;
-use tokio::time::Instant;
 
 struct IntermediateQueryInfo<'a> {
     scoring_query: Option<&'a ScoringQuery>,
