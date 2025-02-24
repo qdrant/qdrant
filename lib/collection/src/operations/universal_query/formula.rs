@@ -26,6 +26,15 @@ pub enum ExpressionInternal {
         right: Box<ExpressionInternal>,
         by_zero_default: Option<ScoreType>,
     },
+    Sqrt(Box<ExpressionInternal>),
+    Pow {
+        base: Box<ExpressionInternal>,
+        exponent: Box<ExpressionInternal>,
+    },
+    Exp(Box<ExpressionInternal>),
+    Log10(Box<ExpressionInternal>),
+    Ln(Box<ExpressionInternal>),
+    Abs(Box<ExpressionInternal>),
     GeoDistance {
         origin: GeoPoint,
         to: JsonPath,
@@ -73,6 +82,25 @@ impl From<rest::Expression> for ExpressionInternal {
                     right,
                     by_zero_default,
                 }
+            }
+            rest::Expression::Sqrt(sqrt_expression) => {
+                ExpressionInternal::Sqrt(Box::new(ExpressionInternal::from(*sqrt_expression.sqrt)))
+            }
+            rest::Expression::Pow(rest::PowExpression { pow }) => ExpressionInternal::Pow {
+                base: Box::new(ExpressionInternal::from(*pow.base)),
+                exponent: Box::new(ExpressionInternal::from(*pow.exponent)),
+            },
+            rest::Expression::Exp(rest::ExpExpression { exp: expr }) => {
+                ExpressionInternal::Exp(Box::new(ExpressionInternal::from(*expr)))
+            }
+            rest::Expression::Log10(rest::Log10Expression { log10: expr }) => {
+                ExpressionInternal::Log10(Box::new(ExpressionInternal::from(*expr)))
+            }
+            rest::Expression::Ln(rest::LnExpression { ln: expr }) => {
+                ExpressionInternal::Ln(Box::new(ExpressionInternal::from(*expr)))
+            }
+            rest::Expression::Abs(rest::AbsExpression { abs: expr }) => {
+                ExpressionInternal::Abs(Box::new(ExpressionInternal::from(*expr)))
             }
             rest::Expression::GeoDistance(GeoDistance {
                 geo_distance: rest::GeoDistanceParams { origin, to },

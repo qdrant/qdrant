@@ -5185,7 +5185,10 @@ pub struct Formula {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Expression {
-    #[prost(oneof = "expression::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[prost(
+        oneof = "expression::Variant",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14"
+    )]
     pub variant: ::core::option::Option<expression::Variant>,
 }
 /// Nested message and enum types in `Expression`.
@@ -5217,6 +5220,24 @@ pub mod expression {
         /// Negate
         #[prost(message, tag = "8")]
         Neg(::prost::alloc::boxed::Box<super::Expression>),
+        /// Absolute value
+        #[prost(message, tag = "9")]
+        Abs(::prost::alloc::boxed::Box<super::Expression>),
+        /// Square root
+        #[prost(message, tag = "10")]
+        Sqrt(::prost::alloc::boxed::Box<super::Expression>),
+        /// Power
+        #[prost(message, tag = "11")]
+        Pow(::prost::alloc::boxed::Box<super::PowExpression>),
+        /// Exponential
+        #[prost(message, tag = "12")]
+        Exp(::prost::alloc::boxed::Box<super::Expression>),
+        /// Logarithm
+        #[prost(message, tag = "13")]
+        Log10(::prost::alloc::boxed::Box<super::Expression>),
+        /// Natural logarithm
+        #[prost(message, tag = "14")]
+        Ln(::prost::alloc::boxed::Box<super::Expression>),
     }
 }
 #[derive(serde::Serialize)]
@@ -5252,6 +5273,15 @@ pub struct DivExpression {
     pub right: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     #[prost(float, optional, tag = "3")]
     pub by_zero_default: ::core::option::Option<f32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PowExpression {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub base: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub exponent: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

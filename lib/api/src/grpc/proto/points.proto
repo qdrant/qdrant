@@ -587,6 +587,12 @@ message Expression {
         SumExpression sum = 6; // Sum
         DivExpression div = 7; // Divide
         Expression neg = 8; // Negate
+        Expression abs = 9; // Absolute value
+        Expression sqrt = 10; // Square root
+        PowExpression pow = 11; // Power
+        Expression exp = 12; // Exponential
+        Expression log10 = 13; // Logarithm
+        Expression ln = 14; // Natural logarithm
     }
 }
 
@@ -607,6 +613,11 @@ message DivExpression {
     Expression left = 1;
     Expression right = 2;
     optional float by_zero_default = 3;
+}
+
+message PowExpression {
+    Expression base = 1;
+    Expression exponent = 2;
 }
 
 message Query {

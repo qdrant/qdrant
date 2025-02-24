@@ -153,6 +153,31 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.neg())
             }
+            ParsedExpression::Sqrt(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                Ok(value.sqrt())
+            }
+            ParsedExpression::Pow { base, exponent } => {
+                let base_value = self.eval_expression(base, point_id)?;
+                let exponent_value = self.eval_expression(exponent, point_id)?;
+                Ok(base_value.powf(exponent_value))
+            }
+            ParsedExpression::Exp(parsed_expression) => {
+                let value = self.eval_expression(parsed_expression, point_id)?;
+                Ok(value.exp())
+            }
+            ParsedExpression::Log10(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                Ok(value.log10())
+            }
+            ParsedExpression::Ln(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                Ok(value.ln())
+            }
+            ParsedExpression::Abs(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                Ok(value.abs())
+            }
             ParsedExpression::GeoDistance { origin, key } => {
                 let value: GeoPoint = self
                     .payload_retrievers
