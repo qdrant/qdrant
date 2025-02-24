@@ -17,11 +17,11 @@ readonly uniform TestParams {
 } test_params;
 
 layout(set = 0, binding = 1) buffer ScoredPointsInput {
-    ScoredPoint data[];
+    readonly ScoredPoint data[];
 } input_points;
 
 layout(set = 0, binding = 2) buffer ScoresOuput {
-    ScoredPoint data[];
+    writeonly ScoredPoint data[];
 } scores_output;
 
 uint candidates_count = 0;

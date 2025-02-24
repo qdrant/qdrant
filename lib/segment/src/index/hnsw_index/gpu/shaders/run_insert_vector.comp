@@ -22,15 +22,15 @@ struct Request {
 };
 
 layout(set = 0, binding = 0) buffer Requests {
-    Request data[];
+    readonly Request data[];
 } requests;
 
 layout(set = 0, binding = 1) buffer NewEntries {
-    uint data[];
+    writeonly uint data[];
 } new_entries;
 
 layout(set = 0, binding = 2) buffer Atomics {
-    uint data[];
+    coherent uint data[];
 } atomics;
 
 void main() {
