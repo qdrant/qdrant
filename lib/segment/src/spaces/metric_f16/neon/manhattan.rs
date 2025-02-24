@@ -6,7 +6,7 @@ use half::f16;
 use crate::data_types::vectors::VectorElementTypeHalf;
 
 #[cfg(target_feature = "neon")]
-extern "C" {
+unsafe extern "C" {
     fn manhattanDist_half_4x4(v1: *const f16, v2: *const f16, n: i32) -> f32;
 }
 
