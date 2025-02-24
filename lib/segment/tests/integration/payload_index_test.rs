@@ -524,20 +524,34 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
 
 #[test]
 fn test_read_operations() -> Result<()> {
-    let test_segments = &TestSegments::new();
+    
+    let start = std::time::Instant::now();
+    let test_segments = Arc::new(TestSegments::new());
+    eprintln!("TestSegments::new() took {:?}", start.elapsed());
 
-    test_is_empty_conditions(test_segments)?;
-    test_integer_index_types(test_segments)?;
-    test_cardinality_estimation(test_segments)?;
-    test_struct_payload_index(test_segments)?;
-    test_struct_payload_geo_boundingbox_index(test_segments)?;
-    test_struct_payload_geo_radius_index(test_segments)?;
-    test_struct_payload_geo_polygon_index(test_segments)?;
-    test_any_matcher_cardinality_estimation(test_segments)?;
-    test_struct_keyword_facet(test_segments)?;
-    test_mmap_keyword_facet(test_segments)?;
-    test_struct_keyword_facet_filtered(test_segments)?;
-    test_mmap_keyword_facet_filtered(test_segments)?;
+    let mut handles = vec![];
+
+    for test_fn in [
+        test_is_empty_conditions,
+        test_integer_index_types,
+        test_cardinality_estimation,
+        test_struct_payload_index,
+        test_struct_payload_geo_boundingbox_index,
+        test_struct_payload_geo_radius_index,
+        test_struct_payload_geo_polygon_index,
+        test_any_matcher_cardinality_estimation,
+        test_struct_keyword_facet,
+        test_mmap_keyword_facet,
+        test_struct_keyword_facet_filtered,
+        test_mmap_keyword_facet_filtered,
+    ] {
+        let segments = Arc::clone(&test_segments);
+        handles.push(std::thread::spawn(move || test_fn(&segments)));
+    }
+
+    for handle in handles {
+        handle.join().unwrap()?;
+    }
 
     Ok(())
 }
