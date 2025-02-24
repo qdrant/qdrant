@@ -12,7 +12,7 @@ use collection::shards::replica_set::ReplicaState;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
-use collection::shards::{replica_set, CollectionId};
+use collection::shards::{CollectionId, replica_set};
 use schemars::JsonSchema;
 use segment::types::{
     PayloadFieldSchema, PayloadKeyType, QuantizationConfig, ShardKey, StrictModeConfig,
@@ -200,9 +200,9 @@ impl CreateCollectionOperation {
             let mut dense_names = create_collection.vectors.params_iter().map(|p| p.0);
             if let Some(duplicate_name) = dense_names.find(|name| sparse_config.contains_key(*name))
             {
-                return Err(StorageError::bad_input(
-                    format!("Dense and sparse vector names must be unique - duplicate found with '{duplicate_name}'"),
-                ));
+                return Err(StorageError::bad_input(format!(
+                    "Dense and sparse vector names must be unique - duplicate found with '{duplicate_name}'",
+                )));
             }
         }
 

@@ -45,10 +45,10 @@ pub fn web_ui_factory(static_folder: &str) -> impl HttpServiceFactory + use<> {
 
 #[cfg(test)]
 mod tests {
-    use actix_web::http::header::{self, HeaderMap};
-    use actix_web::http::StatusCode;
-    use actix_web::test::{self, TestRequest};
     use actix_web::App;
+    use actix_web::http::StatusCode;
+    use actix_web::http::header::{self, HeaderMap};
+    use actix_web::test::{self, TestRequest};
 
     use super::*;
 

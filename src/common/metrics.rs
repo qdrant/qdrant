@@ -1,6 +1,6 @@
 use api::rest::models::HardwareUsage;
-use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
+use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 
 use super::telemetry_ops::hardware::HardwareTelemetry;

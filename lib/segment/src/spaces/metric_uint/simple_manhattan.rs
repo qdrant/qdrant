@@ -10,7 +10,7 @@ use crate::spaces::metric_uint::neon::manhattan::neon_manhattan_similarity_bytes
 use crate::spaces::metric_uint::sse2::manhattan::sse_manhattan_similarity_bytes;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple::MIN_DIM_SIZE_AVX;
-use crate::spaces::simple::{ManhattanMetric, MIN_DIM_SIZE_SIMD};
+use crate::spaces::simple::{MIN_DIM_SIZE_SIMD, ManhattanMetric};
 use crate::types::Distance;
 
 impl Metric<VectorElementTypeByte> for ManhattanMetric {

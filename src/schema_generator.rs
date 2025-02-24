@@ -22,8 +22,8 @@ use collection::operations::types::{
     SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::DeleteVectors;
-use schemars::r#gen::SchemaSettings;
 use schemars::JsonSchema;
+use schemars::r#gen::SchemaSettings;
 use serde::Serialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,

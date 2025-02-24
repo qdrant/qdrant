@@ -11,10 +11,10 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::entry::partial_snapshot_entry::PartialSnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
-use crate::segment::snapshot::{
-    snapshot_files, PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE, ROCKS_DB_VIRT_FILE,
-};
 use crate::segment::Segment;
+use crate::segment::snapshot::{
+    PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE, ROCKS_DB_VIRT_FILE, snapshot_files,
+};
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 

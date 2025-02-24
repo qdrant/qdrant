@@ -1,13 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use parking_lot::RwLock;
-use segment::data_types::vectors::{only_default_vector, VectorStructInternal};
+use segment::data_types::vectors::{VectorStructInternal, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::json_path::JsonPath;
 use segment::payload_json;
@@ -431,18 +431,22 @@ fn test_proxy_shared_updates() {
 
     // Points should still be accessible in both proxies through write segment
     for &point_id in &ids {
-        assert!(holder
-            .get(proxy_1_id)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(point_id));
-        assert!(holder
-            .get(proxy_2_id)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(point_id));
+        assert!(
+            holder
+                .get(proxy_1_id)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(point_id),
+        );
+        assert!(
+            holder
+                .get(proxy_2_id)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(point_id),
+        );
     }
 
     let locked_holder = Arc::new(RwLock::new(holder));
@@ -566,18 +570,22 @@ fn test_proxy_shared_updates_same_version() {
 
     // Points should still be accessible in both proxies through write segment
     for &point_id in &ids {
-        assert!(holder
-            .get(proxy_1_id)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(point_id));
-        assert!(holder
-            .get(proxy_2_id)
-            .unwrap()
-            .get()
-            .read()
-            .has_point(point_id));
+        assert!(
+            holder
+                .get(proxy_1_id)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(point_id),
+        );
+        assert!(
+            holder
+                .get(proxy_2_id)
+                .unwrap()
+                .get()
+                .read()
+                .has_point(point_id),
+        );
     }
 
     let locked_holder = Arc::new(RwLock::new(holder));

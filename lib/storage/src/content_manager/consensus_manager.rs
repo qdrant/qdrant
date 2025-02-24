@@ -7,13 +7,13 @@ use std::str;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use chrono::Utc;
 use collection::collection_state;
 use collection::common::is_ready::IsReady;
 use collection::operations::types::PeerMetadata;
-use collection::shards::shard::PeerId;
 use collection::shards::CollectionId;
+use collection::shards::shard::PeerId;
 use common::defaults;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
@@ -25,10 +25,10 @@ use tokio::sync::broadcast::Receiver;
 use tokio::time::error::Elapsed;
 use tonic::transport::Uri;
 
+use super::CollectionContainer;
 use super::alias_mapping::AliasMapping;
 use super::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use super::errors::StorageError;
-use super::CollectionContainer;
 use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
 use crate::content_manager::consensus::entry_queue::EntryId;
 use crate::content_manager::consensus::operation_sender::OperationSender;
@@ -288,7 +288,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
         if let Some(on_apply) = on_apply {
             if on_apply.send(report).is_err() {
-                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                log::warn!(
+                    "Failed to notify on consensus operation completion: channel receiver is dropped",
+                )
             }
         }
         Ok(stop_consensus)
@@ -339,7 +341,8 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                             Ok(result) => {
                                 log::debug!(
                                     "Successfully applied consensus operation entry. Index: {}. Result: {result}",
-                                    entry.index);
+                                    entry.index,
+                                );
                                 false
                             }
                             Err(err @ StorageError::ServiceError { .. }) => {
@@ -348,7 +351,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                                     .context("Failed to apply collection meta operation entry");
                             }
                             Err(err) => {
-                                log::warn!("Failed to apply collection meta operation entry with user error: {err}");
+                                log::warn!(
+                                    "Failed to apply collection meta operation entry with user error: {err}",
+                                );
                                 // This is a user error so we can safely consider it applied but with error as it was incorrect.
                                 false
                             }
@@ -451,7 +456,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
                             let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
                             if let Some(on_apply) = on_apply {
                                 if on_apply.send(Ok(true)).is_err() {
-                                    log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                                    log::warn!(
+                                        "Failed to notify on consensus operation completion: channel receiver is dropped",
+                                    )
                                 }
                             }
                         }
@@ -522,7 +529,9 @@ impl<C: CollectionContainer> ConsensusManager<C> {
 
         if let Some(on_apply) = on_apply {
             if on_apply.send(result.clone()).is_err() {
-                log::warn!("Failed to notify on consensus operation completion: channel receiver is dropped")
+                log::warn!(
+                    "Failed to notify on consensus operation completion: channel receiver is dropped",
+                )
             }
         }
         result
@@ -1098,7 +1107,7 @@ pub fn raft_error_other(e: impl std::error::Error) -> raft::Error {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{mpsc, Arc};
+    use std::sync::{Arc, mpsc};
 
     use collection::shards::shard::PeerId;
     use proptest::prelude::*;
@@ -1109,11 +1118,11 @@ mod tests {
     use tempfile::Builder;
 
     use super::ConsensusManager;
+    use crate::content_manager::CollectionContainer;
     use crate::content_manager::consensus::consensus_wal::ConsensusOpWal;
     use crate::content_manager::consensus::entry_queue::EntryApplyProgressQueue;
     use crate::content_manager::consensus::operation_sender::OperationSender;
     use crate::content_manager::consensus::persistent::Persistent;
-    use crate::content_manager::CollectionContainer;
 
     #[test]
     fn update_is_applied() {
@@ -1132,9 +1141,11 @@ mod tests {
             path: "./unexistent_dir/file".into(),
             ..Default::default()
         };
-        assert!(state
-            .apply_state_update(|state| { state.hard_state.commit = 1 })
-            .is_err());
+        assert!(
+            state
+                .apply_state_update(|state| { state.hard_state.commit = 1 })
+                .is_err(),
+        );
     }
 
     #[test]

@@ -11,11 +11,7 @@ mod tests {
 
     fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
         let n = f32::signum(rng.random_range(-1.0..1.0));
-        if n == 0.0 {
-            1.0
-        } else {
-            n
-        }
+        if n == 0.0 { 1.0 } else { n }
     }
 
     fn generate_vector(dim: usize, rng: &mut rand::rngs::StdRng) -> Vec<f32> {

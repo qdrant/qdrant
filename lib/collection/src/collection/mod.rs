@@ -47,11 +47,11 @@ use crate::shards::replica_set::{
     ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
 };
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::{shard_not_found_error, LockedShardHolder, ShardHolder};
+use crate::shards::shard_holder::{LockedShardHolder, ShardHolder, shard_not_found_error};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
-use crate::shards::{replica_set, CollectionId};
+use crate::shards::{CollectionId, replica_set};
 use crate::telemetry::CollectionTelemetry;
 
 /// Collection's data is split into several shards.
@@ -225,7 +225,9 @@ impl Collection {
                     .unwrap_or_else(|err| panic!("Can't save collection version {err}"));
             } else {
                 log::error!("Cannot upgrade version {stored_version} to {app_version}.");
-                panic!("Cannot upgrade version {stored_version} to {app_version}. Try to use older version of Qdrant first.");
+                panic!(
+                    "Cannot upgrade version {stored_version} to {app_version}. Try to use older version of Qdrant first.",
+                );
             }
         }
 
@@ -685,7 +687,9 @@ impl Collection {
             let (mut incoming, outgoing) = shard_holder.count_shard_transfer_io(this_peer_id);
             incoming += proposed.get(&this_peer_id).copied().unwrap_or(0);
             if self.check_auto_shard_transfer_limit(incoming, outgoing) {
-                log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on this node (incoming: {incoming}, outgoing: {outgoing})");
+                log::trace!(
+                    "Postponing automatic shard {shard_id} transfer to stay below limit on this node (incoming: {incoming}, outgoing: {outgoing})",
+                );
                 continue;
             }
 
@@ -727,7 +731,9 @@ impl Collection {
                 let (incoming, mut outgoing) = shard_holder.count_shard_transfer_io(replica_id);
                 outgoing += proposed.get(&replica_id).copied().unwrap_or(0);
                 if self.check_auto_shard_transfer_limit(incoming, outgoing) {
-                    log::trace!("Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})");
+                    log::trace!(
+                        "Postponing automatic shard {shard_id} transfer to stay below limit on peer {replica_id} (incoming: {incoming}, outgoing: {outgoing})",
+                    );
                     continue;
                 }
 

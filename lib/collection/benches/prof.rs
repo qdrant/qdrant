@@ -4,9 +4,9 @@ use std::os::raw::c_int;
 use std::path::Path;
 
 use criterion::profiler::Profiler;
+use pprof::ProfilerGuard;
 use pprof::flamegraph::TextTruncateDirection;
 use pprof::protos::Message;
-use pprof::ProfilerGuard;
 
 /// Small custom profiler that can be used with Criterion to create a flamegraph for benchmarks.
 /// Also see [the Criterion documentation on this][custom-profiler].

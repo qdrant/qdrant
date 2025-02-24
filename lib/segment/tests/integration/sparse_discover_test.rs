@@ -11,14 +11,14 @@ use segment::data_types::query_context::{QueryContext, VectorQueryContext};
 use segment::data_types::vectors::{QueryVector, VectorElementType, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_vector;
+use segment::index::VectorIndex;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
-use segment::index::VectorIndex;
 use segment::segment_constructor::{build_segment, create_sparse_vector_index_test};
 use segment::types::{
-    Condition, Distance, ExtendedPointId, Filter, HasIdCondition, Indexes, PointIdType,
-    SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType,
-    VectorDataConfig, VectorStorageDatatype, VectorStorageType, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Distance, ExtendedPointId, Filter,
+    HasIdCondition, Indexes, PointIdType, SegmentConfig, SeqNumberType, SparseVectorDataConfig,
+    SparseVectorStorageType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery};
 use sparse::common::sparse_vector::SparseVector;

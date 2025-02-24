@@ -1,6 +1,6 @@
+use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
 use std::iter;
 
 use bitvec::prelude::{BitSlice, BitVec};
@@ -9,13 +9,13 @@ use byteorder::LittleEndian;
 use common::bitpacking::make_bitmask;
 use common::types::PointOffsetType;
 use itertools::Itertools;
+#[cfg(test)]
+use rand::Rng as _;
 use rand::distr::Distribution;
 #[cfg(test)]
 use rand::rngs::StdRng;
 #[cfg(test)]
 use rand::seq::SliceRandom as _;
-#[cfg(test)]
-use rand::Rng as _;
 use uuid::Uuid;
 
 use crate::types::PointIdType;
@@ -293,18 +293,20 @@ impl PointMappings {
         }
 
         let internal_to_external = (0..total_size)
-            .map(|pos| loop {
-                if rand.random_bool(UUID_LIKELYNESS) {
-                    let uuid = Uuid::from_u128(rand.random_range(0..=mask));
-                    if let Entry::Vacant(e) = external_to_internal_uuid.entry(uuid) {
-                        e.insert(pos);
-                        return PointIdType::Uuid(uuid);
-                    }
-                } else {
-                    let num = rand.random_range(0..=mask_u64);
-                    if let Entry::Vacant(e) = external_to_internal_num.entry(num) {
-                        e.insert(pos);
-                        return PointIdType::NumId(num);
+            .map(|pos| {
+                loop {
+                    if rand.random_bool(UUID_LIKELYNESS) {
+                        let uuid = Uuid::from_u128(rand.random_range(0..=mask));
+                        if let Entry::Vacant(e) = external_to_internal_uuid.entry(uuid) {
+                            e.insert(pos);
+                            return PointIdType::Uuid(uuid);
+                        }
+                    } else {
+                        let num = rand.random_range(0..=mask_u64);
+                        if let Entry::Vacant(e) = external_to_internal_num.entry(num) {
+                            e.insert(pos);
+                            return PointIdType::NumId(num);
+                        }
                     }
                 }
             })

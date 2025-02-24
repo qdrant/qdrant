@@ -5,12 +5,12 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
 use serde::{Deserialize, Serialize};
 
+use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    validate_vector_parameters, DistanceType, EncodedVectors, VectorParameters,
+    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
-use crate::EncodingError;
 
 pub const ALIGNMENT: usize = 16;
 

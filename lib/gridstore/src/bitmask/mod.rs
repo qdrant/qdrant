@@ -508,9 +508,9 @@ mod tests {
     use bitvec::bits;
     use bitvec::vec::BitVec;
     use proptest::prelude::*;
-    use rand::{rng, Rng};
+    use rand::{Rng, rng};
 
-    use crate::config::{StorageOptions, DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS};
+    use crate::config::{DEFAULT_BLOCK_SIZE_BYTES, DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
 
     #[test]
     fn test_length_for_page() {

@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
@@ -11,7 +11,7 @@ use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{
-    only_default_multi_vector, MultiDenseVectorInternal, QueryVector, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, only_default_multi_vector,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};

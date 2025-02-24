@@ -7,12 +7,12 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use smol_str::SmolStr;
 
-use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
 use super::GeoMapIndex;
+use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
+use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::types::GeoPoint;
 

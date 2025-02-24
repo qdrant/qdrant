@@ -330,21 +330,27 @@ mod tests {
 
     #[test]
     fn test_validate_sha256_hash() {
-        assert!(validate_sha256_hash(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-        )
-        .is_ok());
-        assert!(validate_sha256_hash(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde"
-        )
-        .is_err());
-        assert!(validate_sha256_hash(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
-        )
-        .is_err());
-        assert!(validate_sha256_hash(
-            "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEG"
-        )
-        .is_err());
+        assert!(
+            validate_sha256_hash(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            )
+            .is_ok(),
+        );
+        assert!(
+            validate_sha256_hash("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde")
+                .is_err(),
+        );
+        assert!(
+            validate_sha256_hash(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"
+            )
+            .is_err(),
+        );
+        assert!(
+            validate_sha256_hash(
+                "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEG"
+            )
+            .is_err(),
+        );
     }
 }

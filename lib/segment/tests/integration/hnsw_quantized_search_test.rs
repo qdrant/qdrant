@@ -1,26 +1,26 @@
 use std::collections::BTreeSet;
 use std::ops::Deref;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{ScoreType, ScoredPointOffset};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
-use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
+use rand::rngs::StdRng;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
-use segment::fixtures::payload_fixtures::{random_vector, STR_KEY};
+use segment::fixtures::payload_fixtures::{STR_KEY, random_vector};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{VectorIndex, VectorIndexEnum};
 use segment::json_path::JsonPath;
 use segment::payload_json;
 use segment::segment::Segment;
+use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
     CompressionRatio, Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes,
@@ -421,10 +421,12 @@ fn test_build_hnsw_using_quantization() {
     let built_segment: Segment = builder.build(permit, &stopped).unwrap();
 
     // check if built segment has quantization and index
-    assert!(built_segment.vector_data[DEFAULT_VECTOR_NAME]
-        .quantized_vectors
-        .borrow()
-        .is_some());
+    assert!(
+        built_segment.vector_data[DEFAULT_VECTOR_NAME]
+            .quantized_vectors
+            .borrow()
+            .is_some(),
+    );
     let borrowed_index = built_segment.vector_data[DEFAULT_VECTOR_NAME]
         .vector_index
         .borrow();

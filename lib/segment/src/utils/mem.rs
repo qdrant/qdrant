@@ -49,7 +49,7 @@ impl Mem {
 
 #[cfg(target_os = "linux")]
 mod cgroups_mem {
-    use cgroups_rs::{hierarchies, memory, Cgroup};
+    use cgroups_rs::{Cgroup, hierarchies, memory};
     use procfs::process::Process;
 
     #[derive(Clone, Debug)]

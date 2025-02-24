@@ -1,6 +1,6 @@
 use std::future::{self, Future};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use tokio::sync::watch;
 

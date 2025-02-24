@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::parsed_formula::{ParsedExpression, ParsedFormula, VariableId};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::query_optimization::optimized_filter::{check_condition, OptimizedCondition};
+use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;

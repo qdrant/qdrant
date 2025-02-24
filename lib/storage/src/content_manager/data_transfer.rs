@@ -10,9 +10,9 @@ use collection::operations::point_ops::{
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{CollectionError, CollectionResult, ScrollRequestInternal};
 use collection::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use collection::shards::CollectionId;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::CollectionId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::{WithPayloadInterface, WithVector};
 use tokio::sync::RwLock;

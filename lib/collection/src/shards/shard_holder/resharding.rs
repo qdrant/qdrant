@@ -10,7 +10,7 @@ use super::ShardHolder;
 use crate::hash_ring::{self, HashRingRouter};
 use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::{point_ops, CollectionUpdateOperations};
+use crate::operations::{CollectionUpdateOperations, point_ops};
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::resharding::{ReshardKey, ReshardStage, ReshardState};
 use crate::shards::shard::ShardId;
@@ -351,7 +351,9 @@ impl ShardHolder {
             if let Some(shard) = self.get_shard(shard_id) {
                 // Remove all replicas from shard
                 for (peer_id, replica_state) in shard.peers() {
-                    log::debug!("removing peer {peer_id} with state {replica_state:?} from replica set {shard_id}");
+                    log::debug!(
+                        "removing peer {peer_id} with state {replica_state:?} from replica set {shard_id}",
+                    );
                     shard.remove_peer(peer_id).await?;
                 }
 

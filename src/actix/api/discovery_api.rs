@@ -1,4 +1,4 @@
-use actix_web::{post, web, Responder};
+use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{DiscoverRequest, DiscoverRequestBatch};
@@ -9,8 +9,8 @@ use storage::content_manager::collection_verification::{
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
-use crate::actix::api::read_params::ReadParams;
 use crate::actix::api::CollectionPath;
+use crate::actix::api::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
 use crate::common::query::do_discover_batch_points;

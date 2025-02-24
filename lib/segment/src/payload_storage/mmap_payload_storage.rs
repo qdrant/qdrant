@@ -8,8 +8,8 @@ use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
 use serde_json::Value;
 
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::types::{Payload, PayloadKeyTypeRef};

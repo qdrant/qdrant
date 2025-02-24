@@ -13,7 +13,7 @@ use super::GeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
+use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::types::GeoPoint;
 
 pub struct MutableGeoMapIndex {

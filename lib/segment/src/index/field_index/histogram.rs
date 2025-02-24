@@ -56,25 +56,13 @@ pub trait Numericable: Num + PartialEq + PartialOrd + Copy {
     fn from_f64(x: f64) -> Self;
     fn from_u128(x: u128) -> Self;
     fn min(self, b: Self) -> Self {
-        if self < b {
-            self
-        } else {
-            b
-        }
+        if self < b { self } else { b }
     }
     fn max(self, b: Self) -> Self {
-        if self > b {
-            self
-        } else {
-            b
-        }
+        if self > b { self } else { b }
     }
     fn abs_diff(self, b: Self) -> Self {
-        if self > b {
-            self - b
-        } else {
-            b - self
-        }
+        if self > b { self - b } else { b - self }
     }
 }
 

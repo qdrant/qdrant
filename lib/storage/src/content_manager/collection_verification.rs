@@ -2,7 +2,7 @@ use std::iter;
 use std::sync::Arc;
 
 use collection::operations::verification::{
-    check_timeout, new_unchecked_verification_pass, StrictModeVerification, VerificationPass,
+    StrictModeVerification, VerificationPass, check_timeout, new_unchecked_verification_pass,
 };
 
 use super::errors::StorageError;

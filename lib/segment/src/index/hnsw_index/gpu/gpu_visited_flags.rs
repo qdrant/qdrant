@@ -4,8 +4,8 @@ use std::sync::Arc;
 use common::types::PointOffsetType;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use super::shader_builder::ShaderBuilderParameters;
 use super::GPU_TIMEOUT;
+use super::shader_builder::ShaderBuilderParameters;
 use crate::common::operation_error::{OperationError, OperationResult};
 
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]

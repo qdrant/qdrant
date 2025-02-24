@@ -1,4 +1,4 @@
-use crate::bitpacking::{packed_bits, BitReader, BitWriter};
+use crate::bitpacking::{BitReader, BitWriter, packed_bits};
 
 /// To simplify value counting, each value should be at least one byte.
 /// Otherwise the count could would be ambiguous, e.g., a 2-byte slice of 5-bit

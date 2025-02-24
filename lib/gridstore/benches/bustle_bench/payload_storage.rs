@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use bustle::Collection;
 use common::counter::hardware_counter::HardwareCounterCell;
-use gridstore::fixtures::{empty_storage, Payload};
+use gridstore::fixtures::{Payload, empty_storage};
 use parking_lot::RwLock;
 
-use crate::fixture::{ArcStorage, SequentialCollectionHandle, StorageProxy};
 use crate::PayloadStorage;
+use crate::fixture::{ArcStorage, SequentialCollectionHandle, StorageProxy};
 
 impl Collection for ArcStorage<PayloadStorage> {
     type Handle = Self;

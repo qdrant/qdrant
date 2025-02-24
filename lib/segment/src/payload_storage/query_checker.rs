@@ -9,7 +9,7 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use crate::common::utils::{check_is_empty, check_is_null, IndexesMap};
+use crate::common::utils::{IndexesMap, check_is_empty, check_is_null};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::FieldIndex;
 use crate::payload_storage::condition_checker::ValueChecker;
@@ -316,13 +316,13 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
-    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::id_tracker::IdTracker;
+    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
     use crate::json_path::JsonPath;
     use crate::payload_json;
-    use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::payload_storage::PayloadStorage;
+    use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
     use crate::types::{
         DateTimeWrapper, FieldCondition, GeoBoundingBox, GeoPoint, PayloadField, Range, ValuesCount,
     };

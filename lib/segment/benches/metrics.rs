@@ -1,7 +1,7 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};

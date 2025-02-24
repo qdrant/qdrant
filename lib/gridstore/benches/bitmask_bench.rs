@@ -1,5 +1,5 @@
 use bitvec::vec::BitVec;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use gridstore::bitmask::Bitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
 use rand::Rng;

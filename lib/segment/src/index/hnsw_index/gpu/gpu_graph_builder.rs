@@ -37,11 +37,12 @@ pub fn build_hnsw_on_gpu<'a>(
     ids: Vec<PointOffsetType>,
     // Scorer builder for CPU build.
     points_scorer_builder: impl Fn(
-            PointOffsetType,
-        )
-            -> OperationResult<(Box<dyn RawScorer + 'a>, Option<Box<dyn FilterContext + 'a>>)>
-        + Send
-        + Sync,
+        PointOffsetType,
+    ) -> OperationResult<(
+        Box<dyn RawScorer + 'a>,
+        Option<Box<dyn FilterContext + 'a>>,
+    )> + Send
+    + Sync,
     stopped: &AtomicBool,
 ) -> OperationResult<GraphLayersBuilder> {
     let num_vectors = reference_graph.links_layers().len();
@@ -127,8 +128,8 @@ mod tests {
     use super::*;
     use crate::fixtures::index_fixtures::FakeFilterContext;
     use crate::index::hnsw_index::gpu::tests::{
-        check_graph_layers_builders_quality, compare_graph_layers_builders,
-        create_gpu_graph_test_data, GpuGraphTestData,
+        GpuGraphTestData, check_graph_layers_builders_quality, compare_graph_layers_builders,
+        create_gpu_graph_test_data,
     };
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 

@@ -95,12 +95,12 @@ fn create_graph_layers_builder(
 mod tests {
     use ahash::HashSet;
     use common::types::PointOffsetType;
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
     use tempfile::TempDir;
 
     use super::batched_points::BatchedPoints;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::data_types::vectors::DenseVector;
     use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
     use crate::fixtures::payload_fixtures::random_vector;

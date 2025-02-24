@@ -6,11 +6,11 @@ use parking_lot::Mutex;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus};
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::CollectionId;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::CollectionId;
 
 /// Orchestrate shard diff transfer
 ///
@@ -130,7 +130,9 @@ pub(super) async fn transfer_wal_delta(
     replica_set.queue_proxy_flush().await?;
 
     // Set shard state to Partial
-    log::trace!("Shard {shard_id} diff transferred to {remote_peer_id} for diff transfer, switching into next stage through consensus");
+    log::trace!(
+        "Shard {shard_id} diff transferred to {remote_peer_id} for diff transfer, switching into next stage through consensus",
+    );
     consensus
         .recovered_switch_to_partial_confirm_remote(&transfer_config, collection_id, &remote_shard)
         .await

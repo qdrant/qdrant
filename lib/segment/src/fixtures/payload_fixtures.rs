@@ -3,10 +3,10 @@ use std::ops::{Range, RangeInclusive};
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use rand::Rng;
 use rand::distr::{Alphanumeric, SampleString};
 use rand::seq::IndexedRandom;
-use rand::Rng;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::data_types::vectors::{DenseVector, MultiDenseVectorInternal, VectorElementType};
 use crate::payload_json;

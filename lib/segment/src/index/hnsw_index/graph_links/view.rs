@@ -1,15 +1,15 @@
 use std::iter::Copied;
 
 use common::bitpacking::packed_bits;
-use common::bitpacking_links::{iterate_packed_links, PackedLinksIterator, MIN_BITS_PER_VALUE};
+use common::bitpacking_links::{MIN_BITS_PER_VALUE, PackedLinksIterator, iterate_packed_links};
 use common::bitpacking_ordered;
 use common::types::PointOffsetType;
 use itertools::{Either, Itertools as _};
 use zerocopy::native_endian::U64 as NativeU64;
 use zerocopy::{FromBytes, Immutable};
 
-use super::header::{HeaderCompressed, HeaderPlain, HEADER_VERSION_COMPRESSED};
 use super::GraphLinksFormat;
+use super::header::{HEADER_VERSION_COMPRESSED, HeaderCompressed, HeaderPlain};
 use crate::common::operation_error::{OperationError, OperationResult};
 
 /// An (almost) zero-copy, non-owning view into serialized graph links stored

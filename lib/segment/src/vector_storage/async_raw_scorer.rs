@@ -14,9 +14,9 @@ use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, Manhat
 use crate::types::Distance;
 use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
-use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::{RawScorer, VectorStorage as _, DEFAULT_STOPPED};
+use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
+use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, VectorStorage as _};
 
 pub fn new<'a>(
     query: QueryVector,

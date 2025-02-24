@@ -11,9 +11,9 @@ use std::str;
 use memmap2::Mmap;
 use ph::fmph::Function;
 #[cfg(any(test, feature = "testing"))]
-use rand::rngs::StdRng;
-#[cfg(any(test, feature = "testing"))]
 use rand::Rng as _;
+#[cfg(any(test, feature = "testing"))]
+use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::zeros::WriteZerosExt as _;

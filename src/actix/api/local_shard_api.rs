@@ -2,12 +2,12 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 
-use actix_web::{post, web, Responder};
+use actix_web::{Responder, post, web};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, ScrollRequestInternal,
 };
-use collection::operations::verification::{new_unchecked_verification_pass, VerificationPass};
+use collection::operations::verification::{VerificationPass, new_unchecked_verification_pass};
 use collection::shards::shard::ShardId;
 use futures::FutureExt;
 use segment::types::{Condition, Filter};

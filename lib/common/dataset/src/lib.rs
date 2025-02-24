@@ -1,7 +1,7 @@
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 

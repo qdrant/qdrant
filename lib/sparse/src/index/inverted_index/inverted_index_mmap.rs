@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use super::INDEX_FILE_NAME;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
-use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
+use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::posting_list::PostingListIterator;
 use crate::index::posting_list_common::PostingElementEx;
 
@@ -121,7 +121,10 @@ impl InvertedIndex for InvertedIndexMmap {
     }
 
     fn total_sparse_vectors_size(&self) -> usize {
-        debug_assert!(false, "This index is already substituted by the compressed version, no need to maintain new features");
+        debug_assert!(
+            false,
+            "This index is already substituted by the compressed version, no need to maintain new features",
+        );
         0
     }
 

@@ -1,14 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::ShardTransferChange;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
@@ -86,9 +86,7 @@ impl Collection {
                     "collection {} UUID mismatch: \
                      UUID of existing collection is different from UUID of collection in Raft snapshot: \
                      existing collection UUID: {:?}, Raft snapshot collection UUID: {:?}",
-                    self.id,
-                    config.uuid,
-                    new_config.uuid,
+                    self.id, config.uuid, new_config.uuid,
                 )));
             }
 

@@ -35,7 +35,7 @@ impl ShardReplicaSet {
             Some(Shard::ForwardProxy(proxy))
                 if proxy.remote_shard.peer_id == remote_shard.peer_id =>
             {
-                return Ok(())
+                return Ok(());
             }
 
             // Unexpected states, error

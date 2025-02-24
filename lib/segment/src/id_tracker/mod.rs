@@ -71,11 +71,11 @@ pub fn for_each_unique_point<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{hash_map, HashMap};
+    use std::collections::{HashMap, hash_map};
 
     use in_memory_id_tracker::InMemoryIdTracker;
-    use rand::rngs::StdRng;
     use rand::SeedableRng as _;
+    use rand::rngs::StdRng;
     use rstest::rstest;
 
     use super::*;

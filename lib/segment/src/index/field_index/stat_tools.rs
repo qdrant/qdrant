@@ -82,9 +82,9 @@ pub fn number_of_selected_points(points: usize, values: usize) -> usize {
 mod tests {
     use std::collections::HashSet;
 
+    use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
-    use rand::SeedableRng;
 
     use super::*;
 

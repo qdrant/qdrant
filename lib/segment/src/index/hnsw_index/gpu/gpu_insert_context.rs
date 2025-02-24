@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::types::PointOffsetType;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use super::GPU_TIMEOUT;
 use super::gpu_links::GpuLinks;
 use super::gpu_vector_storage::GpuVectorStorage;
 use super::gpu_visited_flags::GpuVisitedFlags;
 use super::shader_builder::ShaderBuilderParameters;
-use super::GPU_TIMEOUT;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilder;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -453,21 +453,21 @@ impl<'a> GpuInsertContext<'a> {
 mod tests {
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
     use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
+    use crate::vector_storage::VectorStorage;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-    use crate::vector_storage::VectorStorage;
 
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]

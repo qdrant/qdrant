@@ -1,16 +1,16 @@
 use std::fmt;
 use std::ops::Range;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
-use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -20,7 +20,7 @@ use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::common::{StoredRecord, CHUNK_SIZE, VECTOR_READ_BATCH_SIZE};
+use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;
@@ -238,7 +238,9 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         assert_eq!(multi_vector.dim, self.dim);
         let multivector_size_in_bytes = std::mem::size_of_val(multi_vector.flattened_vectors);
         if multivector_size_in_bytes >= CHUNK_SIZE {
-            return Err(OperationError::service_error(format!("Cannot insert multi vector of size {multivector_size_in_bytes} to the vector storage. It's too large, maximum size is {CHUNK_SIZE}.")));
+            return Err(OperationError::service_error(format!(
+                "Cannot insert multi vector of size {multivector_size_in_bytes} to the vector storage. It's too large, maximum size is {CHUNK_SIZE}.",
+            )));
         }
 
         let key_usize = key as usize;

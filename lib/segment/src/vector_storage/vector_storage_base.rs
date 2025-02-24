@@ -13,8 +13,8 @@ use super::multi_dense::appendable_mmap_multi_dense_vector_storage::{
 };
 use super::multi_dense::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
 use super::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{

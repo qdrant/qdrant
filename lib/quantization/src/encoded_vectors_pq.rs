@@ -13,7 +13,7 @@ use io::file_operations::atomic_save_json;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{validate_vector_parameters, EncodedVectors, VectorParameters};
+use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 

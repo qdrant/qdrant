@@ -1,4 +1,4 @@
-use actix_web::{post, web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{SearchMatrixOffsetsResponse, SearchMatrixPairsResponse, SearchMatrixRequest};
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
@@ -13,8 +13,8 @@ use storage::content_manager::collection_verification::{
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
-use super::read_params::ReadParams;
 use super::CollectionPath;
+use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,

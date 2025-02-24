@@ -7,16 +7,16 @@ use collection::operations::universal_query::collection_query::{
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{MultiDenseVectorInternal, VectorInternal, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use storage::content_manager::errors::StorageError;
 
+use crate::common::inference::InferenceToken;
 use crate::common::inference::batch_processing::{
     collect_query_groups_request, collect_query_request,
 };
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
-use crate::common::inference::InferenceToken;
 
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
@@ -374,10 +374,12 @@ mod tests {
 
         let result = convert_vector_input_with_inferred(vector, &inferred);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Missing inferred vector"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Missing inferred vector"),
+        );
     }
 
     #[test]

@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::{create_dir_all, remove_dir_all, rename};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
@@ -14,12 +14,12 @@ use sparse::common::scores_memory_pool::ScoresMemoryPool;
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
 use sparse::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-use sparse::index::inverted_index::{InvertedIndex, INDEX_FILE_NAME, OLD_INDEX_FILE_NAME};
+use sparse::index::inverted_index::{INDEX_FILE_NAME, InvertedIndex, OLD_INDEX_FILE_NAME};
 use sparse::index::search_context::SearchContext;
 
 use super::indices_tracker::IndicesTracker;
 use super::sparse_index_config::SparseIndexType;
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::ScopeDurationMeasurer;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::query_context::VectorQueryContext;
@@ -32,10 +32,10 @@ use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD};
+use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
 use crate::vector_storage::{
-    check_deleted_condition, new_stoppable_raw_scorer, VectorStorage, VectorStorageEnum,
+    VectorStorage, VectorStorageEnum, check_deleted_condition, new_stoppable_raw_scorer,
 };
 
 /// Whether to use the new compressed format.
@@ -220,7 +220,9 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                     // the vector was lost in a crash but will be recovered by the WAL
                     let point_id = borrowed_id_tracker.external_id(id);
                     let point_version = borrowed_id_tracker.internal_version(id);
-                    log::debug!("Sparse vector with id {id} is not found, external_id: {point_id:?}, version: {point_version:?}")
+                    log::debug!(
+                        "Sparse vector with id {id} is not found, external_id: {point_id:?}, version: {point_version:?}",
+                    )
                 }
                 Some(vector) => {
                     let vector: &SparseVector = vector.as_vec_ref().try_into()?;

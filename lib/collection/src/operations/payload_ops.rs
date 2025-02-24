@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
-use super::{split_iter_by_shard, OperationToShard, SplitByShard};
+use super::{OperationToShard, SplitByShard, split_iter_by_shard};
 use crate::hash_ring::HashRingRouter;
 
 /// This data structure is used in API interface and applied across multiple shards

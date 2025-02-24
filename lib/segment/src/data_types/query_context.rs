@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_accumulator::HwMeasurementAcc;

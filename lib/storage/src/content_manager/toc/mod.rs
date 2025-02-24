@@ -15,17 +15,17 @@ use std::collections::{HashMap, HashSet};
 use std::fs::{create_dir_all, read_dir};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use api::rest::models::HardwareUsage;
 use collection::collection::{Collection, RequestShardTransfer};
-use collection::config::{default_replication_factor, CollectionConfigInternal};
+use collection::config::{CollectionConfigInternal, default_replication_factor};
 use collection::operations::types::*;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::{replica_set, CollectionId};
+use collection::shards::{CollectionId, replica_set};
 use collection::telemetry::CollectionTelemetry;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
@@ -36,6 +36,7 @@ use tokio::runtime::Runtime;
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 
 use self::dispatcher::TocDispatcher;
+use crate::ConsensusOperations;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
 use crate::content_manager::collections_ops::{Checker, Collections};
@@ -44,7 +45,6 @@ use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::StorageConfig;
-use crate::ConsensusOperations;
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
@@ -523,10 +523,14 @@ impl TableOfContent {
                     state,
                     from_state,
                 ) {
-                    log::error!("Can't send proposal to deactivate replica on peer {peer_id} of shard {shard_id} of collection {collection_name}. Error: {send_error}");
+                    log::error!(
+                        "Can't send proposal to deactivate replica on peer {peer_id} of shard {shard_id} of collection {collection_name}. Error: {send_error}",
+                    );
                 }
             } else {
-                log::error!("Can't send proposal to deactivate replica. Error: this is a single node deployment");
+                log::error!(
+                    "Can't send proposal to deactivate replica. Error: this is a single node deployment",
+                );
             }
         })
     }
@@ -568,7 +572,9 @@ impl TableOfContent {
                     );
                 }
             } else {
-                log::error!("Can't send proposal to request shard transfer. Error: this is a single node deployment");
+                log::error!(
+                    "Can't send proposal to request shard transfer. Error: this is a single node deployment",
+                );
             }
         })
     }

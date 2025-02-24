@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::fs::create_dir;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
@@ -19,21 +19,21 @@ use segment::data_types::index::{
     FloatIndexParams, FloatIndexType, IntegerIndexParams, IntegerIndexType, KeywordIndexParams,
     KeywordIndexType, TextIndexParams, TextIndexType,
 };
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{
-    generate_diverse_nested_payload, generate_diverse_payload, random_filter, random_nested_filter,
-    random_vector, FLICKING_KEY, FLT_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE,
-    LON_RANGE, STR_KEY, STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY,
+    FLICKING_KEY, FLT_KEY, GEO_KEY, INT_KEY, INT_KEY_2, INT_KEY_3, LAT_RANGE, LON_RANGE, STR_KEY,
+    STR_PROJ_KEY, STR_ROOT_PROJ_KEY, TEXT_KEY, generate_diverse_nested_payload,
+    generate_diverse_payload, random_filter, random_nested_filter, random_vector,
 };
+use segment::index::PayloadIndex;
 use segment::index::field_index::{FieldIndex, PrimaryCondition};
 use segment::index::struct_payload_index::StructPayloadIndex;
-use segment::index::PayloadIndex;
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
+use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::segment::Segment;
 use segment::segment_constructor::build_segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
@@ -1259,10 +1259,12 @@ fn test_struct_keyword_facet(test_segments: &TestSegments) -> Result<()> {
     let request = keyword_facet_request();
 
     // Plain segment should fail, as it does not have a keyword index
-    assert!(test_segments
-        .plain_segment
-        .facet(&request, &Default::default(), &Default::default())
-        .is_err());
+    assert!(
+        test_segments
+            .plain_segment
+            .facet(&request, &Default::default(), &Default::default())
+            .is_err(),
+    );
 
     // Struct segment
     let facet_hits = test_segments

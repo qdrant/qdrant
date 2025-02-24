@@ -27,12 +27,12 @@ use rocksdb::DB;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
 use crate::id_tracker::IdTrackerSS;
-use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::VectorIndexEnum;
+use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{SegmentConfig, SegmentType, SeqNumberType, VectorNameBuf};
-use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::VectorStorageEnum;
+use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 

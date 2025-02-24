@@ -1,19 +1,19 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use criterion::{criterion_group, criterion_main, Criterion};
-use rand::prelude::StdRng;
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
-use segment::data_types::vectors::{only_default_multi_vector, DEFAULT_VECTOR_NAME};
+use rand::prelude::StdRng;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::random_multi_vector;
+use segment::index::VectorIndex;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::VectorIndex;
-use segment::segment_constructor::{build_segment, VectorIndexBuildArgs};
+use segment::segment_constructor::{VectorIndexBuildArgs, build_segment};
 use segment::types::Distance::Dot;
 use segment::types::{
     HnswConfig, Indexes, MultiVectorConfig, SegmentConfig, SeqNumberType, VectorDataConfig,

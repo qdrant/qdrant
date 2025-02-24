@@ -3,7 +3,7 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, DenseVector, VectorRef};
+use segment::data_types::vectors::{DenseVector, VectorRef, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::payload_json;

@@ -4,10 +4,10 @@ use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use rand::seq::IteratorRandom as _;
 use rand::SeedableRng as _;
+use rand::seq::IteratorRandom as _;
 
-use super::utils::{delete_random_vectors, insert_distributed_vectors, sampler, score, Result};
+use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler, score};
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -16,7 +16,7 @@ use crate::types::Distance;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{async_raw_scorer, new_raw_scorer_for_test, VectorStorageEnum};
+use crate::vector_storage::{VectorStorageEnum, async_raw_scorer, new_raw_scorer_for_test};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {

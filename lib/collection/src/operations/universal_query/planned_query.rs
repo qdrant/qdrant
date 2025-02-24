@@ -168,7 +168,7 @@ impl PlannedQuery {
                 Some(ScoringQuery::Fusion(_)) => {
                     return Err(CollectionError::bad_request(
                         "cannot apply Fusion without prefetches".to_string(),
-                    ))
+                    ));
                 }
                 Some(ScoringQuery::OrderBy(order_by)) => {
                     // Everything should come from 1 scroll
@@ -188,7 +188,7 @@ impl PlannedQuery {
                 Some(ScoringQuery::Formula(_formula)) => {
                     return Err(CollectionError::bad_request(
                         "cannot apply Formula without prefetches".to_string(),
-                    ))
+                    ));
                 }
                 Some(ScoringQuery::Sample(SampleInternal::Random)) => {
                     // Everything should come from 1 scroll
@@ -318,7 +318,7 @@ fn recurse_prefetches(
                 Some(ScoringQuery::Fusion(_)) => {
                     return Err(CollectionError::bad_request(
                         "cannot apply Fusion without prefetches".to_string(),
-                    ))
+                    ));
                 }
                 Some(ScoringQuery::OrderBy(order_by)) => {
                     let scroll = QueryScrollRequestInternal {
@@ -337,7 +337,7 @@ fn recurse_prefetches(
                 Some(ScoringQuery::Formula(_)) => {
                     return Err(CollectionError::bad_request(
                         "cannot apply Formula without prefetches".to_string(),
-                    ))
+                    ));
                 }
                 Some(ScoringQuery::Sample(SampleInternal::Random)) => {
                     let scroll = QueryScrollRequestInternal {

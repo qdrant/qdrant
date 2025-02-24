@@ -3,15 +3,15 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
-use rand::rngs::ThreadRng;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::only_default_vector;
 use segment::entry::entry_point::SegmentEntry;
 use segment::payload_json;
 use segment::segment::Segment;
 use segment::segment_constructor::simple_segment_constructor::{
-    build_multivec_segment, build_simple_segment, VECTOR1_NAME, VECTOR2_NAME,
+    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
 use segment::types::{Distance, Payload, PointIdType, SeqNumberType};
 

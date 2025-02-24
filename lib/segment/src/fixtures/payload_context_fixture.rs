@@ -6,22 +6,22 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use rand::prelude::StdRng;
 use rand::SeedableRng;
+use rand::prelude::StdRng;
 
 use super::payload_fixtures::BOOL_KEY;
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::fixtures::payload_fixtures::{
-    generate_diverse_payload, FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY,
+    FLT_KEY, GEO_KEY, INT_KEY, STR_KEY, TEXT_KEY, generate_diverse_payload,
 };
 use crate::id_tracker::IdTracker;
+use crate::index::PayloadIndex;
 use crate::index::plain_payload_index::PlainPayloadIndex;
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::PayloadIndex;
+use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::query_checker::SimpleConditionChecker;
-use crate::payload_storage::PayloadStorage;
 use crate::types::{PayloadSchemaType, PointIdType, SeqNumberType};
 
 /// Warn: Use for tests only

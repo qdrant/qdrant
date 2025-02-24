@@ -24,7 +24,7 @@ pub mod consensus_ops {
     use collection::shards::resharding::ReshardKey;
     use collection::shards::shard::PeerId;
     use collection::shards::transfer::ShardTransfer;
-    use collection::shards::{replica_set, CollectionId};
+    use collection::shards::{CollectionId, replica_set};
     use raft::eraftpb::Entry as RaftEntry;
     use serde::{Deserialize, Serialize};
 

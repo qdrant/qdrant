@@ -6,16 +6,16 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::fixtures::payload_fixtures::{FLT_KEY, INT_KEY};
-use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
+use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::payload_json;
-use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
+use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::types::{
     Condition, FieldCondition, Filter, PayloadSchemaType, Range as RangeCondition,
 };

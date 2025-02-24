@@ -305,9 +305,8 @@ impl Settings {
                 < JWT_RECOMMENDED_SECRET_LENGTH
             {
                 log::warn!(
-                "It is highly recommended to use an API key of {} bytes when JWT RBAC is enabled",
-                JWT_RECOMMENDED_SECRET_LENGTH
-            )
+                    "It is highly recommended to use an API key of {JWT_RECOMMENDED_SECRET_LENGTH} bytes when JWT RBAC is enabled",
+                )
             }
         }
 

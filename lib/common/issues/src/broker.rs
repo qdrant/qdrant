@@ -128,10 +128,12 @@ mod tests {
             collection_id: "dummy".to_string(),
         });
 
-        assert!(test_dashboard
-            .get_all_issues()
-            .iter()
-            .any(|issue| issue.id == "DUMMY/dummy"));
+        assert!(
+            test_dashboard
+                .get_all_issues()
+                .iter()
+                .any(|issue| issue.id == "DUMMY/dummy"),
+        );
 
         broker.publish(ClearAllIssuesEvent);
 

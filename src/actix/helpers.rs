@@ -4,7 +4,7 @@ use std::future::Future;
 use actix_web::http::header;
 use actix_web::http::header::HeaderMap;
 use actix_web::rt::time::Instant;
-use actix_web::{http, HttpResponse, ResponseError};
+use actix_web::{HttpResponse, ResponseError, http};
 use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;

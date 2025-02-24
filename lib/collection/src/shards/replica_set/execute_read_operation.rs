@@ -146,12 +146,7 @@ impl ShardReplicaSet {
             Some(local) => {
                 let update_watcher = local.watch_for_update();
                 let is_local_ready = !local.is_update_in_progress();
-
-                (
-                    Some(local),
-                    is_local_ready,
-                    Some(update_watcher),
-                )
+                (Some(local), is_local_ready, Some(update_watcher))
             }
             None => (None, false, None),
         };

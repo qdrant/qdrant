@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 
 /// In case of simple vector storage, vector offset is the same as PointOffsetType.
 /// But in case of multivectors, it requires an additional lookup.

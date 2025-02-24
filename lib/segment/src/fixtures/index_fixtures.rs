@@ -8,8 +8,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
 use crate::payload_storage::FilterContext;
@@ -17,7 +17,7 @@ use crate::spaces::metric::Metric;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
 use crate::vector_storage::{
-    raw_scorer_impl, DenseVectorStorage, RawScorer, VectorStorage, DEFAULT_STOPPED,
+    DEFAULT_STOPPED, DenseVectorStorage, RawScorer, VectorStorage, raw_scorer_impl,
 };
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {

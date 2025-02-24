@@ -2,7 +2,7 @@
 mod prof;
 
 use collection::hash_ring::HashRing;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::Rng;
 
 fn hash_ring_bench(c: &mut Criterion) {

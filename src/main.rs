@@ -17,7 +17,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use ::common::budget::{get_io_budget, ResourceBudget};
+use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
@@ -29,8 +29,8 @@ use startup::setup_panic_hook;
 use storage::content_manager::consensus::operation_sender::OperationSender;
 use storage::content_manager::consensus::persistent::Persistent;
 use storage::content_manager::consensus_manager::{ConsensusManager, ConsensusStateRef};
-use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::content_manager::toc::TableOfContent;
+use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 #[cfg(all(
@@ -210,7 +210,9 @@ fn main() -> anyhow::Result<()> {
     settings.validate_and_warn();
 
     let bootstrap = if args.bootstrap == args.uri {
-        log::warn!("Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.");
+        log::warn!(
+            "Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.",
+        );
         None
     } else {
         args.bootstrap
@@ -550,27 +552,29 @@ fn main() -> anyhow::Result<()> {
 
         thread::Builder::new()
             .name("deadlock_checker".to_string())
-            .spawn(move || loop {
-                thread::sleep(DEADLOCK_CHECK_PERIOD);
-                let deadlocks = deadlock::check_deadlock();
-                if deadlocks.is_empty() {
-                    continue;
-                }
-
-                let mut error = format!("{} deadlocks detected\n", deadlocks.len());
-                for (i, threads) in deadlocks.iter().enumerate() {
-                    writeln!(error, "Deadlock #{i}").expect("fail to writeln!");
-                    for t in threads {
-                        writeln!(
-                            error,
-                            "Thread Id {:#?}\n{:#?}",
-                            t.thread_id(),
-                            t.backtrace()
-                        )
-                        .expect("fail to writeln!");
+            .spawn(move || {
+                loop {
+                    thread::sleep(DEADLOCK_CHECK_PERIOD);
+                    let deadlocks = deadlock::check_deadlock();
+                    if deadlocks.is_empty() {
+                        continue;
                     }
+
+                    let mut error = format!("{} deadlocks detected\n", deadlocks.len());
+                    for (i, threads) in deadlocks.iter().enumerate() {
+                        writeln!(error, "Deadlock #{i}").expect("fail to writeln!");
+                        for t in threads {
+                            writeln!(
+                                error,
+                                "Thread Id {:#?}\n{:#?}",
+                                t.thread_id(),
+                                t.backtrace(),
+                            )
+                            .expect("fail to writeln!");
+                        }
+                    }
+                    log::error!("{}", error);
                 }
-                log::error!("{}", error);
             })
             .unwrap();
     }

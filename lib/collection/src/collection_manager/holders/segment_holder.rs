@@ -3,8 +3,8 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -25,7 +25,7 @@ use segment::types::{
     ExtendedPointId, Payload, PointIdType, SegmentConfig, SegmentType, SeqNumberType,
     SnapshotFormat,
 };
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 
 use super::proxy_segment::{LockedIndexChanges, LockedRmSet};
 use crate::collection::payload_index_schema::PayloadIndexSchema;
@@ -640,7 +640,9 @@ impl<'s> SegmentHolder {
 
             interval = interval.saturating_mul(2);
             if interval.as_secs() >= 10 {
-                log::warn!("Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.");
+                log::warn!(
+                    "Trying to read-lock all collection segments is taking a long time. This could be a deadlock and may block new updates.",
+                );
             }
         }
     }
@@ -892,7 +894,8 @@ impl<'s> SegmentHolder {
             let segment_persisted_version = read_segment.flush(sync, force)?;
 
             log::trace!(
-                "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}", &read_segment.data_path()
+                "Flushed segment {segment_id}:{:?} version: {segment_version} to persisted: {segment_persisted_version}",
+                &read_segment.data_path(),
             );
 
             if segment_version > segment_persisted_version {
@@ -1000,7 +1003,10 @@ impl<'s> SegmentHolder {
                 }
                 // All segments to snapshot should be proxy, warn if this is not the case
                 LockedSegment::Original(segment) => {
-                    debug_assert!(false, "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring");
+                    debug_assert!(
+                        false,
+                        "Reached non-proxy segment while applying function to proxies, this should not happen, ignoring",
+                    );
                     segment.clone()
                 }
             };
@@ -1214,14 +1220,18 @@ impl<'s> SegmentHolder {
         let proxy_segment = match proxy_segment {
             LockedSegment::Proxy(proxy_segment) => proxy_segment,
             LockedSegment::Original(_) => {
-                log::warn!("Unproxying segment {proxy_id} that is not proxified, that is unexpected, skipping");
+                log::warn!(
+                    "Unproxying segment {proxy_id} that is not proxified, that is unexpected, skipping",
+                );
                 return Err(segments_lock);
             }
         };
 
         // Batch 1: propagate changes to wrapped segment with segment holder read lock
         if let Err(err) = proxy_segment.read().propagate_to_wrapped() {
-            log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+            log::error!(
+                "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
+            );
         }
 
         let mut write_segments = RwLockUpgradableReadGuard::upgrade(segments_lock);
@@ -1232,7 +1242,9 @@ impl<'s> SegmentHolder {
         let wrapped_segment = {
             let proxy_segment = proxy_segment.read();
             if let Err(err) = proxy_segment.propagate_to_wrapped() {
-                log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                log::error!(
+                    "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
+                );
             }
             proxy_segment.wrapped_segment.clone()
         };
@@ -1282,7 +1294,9 @@ impl<'s> SegmentHolder {
                     let wrapped_segment = {
                         let proxy_segment = proxy_segment.read();
                         if let Err(err) = proxy_segment.propagate_to_wrapped() {
-                            log::error!("Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}");
+                            log::error!(
+                                "Propagating proxy segment {proxy_id} changes to wrapped segment failed, ignoring: {err}",
+                            );
                         }
                         proxy_segment.wrapped_segment.clone()
                     };
@@ -1458,14 +1472,18 @@ impl<'s> SegmentHolder {
 
                 // choose newer version between point_id and last_point_id
                 if point_version < last_point_version {
-                    log::trace!("Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})");
+                    log::trace!(
+                        "Selected point {point_id} in segment {segment_id} for deduplication (version {point_version:?} versus {last_point_version:?} in segment {last_segment_id})",
+                    );
 
                     points_to_remove
                         .entry(segment_id)
                         .or_default()
                         .push(point_id);
                 } else {
-                    log::trace!("Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})");
+                    log::trace!(
+                        "Selected point {point_id} in segment {last_segment_id} for deduplication (version {last_point_version:?} versus {point_version:?} in segment {segment_id})",
+                    );
 
                     points_to_remove
                         .entry(last_segment_id)
@@ -1493,7 +1511,7 @@ mod tests {
     use std::str::FromStr;
 
     use rand::Rng;
-    use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
+    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::simple_segment_constructor::build_simple_segment;

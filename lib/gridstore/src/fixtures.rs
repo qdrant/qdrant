@@ -1,5 +1,5 @@
-use rand::distr::{Distribution, Uniform};
 use rand::Rng;
+use rand::distr::{Distribution, Uniform};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use tempfile::{Builder, TempDir};
@@ -120,8 +120,8 @@ pub const HM_FIELDS: [&str; 23] = [
 
 #[cfg(test)]
 mod tests {
-    use crate::fixtures::Payload;
     use crate::Blob;
+    use crate::fixtures::Payload;
 
     #[test]
     fn test_serde_symmetry() {

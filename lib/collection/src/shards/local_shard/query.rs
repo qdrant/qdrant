@@ -4,11 +4,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::future::BoxFuture;
 use futures::FutureExt;
+use futures::future::BoxFuture;
 use parking_lot::Mutex;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{score_fusion, ScoreFusion};
+use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{
     Filter, HasIdCondition, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use quantization::encoded_vectors::{DistanceType, VectorParameters};
     use quantization::encoded_vectors_u8::EncodedVectorsU8;

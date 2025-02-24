@@ -20,9 +20,9 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
-use crate::vector_storage::query_scorer::QueryScorer;
 
 /// RawScorer composition:
 ///

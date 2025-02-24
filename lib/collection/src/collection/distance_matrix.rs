@@ -6,7 +6,7 @@ use api::rest::{
     SearchMatrixRequestInternal,
 };
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::vectors::{NamedVectorStruct, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedVectorStruct};
 use segment::types::{
     Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
     WithVector,

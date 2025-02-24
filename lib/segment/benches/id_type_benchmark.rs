@@ -3,7 +3,7 @@ mod prof;
 
 use std::collections::{BTreeMap, HashMap};
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

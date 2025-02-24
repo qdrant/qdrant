@@ -4,7 +4,7 @@ use common::types::PointOffsetType;
 use ordered_float::OrderedFloat;
 
 use super::posting_list_common::{
-    PostingElement, PostingElementEx, PostingListIter, DEFAULT_MAX_NEXT_WEIGHT,
+    DEFAULT_MAX_NEXT_WEIGHT, PostingElement, PostingElementEx, PostingListIter,
 };
 use crate::common::types::DimWeight;
 
@@ -476,8 +476,8 @@ mod tests {
 
     #[test]
     fn test_random_delete() {
-        use rand::seq::SliceRandom;
         use rand::Rng;
+        use rand::seq::SliceRandom;
         let mut rng = rand::rng();
         for _ in 0..1000 {
             let mut ids = Vec::new();

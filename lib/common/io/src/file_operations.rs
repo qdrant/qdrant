@@ -4,8 +4,8 @@ use std::path::Path;
 use std::result;
 
 use atomicwrites::{AtomicFile, OverwriteBehavior};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 pub fn atomic_save_bin<T: Serialize>(path: &Path, object: &T) -> Result<()> {
     let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);

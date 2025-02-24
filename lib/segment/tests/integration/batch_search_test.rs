@@ -1,22 +1,22 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use rand::prelude::StdRng;
 use rand::SeedableRng;
+use rand::prelude::StdRng;
 use segment::data_types::query_context::QueryContext;
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
+use segment::index::VectorIndex;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::VectorIndex;
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, PayloadSchemaType, SeqNumberType,
     WithPayload,

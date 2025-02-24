@@ -6,14 +6,14 @@ use api::rest::{
     DenseVector, MultiDenseVector, ShardKeySelector, VectorOutput, VectorStructOutput,
 };
 use common::validation::validate_multi_vector;
-use itertools::{izip, Itertools};
+use itertools::{Itertools, izip};
 use schemars::JsonSchema;
 use segment::common::operation_error::OperationError;
 use segment::common::utils::transpose_map_into_named_vector;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    BatchVectorStructInternal, MultiDenseVectorInternal, VectorInternal, VectorStructInternal,
-    DEFAULT_VECTOR_NAME,
+    BatchVectorStructInternal, DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, VectorInternal,
+    VectorStructInternal,
 };
 use segment::types::{Filter, Payload, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
@@ -23,8 +23,8 @@ use validator::{Validate, ValidationErrors};
 use super::payload_ops::SetPayloadOp;
 use super::vector_ops::{PointVectorsPersisted, UpdateVectorsOp};
 use super::{
-    point_to_shards, split_iter_by_shard, CollectionUpdateOperations, OperationToShard,
-    SplitByShard,
+    CollectionUpdateOperations, OperationToShard, SplitByShard, point_to_shards,
+    split_iter_by_shard,
 };
 use crate::hash_ring::HashRingRouter;
 use crate::operations::{payload_ops, vector_ops};

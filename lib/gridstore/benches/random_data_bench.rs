@@ -1,5 +1,5 @@
 use common::counter::hardware_counter::HardwareCounterCell;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use gridstore::fixtures::{empty_storage, random_payload};
 
 /// sized similarly to the real dataset for a fair comparison

@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -7,13 +7,13 @@ use common::types::PointOffsetType;
 use rand::rng;
 use tempfile::Builder;
 
-use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::hnsw_index::num_rayon_threads;
-use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::segment_constructor::VectorIndexBuildArgs;
+use crate::segment_constructor::simple_segment_constructor::build_simple_segment;
 use crate::types::{Distance, HnswConfig, SeqNumberType};
 
 #[test]

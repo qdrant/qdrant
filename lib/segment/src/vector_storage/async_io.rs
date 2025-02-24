@@ -3,7 +3,7 @@ use std::fs::File;
 use std::os::fd::AsRawFd;
 
 use common::types::PointOffsetType;
-use io_uring::{opcode, types, IoUring};
+use io_uring::{IoUring, opcode, types};
 use memory::mmap_ops::transmute_from_u8_to_slice;
 
 use crate::common::operation_error::{OperationError, OperationResult};

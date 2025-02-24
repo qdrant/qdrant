@@ -1,4 +1,4 @@
-use actix_web::{get, patch, web, Responder};
+use actix_web::{Responder, get, patch, web};
 use storage::rbac::AccessRequirements;
 
 use crate::actix::auth::ActixAccess;

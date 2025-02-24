@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::vectors::{NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedVectorStruct, VectorInternal};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 use tokio::runtime::Handle;

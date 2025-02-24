@@ -1,7 +1,7 @@
 use std::ops::{Index, Range};
 
 use geo::{Coord, Distance, Haversine, Intersects, LineString, Point, Polygon};
-use geohash::{decode, decode_bbox, encode, Direction, GeohashError};
+use geohash::{Direction, GeohashError, decode, decode_bbox, encode};
 use itertools::Itertools;
 use smol_str::SmolStr;
 

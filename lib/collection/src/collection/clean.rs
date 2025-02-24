@@ -107,12 +107,12 @@ impl ShardCleanTasks {
                 ShardCleanStatus::Failed { reason } => {
                     return Err(CollectionError::service_error(format!(
                         "Failed to clean shard points: {reason}",
-                    )))
+                    )));
                 }
                 ShardCleanStatus::Cancelled => {
                     return Err(CollectionError::service_error(
                         "Failed to clean shard points due to cancellation, please try again",
-                    ))
+                    ));
                 }
             }
 
@@ -132,7 +132,7 @@ impl ShardCleanTasks {
                 Ok(Err(_)) => {
                     return Err(CollectionError::service_error(
                         "Failed to clean shard points, notification channel dropped",
-                    ))
+                    ));
                 }
                 // Timeout elapsed, acknowledge so the client can probe again later
                 Err(_) => return Ok(UpdateStatus::Acknowledged),

@@ -1,7 +1,7 @@
 use api::conversions::json::json_path_from_proto;
 use api::grpc::qdrant as grpc;
-use api::grpc::qdrant::query::Variant;
 use api::grpc::qdrant::RecommendInput;
+use api::grpc::qdrant::query::Variant;
 use api::rest;
 use api::rest::RecommendStrategy;
 use collection::operations::universal_query::collection_query::{
@@ -11,16 +11,16 @@ use collection::operations::universal_query::collection_query::{
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorInternal};
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
 
+use crate::common::inference::InferenceToken;
 use crate::common::inference::batch_processing_grpc::{
-    collect_prefetch, collect_query, BatchAccumGrpc,
+    BatchAccumGrpc, collect_prefetch, collect_query,
 };
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
-use crate::common::inference::InferenceToken;
 
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_point_groups_from_grpc(
@@ -390,9 +390,9 @@ fn context_pair_from_grpc_with_inferred(
 mod tests {
     use std::collections::HashMap;
 
+    use api::grpc::qdrant::Value;
     use api::grpc::qdrant::value::Kind;
     use api::grpc::qdrant::vector_input::Variant;
-    use api::grpc::qdrant::Value;
     use collection::operations::point_ops::VectorPersisted;
 
     use super::*;
@@ -534,9 +534,11 @@ mod tests {
 
         let result = context_pair_from_grpc_with_inferred(pair, &inferred);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .message()
-            .contains("positive is missing"));
+        assert!(
+            result
+                .unwrap_err()
+                .message()
+                .contains("positive is missing"),
+        );
     }
 }

@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::stream::FuturesUnordered;
 use futures::TryStreamExt;
+use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse, FacetValueHit};
 

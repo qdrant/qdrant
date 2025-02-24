@@ -10,9 +10,9 @@ use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;
+use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
-use crate::common::Flusher;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
 use crate::types::GeoPoint;

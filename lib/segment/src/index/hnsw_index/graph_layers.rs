@@ -188,11 +188,7 @@ impl GraphLayersBase for GraphLayers {
     }
 
     fn get_m(&self, level: usize) -> usize {
-        if level == 0 {
-            self.m0
-        } else {
-            self.m
-        }
+        if level == 0 { self.m0 } else { self.m }
     }
 }
 
@@ -353,15 +349,15 @@ impl GraphLayers {
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::StdRng;
     use rand::SeedableRng;
+    use rand::rngs::StdRng;
     use rstest::rstest;
     use tempfile::Builder;
 
     use super::*;
     use crate::data_types::vectors::VectorElementType;
     use crate::fixtures::index_fixtures::{
-        random_vector, FakeFilterContext, TestRawScorerProducer,
+        FakeFilterContext, TestRawScorerProducer, random_vector,
     };
     use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
     use crate::index::hnsw_index::tests::{

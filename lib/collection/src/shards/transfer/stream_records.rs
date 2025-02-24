@@ -5,10 +5,10 @@ use parking_lot::Mutex;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
+use crate::shards::CollectionId;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::CollectionId;
 
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
 
