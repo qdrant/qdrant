@@ -418,7 +418,7 @@ mod tests {
 
     #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
-        env::set_var("RUN_MODE", "development");
+        unsafe { env::set_var("RUN_MODE", "development") };
 
         // `sealed_test` copies files into the same directory as the test runs in.
         // We need them in a subdirectory.
