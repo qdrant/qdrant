@@ -164,7 +164,7 @@ private_intra_doc_links = "allow"
 [workspace.dependencies]
 ahash = { version = "0.8.11", features = ["serde"] }
 atomicwrites = "0.4.4"
-bytemuck = { version = "1.21.0", features = ["extern_crate_alloc", "transparentwrapper_extra"] }
+bytemuck = { version = "1.21.0", features = ["extern_crate_alloc", "must_cast", "transparentwrapper_extra"] }
 bytes = "1.10.0"
 chrono = { version = "0.4.39", features = ["serde"] }
 criterion = "0.5.1"
@@ -174,7 +174,7 @@ fnv = "1.0"
 futures = "0.3.31"
 futures-util = "0.3.31"
 generic-tests = "0.1.3"
-half = { version = "2.4.1", features = ["alloc", "serde", "num-traits"] }
+half = { version = "2.4.1", features = ["alloc", "bytemuck", "serde", "num-traits"] }
 http = "1.2.0"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17.11", features = ["rayon"] }
