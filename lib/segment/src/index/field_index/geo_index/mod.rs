@@ -274,13 +274,13 @@ impl GeoMapIndex {
             GeoMapIndex::Mutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.stored_sub_regions(&top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Immutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.stored_sub_regions(&top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Mmap(index) => Box::new(
