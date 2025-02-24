@@ -274,7 +274,7 @@ impl UpdateHandler {
         limit: Option<usize>,
     ) -> Vec<StoppableTaskHandle<bool>>
     where
-        F: FnOnce(bool) + Send + Clone + 'static,
+        F: Fn(bool) + Send + Clone + Sync + 'static,
     {
         let mut scheduled_segment_ids = HashSet::<_>::default();
         let mut handles = vec![];
@@ -295,12 +295,12 @@ impl UpdateHandler {
 
                 debug!("Optimizing segments: {:?}", &nonoptimal_segment_ids);
 
-                // Determine how many CPUs we prefer for optimization task, acquire permit for it
+                // Determine how many Resources we prefer for optimization task, acquire permit for it
                 // And use same amount of IO threads as CPUs
                 let max_indexing_threads = optimizer.hnsw_config().max_indexing_threads;
                 let desired_io = num_rayon_threads(max_indexing_threads);
-                let Some(permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
-                    // If there is no CPU budget, break outer loop and return early
+                let Some(mut permit) = optimizer_resource_budget.try_acquire(0, desired_io) else {
+                    // If there is no Resource budget, break outer loop and return early
                     // If we have no handles (no optimizations) trigger callback so that we wake up
                     // our optimization worker to try again later, otherwise it could get stuck
                     log::trace!(
@@ -317,6 +317,13 @@ impl UpdateHandler {
                     permit.num_io,
                     optimizer.name(),
                 );
+
+                let permit_callback = callback.clone();
+
+                permit.set_on_release(move || {
+                    // Notify scheduler that resource budget changed
+                    permit_callback(false);
+                });
 
                 let optimizer = optimizer.clone();
                 let optimizers_log = optimizers_log.clone();
