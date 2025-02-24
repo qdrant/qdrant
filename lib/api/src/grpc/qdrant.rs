@@ -5175,8 +5175,89 @@ pub struct ContextInput {
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Formula {
+    #[prost(message, optional, tag = "1")]
+    pub expression: ::core::option::Option<Expression>,
+    #[prost(map = "string, message", tag = "2")]
+    pub defaults: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Expression {
+    #[prost(oneof = "expression::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    pub variant: ::core::option::Option<expression::Variant>,
+}
+/// Nested message and enum types in `Expression`.
+pub mod expression {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(float, tag = "1")]
+        Constant(f32),
+        /// Payload key or reference to score.
+        #[prost(string, tag = "2")]
+        Variable(::prost::alloc::string::String),
+        /// Payload condition. If true, becomes 1.0; otherwise 0.0
+        #[prost(message, tag = "3")]
+        Condition(super::Condition),
+        /// Geographic distance in meters
+        #[prost(message, tag = "4")]
+        GeoDistance(super::GeoDistance),
+        /// Multiply
+        #[prost(message, tag = "5")]
+        Mult(super::MultExpression),
+        /// Sum
+        #[prost(message, tag = "6")]
+        Sum(super::SumExpression),
+        /// Divide
+        #[prost(message, tag = "7")]
+        Div(::prost::alloc::boxed::Box<super::DivExpression>),
+        /// Negate
+        #[prost(message, tag = "8")]
+        Neg(::prost::alloc::boxed::Box<super::Expression>),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GeoDistance {
+    #[prost(message, optional, tag = "1")]
+    pub origin: ::core::option::Option<GeoPoint>,
+    #[prost(string, tag = "2")]
+    pub to: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MultExpression {
+    #[prost(message, repeated, tag = "1")]
+    pub mult: ::prost::alloc::vec::Vec<Expression>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SumExpression {
+    #[prost(message, repeated, tag = "1")]
+    pub sum: ::prost::alloc::vec::Vec<Expression>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DivExpression {
+    #[prost(message, optional, boxed, tag = "1")]
+    pub left: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
+    #[prost(message, optional, boxed, tag = "2")]
+    pub right: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
+    #[prost(float, optional, tag = "3")]
+    pub by_zero_default: ::core::option::Option<f32>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
-    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     pub variant: ::core::option::Option<query::Variant>,
 }
 /// Nested message and enum types in `Query`.
@@ -5206,6 +5287,9 @@ pub mod query {
         /// Sample points from the collection.
         #[prost(enumeration = "super::Sample", tag = "7")]
         Sample(i32),
+        /// Score boosting via an arbitrary formula
+        #[prost(message, tag = "8")]
+        Formula(super::Formula),
     }
 }
 #[derive(serde::Serialize)]

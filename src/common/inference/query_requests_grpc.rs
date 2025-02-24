@@ -8,6 +8,7 @@ use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
     VectorInputInternal, VectorQuery,
 };
+use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, DEFAULT_VECTOR_NAME};
@@ -283,6 +284,7 @@ fn convert_query_with_inferred(
         }
         Variant::OrderBy(order_by) => Query::OrderBy(OrderBy::try_from(order_by)?),
         Variant::Fusion(fusion) => Query::Fusion(FusionInternal::try_from(fusion)?),
+        Variant::Formula(formula) => Query::Formula(FormulaInternal::try_from(formula)?),
         Variant::Sample(sample) => Query::Sample(SampleInternal::try_from(sample)?),
     };
 
