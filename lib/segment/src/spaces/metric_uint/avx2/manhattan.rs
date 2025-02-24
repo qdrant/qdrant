@@ -15,40 +15,42 @@ pub unsafe fn avx_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
 
-    // sum accumulator for 8x32 bit integers
-    let mut acc = _mm256_setzero_si256();
-    let len = v1.len();
-    for _ in 0..len / 32 {
-        // load 32 bytes
-        let p1 = _mm256_loadu_si256(ptr1.cast::<__m256i>());
-        let p2 = _mm256_loadu_si256(ptr2.cast::<__m256i>());
-        ptr1 = ptr1.add(32);
-        ptr2 = ptr2.add(32);
+    unsafe {
+        // sum accumulator for 8x32 bit integers
+        let mut acc = _mm256_setzero_si256();
+        let len = v1.len();
+        for _ in 0..len / 32 {
+            // load 32 bytes
+            let p1 = _mm256_loadu_si256(ptr1.cast::<__m256i>());
+            let p2 = _mm256_loadu_si256(ptr2.cast::<__m256i>());
+            ptr1 = ptr1.add(32);
+            ptr2 = ptr2.add(32);
 
-        // Computes the absolute differences of packed unsigned 8-bit integers in a and b
-        // with horizontal sum and adding to accumulator
-        let sad = _mm256_sad_epu8(p1, p2);
-        acc = _mm256_add_epi32(acc, sad);
-    }
-
-    // convert 8x32 bit integers into 8x32 bit floats and calculate horizontal sum
-    let mul_ps = _mm256_cvtepi32_ps(acc);
-    let mut score = hsum256_ps_avx(mul_ps);
-
-    let remainder = len % 32;
-    if remainder != 0 {
-        let mut remainder_score = 0;
-        for _ in 0..len % 32 {
-            let v1 = i32::from(*ptr1);
-            let v2 = i32::from(*ptr2);
-            ptr1 = ptr1.add(1);
-            ptr2 = ptr2.add(1);
-            remainder_score += (v1 - v2).abs();
+            // Computes the absolute differences of packed unsigned 8-bit integers in a and b
+            // with horizontal sum and adding to accumulator
+            let sad = _mm256_sad_epu8(p1, p2);
+            acc = _mm256_add_epi32(acc, sad);
         }
-        score += remainder_score as f32;
-    }
 
-    -score
+        // convert 8x32 bit integers into 8x32 bit floats and calculate horizontal sum
+        let mul_ps = _mm256_cvtepi32_ps(acc);
+        let mut score = hsum256_ps_avx(mul_ps);
+
+        let remainder = len % 32;
+        if remainder != 0 {
+            let mut remainder_score = 0;
+            for _ in 0..len % 32 {
+                let v1 = i32::from(*ptr1);
+                let v2 = i32::from(*ptr2);
+                ptr1 = ptr1.add(1);
+                ptr2 = ptr2.add(1);
+                remainder_score += (v1 - v2).abs();
+            }
+            score += remainder_score as f32;
+        }
+
+        -score
+    }
 }
 
 #[cfg(test)]

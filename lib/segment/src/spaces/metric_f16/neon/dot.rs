@@ -17,7 +17,7 @@ pub unsafe fn neon_dot_similarity_half(
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
     let n: i32 = v1.len().try_into().unwrap();
-    dotProduct_half_4x4(v1.as_ptr(), v2.as_ptr(), n)
+    unsafe { dotProduct_half_4x4(v1.as_ptr(), v2.as_ptr(), n) }
 }
 
 #[cfg(test)]
