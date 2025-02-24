@@ -15,7 +15,7 @@ use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
 use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
-use segment::data_types::segment_manifest::SegmentManifest;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::partial_snapshot_entry::PartialSnapshotEntry;
@@ -1330,15 +1330,40 @@ impl SegmentEntry for ProxySegment {
 impl PartialSnapshotEntry for ProxySegment {
     fn take_partial_snapshot(
         &self,
-        _temp_path: &Path,
-        _tar: &tar_ext::BuilderExt,
-        _manifest: &SegmentManifest,
+        temp_path: &Path,
+        tar: &tar_ext::BuilderExt,
+        manifest: &SegmentManifests,
+        snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
-        todo!()
+        self.wrapped_segment.get().read().take_partial_snapshot(
+            temp_path,
+            tar,
+            manifest,
+            snapshotted_segments,
+        )?;
+
+        self.write_segment.get().read().take_partial_snapshot(
+            temp_path,
+            tar,
+            manifest,
+            snapshotted_segments,
+        )?;
+
+        Ok(())
     }
 
-    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
-        todo!()
+    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()> {
+        self.wrapped_segment
+            .get()
+            .read()
+            .collect_segment_manifests(manifests)?;
+
+        self.write_segment
+            .get()
+            .read()
+            .collect_segment_manifests(manifests)?;
+
+        Ok(())
     }
 }
 
