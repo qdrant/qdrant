@@ -173,8 +173,10 @@ impl ResourceBudget {
         permit.merge(extra_acquired);
 
         // Release excess resources we now have
-        permit.release_cpu_count(permit.num_cpus.saturating_sub(new_desired_cpus as u32));
-        permit.release_io_count(permit.num_io.saturating_sub(new_desired_io as u32));
+        permit.release(
+            permit.num_cpus.saturating_sub(new_desired_cpus as u32),
+            permit.num_io.saturating_sub(new_desired_io as u32),
+        );
 
         Ok(permit)
     }
@@ -256,6 +258,11 @@ pub struct ResourcePermit {
     pub num_io: u32,
     /// Semaphore permit.
     io_permit: Option<OwnedSemaphorePermit>,
+
+    /// A callback, which should be called when the permit is changed.
+    /// Originally used to notify the task manager that a permit is available
+    /// and schedule more optimization tasks.
+    on_release: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl ResourcePermit {
@@ -275,7 +282,12 @@ impl ResourcePermit {
             cpu_permit,
             num_io: io_count,
             io_permit,
+            on_release: None,
         }
+    }
+
+    pub fn set_on_release(&mut self, on_release: impl Fn() + Send + Sync + 'static) {
+        self.on_release = Some(Box::new(on_release));
     }
 
     /// Merge the other resource permit into this one
@@ -318,21 +330,24 @@ impl ResourcePermit {
             cpu_permit: None,
             num_io: 0,
             io_permit: None,
+            on_release: None,
         }
     }
 
     /// Release CPU permit, giving them back to the semaphore.
-    pub fn release_cpu(&mut self) {
+    fn release_cpu(&mut self) {
+        self.num_cpus = 0;
         self.cpu_permit.take();
     }
 
     /// Release IO permit, giving them back to the semaphore.
-    pub fn release_io(&mut self) {
+    fn release_io(&mut self) {
+        self.num_io = 0;
         self.io_permit.take();
     }
 
     /// Partial release CPU permit, giving them back to the semaphore.
-    pub fn release_cpu_count(&mut self, release_count: u32) {
+    fn release_cpu_count(&mut self, release_count: u32) {
         if release_count == 0 {
             return;
         }
@@ -347,7 +362,7 @@ impl ResourcePermit {
     }
 
     /// Partial release IO permit, giving them back to the semaphore.
-    pub fn release_io_count(&mut self, release_count: u32) {
+    fn release_io_count(&mut self, release_count: u32) {
         if release_count == 0 {
             return;
         }
@@ -358,6 +373,34 @@ impl ResourcePermit {
             self.io_permit = permit.and_then(|mut permit| permit.split(self.num_io as usize));
         } else {
             self.release_io();
+        }
+    }
+
+    pub fn release(&mut self, cpu: u32, io: u32) {
+        self.release_cpu_count(cpu);
+        self.release_io_count(io);
+
+        if let Some(on_release) = &self.on_release {
+            on_release();
+        }
+    }
+}
+
+impl Drop for ResourcePermit {
+    fn drop(&mut self) {
+        let Self {
+            num_cpus: _,
+            cpu_permit,
+            num_io: _,
+            io_permit,
+            on_release,
+        } = self;
+
+        let _ = cpu_permit.take();
+        let _ = io_permit.take();
+
+        if let Some(on_release) = on_release.take() {
+            on_release();
         }
     }
 }

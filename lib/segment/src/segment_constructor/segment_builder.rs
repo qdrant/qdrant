@@ -442,7 +442,7 @@ impl SegmentBuilder {
 
     pub fn build(
         self,
-        mut permit: ResourcePermit,
+        permit: ResourcePermit,
         stopped: &AtomicBool,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
@@ -551,13 +551,6 @@ impl SegmentBuilder {
                 .flatten();
             #[cfg(not(feature = "gpu"))]
             let gpu_device = None;
-
-            // If GPU is enabled, release all CPU cores except one.
-            if let Some(_gpu_device) = &gpu_device {
-                if permit.num_cpus > 1 {
-                    permit.release_cpu_count(permit.num_cpus - 1);
-                }
-            }
 
             // Arc permit to share it with each vector store
             let permit = Arc::new(permit);
