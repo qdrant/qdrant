@@ -669,7 +669,7 @@ pub struct DivExpression {
 pub struct DivParams {
     pub left: Box<Expression>,
     pub right: Box<Expression>,
-    pub by_zero_default: ScoreType,
+    pub by_zero_default: Option<ScoreType>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
