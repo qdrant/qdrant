@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use data_encoding::BASE32_DNSSEC;
 use itertools::Itertools as _;
-use schemars::gen::SchemaGenerator;
+use schemars::r#gen::SchemaGenerator;
 use schemars::schema::Schema;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -525,8 +525,8 @@ impl JsonSchema for JsonPath {
         "JsonPath".to_string()
     }
 
-    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
-        String::json_schema(gen)
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        String::json_schema(generator)
     }
 }
 

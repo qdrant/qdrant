@@ -90,7 +90,7 @@ impl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {
 }
 
 impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         use schemars::schema::SchemaObject;
 
         #[derive(JsonSchema)]
@@ -101,7 +101,7 @@ impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
             _None(()),
         }
 
-        let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
+        let schema: SchemaObject = <OneOrMany<T>>::json_schema(generator).into();
         schema.into()
     }
 
