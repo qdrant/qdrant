@@ -630,7 +630,7 @@ impl GpuVectorStorage {
         // fill staging buffer with zeros
         let zero_vector = vec![TElement::default(); gpu_vector_capacity];
         for i in 0..upload_points_count {
-            staging_buffer.upload_slice(&zero_vector, i * gpu_vector_capacity)?;
+            staging_buffer.upload(TElement::as_bytes(&zero_vector), i * gpu_vector_capacity)?;
         }
         log::trace!(
             "GPU staging buffer size {}, `upload_points_count` = {}",
@@ -647,7 +647,8 @@ impl GpuVectorStorage {
 
             for vector in vectors.clone().skip(storage_index).step_by(STORAGES_COUNT) {
                 check_process_stopped(stopped)?;
-                staging_buffer.upload_slice(vector.as_ref(), upload_points * gpu_vector_size)?;
+                staging_buffer
+                    .upload(TElement::as_bytes(&vector), upload_points * gpu_vector_size)?;
                 upload_size += gpu_vector_size;
                 upload_points += 1;
 

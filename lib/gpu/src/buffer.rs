@@ -1,9 +1,11 @@
+use std::ops::Range;
 use std::sync::Arc;
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
-use parking_lot::Mutex;
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
+use zerocopy::{FromBytes, Immutable, IntoBytes};
 
 use crate::*;
 
@@ -167,87 +169,82 @@ impl Buffer {
         self.buffer_type
     }
 
-    /// Download data from the buffer to the RAM.
-    pub fn download<T: Sized>(&self, data: &mut T, offset: usize) -> GpuResult<()> {
+    /// Download a value from the buffer to the RAM.
+    pub fn download<T>(&self, data: &mut T, offset: usize) -> GpuResult<()>
+    where
+        T: FromBytes + IntoBytes + ?Sized,
+    {
+        if self.buffer_type != BufferType::GpuToCpu {
+            return Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()));
+        }
+        let data_bytes = data.as_mut_bytes();
+        let end = checked_add(offset, data_bytes.len())?;
+        self.view(offset..end)?.copy_from_slice(data_bytes);
+        Ok(())
+    }
+
+    /// Download a vector of `len` elements from the buffer to the RAM.
+    pub fn download_vec<T>(&self, offset: usize, len: usize) -> GpuResult<Vec<T>>
+    where
+        T: FromBytes + IntoBytes + Clone,
+    {
         if self.buffer_type != BufferType::GpuToCpu {
             return Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()));
         }
 
-        let bytes = memory::mmap_ops::transmute_to_u8_mut(data);
-        self.download_bytes(bytes, offset)
+        let end = len
+            .checked_mul(size_of::<T>())
+            .and_then(|total_bytes| offset.checked_add(total_bytes))
+            .ok_or_else(|| {
+                GpuError::OutOfBounds(format!(
+                    "Size overflow while downloading from GPU: \
+                     {len}*{} + {offset} overflows",
+                    size_of::<T>()
+                ))
+            })?;
+
+        let buffer_slice = self.view(offset..end)?;
+        let mut result = vec![T::new_zeroed(); len];
+        result.as_mut_bytes().copy_from_slice(&buffer_slice);
+        Ok(result)
     }
 
-    /// Download data from the buffer to the RAM.
-    pub fn download_slice<T: Sized>(&self, data: &mut [T], offset: usize) -> GpuResult<()> {
-        if self.buffer_type != BufferType::GpuToCpu {
-            return Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()));
-        }
-
-        let bytes = memory::mmap_ops::transmute_to_u8_slice_mut(data);
-        self.download_bytes(bytes, offset)
-    }
-
-    /// Download data from the buffer to the RAM.
-    pub fn download_bytes(&self, data: &mut [u8], offset: usize) -> GpuResult<()> {
-        if self.buffer_type != BufferType::GpuToCpu {
-            return Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()));
-        }
-
-        if data.len() + offset > self.size {
-            return Err(GpuError::OutOfBounds(
-                "Out of bounds while downloading from GPU".to_string(),
-            ));
-        }
-
-        let allocation = self.allocation.lock();
-        if let Some(slice) = allocation.mapped_slice() {
-            data.copy_from_slice(&slice[offset..offset + data.len()]);
-            Ok(())
-        } else {
-            Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()))
-        }
-    }
-
-    /// Upload data from the RAM to the buffer.
-    pub fn upload<T: Sized>(&self, data: &T, offset: usize) -> GpuResult<()> {
+    /// Upload a value from the RAM to the buffer.
+    pub fn upload<T>(&self, data: &T, offset: usize) -> GpuResult<()>
+    where
+        T: IntoBytes + Immutable + ?Sized,
+    {
         if self.buffer_type != BufferType::CpuToGpu {
             return Err(GpuError::Other(UPLOAD_NOT_ALLOWED_ERROR.to_string()));
         }
-
-        let bytes = memory::mmap_ops::transmute_to_u8(data);
-        self.upload_bytes(bytes, offset)
+        let bytes = data.as_bytes();
+        let end = checked_add(offset, bytes.len())?;
+        self.view(offset..end)?.copy_from_slice(bytes);
+        Ok(())
     }
 
-    /// Upload data from the RAM to the buffer.
-    pub fn upload_slice<T: Sized>(&self, data: &[T], offset: usize) -> GpuResult<()> {
-        if self.buffer_type != BufferType::CpuToGpu {
-            return Err(GpuError::Other(UPLOAD_NOT_ALLOWED_ERROR.to_string()));
-        }
+    fn view(&self, range: Range<usize>) -> GpuResult<MappedMutexGuard<'_, [u8]>> {
+        let slice = MutexGuard::try_map(self.allocation.lock(), |allocation| {
+            allocation.mapped_slice_mut()
+        })
+        .map_err(|_| GpuError::Other("Accessing the GPU buffer is not allowed".to_string()))?;
 
-        let bytes = memory::mmap_ops::transmute_to_u8_slice(data);
-        self.upload_bytes(bytes, offset)
+        MappedMutexGuard::try_map(slice, |slice| slice.get_mut(range.clone())).map_err(|slice| {
+            GpuError::OutOfBounds(format!(
+                "Out of bounds while accessing the buffer: \
+                 range {range:?} exceeds the buffer size of {} bytes.",
+                slice.len()
+            ))
+        })
     }
+}
 
-    /// Upload data from the RAM to the buffer.
-    pub fn upload_bytes(&self, data: &[u8], offset: usize) -> GpuResult<()> {
-        if self.buffer_type != BufferType::CpuToGpu {
-            return Err(GpuError::Other(UPLOAD_NOT_ALLOWED_ERROR.to_string()));
-        }
-
-        if data.len() + offset > self.size {
-            return Err(GpuError::OutOfBounds(
-                "Out of bounds while uploading to GPU".to_string(),
-            ));
-        }
-
-        let mut allocation = self.allocation.lock();
-        if let Some(slice) = allocation.mapped_slice_mut() {
-            slice[offset..offset + data.len()].copy_from_slice(data);
-            Ok(())
-        } else {
-            Err(GpuError::Other(DOWNLOAD_NOT_ALLOWED_ERROR.to_string()))
-        }
-    }
+fn checked_add(a: usize, b: usize) -> GpuResult<usize> {
+    a.checked_add(b).ok_or_else(|| {
+        GpuError::OutOfBounds(format!(
+            "Size overflow while accessing the buffer: {a} + {b} overflows"
+        ))
+    })
 }
 
 impl Drop for Buffer {

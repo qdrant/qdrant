@@ -2,11 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use common::types::PointOffsetType;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use super::shader_builder::ShaderBuilderParameters;
 use super::GPU_TIMEOUT;
 use crate::common::operation_error::{OperationError, OperationResult};
 
+#[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct GpuVisitedFlagsParamsBuffer {
     generation: u32,
@@ -177,7 +179,7 @@ impl GpuVisitedFlags {
         )?;
         let mut context = gpu::Context::new(device.clone())?;
         for chunk in points_remap.chunks(UPLOAD_REMAP_BUFFER_COUNT) {
-            remap_staging_buffer.upload_slice(chunk, 0)?;
+            remap_staging_buffer.upload(chunk, 0)?;
             context.copy_gpu_buffer(
                 remap_staging_buffer.clone(),
                 remap_buffer.clone(),
