@@ -522,8 +522,7 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
     Ok(())
 }
 
-
-/// Test read operations on segments. 
+/// Test read operations on segments.
 /// The segments fixtures are created only once to improve test speed.
 #[test]
 fn test_read_operations() -> Result<()> {
@@ -1297,7 +1296,8 @@ fn test_struct_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()
             .facet(&request, &Default::default(), &Default::default())
             .unwrap();
 
-        validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter)).context(here!())?
+        validate_facet_result(&test_segments.struct_segment, facet_hits, Some(filter))
+            .context(here!())?
     }
     Ok(())
 }
@@ -1314,7 +1314,8 @@ fn test_mmap_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> 
             .facet(&request, &Default::default(), &Default::default())
             .unwrap();
 
-        validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter)).context(here!())?
+        validate_facet_result(&test_segments.mmap_segment, facet_hits, Some(filter))
+            .context(here!())?
     }
     Ok(())
 }
