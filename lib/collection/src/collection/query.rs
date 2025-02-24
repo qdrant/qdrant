@@ -2,19 +2,8 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::types::ScoreType;
-use futures::{future, TryFutureExt};
-use itertools::{Either, Itertools};
-use rand::Rng;
-use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{score_fusion, ScoreFusion};
-use segment::types::{Order, ScoredPoint};
-use segment::utils::scored_point_ties::ScoredPointTies;
-use tokio::sync::RwLockReadGuard;
-use tokio::time::Instant;
-
 use super::Collection;
+use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
     build_vector_resolver_queries, resolve_referenced_vectors_batch,
@@ -28,6 +17,17 @@ use crate::operations::universal_query::collection_query::CollectionQueryRequest
 use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::types::ScoreType;
+use futures::{future, TryFutureExt};
+use itertools::{Either, Itertools};
+use rand::Rng;
+use segment::common::reciprocal_rank_fusion::rrf_scoring;
+use segment::common::score_fusion::{score_fusion, ScoreFusion};
+use segment::types::{Order, ScoredPoint};
+use segment::utils::scored_point_ties::ScoredPointTies;
+use tokio::sync::RwLockReadGuard;
+use tokio::time::Instant;
 
 struct IntermediateQueryInfo<'a> {
     scoring_query: Option<&'a ScoringQuery>,
@@ -60,6 +60,72 @@ impl Collection {
         Ok(results.into_iter().next().unwrap())
     }
 
+    const SHARD_QUERY_SUBSAMPLING_LIMIT: usize = 128;
+
+    /// Creates a copy of requests in case it is possible to apply limit modification
+    /// Returns unchanged requests if limit modification is not applicable.
+    ///
+    /// If there are many independent shards, and we need a very high limit, we can do an optimization.
+    /// Instead of querying all shards with the same limit, we can query each shard with a smaller limit
+    /// and then merge the results. Since shards are independent and data is randomly distributed, we can
+    /// apply probability estimation to make sure we query enough points to get the desired number of results.
+    ///
+    /// Same optimization we already apply on segment level, but here it seems to be even more reliable
+    /// because auto-sharding guarantee random and independent distribution of data.
+    ///
+    /// Unlike segments, however, the cost of re-requesting the data is much higher for shards.
+    /// So we "accept" the risk of not getting enough results.
+    fn modify_shard_query_for_undersampling_limits(
+        batch_request: Arc<Vec<ShardQueryRequest>>,
+        num_shards: usize,
+        is_auto_sharding: bool,
+    ) -> Arc<Vec<ShardQueryRequest>> {
+        if num_shards <= 1 {
+            return batch_request;
+        }
+
+        // Check this parameter inside the function
+        // to ensure it is not omitted in the future.
+        if !is_auto_sharding {
+            return batch_request;
+        }
+
+        let max_limit = batch_request
+            .iter()
+            .map(|req| req.limit + req.offset)
+            .max()
+            .unwrap_or(0);
+
+        if max_limit < Self::SHARD_QUERY_SUBSAMPLING_LIMIT {
+            return batch_request;
+        }
+
+        let mut new_requests = Vec::with_capacity(batch_request.len());
+
+        for request in batch_request.iter() {
+            let mut new_request = request.clone();
+            let request_limit = new_request.limit + new_request.offset;
+
+            let is_exact = request.params.map(|p| p.exact).unwrap_or(false);
+
+            if is_exact || request_limit < Self::SHARD_QUERY_SUBSAMPLING_LIMIT {
+                new_requests.push(new_request);
+                continue;
+            }
+
+            let undersample_limit = find_search_sampling_over_point_distribution(
+                request_limit as f64,
+                1. / num_shards as f64,
+            );
+
+            new_request.limit = std::cmp::min(undersample_limit, request_limit);
+            new_request.offset = 0; // Offset is handled on the collection level
+            new_requests.push(new_request);
+        }
+
+        Arc::new(new_requests)
+    }
+
     /// Returns a shape of [shard_id, batch_id, intermediate_response, points]
     async fn batch_query_shards_concurrently(
         &self,
@@ -72,6 +138,22 @@ impl Collection {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
+
+        let num_unique_shard_keys = target_shards
+            .iter()
+            .map(|(_, shard_key)| shard_key)
+            .unique()
+            .count();
+        // Auto-sharding happens when we are only querying shards with _the_same_ shard key.
+        // It either might be when we are querying a specific shard key
+        // OR when we are querying all shards with no shard keys specified.
+        let is_auto_sharding = num_unique_shard_keys == 1;
+
+        let batch_request = Self::modify_shard_query_for_undersampling_limits(
+            batch_request,
+            target_shards.len(),
+            is_auto_sharding,
+        );
 
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
             let shard_key = shard_key.cloned();

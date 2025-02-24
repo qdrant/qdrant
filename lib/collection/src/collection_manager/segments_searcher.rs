@@ -23,7 +23,7 @@ use tokio::task::JoinHandle;
 
 use super::holders::segment_holder::LockedSegmentHolder;
 use crate::collection_manager::holders::segment_holder::LockedSegment;
-use crate::collection_manager::probabilistic_segment_search_sampling::find_search_sampling_over_point_distribution;
+use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::collection_manager::search_result_aggregator::BatchResultAggregator;
 use crate::common::stopping_guard::StoppingGuard;
 use crate::config::CollectionConfigInternal;
