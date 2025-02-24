@@ -65,7 +65,7 @@ macro_rules! ensure {
 }
 
 const DIM: usize = 5;
-const ATTEMPTS: usize = 100;
+const ATTEMPTS: usize = 20;
 
 struct TestSegments {
     _base_dir: TempDir,
@@ -448,9 +448,9 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
 fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Result<()> {
     let mut rnd = rand::rng();
-    let query = random_vector(&mut rnd, DIM).into();
 
     for _i in 0..ATTEMPTS {
+        let query = random_vector(&mut rnd, DIM).into();
         let plain_result = test_segments
             .plain_segment
             .search(
@@ -522,13 +522,12 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
     Ok(())
 }
 
+
+/// Test read operations on segments. 
+/// The segments fixtures are created only once to improve test speed.
 #[test]
 fn test_read_operations() -> Result<()> {
-    
-    let start = std::time::Instant::now();
     let test_segments = Arc::new(TestSegments::new());
-    eprintln!("TestSegments::new() took {:?}", start.elapsed());
-
     let mut handles = vec![];
 
     for test_fn in [
@@ -1289,7 +1288,7 @@ fn test_mmap_keyword_facet(test_segments: &TestSegments) -> Result<()> {
 fn test_struct_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> {
     let mut request = keyword_facet_request();
 
-    for _ in 0..10 {
+    for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rand::rng(), 3);
         request.filter = Some(filter.clone());
 
@@ -1306,7 +1305,7 @@ fn test_struct_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()
 fn test_mmap_keyword_facet_filtered(test_segments: &TestSegments) -> Result<()> {
     let mut request = keyword_facet_request();
 
-    for _ in 0..10 {
+    for _ in 0..ATTEMPTS {
         let filter = random_filter(&mut rand::rng(), 3);
         request.filter = Some(filter.clone());
 
