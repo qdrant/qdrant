@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::thread::{self};
+use std::thread;
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;

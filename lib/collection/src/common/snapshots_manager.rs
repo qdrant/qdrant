@@ -12,7 +12,7 @@ use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
     get_checksum_path, get_snapshot_description, SnapshotDescription,
 };
-use crate::operations::snapshot_storage_ops::{self};
+use crate::operations::snapshot_storage_ops;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Clone, Deserialize, Debug, Default)]

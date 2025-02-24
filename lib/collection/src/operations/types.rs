@@ -46,7 +46,7 @@ use tonic::codegen::http::uri::InvalidUri;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use super::config_diff::{self};
+use super::config_diff;
 use super::ClockTag;
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::cluster_ops::ReshardingDirection;

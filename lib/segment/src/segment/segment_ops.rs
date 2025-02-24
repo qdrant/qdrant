@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::{self};
+use std::fs;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
 

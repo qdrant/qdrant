@@ -31,7 +31,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::common::collection_size_stats::CollectionSizeStats;
 use crate::common::snapshots_manager::SnapshotStorageManager;
 use crate::config::CollectionConfigInternal;
-use crate::operations::point_ops::{self};
+use crate::operations::point_ops;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::CollectionUpdateOperations;
