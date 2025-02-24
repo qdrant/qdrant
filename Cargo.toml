@@ -10,8 +10,8 @@ readme = "README.md"
 homepage = "https://qdrant.tech/"
 repository = "https://github.com/qdrant/qdrant"
 license = "Apache-2.0"
-edition = "2021"
-rust-version = "1.80"
+edition = "2024"
+rust-version = "1.85"
 default-run = "qdrant"
 
 [lints]
