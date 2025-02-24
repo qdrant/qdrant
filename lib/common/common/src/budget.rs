@@ -336,11 +336,13 @@ impl ResourcePermit {
 
     /// Release CPU permit, giving them back to the semaphore.
     fn release_cpu(&mut self) {
+        self.num_cpus = 0;
         self.cpu_permit.take();
     }
 
     /// Release IO permit, giving them back to the semaphore.
     fn release_io(&mut self) {
+        self.num_io = 0;
         self.io_permit.take();
     }
 
