@@ -194,7 +194,7 @@ impl MetricsProvider for ClusterTelemetry {
             vec![gauge(if *enabled { 1.0 } else { 0.0 }, &[])],
         ));
 
-        if let Some(ref status) = status {
+        if let Some(status) = status {
             status.add_metrics(metrics);
         }
     }

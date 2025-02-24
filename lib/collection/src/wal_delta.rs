@@ -1393,10 +1393,7 @@ mod tests {
                 });
 
             // Release some kept clocks
-            kept_clocks.retain(|(mut keep_for, _)| {
-                keep_for -= 1;
-                keep_for > 0
-            });
+            kept_clocks.retain(|(keep_for, _)| *keep_for > 1);
         }
 
         for (wal, _) in wals {
