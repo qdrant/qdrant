@@ -48,8 +48,8 @@ def first_segment_name(peer_storage: str, collection_name: str) -> str:
     segment_name_path = next(filter(lambda x: x.is_dir(), pathlib.Path(shard_path).iterdir()))
     return segment_name_path.name
 
-def shard_initialized_flag(peer_storage: str, collection_name: str, shard_id: int) -> str:
-    return f"{peer_storage}/storage/collections/{collection_name}/shard_{shard_id}.initialized"
+def shard_initializing_flag(peer_storage: str, collection_name: str, shard_id: int) -> str:
+    return f"{peer_storage}/storage/collections/{collection_name}/shard_{shard_id}.initializing"
 
 def corrupt_snapshot(snapshot_path: pathlib.Path, segment_name: str):
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -132,6 +132,10 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     # Recover snapshot should fail because the snapshot is corrupted
     fail_to_recover_snapshot(peer_api_uris[-1], snapshot_url)
 
+    # Assert storage contains initialized flag
+    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
+    assert os.path.exists(flag_path)
+
     # Kill last peer
     p = processes.pop()
     p.kill()
@@ -154,6 +158,10 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
             time.sleep(1)  # Wait to sync with consensus
             continue
         break
+
+    # Assert storage does not contain initialized flag
+    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
+    assert not os.path.exists(flag_path)
 
     # Assert that the local shard is dead and empty
     local_shards = get_local_shards(peer_api_uris[-1])
