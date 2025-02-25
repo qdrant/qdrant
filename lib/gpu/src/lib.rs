@@ -34,6 +34,15 @@ pub use shader::*;
 #[cfg(test)]
 mod basic_test;
 
+#[cfg(any(test, feature = "testing"))]
+pub static GPU_TEST_INSTANCE: std::sync::LazyLock<std::sync::Arc<Instance>> =
+    std::sync::LazyLock::new(|| {
+        Instance::builder()
+            .with_debug_messenger(Box::new(PanicIfErrorMessenger {}))
+            .build()
+            .unwrap()
+    });
+
 /// A trait for GPU resources.
 /// It's used keep GPU resources alive while they are in use by the GPU context.
 pub trait Resource: Send + Sync {}

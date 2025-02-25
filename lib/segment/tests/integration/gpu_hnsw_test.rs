@@ -118,11 +118,7 @@ fn test_gpu_filterable_hnsw() {
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
-    let debug_messenger = gpu::PanicIfErrorMessenger {};
-    let instance = gpu::Instance::builder()
-        .with_debug_messenger(&debug_messenger)
-        .build()
-        .unwrap();
+    let instance = gpu::GPU_TEST_INSTANCE.clone();
     let device =
         Mutex::new(gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap());
     let locked_device = LockedGpuDevice::new(device.lock());
