@@ -210,9 +210,11 @@ fn main() -> anyhow::Result<()> {
     settings.validate_and_warn();
 
     let bootstrap = if args.bootstrap == args.uri {
-        log::warn!(
-            "Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.",
-        );
+        if args.bootstrap.is_some() {
+            log::warn!(
+                "Bootstrap URI is the same as this peer URI. Consider this peer as a first in a new deployment.",
+            );
+        }
         None
     } else {
         args.bootstrap
