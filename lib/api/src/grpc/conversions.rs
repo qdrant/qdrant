@@ -2408,7 +2408,7 @@ impl TryFrom<SearchPointGroups> for rest::SearchGroupsRequestInternal {
             with_payload,
             with_vector,
             score_threshold,
-        } = search_points.try_into()?;
+        } = rest::SearchRequestInternal::try_from(search_points)?;
 
         Ok(Self {
             vector,
