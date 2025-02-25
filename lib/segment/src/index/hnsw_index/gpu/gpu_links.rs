@@ -97,7 +97,7 @@ impl GpuLinks {
             0,
             std::mem::size_of::<GpuLinksParamsBuffer>(),
         )?;
-        upload_context.clear_buffer(links_buffer.clone())?;
+        upload_context.clear_buffer(links_buffer.clone(), u32::MAX)?;
         upload_context.run()?;
         upload_context.wait_finish(GPU_TIMEOUT)?;
 
@@ -157,7 +157,7 @@ impl GpuLinks {
         if !self.patched_points.is_empty() {
             self.patched_points.clear();
         }
-        gpu_context.clear_buffer(self.links_buffer.clone())?;
+        gpu_context.clear_buffer(self.links_buffer.clone(), u32::MAX)?;
         gpu_context.run()?;
         gpu_context.wait_finish(GPU_TIMEOUT)?;
         Ok(())
@@ -251,15 +251,25 @@ impl GpuLinks {
 
             for (index, chunk) in links.chunks(self.links_capacity + 1).enumerate() {
                 let point_id = points[start + index] as usize;
-                let links_count = chunk[0] as usize;
+                let links_count = chunk[0];
+                if links_count == u32::MAX {
+                    bad_links.push(point_id);
+                    continue;
+                }
+
+                let links_count = links_count as usize;
                 let links = &chunk[1..=links_count];
                 let mut dst = graph_layers_builder.links_layers()[point_id][level].write();
                 dst.clear();
                 dst.extend(links.iter().copied().filter(|&other_point_id| {
-                    let is_correct_link =
-                        level < graph_layers_builder.links_layers()[other_point_id as usize].len();
+                    let other_links = graph_layers_builder.links_layers().get(other_point_id as usize);
+                    let is_correct_link = if let Some(other_links) = other_links {
+                        level < other_links.len()
+                    } else {
+                        false
+                    };
                     if !is_correct_link {
-                        bad_links.push(other_point_id);
+                        bad_links.push(other_point_id as usize);
                     }
                     is_correct_link
                 }));
@@ -268,10 +278,11 @@ impl GpuLinks {
 
         if !bad_links.is_empty() {
             log::warn!(
-                "Incorrect links on level {} were found. Amount of incorrect links: {}, zeroes: {}",
+                "Incorrect links on level {} were found. Amount of incorrect links: {}, zeroes: {}, maxes: {}",
                 level,
                 bad_links.len(),
-                bad_links.iter().filter(|&&point_id| point_id == 0).count()
+                bad_links.iter().filter(|&&point_id| point_id == 0).count(),
+                bad_links.iter().filter(|&&point_id| point_id == u32::MAX as usize).count()
             );
         }
 

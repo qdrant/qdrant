@@ -26,6 +26,10 @@ void process_candidate(ScoredPoint scored_point) {
 
 void process_candidate(POINT_ID candidate_id) {
     uint links_count = LINKS_COUNT(candidate_id);
+    if (links_count == UINT_MAX) {
+        return;
+    }
+
     uint subgroup_link = 0;
     bool subgroup_is_visited = true;
     uint invocation = gl_SubgroupInvocationID;
@@ -62,6 +66,10 @@ ScoredPoint greedy_search(POINT_ID point_id, ScoredPoint entry) {
 
         uint current = result.id;
         uint links_count = LINKS_COUNT(current);
+        if (links_count == UINT_MAX) {
+            continue;
+        }
+
         for (uint i = 0; i < links_count; i++) {
             if (i % SUBGROUP_SIZE == 0 && i + invocation < links_count) {
                 subgroup_link = GET_LINK(current, i + invocation);

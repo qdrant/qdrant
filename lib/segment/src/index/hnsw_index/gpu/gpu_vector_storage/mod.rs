@@ -616,7 +616,7 @@ impl GpuVectorStorage {
 
         // Fill all vector storages with zeros.
         for buffer in vectors_buffer.iter() {
-            upload_context.clear_buffer(buffer.clone())?;
+            upload_context.clear_buffer(buffer.clone(), 0)?;
         }
         upload_context.run()?;
         upload_context.wait_finish(GPU_TIMEOUT)?;

@@ -236,7 +236,7 @@ impl<'a> GpuInsertContext<'a> {
             .build(device.clone())?;
 
         let mut context = gpu::Context::new(device)?;
-        context.clear_buffer(insert_resources.insert_atomics_buffer.clone())?;
+        context.clear_buffer(insert_resources.insert_atomics_buffer.clone(), 0)?;
         context.run()?;
         context.wait_finish(GPU_TIMEOUT)?;
 

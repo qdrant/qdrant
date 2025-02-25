@@ -72,7 +72,7 @@ impl GpuVisitedFlags {
         params_staging_buffer.upload(&params, 0)?;
 
         let mut upload_context = gpu::Context::new(device.clone())?;
-        upload_context.clear_buffer(visited_flags_buffer.clone())?;
+        upload_context.clear_buffer(visited_flags_buffer.clone(), 0)?;
         upload_context.copy_gpu_buffer(
             params_staging_buffer.clone(),
             params_buffer.clone(),
@@ -114,7 +114,7 @@ impl GpuVisitedFlags {
     pub fn clear(&mut self, gpu_context: &mut gpu::Context) -> OperationResult<()> {
         if self.params.generation == 255 {
             self.params.generation = 1;
-            gpu_context.clear_buffer(self.visited_flags_buffer.clone())?;
+            gpu_context.clear_buffer(self.visited_flags_buffer.clone(), 0)?;
         } else {
             self.params.generation += 1;
         }
