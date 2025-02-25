@@ -1,5 +1,5 @@
 name: Build the Docker image
-description: "Run benchmark with specified params"
+description: "Build and push a branch image to ghcr"
 
 runs:
   using: "composite"
