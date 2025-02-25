@@ -212,6 +212,7 @@
     - [PointsUpdateOperation.SetPayload](#qdrant-PointsUpdateOperation-SetPayload)
     - [PointsUpdateOperation.SetPayload.PayloadEntry](#qdrant-PointsUpdateOperation-SetPayload-PayloadEntry)
     - [PointsUpdateOperation.UpdateVectors](#qdrant-PointsUpdateOperation-UpdateVectors)
+    - [PowExpression](#qdrant-PowExpression)
     - [PrefetchQuery](#qdrant-PrefetchQuery)
     - [QuantizationSearchParams](#qdrant-QuantizationSearchParams)
     - [Query](#qdrant-Query)
@@ -2699,6 +2700,12 @@ The JSON representation for `Value` is a JSON value.
 | sum | [SumExpression](#qdrant-SumExpression) |  | Sum |
 | div | [DivExpression](#qdrant-DivExpression) |  | Divide |
 | neg | [Expression](#qdrant-Expression) |  | Negate |
+| abs | [Expression](#qdrant-Expression) |  | Absolute value |
+| sqrt | [Expression](#qdrant-Expression) |  | Square root |
+| pow | [PowExpression](#qdrant-PowExpression) |  | Power |
+| exp | [Expression](#qdrant-Expression) |  | Exponential |
+| log10 | [Expression](#qdrant-Expression) |  | Logarithm |
+| ln | [Expression](#qdrant-Expression) |  | Natural logarithm |
 
 
 
@@ -3698,6 +3705,22 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | points | [PointVectors](#qdrant-PointVectors) | repeated | List of points and vectors to update |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+
+
+
+
+
+
+<a name="qdrant-PowExpression"></a>
+
+### PowExpression
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| base | [Expression](#qdrant-Expression) |  |  |
+| exponent | [Expression](#qdrant-Expression) |  |  |
 
 
 
