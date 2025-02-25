@@ -140,11 +140,7 @@ mod tests {
         exact: bool,
     ) -> GraphLayersBuilder {
         let num_vectors = test.graph_layers_builder.links_layers().len();
-        let debug_messenger = gpu::PanicIfErrorMessenger {};
-        let instance = gpu::Instance::builder()
-            .with_debug_messenger(&debug_messenger)
-            .build()
-            .unwrap();
+        let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
 
         let gpu_vector_storage = GpuVectorStorage::new(
