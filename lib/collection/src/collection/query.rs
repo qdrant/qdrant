@@ -113,10 +113,19 @@ impl Collection {
                 new_requests.push(new_request);
                 continue;
             }
+            // Give some more ensurance for undersampling,
+            // retrieve more points to prevent undersampling errors.
+            // Errors are still possible, but rare enough to be acceptable compared to
+            // errors introduced by vector index.
+            let more_ensurance_factor = 1.2;
 
+            // Example: 1000 limit, 10 shards
+            // 1.0 / 10 * 1.2 = 0.12
+            // lambda = 0.12 * 1000 = 120
+            // Which is equal to 171 limit per shard
             let undersample_limit = find_search_sampling_over_point_distribution(
                 request_limit as f64,
-                1. / num_shards as f64,
+                1. / num_shards as f64 * more_ensurance_factor,
             );
 
             new_request.limit = std::cmp::min(undersample_limit, request_limit);
