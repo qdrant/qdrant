@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::ops::Deref;
 use std::sync::Arc;
 
 use ash::vk;
@@ -33,6 +34,10 @@ pub struct Instance {
 
     /// Shader compiler.
     compiler: Mutex<shaderc::Compiler>,
+
+    /// Debug messenger for the instance. It contains validation error callbacks.
+    /// Should be kept alive while the instance is alive because it contains raw pointers to callbacks.
+    _debug_messenger: Option<Box<dyn DebugMessenger>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,19 +59,19 @@ pub struct PhysicalDevice {
 }
 
 #[derive(Default)]
-pub struct InstanceBuilder<'a> {
-    debug_messenger: Option<&'a dyn DebugMessenger>,
+pub struct InstanceBuilder {
+    debug_messenger: Option<Box<dyn DebugMessenger>>,
     allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
     dump_api: bool,
 }
 
-impl<'a> InstanceBuilder<'a> {
+impl InstanceBuilder {
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Set debug messenger for the instance.
-    pub fn with_debug_messenger(mut self, debug_messenger: &'a dyn DebugMessenger) -> Self {
+    pub fn with_debug_messenger(mut self, debug_messenger: Box<dyn DebugMessenger>) -> Self {
         self.debug_messenger = Some(debug_messenger);
         self
     }
@@ -96,12 +101,12 @@ impl<'a> InstanceBuilder<'a> {
 }
 
 impl Instance {
-    pub fn builder() -> InstanceBuilder<'static> {
+    pub fn builder() -> InstanceBuilder {
         InstanceBuilder::new()
     }
 
     fn new(
-        debug_messenger: Option<&dyn DebugMessenger>,
+        debug_messenger: Option<Box<dyn DebugMessenger>>,
         allocation_callbacks: Option<Box<dyn AllocationCallbacks>>,
         dump_api: bool,
     ) -> GpuResult<Arc<Self>> {
@@ -155,7 +160,9 @@ impl Instance {
             .collect();
 
         // If we provide debug messenger, we need to create a debug messenger info.
-        let mut debug_utils_create_info = debug_messenger.map(Self::debug_messenger_create_info);
+        let mut debug_utils_create_info = debug_messenger
+            .as_deref()
+            .map(Self::debug_messenger_create_info);
 
         let create_flags = if cfg!(any(target_os = "macos")) {
             // On MacOS we need to enable portability extension to enable MoltenVK.
@@ -233,10 +240,10 @@ impl Instance {
 
         // If we have a debug messenger, we need to create it.
         let (vk_debug_utils_loader, vk_debug_messenger) = if let Some(debug_messenger) =
-            debug_messenger
+            debug_messenger.as_ref()
         {
             let debug_utils_loader = ash::ext::debug_utils::Instance::new(&entry, &vk_instance);
-            let messenger_create_info = Self::debug_messenger_create_info(debug_messenger);
+            let messenger_create_info = Self::debug_messenger_create_info(debug_messenger.deref());
             let utils_messenger_result = unsafe {
                 debug_utils_loader
                     .create_debug_utils_messenger(&messenger_create_info, vk_allocation_callbacks)
@@ -265,6 +272,7 @@ impl Instance {
             vk_debug_utils_loader,
             vk_debug_messenger,
             compiler,
+            _debug_messenger: debug_messenger,
         }))
     }
 
