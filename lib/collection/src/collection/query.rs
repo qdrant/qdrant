@@ -402,6 +402,49 @@ impl Collection {
         Ok(merged)
     }
 
+    /// Find best result across last results of all shards.
+    /// Presence of the worst result in final result means that there could be other results
+    /// of that shard that could be included in the final result.
+    /// Used to check undersampling.
+    fn get_best_last_shard_result(
+        shard_results: &[Vec<ScoredPoint>],
+        order: Order,
+    ) -> Option<ScoredPoint> {
+        shard_results
+            .iter()
+            .filter_map(|shard_result| shard_result.last().cloned())
+            .max_by(|a, b| match order {
+                Order::LargeBetter => ScoredPointTies(a).cmp(&ScoredPointTies(b)),
+                Order::SmallBetter => ScoredPointTies(a).cmp(&ScoredPointTies(b)).reverse(),
+            })
+    }
+
+    /// Check that worst result of the shard in not present in the final result.
+    fn check_undersampling(
+        &self,
+        worst_merged_point: &ScoredPoint,
+        best_last_result: &ScoredPoint,
+        order: Order,
+    ) {
+        // Merged point should be better than the best last result.
+        let is_properly_sampled = match order {
+            Order::LargeBetter => {
+                ScoredPointTies(worst_merged_point) > ScoredPointTies(best_last_result)
+            }
+            Order::SmallBetter => {
+                ScoredPointTies(worst_merged_point) < ScoredPointTies(best_last_result)
+            }
+        };
+        if !is_properly_sampled {
+            log::debug!(
+                "Undersampling detected. Collection: {}, Best last shard score: {}, Worst merged score: {}",
+                self.id,
+                best_last_result.score,
+                worst_merged_point.score
+            );
+        }
+    }
+
     /// Merges the results in each shard for each intermediate query.
     /// ```text
     /// [ [shard1_result1, shard1_result2],
@@ -432,6 +475,7 @@ impl Collection {
         {
             // `shards_results` shape: [num_shards, num_scored_points]
             let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
+            let number_of_shards = shards_results.len();
 
             // Equivalent to:
             //
@@ -446,7 +490,9 @@ impl Collection {
             // Either::Left and Either::Right are used to allow type inference to work.
             //
             let intermediate_result = if let Some(order) = order {
-                match order {
+                let best_last_result = Self::get_best_last_shard_result(&shards_results, order);
+
+                let merged: Vec<_> = match order {
                     Order::LargeBetter => Either::Left(
                         shards_results
                             .into_iter()
@@ -460,7 +506,20 @@ impl Collection {
                 }
                 .dedup()
                 .take(query_info.take)
-                .collect()
+                .collect();
+
+                // Prevents undersampling warning in case there are not enough data to merge.
+                let is_enough = merged.len() == query_info.take;
+
+                if number_of_shards > 1 && is_enough && best_last_result.is_some() {
+                    let worst_merged_point = merged.last();
+                    let best_last_result = best_last_result.unwrap();
+                    if let Some(worst_merged_point) = worst_merged_point {
+                        self.check_undersampling(worst_merged_point, &best_last_result, order);
+                    }
+                }
+
+                merged
             } else {
                 // If the order is not defined, it is a random query. Take from all shards randomly.
                 let mut rng = rand::rng();
