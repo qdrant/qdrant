@@ -1158,7 +1158,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "fnv",
- "fs4 0.12.0",
+ "fs4 0.13.0",
  "fs_extra",
  "futures",
  "hashring",
@@ -2025,12 +2025,12 @@ dependencies = [
 
 [[package]]
 name = "fs4"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c29c30684418547d476f0b48e84f4821639119c483b1eccd566c8cd0cd05f521"
+checksum = "be058769cf1633370c3d0dac6bb9b223b8f18900cf808abadf7843192e706238"
 dependencies = [
  "rustix 0.38.40",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
