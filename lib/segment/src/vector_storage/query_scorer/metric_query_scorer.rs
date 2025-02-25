@@ -7,9 +7,9 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
 use crate::spaces::metric::Metric;
+use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::DenseVectorStorage;
 
 pub struct MetricQueryScorer<
     'a,
@@ -24,11 +24,11 @@ pub struct MetricQueryScorer<
 }
 
 impl<
-        'a,
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: DenseVectorStorage<TElement>,
-    > MetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
+    'a,
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: DenseVectorStorage<TElement>,
+> MetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
     pub fn new(
         query: TypedDenseVector<VectorElementType>,
@@ -51,10 +51,10 @@ impl<
 }
 
 impl<
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: DenseVectorStorage<TElement>,
-    > QueryScorer<[TElement]> for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: DenseVectorStorage<TElement>,
+> QueryScorer<[TElement]> for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {

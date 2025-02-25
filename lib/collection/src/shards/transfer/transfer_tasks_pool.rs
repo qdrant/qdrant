@@ -6,8 +6,8 @@ use parking_lot::Mutex;
 
 use crate::common::eta_calculator::EtaCalculator;
 use crate::common::stoppable_task_async::CancellableAsyncTaskHandle;
-use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 use crate::shards::CollectionId;
+use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
 
 pub struct TransferTasksPool {
     collection_id: CollectionId,

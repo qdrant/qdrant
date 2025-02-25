@@ -22,8 +22,8 @@ use itertools::Itertools;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::json_path::JsonPath;
 use segment::types::Filter;
-use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::content_manager::toc::TableOfContent;
+use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Access;
 use tonic::{Request, Response, Status};
 

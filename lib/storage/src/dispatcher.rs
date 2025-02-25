@@ -207,7 +207,9 @@ impl Dispatcher {
                 let remaining_timeout =
                     wait_timeout.map(|timeout| timeout.saturating_sub(start.elapsed()));
                 if let Err(err) = self.await_consensus_sync(remaining_timeout).await {
-                    log::warn!("Failed to synchronize all nodes after collection operation in time, some nodes may not be ready: {err}");
+                    log::warn!(
+                        "Failed to synchronize all nodes after collection operation in time, some nodes may not be ready: {err}",
+                    );
                 }
             }
 

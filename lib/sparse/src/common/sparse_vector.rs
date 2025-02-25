@@ -75,11 +75,7 @@ fn score_vectors<T: Ord + Eq>(
             }
         }
     }
-    if overlap {
-        Some(score)
-    } else {
-        None
-    }
+    if overlap { Some(score) } else { None }
 }
 
 impl RemappedSparseVector {

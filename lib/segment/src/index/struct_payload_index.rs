@@ -12,16 +12,17 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use schemars::_serde_json::Value;
 
+use super::field_index::FieldIndexBuilderTrait as _;
 use super::field_index::facet_index::FacetIndexEnum;
 use super::field_index::index_selector::{
     IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
 };
-use super::field_index::FieldIndexBuilderTrait as _;
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
-use crate::common::Flusher;
 use crate::id_tracker::IdTrackerSS;
+use crate::index::PayloadIndex;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
@@ -30,15 +31,14 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
-use crate::index::PayloadIndex;
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
-    infer_collection_value_type, infer_value_type, Condition, FieldCondition, Filter,
-    IsEmptyCondition, IsNullCondition, Payload, PayloadContainer, PayloadField, PayloadFieldSchema,
-    PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, VectorNameBuf,
+    Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Payload,
+    PayloadContainer, PayloadField, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
+    PayloadSchemaType, VectorNameBuf, infer_collection_value_type, infer_value_type,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 

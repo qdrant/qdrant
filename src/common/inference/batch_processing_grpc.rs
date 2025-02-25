@@ -2,8 +2,8 @@ use std::collections::HashSet;
 
 use api::grpc::qdrant::vector_input::Variant;
 use api::grpc::qdrant::{
-    query, ContextInput, ContextInputPair, DiscoverInput, PrefetchQuery, Query, RecommendInput,
-    VectorInput,
+    ContextInput, ContextInputPair, DiscoverInput, PrefetchQuery, Query, RecommendInput,
+    VectorInput, query,
 };
 use api::rest::schema as rest;
 use tonic::Status;

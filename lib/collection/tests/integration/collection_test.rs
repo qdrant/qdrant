@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
 use api::rest::{OrderByInterface, SearchRequestInternal};
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
@@ -12,7 +13,6 @@ use collection::operations::types::{
     CountRequestInternal, PointRequestInternal, RecommendRequestInternal, ScrollRequestInternal,
     UpdateStatus,
 };
-use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use collection::shards::replica_set::{ReplicaSetState, ReplicaState};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -26,7 +26,7 @@ use segment::types::{
 use serde_json::Map;
 use tempfile::Builder;
 
-use crate::common::{load_local_collection, simple_collection_fixture, N_SHARDS};
+use crate::common::{N_SHARDS, load_local_collection, simple_collection_fixture};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_updater() {
@@ -735,19 +735,21 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         .await
         .unwrap();
 
-    assert!(result_multi
-        .points
-        .iter()
-        .fold(HashMap::<PointIdType, usize, _>::new(), |mut acc, point| {
-            acc.entry(point.id)
-                .and_modify(|x| {
-                    *x += 1;
-                })
-                .or_insert(1);
-            acc
-        })
-        .values()
-        .all(|&x| x == 2));
+    assert!(
+        result_multi
+            .points
+            .iter()
+            .fold(HashMap::<PointIdType, usize, _>::new(), |mut acc, point| {
+                acc.entry(point.id)
+                    .and_modify(|x| {
+                        *x += 1;
+                    })
+                    .or_insert(1);
+                acc
+            })
+            .values()
+            .all(|&x| x == 2),
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

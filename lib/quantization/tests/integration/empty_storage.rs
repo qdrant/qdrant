@@ -2,10 +2,10 @@
 mod tests {
     use std::sync::atomic::AtomicBool;
 
+    use quantization::EncodedVectorsPQ;
     use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
     use quantization::encoded_vectors_binary::EncodedVectorsBin;
     use quantization::encoded_vectors_u8::EncodedVectorsU8;
-    use quantization::EncodedVectorsPQ;
     use tempfile::Builder;
 
     #[test]

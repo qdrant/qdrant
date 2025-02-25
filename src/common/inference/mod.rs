@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 use std::fmt;
-use std::future::{ready, Ready};
+use std::future::{Ready, ready};
 
 use actix_web::{FromRequest, HttpMessage};
 

@@ -2,8 +2,8 @@ use std::cmp::max;
 
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
-use rand::prelude::StdRng;
 use rand::SeedableRng;
+use rand::prelude::StdRng;
 use rstest::rstest;
 
 use crate::fixtures::index_fixtures::random_vector;

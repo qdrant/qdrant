@@ -1,12 +1,12 @@
 use collection::collection::Collection;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::types::{RecommendRequestInternal, UpdateStatus};
-use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
+use rand::Rng;
 use rand::distr::Uniform;
 use rand::rngs::ThreadRng;
-use rand::Rng;
 use segment::data_types::vectors::DenseVector;
 use segment::json_path::JsonPath;
 use segment::types::{Filter, WithPayloadInterface, WithVector};
@@ -473,8 +473,8 @@ mod group_by {
 mod group_by_builder {
     use api::rest::SearchRequestInternal;
     use collection::grouping::GroupBy;
-    use collection::lookup::types::PseudoId;
     use collection::lookup::WithLookup;
+    use collection::lookup::types::PseudoId;
     use collection::operations::point_ops::{
         BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,
     };

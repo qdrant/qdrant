@@ -9,8 +9,8 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use io::file_operations::atomic_save_bin;
 use parking_lot::{Mutex, MutexGuard, RwLock};
-use rand::distr::Uniform;
 use rand::Rng;
+use rand::distr::Uniform;
 
 use super::graph_layers::GraphLayerData;
 use super::graph_links::{GraphLinks, GraphLinksFormat};
@@ -65,11 +65,7 @@ impl GraphLayersBase for GraphLayersBuilder {
     }
 
     fn get_m(&self, level: usize) -> usize {
-        if level == 0 {
-            self.m0
-        } else {
-            self.m
-        }
+        if level == 0 { self.m0 } else { self.m }
     }
 }
 
@@ -547,15 +543,15 @@ impl GraphLayersBuilder {
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
+    use rand::SeedableRng;
     use rand::prelude::StdRng;
     use rand::seq::SliceRandom;
-    use rand::SeedableRng;
     use rstest::rstest;
 
     use super::*;
     use crate::data_types::vectors::{DenseVector, VectorElementType};
     use crate::fixtures::index_fixtures::{
-        random_vector, FakeFilterContext, TestRawScorerProducer,
+        FakeFilterContext, TestRawScorerProducer, random_vector,
     };
     use crate::index::hnsw_index::graph_links::normalize_links;
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;

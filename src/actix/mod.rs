@@ -10,10 +10,10 @@ use std::sync::Arc;
 
 use ::api::rest::models::{ApiResponse, ApiStatus, VersionInfo};
 use actix_cors::Cors;
-use actix_multipart::form::tempfile::TempFileConfig;
 use actix_multipart::form::MultipartFormConfig;
+use actix_multipart::form::tempfile::TempFileConfig;
 use actix_web::middleware::{Compress, Condition, Logger, NormalizePath};
-use actix_web::{error, get, web, App, HttpRequest, HttpResponse, HttpServer, Responder};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, error, get, web};
 use actix_web_extras::middleware::Condition as ConditionEx;
 use api::facet_api::config_facet_api;
 use collection::operations::validation;
@@ -37,13 +37,13 @@ use crate::actix::api::shards_api::config_shards_api;
 use crate::actix::api::snapshot_api::config_snapshots_api;
 use crate::actix::api::update_api::config_update_api;
 use crate::actix::auth::{Auth, WhitelistItem};
-use crate::actix::web_ui::{web_ui_factory, web_ui_folder, WEB_UI_PATH};
+use crate::actix::web_ui::{WEB_UI_PATH, web_ui_factory, web_ui_folder};
 use crate::common::auth::AuthKeys;
 use crate::common::debugger::DebuggerState;
 use crate::common::health;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry::TelemetryCollector;
-use crate::settings::{max_web_workers, Settings};
+use crate::settings::{Settings, max_web_workers};
 use crate::tracing::LoggerHandle;
 
 #[get("/")]

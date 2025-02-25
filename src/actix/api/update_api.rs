@@ -1,8 +1,8 @@
 use actix_web::rt::time::Instant;
-use actix_web::{delete, post, put, web, Responder};
+use actix_web::{Responder, delete, post, put, web};
 use actix_web_validator::{Json, Path, Query};
-use api::rest::schema::PointInsertOperations;
 use api::rest::UpdateVectors;
+use api::rest::schema::PointInsertOperations;
 use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::PointsSelector;
 use collection::operations::types::UpdateResult;

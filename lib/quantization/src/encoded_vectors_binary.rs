@@ -345,7 +345,7 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
 }
 
 #[cfg(target_arch = "x86_64")]
-extern "C" {
+unsafe extern "C" {
     fn impl_xor_popcnt_sse_uint128(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
 
     fn impl_xor_popcnt_sse_uint64(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
@@ -354,9 +354,9 @@ extern "C" {
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-extern "C" {
+unsafe extern "C" {
     fn impl_xor_popcnt_neon_uint128(query_ptr: *const u8, vector_ptr: *const u8, count: u32)
-        -> u32;
+    -> u32;
 
     fn impl_xor_popcnt_neon_uint64(query_ptr: *const u8, vector_ptr: *const u8, count: u32) -> u32;
 }

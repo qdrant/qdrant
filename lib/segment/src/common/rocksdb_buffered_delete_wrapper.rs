@@ -6,9 +6,9 @@ use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 
 use super::rocksdb_wrapper::DatabaseColumnIterator;
+use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
-use crate::common::Flusher;
 
 /// Wrapper around `DatabaseColumnWrapper` that ensures, that keys that were removed from the
 /// database are only persisted on flush explicitly.

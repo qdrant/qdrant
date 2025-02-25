@@ -4,7 +4,7 @@ use std::path::Path;
 use common::tar_ext;
 use segment::types::SnapshotFormat;
 
-use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, REPLICA_STATE_FILE};
+use super::{REPLICA_STATE_FILE, ReplicaSetState, ReplicaState, ShardReplicaSet};
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::dummy_shard::DummyShard;

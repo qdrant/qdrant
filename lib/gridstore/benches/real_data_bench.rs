@@ -2,8 +2,8 @@ use std::fs::File;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use gridstore::fixtures::{empty_storage, Payload, HM_FIELDS};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use gridstore::fixtures::{HM_FIELDS, Payload, empty_storage};
 use rand::Rng;
 use serde_json::Value;
 

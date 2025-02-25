@@ -1173,7 +1173,11 @@ pub struct GeoPointValidationError {
 // The error type has to implement Display
 impl std::fmt::Display for GeoPointValidationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "Wrong format of GeoPoint payload: expected `lat` = {} within [-90;90] and `lon` = {} within [-180;180]", self.lat, self.lon)
+        write!(
+            formatter,
+            "Wrong format of GeoPoint payload: expected `lat` = {} within [-90;90] and `lon` = {} within [-180;180]",
+            self.lat, self.lon,
+        )
     }
 }
 
@@ -2027,7 +2031,9 @@ impl GeoPolygon {
                 || (first.lon - last.lon).abs() > f64::EPSILON
             {
                 return Err(OperationError::ValidationError {
-                    description: String::from("polygon invalid, the first and the last points should be the same to form a closed line")
+                    description: String::from(
+                        "polygon invalid, the first and the last points should be the same to form a closed line",
+                    ),
                 });
             }
         }

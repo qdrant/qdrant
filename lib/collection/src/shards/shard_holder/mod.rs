@@ -10,13 +10,13 @@ use std::time::Duration;
 
 use common::budget::ResourceBudget;
 use common::tar_ext::BuilderExt;
-use futures::{stream, Future, StreamExt, TryStreamExt as _};
+use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
 use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMapping};
 use tokio::runtime::Handle;
-use tokio::sync::{broadcast, OwnedRwLockReadGuard, RwLock};
+use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
@@ -43,7 +43,7 @@ use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
-use crate::shards::{check_shard_path, CollectionId};
+use crate::shards::{CollectionId, check_shard_path};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -135,7 +135,9 @@ impl ShardHolder {
             // we don't attempt to load this shard anymore on restart.
             let shard_config_path = ShardConfig::get_config_path(&shard_path);
             if let Err(err) = tokio::fs::remove_file(shard_config_path).await {
-                log::error!("Failed to remove shard config file before removing the rest of the files: {err}");
+                log::error!(
+                    "Failed to remove shard config file before removing the rest of the files: {err}",
+                );
             }
 
             tokio::fs::remove_dir_all(shard_path).await?;
@@ -389,15 +391,19 @@ impl ShardHolder {
         let receiver = async move {
             loop {
                 match subscriber.recv().await {
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return Err(CollectionError::service_error(
-                        "Failed to await shard transfer end: failed to listen for shard transfer changes, channel closed"
-                    )),
-                    Err(err @ tokio::sync::broadcast::error::RecvError::Lagged(_)) => return Err(CollectionError::service_error(format!(
-                        "Failed to await shard transfer end: failed to listen for shard transfer changes, channel lagged behind: {err}"
-                    ))),
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        return Err(CollectionError::service_error(
+                            "Failed to await shard transfer end: failed to listen for shard transfer changes, channel closed",
+                        ));
+                    }
+                    Err(err @ tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        return Err(CollectionError::service_error(format!(
+                            "Failed to await shard transfer end: failed to listen for shard transfer changes, channel lagged behind: {err}",
+                        )));
+                    }
                     Ok(ShardTransferChange::Finish(key)) if key == transfer => return Ok(Ok(())),
                     Ok(ShardTransferChange::Abort(key)) if key == transfer => return Ok(Err(())),
-                    Ok(_) => {},
+                    Ok(_) => {}
                 }
             }
         };
@@ -635,7 +641,10 @@ impl ShardHolder {
             let is_initializing =
                 replica_set.peer_state(local_peer_id) == Some(ReplicaState::Initializing);
             if not_distributed && is_local && is_initializing {
-                log::warn!("Local shard {collection_id}:{} stuck in Initializing state, changing to Active", replica_set.shard_id);
+                log::warn!(
+                    "Local shard {collection_id}:{} stuck in Initializing state, changing to Active",
+                    replica_set.shard_id,
+                );
                 replica_set
                     .set_replica_state(local_peer_id, ReplicaState::Active)
                     .expect("Failed to set local shard state");

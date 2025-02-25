@@ -1,4 +1,4 @@
-use actix_web::{post, put, web, Responder};
+use actix_web::{Responder, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::{
     ClusterOperations, CreateShardingKey, CreateShardingKeyOperation, DropShardingKey,
@@ -7,8 +7,8 @@ use collection::operations::cluster_ops::{
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
-use crate::actix::api::collections_api::WaitTimeout;
 use crate::actix::api::CollectionPath;
+use crate::actix::api::collections_api::WaitTimeout;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::process_response;
 use crate::common::collections::do_update_collection_cluster;

@@ -5,12 +5,12 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
-use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
+use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::payload_storage::PayloadStorage;
+use segment::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use segment::types::{Condition, FieldCondition, Filter, Match, Payload, PayloadSchemaType, Range};
 use tempfile::Builder;
 

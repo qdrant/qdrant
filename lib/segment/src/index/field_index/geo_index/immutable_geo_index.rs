@@ -7,12 +7,12 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 use smol_str::SmolStr;
 
-use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
 use super::GeoMapIndex;
+use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
+use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::types::GeoPoint;
 
@@ -203,15 +203,14 @@ impl ImmutableGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn stored_sub_regions(&self, geo: &GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let geo_clone = *geo;
+    pub fn stored_sub_regions(&self, geo: GeoHash) -> impl Iterator<Item = PointOffsetType> {
         let start_index = self
             .points_map
-            .binary_search_by(|(p, _h)| p.cmp(geo))
+            .binary_search_by(|(p, _h)| p.cmp(&geo))
             .unwrap_or_else(|index| index);
         self.points_map[start_index..]
             .iter()
-            .take_while(move |(p, _h)| p.starts_with(geo_clone))
+            .take_while(move |(p, _h)| p.starts_with(geo))
             .flat_map(|(_, points)| points.iter().copied())
     }
 

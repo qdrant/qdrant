@@ -305,9 +305,8 @@ impl Settings {
                 < JWT_RECOMMENDED_SECRET_LENGTH
             {
                 log::warn!(
-                "It is highly recommended to use an API key of {} bytes when JWT RBAC is enabled",
-                JWT_RECOMMENDED_SECRET_LENGTH
-            )
+                    "It is highly recommended to use an API key of {JWT_RECOMMENDED_SECRET_LENGTH} bytes when JWT RBAC is enabled",
+                )
             }
         }
 
@@ -418,7 +417,7 @@ mod tests {
 
     #[sealed_test(files = ["config/config.yaml", "config/development.yaml"])]
     fn test_runtime_development_config() {
-        env::set_var("RUN_MODE", "development");
+        unsafe { env::set_var("RUN_MODE", "development") };
 
         // `sealed_test` copies files into the same directory as the test runs in.
         // We need them in a subdirectory.

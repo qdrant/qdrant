@@ -2,7 +2,7 @@ use tonic::Status;
 
 use crate::conversions::json::{dict_to_proto, json_to_proto, proto_dict_to_json, proto_to_json};
 use crate::grpc::qdrant as grpc;
-use crate::rest::{schema as rest, Options};
+use crate::rest::{Options, schema as rest};
 
 impl From<rest::Document> for grpc::Document {
     fn from(document: rest::Document) -> Self {

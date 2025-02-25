@@ -6,7 +6,7 @@ use futures::stream::FuturesUnordered;
 use futures::{FutureExt as _, StreamExt as _};
 use itertools::Itertools as _;
 
-use super::{clock_set, ReplicaSetState, ReplicaState, ShardReplicaSet};
+use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
@@ -74,9 +74,13 @@ impl ShardReplicaSet {
             ReplicaState::PartialSnapshot | ReplicaState::Recovery => {
                 if log::log_enabled!(log::Level::Debug) {
                     if let Some(ids) = operation.operation.point_ids() {
-                        log::debug!("Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state");
+                        log::debug!(
+                            "Operation affecting point IDs {ids:?} rejected on this peer, force flag required in recovery state",
+                        );
                     } else {
-                        log::debug!("Operation {operation:?} rejected on this peer, force flag required in recovery state");
+                        log::debug!(
+                            "Operation {operation:?} rejected on this peer, force flag required in recovery state",
+                        );
                     }
                 }
 
@@ -471,7 +475,8 @@ impl ShardReplicaSet {
                         return Err(CollectionError::service_error(format!(
                             "Some replica of shard {} failed to apply operation and deactivation \
                             timed out after {} seconds. Consistency of this update is not guaranteed. Please retry. {failure_error}",
-                            self.shard_id, timeout.as_secs(),
+                            self.shard_id,
+                            timeout.as_secs(),
                         )));
                     }
                 }

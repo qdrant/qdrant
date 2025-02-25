@@ -183,8 +183,8 @@ pub trait InvertedIndex {
 mod tests {
     use std::collections::BTreeSet;
 
-    use rand::seq::SliceRandom;
     use rand::Rng;
+    use rand::seq::SliceRandom;
     use rstest::rstest;
 
     use super::{InvertedIndex, ParsedQuery, TokenId};

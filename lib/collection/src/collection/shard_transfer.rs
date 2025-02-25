@@ -93,7 +93,11 @@ impl Collection {
                     match resharding_direction {
                         Some(ReshardingDirection::Up) => ReplicaState::Resharding,
                         Some(ReshardingDirection::Down) => ReplicaState::ReshardingScaleDown,
-                        None => return Err(CollectionError::bad_input("can't start resharding transfer, because resharding is not in progress")),
+                        None => {
+                            return Err(CollectionError::bad_input(
+                                "can't start resharding transfer, because resharding is not in progress",
+                            ));
+                        }
                     }
                 }
             };

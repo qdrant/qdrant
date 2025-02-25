@@ -29,7 +29,7 @@ impl BatchAccumInferred {
 
         let Some(service) = InferenceService::get_global() else {
             return Err(StorageError::service_error(
-                "InferenceService is not initialized. Please check if it was properly configured and initialized during startup."
+                "InferenceService is not initialized. Please check if it was properly configured and initialized during startup.",
             ));
         };
 

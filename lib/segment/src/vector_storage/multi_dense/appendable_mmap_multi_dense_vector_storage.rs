@@ -7,8 +7,8 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedMultiDenseVectorRef, VectorElementType, VectorRef};
@@ -47,10 +47,10 @@ pub struct AppendableMmapMultiDenseVectorStorage<
 }
 
 impl<
-        T: PrimitiveVectorElement,
-        S: ChunkedVectorStorage<T>,
-        O: ChunkedVectorStorage<MultivectorMmapOffset>,
-    > AppendableMmapMultiDenseVectorStorage<T, S, O>
+    T: PrimitiveVectorElement,
+    S: ChunkedVectorStorage<T>,
+    O: ChunkedVectorStorage<MultivectorMmapOffset>,
+> AppendableMmapMultiDenseVectorStorage<T, S, O>
 {
     /// Set deleted flag for given key. Returns previous deleted state.
     #[inline]
@@ -73,10 +73,10 @@ impl<
 }
 
 impl<
-        T: PrimitiveVectorElement,
-        S: ChunkedVectorStorage<T> + Sync,
-        O: ChunkedVectorStorage<MultivectorMmapOffset> + Sync,
-    > MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T, S, O>
+    T: PrimitiveVectorElement,
+    S: ChunkedVectorStorage<T> + Sync,
+    O: ChunkedVectorStorage<MultivectorMmapOffset> + Sync,
+> MultiVectorStorage<T> for AppendableMmapMultiDenseVectorStorage<T, S, O>
 {
     fn vector_dim(&self) -> usize {
         self.vectors.dim()
@@ -148,10 +148,10 @@ impl<
 }
 
 impl<
-        T: PrimitiveVectorElement,
-        S: ChunkedVectorStorage<T> + Sync,
-        O: ChunkedVectorStorage<MultivectorMmapOffset> + Sync,
-    > VectorStorage for AppendableMmapMultiDenseVectorStorage<T, S, O>
+    T: PrimitiveVectorElement,
+    S: ChunkedVectorStorage<T> + Sync,
+    O: ChunkedVectorStorage<MultivectorMmapOffset> + Sync,
+> VectorStorage for AppendableMmapMultiDenseVectorStorage<T, S, O>
 {
     fn distance(&self) -> Distance {
         self.distance

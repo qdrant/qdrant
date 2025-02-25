@@ -9,8 +9,8 @@ use rand::{Rng, SeedableRng};
 use rstest::rstest;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::index::hnsw_index::gpu::shader_builder::{ShaderBuilder, ShaderBuilderParameters};
 use crate::index::hnsw_index::gpu::GPU_TIMEOUT;
+use crate::index::hnsw_index::gpu::shader_builder::{ShaderBuilder, ShaderBuilderParameters};
 
 struct GpuHeapTestConfig {
     ef: usize,

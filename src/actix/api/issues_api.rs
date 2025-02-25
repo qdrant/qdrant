@@ -1,4 +1,4 @@
-use actix_web::{delete, get, web, Responder};
+use actix_web::{Responder, delete, get, web};
 use collection::operations::types::IssuesReport;
 use storage::rbac::{Access, AccessRequirements};
 

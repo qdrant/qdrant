@@ -1,11 +1,11 @@
 use std::time::Duration;
 
+use collection::collection::Collection;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
 };
-use collection::collection::Collection;
-use collection::grouping::group_by::GroupRequest;
 use collection::grouping::GroupBy;
+use collection::grouping::group_by::GroupRequest;
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::WriteOrdering;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -14,8 +14,8 @@ use collection::operations::universal_query::collection_query::CollectionQueryRe
 use collection::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use collection::{discovery, recommendations};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::stream::FuturesUnordered;
 use futures::TryStreamExt as _;
+use futures::stream::FuturesUnordered;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::types::{ScoredPoint, ShardKey};
 

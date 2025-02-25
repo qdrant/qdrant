@@ -1,8 +1,8 @@
 use std::cmp;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitVec;
 use bitvec::slice::BitSlice;
@@ -1436,7 +1436,7 @@ mod tests {
     use std::fs::File;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+    use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
     use segment::payload_json;
     use segment::types::{FieldCondition, PayloadSchemaType};
     use tempfile::{Builder, TempDir};
@@ -1797,11 +1797,13 @@ mod tests {
 
         proxy_segment.replicate_field_indexes(0).unwrap();
 
-        assert!(write_segment
-            .get()
-            .read()
-            .get_indexed_fields()
-            .contains_key(&"color".parse().unwrap()));
+        assert!(
+            write_segment
+                .get()
+                .read()
+                .get_indexed_fields()
+                .contains_key(&"color".parse().unwrap()),
+        );
 
         original_segment
             .get()
@@ -1821,16 +1823,20 @@ mod tests {
 
         proxy_segment.replicate_field_indexes(0).unwrap();
 
-        assert!(write_segment
-            .get()
-            .read()
-            .get_indexed_fields()
-            .contains_key(&"location".parse().unwrap()));
-        assert!(!write_segment
-            .get()
-            .read()
-            .get_indexed_fields()
-            .contains_key(&"color".parse().unwrap()));
+        assert!(
+            write_segment
+                .get()
+                .read()
+                .get_indexed_fields()
+                .contains_key(&"location".parse().unwrap()),
+        );
+        assert!(
+            !write_segment
+                .get()
+                .read()
+                .get_indexed_fields()
+                .contains_key(&"color".parse().unwrap()),
+        );
     }
 
     #[test]
@@ -1960,7 +1966,7 @@ mod tests {
     fn test_point_vector_count_multivec() {
         use segment::segment_constructor::build_segment;
         use segment::segment_constructor::simple_segment_constructor::{
-            build_multivec_segment, VECTOR1_NAME, VECTOR2_NAME,
+            VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
         };
         use segment::types::Distance;
 

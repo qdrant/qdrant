@@ -10,9 +10,9 @@ use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;
+use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
-use crate::common::Flusher;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
 use crate::types::GeoPoint;
@@ -319,10 +319,7 @@ impl MmapGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn stored_sub_regions(
-        &self,
-        geohash: GeoHash,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+    pub fn stored_sub_regions(&self, geohash: GeoHash) -> impl Iterator<Item = PointOffsetType> {
         let start_index = self
             .points_map
             .binary_search_by(|point_key_value| point_key_value.hash.cmp(&geohash))

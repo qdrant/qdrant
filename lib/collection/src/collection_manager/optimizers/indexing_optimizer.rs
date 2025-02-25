@@ -281,8 +281,8 @@ impl SegmentOptimizer for IndexingOptimizer {
 mod tests {
     use std::collections::BTreeMap;
     use std::ops::Deref;
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use common::budget::ResourceBudget;
     use common::counter::hardware_counter::HardwareCounterCell;

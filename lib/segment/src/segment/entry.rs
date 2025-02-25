@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::thread::{self};
+use std::sync::atomic::AtomicBool;
+use std::{fs, thread};
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -24,8 +23,8 @@ use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
-use crate::segment::snapshot::snapshot_files;
 use crate::segment::SNAPSHOT_PATH;
+use crate::segment::snapshot::snapshot_files;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,

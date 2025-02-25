@@ -8,7 +8,7 @@ use rocksdb::DB;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
-use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_PAYLOAD_CF};
+use crate::common::rocksdb_wrapper::{DB_PAYLOAD_CF, DatabaseColumnWrapper};
 use crate::types::Payload;
 
 /// In-memory implementation of `PayloadStorage`.

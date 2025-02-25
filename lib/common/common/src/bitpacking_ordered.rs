@@ -44,7 +44,7 @@ use thiserror::Error;
 use zerocopy::little_endian::U64;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::bitpacking::{make_bitmask, packed_bits, BitWriter};
+use crate::bitpacking::{BitWriter, make_bitmask, packed_bits};
 
 /// The size of the tail padding.
 /// These extra 7 bytes after the last chunk allows the decompressor to safely

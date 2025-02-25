@@ -2,10 +2,10 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 
+use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::SparseVectorStorage;
 
 pub struct SparseCustomQueryScorer<
     'a,
@@ -18,10 +18,10 @@ pub struct SparseCustomQueryScorer<
 }
 
 impl<
-        'a,
-        TVectorStorage: SparseVectorStorage,
-        TQuery: Query<SparseVector> + TransformInto<TQuery, SparseVector, SparseVector>,
-    > SparseCustomQueryScorer<'a, TVectorStorage, TQuery>
+    'a,
+    TVectorStorage: SparseVectorStorage,
+    TQuery: Query<SparseVector> + TransformInto<TQuery, SparseVector, SparseVector>,
+> SparseCustomQueryScorer<'a, TVectorStorage, TQuery>
 {
     pub fn new(
         query: TQuery,

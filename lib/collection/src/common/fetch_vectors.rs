@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use api::rest::ShardKeySelector;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::future::try_join_all;
 use futures::Future;
+use futures::future::try_join_all;
 use segment::data_types::vectors::{VectorInternal, VectorRef};
 use segment::types::{PointIdType, VectorName, VectorNameBuf, WithPayloadInterface, WithVector};
 use tokio::sync::RwLockReadGuard;
@@ -263,7 +263,7 @@ impl<'coll_name> ReferencedPoints<'coll_name> {
                         None => {
                             return Err(CollectionError::NotFound {
                                 what: format!("Collection {name}"),
-                            })
+                            });
                         }
                     }
                 }

@@ -11,7 +11,7 @@ use crate::spaces::metric_f16::neon::dot::neon_dot_similarity_half;
 use crate::spaces::metric_f16::sse::dot::sse_dot_similarity_half;
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple::MIN_DIM_SIZE_AVX;
-use crate::spaces::simple::{cosine_preprocess, CosineMetric, MIN_DIM_SIZE_SIMD};
+use crate::spaces::simple::{CosineMetric, MIN_DIM_SIZE_SIMD, cosine_preprocess};
 #[cfg(target_arch = "x86_64")]
 use crate::spaces::simple_avx::*;
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]

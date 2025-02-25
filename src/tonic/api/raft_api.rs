@@ -8,7 +8,7 @@ use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::ConsensusOperations;
 use tokio::sync::mpsc::Sender;
 use tonic::transport::Uri;
-use tonic::{async_trait, Request, Response, Status};
+use tonic::{Request, Response, Status, async_trait};
 
 use super::validate;
 use crate::consensus;

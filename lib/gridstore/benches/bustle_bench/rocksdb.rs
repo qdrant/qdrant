@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use bustle::Collection;
-use gridstore::fixtures::Payload;
 use gridstore::Blob;
+use gridstore::fixtures::Payload;
 use parking_lot::RwLock;
-use rocksdb::{DBRecoveryMode, LogLevel, Options, WriteOptions, DB};
+use rocksdb::{DB, DBRecoveryMode, LogLevel, Options, WriteOptions};
 
 use crate::fixture::{ArcStorage, SequentialCollectionHandle, StorageProxy};
 

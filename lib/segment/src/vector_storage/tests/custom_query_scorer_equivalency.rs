@@ -8,7 +8,7 @@ use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::rngs::StdRng;
 use rand::seq::IteratorRandom;
-use rand::{rng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rng};
 use rstest::rstest;
 
 use super::utils::sampler;
@@ -27,7 +27,7 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{new_raw_scorer_for_test, VectorStorageEnum};
+use crate::vector_storage::{VectorStorageEnum, new_raw_scorer_for_test};
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;

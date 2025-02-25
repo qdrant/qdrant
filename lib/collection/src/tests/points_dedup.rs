@@ -5,7 +5,7 @@ use std::sync::Arc;
 use api::rest::OrderByInterface;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use segment::data_types::vectors::NamedVectorStruct;
 use segment::types::{
     Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,

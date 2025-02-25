@@ -4,11 +4,11 @@ use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
-use futures::{future, TryFutureExt};
+use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
 use rand::Rng;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
-use segment::common::score_fusion::{score_fusion, ScoreFusion};
+use segment::common::score_fusion::{ScoreFusion, score_fusion};
 use segment::types::{Order, ScoredPoint};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
@@ -324,9 +324,11 @@ impl Collection {
         let query_infos = intermediate_query_infos(request);
         let results_len = query_infos.len();
         let mut results = ShardQueryResponse::with_capacity(results_len);
-        debug_assert!(all_shards_results
-            .iter()
-            .all(|shard_results| shard_results.len() == results_len));
+        debug_assert!(
+            all_shards_results
+                .iter()
+                .all(|shard_results| shard_results.len() == results_len)
+        );
 
         let collection_params = self.collection_config.read().await.params.clone();
 

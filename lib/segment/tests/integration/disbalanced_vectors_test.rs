@@ -11,7 +11,7 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::{
-    build_multivec_segment, VECTOR1_NAME, VECTOR2_NAME,
+    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment,
 };
 use segment::types::Distance;
 use segment::vector_storage::VectorStorage;

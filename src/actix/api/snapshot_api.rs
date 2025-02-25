@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use actix_multipart::form::tempfile::TempFile;
 use actix_multipart::form::MultipartForm;
-use actix_web::{delete, get, post, put, web, Responder, Result};
+use actix_multipart::form::tempfile::TempFile;
+use actix_web::{Responder, Result, delete, get, post, put, web};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
 use collection::common::sha_256::{hash_file, hashes_equal};

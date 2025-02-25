@@ -9,7 +9,7 @@ use rustls::client::VerifierBuilderError;
 use rustls::pki_types::CertificateDer;
 use rustls::server::{ClientHello, ResolvesServerCert, WebPkiClientVerifier};
 use rustls::sign::CertifiedKey;
-use rustls::{crypto, RootCertStore, ServerConfig};
+use rustls::{RootCertStore, ServerConfig, crypto};
 use rustls_pemfile::Item;
 
 use crate::settings::{Settings, TlsConfig};

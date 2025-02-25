@@ -1,8 +1,8 @@
 use std::cmp::min;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -15,10 +15,10 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::SeqNumberType;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{oneshot, Mutex as TokioMutex};
+use tokio::sync::{Mutex as TokioMutex, oneshot};
 use tokio::task::{self, JoinHandle};
 use tokio::time::error::Elapsed;
-use tokio::time::{timeout, Duration};
+use tokio::time::{Duration, timeout};
 
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::collection_updater::CollectionUpdater;
@@ -27,11 +27,11 @@ use crate::collection_manager::optimizers::segment_optimizer::{
     OptimizerThresholds, SegmentOptimizer,
 };
 use crate::collection_manager::optimizers::{Tracker, TrackerLog, TrackerStatus};
-use crate::common::stoppable_task::{spawn_stoppable, StoppableTaskHandle};
+use crate::common::stoppable_task::{StoppableTaskHandle, spawn_stoppable};
 use crate::config::CollectionParams;
+use crate::operations::CollectionUpdateOperations;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult};
-use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShardClocks;
 use crate::wal::WalError;
@@ -586,7 +586,9 @@ impl UpdateHandler {
                     // tasks that'll trigger this for us. If we don't run optimizers here we might
                     // get stuck into yellow state until a new update operation is received.
                     // See: <https://github.com/qdrant/qdrant/pull/5111>
-                    log::warn!("Cleaned a optimization handle after timeout, explicitly triggering optimizers");
+                    log::warn!(
+                        "Cleaned a optimization handle after timeout, explicitly triggering optimizers",
+                    );
                     true
                 }
                 // Hit optimizer cleanup interval, did not clean up a task: do 2

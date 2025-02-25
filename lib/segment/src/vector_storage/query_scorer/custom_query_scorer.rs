@@ -7,10 +7,10 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{DenseVector, TypedDenseVector};
 use crate::spaces::metric::Metric;
+use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::DenseVectorStorage;
 
 pub struct CustomQueryScorer<
     'a,
@@ -29,13 +29,13 @@ pub struct CustomQueryScorer<
 }
 
 impl<
-        'a,
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: DenseVectorStorage<TElement>,
-        TInputQuery: Query<DenseVector> + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
-        TStoredQuery: Query<TypedDenseVector<TElement>>,
-    > CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
+    'a,
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: DenseVectorStorage<TElement>,
+    TInputQuery: Query<DenseVector> + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
+    TStoredQuery: Query<TypedDenseVector<TElement>>,
+> CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
 {
     pub fn new(
         query: TInputQuery,
@@ -67,12 +67,12 @@ impl<
 }
 
 impl<
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: DenseVectorStorage<TElement>,
-        TInputQuery: Query<DenseVector>,
-        TStoredQuery: Query<TypedDenseVector<TElement>>,
-    > QueryScorer<[TElement]>
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: DenseVectorStorage<TElement>,
+    TInputQuery: Query<DenseVector>,
+    TStoredQuery: Query<TypedDenseVector<TElement>>,
+> QueryScorer<[TElement]>
     for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
 {
     #[inline]

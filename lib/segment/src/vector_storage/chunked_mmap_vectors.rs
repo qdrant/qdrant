@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 
 use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
-use memory::chunked_utils::{chunk_name, create_chunk, read_mmaps, UniversalMmapChunk};
+use memory::chunked_utils::{UniversalMmapChunk, chunk_name, create_chunk, read_mmaps};
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
 use serde::{Deserialize, Serialize};
 
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 use crate::vector_storage::common::{CHUNK_SIZE, PAGE_SIZE_BYTES, VECTOR_READ_BATCH_SIZE};
 use crate::vector_storage::query_scorer::is_read_with_prefetch_efficient_vectors;
@@ -391,8 +391,8 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
 mod tests {
     use std::iter::zip;
 
-    use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use rand::prelude::StdRng;
     use tempfile::Builder;
 
     use super::*;

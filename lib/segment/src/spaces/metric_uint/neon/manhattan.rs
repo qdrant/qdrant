@@ -7,45 +7,47 @@ pub unsafe fn neon_manhattan_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
 
-    let mut sum16_low = vdupq_n_u16(0);
-    let mut sum16_high = vdupq_n_u16(0);
-    let len = v1.len();
-    for _ in 0..len / 16 {
-        let p1 = vld1q_u8(ptr1);
-        let p2 = vld1q_u8(ptr2);
-        ptr1 = ptr1.add(16);
-        ptr2 = ptr2.add(16);
+    unsafe {
+        let mut sum16_low = vdupq_n_u16(0);
+        let mut sum16_high = vdupq_n_u16(0);
+        let len = v1.len();
+        for _ in 0..len / 16 {
+            let p1 = vld1q_u8(ptr1);
+            let p2 = vld1q_u8(ptr2);
+            ptr1 = ptr1.add(16);
+            ptr2 = ptr2.add(16);
 
-        let abs_diff = vabdq_u8(p1, p2);
-        let abs_diff16_low = vmovl_u8(vget_low_u8(abs_diff));
-        let abs_diff16_high = vmovl_u8(vget_high_u8(abs_diff));
+            let abs_diff = vabdq_u8(p1, p2);
+            let abs_diff16_low = vmovl_u8(vget_low_u8(abs_diff));
+            let abs_diff16_high = vmovl_u8(vget_high_u8(abs_diff));
 
-        sum16_low = vaddq_u16(sum16_low, abs_diff16_low);
-        sum16_high = vaddq_u16(sum16_high, abs_diff16_high);
-    }
-    // Horizontal sum of 16-bit integers
-    let sum32_low = vpaddlq_u16(sum16_low);
-    let sum32_high = vpaddlq_u16(sum16_high);
-    let sum32 = vaddq_u32(sum32_low, sum32_high);
-
-    let sum64_low = vadd_u32(vget_low_u32(sum32), vget_high_u32(sum32));
-    let sum64_high = vpadd_u32(sum64_low, sum64_low);
-    let mut score = vget_lane_u32(sum64_high, 0) as f32;
-
-    let remainder = len % 16;
-    if remainder != 0 {
-        let mut remainder_score = 0;
-        for _ in 0..len % 16 {
-            let v1 = i32::from(*ptr1);
-            let v2 = i32::from(*ptr2);
-            ptr1 = ptr1.add(1);
-            ptr2 = ptr2.add(1);
-            remainder_score += (v1 - v2).abs();
+            sum16_low = vaddq_u16(sum16_low, abs_diff16_low);
+            sum16_high = vaddq_u16(sum16_high, abs_diff16_high);
         }
-        score += remainder_score as f32;
-    }
+        // Horizontal sum of 16-bit integers
+        let sum32_low = vpaddlq_u16(sum16_low);
+        let sum32_high = vpaddlq_u16(sum16_high);
+        let sum32 = vaddq_u32(sum32_low, sum32_high);
 
-    -score
+        let sum64_low = vadd_u32(vget_low_u32(sum32), vget_high_u32(sum32));
+        let sum64_high = vpadd_u32(sum64_low, sum64_low);
+        let mut score = vget_lane_u32(sum64_high, 0) as f32;
+
+        let remainder = len % 16;
+        if remainder != 0 {
+            let mut remainder_score = 0;
+            for _ in 0..len % 16 {
+                let v1 = i32::from(*ptr1);
+                let v2 = i32::from(*ptr2);
+                ptr1 = ptr1.add(1);
+                ptr2 = ptr2.add(1);
+                remainder_score += (v1 - v2).abs();
+            }
+            score += remainder_score as f32;
+        }
+
+        -score
+    }
 }
 
 #[cfg(test)]

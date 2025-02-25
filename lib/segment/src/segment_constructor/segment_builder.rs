@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use ahash::AHasher;
 use atomic_refcell::AtomicRefCell;
@@ -24,21 +24,21 @@ use super::{
     get_vector_storage_path, new_segment_path, open_segment_db, open_vector_storage,
 };
 use crate::common::error_logging::LogError;
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::entry::entry_point::SegmentEntry;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
-use crate::id_tracker::{for_each_unique_point, IdTracker, IdTrackerEnum};
+use crate::id_tracker::{IdTracker, IdTrackerEnum, for_each_unique_point};
 use crate::index::field_index::FieldIndex;
 use crate::index::sparse_index::sparse_vector_index::SparseVectorIndexOpenArgs;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndexEnum};
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};
 use crate::segment_constructor::{
-    build_vector_index, load_segment, VectorIndexBuildArgs, VectorIndexOpenArgs,
+    VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
 use crate::types::{
     CompactExtendedPointId, ExtendedPointId, PayloadFieldSchema, PayloadKeyType, SegmentConfig,
@@ -349,10 +349,10 @@ impl SegmentBuilder {
             match &new_internal_range {
                 Some(new_internal_range) => {
                     if new_internal_range != &internal_range {
-                        return Err(OperationError::service_error( format!(
-                                "Internal ids range mismatch between self segment vectors and other segment vectors\n\
+                        return Err(OperationError::service_error(format!(
+                            "Internal ids range mismatch between self segment vectors and other segment vectors\n\
                                 vector_name: {vector_name}, self range: {new_internal_range:?}, other range: {internal_range:?}"
-                            )));
+                        )));
                     }
                 }
                 None => new_internal_range = Some(internal_range),

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,10 +16,11 @@ use segment::types::{
     WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::{RwLock, oneshot};
 use tokio::time::timeout;
 
 use super::update_tracker::UpdateTracker;
+use crate::operations::OperationWithClockTag;
 use crate::operations::operation_effect::{
     EstimateOperationEffectArea, OperationEffectArea, PointsOperationEffect,
 };
@@ -28,7 +29,6 @@ use crate::operations::types::{
     CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
-use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
@@ -112,7 +112,10 @@ impl ProxyShard {
             // It is possible, that the queue is recreated while we are waiting for plunger.
             // So we will timeout and try again
             if timeout(attempt_timeout, rx).await.is_err() {
-                log::warn!("Timeout {} while waiting for the wrapped shard to finish the update queue, retrying", attempt_timeout.as_secs());
+                log::warn!(
+                    "Timeout {} while waiting for the wrapped shard to finish the update queue, retrying",
+                    attempt_timeout.as_secs(),
+                );
                 attempt += 1;
                 if attempt_timeout > UPDATE_QUEUE_CLEAR_MAX_TIMEOUT {
                     return Err(CollectionError::service_error(

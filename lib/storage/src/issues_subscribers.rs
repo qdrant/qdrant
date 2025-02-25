@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
-use issues::broker::Subscriber;
 use issues::Code;
+use issues::broker::Subscriber;
 use segment::problems::UnindexedField;
 
 #[derive(Clone, Copy)]

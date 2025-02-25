@@ -5,7 +5,7 @@ use futures::Future;
 use itertools::Itertools;
 use tokio::sync::RwLockReadGuard;
 
-use super::group_by::{group_by, GroupRequest};
+use super::group_by::{GroupRequest, group_by};
 use crate::collection::Collection;
 use crate::lookup::lookup_ids;
 use crate::lookup::types::PseudoId;

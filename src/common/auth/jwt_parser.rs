@@ -1,9 +1,9 @@
 use jsonwebtoken::errors::ErrorKind;
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
 use validator::Validate;
 
-use super::claims::Claims;
 use super::AuthError;
+use super::claims::Claims;
 
 #[derive(Clone)]
 pub struct JwtParser {
@@ -41,7 +41,7 @@ impl JwtParser {
                         Some(Err(AuthError::Forbidden(e.to_string())))
                     }
                     _ => None,
-                }
+                };
             }
         };
         if let Err(e) = claims.validate() {
@@ -62,7 +62,7 @@ mod tests {
     use super::*;
 
     pub fn create_token(claims: &Claims) -> String {
-        use jsonwebtoken::{encode, EncodingKey, Header};
+        use jsonwebtoken::{EncodingKey, Header, encode};
 
         let key = EncodingKey::from_secret("secret".as_ref());
         let header = Header::new(JwtParser::ALGORITHM);

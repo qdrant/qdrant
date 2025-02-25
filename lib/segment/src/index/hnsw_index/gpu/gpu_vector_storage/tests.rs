@@ -11,7 +11,7 @@ use rocksdb::DB;
 use rstest::rstest;
 
 use super::*;
-use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::{MultiDenseVectorInternal, QueryVector, VectorRef};
 use crate::fixtures::index_fixtures::random_vector;
 use crate::fixtures::payload_fixtures::random_dense_byte_vector;
@@ -30,7 +30,7 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
     open_simple_multi_dense_vector_storage_half,
 };
-use crate::vector_storage::{new_raw_scorer_for_test, RawScorer};
+use crate::vector_storage::{RawScorer, new_raw_scorer_for_test};
 
 #[derive(Debug, Clone, Copy)]
 enum TestElementType {

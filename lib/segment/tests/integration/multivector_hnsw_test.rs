@@ -1,33 +1,33 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use rand::prelude::StdRng;
 use rand::SeedableRng;
-use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use rand::prelude::StdRng;
+use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{
-    only_default_vector, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
-    VectorElementType, VectorRef, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef,
+    VectorElementType, VectorRef, only_default_vector,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::VectorIndex;
+use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, MultiVectorConfig, PayloadSchemaType,
     SeqNumberType,
 };
-use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use segment::vector_storage::VectorStorage;
+use segment::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use tempfile::Builder;
 
 #[test]

@@ -3,9 +3,9 @@ use std::path::Path;
 
 use common::types::PointOffsetType;
 
+use super::InvertedIndex;
 use super::inverted_index_mmap::InvertedIndexMmap;
 use super::inverted_index_ram::InvertedIndexRam;
-use super::InvertedIndex;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset};
 use crate::index::posting_list::{PostingList, PostingListIterator};

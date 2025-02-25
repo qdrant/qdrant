@@ -13,7 +13,7 @@ use io::file_operations::atomic_save_json;
 use serde::{Deserialize, Serialize};
 
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
-use crate::encoded_vectors::{validate_vector_parameters, EncodedVectors, VectorParameters};
+use crate::encoded_vectors::{EncodedVectors, VectorParameters, validate_vector_parameters};
 use crate::kmeans::kmeans;
 use crate::{ConditionalVariable, EncodingError};
 
@@ -338,72 +338,76 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse4.1")]
     unsafe fn score_point_sse(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
-        let len = centroids.len();
-        let centroids_count = self.metadata.centroids.len();
+        unsafe {
+            let centroids = self
+                .encoded_vectors
+                .get_vector_data(i as usize, self.metadata.vector_division.len());
+            let len = centroids.len();
+            let centroids_count = self.metadata.centroids.len();
 
-        let mut centroids = centroids.as_ptr();
-        let mut lut = query.lut.as_ptr();
-        let mut sum128: __m128 = _mm_setzero_ps();
-        for _ in 0..len / 4 {
-            let buffer = [
-                *lut.add(*centroids as usize),
-                *lut.add(centroids_count + *centroids.add(1) as usize),
-                *lut.add(2 * centroids_count + *centroids.add(2) as usize),
-                *lut.add(3 * centroids_count + *centroids.add(3) as usize),
-            ];
-            let c = _mm_loadu_ps(buffer.as_ptr());
-            sum128 = _mm_add_ps(sum128, c);
+            let mut centroids = centroids.as_ptr();
+            let mut lut = query.lut.as_ptr();
+            let mut sum128: __m128 = _mm_setzero_ps();
+            for _ in 0..len / 4 {
+                let buffer = [
+                    *lut.add(*centroids as usize),
+                    *lut.add(centroids_count + *centroids.add(1) as usize),
+                    *lut.add(2 * centroids_count + *centroids.add(2) as usize),
+                    *lut.add(3 * centroids_count + *centroids.add(3) as usize),
+                ];
+                let c = _mm_loadu_ps(buffer.as_ptr());
+                sum128 = _mm_add_ps(sum128, c);
 
-            centroids = centroids.add(4);
-            lut = lut.add(4 * centroids_count);
+                centroids = centroids.add(4);
+                lut = lut.add(4 * centroids_count);
+            }
+            let sum64: __m128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
+            let sum32: __m128 = _mm_add_ss(sum64, _mm_shuffle_ps(sum64, sum64, 0x55));
+            let mut sum = _mm_cvtss_f32(sum32);
+
+            for _ in 0..len % 4 {
+                sum += *lut.add(*centroids as usize);
+                centroids = centroids.add(1);
+                lut = lut.add(centroids_count);
+            }
+            sum
         }
-        let sum64: __m128 = _mm_add_ps(sum128, _mm_movehl_ps(sum128, sum128));
-        let sum32: __m128 = _mm_add_ss(sum64, _mm_shuffle_ps(sum64, sum64, 0x55));
-        let mut sum = _mm_cvtss_f32(sum32);
-
-        for _ in 0..len % 4 {
-            sum += *lut.add(*centroids as usize);
-            centroids = centroids.add(1);
-            lut = lut.add(centroids_count);
-        }
-        sum
     }
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     unsafe fn score_point_neon(&self, query: &EncodedQueryPQ, i: u32) -> f32 {
-        let centroids = self
-            .encoded_vectors
-            .get_vector_data(i as usize, self.metadata.vector_division.len());
-        let len = centroids.len();
-        let centroids_count = self.metadata.centroids.len();
+        unsafe {
+            let centroids = self
+                .encoded_vectors
+                .get_vector_data(i as usize, self.metadata.vector_division.len());
+            let len = centroids.len();
+            let centroids_count = self.metadata.centroids.len();
 
-        let mut centroids = centroids.as_ptr();
-        let mut lut = query.lut.as_ptr();
-        let mut sum128 = vdupq_n_f32(0.);
-        for _ in 0..len / 4 {
-            let buffer = [
-                *lut.add(*centroids as usize),
-                *lut.add(centroids_count + *centroids.add(1) as usize),
-                *lut.add(2 * centroids_count + *centroids.add(2) as usize),
-                *lut.add(3 * centroids_count + *centroids.add(3) as usize),
-            ];
-            let c = vld1q_f32(buffer.as_ptr());
-            sum128 = vaddq_f32(sum128, c);
+            let mut centroids = centroids.as_ptr();
+            let mut lut = query.lut.as_ptr();
+            let mut sum128 = vdupq_n_f32(0.);
+            for _ in 0..len / 4 {
+                let buffer = [
+                    *lut.add(*centroids as usize),
+                    *lut.add(centroids_count + *centroids.add(1) as usize),
+                    *lut.add(2 * centroids_count + *centroids.add(2) as usize),
+                    *lut.add(3 * centroids_count + *centroids.add(3) as usize),
+                ];
+                let c = vld1q_f32(buffer.as_ptr());
+                sum128 = vaddq_f32(sum128, c);
 
-            centroids = centroids.add(4);
-            lut = lut.add(4 * centroids_count);
+                centroids = centroids.add(4);
+                lut = lut.add(4 * centroids_count);
+            }
+            let mut sum = vaddvq_f32(sum128);
+
+            for _ in 0..len % 4 {
+                sum += *lut.add(*centroids as usize);
+                centroids = centroids.add(1);
+                lut = lut.add(centroids_count);
+            }
+            sum
         }
-        let mut sum = vaddvq_f32(sum128);
-
-        for _ in 0..len % 4 {
-            sum += *lut.add(*centroids as usize);
-            centroids = centroids.add(1);
-            lut = lut.add(centroids_count);
-        }
-        sum
     }
 
     fn score_point_simple(&self, query: &EncodedQueryPQ, i: u32) -> f32 {

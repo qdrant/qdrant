@@ -7,7 +7,7 @@ use collection::events::{CollectionDeletedEvent, IndexCreatedEvent};
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
-use collection::shards::{transfer, CollectionId};
+use collection::shards::{CollectionId, transfer};
 use tempfile::Builder;
 
 use super::TableOfContent;
@@ -310,7 +310,7 @@ impl TableOfContent {
                     None => {
                         return Err(StorageError::service_error(
                             "Can't handle transfer, this is a single node deployment",
-                        ))
+                        ));
                     }
                 };
 
@@ -452,7 +452,7 @@ impl TableOfContent {
                     None => {
                         return Err(StorageError::service_error(
                             "Can't handle transfer, this is a single node deployment",
-                        ))
+                        ));
                     }
                 };
 
@@ -559,7 +559,7 @@ impl TableOfContent {
                             transfer.shard_id,
                             ReplicaState::PartialSnapshot,
                             ReplicaState::Recovery,
-                        )))
+                        )));
                     }
                 }
 

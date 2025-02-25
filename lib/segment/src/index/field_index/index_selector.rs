@@ -4,9 +4,9 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
+use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndex;
 use super::bool_index::simple_bool_index::SimpleBoolIndex;
-use super::bool_index::BoolIndex;
 use super::geo_index::{GeoMapIndexBuilder, GeoMapIndexMmapBuilder};
 use super::histogram::Numericable;
 use super::map_index::{MapIndex, MapIndexBuilder, MapIndexKey, MapIndexMmapBuilder};
@@ -17,10 +17,10 @@ use super::numeric_index::{
 use super::{FieldIndexBuilder, ValueIndexer};
 use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
+use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
-use crate::index::field_index::FieldIndex;
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 

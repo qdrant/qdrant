@@ -17,13 +17,13 @@ use segment::types::{
 };
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
+use crate::operations::FieldIndexOperations;
 use crate::operations::payload_ops::PayloadOps;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
-use crate::operations::FieldIndexOperations;
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
@@ -479,7 +479,10 @@ pub(crate) fn sync_points(
 
     // 5. Upsert points which differ from the stored ones
     let num_replaced = upsert_points(segments, op_num, points_to_update, hw_counter)?;
-    debug_assert!(num_replaced <= num_updated, "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})");
+    debug_assert!(
+        num_replaced <= num_updated,
+        "number of replaced points cannot be greater than points to update ({num_replaced} <= {num_updated})",
+    );
 
     Ok((deleted, num_new, num_updated))
 }

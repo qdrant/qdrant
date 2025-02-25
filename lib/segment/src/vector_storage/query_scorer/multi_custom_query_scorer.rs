@@ -10,10 +10,10 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
 use crate::spaces::metric::Metric;
+use crate::vector_storage::MultiVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
-use crate::vector_storage::MultiVectorStorage;
 
 pub struct MultiCustomQueryScorer<
     'a,
@@ -32,14 +32,14 @@ pub struct MultiCustomQueryScorer<
 }
 
 impl<
-        'a,
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: MultiVectorStorage<TElement>,
-        TQuery: Query<TypedMultiDenseVector<TElement>>,
-        TInputQuery: Query<MultiDenseVectorInternal>
-            + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
-    > MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
+    'a,
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: MultiVectorStorage<TElement>,
+    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TInputQuery: Query<MultiDenseVectorInternal>
+        + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
+> MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
     pub fn new(
         query: TInputQuery,
@@ -76,12 +76,12 @@ impl<
 }
 
 impl<
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: MultiVectorStorage<TElement>,
-        TQuery: Query<TypedMultiDenseVector<TElement>>,
-        TInputQuery: Query<MultiDenseVectorInternal>,
-    > MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: MultiVectorStorage<TElement>,
+    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TInputQuery: Query<MultiDenseVectorInternal>,
+> MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
     #[inline]
     fn score_ref(&self, against: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
@@ -102,12 +102,12 @@ impl<
 }
 
 impl<
-        TElement: PrimitiveVectorElement,
-        TMetric: Metric<TElement>,
-        TVectorStorage: MultiVectorStorage<TElement>,
-        TQuery: Query<TypedMultiDenseVector<TElement>>,
-        TInputQuery: Query<MultiDenseVectorInternal>,
-    > QueryScorer<TypedMultiDenseVector<TElement>>
+    TElement: PrimitiveVectorElement,
+    TMetric: Metric<TElement>,
+    TVectorStorage: MultiVectorStorage<TElement>,
+    TQuery: Query<TypedMultiDenseVector<TElement>>,
+    TInputQuery: Query<MultiDenseVectorInternal>,
+> QueryScorer<TypedMultiDenseVector<TElement>>
     for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
 {
     #[inline]

@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::{self};
+use std::fs;
 use std::path::Path;
 use std::thread::{self, JoinHandle};
 
@@ -11,11 +11,11 @@ use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;
 
 use super::{
-    Segment, DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH,
-    SNAPSHOT_PATH,
+    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
+    Segment,
 };
 use crate::common::operation_error::{
-    get_service_error, OperationError, OperationResult, SegmentFailedState,
+    OperationError, OperationResult, SegmentFailedState, get_service_error,
 };
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_vector_name};
@@ -531,7 +531,8 @@ impl Segment {
         for (key, schema) in schema_config {
             match schema_applied.get(key) {
                 Some(existing_schema) if existing_schema == schema => continue,
-                Some(existing_schema) => log::warn!("Segment has incorrect payload index for{key}, recreating it now (current: {:?}, configured: {:?})",
+                Some(existing_schema) => log::warn!(
+                    "Segment has incorrect payload index for{key}, recreating it now (current: {:?}, configured: {:?})",
                     existing_schema.name(),
                     schema.name(),
                 ),
@@ -610,12 +611,8 @@ impl Segment {
                     // those points will be deleted by the next deduplication process
                     if point_version != Some(0) {
                         log::error!(
-                        "Vector storage '{}' is missing point {:?} point_offset: {} version: {:?}",
-                        vector_name,
-                        point_id,
-                        internal_id,
-                        point_version
-                    );
+                            "Vector storage '{vector_name}' is missing point {point_id:?} point_offset: {internal_id} version: {point_version:?}",
+                        );
                         has_internal_ids_without_vector = true;
                     }
                 }
@@ -687,7 +684,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         _ => {
             return Err(OperationError::service_error(
                 "Invalid snapshot path, expected either a directory or a .tar file",
-            ))
+            ));
         }
     };
 

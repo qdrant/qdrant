@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
@@ -14,12 +14,13 @@ use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
-use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
+use crate::index::VectorIndexEnum;
 use crate::index::hnsw_index::gpu::gpu_devices_manager::LockedGpuDevice;
 use crate::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use crate::index::plain_vector_index::PlainVectorIndex;
@@ -28,12 +29,11 @@ use crate::index::sparse_index::sparse_vector_index::{
     self, SparseVectorIndex, SparseVectorIndexOpenArgs,
 };
 use crate::index::struct_payload_index::StructPayloadIndex;
-use crate::index::VectorIndexEnum;
 use crate::payload_storage::mmap_payload_storage::MmapPayloadStorage;
 use crate::payload_storage::on_disk_payload_storage::OnDiskPayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::simple_payload_storage::SimplePayloadStorage;
-use crate::segment::{Segment, SegmentVersion, VectorData, SEGMENT_STATE_FILE};
+use crate::segment::{SEGMENT_STATE_FILE, Segment, SegmentVersion, VectorData};
 use crate::types::{
     Distance, Indexes, PayloadStorageType, SegmentConfig, SegmentState, SegmentType, SeqNumberType,
     SparseVectorStorageType, VectorDataConfig, VectorName, VectorStorageDatatype,

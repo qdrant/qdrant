@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use actix_web::{delete, get, post, put, web, HttpResponse};
+use actix_web::{HttpResponse, delete, get, post, put, web};
 use actix_web_validator::Query;
 use collection::operations::verification::new_unchecked_verification_pass;
 use schemars::JsonSchema;

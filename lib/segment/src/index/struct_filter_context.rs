@@ -1,6 +1,6 @@
 use common::types::PointOffsetType;
 
-use crate::index::query_optimization::optimized_filter::{check_optimized_filter, OptimizedFilter};
+use crate::index::query_optimization::optimized_filter::{OptimizedFilter, check_optimized_filter};
 use crate::payload_storage::FilterContext;
 
 pub struct StructFilterContext<'a> {

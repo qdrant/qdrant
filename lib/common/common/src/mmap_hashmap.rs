@@ -11,9 +11,9 @@ use std::str;
 use memmap2::Mmap;
 use ph::fmph::Function;
 #[cfg(any(test, feature = "testing"))]
-use rand::rngs::StdRng;
-#[cfg(any(test, feature = "testing"))]
 use rand::Rng as _;
+#[cfg(any(test, feature = "testing"))]
+use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::zeros::WriteZerosExt as _;
@@ -492,14 +492,14 @@ mod tests {
     }
 
     fn test_mmap_hash_impl<K: Key + ?Sized, K1: Ord + Hash>(
-        gen: impl Clone + Fn(&mut StdRng) -> K1,
+        generator: impl Clone + Fn(&mut StdRng) -> K1,
         as_ref: impl Fn(&K1) -> &K,
         from_ref: impl Fn(&K) -> K1,
     ) {
         let mut rng = StdRng::seed_from_u64(42);
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
-        let map = gen_map(&mut rng, gen.clone(), 1000);
+        let map = gen_map(&mut rng, generator.clone(), 1000);
         MmapHashMap::<K, u32>::create(
             &tmpdir.path().join("map"),
             map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
@@ -509,7 +509,7 @@ mod tests {
 
         // Non-existing keys should return None
         for _ in 0..1000 {
-            let key = repeat_until(|| gen(&mut rng), |key| !map.contains_key(key));
+            let key = repeat_until(|| generator(&mut rng), |key| !map.contains_key(key));
             assert!(mmap.get(as_ref(&key)).unwrap().is_none());
         }
 

@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 #[cfg(target_os = "linux")]
 use thiserror::Error;
 #[cfg(target_os = "linux")]
-use thread_priority::{set_current_thread_priority, ThreadPriority, ThreadPriorityValue};
+use thread_priority::{ThreadPriority, ThreadPriorityValue, set_current_thread_priority};
 
 use crate::defaults::default_cpu_budget_unallocated;
 

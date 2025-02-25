@@ -11,8 +11,8 @@ use super::mmap_inverted_index::MmapInvertedIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::{FieldIndexBuilderTrait, ValueIndexer};
 

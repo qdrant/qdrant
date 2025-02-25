@@ -1,6 +1,6 @@
 use collection::collection::Collection;
 use collection::lookup::types::PseudoId;
-use collection::lookup::{lookup_ids, WithLookup};
+use collection::lookup::{WithLookup, lookup_ids};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointInsertOperationsInternal, PointOperations,

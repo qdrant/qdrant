@@ -13,8 +13,8 @@ use quantization::{
 use serde::{Deserialize, Serialize};
 
 use super::quantized_multivector_storage::{
-    create_offsets_file_from_iter, MultivectorOffset, MultivectorOffsetsStorage,
-    MultivectorOffsetsStorageMmap, QuantizedMultivectorStorage,
+    MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageMmap,
+    QuantizedMultivectorStorage, create_offsets_file_from_iter,
 };
 use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::operation_error::{OperationError, OperationResult};

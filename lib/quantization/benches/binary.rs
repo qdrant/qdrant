@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_binary::EncodedVectorsBin;
@@ -9,11 +9,7 @@ use rand::{Rng, SeedableRng};
 
 fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
     let n = f32::signum(rng.random_range(-1.0..1.0));
-    if n == 0.0 {
-        1.0
-    } else {
-        n
-    }
+    if n == 0.0 { 1.0 } else { n }
 }
 
 fn generate_vector(dim: usize, rng: &mut rand::rngs::StdRng) -> Vec<f32> {

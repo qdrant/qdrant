@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
@@ -8,7 +8,7 @@ use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
 use rstest::rstest;
 use tempfile::Builder;
 
-use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::{
     MultiDenseVectorInternal, QueryVector, TypedMultiDenseVectorRef, VectorElementType, VectorRef,
 };
@@ -19,7 +19,7 @@ use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
 use crate::vector_storage::{
-    new_raw_scorer_for_test, MultiVectorStorage, VectorStorage, VectorStorageEnum,
+    MultiVectorStorage, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
 };
 
 #[derive(Clone, Copy)]

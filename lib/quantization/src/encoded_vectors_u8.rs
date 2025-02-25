@@ -5,12 +5,12 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use io::file_operations::atomic_save_json;
 use serde::{Deserialize, Serialize};
 
+use crate::EncodingError;
 use crate::encoded_storage::{EncodedStorage, EncodedStorageBuilder};
 use crate::encoded_vectors::{
-    validate_vector_parameters, DistanceType, EncodedVectors, VectorParameters,
+    DistanceType, EncodedVectors, VectorParameters, validate_vector_parameters,
 };
 use crate::quantile::{find_min_max_from_iter, find_quantile_interval};
-use crate::EncodingError;
 
 pub const ALIGNMENT: usize = 16;
 
@@ -512,7 +512,7 @@ fn impl_score_l1(q_ptr: *const u8, v_ptr: *const u8, actual_dim: usize) -> i32 {
 }
 
 #[cfg(target_arch = "x86_64")]
-extern "C" {
+unsafe extern "C" {
     fn impl_score_dot_avx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
     fn impl_score_l1_avx(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
 
@@ -521,7 +521,7 @@ extern "C" {
 }
 
 #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
-extern "C" {
+unsafe extern "C" {
     fn impl_score_dot_neon(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
     fn impl_score_l1_neon(query_ptr: *const u8, vector_ptr: *const u8, dim: u32) -> f32;
 }

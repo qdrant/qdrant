@@ -10,7 +10,7 @@ use crate::common::operation_error::OperationResult;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{
-    Segment, DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH,
+    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, Segment,
 };
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;

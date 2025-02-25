@@ -796,18 +796,22 @@ mod tests {
         c_wal.append_from(&b_wal, delta_from).await.unwrap();
 
         // WAL on node B and C will match, A is in different order
-        assert!(!a_wal
-            .wal
-            .lock()
-            .read(0)
-            .zip(c_wal.wal.lock().read(0))
-            .all(|(a, c)| a == c));
-        assert!(b_wal
-            .wal
-            .lock()
-            .read(0)
-            .zip(c_wal.wal.lock().read(0))
-            .all(|(b, c)| b == c));
+        assert!(
+            !a_wal
+                .wal
+                .lock()
+                .read(0)
+                .zip(c_wal.wal.lock().read(0))
+                .all(|(a, c)| a == c),
+        );
+        assert!(
+            b_wal
+                .wal
+                .lock()
+                .read(0)
+                .zip(c_wal.wal.lock().read(0))
+                .all(|(b, c)| b == c),
+        );
 
         // All WALs should have 3 operations
         assert_eq!(a_wal.wal.lock().read(0).count(), 3);
@@ -1361,7 +1365,11 @@ mod tests {
                         .expect("failed to resolve WAL delta on alive node");
                     from_deltas.insert(delta_from);
                 }
-                assert_eq!(from_deltas.len(), 1, "found different delta starting points in different WALs, while all should be the same");
+                assert_eq!(
+                    from_deltas.len(),
+                    1,
+                    "found different delta starting points in different WALs, while all should be the same",
+                );
                 let delta_from = from_deltas.into_iter().next().unwrap();
                 assert_eq!(
                     delta_from.is_some(),
@@ -1393,10 +1401,7 @@ mod tests {
                 });
 
             // Release some kept clocks
-            kept_clocks.retain(|(mut keep_for, _)| {
-                keep_for -= 1;
-                keep_for > 0
-            });
+            kept_clocks.retain(|(keep_for, _)| *keep_for > 1);
         }
 
         for (wal, _) in wals {
@@ -1684,7 +1689,11 @@ mod tests {
             if !must_see_ticks.is_empty() {
                 return Err(format!(
                     "following clock tags did not cover ticks [{}] in order (peer_id: {}, clock_id: {}, max_tick: {highest})",
-                    must_see_ticks.into_iter().map(|tick| tick.to_string()).collect::<Vec<_>>().join(", "),
+                    must_see_ticks
+                        .into_iter()
+                        .map(|tick| tick.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
                     clock_tag.peer_id,
                     clock_tag.clock_id,
                 ));

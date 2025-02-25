@@ -20,18 +20,18 @@ use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use parking_lot::RwLock;
 use rocksdb::DB;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use uuid::Uuid;
 
 use self::immutable_numeric_index::ImmutableNumericIndex;
+use super::FieldIndexBuilderTrait;
 use super::histogram::Point;
 use super::mmap_point_to_values::MmapValue;
 use super::utils::check_boundaries;
-use super::FieldIndexBuilderTrait;
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::histogram::{Histogram, Numericable};
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{

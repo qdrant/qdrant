@@ -5,15 +5,15 @@ use std::mem::{size_of, take};
 use std::path::Path;
 
 use common::bitpacking::packed_bits;
-use common::bitpacking_links::{pack_links, MIN_BITS_PER_VALUE};
+use common::bitpacking_links::{MIN_BITS_PER_VALUE, pack_links};
 use common::bitpacking_ordered;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use itertools::Either;
-use zerocopy::little_endian::U64 as LittleU64;
 use zerocopy::IntoBytes as AsBytes;
+use zerocopy::little_endian::U64 as LittleU64;
 
-use super::header::{HeaderCompressed, HeaderPlain, HEADER_VERSION_COMPRESSED};
+use super::header::{HEADER_VERSION_COMPRESSED, HeaderCompressed, HeaderPlain};
 use super::{GraphLinks, GraphLinksEnum, GraphLinksFormat};
 use crate::common::operation_error::OperationResult;
 

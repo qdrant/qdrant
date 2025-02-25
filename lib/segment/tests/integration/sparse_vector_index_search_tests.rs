@@ -7,8 +7,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, TelemetryDetail};
 use io::storage_version::VERSION_FILE;
 use itertools::Itertools;
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use segment::common::operation_error::OperationResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
@@ -26,19 +26,19 @@ use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::PayloadFieldSchema::FieldType;
 use segment::types::PayloadSchemaType::Keyword;
 use segment::types::{
-    Condition, FieldCondition, Filter, ScoredPoint, SegmentConfig, SeqNumberType,
-    SparseVectorDataConfig, SparseVectorStorageType, VectorName, VectorStorageDatatype,
-    DEFAULT_SPARSE_FULL_SCAN_THRESHOLD,
+    Condition, DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, FieldCondition, Filter, ScoredPoint,
+    SegmentConfig, SeqNumberType, SparseVectorDataConfig, SparseVectorStorageType, VectorName,
+    VectorStorageDatatype,
 };
 use segment::vector_storage::VectorStorage;
 use segment::{fixture_for_all_indices, payload_json};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::sparse_vector_fixture::{random_full_sparse_vector, random_sparse_vector};
 use sparse::common::types::DimId;
+use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::posting_list_common::PostingListIter as _;
 use tempfile::Builder;
 
@@ -166,15 +166,19 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
         {
             let posting_list = sparse_vector_index.inverted_index().get(dim_id).unwrap();
             // assert posting list sorted by record id
-            assert!(posting_list
-                .clone()
-                .into_std_iter()
-                .tuple_windows()
-                .all(|(w0, w1)| w0.record_id < w1.record_id));
+            assert!(
+                posting_list
+                    .clone()
+                    .into_std_iter()
+                    .tuple_windows()
+                    .all(|(w0, w1)| w0.record_id < w1.record_id),
+            );
             // assert posted list contains record id
-            assert!(posting_list
-                .into_std_iter()
-                .any(|e| e.record_id == id && e.weight == *dim_value));
+            assert!(
+                posting_list
+                    .into_std_iter()
+                    .any(|e| e.record_id == id && e.weight == *dim_value),
+            );
         }
         // check the vector can be found via search using large top
         let top = sparse_vector_index.max_result_count(vector);
@@ -322,10 +326,12 @@ fn sparse_vector_index_ram_deleted_points_search() {
         .drop(deleted_external)
         .unwrap();
 
-    assert!(sparse_vector_index
-        .id_tracker()
-        .borrow()
-        .is_deleted_point(deleted_idx));
+    assert!(
+        sparse_vector_index
+            .id_tracker()
+            .borrow()
+            .is_deleted_point(deleted_idx),
+    );
     assert_eq!(
         sparse_vector_index
             .id_tracker()
@@ -339,9 +345,11 @@ fn sparse_vector_index_ram_deleted_points_search() {
         .search(&[&query_vector], None, top, None, &Default::default())
         .unwrap();
     assert_ne!(before_deletion_results, after_deletion_results);
-    assert!(after_deletion_results
-        .iter()
-        .all(|x| x.iter().all(|y| y.idx != deleted_idx)));
+    assert!(
+        after_deletion_results
+            .iter()
+            .all(|x| x.iter().all(|y| y.idx != deleted_idx)),
+    );
 }
 
 #[test]
@@ -774,10 +782,12 @@ fn sparse_vector_test_large_index() {
         .borrow();
     match &*borrowed_vector_index {
         VectorIndexEnum::SparseRam(sparse_vector_index) => {
-            assert!(sparse_vector_index
-                .indices_tracker()
-                .remap_index(DimId::MAX)
-                .is_some());
+            assert!(
+                sparse_vector_index
+                    .indices_tracker()
+                    .remap_index(DimId::MAX)
+                    .is_some(),
+            );
             assert_eq!(sparse_vector_index.inverted_index().max_index().unwrap(), 0);
         }
         _ => panic!("unexpected vector index type"),

@@ -101,7 +101,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_prefix_to_type_unbounded`]
     pub unsafe fn from(mmap_with_type: MmapMut) -> Self {
-        Self::try_from(mmap_with_type).unwrap()
+        unsafe { Self::try_from(mmap_with_type).unwrap() }
     }
 
     /// Transform a mmap into a typed mmap of type `T`.
@@ -118,7 +118,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_prefix_to_type_unbounded`]
     pub unsafe fn try_from(mut mmap_with_type: MmapMut) -> Result<Self> {
-        let r#type = mmap_prefix_to_type_unbounded(&mut mmap_with_type)?;
+        let r#type = unsafe { mmap_prefix_to_type_unbounded(&mut mmap_with_type)? };
         let mmap = Arc::new(mmap_with_type);
         Ok(Self { r#type, mmap })
     }
@@ -147,7 +147,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn try_slice_from(mut mmap_with_slice: MmapMut) -> Result<Self> {
-        let r#type = mmap_to_slice_unbounded(&mut mmap_with_slice, 0)?;
+        let r#type = unsafe { mmap_to_slice_unbounded(&mut mmap_with_slice, 0)? };
         let mmap = Arc::new(mmap_with_slice);
         Ok(Self { r#type, mmap })
     }
@@ -180,7 +180,7 @@ where
     /// See [`memmap2::UncheckedAdvice`] doc.
     #[cfg(unix)]
     pub unsafe fn unchecked_advise(&self, advice: memmap2::UncheckedAdvice) -> std::io::Result<()> {
-        self.mmap.unchecked_advise(advice)
+        unsafe { self.mmap.unchecked_advise(advice) }
     }
 }
 
@@ -246,7 +246,7 @@ impl<T> MmapSlice<T> {
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn from(mmap_with_slice: MmapMut) -> Self {
-        Self::try_from(mmap_with_slice).unwrap()
+        unsafe { Self::try_from(mmap_with_slice).unwrap() }
     }
 
     /// Transform a mmap into a typed slice mmap of type `&[T]`.
@@ -265,7 +265,8 @@ impl<T> MmapSlice<T> {
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn try_from(mmap_with_slice: MmapMut) -> Result<Self> {
-        MmapType::try_slice_from(mmap_with_slice).map(|mmap| Self { mmap })
+        let r#type = unsafe { MmapType::try_slice_from(mmap_with_slice) };
+        r#type.map(|mmap| Self { mmap })
     }
 
     /// Get flusher to explicitly flush mmap at a later time
@@ -448,7 +449,7 @@ where
     }
 
     // Obtain unbounded bytes slice into mmap
-    let bytes: &'unbnd mut [u8] = {
+    let bytes: &'unbnd mut [u8] = unsafe {
         let slice = mmap.deref_mut();
         slice::from_raw_parts_mut(slice.as_mut_ptr(), size_t)
     };
@@ -518,7 +519,7 @@ where
     }
 
     // Obtain unbounded bytes slice into mmap
-    let bytes: &'unbnd mut [u8] = {
+    let bytes: &'unbnd mut [u8] = unsafe {
         let slice = mmap.deref_mut();
         &mut slice::from_raw_parts_mut(slice.as_mut_ptr(), slice.len())[header_size..]
     };
@@ -528,10 +529,12 @@ where
     debug_assert_eq!(bytes.len() + header_size, mmap.len());
 
     // Transmute slice types
-    Ok(slice::from_raw_parts_mut(
-        bytes.as_mut_ptr().cast::<T>(),
-        bytes.len().checked_div(size_t).unwrap_or(0),
-    ))
+    unsafe {
+        Ok(slice::from_raw_parts_mut(
+            bytes.as_mut_ptr().cast::<T>(),
+            bytes.len().checked_div(size_t).unwrap_or(0),
+        ))
+    }
 }
 
 /// Assert slice `&[S]` is correctly aligned for type `T`.

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use actix_web::{get, post, web, Responder};
+use actix_web::{Responder, get, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::consistency_params::ReadConsistency;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -22,8 +22,8 @@ use storage::rbac::Access;
 use tokio::time::Instant;
 use validator::Validate;
 
-use super::read_params::ReadParams;
 use super::CollectionPath;
+use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,

@@ -20,11 +20,11 @@ use uuid::Uuid;
 
 use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
+use super::FieldIndexBuilderTrait;
 use super::facet_index::FacetIndex;
 use super::mmap_point_to_values::MmapValue;
-use super::FieldIndexBuilderTrait;
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::index::field_index::stat_tools::number_of_selected_points;
 use crate::index::field_index::{
@@ -1181,9 +1181,11 @@ mod tests {
         let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is non zero
-        assert!(!index
-            .except_cardinality(vec![].into_iter())
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)));
+        assert!(
+            !index
+                .except_cardinality(vec![].into_iter())
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
     }
 
     #[rstest]
@@ -1220,9 +1222,11 @@ mod tests {
         let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is non zero
-        assert!(!index
-            .except_cardinality(vec![].into_iter())
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)));
+        assert!(
+            !index
+                .except_cardinality(vec![].into_iter())
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
     }
 
     #[rstest]
@@ -1237,8 +1241,10 @@ mod tests {
         let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
         // Ensure cardinality is zero
-        assert!(index
-            .except_cardinality(vec![].into_iter())
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)));
+        assert!(
+            index
+                .except_cardinality(vec![].into_iter())
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
     }
 }

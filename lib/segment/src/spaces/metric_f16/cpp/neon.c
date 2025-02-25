@@ -18,7 +18,7 @@ float32_t dotProduct_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB, ui
         sum2 = vfmaq_f16(sum2, vld1q_f16(pSrcA+8), vld1q_f16(pSrcB+8));
         sum3 = vfmaq_f16(sum3, vld1q_f16(pSrcA+16), vld1q_f16(pSrcB+16));
         sum4 = vfmaq_f16(sum4, vld1q_f16(pSrcA+24), vld1q_f16(pSrcB+24));
-        
+
         pSrcA += 32;
         pSrcB += 32;
     }
@@ -67,7 +67,7 @@ float32_t euclideanDist_half_4x4(const float16_t* pSrcA, const float16_t* pSrcB,
 
         sub4 = vsubq_f16(vld1q_f16(pSrcA+24), vld1q_f16(pSrcB+24));
         sum4 = vfmaq_f16(sum4, sub4, sub4);
-        
+
         pSrcA += 32;
         pSrcB += 32;
     }

@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::config::InferenceConfig;
 use crate::common::inference::InferenceToken;
+use crate::common::inference::config::InferenceConfig;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
 const IMAGE_DATA_TYPE: &str = "image";
@@ -141,7 +141,7 @@ impl InferenceService {
 
         if config.address.is_none() || config.address.as_ref().unwrap().is_empty() {
             return Err(StorageError::service_error(
-                "Cannot initialize InferenceService: address is required but not provided or empty in config"
+                "Cannot initialize InferenceService: address is required but not provided or empty in config",
             ));
         }
 
@@ -158,7 +158,7 @@ impl InferenceService {
             .config
             .address
             .as_ref()
-            .map_or(true, |url| url.is_empty())
+            .is_none_or(|url| url.is_empty())
         {
             return Err(StorageError::service_error(
                 "InferenceService configuration error: address is missing or empty",
@@ -227,7 +227,7 @@ impl InferenceService {
 
                 if inference_response.embeddings.is_empty() {
                     Err(StorageError::service_error(
-                        "Inference response contained no embeddings - this may indicate an issue with the model or input"
+                        "Inference response contained no embeddings - this may indicate an issue with the model or input",
                     ))
                 } else {
                     Ok(inference_response.embeddings)

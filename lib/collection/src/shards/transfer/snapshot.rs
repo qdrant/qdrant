@@ -8,14 +8,14 @@ use tempfile::TempPath;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::{ShardTransfer, ShardTransferConsensus};
-use crate::operations::snapshot_ops::{get_checksum_path, SnapshotPriority};
+use crate::operations::snapshot_ops::{SnapshotPriority, get_checksum_path};
 use crate::operations::types::{CollectionError, CollectionResult};
+use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
-use crate::shards::CollectionId;
 
 /// Orchestrate shard snapshot transfer
 ///
@@ -259,7 +259,9 @@ pub(super) async fn transfer_snapshot(
     }
 
     // Set shard state to Partial
-    log::trace!("Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus");
+    log::trace!(
+        "Shard {shard_id} snapshot recovered on {remote_peer_id} for snapshot transfer, switching into next stage through consensus",
+    );
     consensus
         .recovered_switch_to_partial_confirm_remote(&transfer_config, collection_id, &remote_shard)
         .await

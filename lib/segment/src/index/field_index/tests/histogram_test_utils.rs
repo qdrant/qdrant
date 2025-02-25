@@ -3,8 +3,8 @@ use std::fmt::Display;
 use std::io;
 use std::io::Write;
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 

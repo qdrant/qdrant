@@ -12,13 +12,13 @@ use super::stream_records::transfer_stream_records;
 use super::transfer_tasks_pool::TransferTaskProgress;
 use super::wal_delta::transfer_wal_delta;
 use super::{ShardTransfer, ShardTransferConsensus, ShardTransferMethod};
-use crate::common::stoppable_task_async::{spawn_async_cancellable, CancellableAsyncTaskHandle};
+use crate::common::stoppable_task_async::{CancellableAsyncTaskHandle, spawn_async_cancellable};
 use crate::operations::types::CollectionResult;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder};
-use crate::shards::{await_consensus_sync, CollectionId};
+use crate::shards::{CollectionId, await_consensus_sync};
 
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 pub(crate) const MAX_RETRY_COUNT: usize = 3;
@@ -115,7 +115,9 @@ pub async fn transfer_shard(
             // Handle failure, fall back to default transfer method or propagate error
             if let Err(err) = result {
                 let fallback_shard_transfer_method = ShardTransferMethod::default();
-                log::warn!("Failed to do shard diff transfer, falling back to default method {fallback_shard_transfer_method:?}: {err}");
+                log::warn!(
+                    "Failed to do shard diff transfer, falling back to default method {fallback_shard_transfer_method:?}: {err}",
+                );
                 let did_fall_back = transfer_shard_fallback_default(
                     transfer_config,
                     consensus,
@@ -149,7 +151,9 @@ pub async fn transfer_shard_fallback_default(
     // Do not attempt to fall back to the same method
     let old_method = transfer_config.method;
     if old_method.is_some_and(|method| method == fallback_method) {
-        log::warn!("Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}");
+        log::warn!(
+            "Failed shard transfer fallback, because it would use the same transfer method: {fallback_method:?}",
+        );
         return Ok(false);
     }
 

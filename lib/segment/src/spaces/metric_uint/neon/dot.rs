@@ -7,36 +7,38 @@ pub unsafe fn neon_dot_similarity_bytes(v1: &[u8], v2: &[u8]) -> f32 {
     let mut ptr1: *const u8 = v1.as_ptr();
     let mut ptr2: *const u8 = v2.as_ptr();
 
-    let mut mul1 = vdupq_n_u32(0);
-    let mut mul2 = vdupq_n_u32(0);
-    let len = v1.len();
-    for _ in 0..len / 16 {
-        let p1 = vld1q_u8(ptr1);
-        let p2 = vld1q_u8(ptr2);
-        ptr1 = ptr1.add(16);
-        ptr2 = ptr2.add(16);
+    unsafe {
+        let mut mul1 = vdupq_n_u32(0);
+        let mut mul2 = vdupq_n_u32(0);
+        let len = v1.len();
+        for _ in 0..len / 16 {
+            let p1 = vld1q_u8(ptr1);
+            let p2 = vld1q_u8(ptr2);
+            ptr1 = ptr1.add(16);
+            ptr2 = ptr2.add(16);
 
-        let mul_low = vmull_u8(vget_low_u8(p1), vget_low_u8(p2));
-        let mul_high = vmull_u8(vget_high_u8(p1), vget_high_u8(p2));
-        mul1 = vpadalq_u16(mul1, mul_low);
-        mul2 = vpadalq_u16(mul2, mul_high);
-    }
-    let mut score = vaddvq_u32(vaddq_u32(mul1, mul2)) as f32;
-
-    let remainder = len % 16;
-    if remainder != 0 {
-        let mut remainder_score = 0;
-        for _ in 0..remainder {
-            let v1 = *ptr1;
-            let v2 = *ptr2;
-            ptr1 = ptr1.add(1);
-            ptr2 = ptr2.add(1);
-            remainder_score += i32::from(v1) * i32::from(v2);
+            let mul_low = vmull_u8(vget_low_u8(p1), vget_low_u8(p2));
+            let mul_high = vmull_u8(vget_high_u8(p1), vget_high_u8(p2));
+            mul1 = vpadalq_u16(mul1, mul_low);
+            mul2 = vpadalq_u16(mul2, mul_high);
         }
-        score += remainder_score as f32;
-    }
+        let mut score = vaddvq_u32(vaddq_u32(mul1, mul2)) as f32;
 
-    score
+        let remainder = len % 16;
+        if remainder != 0 {
+            let mut remainder_score = 0;
+            for _ in 0..remainder {
+                let v1 = *ptr1;
+                let v2 = *ptr2;
+                ptr1 = ptr1.add(1);
+                ptr2 = ptr2.add(1);
+                remainder_score += i32::from(v1) * i32::from(v2);
+            }
+            score += remainder_score as f32;
+        }
+
+        score
+    }
 }
 
 #[cfg(test)]
