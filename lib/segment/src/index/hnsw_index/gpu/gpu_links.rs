@@ -165,6 +165,10 @@ impl GpuLinks {
         Ok(())
     }
 
+    pub fn links_buffer(&self) -> Arc<gpu::Buffer> {
+        self.links_buffer.clone()
+    }
+
     pub fn upload_links(
         &mut self,
         level: usize,
