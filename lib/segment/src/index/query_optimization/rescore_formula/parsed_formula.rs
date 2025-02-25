@@ -66,6 +66,16 @@ pub enum VariableId {
     Condition(ConditionId),
 }
 
+impl VariableId {
+    pub fn unparse(self) -> String {
+        match self {
+            VariableId::Score(index) => format!("${SCORE_KEYWORD}[{index}]"),
+            VariableId::Payload(path) => path.to_string(),
+            VariableId::Condition(_) => unreachable!("there are no defaults for conditions"),
+        }
+    }
+}
+
 impl ParsedExpression {
     /// Default value for division by zero
     const fn by_zero_default() -> ScoreType {
