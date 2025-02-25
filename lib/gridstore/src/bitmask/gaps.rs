@@ -261,7 +261,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::config::{StorageOptions, DEFAULT_REGION_SIZE_BLOCKS};
+    use crate::config::{DEFAULT_REGION_SIZE_BLOCKS, StorageOptions};
 
     prop_compose! {
         fn arbitrary_region_gaps(region_size_blocks: u16)(
@@ -395,9 +395,11 @@ mod tests {
         assert!(bitmask_gaps.mmap_slice.len() >= 3);
         bitmask_gaps.mmap_slice[0..3].clone_from_slice(&gaps[..]);
 
-        assert!(bitmask_gaps
-            .find_fitting_gap(large_value_blocks as u32)
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(large_value_blocks as u32)
+                .is_some(),
+        );
     }
 
     #[test]
@@ -419,22 +421,30 @@ mod tests {
         // Find space for blocks covering up to 2 regions
         assert!(bitmask_gaps.find_fitting_gap(1).is_some());
         assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+                .is_some(),
+        );
 
         // Find space for blocks covering 3 regions
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
-            .is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS * 3)
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+                .is_some(),
+        );
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS * 3)
+                .is_some(),
+        );
 
         // No space for blocks covering 4 or more regions
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS * 4)
-            .is_none());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS * 4)
+                .is_none(),
+        );
 
         // 3 regions with first 0.5 regions occupied and last 2.5 regions available
         let gaps = vec![
@@ -451,22 +461,30 @@ mod tests {
 
         // Find space for blocks covering up to 2 regions
         assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS * 2)
+                .is_some(),
+        );
 
         // Find space for blocks covering more than 2 up to 2.5 regions
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
-            .is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2))
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS * 2 + 1)
+                .is_some(),
+        );
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2))
+                .is_some(),
+        );
 
         // No space for blocks covering more than 2.5 regions
-        assert!(bitmask_gaps
-            .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2) + 1)
-            .is_none());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap((REGION_SIZE_BLOCKS * 2) + (REGION_SIZE_BLOCKS / 2) + 1)
+                .is_none(),
+        );
 
         // 3 regions with first 1.5 regions occupied and last 1.5 regions available
         let gaps = vec![
@@ -486,17 +504,23 @@ mod tests {
 
         // Find space for blocks covering more than 1 to 1.5 regions
         assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
-            .is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2))
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+                .is_some(),
+        );
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS + (REGION_SIZE_BLOCKS / 2))
+                .is_some(),
+        );
 
         // No space for blocks covering more than 1.5 regions
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
-            .is_none());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+                .is_none(),
+        );
     }
 
     #[test]
@@ -531,17 +555,23 @@ mod tests {
 
         // Find space for blocks covering up to 1.5 region
         assert!(bitmask_gaps.find_fitting_gap(REGION_SIZE_BLOCKS).is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
-            .is_some());
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
-            .is_some());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS + 1)
+                .is_some(),
+        );
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2)
+                .is_some(),
+        );
 
         // No space for blocks covering more than 1.5 regions
-        assert!(bitmask_gaps
-            .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
-            .is_none());
+        assert!(
+            bitmask_gaps
+                .find_fitting_gap(REGION_SIZE_BLOCKS + REGION_SIZE_BLOCKS / 2 + 1)
+                .is_none(),
+        );
     }
 
     #[test]

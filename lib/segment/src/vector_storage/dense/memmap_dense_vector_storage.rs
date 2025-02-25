@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::fs::{create_dir_all, File, OpenOptions};
+use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{self, Write};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -9,8 +9,8 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};
@@ -280,7 +280,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::data_types::vectors::{DenseVector, QueryVector};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::id_tracker_base::IdTracker;

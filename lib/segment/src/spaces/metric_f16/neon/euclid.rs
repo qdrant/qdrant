@@ -6,7 +6,7 @@ use half::f16;
 use crate::data_types::vectors::VectorElementTypeHalf;
 
 #[cfg(target_feature = "neon")]
-extern "C" {
+unsafe extern "C" {
     fn euclideanDist_half_4x4(v1: *const f16, v2: *const f16, n: i32) -> f32;
 }
 
@@ -17,7 +17,7 @@ pub unsafe fn neon_euclid_similarity_half(
     v2: &[VectorElementTypeHalf],
 ) -> ScoreType {
     let n = v1.len();
-    -euclideanDist_half_4x4(v1.as_ptr(), v2.as_ptr(), n.try_into().unwrap())
+    unsafe { -euclideanDist_half_4x4(v1.as_ptr(), v2.as_ptr(), n.try_into().unwrap()) }
 }
 
 #[cfg(test)]

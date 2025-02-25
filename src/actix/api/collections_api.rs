@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
-use actix_web::{delete, get, patch, post, put, web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::verification::new_unchecked_verification_pass;

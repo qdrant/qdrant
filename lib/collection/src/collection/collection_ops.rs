@@ -2,7 +2,7 @@ use std::cmp;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::{future, TryStreamExt as _};
+use futures::{TryStreamExt as _, future};
 use lazy_static::lazy_static;
 use segment::types::{QuantizationConfig, StrictModeConfig};
 use semver::Version;
@@ -224,7 +224,9 @@ impl Collection {
             // `is_last_active_replica` counts both `Active` and `ReshardingScaleDown` replicas!
             if peers.len() == 1 || replica_set.is_last_active_replica(peer_id) {
                 return Err(CollectionError::BadRequest {
-                    description: format!("Shard {shard_id} must have at least one active replica after removing {peer_id}"),
+                    description: format!(
+                        "Shard {shard_id} must have at least one active replica after removing {peer_id}",
+                    ),
                 });
             }
 

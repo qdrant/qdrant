@@ -20,7 +20,7 @@ pub mod serialize_peer_addresses {
     use std::collections::HashMap;
 
     use itertools::Itertools;
-    use serde::{self, de, Deserialize, Deserializer, Serialize, Serializer};
+    use serde::{self, Deserialize, Deserializer, Serialize, Serializer, de};
 
     use crate::types::PeerAddressById;
 

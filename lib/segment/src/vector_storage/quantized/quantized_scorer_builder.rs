@@ -17,7 +17,7 @@ use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
-use crate::vector_storage::{raw_scorer_from_query_scorer, RawScorer};
+use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
     quantized_storage: &'a QuantizedVectorStorage,

@@ -77,25 +77,27 @@ impl Csr {
 
     #[inline]
     unsafe fn vec(&self, row: usize) -> Result<SparseVector, ValidationErrors> {
-        let start = *self.intptr.get_unchecked(row) as usize;
-        let end = *self.intptr.get_unchecked(row + 1) as usize;
+        unsafe {
+            let start = *self.intptr.get_unchecked(row) as usize;
+            let end = *self.intptr.get_unchecked(row + 1) as usize;
 
-        let mut pos = CSR_HEADER_SIZE + size_of::<u64>() * (self.nrow + 1);
+            let mut pos = CSR_HEADER_SIZE + size_of::<u64>() * (self.nrow + 1);
 
-        let indices = transmute_from_u8_to_slice::<u32>(
-            self.mmap
-                .as_ref()
-                .get_unchecked(pos + size_of::<u32>() * start..pos + size_of::<u32>() * end),
-        );
-        pos += size_of::<u32>() * self.nnz;
+            let indices = transmute_from_u8_to_slice::<u32>(
+                self.mmap
+                    .as_ref()
+                    .get_unchecked(pos + size_of::<u32>() * start..pos + size_of::<u32>() * end),
+            );
+            pos += size_of::<u32>() * self.nnz;
 
-        let data = transmute_from_u8_to_slice::<f32>(
-            self.mmap
-                .as_ref()
-                .get_unchecked(pos + size_of::<f32>() * start..pos + size_of::<f32>() * end),
-        );
+            let data = transmute_from_u8_to_slice::<f32>(
+                self.mmap
+                    .as_ref()
+                    .get_unchecked(pos + size_of::<f32>() * start..pos + size_of::<f32>() * end),
+            );
 
-        SparseVector::new(indices.to_vec(), data.to_vec())
+            SparseVector::new(indices.to_vec(), data.to_vec())
+        }
     }
 }
 

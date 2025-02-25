@@ -1,19 +1,19 @@
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::types::PointOffsetType;
-use criterion::{criterion_group, criterion_main, Criterion};
-use rand::distr::StandardUniform;
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::Rng;
-use segment::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+use rand::distr::StandardUniform;
+use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-use segment::vector_storage::{new_raw_scorer_for_test, VectorStorage, VectorStorageEnum};
+use segment::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer_for_test};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100000;

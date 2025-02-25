@@ -97,9 +97,10 @@ mod tests {
             max_relative = 0.02,
         );
         // Emulate a stall.
-        assert!(eta
-            .estimate_raw(now + Duration::from_secs(20), 100)
-            .is_none());
+        assert!(
+            eta.estimate_raw(now + Duration::from_secs(20), 100)
+                .is_none(),
+        );
 
         // Change the speed.
         let delta = Duration::from_millis(5000);

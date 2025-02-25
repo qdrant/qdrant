@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::fixtures::payload_context_fixture::{
-    create_payload_storage_fixture, create_plain_payload_index, create_struct_payload_index,
-    FixtureIdTracker,
+    FixtureIdTracker, create_payload_storage_fixture, create_plain_payload_index,
+    create_struct_payload_index,
 };
 use segment::fixtures::payload_fixtures::BOOL_KEY;
-use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::index::PayloadIndex;
+use segment::index::struct_payload_index::StructPayloadIndex;
 use segment::types::{Condition, FieldCondition, Filter, Match, PayloadSchemaType, ValueVariants};
 use tempfile::Builder;
 

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -10,7 +10,7 @@ use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{check_process_stopped, OperationResult};
+use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -124,7 +124,7 @@ pub trait SegmentOptimizer {
                 LockedSegment::Proxy(_) => {
                     return Err(CollectionError::service_error(
                         "Proxy segment is not expected here".to_string(),
-                    ))
+                    ));
                 }
             };
             let locked_segment = segment.read();

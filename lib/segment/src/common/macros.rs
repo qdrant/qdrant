@@ -20,12 +20,12 @@ macro_rules! schemars_rename_generics {
             fn schema_name() -> String {
                 $new_name.to_string()
             }
-            fn json_schema(gen: &mut ::schemars::gen::SchemaGenerator) -> ::schemars::schema::Schema {
+            fn json_schema(generator: &mut ::schemars::r#gen::SchemaGenerator) -> ::schemars::schema::Schema {
                 #[doc = $doc]
                 #[derive(::schemars::JsonSchema)]
                 $( #[$attrs] )*
                 struct Temp<$($param),*>{ $($body)* }
-                Temp::<$($old_params),*>::json_schema(gen)
+                Temp::<$($old_params),*>::json_schema(generator)
             }
         }
         $crate::common::macros::schemars_rename_generics! {

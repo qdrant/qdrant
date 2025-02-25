@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use memory::madvise::{Advice, AdviceSetting};
 
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::chunked_vector_storage::{ChunkedVectorStorage, VectorOffsetType};
 

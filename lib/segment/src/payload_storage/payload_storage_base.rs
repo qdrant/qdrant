@@ -4,8 +4,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
 use crate::types::{Filter, Payload, SeqNumberType};
 

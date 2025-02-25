@@ -2,11 +2,11 @@
 mod prof;
 
 use common::types::PointOffsetType;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use segment::data_types::vectors::VectorElementType;
-use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
+use segment::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormat;

@@ -7,7 +7,7 @@ use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{
-    only_default_vector, VectorRef, VectorStructInternal, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, VectorRef, VectorStructInternal, only_default_vector,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;

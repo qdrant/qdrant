@@ -7,8 +7,8 @@ use quantization::{EncodedStorage, EncodedVectorsPQ, EncodedVectorsU8};
 
 use super::{GpuVectorStorage, STORAGES_COUNT};
 use crate::common::operation_error::OperationResult;
-use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
 use crate::index::hnsw_index::gpu::GPU_TIMEOUT;
+use crate::index::hnsw_index::gpu::shader_builder::ShaderBuilderParameters;
 
 pub const START_QUANTIZATION_BINDING: usize = STORAGES_COUNT;
 pub const MAX_QUANTIZATION_BINDINGS: usize = 2;

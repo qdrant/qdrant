@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use common::budget::ResourcePermit;
@@ -9,7 +9,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::named_vectors::NamedVectors;
-use segment::data_types::vectors::{only_default_vector, VectorRef, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, VectorRef, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
@@ -25,8 +25,8 @@ use sparse::common::sparse_vector::SparseVector;
 use tempfile::Builder;
 
 use crate::fixtures::segment::{
-    build_segment_1, build_segment_2, build_segment_sparse_1, build_segment_sparse_2,
-    empty_segment, PAYLOAD_KEY, SPARSE_VECTOR_NAME,
+    PAYLOAD_KEY, SPARSE_VECTOR_NAME, build_segment_1, build_segment_2, build_segment_sparse_1,
+    build_segment_sparse_2, empty_segment,
 };
 
 #[test]

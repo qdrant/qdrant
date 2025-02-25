@@ -43,7 +43,7 @@ unsafe extern "system" fn vulkan_debug_callback_log(
     p_callback_data: *const vk::DebugUtilsMessengerCallbackDataEXT,
     _p_user_data: *mut c_void,
 ) -> vk::Bool32 {
-    let message = CStr::from_ptr((*p_callback_data).p_message);
+    let message = unsafe { CStr::from_ptr((*p_callback_data).p_message) };
     let message_type_str = match message_type {
         vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "[General]",
         vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE => "[Performance]",
@@ -96,7 +96,7 @@ unsafe extern "system" fn vulkan_debug_callback_panic(
     if std::thread::panicking() {
         return vk::FALSE;
     }
-    let message = CStr::from_ptr((*p_callback_data).p_message);
+    let message = unsafe { CStr::from_ptr((*p_callback_data).p_message) };
     let message = message.to_str().unwrap();
     let message_type = match message_type {
         vk::DebugUtilsMessageTypeFlagsEXT::GENERAL => "General",

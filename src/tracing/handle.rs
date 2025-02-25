@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
-use tracing_subscriber::{layer, reload, Registry};
+use tracing_subscriber::{Registry, layer, reload};
 
 use super::*;
 

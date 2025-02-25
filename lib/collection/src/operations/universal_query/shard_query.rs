@@ -7,7 +7,7 @@ use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
-    NamedQuery, NamedVectorStruct, VectorInternal, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, NamedQuery, NamedVectorStruct, VectorInternal,
 };
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     ParsedExpression, ParsedFormula, VariableId,
@@ -370,7 +370,7 @@ impl QueryEnum {
                 let vector = VectorInternal::try_from(nearest)?;
                 let name = match (using, &vector) {
                     (None, VectorInternal::Sparse(_)) => {
-                        return Err(Status::invalid_argument("Sparse vector must have a name"))
+                        return Err(Status::invalid_argument("Sparse vector must have a name"));
                     }
                     (
                         Some(name),

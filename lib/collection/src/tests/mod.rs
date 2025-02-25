@@ -9,8 +9,8 @@ mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
@@ -23,16 +23,16 @@ use segment::data_types::vectors::only_default_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{Distance, PointIdType};
 use tempfile::Builder;
-use tokio::time::{sleep, Instant};
+use tokio::time::{Instant, sleep};
 
-use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection::Collection;
+use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::fixtures::{
-    get_indexing_optimizer, get_merge_optimizer, random_segment, PointIdGenerator,
+    PointIdGenerator, get_indexing_optimizer, get_merge_optimizer, random_segment,
 };
 use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentHolder, SegmentId};
-use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::collection_manager::optimizers::TrackerStatus;
+use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;

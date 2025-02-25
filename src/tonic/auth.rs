@@ -3,8 +3,8 @@ use std::task::{Context, Poll};
 
 use futures::future::BoxFuture;
 use storage::rbac::Access;
-use tonic::body::BoxBody;
 use tonic::Status;
+use tonic::body::BoxBody;
 use tower::{Layer, Service};
 
 use crate::common::auth::{AuthError, AuthKeys};

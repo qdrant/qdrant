@@ -1,7 +1,7 @@
 use common::delta_pack::{delta_pack, delta_unpack};
 use gridstore::Blob;
 use serde::{Deserialize, Serialize};
-use sparse::common::sparse_vector::{double_sort, SparseVector};
+use sparse::common::sparse_vector::{SparseVector, double_sort};
 use sparse::common::types::{DimId, DimId64, DimWeight};
 
 use crate::common::operation_error::OperationError;

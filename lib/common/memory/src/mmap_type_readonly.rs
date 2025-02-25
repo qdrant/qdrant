@@ -95,7 +95,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_prefix_to_type_unbounded`]
     pub unsafe fn from(mmap_with_type: Mmap) -> Self {
-        Self::try_from(mmap_with_type).unwrap()
+        unsafe { Self::try_from(mmap_with_type).unwrap() }
     }
 
     /// Transform a mmap into a typed mmap of type `T`.
@@ -112,7 +112,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_prefix_to_type_unbounded`]
     pub unsafe fn try_from(mmap_with_type: Mmap) -> Result<Self> {
-        let r#type = mmap_prefix_to_type_unbounded(&mmap_with_type)?;
+        let r#type = unsafe { mmap_prefix_to_type_unbounded(&mmap_with_type)? };
         let mmap = Arc::new(mmap_with_type);
         Ok(Self { r#type, mmap })
     }
@@ -141,7 +141,7 @@ where
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn try_slice_from(mmap_with_slice: Mmap) -> Result<Self> {
-        let r#type = mmap_to_slice_unbounded(&mmap_with_slice, 0)?;
+        let r#type = unsafe { mmap_to_slice_unbounded(&mmap_with_slice, 0)? };
         let mmap = Arc::new(mmap_with_slice);
         Ok(Self { r#type, mmap })
     }
@@ -173,7 +173,7 @@ where
     }
 
     // Obtain unbounded bytes slice into mmap
-    let bytes: &'unbnd [u8] = {
+    let bytes: &'unbnd [u8] = unsafe {
         let slice = mmap.deref();
         slice::from_raw_parts(slice.as_ptr(), size_t)
     };
@@ -240,7 +240,7 @@ where
     }
 
     // Obtain unbounded bytes slice into mmap
-    let bytes: &'unbnd [u8] = {
+    let bytes: &'unbnd [u8] = unsafe {
         let slice = mmap.deref();
         &slice::from_raw_parts(slice.as_ptr(), slice.len())[header_size..]
     };
@@ -250,10 +250,12 @@ where
     debug_assert_eq!(bytes.len() + header_size, mmap.len());
 
     // Transmute slice types
-    Ok(slice::from_raw_parts(
-        bytes.as_ptr().cast::<T>(),
-        bytes.len().checked_div(size_t).unwrap_or(0),
-    ))
+    unsafe {
+        Ok(slice::from_raw_parts(
+            bytes.as_ptr().cast::<T>(),
+            bytes.len().checked_div(size_t).unwrap_or(0),
+        ))
+    }
 }
 
 impl<T> Deref for MmapTypeReadOnly<T>
@@ -306,7 +308,7 @@ impl<T> MmapSliceReadOnly<T> {
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn from(mmap_with_slice: Mmap) -> Self {
-        Self::try_from(mmap_with_slice).unwrap()
+        unsafe { Self::try_from(mmap_with_slice).unwrap() }
     }
 
     /// Transform a mmap into a typed slice mmap of type `&[T]`.
@@ -325,7 +327,8 @@ impl<T> MmapSliceReadOnly<T> {
     /// - panics when the mmap data is not correctly aligned for type `T`
     /// - See: [`mmap_to_slice_unbounded`]
     pub unsafe fn try_from(mmap_with_slice: Mmap) -> Result<Self> {
-        MmapTypeReadOnly::try_slice_from(mmap_with_slice).map(|mmap| Self { mmap })
+        let r#type = unsafe { MmapTypeReadOnly::try_slice_from(mmap_with_slice) };
+        r#type.map(|mmap| Self { mmap })
     }
 }
 

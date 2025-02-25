@@ -103,7 +103,7 @@ impl Access {
         match self {
             Access::Global(mode) => mode.meets_requirements(requirements)?,
             Access::Collection(_) => {
-                return Err(StorageError::forbidden("Global access is required"))
+                return Err(StorageError::forbidden("Global access is required"));
             }
         }
         Ok(CollectionMultipass)
@@ -183,7 +183,7 @@ impl CollectionAccessView<'_> {
                     return Err(StorageError::forbidden(format!(
                         "Only points access is allowed for collection {}",
                         self.collection,
-                    )))
+                    )));
                 }
             }
         }
@@ -194,7 +194,7 @@ impl CollectionAccessView<'_> {
                     return Err(StorageError::forbidden(format!(
                         "Write access to collection {} is required",
                         self.collection,
-                    )))
+                    )));
                 }
                 CollectionAccessMode::ReadWrite => (),
                 CollectionAccessMode::PointsReadWrite => {
@@ -302,7 +302,7 @@ impl GlobalAccessMode {
         if write || manage {
             match self {
                 GlobalAccessMode::Read => {
-                    return Err(StorageError::forbidden("Global manage access is required"))
+                    return Err(StorageError::forbidden("Global manage access is required"));
                 }
                 GlobalAccessMode::Manage => (),
             }

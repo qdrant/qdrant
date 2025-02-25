@@ -108,14 +108,20 @@ mod tests {
         use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
 
         let payloads: Vec<_> = vec![
-            serde_json::json!("The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air."),
+            serde_json::json!(
+                "The celebration had a long way to go and even in the silent depths of Multivac's underground chambers, it hung in the air."
+            ),
             serde_json::json!("If nothing else, there was the mere fact of isolation and silence."),
             serde_json::json!([
                 "For the first time in a decade, technicians were not scurrying about the vitals of the giant computer, ",
                 "the soft lights did not wink out their erratic patterns, the flow of information in and out had halted."
             ]),
-            serde_json::json!("It would not be halted long, of course, for the needs of peace would be pressing."),
-            serde_json::json!("Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest."),
+            serde_json::json!(
+                "It would not be halted long, of course, for the needs of peace would be pressing."
+            ),
+            serde_json::json!(
+                "Yet now, for a day, perhaps for a week, even Multivac might celebrate the great time, and rest."
+            ),
         ];
 
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();

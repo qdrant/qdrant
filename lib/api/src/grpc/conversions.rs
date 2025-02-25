@@ -11,7 +11,7 @@ use segment::data_types::index::{
     KeywordIndexType, TextIndexType, UuidIndexType,
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
-use segment::types::{default_quantization_ignore_value, DateTimePayloadType, FloatPayloadType};
+use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
 use tonic::Status;
@@ -19,33 +19,32 @@ use uuid::Uuid;
 
 use super::qdrant::raw_query::RawContextPair;
 use super::qdrant::{
-    raw_query, start_from, BinaryQuantization, BoolIndexParams, CompressionRatio,
-    DatetimeIndexParams, DatetimeRange, Direction, FacetHit, FacetHitInternal, FacetValue,
-    FacetValueInternal, FieldType, FloatIndexParams, GeoIndexParams, GeoLineString, GroupId,
-    HardwareUsage, HasVectorCondition, KeywordIndexParams, LookupLocation, MaxOptimizationThreads,
-    MultiVectorComparator, MultiVectorConfig, OrderBy, OrderValue, Range, RawVector,
-    RecommendStrategy, RetrievedPoint, SearchMatrixPair, SearchPointGroups, SearchPoints,
-    ShardKeySelector, SparseIndices, StartFrom, StrictModeMultivector, StrictModeMultivectorConfig,
-    StrictModeSparse, StrictModeSparseConfig, UuidIndexParams, VectorsOutput, WithLookup,
+    BinaryQuantization, BoolIndexParams, CompressionRatio, DatetimeIndexParams, DatetimeRange,
+    Direction, FacetHit, FacetHitInternal, FacetValue, FacetValueInternal, FieldType,
+    FloatIndexParams, GeoIndexParams, GeoLineString, GroupId, HardwareUsage, HasVectorCondition,
+    KeywordIndexParams, LookupLocation, MaxOptimizationThreads, MultiVectorComparator,
+    MultiVectorConfig, OrderBy, OrderValue, Range, RawVector, RecommendStrategy, RetrievedPoint,
+    SearchMatrixPair, SearchPointGroups, SearchPoints, ShardKeySelector, SparseIndices, StartFrom,
+    StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
+    UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
 use crate::conversions::json;
 use crate::grpc::qdrant::condition::ConditionOneOf;
+use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
 use crate::grpc::qdrant::point_id::PointIdOptions;
-use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::with_payload_selector::SelectorOptions;
 use crate::grpc::qdrant::{
-    shard_key, with_vectors_selector, CollectionDescription, CollectionOperationResponse,
-    Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius,
-    HasIdCondition, HealthCheckReply, HnswConfigDiff, IntegerIndexParams, IsEmptyCondition,
-    IsNullCondition, ListCollectionsResponse, Match, MinShould, NamedVectors, NestedCondition,
-    PayloadExcludeSelector, PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo,
-    PayloadSchemaType, PointId, PointStruct, PointsOperationResponse,
-    PointsOperationResponseInternal, ProductQuantization, QuantizationConfig,
-    QuantizationSearchParams, QuantizationType, RepeatedIntegers, RepeatedStrings,
-    ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StrictModeConfig, TextIndexParams,
-    TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount, VectorsSelector,
-    WithPayloadSelector, WithVectorsSelector,
+    CollectionDescription, CollectionOperationResponse, Condition, Distance, FieldCondition,
+    Filter, GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius, HasIdCondition, HealthCheckReply,
+    HnswConfigDiff, IntegerIndexParams, IsEmptyCondition, IsNullCondition, ListCollectionsResponse,
+    Match, MinShould, NamedVectors, NestedCondition, PayloadExcludeSelector,
+    PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
+    PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
+    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
+    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StrictModeConfig,
+    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
+    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
 use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
@@ -2101,7 +2100,7 @@ impl TryFrom<SearchPoints> for rest::SearchRequestInternal {
             segment_vectors::NamedVectorStruct::MultiDense(_) => {
                 return Err(Status::invalid_argument(
                     "MultiDense vector is not supported in search request",
-                ))
+                ));
             }
         };
         Ok(Self {

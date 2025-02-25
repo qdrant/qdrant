@@ -80,7 +80,9 @@ fn https_client(
                     //
                     // So both scenarios work exactly the same way if we fail early or not.
                     // Warning message is needed for easier debugging in case of second scenario.
-                    log::warn!("Failed to load CA certificate, skipping HTTPS client CA certificate configuration: {err}");
+                    log::warn!(
+                        "Failed to load CA certificate, skipping HTTPS client CA certificate configuration: {err}",
+                    );
                 }
             }
         }

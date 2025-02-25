@@ -6,7 +6,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use futures::future;
 use futures::future::try_join_all;
-use itertools::{process_results, Itertools};
+use itertools::{Itertools, process_results};
 use segment::data_types::facets::{FacetParams, FacetValue, FacetValueHit};
 use segment::types::{Condition, FieldCondition, Filter, Match};
 use tokio::runtime::Handle;

@@ -4,8 +4,8 @@ use segment::types::SeqNumberType;
 
 use crate::collection_manager::holders::segment_holder::SegmentHolder;
 use crate::collection_manager::segments_updater::*;
-use crate::operations::types::CollectionResult;
 use crate::operations::CollectionUpdateOperations;
+use crate::operations::types::CollectionResult;
 
 /// Implementation of the update operation
 #[derive(Default)]
@@ -67,14 +67,14 @@ impl CollectionUpdater {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use parking_lot::RwLockUpgradableReadGuard;
     use segment::data_types::vectors::{
-        only_default_vector, VectorStructInternal, DEFAULT_VECTOR_NAME,
+        DEFAULT_VECTOR_NAME, VectorStructInternal, only_default_vector,
     };
     use segment::entry::entry_point::SegmentEntry;
     use segment::json_path::JsonPath;
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(num_deleted, 1); // delete point 15
         assert_eq!(num_new, 1); // insert point 500
         assert_eq!(num_updated, 2); // upsert point 13 and 14 as it has updated data
-                                    // points 11 and 12 are not updated as they are same as before
+        // points 11 and 12 are not updated as they are same as before
     }
 
     #[test]

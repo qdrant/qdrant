@@ -5,12 +5,12 @@ use std::hint::black_box;
 use std::path::Path;
 
 use common::types::PointOffsetType;
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use indicatif::{ParallelProgressIterator, ProgressStyle};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
-use segment::fixtures::index_fixtures::{random_vector, FakeFilterContext, TestRawScorerProducer};
+use segment::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormat;

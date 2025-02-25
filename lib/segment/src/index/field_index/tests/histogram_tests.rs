@@ -6,8 +6,8 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::tests::histogram_test_utils::print_results;

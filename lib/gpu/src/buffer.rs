@@ -2,8 +2,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use ash::vk;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use gpu_allocator::MemoryLocation;
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard};
 use zerocopy::{FromBytes, Immutable, IntoBytes};
 

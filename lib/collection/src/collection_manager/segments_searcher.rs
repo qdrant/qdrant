@@ -1,7 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
@@ -149,7 +149,9 @@ impl SegmentsSearcher {
                         && retrieved_points < required_limit
                         && segment_lowest_score >= lowest_batch_score
                     {
-                        log::debug!("Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score}, lowest_batch_score: {lowest_batch_score}, retrieved_points: {retrieved_points}, required_limit: {required_limit}");
+                        log::debug!(
+                            "Search to re-run without sampling on segment_id: {segment_id} segment_lowest_score: {segment_lowest_score}, lowest_batch_score: {lowest_batch_score}, retrieved_points: {retrieved_points}, required_limit: {required_limit}",
+                        );
                         // It is possible, that current segment can have better results than
                         // the lowest score in the batch. In that case, we need to re-run the search
                         // without sampling on that segment.
@@ -606,7 +608,9 @@ fn sampling_limit(
     let effective = ef_limit.map_or(limit, |ef_limit| {
         effective_limit(limit, ef_limit, poisson_sampling)
     });
-    log::trace!("sampling: {effective}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}");
+    log::trace!(
+        "sampling: {effective}, poisson: {poisson_sampling} segment_probability: {segment_probability}, segment_points: {segment_points}, total_points: {total_points}",
+    );
     effective
 }
 

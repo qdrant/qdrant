@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use api::rest::schema::ShardKeySelector;
 use api::rest::PointVectors;
+use api::rest::schema::ShardKeySelector;
 use schemars::JsonSchema;
 use segment::types::{Filter, PointIdType, VectorNameBuf};
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::point_ops::{PointIdsList, VectorStructPersisted};
-use super::{point_to_shards, split_iter_by_shard, OperationToShard, SplitByShard};
+use super::{OperationToShard, SplitByShard, point_to_shards, split_iter_by_shard};
 use crate::hash_ring::HashRingRouter;
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

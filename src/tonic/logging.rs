@@ -1,9 +1,9 @@
 use std::task::{Context, Poll};
 
 use futures_util::future::BoxFuture;
+use tonic::Code;
 use tonic::body::BoxBody;
 use tonic::codegen::http::Response;
-use tonic::Code;
 use tower::Service;
 use tower_layer::Layer;
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
@@ -11,7 +12,6 @@ use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::shared_storage_config::SharedStorageConfig;
 use collection::operations::types::{NodeType, VectorsConfig};
 use collection::operations::vector_params_builder::VectorParamsBuilder;
-use collection::operations::CollectionUpdateOperations;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
@@ -21,8 +21,8 @@ use segment::types::{Distance, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
 use crate::common::{
-    dummy_abort_shard_transfer, dummy_on_replica_failure, dummy_request_shard_transfer, REST_PORT,
-    TEST_OPTIMIZERS_CONFIG,
+    REST_PORT, TEST_OPTIMIZERS_CONFIG, dummy_abort_shard_transfer, dummy_on_replica_failure,
+    dummy_request_shard_transfer,
 };
 
 async fn _test_snapshot_and_recover_collection(node_type: NodeType) {

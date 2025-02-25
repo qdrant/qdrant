@@ -2,15 +2,15 @@ use std::fmt::{Display, Formatter};
 
 use data_encoding::BASE32_DNSSEC;
 use itertools::Itertools as _;
-use schemars::gen::SchemaGenerator;
-use schemars::schema::Schema;
 use schemars::JsonSchema;
+use schemars::r#gen::SchemaGenerator;
+use schemars::schema::Schema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 use crate::common::anonymize::Anonymize;
-use crate::common::utils::{merge_map, MultiValue};
+use crate::common::utils::{MultiValue, merge_map};
 
 mod parse;
 
@@ -129,7 +129,7 @@ impl JsonPath {
                     return Some(JsonPath {
                         first_key: k.clone(),
                         rest: self_it.skip(1).cloned().collect(),
-                    })
+                    });
                 }
                 (Some(_), None) => {
                     // We don't support json paths starting with `[`. So
@@ -270,10 +270,10 @@ impl JsonPath {
                 // Types are not compatible. This means that `value_set` could override the
                 // subtree, deleting indexed fields.
                 (JsonPathItem::Key(_), JsonPathItem::Index(_) | JsonPathItem::WildcardIndex) => {
-                    return true
+                    return true;
                 }
                 (JsonPathItem::Index(_) | JsonPathItem::WildcardIndex, JsonPathItem::Key(_)) => {
-                    return true
+                    return true;
                 }
             }
         }
@@ -525,8 +525,8 @@ impl JsonSchema for JsonPath {
         "JsonPath".to_string()
     }
 
-    fn json_schema(gen: &mut SchemaGenerator) -> Schema {
-        String::json_schema(gen)
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        String::json_schema(generator)
     }
 }
 

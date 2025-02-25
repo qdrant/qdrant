@@ -11,8 +11,8 @@ use std::collections::{BTreeSet, HashMap};
 use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -40,7 +40,7 @@ use segment::vector_storage::common::get_async_scorer;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock as TokioRwLock};
+use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -55,18 +55,18 @@ use crate::collection_manager::optimizers::TrackerLog;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
 use crate::common::file_utils::{move_dir, move_file};
 use crate::config::CollectionConfigInternal;
+use crate::operations::OperationWithClockTag;
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
-    check_sparse_compatible_with_segment_config, CollectionError, CollectionResult,
-    OptimizersStatus, ShardInfoInternal, ShardStatus,
+    CollectionError, CollectionResult, OptimizersStatus, ShardInfoInternal, ShardStatus,
+    check_sparse_compatible_with_segment_config,
 };
-use crate::operations::OperationWithClockTag;
-use crate::optimizers_builder::{build_optimizers, clear_temp_segments, OptimizersConfig};
+use crate::optimizers_builder::{OptimizersConfig, build_optimizers, clear_temp_segments};
 use crate::save_on_disk::SaveOnDisk;
+use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
-use crate::shards::CollectionId;
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::wal_delta::{LockedWal, RecoverableWal};
@@ -395,7 +395,9 @@ impl LocalShard {
                 false,
                 "Shard has no appendable segments, this should never happen",
             );
-            log::warn!("Shard has no appendable segments, this should never happen. Creating new appendable segment now");
+            log::warn!(
+                "Shard has no appendable segments, this should never happen. Creating new appendable segment now",
+            );
             let segments_path = LocalShard::segments_path(shard_path);
             let collection_params = collection_config.read().await.params.clone();
             let payload_index_schema = payload_index_schema.read();

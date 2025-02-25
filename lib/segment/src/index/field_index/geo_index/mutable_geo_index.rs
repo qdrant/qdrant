@@ -13,7 +13,7 @@ use super::GeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
-use crate::index::field_index::geo_hash::{encode_max_precision, GeoHash};
+use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::types::GeoPoint;
 
 pub struct MutableGeoMapIndex {
@@ -183,8 +183,8 @@ impl MutableGeoMapIndex {
             pub fn values_of_hash(&self, hash: &GeoHash) -> usize;
             pub fn stored_sub_regions(
                 &self,
-                geo: &GeoHash,
-            ) -> impl Iterator<Item = PointOffsetType> + '_;
+                geo: GeoHash,
+            ) -> impl Iterator<Item = PointOffsetType>;
         }
     }
 }
@@ -327,11 +327,10 @@ impl InMemoryGeoMapIndex {
 
     /// Returns an iterator over all point IDs which have the `geohash` prefix.
     /// Note. Point ID may be repeated multiple times in the iterator.
-    pub fn stored_sub_regions(&self, geo: &GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let geo_clone = *geo;
+    pub fn stored_sub_regions(&self, geo: GeoHash) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.points_map
-            .range(*geo..)
-            .take_while(move |(p, _h)| p.starts_with(geo_clone))
+            .range(geo..)
+            .take_while(move |(p, _h)| p.starts_with(geo))
             .flat_map(|(_, points)| points.iter().copied())
     }
 

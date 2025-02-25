@@ -12,8 +12,8 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
 
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 
 #[cfg(debug_assertions)]
 const MINIMAL_MMAP_SIZE: usize = 128; // 128 bytes -> 1024 flags

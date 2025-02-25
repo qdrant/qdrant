@@ -121,9 +121,11 @@ pub trait StrictModeVerification {
                         .join(", ");
 
                     return Err(CollectionError::strict_mode(
-                            format!("Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]"),
-                            "Create an index for this key or use a different filter.",
-                        ));
+                        format!(
+                            "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
+                        ),
+                        "Create an index for this key or use a different filter.",
+                    ));
                 }
             }
 
@@ -172,7 +174,9 @@ fn check_filter_limits(
 
         if !check_custom(|| Some(filter_conditions), Some(filter_condition_limit)) {
             return Err(CollectionError::strict_mode(
-                format!("Filter condition limit reached ({filter_conditions} > {filter_condition_limit})"),
+                format!(
+                    "Filter condition limit reached ({filter_conditions} > {filter_condition_limit})",
+                ),
                 "Reduce the amount of conditions of your filter.",
             ));
         }

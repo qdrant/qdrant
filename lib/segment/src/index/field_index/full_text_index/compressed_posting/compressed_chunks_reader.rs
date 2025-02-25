@@ -2,7 +2,7 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    get_chunk_size, BitPackerImpl, CompressedPostingChunksIndex,
+    BitPackerImpl, CompressedPostingChunksIndex, get_chunk_size,
 };
 
 pub struct ChunkReader<'a> {

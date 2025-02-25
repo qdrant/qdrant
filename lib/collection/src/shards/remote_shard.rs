@@ -32,9 +32,9 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
+use tonic::Status;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};
-use tonic::Status;
 use url::Url;
 
 use super::conversions::{
@@ -53,6 +53,7 @@ use crate::operations::types::{
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::vector_ops::VectorOperations;
 use crate::operations::{CollectionUpdateOperations, FieldIndexOperations, OperationWithClockTag};
+use crate::shards::CollectionId;
 use crate::shards::channel_service::ChannelService;
 use crate::shards::conversions::{
     internal_clear_payload, internal_clear_payload_by_filter, internal_create_index,
@@ -63,7 +64,6 @@ use crate::shards::conversions::{
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::RemoteShardTelemetry;
-use crate::shards::CollectionId;
 
 /// Timeout for transferring and recovering a shard snapshot on a remote peer.
 const SHARD_SNAPSHOT_TRANSFER_RECOVER_TIMEOUT: Duration = MAX_GRPC_CHANNEL_TIMEOUT;

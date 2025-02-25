@@ -3,7 +3,7 @@ use std::hint::black_box;
 use common::bitpacking::{BitReader, BitWriter};
 use common::bitpacking_links::{iterate_packed_links, pack_links};
 use common::bitpacking_ordered;
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{Rng as _, SeedableRng as _};

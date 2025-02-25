@@ -12,17 +12,17 @@ use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use uuid::Uuid;
 
+use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::common::Flusher;
+use crate::id_tracker::IdTracker;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
 use crate::id_tracker::compressed::internal_to_external::CompressedInternalToExternal;
 use crate::id_tracker::compressed::versions_store::CompressedVersions;
 use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
 use crate::id_tracker::point_mappings::FileEndianess;
-use crate::id_tracker::IdTracker;
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
@@ -162,7 +162,7 @@ impl ImmutableIdTracker {
                 return Err(OperationError::InconsistentStorage {
                     description: "Invalid byte read when deserializing Immutable id tracker"
                         .to_string(),
-                })
+                });
             }
             Some(ExternalIdType::Number) => {
                 let num = reader.read_u64::<FileEndianess>()?;
@@ -513,13 +513,13 @@ pub(super) mod test {
     use std::collections::{HashMap, HashSet};
 
     use itertools::Itertools;
-    use rand::prelude::*;
     use rand::Rng;
+    use rand::prelude::*;
     use tempfile::Builder;
     use uuid::Uuid;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;

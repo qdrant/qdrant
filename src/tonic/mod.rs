@@ -9,6 +9,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
+use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use ::api::grpc::grpc_health_v1::health_check_response::ServingStatus;
 use ::api::grpc::grpc_health_v1::health_server::{Health, HealthServer};
 use ::api::grpc::grpc_health_v1::{
@@ -27,7 +28,6 @@ use ::api::grpc::qdrant::{
     GetConsensusCommitRequest, GetConsensusCommitResponse, HealthCheckReply, HealthCheckRequest,
     WaitOnConsensusCommitRequest, WaitOnConsensusCommitResponse,
 };
-use ::api::grpc::QDRANT_DESCRIPTOR_SET;
 use ::api::rest::models::VersionInfo;
 use collection::operations::verification::new_unchecked_verification_pass;
 use storage::content_manager::consensus_manager::ConsensusStateRef;

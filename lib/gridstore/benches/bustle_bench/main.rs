@@ -3,8 +3,8 @@
 use ::rocksdb::DB;
 use bustle::{Mix, Workload};
 use fixture::ArcStorage;
-use gridstore::fixtures::Payload;
 use gridstore::Gridstore;
+use gridstore::fixtures::Payload;
 
 mod fixture;
 mod payload_storage;

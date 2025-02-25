@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use std::{cmp, fmt, thread};
 
-use anyhow::{anyhow, Context as _};
+use anyhow::{Context as _, anyhow};
 use api::grpc::dynamic_channel_pool::make_grpc_channel;
 use api::grpc::qdrant::raft_client::RaftClient;
 use api::grpc::qdrant::{AllPeers, PeerId as GrpcPeerId, RaftMessage as GrpcRaftMessage};
@@ -16,7 +16,7 @@ use collection::shards::shard::PeerId;
 use common::cpu::linux_high_thread_priority;
 use raft::eraftpb::Message as RaftMessage;
 use raft::prelude::*;
-use raft::{SoftState, StateRole, INVALID_ID};
+use raft::{INVALID_ID, SoftState, StateRole};
 use storage::content_manager::consensus_manager::ConsensusStateRef;
 use storage::content_manager::consensus_ops::{ConsensusOperations, SnapshotStatus};
 use storage::content_manager::toc::TableOfContent;
@@ -312,7 +312,9 @@ impl Consensus {
                 "Bootstrapping is disabled. Assuming this peer is the first in the network"
             );
             let tick_period = config.tick_period_ms;
-            log::info!("With current tick period of {tick_period}ms, leader will be established in approximately {leader_established_in_ms}ms. To avoid rejected operations - add peers and submit operations only after this period.");
+            log::info!(
+                "With current tick period of {tick_period}ms, leader will be established in approximately {leader_established_in_ms}ms. To avoid rejected operations - add peers and submit operations only after this period.",
+            );
             // First peer needs to add its own address
             state_ref.add_peer(
                 state_ref.this_peer_id(),

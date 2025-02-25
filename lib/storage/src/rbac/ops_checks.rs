@@ -6,6 +6,7 @@ use api::rest::LookupLocation;
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
 use collection::lookup::WithLookup;
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::payload_ops::{DeletePayloadOp, PayloadOps, SetPayloadOp};
 use collection::operations::point_ops::{PointIdsList, PointOperations};
 use collection::operations::types::{
@@ -16,13 +17,12 @@ use collection::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryRequest, Query, VectorInputInternal, VectorQuery,
 };
 use collection::operations::vector_ops::VectorOperations;
-use collection::operations::CollectionUpdateOperations;
 use segment::data_types::facets::FacetParams;
 use segment::types::{Condition, ExtendedPointId, FieldCondition, Filter, Match, Payload};
 
 use super::{
-    incompatible_with_payload_constraint, Access, AccessRequirements, CollectionAccessList,
-    CollectionAccessView, CollectionPass, PayloadConstraint,
+    Access, AccessRequirements, CollectionAccessList, CollectionAccessView, CollectionPass,
+    PayloadConstraint, incompatible_with_payload_constraint,
 };
 use crate::content_manager::collection_meta_ops::CollectionMetaOperations;
 use crate::content_manager::errors::{StorageError, StorageResult};

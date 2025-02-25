@@ -4,20 +4,20 @@ use std::time::Duration;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use rand::rngs::ThreadRng;
-use rand::{rng, RngCore};
+use rand::{RngCore, rng};
 use segment::data_types::vectors::{
-    NamedVector, NamedVectorStruct, VectorStructInternal, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, NamedVector, NamedVectorStruct, VectorStructInternal,
 };
 use tempfile::Builder;
 use tokio::runtime::Handle;
 use tokio::sync::RwLock;
 
+use crate::operations::CollectionUpdateOperations;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted,
 };
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CoreSearchRequest, CoreSearchRequestBatch};
-use crate::operations::CollectionUpdateOperations;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;

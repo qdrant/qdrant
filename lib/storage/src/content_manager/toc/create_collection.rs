@@ -5,12 +5,12 @@ use collection::collection::Collection;
 use collection::config::{self, CollectionConfigInternal, CollectionParams, ShardingMethod};
 use collection::operations::config_diff::DiffConfig as _;
 use collection::operations::types::{
-    check_sparse_compatible, CollectionResult, SparseVectorParams, VectorsConfig,
+    CollectionResult, SparseVectorParams, VectorsConfig, check_sparse_compatible,
 };
+use collection::shards::CollectionId;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
-use collection::shards::CollectionId;
 use segment::types::VectorNameBuf;
 
 use super::TableOfContent;
@@ -293,12 +293,8 @@ impl TableOfContent {
                 ConsensusOperations::initialize_replica(collection_name.clone(), shard_id, peer_id);
             if let Err(send_error) = proposal_sender.send(operation) {
                 log::error!(
-                        "Can't send proposal to deactivate replica on peer {} of shard {} of collection {}. Error: {}",
-                        peer_id,
-                        shard_id,
-                        collection_name,
-                        send_error
-                    );
+                    "Can't send proposal to deactivate replica on peer {peer_id} of shard {shard_id} of collection {collection_name}. Error: {send_error}",
+                );
             }
         } else {
             // Just activate the shard

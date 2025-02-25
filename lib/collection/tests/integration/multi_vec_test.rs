@@ -5,6 +5,7 @@ use std::path::Path;
 use api::rest::SearchRequestInternal;
 use collection::collection::Collection;
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
@@ -14,7 +15,6 @@ use collection::operations::types::{
     CollectionError, PointRequestInternal, RecommendRequestInternal, VectorsConfig,
 };
 use collection::operations::vector_params_builder::VectorParamsBuilder;
-use collection::operations::CollectionUpdateOperations;
 use collection::recommendations::recommend_by;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::named_vectors::NamedVectors;
@@ -22,7 +22,7 @@ use segment::data_types::vectors::{NamedVector, VectorStructInternal};
 use segment::types::{Distance, VectorName, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 
-use crate::common::{new_local_collection, N_SHARDS, TEST_OPTIMIZERS_CONFIG};
+use crate::common::{N_SHARDS, TEST_OPTIMIZERS_CONFIG, new_local_collection};
 
 const VECTOR1_NAME: &VectorName = "vec1";
 const VECTOR2_NAME: &VectorName = "vec2";

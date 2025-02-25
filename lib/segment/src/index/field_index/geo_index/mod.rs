@@ -9,17 +9,17 @@ use mutable_geo_index::InMemoryGeoMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
-use smol_str::{format_smolstr, SmolStr};
+use smol_str::{SmolStr, format_smolstr};
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mmap_geo_index::MmapGeoMapIndex;
 use self::mutable_geo_index::MutableGeoMapIndex;
 use super::FieldIndexBuilderTrait;
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::geo_hash::{
-    circle_hashes, common_hash_prefix, geo_hash_to_box, polygon_hashes, polygon_hashes_estimation,
-    rectangle_hashes, GeoHash,
+    GeoHash, circle_hashes, common_hash_prefix, geo_hash_to_box, polygon_hashes,
+    polygon_hashes_estimation, rectangle_hashes,
 };
 use crate::index::field_index::stat_tools::estimate_multi_value_selection_cardinality;
 use crate::index::field_index::{
@@ -274,13 +274,13 @@ impl GeoMapIndex {
             GeoMapIndex::Mutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.stored_sub_regions(&top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Immutable(index) => Box::new(
                 values
                     .into_iter()
-                    .flat_map(|top_geo_hash| index.stored_sub_regions(&top_geo_hash))
+                    .flat_map(|top_geo_hash| index.stored_sub_regions(top_geo_hash))
                     .unique(),
             ),
             GeoMapIndex::Mmap(index) => Box::new(
@@ -608,8 +608,8 @@ mod tests {
     use std::ops::Range;
 
     use itertools::Itertools;
-    use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use rand::prelude::StdRng;
     use rstest::rstest;
     use serde_json::json;
     use tempfile::{Builder, TempDir};
@@ -1325,28 +1325,40 @@ mod tests {
             polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
 
         let (field_index, _, _) = build_random_index(0, 0, index_type);
-        assert!(field_index
-            .match_cardinality(&hashes)
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
-        assert!(field_index
-            .match_cardinality(&hashes_with_interior)
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(
+            field_index
+                .match_cardinality(&hashes)
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
+        assert!(
+            field_index
+                .match_cardinality(&hashes_with_interior)
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
 
         let (field_index, _, _) = build_random_index(0, 100, index_type);
-        assert!(field_index
-            .match_cardinality(&hashes)
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
-        assert!(field_index
-            .match_cardinality(&hashes_with_interior)
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(
+            field_index
+                .match_cardinality(&hashes)
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
+        assert!(
+            field_index
+                .match_cardinality(&hashes_with_interior)
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
 
         let (field_index, _, _) = build_random_index(100, 100, index_type);
-        assert!(!field_index
-            .match_cardinality(&hashes)
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
-        assert!(!field_index
-            .match_cardinality(&hashes_with_interior)
-            .equals_min_exp_max(&CardinalityEstimation::exact(0)),);
+        assert!(
+            !field_index
+                .match_cardinality(&hashes)
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
+        assert!(
+            !field_index
+                .match_cardinality(&hashes_with_interior)
+                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+        );
     }
 
     #[rstest]

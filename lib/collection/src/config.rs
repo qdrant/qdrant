@@ -11,10 +11,10 @@ use segment::common::anonymize::Anonymize;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::index::sparse_index::sparse_index_config::{SparseIndexConfig, SparseIndexType};
 use segment::types::{
-    default_replication_factor_const, default_shard_number_const,
-    default_write_consistency_factor_const, Distance, HnswConfig, Indexes, PayloadStorageType,
-    QuantizationConfig, SparseVectorDataConfig, StrictModeConfig, VectorDataConfig, VectorName,
-    VectorNameBuf, VectorStorageDatatype, VectorStorageType,
+    Distance, HnswConfig, Indexes, PayloadStorageType, QuantizationConfig, SparseVectorDataConfig,
+    StrictModeConfig, VectorDataConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
+    VectorStorageType, default_replication_factor_const, default_shard_number_const,
+    default_write_consistency_factor_const,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

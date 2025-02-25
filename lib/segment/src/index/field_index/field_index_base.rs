@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
+use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
 use super::bool_index::simple_bool_index::BoolIndexBuilder;
-use super::bool_index::BoolIndex;
 use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
@@ -15,8 +15,8 @@ use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
     NumericIndex, NumericIndexBuilder, NumericIndexMmapBuilder, StreamRange,
 };
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::numeric_index::NumericIndexInner;
@@ -195,16 +195,16 @@ impl FieldIndex {
 
     pub fn load(&mut self) -> OperationResult<bool> {
         match self {
-            FieldIndex::IntIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::DatetimeIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::IntMapIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::KeywordIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::FloatIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::GeoIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::BoolIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::FullTextIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::UuidIndex(ref mut payload_field_index) => payload_field_index.load(),
-            FieldIndex::UuidMapIndex(ref mut payload_field_index) => payload_field_index.load(),
+            FieldIndex::IntIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::DatetimeIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::IntMapIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::KeywordIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::FloatIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::GeoIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::BoolIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::FullTextIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::UuidIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index.load(),
         }
     }
 
@@ -261,34 +261,30 @@ impl FieldIndex {
 
     pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         match self {
-            FieldIndex::IntIndex(ref mut payload_field_index) => {
+            FieldIndex::IntIndex(payload_field_index) => payload_field_index.add_point(id, payload),
+            FieldIndex::DatetimeIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::DatetimeIndex(ref mut payload_field_index) => {
+            FieldIndex::IntMapIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::IntMapIndex(ref mut payload_field_index) => {
+            FieldIndex::KeywordIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::KeywordIndex(ref mut payload_field_index) => {
+            FieldIndex::FloatIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::FloatIndex(ref mut payload_field_index) => {
+            FieldIndex::GeoIndex(payload_field_index) => payload_field_index.add_point(id, payload),
+            FieldIndex::BoolIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::GeoIndex(ref mut payload_field_index) => {
+            FieldIndex::FullTextIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::BoolIndex(ref mut payload_field_index) => {
+            FieldIndex::UuidIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
-            FieldIndex::FullTextIndex(ref mut payload_field_index) => {
-                payload_field_index.add_point(id, payload)
-            }
-            FieldIndex::UuidIndex(ref mut payload_field_index) => {
-                payload_field_index.add_point(id, payload)
-            }
-            FieldIndex::UuidMapIndex(ref mut payload_field_index) => {
+            FieldIndex::UuidMapIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
         }

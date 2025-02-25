@@ -1,6 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use permutation_iterator::Permutor;
 use quantization::encoded_vectors::{DistanceType, EncodedVectors, VectorParameters};
 use quantization::encoded_vectors_u8::EncodedVectorsU8;

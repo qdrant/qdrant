@@ -3,7 +3,7 @@ pub mod pyro {
 
     use pyroscope::pyroscope::PyroscopeAgentRunning;
     use pyroscope::{PyroscopeAgent, PyroscopeError};
-    use pyroscope_pprofrs::{pprof_backend, PprofConfig};
+    use pyroscope_pprofrs::{PprofConfig, pprof_backend};
 
     use crate::common::debugger::PyroscopeConfig;
 

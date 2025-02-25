@@ -90,7 +90,7 @@ impl<'de, T: Deserialize<'de>> MaybeOneOrMany<T> {
 }
 
 impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
-    fn json_schema(gen: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
         use schemars::schema::SchemaObject;
 
         #[derive(JsonSchema)]
@@ -101,7 +101,7 @@ impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
             _None(()),
         }
 
-        let schema: SchemaObject = <OneOrMany<T>>::json_schema(gen).into();
+        let schema: SchemaObject = <OneOrMany<T>>::json_schema(generator).into();
         schema.into()
     }
 
@@ -116,7 +116,7 @@ impl<T: JsonSchema> JsonSchema for MaybeOneOrMany<T> {
 
 #[cfg(test)]
 mod tests {
-    use schemars::{schema_for, JsonSchema};
+    use schemars::{JsonSchema, schema_for};
     use serde::{Deserialize, Serialize};
 
     use crate::common::utils::MaybeOneOrMany;
@@ -184,14 +184,16 @@ mod tests {
             _field: Option<Vec<String>>,
         }
 
-        let mut field_schema = dbg!(schemars::schema_for!(Test)
-            .schema
-            .object
-            .unwrap()
-            .properties
-            .remove("_field")
-            .unwrap()
-            .into_object());
+        let mut field_schema = dbg!(
+            schemars::schema_for!(Test)
+                .schema
+                .object
+                .unwrap()
+                .properties
+                .remove("_field")
+                .unwrap()
+                .into_object(),
+        );
 
         assert!(field_schema.subschemas.is_some());
 

@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 #[cfg(test)]
-use rand::rngs::StdRng;
-#[cfg(test)]
 use rand::Rng as _;
+#[cfg(test)]
+use rand::rngs::StdRng;
 
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
-use crate::id_tracker::point_mappings::PointMappings;
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::IdTracker;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
 /// A non-persistent ID tracker for faster and more efficient building of `ImmutableIdTracker`.

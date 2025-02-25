@@ -1,19 +1,19 @@
 use std::ops::Range;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
-use gridstore::config::{Compression, StorageOptions};
 use gridstore::Gridstore;
+use gridstore::config::{Compression, StorageOptions};
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
 use crate::types::VectorStorageDatatype;
@@ -300,10 +300,10 @@ mod test {
 
     use sparse::common::sparse_vector;
 
+    use crate::vector_storage::VectorStorage;
     use crate::vector_storage::sparse::mmap_sparse_vector_storage::{
         MmapSparseVectorStorage, VectorRef,
     };
-    use crate::vector_storage::VectorStorage;
 
     fn visit_files_recursively(dir: &Path, cb: &mut impl FnMut(PathBuf)) -> std::io::Result<()> {
         if dir.is_dir() {

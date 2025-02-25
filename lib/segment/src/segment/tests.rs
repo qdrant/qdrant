@@ -12,11 +12,11 @@ use crate::common::operation_error::OperationError::PointIdError;
 use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
-use crate::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::entry_point::SegmentEntry;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::{
-    build_multivec_segment, build_simple_segment, VECTOR1_NAME, VECTOR2_NAME,
+    VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
 };
 use crate::types::{Distance, Filter, Payload, SnapshotFormat, WithPayload, WithVector};
 

@@ -8,8 +8,8 @@ use bitvec::prelude::BitSlice;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
-use crate::common::operation_error::{check_process_stopped, OperationResult};
 use crate::common::Flusher;
+use crate::common::operation_error::{OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{VectorElementType, VectorRef};

@@ -150,8 +150,8 @@ impl SegmentOptimizer for MergeOptimizer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use common::budget::ResourceBudget;
     use parking_lot::RwLock;

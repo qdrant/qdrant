@@ -13,7 +13,7 @@ pub unsafe fn sse_dot_similarity_half(
 ) -> ScoreType {
     let v1_f32 = v1.iter().map(|x| f16::to_f32(*x)).collect_vec();
     let v2_f32 = v2.iter().map(|x| f16::to_f32(*x)).collect_vec();
-    simple_sse::dot_similarity_sse(&v1_f32, &v2_f32)
+    unsafe { simple_sse::dot_similarity_sse(&v1_f32, &v2_f32) }
 }
 
 #[cfg(test)]

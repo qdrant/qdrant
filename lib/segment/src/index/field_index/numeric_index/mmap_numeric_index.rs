@@ -10,11 +10,11 @@ use memory::mmap_ops::{self, create_and_ensure_length};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
 
-use super::mutable_numeric_index::InMemoryNumericIndex;
 use super::Encodable;
+use super::mutable_numeric_index::InMemoryNumericIndex;
+use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::operation_error::OperationResult;
-use crate::common::Flusher;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::{MmapPointToValues, MmapValue};
 

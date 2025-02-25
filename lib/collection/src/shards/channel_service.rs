@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::qdrant::WaitOnConsensusCommitRequest;
+use api::grpc::qdrant::qdrant_internal_client::QdrantInternalClient;
 use api::grpc::transport_channel_pool::{AddTimeout, TransportChannelPool};
-use futures::future::try_join_all;
 use futures::Future;
+use futures::future::try_join_all;
 use semver::Version;
 use tonic::codegen::InterceptedService;
 use tonic::transport::{Channel, Uri};

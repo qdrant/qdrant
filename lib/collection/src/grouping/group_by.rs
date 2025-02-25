@@ -626,13 +626,15 @@ mod tests {
         let a = groups.first().unwrap();
         let b = groups.get(1).unwrap();
 
-        assert!(a
-            .hits
-            .iter()
-            .all(|x| x.payload.as_ref() == Some(&payload_a)));
-        assert!(b
-            .hits
-            .iter()
-            .all(|x| x.payload.as_ref() == Some(&payload_b)));
+        assert!(
+            a.hits
+                .iter()
+                .all(|x| x.payload.as_ref() == Some(&payload_a)),
+        );
+        assert!(
+            b.hits
+                .iter()
+                .all(|x| x.payload.as_ref() == Some(&payload_b)),
+        );
     }
 }

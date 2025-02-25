@@ -1,15 +1,15 @@
 use api::rest::SearchRequestInternal;
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, VectorStructPersisted,
     WriteOrdering,
 };
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::CollectionUpdateOperations;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::types::WithPayloadInterface;
 use tempfile::Builder;
 
-use crate::common::{simple_collection_fixture, N_SHARDS};
+use crate::common::{N_SHARDS, simple_collection_fixture};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_collection_paginated_search() {

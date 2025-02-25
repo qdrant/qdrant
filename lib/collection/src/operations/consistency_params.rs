@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use api::grpc::qdrant::{
-    read_consistency, ReadConsistency as ReadConsistencyGrpc,
-    ReadConsistencyType as ReadConsistencyTypeGrpc,
+    ReadConsistency as ReadConsistencyGrpc, ReadConsistencyType as ReadConsistencyTypeGrpc,
+    read_consistency,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

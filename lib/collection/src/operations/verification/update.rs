@@ -8,7 +8,7 @@ use segment::types::{
     VectorNameBuf,
 };
 
-use super::{check_limit_opt, StrictModeVerification};
+use super::{StrictModeVerification, check_limit_opt};
 use crate::collection::Collection;
 use crate::common::collection_size_stats::CollectionSizeAtomicStats;
 use crate::operations::payload_ops::{DeletePayload, SetPayload};

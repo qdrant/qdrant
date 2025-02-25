@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
@@ -78,7 +78,9 @@ impl ResourceBudget {
             match cpu_result {
                 Ok(permit) => Some(permit),
                 Err(TryAcquireError::NoPermits) => return None,
-                Err(TryAcquireError::Closed) => unreachable!("Cannot acquire CPU permit because CPU budget semaphore is closed, this should never happen"),
+                Err(TryAcquireError::Closed) => unreachable!(
+                    "Cannot acquire CPU permit because CPU budget semaphore is closed, this should never happen",
+                ),
             }
         } else {
             None
@@ -99,7 +101,9 @@ impl ResourceBudget {
             match io_result {
                 Ok(permit) => Some(permit),
                 Err(TryAcquireError::NoPermits) => return None,
-                Err(TryAcquireError::Closed) => unreachable!("Cannot acquire IO permit because IO budget semaphore is closed, this should never happen"),
+                Err(TryAcquireError::Closed) => unreachable!(
+                    "Cannot acquire IO permit because IO budget semaphore is closed, this should never happen",
+                ),
             }
         } else {
             None

@@ -1,4 +1,4 @@
-use actix_web::{post, web, Responder};
+use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
@@ -10,14 +10,14 @@ use storage::content_manager::errors::StorageError;
 use storage::dispatcher::Dispatcher;
 use tokio::time::Instant;
 
-use super::read_params::ReadParams;
 use super::CollectionPath;
+use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
+use crate::common::inference::InferenceToken;
 use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
-use crate::common::inference::InferenceToken;
 use crate::common::query::do_query_point_groups;
 use crate::settings::ServiceConfig;
 

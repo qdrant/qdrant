@@ -11,11 +11,11 @@ use segment::types::SnapshotFormat;
 use tokio::sync::OwnedRwLockReadGuard;
 
 use super::Collection;
-use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
 use crate::collection::CollectionVersion;
+use crate::collection::payload_index_schema::PAYLOAD_INDEX_CONFIG_FILE;
 use crate::common::snapshot_stream::SnapshotStream;
 use crate::common::snapshots_manager::SnapshotStorageManager;
-use crate::config::{CollectionConfigInternal, ShardingMethod, COLLECTION_CONFIG_FILE};
+use crate::config::{COLLECTION_CONFIG_FILE, CollectionConfigInternal, ShardingMethod};
 use crate::operations::snapshot_ops::SnapshotDescription;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
@@ -24,7 +24,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
-use crate::shards::shard_holder::{shard_not_found_error, ShardHolder, SHARD_KEY_MAPPING_FILE};
+use crate::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardHolder, shard_not_found_error};
 use crate::shards::shard_path;
 
 impl Collection {

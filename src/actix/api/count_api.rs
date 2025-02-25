@@ -1,4 +1,4 @@
-use actix_web::{post, web, Responder};
+use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::CountRequest;

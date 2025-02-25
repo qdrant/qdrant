@@ -5,18 +5,19 @@ use api::conversions::json::{json_path_from_proto, proto_to_payloads};
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
-    points_update_operation, ClearPayloadPoints, CreateFieldIndexCollection,
-    DeleteFieldIndexCollection, DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType,
-    PayloadIndexParams, PointsOperationResponseInternal, PointsSelector, SetPayloadPoints,
-    SyncPoints, UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    ClearPayloadPoints, CreateFieldIndexCollection, DeleteFieldIndexCollection,
+    DeletePayloadPoints, DeletePointVectors, DeletePoints, FieldType, PayloadIndexParams,
+    PointsOperationResponseInternal, PointsSelector, SetPayloadPoints, SyncPoints,
+    UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
+    points_update_operation,
 };
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
+use collection::operations::CollectionUpdateOperations;
 use collection::operations::conversions::try_points_selector_from_grpc;
 use collection::operations::payload_ops::DeletePayload;
 use collection::operations::point_ops::{self, PointOperations, PointSyncOperation};
 use collection::operations::vector_ops::DeleteVectors;
-use collection::operations::CollectionUpdateOperations;
 use itertools::Itertools;
 use segment::types::{
     ExtendedPointId, Filter, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType,
@@ -26,9 +27,9 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
+use crate::common::inference::InferenceToken;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::convert_point_struct;
-use crate::common::inference::InferenceToken;
 use crate::common::update::*;
 use crate::tonic::verification::{CheckedTocProvider, StrictModeCheckedTocProvider};
 

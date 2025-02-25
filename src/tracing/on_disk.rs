@@ -5,7 +5,7 @@ use std::{fs, io};
 use anyhow::Context as _;
 use common::ext::OptionExt;
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::{fmt, registry, Layer};
+use tracing_subscriber::{Layer, fmt, registry};
 
 use super::*;
 

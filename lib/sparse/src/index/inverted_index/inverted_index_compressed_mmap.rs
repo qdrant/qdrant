@@ -16,15 +16,15 @@ use memory::mmap_ops::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use super::INDEX_FILE_NAME;
+use super::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{
     CompressedPostingChunk, CompressedPostingListIterator, CompressedPostingListView,
 };
-use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::inverted_index::InvertedIndex;
+use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
 use crate::index::posting_list_common::GenericPostingElement;
 
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";

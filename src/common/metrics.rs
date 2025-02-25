@@ -1,6 +1,6 @@
 use api::rest::models::HardwareUsage;
-use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use prometheus::TextEncoder;
+use prometheus::proto::{Counter, Gauge, LabelPair, Metric, MetricFamily, MetricType};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 
 use super::telemetry_ops::hardware::HardwareTelemetry;
@@ -194,7 +194,7 @@ impl MetricsProvider for ClusterTelemetry {
             vec![gauge(if *enabled { 1.0 } else { 0.0 }, &[])],
         ));
 
-        if let Some(ref status) = status {
+        if let Some(status) = status {
             status.add_metrics(metrics);
         }
     }

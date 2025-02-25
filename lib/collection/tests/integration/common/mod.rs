@@ -7,10 +7,10 @@ use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use collection::operations::types::CollectionError;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
+use collection::shards::CollectionId;
 use collection::shards::channel_service::ChannelService;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::{AbortShardTransfer, ChangePeerFromState, ReplicaState};
-use collection::shards::CollectionId;
 use common::budget::ResourceBudget;
 use segment::types::Distance;
 

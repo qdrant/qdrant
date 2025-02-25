@@ -1,23 +1,23 @@
 use std::cmp;
 use std::collections::HashMap;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use collection::operations::types::PeerMetadata;
 use collection::shards::shard::PeerId;
 use http::Uri;
 use parking_lot::RwLock;
-use raft::eraftpb::{ConfState, HardState, SnapshotMetadata};
 use raft::RaftState;
+use raft::eraftpb::{ConfState, HardState, SnapshotMetadata};
 use serde::{Deserialize, Serialize};
 
+use crate::StorageError;
 use crate::content_manager::consensus::entry_queue::{EntryApplyProgressQueue, EntryId};
 use crate::types::{PeerAddressById, PeerMetadataById};
-use crate::StorageError;
 
 // Deprecated, use `STATE_FILE_NAME` instead
 const STATE_FILE_NAME_CBOR: &str = "raft_state";

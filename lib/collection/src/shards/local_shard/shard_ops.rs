@@ -13,6 +13,7 @@ use tokio::sync::oneshot;
 use tokio::time::error::Elapsed;
 
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
+use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
     CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
@@ -20,7 +21,6 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
-use crate::operations::OperationWithClockTag;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};

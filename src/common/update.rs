@@ -22,9 +22,9 @@ use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
 use validator::Validate;
 
+use crate::common::inference::InferenceToken;
 use crate::common::inference::service::InferenceType;
 use crate::common::inference::update_requests::*;
-use crate::common::inference::InferenceToken;
 
 #[derive(Copy, Clone, Debug, Deserialize, Serialize, Validate)]
 pub struct UpdateParams {

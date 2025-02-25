@@ -5,11 +5,11 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::json_path::JsonPath;
-use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::in_memory_payload_storage::InMemoryPayloadStorage;
 use crate::types::Payload;
 
 impl PayloadStorage for InMemoryPayloadStorage {

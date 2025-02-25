@@ -1,13 +1,13 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use rand::{rng, Rng};
-use segment::data_types::vectors::{only_default_vector, DEFAULT_VECTOR_NAME};
+use rand::{Rng, rng};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_vector};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
@@ -15,8 +15,8 @@ use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::segment_constructor::VectorIndexBuildArgs;
+use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, PayloadSchemaType, Range,
     SearchParams, SeqNumberType,

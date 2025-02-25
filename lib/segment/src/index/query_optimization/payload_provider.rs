@@ -5,8 +5,8 @@ use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::PayloadStorage;
+use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::types::{OwnedPayloadRef, Payload};
 
 #[derive(Clone)]

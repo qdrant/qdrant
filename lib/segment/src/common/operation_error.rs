@@ -26,7 +26,9 @@ pub enum OperationError {
     VectorNameNotExists { received_name: VectorNameBuf },
     #[error("No point with id {missed_point_id}")]
     PointIdError { missed_point_id: PointIdType },
-    #[error("Payload type does not match with previously given for field {field_name}. Expected: {expected_type}")]
+    #[error(
+        "Payload type does not match with previously given for field {field_name}. Expected: {expected_type}"
+    )]
     TypeError {
         field_name: PayloadKeyType,
         expected_type: String,
@@ -52,9 +54,13 @@ pub enum OperationError {
     WrongSparse,
     #[error("Wrong usage of multi vectors")]
     WrongMulti,
-    #[error("No range index for `order_by` key: `{key}`. Please create one to use `order_by`. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Range conditions")]
+    #[error(
+        "No range index for `order_by` key: `{key}`. Please create one to use `order_by`. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Range conditions"
+    )]
     MissingRangeIndexForOrderBy { key: String },
-    #[error("No appropriate index for faceting: `{key}`. Please create one to facet on this field. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Match conditions")]
+    #[error(
+        "No appropriate index for faceting: `{key}`. Please create one to facet on this field. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Match conditions"
+    )]
     MissingMapIndexForFacet { key: String },
     #[error("The variable nor the default value for {field_name} is a {expected_type}")]
     VariableTypeError {

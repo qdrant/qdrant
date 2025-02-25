@@ -3,9 +3,9 @@ mod prof;
 
 use std::collections::{BTreeMap, HashMap};
 
-use criterion::{criterion_group, criterion_main, Criterion};
-use rand::rngs::StdRng;
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 use segment::data_types::tiny_map::TinyMap;
 use segment::fixtures::index_fixtures::random_vector;
 

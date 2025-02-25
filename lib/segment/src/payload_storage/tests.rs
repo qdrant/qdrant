@@ -2,10 +2,10 @@ use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 
+use super::PayloadStorage;
 use super::mmap_payload_storage::MmapPayloadStorage;
 use super::on_disk_payload_storage::OnDiskPayloadStorage;
 use super::simple_payload_storage::SimplePayloadStorage;
-use super::PayloadStorage;
 use crate::common::rocksdb_wrapper::open_db;
 use crate::payload_json;
 

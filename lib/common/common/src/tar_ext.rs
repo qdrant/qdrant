@@ -2,8 +2,8 @@
 
 use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tap::Tap;
 use tokio::sync::Mutex;
@@ -99,15 +99,15 @@ impl<T: Write + Seek> WriteSeek for T {}
 impl Write for WriteSeekBoxOwned {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            WriteSeekBoxOwned::Streaming(ref mut w) => w.write(buf),
-            WriteSeekBoxOwned::Seekable(ref mut w) => w.write(buf),
+            WriteSeekBoxOwned::Streaming(w) => w.write(buf),
+            WriteSeekBoxOwned::Seekable(w) => w.write(buf),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            WriteSeekBoxOwned::Streaming(ref mut w) => w.flush(),
-            WriteSeekBoxOwned::Seekable(ref mut w) => w.flush(),
+            WriteSeekBoxOwned::Streaming(w) => w.flush(),
+            WriteSeekBoxOwned::Seekable(w) => w.flush(),
         }
     }
 }
@@ -119,7 +119,7 @@ impl Seek for WriteSeekBoxOwned {
                 std::io::ErrorKind::Other,
                 "Seeking is not supported",
             )),
-            WriteSeekBoxOwned::Seekable(ref mut w) => w.seek(pos),
+            WriteSeekBoxOwned::Seekable(w) => w.seek(pos),
         }
     }
 }
@@ -127,15 +127,15 @@ impl Seek for WriteSeekBoxOwned {
 impl Write for WriteSeekBoxBorrowed<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self {
-            WriteSeekBoxBorrowed::Streaming(ref mut w) => w.write(buf),
-            WriteSeekBoxBorrowed::Seekable(ref mut w) => w.write(buf),
+            WriteSeekBoxBorrowed::Streaming(w) => w.write(buf),
+            WriteSeekBoxBorrowed::Seekable(w) => w.write(buf),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            WriteSeekBoxBorrowed::Streaming(ref mut w) => w.flush(),
-            WriteSeekBoxBorrowed::Seekable(ref mut w) => w.flush(),
+            WriteSeekBoxBorrowed::Streaming(w) => w.flush(),
+            WriteSeekBoxBorrowed::Seekable(w) => w.flush(),
         }
     }
 }
@@ -147,7 +147,7 @@ impl Seek for WriteSeekBoxBorrowed<'_> {
                 std::io::ErrorKind::Other,
                 "Seeking is not supported",
             )),
-            WriteSeekBoxBorrowed::Seekable(ref mut w) => w.seek(pos),
+            WriteSeekBoxBorrowed::Seekable(w) => w.seek(pos),
         }
     }
 }

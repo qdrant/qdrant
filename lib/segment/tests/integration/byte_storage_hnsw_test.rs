@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::types::{ScoredPointOffset, TelemetryDetail};
@@ -8,7 +8,7 @@ use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
-use segment::data_types::vectors::{only_default_vector, QueryVector, DEFAULT_VECTOR_NAME};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
@@ -19,8 +19,8 @@ use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, Range, SearchParams,
     SegmentConfig, SeqNumberType, VectorDataConfig, VectorStorageDatatype, VectorStorageType,
 };
-use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use segment::vector_storage::VectorStorageEnum;
+use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;

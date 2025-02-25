@@ -24,7 +24,7 @@ use segment::types::{
     Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfig,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
-use sparse::common::sparse_vector::{validate_sparse_vector_impl, SparseVector};
+use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
 use tonic::Status;
 
 use super::cluster_ops::ReshardingDirection;
@@ -36,11 +36,11 @@ use super::types::{
     VectorsConfigDiff,
 };
 use crate::config::{
-    default_replication_factor, default_write_consistency_factor, CollectionParams, ShardingMethod,
-    WalConfig,
+    CollectionParams, ShardingMethod, WalConfig, default_replication_factor,
+    default_write_consistency_factor,
 };
-use crate::lookup::types::WithLookupInterface;
 use crate::lookup::WithLookup;
+use crate::lookup::types::WithLookupInterface;
 use crate::operations::cluster_ops::{
     AbortShardTransfer, AbortTransferOperation, ClusterOperations, CreateShardingKey,
     CreateShardingKeyOperation, DropReplicaOperation, DropShardingKey, DropShardingKeyOperation,
@@ -108,7 +108,7 @@ pub fn write_ordering_from_proto(
                     return Err(Status::invalid_argument(format!(
                         "cannot convert ordering: {}",
                         write_ordering.r#type
-                    )))
+                    )));
                 }
                 Ok(res) => res,
             }
@@ -761,7 +761,7 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                 segments_count: collection_info_response.segments_count as usize,
                 config: match collection_info_response.config {
                     None => {
-                        return Err(Status::invalid_argument("Malformed CollectionConfig type"))
+                        return Err(Status::invalid_argument("Malformed CollectionConfig type"));
                     }
                     Some(config) => CollectionConfig::try_from(config)?,
                 },
@@ -1779,13 +1779,13 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                         None => {
                             return Err(Status::invalid_argument(
                                 "Expected `vectors` - configuration for vector storage",
-                            ))
+                            ));
                         }
                         Some(vector_config) => match vector_config.config {
                             None => {
                                 return Err(Status::invalid_argument(
                                     "Expected `vectors` - configuration for vector storage",
-                                ))
+                                ));
                             }
                             Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
                                 VectorsConfig::Single(params.try_into()?)

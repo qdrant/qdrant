@@ -106,13 +106,15 @@ async fn _test_snapshot_collection(node_type: NodeType) {
             .tempdir()
             .unwrap();
         // Do not recover in local mode if some shards are remote
-        assert!(Collection::restore_snapshot(
-            &snapshots_path.path().join(&snapshot_description.name),
-            recover_dir.path(),
-            0,
-            false,
-        )
-        .is_err());
+        assert!(
+            Collection::restore_snapshot(
+                &snapshots_path.path().join(&snapshot_description.name),
+                recover_dir.path(),
+                0,
+                false,
+            )
+            .is_err(),
+        );
     }
 
     let recover_dir = Builder::new()

@@ -3,7 +3,7 @@ use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
-    compress_posting, BitPackerImpl, CompressedPostingChunksIndex,
+    BitPackerImpl, CompressedPostingChunksIndex, compress_posting,
 };
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;

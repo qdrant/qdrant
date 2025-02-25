@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use futures::{future, TryFutureExt};
+use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
 use segment::types::{
     ExtendedPointId, Filter, Order, ScoredPoint, WithPayloadInterface, WithVector,

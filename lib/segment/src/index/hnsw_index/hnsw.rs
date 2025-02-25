@@ -1,8 +1,8 @@
 use std::fs::create_dir_all;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread;
 
 use atomic_refcell::AtomicRefCell;
@@ -15,18 +15,18 @@ use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::mmap_ops;
 use parking_lot::Mutex;
-use rayon::prelude::*;
 use rayon::ThreadPool;
+use rayon::prelude::*;
 
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
 use super::graph_links::GraphLinksFormat;
-use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
+use crate::common::BYTES_IN_KB;
+use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
-use crate::common::BYTES_IN_KB;
 use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
@@ -48,13 +48,13 @@ use crate::segment_constructor::VectorIndexBuildArgs;
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::Condition::Field;
 use crate::types::{
-    default_quantization_ignore_value, default_quantization_oversampling_value, FieldCondition,
-    Filter, HnswConfig, QuantizationSearchParams, SearchParams,
+    FieldCondition, Filter, HnswConfig, QuantizationSearchParams, SearchParams,
+    default_quantization_ignore_value, default_quantization_oversampling_value,
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
 use crate::vector_storage::{
-    new_raw_scorer, new_stoppable_raw_scorer, RawScorer, VectorStorage, VectorStorageEnum,
+    RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer, new_stoppable_raw_scorer,
 };
 
 const HNSW_USE_HEURISTIC: bool = true;
@@ -739,11 +739,12 @@ impl HNSWIndex {
         points_to_index: impl Iterator<Item = PointOffsetType>,
         entry_points_num: usize,
         points_scorer_builder: impl Fn(
-                PointOffsetType,
-            )
-                -> OperationResult<(Box<dyn RawScorer + 'a>, Option<Box<dyn FilterContext + 'a>>)>
-            + Send
-            + Sync,
+            PointOffsetType,
+        ) -> OperationResult<(
+            Box<dyn RawScorer + 'a>,
+            Option<Box<dyn FilterContext + 'a>>,
+        )> + Send
+        + Sync,
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         if let Some(gpu_vectors) = gpu_vectors {

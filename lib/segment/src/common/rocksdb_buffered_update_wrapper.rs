@@ -3,9 +3,9 @@ use std::mem;
 
 use parking_lot::Mutex;
 
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
-use crate::common::Flusher;
 
 /// Wrapper around `DatabaseColumnWrapper` that ensures,
 ///     that all changes are only persisted on flush explicitly.

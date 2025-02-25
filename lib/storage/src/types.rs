@@ -4,10 +4,10 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use collection::common::snapshots_manager::SnapshotsConfig;
-use collection::config::{default_on_disk_payload, WalConfig};
+use collection::config::{WalConfig, default_on_disk_payload};
 use collection::operations::config_diff::OptimizersConfigDiff;
 use collection::operations::shared_storage_config::{
-    SharedStorageConfig, DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH,
+    DEFAULT_IO_SHARD_TRANSFER_LIMIT, DEFAULT_SNAPSHOTS_PATH, SharedStorageConfig,
 };
 use collection::operations::types::{NodeType, PeerMetadata};
 use collection::optimizers_builder::OptimizersConfig;

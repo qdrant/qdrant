@@ -19,23 +19,23 @@ use collection::operations::conversions::try_discover_request_from_grpc;
 use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    default_exact_count, CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal,
-    RecommendExample, ScrollRequestInternal,
+    CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal, RecommendExample,
+    ScrollRequestInternal, default_exact_count,
 };
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
-use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::content_manager::toc::TableOfContent;
+use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Access;
 use tonic::{Response, Status};
 
+use crate::common::inference::InferenceToken;
 use crate::common::inference::query_requests_grpc::{
     convert_query_point_groups_from_grpc, convert_query_points_from_grpc,
 };
-use crate::common::inference::InferenceToken;
 use crate::common::query::*;
 use crate::tonic::verification::CheckedTocProvider;
 

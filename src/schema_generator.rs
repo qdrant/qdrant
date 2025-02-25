@@ -22,8 +22,8 @@ use collection::operations::types::{
     SearchRequestBatch, UpdateResult,
 };
 use collection::operations::vector_ops::DeleteVectors;
-use schemars::gen::SchemaSettings;
 use schemars::JsonSchema;
+use schemars::r#gen::SchemaSettings;
 use serde::Serialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CreateCollection, UpdateCollection,
@@ -102,8 +102,8 @@ struct AllDefinitions {
 
 fn save_schema<T: JsonSchema>() {
     let settings = SchemaSettings::draft07();
-    let gen = settings.into_generator();
-    let schema = gen.into_root_schema_for::<T>();
+    let generator = settings.into_generator();
+    let schema = generator.into_root_schema_for::<T>();
     let schema_str = serde_json::to_string_pretty(&schema).unwrap();
     println!("{schema_str}")
 }

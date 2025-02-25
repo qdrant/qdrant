@@ -10,8 +10,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{FloatPayloadType, GeoPoint, IntPayloadType, UuidIntType};
 
 const POINT_TO_VALUES_PATH: &str = "point_to_values.bin";
-const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str =
-    "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
+const NOT_ENOUGHT_BYTES_ERROR_MESSAGE: &str = "Not enough bytes to operate with memmapped file `point_to_values.bin`. Is the storage corrupted?";
 const PADDING_SIZE: usize = 4096;
 
 /// Trait for values that can be stored in memmapped file. It's used in `MmapPointToValues` to store values.

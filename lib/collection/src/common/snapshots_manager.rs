@@ -10,9 +10,9 @@ use super::snapshot_stream::{SnapShotStreamLocalFS, SnapshotStream};
 use crate::common::file_utils::move_file;
 use crate::common::sha_256::hash_file;
 use crate::operations::snapshot_ops::{
-    get_checksum_path, get_snapshot_description, SnapshotDescription,
+    SnapshotDescription, get_checksum_path, get_snapshot_description,
 };
-use crate::operations::snapshot_storage_ops::{self};
+use crate::operations::snapshot_storage_ops;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Clone, Deserialize, Debug, Default)]

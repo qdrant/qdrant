@@ -9,7 +9,7 @@ use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::{Rng as _, SeedableRng as _};
 use tango_bench::{
-    benchmark_fn, tango_benchmarks, tango_main, Bencher, Benchmark, ErasedSampler, IntoBenchmarks,
+    Bencher, Benchmark, ErasedSampler, IntoBenchmarks, benchmark_fn, tango_benchmarks, tango_main,
 };
 use zerocopy::IntoBytes;
 

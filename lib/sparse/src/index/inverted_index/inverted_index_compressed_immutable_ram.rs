@@ -3,9 +3,9 @@ use std::path::Path;
 
 use common::types::PointOffsetType;
 
+use super::InvertedIndex;
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use super::inverted_index_ram::InvertedIndexRam;
-use super::InvertedIndex;
 use crate::common::sparse_vector::RemappedSparseVector;
 use crate::common::types::{DimId, DimOffset, Weight};
 use crate::index::compressed_posting_list::{

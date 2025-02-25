@@ -7,8 +7,8 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use super::in_memory_id_tracker::InMemoryIdTracker;
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::types::{PointIdType, SeqNumberType};

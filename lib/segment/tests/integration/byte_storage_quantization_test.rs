@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
@@ -10,7 +10,7 @@ use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
 use segment::data_types::vectors::{
-    only_default_vector, DenseVector, QueryVector, DEFAULT_VECTOR_NAME,
+    DEFAULT_VECTOR_NAME, DenseVector, QueryVector, only_default_vector,
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
@@ -24,9 +24,9 @@ use segment::types::{
     Range, ScalarQuantizationConfig, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageDatatype, VectorStorageType,
 };
+use segment::vector_storage::VectorStorageEnum;
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
-use segment::vector_storage::VectorStorageEnum;
 use tempfile::Builder;
 
 const MAX_EXAMPLE_PAIRS: usize = 4;

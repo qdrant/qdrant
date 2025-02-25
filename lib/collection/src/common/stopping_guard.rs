@@ -1,5 +1,5 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Structure that ensures that `is_stopped` flag is set to `true` when dropped.
 pub struct StoppingGuard {

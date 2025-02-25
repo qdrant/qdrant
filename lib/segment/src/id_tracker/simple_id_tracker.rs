@@ -10,12 +10,12 @@ use rocksdb::DB;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_update_wrapper::DatabaseColumnScheduledUpdateWrapper;
-use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, DB_MAPPING_CF, DB_VERSIONS_CF};
-use crate::common::Flusher;
-use crate::id_tracker::point_mappings::PointMappings;
+use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VERSIONS_CF, DatabaseColumnWrapper};
 use crate::id_tracker::IdTracker;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{ExtendedPointId, PointIdType, SeqNumberType};
 
 /// Point Id type used for storing ids internally
@@ -372,7 +372,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 
     fn check_bincode_serialization<
         T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
