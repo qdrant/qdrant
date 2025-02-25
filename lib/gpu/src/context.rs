@@ -112,6 +112,13 @@ impl Context {
         Ok(())
     }
 
+    /// Barrier for buffers.
+    /// It's used to synchronize access to buffers between different shaders.
+    /// By Vulkan specification, resources between different shaders/transfers must be synchronized.
+    /// Example of compute shader sync:
+    /// https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#compute-to-compute-dependencies
+    /// In practice, we use `context.wait_finish()` to synchronize between different shaders.
+    /// But, for additional safety, we have this `barrier_buffers` to synchronize access to buffers.
     pub fn barrier_buffers(&mut self, buffers: &[Arc<Buffer>]) -> GpuResult<()> {
         if self.vk_command_buffer == vk::CommandBuffer::null() {
             self.init_command_buffer()?;
@@ -132,7 +139,11 @@ impl Context {
                         self.device.compute_queue().vk_queue_family_index as u32,
                     )
                     .src_access_mask(vk::AccessFlags::SHADER_WRITE)
-                    .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
+                    .dst_access_mask(
+                        vk::AccessFlags::TRANSFER_READ
+                            | vk::AccessFlags::SHADER_READ
+                            | vk::AccessFlags::SHADER_WRITE,
+                    )
             })
             .collect::<Vec<_>>();
 
