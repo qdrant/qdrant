@@ -185,6 +185,9 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
+    # Wait for all replicas to be active on the receiving peer
+    wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME)
+
     # Assert that the local shard is active and not empty
     local_shards = get_local_shards(peer_api_uris[-1])
     assert len(local_shards) == 1
