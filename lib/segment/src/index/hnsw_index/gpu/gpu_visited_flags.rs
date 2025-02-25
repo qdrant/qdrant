@@ -140,6 +140,10 @@ impl GpuVisitedFlags {
         self.descriptor_set.clone()
     }
 
+    pub fn visited_flags_buffer(&self) -> Arc<gpu::Buffer> {
+        self.visited_flags_buffer.clone()
+    }
+
     fn create_flags_buffer(
         device: Arc<gpu::Device>,
         groups_count: usize,

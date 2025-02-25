@@ -322,6 +322,9 @@ impl<'a> GpuInsertContext<'a> {
             ],
         )?;
         self.context.dispatch(requests.len(), 1, 1)?;
+        self.context
+            .barrier_buffers(&[self.insert_resources.responses_buffer.clone()])
+            .unwrap();
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
 
@@ -386,6 +389,14 @@ impl<'a> GpuInsertContext<'a> {
             ],
         )?;
         self.context.dispatch(requests.len(), 1, 1)?;
+        self.context
+            .barrier_buffers(&[
+                self.insert_resources.responses_buffer.clone(),
+                self.insert_resources.insert_atomics_buffer.clone(),
+                self.gpu_links.links_buffer(),
+                self.gpu_visited_flags.visited_flags_buffer(),
+            ])
+            .unwrap();
         self.context.run()?;
         self.context.wait_finish(GPU_TIMEOUT)?;
 
