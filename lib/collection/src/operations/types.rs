@@ -1855,19 +1855,34 @@ impl VectorParamsBase {
 
 impl From<&VectorParams> for VectorParamsBase {
     fn from(params: &VectorParams) -> Self {
+        let &VectorParams {
+            size,
+            distance,
+            hnsw_config: _,
+            quantization_config: _,
+            on_disk: _,
+            datatype: _,
+            multivector_config: _,
+        } = params;
         Self {
-            size: params.size.get() as _, // TODO!?
-            distance: params.distance,
+            size: size.get() as _, // TODO!?
+            distance,
         }
     }
 }
 
 impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
     fn from(config: &segment::types::VectorDataConfig) -> Self {
-        Self {
-            size: config.size,
-            distance: config.distance,
-        }
+        let &segment::types::VectorDataConfig {
+            size,
+            distance,
+            storage_type: _,
+            index: _,
+            quantization_config: _,
+            multivector_config: _,
+            datatype: _,
+        } = config;
+        Self { size, distance }
     }
 }
 

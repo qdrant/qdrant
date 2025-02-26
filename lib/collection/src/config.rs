@@ -42,9 +42,13 @@ pub struct WalConfig {
 
 impl From<&WalConfig> for WalOptions {
     fn from(config: &WalConfig) -> Self {
+        let WalConfig {
+            wal_capacity_mb,
+            wal_segments_ahead,
+        } = config;
         WalOptions {
-            segment_capacity: config.wal_capacity_mb * 1024 * 1024,
-            segment_queue_len: config.wal_segments_ahead,
+            segment_capacity: wal_capacity_mb * 1024 * 1024,
+            segment_queue_len: *wal_segments_ahead,
         }
     }
 }

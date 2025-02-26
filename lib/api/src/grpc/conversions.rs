@@ -772,7 +772,9 @@ impl TryFrom<OrderValue> for segment::data_types::order_by::OrderValue {
 
         use crate::grpc::qdrant::order_value::Variant;
 
-        let variant = value.variant.ok_or_else(|| {
+        let OrderValue { variant } = value;
+
+        let variant = variant.ok_or_else(|| {
             Status::invalid_argument("OrderedValue should have a variant".to_string())
         })?;
 
@@ -1044,8 +1046,8 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
     type Error = Status;
 
     fn try_from(value: QuantizationConfig) -> Result<Self, Self::Error> {
-        let value = value
-            .quantization
+        let QuantizationConfig { quantization } = value;
+        let value = quantization
             .ok_or_else(|| Status::invalid_argument("Unable to convert quantization config"))?;
         match value {
             super::qdrant::quantization_config::Quantization::Scalar(config) => Ok(

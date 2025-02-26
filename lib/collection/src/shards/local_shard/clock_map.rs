@@ -368,8 +368,8 @@ impl TryFrom<api::grpc::qdrant::RecoveryPoint> for RecoveryPoint {
     type Error = Status;
 
     fn try_from(rp: api::grpc::qdrant::RecoveryPoint) -> Result<Self, Self::Error> {
-        let clocks = rp
-            .clocks
+        let api::grpc::qdrant::RecoveryPoint { clocks } = rp;
+        let clocks = clocks
             .into_iter()
             .map(|tag| {
                 (

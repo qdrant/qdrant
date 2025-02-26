@@ -225,7 +225,8 @@ impl TryFrom<api::grpc::qdrant::AliasOperations> for AliasOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::AliasOperations) -> Result<Self, Self::Error> {
-        match value.action {
+        let api::grpc::qdrant::AliasOperations { action } = value;
+        match action {
             Some(api::grpc::qdrant::alias_operations::Action::CreateAlias(create)) => {
                 Ok(create.into())
             }
