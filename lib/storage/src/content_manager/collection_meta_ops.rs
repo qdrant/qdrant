@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use collection::config::{CollectionConfigInternal, ShardingMethod};
+use collection::config::{CollectionConfigInternal, CollectionParams, ShardingMethod};
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
     WalConfigDiff,
@@ -415,21 +415,42 @@ pub enum CollectionMetaOperations {
 /// for the new collection
 impl From<CollectionConfigInternal> for CreateCollection {
     fn from(value: CollectionConfigInternal) -> Self {
+        let CollectionConfigInternal {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+            uuid,
+        } = value;
+
+        let CollectionParams {
+            vectors,
+            shard_number,
+            sharding_method,
+            replication_factor,
+            write_consistency_factor,
+            read_fan_out_factor: _,
+            on_disk_payload,
+            sparse_vectors,
+        } = params;
+
         Self {
-            vectors: value.params.vectors,
-            shard_number: Some(value.params.shard_number.get()),
-            sharding_method: value.params.sharding_method,
-            replication_factor: Some(value.params.replication_factor.get()),
-            write_consistency_factor: Some(value.params.write_consistency_factor.get()),
-            on_disk_payload: Some(value.params.on_disk_payload),
-            hnsw_config: Some(value.hnsw_config.into()),
-            wal_config: Some(value.wal_config.into()),
-            optimizers_config: Some(value.optimizer_config.into()),
+            vectors,
+            shard_number: Some(shard_number.get()),
+            sharding_method,
+            replication_factor: Some(replication_factor.get()),
+            write_consistency_factor: Some(write_consistency_factor.get()),
+            on_disk_payload: Some(on_disk_payload),
+            hnsw_config: Some(hnsw_config.into()),
+            wal_config: Some(wal_config.into()),
+            optimizers_config: Some(optimizer_config.into()),
             init_from: None,
-            quantization_config: value.quantization_config,
-            sparse_vectors: value.params.sparse_vectors,
-            strict_mode_config: value.strict_mode_config,
-            uuid: value.uuid,
+            quantization_config,
+            sparse_vectors,
+            strict_mode_config,
+            uuid,
         }
     }
 }

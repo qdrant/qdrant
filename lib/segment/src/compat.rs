@@ -124,9 +124,10 @@ pub struct SegmentStateV5 {
 
 impl From<SegmentStateV5> for SegmentState {
     fn from(old: SegmentStateV5) -> Self {
+        let SegmentStateV5 { version, config } = old;
         Self {
-            version: old.version,
-            config: old.config.into(),
+            version,
+            config: config.into(),
         }
     }
 }

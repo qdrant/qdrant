@@ -631,7 +631,7 @@ pub struct ProductQuantization {
     pub product: ProductQuantizationConfig,
 }
 
-impl std::hash::Hash for ScalarQuantizationConfig {
+impl Hash for ScalarQuantizationConfig {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.always_ram.hash(state);
         self.r#type.hash(state);
@@ -1204,12 +1204,10 @@ impl TryFrom<GeoPointShadow> for GeoPoint {
     type Error = GeoPointValidationError;
 
     fn try_from(value: GeoPointShadow) -> Result<Self, Self::Error> {
-        GeoPoint::validate(value.lon, value.lat)?;
+        let GeoPointShadow { lon, lat } = value;
+        GeoPoint::validate(lon, lat)?;
 
-        Ok(Self {
-            lon: value.lon,
-            lat: value.lat,
-        })
+        Ok(Self { lon, lat })
     }
 }
 
@@ -1397,7 +1395,7 @@ pub enum PayloadSchemaType {
 }
 
 impl PayloadSchemaType {
-    /// Human readable type name
+    /// Human-readable type name
     pub fn name(&self) -> &'static str {
         serde_variant::to_variant_name(&self).unwrap_or("unknown")
     }
@@ -1431,7 +1429,7 @@ pub enum PayloadSchemaParams {
 }
 
 impl PayloadSchemaParams {
-    /// Human readable type name
+    /// Human-readable type name
     pub fn name(&self) -> &'static str {
         self.kind().name()
     }
@@ -1515,7 +1513,7 @@ impl PayloadFieldSchema {
         }
     }
 
-    /// Human readable type name
+    /// Human-readable type name
     pub fn name(&self) -> &'static str {
         match self {
             PayloadFieldSchema::FieldType(field_type) => field_type.name(),
@@ -1562,15 +1560,19 @@ impl TryFrom<PayloadIndexInfo> for PayloadFieldSchema {
     type Error = String;
 
     fn try_from(index_info: PayloadIndexInfo) -> Result<Self, Self::Error> {
-        match index_info.params {
-            Some(params) if params.kind() == index_info.data_type => {
+        let PayloadIndexInfo {
+            data_type,
+            params,
+            points: _,
+        } = index_info;
+        match params {
+            Some(params) if params.kind() == data_type => {
                 Ok(PayloadFieldSchema::FieldParams(params))
             }
             Some(_) => Err(format!(
-                "Payload field with type {:?} has unexpected params",
-                index_info.data_type,
+                "Payload field with type {data_type:?} has unexpected params"
             )),
-            None => Ok(PayloadFieldSchema::FieldType(index_info.data_type)),
+            None => Ok(PayloadFieldSchema::FieldType(data_type)),
         }
     }
 }
@@ -1885,21 +1887,23 @@ impl FromStr for DateTimePayloadType {
 impl<T: Copy> Range<T> {
     /// Convert range to a range of another type
     pub fn map<U, F: Fn(T) -> U>(&self, f: F) -> Range<U> {
+        let Self { lt, gt, gte, lte } = self;
         Range {
-            lt: self.lt.map(&f),
-            gt: self.gt.map(&f),
-            gte: self.gte.map(&f),
-            lte: self.lte.map(&f),
+            lt: lt.map(&f),
+            gt: gt.map(&f),
+            gte: gte.map(&f),
+            lte: lte.map(&f),
         }
     }
 }
 
 impl<T: Copy + PartialOrd> Range<T> {
     pub fn check_range(&self, number: T) -> bool {
-        self.lt.is_none_or(|x| number < x)
-            && self.gt.is_none_or(|x| number > x)
-            && self.lte.is_none_or(|x| number <= x)
-            && self.gte.is_none_or(|x| number >= x)
+        let Self { lt, gt, gte, lte } = self;
+        lt.is_none_or(|x| number < x)
+            && gt.is_none_or(|x| number > x)
+            && lte.is_none_or(|x| number <= x)
+            && gte.is_none_or(|x| number >= x)
     }
 }
 
@@ -1919,10 +1923,11 @@ pub struct ValuesCount {
 
 impl ValuesCount {
     pub fn check_count(&self, count: usize) -> bool {
-        self.lt.is_none_or(|x| count < x)
-            && self.gt.is_none_or(|x| count > x)
-            && self.lte.is_none_or(|x| count <= x)
-            && self.gte.is_none_or(|x| count >= x)
+        let Self { lt, gt, gte, lte } = self;
+        lt.is_none_or(|x| count < x)
+            && gt.is_none_or(|x| count > x)
+            && lte.is_none_or(|x| count <= x)
+            && gte.is_none_or(|x| count >= x)
     }
 
     pub fn check_count_from(&self, value: &Value) -> bool {
@@ -2076,17 +2081,21 @@ impl TryFrom<GeoPolygonShadow> for GeoPolygon {
     type Error = OperationError;
 
     fn try_from(value: GeoPolygonShadow) -> OperationResult<Self> {
-        Self::validate_line_string(&value.exterior)?;
+        let GeoPolygonShadow {
+            exterior,
+            interiors,
+        } = value;
+        Self::validate_line_string(&exterior)?;
 
-        if let Some(interiors) = &value.interiors {
+        if let Some(interiors) = &interiors {
             for interior in interiors {
                 Self::validate_line_string(interior)?;
             }
         }
 
         Ok(GeoPolygon {
-            exterior: value.exterior,
-            interiors: value.interiors,
+            exterior,
+            interiors,
         })
     }
 }
@@ -2102,7 +2111,7 @@ pub struct FieldCondition {
     pub r#match: Option<Match>,
     /// Check if points value lies in a given range
     pub range: Option<RangeInterface>,
-    /// Check if points geo location lies in a given area
+    /// Check if points geolocation lies in a given area
     pub geo_bounding_box: Option<GeoBoundingBox>,
     /// Check if geo point is within a given radius
     pub geo_radius: Option<GeoRadius>,
@@ -2317,7 +2326,7 @@ pub struct NestedCondition {
     pub nested: Nested,
 }
 
-/// Container to workaround the untagged enum limitation for condition
+/// Container to work around the untagged enum limitation for condition
 impl NestedCondition {
     pub fn new(nested: Nested) -> Self {
         Self { nested }
