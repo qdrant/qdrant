@@ -641,7 +641,13 @@ pub enum Expression {
     Mult(MultExpression),
     Sum(SumExpression),
     Neg(NegExpression),
+    Abs(AbsExpression),
     Div(DivExpression),
+    Sqrt(SqrtExpression),
+    Pow(PowExpression),
+    Exp(ExpExpression),
+    Log10(Log10Expression),
+    Ln(LnExpression),
     GeoDistance(GeoDistance),
 }
 
@@ -661,6 +667,11 @@ pub struct NegExpression {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AbsExpression {
+    pub abs: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct DivExpression {
     pub div: DivParams,
 }
@@ -670,6 +681,37 @@ pub struct DivParams {
     pub left: Box<Expression>,
     pub right: Box<Expression>,
     pub by_zero_default: Option<ScoreType>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct SqrtExpression {
+    pub sqrt: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PowExpression {
+    pub pow: PowParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PowParams {
+    pub base: Box<Expression>,
+    pub exponent: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ExpExpression {
+    pub exp: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Log10Expression {
+    pub log10: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct LnExpression {
+    pub ln: Box<Expression>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

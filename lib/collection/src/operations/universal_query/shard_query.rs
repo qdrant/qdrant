@@ -246,6 +246,25 @@ impl ExpressionInternal {
             ExpressionInternal::GeoDistance { origin, to } => {
                 ParsedExpression::new_geo_distance(origin, to)
             }
+            ExpressionInternal::Sqrt(expression_internal) => ParsedExpression::Sqrt(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Pow { base, exponent } => ParsedExpression::Pow {
+                base: Box::new(base.parse_and_convert(payload_vars, conditions)?),
+                exponent: Box::new(exponent.parse_and_convert(payload_vars, conditions)?),
+            },
+            ExpressionInternal::Exp(expression_internal) => ParsedExpression::Exp(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Log10(expression_internal) => ParsedExpression::Log10(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Ln(expression_internal) => ParsedExpression::Ln(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Abs(expression_internal) => ParsedExpression::Abs(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
         };
 
         Ok(expr)
@@ -516,6 +535,31 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
             Variant::Neg(expression) => {
                 ExpressionInternal::Neg(Box::new((*expression).try_into()?))
             }
+            Variant::Abs(expression) => {
+                ExpressionInternal::Abs(Box::new((*expression).try_into()?))
+            }
+            Variant::Sqrt(expression) => {
+                ExpressionInternal::Sqrt(Box::new((*expression).try_into()?))
+            }
+            Variant::Pow(pow_expression) => {
+                let grpc::PowExpression { base, exponent } = *pow_expression;
+                let raw_base =
+                    *base.ok_or_else(|| tonic::Status::invalid_argument("missing field: base"))?;
+                let raw_exponent = *exponent
+                    .ok_or_else(|| tonic::Status::invalid_argument("missing field: exponent"))?;
+
+                ExpressionInternal::Pow {
+                    base: Box::new(raw_base.try_into()?),
+                    exponent: Box::new(raw_exponent.try_into()?),
+                }
+            }
+            Variant::Exp(expression) => {
+                ExpressionInternal::Exp(Box::new((*expression).try_into()?))
+            }
+            Variant::Log10(expression) => {
+                ExpressionInternal::Log10(Box::new((*expression).try_into()?))
+            }
+            Variant::Ln(expression) => ExpressionInternal::Ln(Box::new((*expression).try_into()?)),
         };
 
         Ok(expression)

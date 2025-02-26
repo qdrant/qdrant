@@ -41,6 +41,15 @@ pub enum ParsedExpression {
         by_zero_default: ScoreType,
     },
     Neg(Box<ParsedExpression>),
+    Sqrt(Box<ParsedExpression>),
+    Pow {
+        base: Box<ParsedExpression>,
+        exponent: Box<ParsedExpression>,
+    },
+    Exp(Box<ParsedExpression>),
+    Log10(Box<ParsedExpression>),
+    Ln(Box<ParsedExpression>),
+    Abs(Box<ParsedExpression>),
     GeoDistance {
         origin: GeoPoint,
         key: JsonPath,

@@ -153,6 +153,53 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.neg())
             }
+            ParsedExpression::Sqrt(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                let sqrt_value = value.sqrt();
+                if sqrt_value.is_nan() {
+                    // Undefined: Send this point to the bottom of results
+                    Ok(f32::NEG_INFINITY)
+                } else {
+                    Ok(sqrt_value)
+                }
+            }
+            ParsedExpression::Pow { base, exponent } => {
+                let base_value = self.eval_expression(base, point_id)?;
+                let exponent_value = self.eval_expression(exponent, point_id)?;
+                let power = base_value.powf(exponent_value);
+                if power.is_nan() {
+                    // Undefined: Send this point to the bottom of results
+                    Ok(f32::NEG_INFINITY)
+                } else {
+                    Ok(power)
+                }
+            }
+            ParsedExpression::Exp(parsed_expression) => {
+                let value = self.eval_expression(parsed_expression, point_id)?;
+                Ok(value.exp())
+            }
+            ParsedExpression::Log10(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                if value <= 0.0 {
+                    // Undefined: Send this point to the bottom of results
+                    Ok(f32::NEG_INFINITY)
+                } else {
+                    Ok(value.log10())
+                }
+            }
+            ParsedExpression::Ln(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                if value <= 0.0 {
+                    // Undefined: Send this point to the bottom of results
+                    Ok(f32::NEG_INFINITY)
+                } else {
+                    Ok(value.ln())
+                }
+            }
+            ParsedExpression::Abs(expr) => {
+                let value = self.eval_expression(expr, point_id)?;
+                Ok(value.abs())
+            }
             ParsedExpression::GeoDistance { origin, key } => {
                 let value: GeoPoint = self
                     .payload_retrievers
