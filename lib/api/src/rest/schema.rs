@@ -511,6 +511,8 @@ pub struct FusionQuery {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct FormulaQuery {
     pub formula: Expression,
+
+    #[serde(default)]
     pub defaults: HashMap<String, Value>,
 }
 

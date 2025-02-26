@@ -1,7 +1,6 @@
 from math import isclose
 import pytest
 import requests
-import os
 
 from .helpers.collection_setup import basic_collection_setup, drop_collection
 from .helpers.helpers import distribution_based_score_fusion, reciprocal_rank_fusion, request_with_validation, \
