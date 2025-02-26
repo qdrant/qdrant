@@ -104,9 +104,9 @@ impl ShardDistributionProposal {
 
 impl From<ShardDistributionProposal> for CollectionShardDistribution {
     fn from(proposal: ShardDistributionProposal) -> Self {
+        let ShardDistributionProposal { distribution } = proposal;
         CollectionShardDistribution {
-            shards: proposal
-                .distribution
+            shards: distribution
                 .into_iter()
                 .map(|(shard_id, peers)| (shard_id, peers.into_iter().collect()))
                 .collect(),

@@ -347,7 +347,8 @@ impl TryFrom<grpc::VectorOutput> for VectorInternal {
 impl TryFrom<grpc::VectorsOutput> for VectorStructInternal {
     type Error = OperationError;
     fn try_from(vectors_output: grpc::VectorsOutput) -> Result<Self, Self::Error> {
-        match vectors_output.vectors_options {
+        let grpc::VectorsOutput { vectors_options } = vectors_output;
+        match vectors_options {
             Some(vectors_options) => Ok(match vectors_options {
                 grpc::vectors_output::VectorsOptions::Vector(vector) => {
                     let grpc::VectorOutput {

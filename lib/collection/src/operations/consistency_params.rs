@@ -76,7 +76,8 @@ impl TryFrom<ReadConsistencyGrpc> for ReadConsistency {
     type Error = tonic::Status;
 
     fn try_from(consistency: ReadConsistencyGrpc) -> Result<Self, Self::Error> {
-        let value = consistency.value.ok_or_else(|| {
+        let ReadConsistencyGrpc { value } = consistency;
+        let value = value.ok_or_else(|| {
             tonic::Status::invalid_argument(
                 "invalid read consistency message: `ReadConsistency::value` field is `None`",
             )
