@@ -14,7 +14,7 @@ use crate::content_manager::collection_meta_ops::{
 };
 use crate::content_manager::errors::StorageError;
 
-impl From<StorageError> for tonic::Status {
+impl From<StorageError> for Status {
     fn from(error: StorageError) -> Self {
         let error_code = match &error {
             StorageError::BadInput { .. } => tonic::Code::InvalidArgument,
@@ -38,37 +38,47 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::CreateCollection) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::CreateCollection {
+            collection_name,
+            hnsw_config,
+            wal_config,
+            optimizers_config,
+            shard_number,
+            on_disk_payload,
+            timeout: _,
+            vectors_config,
+            replication_factor,
+            write_consistency_factor,
+            init_from_collection,
+            quantization_config,
+            sharding_method,
+            sparse_vectors_config,
+            strict_mode_config,
+        } = value;
         let op = CreateCollectionOperation::new(
-            value.collection_name,
+            collection_name,
             CreateCollection {
-                vectors: match value.vectors_config.and_then(|config| config.config) {
+                vectors: match vectors_config.and_then(|config| config.config) {
                     Some(vector_config) => vector_config.try_into()?,
                     // TODO(sparse): sparse or dense vectors config is required
                     None => Default::default(),
                 },
-                sparse_vectors: value
-                    .sparse_vectors_config
+                sparse_vectors: sparse_vectors_config
                     .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
                     .transpose()?,
-                hnsw_config: value.hnsw_config.map(|v| v.into()),
-                wal_config: value.wal_config.map(|v| v.into()),
-                optimizers_config: value.optimizers_config.map(TryFrom::try_from).transpose()?,
-                shard_number: value.shard_number,
-                on_disk_payload: value.on_disk_payload,
-                replication_factor: value.replication_factor,
-                write_consistency_factor: value.write_consistency_factor,
-                init_from: value
-                    .init_from_collection
-                    .map(|v| InitFrom { collection: v }),
-                quantization_config: value
-                    .quantization_config
-                    .map(TryInto::try_into)
-                    .transpose()?,
-                sharding_method: value
-                    .sharding_method
+                hnsw_config: hnsw_config.map(|v| v.into()),
+                wal_config: wal_config.map(|v| v.into()),
+                optimizers_config: optimizers_config.map(TryFrom::try_from).transpose()?,
+                shard_number,
+                on_disk_payload,
+                replication_factor,
+                write_consistency_factor,
+                init_from: init_from_collection.map(|v| InitFrom { collection: v }),
+                quantization_config: quantization_config.map(TryInto::try_into).transpose()?,
+                sharding_method: sharding_method
                     .map(sharding_method_from_proto)
                     .transpose()?,
-                strict_mode_config: value.strict_mode_config.map(strict_mode_from_api),
+                strict_mode_config: strict_mode_config.map(strict_mode_from_api),
                 uuid: None,
             },
         )?;
@@ -77,31 +87,45 @@ impl TryFrom<api::grpc::qdrant::CreateCollection> for CollectionMetaOperations {
 }
 
 pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> StrictModeConfig {
+    let api::grpc::qdrant::StrictModeConfig {
+        enabled,
+        max_query_limit,
+        max_timeout,
+        unindexed_filtering_retrieve,
+        unindexed_filtering_update,
+        search_max_hnsw_ef,
+        search_allow_exact,
+        search_max_oversampling,
+        upsert_max_batchsize,
+        max_collection_vector_size_bytes,
+        read_rate_limit,
+        write_rate_limit,
+        max_collection_payload_size_bytes,
+        max_points_count,
+        filter_max_conditions,
+        condition_max_size,
+        multivector_config,
+        sparse_config,
+    } = value;
     StrictModeConfig {
-        enabled: value.enabled,
-        max_query_limit: value.max_query_limit.map(|i| i as usize),
-        max_timeout: value.max_timeout.map(|i| i as usize),
-        unindexed_filtering_retrieve: value.unindexed_filtering_retrieve,
-        unindexed_filtering_update: value.unindexed_filtering_update,
-        search_max_hnsw_ef: value.search_max_hnsw_ef.map(|i| i as usize),
-        search_allow_exact: value.search_allow_exact,
-        search_max_oversampling: value.search_max_oversampling.map(f64::from),
-        upsert_max_batchsize: value.upsert_max_batchsize.map(|i| i as usize),
-        max_collection_vector_size_bytes: value
-            .max_collection_vector_size_bytes
-            .map(|i| i as usize),
-        read_rate_limit: value.read_rate_limit.map(|i| i as usize),
-        write_rate_limit: value.write_rate_limit.map(|i| i as usize),
-        max_collection_payload_size_bytes: value
-            .max_collection_payload_size_bytes
-            .map(|i| i as usize),
-        max_points_count: value.max_points_count.map(|i| i as usize),
-        filter_max_conditions: value.filter_max_conditions.map(|i| i as usize),
-        condition_max_size: value.condition_max_size.map(|i| i as usize),
-        multivector_config: value
-            .multivector_config
-            .map(StrictModeMultivectorConfig::from),
-        sparse_config: value.sparse_config.map(StrictModeSparseConfig::from),
+        enabled,
+        max_query_limit: max_query_limit.map(|i| i as usize),
+        max_timeout: max_timeout.map(|i| i as usize),
+        unindexed_filtering_retrieve,
+        unindexed_filtering_update,
+        search_max_hnsw_ef: search_max_hnsw_ef.map(|i| i as usize),
+        search_allow_exact,
+        search_max_oversampling: search_max_oversampling.map(f64::from),
+        upsert_max_batchsize: upsert_max_batchsize.map(|i| i as usize),
+        max_collection_vector_size_bytes: max_collection_vector_size_bytes.map(|i| i as usize),
+        read_rate_limit: read_rate_limit.map(|i| i as usize),
+        write_rate_limit: write_rate_limit.map(|i| i as usize),
+        max_collection_payload_size_bytes: max_collection_payload_size_bytes.map(|i| i as usize),
+        max_points_count: max_points_count.map(|i| i as usize),
+        filter_max_conditions: filter_max_conditions.map(|i| i as usize),
+        condition_max_size: condition_max_size.map(|i| i as usize),
+        multivector_config: multivector_config.map(StrictModeMultivectorConfig::from),
+        sparse_config: sparse_config.map(StrictModeSparseConfig::from),
     }
 }
 
@@ -109,32 +133,36 @@ impl TryFrom<api::grpc::qdrant::UpdateCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::UpdateCollection) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::UpdateCollection {
+            collection_name,
+            optimizers_config,
+            timeout: _,
+            params,
+            hnsw_config,
+            vectors_config,
+            quantization_config,
+            sparse_vectors_config,
+            strict_mode_config,
+        } = value;
         Ok(Self::UpdateCollection(UpdateCollectionOperation::new(
-            value.collection_name,
+            collection_name,
             UpdateCollection {
-                vectors: value
-                    .vectors_config
+                vectors: vectors_config
                     .and_then(|config| config.config)
                     .map(VectorsConfigDiff::try_from)
                     .transpose()?,
-                hnsw_config: value.hnsw_config.map(HnswConfigDiff::from),
-                params: value
-                    .params
-                    .map(CollectionParamsDiff::try_from)
-                    .transpose()?,
-                optimizers_config: value
-                    .optimizers_config
+                hnsw_config: hnsw_config.map(HnswConfigDiff::from),
+                params: params.map(CollectionParamsDiff::try_from).transpose()?,
+                optimizers_config: optimizers_config
                     .map(OptimizersConfigDiff::try_from)
                     .transpose()?,
-                quantization_config: value
-                    .quantization_config
+                quantization_config: quantization_config
                     .map(QuantizationConfigDiff::try_from)
                     .transpose()?,
-                sparse_vectors: value
-                    .sparse_vectors_config
+                sparse_vectors: sparse_vectors_config
                     .map(SparseVectorsConfig::try_from)
                     .transpose()?,
-                strict_mode_config: value.strict_mode_config.map(StrictModeConfig::from),
+                strict_mode_config: strict_mode_config.map(StrictModeConfig::from),
             },
         )))
     }
@@ -144,18 +172,26 @@ impl TryFrom<api::grpc::qdrant::DeleteCollection> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::DeleteCollection) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::DeleteCollection {
+            collection_name,
+            timeout: _,
+        } = value;
         Ok(Self::DeleteCollection(DeleteCollectionOperation(
-            value.collection_name,
+            collection_name,
         )))
     }
 }
 
 impl From<api::grpc::qdrant::CreateAlias> for AliasOperations {
     fn from(value: api::grpc::qdrant::CreateAlias) -> Self {
+        let api::grpc::qdrant::CreateAlias {
+            collection_name,
+            alias_name,
+        } = value;
         Self::CreateAlias(CreateAliasOperation {
             create_alias: CreateAlias {
-                collection_name: value.collection_name,
-                alias_name: value.alias_name,
+                collection_name,
+                alias_name,
             },
         })
     }
@@ -163,20 +199,23 @@ impl From<api::grpc::qdrant::CreateAlias> for AliasOperations {
 
 impl From<api::grpc::qdrant::DeleteAlias> for AliasOperations {
     fn from(value: api::grpc::qdrant::DeleteAlias) -> Self {
+        let api::grpc::qdrant::DeleteAlias { alias_name } = value;
         Self::DeleteAlias(DeleteAliasOperation {
-            delete_alias: DeleteAlias {
-                alias_name: value.alias_name,
-            },
+            delete_alias: DeleteAlias { alias_name },
         })
     }
 }
 
 impl From<api::grpc::qdrant::RenameAlias> for AliasOperations {
     fn from(value: api::grpc::qdrant::RenameAlias) -> Self {
+        let api::grpc::qdrant::RenameAlias {
+            old_alias_name,
+            new_alias_name,
+        } = value;
         Self::RenameAlias(RenameAliasOperation {
             rename_alias: RenameAlias {
-                old_alias_name: value.old_alias_name,
-                new_alias_name: value.new_alias_name,
+                old_alias_name,
+                new_alias_name,
             },
         })
     }
@@ -205,8 +244,11 @@ impl TryFrom<api::grpc::qdrant::ChangeAliases> for CollectionMetaOperations {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::ChangeAliases) -> Result<Self, Self::Error> {
-        let actions: Vec<AliasOperations> = value
-            .actions
+        let api::grpc::qdrant::ChangeAliases {
+            actions,
+            timeout: _,
+        } = value;
+        let actions: Vec<AliasOperations> = actions
             .into_iter()
             .map(|a| a.try_into())
             .collect::<Result<_, _>>()?;
