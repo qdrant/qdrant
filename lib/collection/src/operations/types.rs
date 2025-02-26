@@ -1345,10 +1345,19 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::FailedPrecondition => CollectionError::PreConditionFailed {
                 description: format!("{err}"),
             },
-            tonic::Code::ResourceExhausted => CollectionError::RateLimitExceeded {
-                description: format!("{err}"),
-                retry_after: None,
-            },
+            tonic::Code::ResourceExhausted => {
+                // extract retry-after from metadata
+                let retry_after = err.metadata().get("retry-after").and_then(|v| {
+                    v.to_str()
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .map(Duration::from_secs)
+                });
+                CollectionError::RateLimitExceeded {
+                    description: format!("{err}"),
+                    retry_after,
+                }
+            }
             tonic::Code::Ok
             | tonic::Code::Unknown
             | tonic::Code::PermissionDenied
