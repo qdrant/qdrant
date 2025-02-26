@@ -9634,7 +9634,7 @@ pub mod query_shard_points {
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Query {
-        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4")]
+        #[prost(oneof = "query::Score", tags = "1, 2, 3, 4, 5")]
         pub score: ::core::option::Option<query::Score>,
     }
     /// Nested message and enum types in `Query`.
@@ -9655,6 +9655,9 @@ pub mod query_shard_points {
             /// Sample points
             #[prost(enumeration = "super::super::Sample", tag = "4")]
             Sample(i32),
+            /// Use an arbitrary formula to rescore points
+            #[prost(message, tag = "5")]
+            Formula(super::super::Formula),
         }
     }
     #[derive(serde::Serialize)]

@@ -1,11 +1,17 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use api::rest;
 use api::rest::GeoDistance;
 use common::types::ScoreType;
+use itertools::Itertools;
+use segment::index::query_optimization::rescore_formula::parsed_formula::{
+    ParsedExpression, ParsedFormula, VariableId,
+};
 use segment::json_path::JsonPath;
 use segment::types::{Condition, GeoPoint};
 use serde_json::Value;
+
+use crate::operations::types::{CollectionError, CollectionResult};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormulaInternal {
@@ -39,6 +45,106 @@ pub enum ExpressionInternal {
         origin: GeoPoint,
         to: JsonPath,
     },
+}
+
+impl ExpressionInternal {
+    fn parse_and_convert(
+        self,
+        payload_vars: &mut HashSet<JsonPath>,
+        conditions: &mut Vec<Condition>,
+    ) -> CollectionResult<ParsedExpression> {
+        let expr = match self {
+            ExpressionInternal::Constant(c) => ParsedExpression::Constant(c),
+            ExpressionInternal::Variable(var) => {
+                let var: VariableId = var.parse()?;
+                if let VariableId::Payload(payload_var) = var.clone() {
+                    payload_vars.insert(payload_var);
+                }
+                ParsedExpression::Variable(var)
+            }
+            ExpressionInternal::Condition(condition) => {
+                let condition_id = conditions.len();
+                conditions.push(*condition);
+                ParsedExpression::new_condition_id(condition_id)
+            }
+            ExpressionInternal::Mult(internal_expressions) => ParsedExpression::Mult(
+                internal_expressions
+                    .into_iter()
+                    .map(|expr| expr.parse_and_convert(payload_vars, conditions))
+                    .try_collect()?,
+            ),
+            ExpressionInternal::Sum(expression_internals) => ParsedExpression::Sum(
+                expression_internals
+                    .into_iter()
+                    .map(|expr| expr.parse_and_convert(payload_vars, conditions))
+                    .try_collect()?,
+            ),
+            ExpressionInternal::Neg(expression_internal) => ParsedExpression::new_neg(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            ),
+            ExpressionInternal::Div {
+                left,
+                right,
+                by_zero_default,
+            } => ParsedExpression::new_div(
+                left.parse_and_convert(payload_vars, conditions)?,
+                right.parse_and_convert(payload_vars, conditions)?,
+                by_zero_default,
+            ),
+            ExpressionInternal::GeoDistance { origin, to } => {
+                ParsedExpression::new_geo_distance(origin, to)
+            }
+            ExpressionInternal::Sqrt(expression_internal) => ParsedExpression::Sqrt(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Pow { base, exponent } => ParsedExpression::Pow {
+                base: Box::new(base.parse_and_convert(payload_vars, conditions)?),
+                exponent: Box::new(exponent.parse_and_convert(payload_vars, conditions)?),
+            },
+            ExpressionInternal::Exp(expression_internal) => ParsedExpression::Exp(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Log10(expression_internal) => ParsedExpression::Log10(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Ln(expression_internal) => ParsedExpression::Ln(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+            ExpressionInternal::Abs(expression_internal) => ParsedExpression::Abs(Box::new(
+                expression_internal.parse_and_convert(payload_vars, conditions)?,
+            )),
+        };
+
+        Ok(expr)
+    }
+}
+
+impl TryFrom<FormulaInternal> for ParsedFormula {
+    type Error = CollectionError;
+
+    fn try_from(value: FormulaInternal) -> Result<Self, Self::Error> {
+        let FormulaInternal { formula, defaults } = value;
+
+        let mut payload_vars = HashSet::new();
+        let mut conditions = Vec::new();
+
+        let parsed_expression = formula.parse_and_convert(&mut payload_vars, &mut conditions)?;
+
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| {
+                let key = key.as_str().parse()?;
+                CollectionResult::Ok((key, value))
+            })
+            .try_collect()?;
+
+        Ok(ParsedFormula {
+            formula: parsed_expression,
+            payload_vars,
+            conditions,
+            defaults,
+        })
+    }
 }
 
 impl From<rest::FormulaQuery> for FormulaInternal {

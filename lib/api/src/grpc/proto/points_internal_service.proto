@@ -244,6 +244,7 @@ message QueryShardPoints {
       Fusion fusion = 2; // One of the fusion methods
       OrderBy order_by = 3; // Order by a field
       Sample sample = 4; // Sample points
+      Formula formula = 5; // Use an arbitrary formula to rescore points
     }
   }
 

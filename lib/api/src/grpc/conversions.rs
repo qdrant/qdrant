@@ -11,6 +11,9 @@ use segment::data_types::index::{
     KeywordIndexType, TextIndexType, UuidIndexType,
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
+use segment::index::query_optimization::rescore_formula::parsed_formula::{
+    ParsedExpression, ParsedFormula,
+};
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
 use sparse::common::sparse_vector::validate_sparse_vector_impl;
@@ -27,7 +30,8 @@ use super::qdrant::{
     StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
-use crate::conversions::json;
+use super::{Expression, Formula};
+use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
 use crate::grpc::qdrant::payload_index_params::IndexParams;
@@ -45,6 +49,7 @@ use crate::grpc::qdrant::{
     TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
     VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
+use crate::grpc::{DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression};
 use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
 
@@ -2585,5 +2590,102 @@ impl From<HwMeasurementAcc> for HardwareUsage {
             vector_io_read: value.get_vector_io_read() as u64,
             vector_io_write: value.get_vector_io_write() as u64,
         }
+    }
+}
+
+impl Formula {
+    /// This implementation is only used to forward a request to remote shards.
+    ///
+    /// It is preferred to pay the cost of un-parsing->re-parsing the formula, and keep the parsed representation
+    /// out of the API surface, than to expose the implementation details to the interface and avoid the extra work.
+    /// Conversion should be cheap enough.
+    pub fn from_parsed(value: ParsedFormula) -> Self {
+        let ParsedFormula {
+            formula,
+            payload_vars: _, // they are already in the expression
+            conditions,
+            defaults,
+        } = value;
+
+        let expression = unparse_expression(formula, &conditions);
+
+        let defaults = defaults
+            .into_iter()
+            .map(|(key, value)| (key.unparse(), json_to_proto(value)))
+            .collect();
+
+        Formula {
+            expression: Some(expression),
+            defaults,
+        }
+    }
+}
+
+fn unparse_expression(
+    formula: ParsedExpression,
+    conditions: &Vec<segment::types::Condition>,
+) -> Expression {
+    use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
+
+    use super::expression::Variant;
+
+    let variant = match formula {
+        ParsedExpression::Constant(c) => Variant::Constant(c),
+        ParsedExpression::Variable(variable_id) => match variable_id {
+            var_id @ VariableId::Score(_) => Variant::Variable(var_id.unparse()),
+            var_id @ VariableId::Payload(_) => Variant::Variable(var_id.unparse()),
+            VariableId::Condition(cond_idx) => {
+                Variant::Condition(Condition::from(conditions[cond_idx].clone()))
+            }
+        },
+        ParsedExpression::Mult(exprs) => Variant::Mult(MultExpression {
+            mult: exprs
+                .into_iter()
+                .map(|expr| unparse_expression(expr, conditions))
+                .collect(),
+        }),
+        ParsedExpression::Sum(exprs) => Variant::Sum(SumExpression {
+            sum: exprs
+                .into_iter()
+                .map(|expr| unparse_expression(expr, conditions))
+                .collect(),
+        }),
+        ParsedExpression::Neg(expr) => {
+            Variant::Neg(Box::new(unparse_expression(*expr, conditions)))
+        }
+        ParsedExpression::Div {
+            left,
+            right,
+            by_zero_default,
+        } => Variant::Div(Box::new(DivExpression {
+            left: Some(Box::new(unparse_expression(*left, conditions))),
+            right: Some(Box::new(unparse_expression(*right, conditions))),
+            by_zero_default: Some(by_zero_default),
+        })),
+        ParsedExpression::Sqrt(expr) => {
+            Variant::Sqrt(Box::new(unparse_expression(*expr, conditions)))
+        }
+        ParsedExpression::Pow { base, exponent } => Variant::Pow(Box::new(PowExpression {
+            base: Some(Box::new(unparse_expression(*base, conditions))),
+            exponent: Some(Box::new(unparse_expression(*exponent, conditions))),
+        })),
+        ParsedExpression::Exp(expr) => {
+            Variant::Exp(Box::new(unparse_expression(*expr, conditions)))
+        }
+        ParsedExpression::Log10(expr) => {
+            Variant::Log10(Box::new(unparse_expression(*expr, conditions)))
+        }
+        ParsedExpression::Ln(expr) => Variant::Ln(Box::new(unparse_expression(*expr, conditions))),
+        ParsedExpression::Abs(expr) => {
+            Variant::Abs(Box::new(unparse_expression(*expr, conditions)))
+        }
+        ParsedExpression::GeoDistance { origin, key } => Variant::GeoDistance(GeoDistance {
+            origin: Some(GeoPoint::from(origin)),
+            to: key.to_string(),
+        }),
+    };
+
+    Expression {
+        variant: Some(variant),
     }
 }

@@ -10,6 +10,8 @@ pub mod grpc_health_v1;
 pub mod transport_channel_pool;
 pub mod validate;
 
+pub use qdrant::*;
+
 pub const fn api_crate_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
