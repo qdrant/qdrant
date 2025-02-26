@@ -15,6 +15,7 @@ use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
 
 use super::Collection;
+use crate::collection_manager::probabilistic_search_sampling::find_search_sampling_over_point_distribution;
 use crate::common::batching::batch_requests;
 use crate::common::fetch_vectors::{
     build_vector_resolver_queries, resolve_referenced_vectors_batch,
@@ -60,6 +61,83 @@ impl Collection {
         Ok(results.into_iter().next().unwrap())
     }
 
+    /// If the query limit above this value, it will be a subject to undersampling.
+    const SHARD_QUERY_SUBSAMPLING_LIMIT: usize = 128;
+
+    /// Give some more ensurance for undersampling,
+    /// retrieve more points to prevent undersampling errors.
+    /// Errors are still possible, but rare enough to be acceptable compared to
+    /// errors introduced by vector index.
+    const MORE_ENSURANCE_FACTOR: f64 = 1.2;
+
+    /// Creates a copy of requests in case it is possible to apply limit modification
+    /// Returns unchanged requests if limit modification is not applicable.
+    ///
+    /// If there are many independent shards, and we need a very high limit, we can do an optimization.
+    /// Instead of querying all shards with the same limit, we can query each shard with a smaller limit
+    /// and then merge the results. Since shards are independent and data is randomly distributed, we can
+    /// apply probability estimation to make sure we query enough points to get the desired number of results.
+    ///
+    /// Same optimization we already apply on segment level, but here it seems to be even more reliable
+    /// because auto-sharding guarantee random and independent distribution of data.
+    ///
+    /// Unlike segments, however, the cost of re-requesting the data is much higher for shards.
+    /// So we "accept" the risk of not getting enough results.
+    fn modify_shard_query_for_undersampling_limits(
+        batch_request: Arc<Vec<ShardQueryRequest>>,
+        num_shards: usize,
+        is_auto_sharding: bool,
+    ) -> Arc<Vec<ShardQueryRequest>> {
+        if num_shards <= 1 {
+            return batch_request;
+        }
+
+        // Check this parameter inside the function
+        // to ensure it is not omitted in the future.
+        if !is_auto_sharding {
+            return batch_request;
+        }
+
+        let max_limit = batch_request
+            .iter()
+            .map(|req| req.limit + req.offset)
+            .max()
+            .unwrap_or(0);
+
+        if max_limit < Self::SHARD_QUERY_SUBSAMPLING_LIMIT {
+            return batch_request;
+        }
+
+        let mut new_requests = Vec::with_capacity(batch_request.len());
+
+        for request in batch_request.iter() {
+            let mut new_request = request.clone();
+            let request_limit = new_request.limit + new_request.offset;
+
+            let is_exact = request.params.map(|p| p.exact).unwrap_or(false);
+
+            if is_exact || request_limit < Self::SHARD_QUERY_SUBSAMPLING_LIMIT {
+                new_requests.push(new_request);
+                continue;
+            }
+
+            // Example: 1000 limit, 10 shards
+            // 1.0 / 10 * 1.2 = 0.12
+            // lambda = 0.12 * 1000 = 120
+            // Which is equal to 171 limit per shard
+            let undersample_limit = find_search_sampling_over_point_distribution(
+                request_limit as f64,
+                1. / num_shards as f64 * Self::MORE_ENSURANCE_FACTOR,
+            );
+
+            new_request.limit = std::cmp::min(undersample_limit, request_limit);
+            new_request.offset = 0; // Offset is handled on the collection level
+            new_requests.push(new_request);
+        }
+
+        Arc::new(new_requests)
+    }
+
     /// Returns a shape of [shard_id, batch_id, intermediate_response, points]
     async fn batch_query_shards_concurrently(
         &self,
@@ -72,6 +150,22 @@ impl Collection {
         // query all shards concurrently
         let shard_holder = self.shards_holder.read().await;
         let target_shards = shard_holder.select_shards(shard_selection)?;
+
+        let num_unique_shard_keys = target_shards
+            .iter()
+            .map(|(_, shard_key)| shard_key)
+            .unique()
+            .count();
+        // Auto-sharding happens when we are only querying shards with _the_same_ shard key.
+        // It either might be when we are querying a specific shard key
+        // OR when we are querying all shards with no shard keys specified.
+        let is_auto_sharding = num_unique_shard_keys == 1;
+
+        let batch_request = Self::modify_shard_query_for_undersampling_limits(
+            batch_request,
+            target_shards.len(),
+            is_auto_sharding,
+        );
 
         let all_searches = target_shards.iter().map(|(shard, shard_key)| {
             let shard_key = shard_key.cloned();
@@ -308,6 +402,49 @@ impl Collection {
         Ok(merged)
     }
 
+    /// Find best result across last results of all shards.
+    /// Presence of the worst result in final result means that there could be other results
+    /// of that shard that could be included in the final result.
+    /// Used to check undersampling.
+    fn get_best_last_shard_result(
+        shard_results: &[Vec<ScoredPoint>],
+        order: Order,
+    ) -> Option<ScoredPoint> {
+        shard_results
+            .iter()
+            .filter_map(|shard_result| shard_result.last().cloned())
+            .max_by(|a, b| match order {
+                Order::LargeBetter => ScoredPointTies(a).cmp(&ScoredPointTies(b)),
+                Order::SmallBetter => ScoredPointTies(a).cmp(&ScoredPointTies(b)).reverse(),
+            })
+    }
+
+    /// Check that worst result of the shard in not present in the final result.
+    fn check_undersampling(
+        &self,
+        worst_merged_point: &ScoredPoint,
+        best_last_result: &ScoredPoint,
+        order: Order,
+    ) {
+        // Merged point should be better than the best last result.
+        let is_properly_sampled = match order {
+            Order::LargeBetter => {
+                ScoredPointTies(worst_merged_point) > ScoredPointTies(best_last_result)
+            }
+            Order::SmallBetter => {
+                ScoredPointTies(worst_merged_point) < ScoredPointTies(best_last_result)
+            }
+        };
+        if !is_properly_sampled {
+            log::debug!(
+                "Undersampling detected. Collection: {}, Best last shard score: {}, Worst merged score: {}",
+                self.id,
+                best_last_result.score,
+                worst_merged_point.score
+            );
+        }
+    }
+
     /// Merges the results in each shard for each intermediate query.
     /// ```text
     /// [ [shard1_result1, shard1_result2],
@@ -340,6 +477,7 @@ impl Collection {
         {
             // `shards_results` shape: [num_shards, num_scored_points]
             let order = ScoringQuery::order(query_info.scoring_query, &collection_params)?;
+            let number_of_shards = shards_results.len();
 
             // Equivalent to:
             //
@@ -354,7 +492,9 @@ impl Collection {
             // Either::Left and Either::Right are used to allow type inference to work.
             //
             let intermediate_result = if let Some(order) = order {
-                match order {
+                let best_last_result = Self::get_best_last_shard_result(&shards_results, order);
+
+                let merged: Vec<_> = match order {
                     Order::LargeBetter => Either::Left(
                         shards_results
                             .into_iter()
@@ -368,7 +508,20 @@ impl Collection {
                 }
                 .dedup()
                 .take(query_info.take)
-                .collect()
+                .collect();
+
+                // Prevents undersampling warning in case there are not enough data to merge.
+                let is_enough = merged.len() == query_info.take;
+
+                if number_of_shards > 1 && is_enough && best_last_result.is_some() {
+                    let worst_merged_point = merged.last();
+                    let best_last_result = best_last_result.unwrap();
+                    if let Some(worst_merged_point) = worst_merged_point {
+                        self.check_undersampling(worst_merged_point, &best_last_result, order);
+                    }
+                }
+
+                merged
             } else {
                 // If the order is not defined, it is a random query. Take from all shards randomly.
                 let mut rng = rand::rng();
