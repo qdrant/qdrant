@@ -11,7 +11,6 @@ use api::grpc::qdrant::quantization_config_diff::Quantization;
 use api::grpc::qdrant::update_collection_cluster_setup_request::{
     Operation as ClusterOperationsPb, Operation,
 };
-use api::grpc::qdrant::{CreateShardKey, Vectors};
 use api::rest::schema::ShardKeySelector;
 use api::rest::{BaseGroupRequest, MaxOptimizationThreads};
 use common::types::ScoreType;
@@ -21,7 +20,8 @@ use segment::data_types::vectors::{
     BatchVectorStructInternal, NamedQuery, VectorInternal, VectorStructInternal,
 };
 use segment::types::{
-    Distance, HnswConfig, MultiVectorConfig, QuantizationConfig, StrictModeConfig,
+    Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, SearchParams,
+    StrictModeConfig, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
@@ -41,6 +41,7 @@ use crate::config::{
 };
 use crate::lookup::WithLookup;
 use crate::lookup::types::WithLookupInterface;
+use crate::operations::ClockTag;
 use crate::operations::cluster_ops::{
     AbortShardTransfer, AbortTransferOperation, ClusterOperations, CreateShardingKey,
     CreateShardingKeyOperation, DropReplicaOperation, DropShardingKey, DropShardingKeyOperation,
@@ -125,32 +126,37 @@ pub fn write_ordering_from_proto(
 pub fn try_record_from_grpc(
     point: api::grpc::qdrant::RetrievedPoint,
     with_payload: bool,
-) -> Result<RecordInternal, tonic::Status> {
-    let id = point
-        .id
-        .ok_or_else(|| tonic::Status::invalid_argument("retrieved point does not have an ID"))?
+) -> Result<RecordInternal, Status> {
+    let api::grpc::qdrant::RetrievedPoint {
+        id,
+        payload,
+        vectors,
+        shard_key,
+        order_value,
+    } = point;
+    let id = id
+        .ok_or_else(|| Status::invalid_argument("retrieved point does not have an ID"))?
         .try_into()?;
 
     let payload = if with_payload {
-        Some(api::conversions::json::proto_to_payloads(point.payload)?)
+        Some(api::conversions::json::proto_to_payloads(payload)?)
     } else {
-        debug_assert!(point.payload.is_empty());
+        debug_assert!(payload.is_empty());
         None
     };
 
-    let vector: Option<_> = point
-        .vectors
+    let vector: Option<_> = vectors
         .map(VectorStructInternal::try_from)
         .transpose()
-        .map_err(|e| tonic::Status::invalid_argument(format!("Cannot convert vectors: {e}")))?;
+        .map_err(|e| Status::invalid_argument(format!("Cannot convert vectors: {e}")))?;
 
-    let order_value = point.order_value.map(TryFrom::try_from).transpose()?;
+    let order_value = order_value.map(TryFrom::try_from).transpose()?;
 
     Ok(RecordInternal {
         id,
         payload,
         vector,
-        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
+        shard_key: convert_shard_key_from_grpc_opt(shard_key),
         order_value,
     })
 }
@@ -237,35 +243,55 @@ pub fn try_discover_request_from_grpc(
 
 impl From<api::grpc::qdrant::HnswConfigDiff> for HnswConfigDiff {
     fn from(value: api::grpc::qdrant::HnswConfigDiff) -> Self {
+        let api::grpc::qdrant::HnswConfigDiff {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+        } = value;
         Self {
-            m: value.m.map(|v| v as usize),
-            ef_construct: value.ef_construct.map(|v| v as usize),
-            full_scan_threshold: value.full_scan_threshold.map(|v| v as usize),
-            max_indexing_threads: value.max_indexing_threads.map(|v| v as usize),
-            on_disk: value.on_disk,
-            payload_m: value.payload_m.map(|v| v as usize),
+            m: m.map(|v| v as usize),
+            ef_construct: ef_construct.map(|v| v as usize),
+            full_scan_threshold: full_scan_threshold.map(|v| v as usize),
+            max_indexing_threads: max_indexing_threads.map(|v| v as usize),
+            on_disk,
+            payload_m: payload_m.map(|v| v as usize),
         }
     }
 }
 
 impl From<HnswConfigDiff> for api::grpc::qdrant::HnswConfigDiff {
     fn from(value: HnswConfigDiff) -> Self {
+        let HnswConfigDiff {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+        } = value;
         Self {
-            m: value.m.map(|v| v as u64),
-            ef_construct: value.ef_construct.map(|v| v as u64),
-            full_scan_threshold: value.full_scan_threshold.map(|v| v as u64),
-            max_indexing_threads: value.max_indexing_threads.map(|v| v as u64),
-            on_disk: value.on_disk,
-            payload_m: value.payload_m.map(|v| v as u64),
+            m: m.map(|v| v as u64),
+            ef_construct: ef_construct.map(|v| v as u64),
+            full_scan_threshold: full_scan_threshold.map(|v| v as u64),
+            max_indexing_threads: max_indexing_threads.map(|v| v as u64),
+            on_disk,
+            payload_m: payload_m.map(|v| v as u64),
         }
     }
 }
 
 impl From<api::grpc::qdrant::WalConfigDiff> for WalConfigDiff {
     fn from(value: api::grpc::qdrant::WalConfigDiff) -> Self {
+        let api::grpc::qdrant::WalConfigDiff {
+            wal_capacity_mb,
+            wal_segments_ahead,
+        } = value;
         Self {
-            wal_capacity_mb: value.wal_capacity_mb.map(|v| v as usize),
-            wal_segments_ahead: value.wal_segments_ahead.map(|v| v as usize),
+            wal_capacity_mb: wal_capacity_mb.map(|v| v as usize),
+            wal_segments_ahead: wal_segments_ahead.map(|v| v as usize),
         }
     }
 }
@@ -274,24 +300,28 @@ impl TryFrom<api::grpc::qdrant::CollectionParamsDiff> for CollectionParamsDiff {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::CollectionParamsDiff) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::CollectionParamsDiff {
+            replication_factor,
+            write_consistency_factor,
+            read_fan_out_factor,
+            on_disk_payload,
+        } = value;
         Ok(Self {
-            replication_factor: value
-                .replication_factor
+            replication_factor: replication_factor
                 .map(|factor| {
                     NonZeroU32::new(factor)
                         .ok_or_else(|| Status::invalid_argument("`replication_factor` cannot be 0"))
                 })
                 .transpose()?,
-            write_consistency_factor: value
-                .write_consistency_factor
+            write_consistency_factor: write_consistency_factor
                 .map(|factor| {
                     NonZeroU32::new(factor).ok_or_else(|| {
                         Status::invalid_argument("`write_consistency_factor` cannot be 0")
                     })
                 })
                 .transpose()?,
-            read_fan_out_factor: value.read_fan_out_factor,
-            on_disk_payload: value.on_disk_payload,
+            read_fan_out_factor,
+            on_disk_payload,
         })
     }
 }
@@ -300,20 +330,29 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfigDiff {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::OptimizersConfigDiff) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::OptimizersConfigDiff {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            deprecated_max_optimization_threads,
+            max_optimization_threads,
+        } = value;
         Ok(Self {
-            deleted_threshold: value.deleted_threshold,
-            vacuum_min_vector_number: value.vacuum_min_vector_number.map(|v| v as usize),
-            default_segment_number: value.default_segment_number.map(|v| v as usize),
-            max_segment_size: value.max_segment_size.map(|v| v as usize),
-            memmap_threshold: value.memmap_threshold.map(|v| v as usize),
-            indexing_threshold: value.indexing_threshold.map(|v| v as usize),
-            flush_interval_sec: value.flush_interval_sec,
+            deleted_threshold,
+            vacuum_min_vector_number: vacuum_min_vector_number.map(|v| v as usize),
+            default_segment_number: default_segment_number.map(|v| v as usize),
+            max_segment_size: max_segment_size.map(|v| v as usize),
+            memmap_threshold: memmap_threshold.map(|v| v as usize),
+            indexing_threshold: indexing_threshold.map(|v| v as usize),
+            flush_interval_sec,
             // TODO: remove deprecated field in a later version
-            max_optimization_threads: value
-                .deprecated_max_optimization_threads
+            max_optimization_threads: deprecated_max_optimization_threads
                 .map(|v| MaxOptimizationThreads::Threads(v as usize))
-                .or(value
-                    .max_optimization_threads
+                .or(max_optimization_threads
                     .map(TryFrom::try_from)
                     .transpose()?),
         })
@@ -324,7 +363,8 @@ impl TryFrom<api::grpc::qdrant::QuantizationConfigDiff> for QuantizationConfigDi
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::QuantizationConfigDiff) -> Result<Self, Self::Error> {
-        match value.quantization {
+        let api::grpc::qdrant::QuantizationConfigDiff { quantization } = value;
+        match quantization {
             None => Err(Status::invalid_argument(
                 "Quantization type is not specified",
             )),
@@ -351,6 +391,46 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             payload_schema,
         } = value;
 
+        let CollectionConfig {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+        } = config;
+
+        let OptimizersConfig {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            max_optimization_threads,
+        } = optimizer_config;
+
+        let HnswConfig {
+            m,
+            ef_construct,
+            full_scan_threshold,
+            max_indexing_threads,
+            on_disk,
+            payload_m,
+        } = hnsw_config;
+
+        let CollectionParams {
+            vectors,
+            shard_number,
+            replication_factor,
+            on_disk_payload,
+            write_consistency_factor,
+            read_fan_out_factor,
+            sharding_method,
+            sparse_vectors,
+        } = params;
+
         api::grpc::qdrant::CollectionInfo {
             status: match status {
                 CollectionStatus::Green => api::grpc::qdrant::CollectionStatus::Green,
@@ -375,7 +455,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             config: Some(api::grpc::qdrant::CollectionConfig {
                 params: Some(api::grpc::qdrant::CollectionParams {
                     vectors_config: {
-                        let config = match config.params.vectors {
+                        let config = match vectors {
                             VectorsConfig::Single(vector_params) => {
                                 Some(api::grpc::qdrant::vectors_config::Config::Params(
                                     vector_params.into(),
@@ -396,13 +476,13 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                         };
                         Some(api::grpc::qdrant::VectorsConfig { config })
                     },
-                    shard_number: config.params.shard_number.get(),
-                    replication_factor: Some(config.params.replication_factor.get()),
-                    on_disk_payload: config.params.on_disk_payload,
-                    write_consistency_factor: Some(config.params.write_consistency_factor.get()),
-                    read_fan_out_factor: config.params.read_fan_out_factor,
-                    sharding_method: config.params.sharding_method.map(sharding_method_to_proto),
-                    sparse_vectors_config: config.params.sparse_vectors.map(|sparse_vectors| {
+                    shard_number: shard_number.get(),
+                    replication_factor: Some(replication_factor.get()),
+                    on_disk_payload,
+                    write_consistency_factor: Some(write_consistency_factor.get()),
+                    read_fan_out_factor,
+                    sharding_method: sharding_method.map(sharding_method_to_proto),
+                    sparse_vectors_config: sparse_vectors.map(|sparse_vectors| {
                         api::grpc::qdrant::SparseVectorConfig {
                             map: sparse_vectors
                                 .into_iter()
@@ -414,45 +494,37 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
                     }),
                 }),
                 hnsw_config: Some(api::grpc::qdrant::HnswConfigDiff {
-                    m: Some(config.hnsw_config.m as u64),
-                    ef_construct: Some(config.hnsw_config.ef_construct as u64),
-                    full_scan_threshold: Some(config.hnsw_config.full_scan_threshold as u64),
-                    max_indexing_threads: Some(config.hnsw_config.max_indexing_threads as u64),
-                    on_disk: config.hnsw_config.on_disk,
-                    payload_m: config.hnsw_config.payload_m.map(|v| v as u64),
+                    m: Some(m as u64),
+                    ef_construct: Some(ef_construct as u64),
+                    full_scan_threshold: Some(full_scan_threshold as u64),
+                    max_indexing_threads: Some(max_indexing_threads as u64),
+                    on_disk,
+                    payload_m: payload_m.map(|v| v as u64),
                 }),
                 optimizer_config: Some(api::grpc::qdrant::OptimizersConfigDiff {
-                    deleted_threshold: Some(config.optimizer_config.deleted_threshold),
-                    vacuum_min_vector_number: Some(
-                        config.optimizer_config.vacuum_min_vector_number as u64,
-                    ),
-                    default_segment_number: Some(
-                        config.optimizer_config.default_segment_number as u64,
-                    ),
-                    max_segment_size: config.optimizer_config.max_segment_size.map(|x| x as u64),
-                    memmap_threshold: config.optimizer_config.memmap_threshold.map(|x| x as u64),
-                    indexing_threshold: config
-                        .optimizer_config
-                        .indexing_threshold
-                        .map(|x| x as u64),
-                    flush_interval_sec: Some(config.optimizer_config.flush_interval_sec),
-                    deprecated_max_optimization_threads: config
-                        .optimizer_config
-                        .max_optimization_threads
-                        .map(|x| x as u64),
-                    max_optimization_threads: Some(From::from(
-                        config.optimizer_config.max_optimization_threads,
-                    )),
+                    deleted_threshold: Some(deleted_threshold),
+                    vacuum_min_vector_number: Some(vacuum_min_vector_number as u64),
+                    default_segment_number: Some(default_segment_number as u64),
+                    max_segment_size: max_segment_size.map(|x| x as u64),
+                    memmap_threshold: memmap_threshold.map(|x| x as u64),
+                    indexing_threshold: indexing_threshold.map(|x| x as u64),
+                    flush_interval_sec: Some(flush_interval_sec),
+                    deprecated_max_optimization_threads: max_optimization_threads.map(|x| x as u64),
+                    max_optimization_threads: Some(From::from(max_optimization_threads)),
                 }),
-                wal_config: config
-                    .wal_config
-                    .map(|wal_config| api::grpc::qdrant::WalConfigDiff {
-                        wal_capacity_mb: Some(wal_config.wal_capacity_mb as u64),
-                        wal_segments_ahead: Some(wal_config.wal_segments_ahead as u64),
-                    }),
-                quantization_config: config.quantization_config.map(|x| x.into()),
-                strict_mode_config: config
-                    .strict_mode_config
+                wal_config: wal_config.map(|wal_config| {
+                    let WalConfig {
+                        wal_capacity_mb,
+                        wal_segments_ahead,
+                    } = wal_config;
+
+                    api::grpc::qdrant::WalConfigDiff {
+                        wal_capacity_mb: Some(wal_capacity_mb as u64),
+                        wal_segments_ahead: Some(wal_segments_ahead as u64),
+                    }
+                }),
+                quantization_config: quantization_config.map(|x| x.into()),
+                strict_mode_config: strict_mode_config
                     .map(api::grpc::qdrant::StrictModeConfig::from),
             }),
             payload_schema: payload_schema
@@ -465,14 +537,19 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
 
 impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: RecordInternal) -> Self {
-        let vectors = record.vector;
-
+        let RecordInternal {
+            id,
+            payload,
+            vector,
+            shard_key,
+            order_value,
+        } = record;
         Self {
-            id: Some(record.id.into()),
-            payload: record.payload.map(payload_to_proto).unwrap_or_default(),
-            vectors: vectors.map(api::grpc::qdrant::VectorsOutput::from),
-            shard_key: record.shard_key.map(convert_shard_key_to_grpc),
-            order_value: record.order_value.map(From::from),
+            id: Some(id.into()),
+            payload: payload.map(payload_to_proto).unwrap_or_default(),
+            vectors: vector.map(api::grpc::qdrant::VectorsOutput::from),
+            shard_key: shard_key.map(convert_shard_key_to_grpc),
+            order_value: order_value.map(From::from),
         }
     }
 }
@@ -539,9 +616,13 @@ impl TryFrom<api::grpc::qdrant::OptimizersConfigDiff> for OptimizersConfig {
 
 impl From<api::grpc::qdrant::WalConfigDiff> for WalConfig {
     fn from(wal_config: api::grpc::qdrant::WalConfigDiff) -> Self {
+        let api::grpc::qdrant::WalConfigDiff {
+            wal_capacity_mb,
+            wal_segments_ahead,
+        } = wal_config;
         Self {
-            wal_capacity_mb: wal_config.wal_capacity_mb.unwrap_or_default() as usize,
-            wal_segments_ahead: wal_config.wal_segments_ahead.unwrap_or_default() as usize,
+            wal_capacity_mb: wal_capacity_mb.unwrap_or_default() as usize,
+            wal_segments_ahead: wal_segments_ahead.unwrap_or_default() as usize,
         }
     }
 }
@@ -591,20 +672,27 @@ impl TryFrom<api::grpc::qdrant::VectorParams> for VectorParams {
     type Error = Status;
 
     fn try_from(vector_params: api::grpc::qdrant::VectorParams) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::VectorParams {
+            size,
+            distance,
+            hnsw_config,
+            quantization_config,
+            on_disk,
+            datatype,
+            multivector_config,
+        } = vector_params;
         Ok(Self {
-            size: NonZeroU64::new(vector_params.size).ok_or_else(|| {
+            size: NonZeroU64::new(size).ok_or_else(|| {
                 Status::invalid_argument("VectorParams size must be greater than zero")
             })?,
-            distance: from_grpc_dist(vector_params.distance)?,
-            hnsw_config: vector_params.hnsw_config.map(Into::into),
-            quantization_config: vector_params
-                .quantization_config
+            distance: from_grpc_dist(distance)?,
+            hnsw_config: hnsw_config.map(Into::into),
+            quantization_config: quantization_config
                 .map(grpc_to_segment_quantization_config)
                 .transpose()?,
-            on_disk: vector_params.on_disk,
-            datatype: convert_datatype_from_proto(vector_params.datatype)?,
-            multivector_config: vector_params
-                .multivector_config
+            on_disk,
+            datatype: convert_datatype_from_proto(datatype)?,
+            multivector_config: multivector_config
                 .map(MultiVectorConfig::try_from)
                 .transpose()?,
         })
@@ -635,13 +723,15 @@ impl TryFrom<api::grpc::qdrant::VectorParamsDiff> for VectorParamsDiff {
     type Error = Status;
 
     fn try_from(vector_params: api::grpc::qdrant::VectorParamsDiff) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::VectorParamsDiff {
+            hnsw_config,
+            quantization_config,
+            on_disk,
+        } = vector_params;
         Ok(Self {
-            hnsw_config: vector_params.hnsw_config.map(Into::into),
-            quantization_config: vector_params
-                .quantization_config
-                .map(TryInto::try_into)
-                .transpose()?,
-            on_disk: vector_params.on_disk,
+            hnsw_config: hnsw_config.map(Into::into),
+            quantization_config: quantization_config.map(TryInto::try_into).transpose()?,
+            on_disk,
         })
     }
 }
@@ -661,9 +751,9 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
     fn try_from(
         sparse_vector_params: api::grpc::qdrant::SparseVectorParams,
     ) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::SparseVectorParams { index, modifier } = sparse_vector_params;
         Ok(Self {
-            index: sparse_vector_params
-                .index
+            index: index
                 .map(|index_config| -> Result<_, Status> {
                     Ok(SparseIndexParams {
                         full_scan_threshold: index_config.full_scan_threshold.map(|v| v as usize),
@@ -672,8 +762,7 @@ impl TryFrom<api::grpc::qdrant::SparseVectorParams> for SparseVectorParams {
                     })
                 })
                 .transpose()?,
-            modifier: sparse_vector_params
-                .modifier
+            modifier: modifier
                 .and_then(|x|
                     // XXX: Invalid values silently converted to None
                     api::grpc::qdrant::Modifier::try_from(x).ok())
@@ -693,19 +782,21 @@ impl From<Modifier> for api::grpc::qdrant::Modifier {
 
 impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
     fn from(sparse_vector_params: SparseVectorParams) -> Self {
+        let SparseVectorParams { index, modifier } = sparse_vector_params;
         Self {
-            index: sparse_vector_params.index.map(|index_config| {
+            index: index.map(|index_config| {
+                let SparseIndexParams {
+                    full_scan_threshold,
+                    on_disk,
+                    datatype,
+                } = index_config;
                 api::grpc::qdrant::SparseIndexConfig {
-                    full_scan_threshold: index_config.full_scan_threshold.map(|v| v as u64),
-                    on_disk: index_config.on_disk,
-                    datatype: index_config
-                        .datatype
-                        .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
+                    full_scan_threshold: full_scan_threshold.map(|v| v as u64),
+                    on_disk,
+                    datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
                 }
             }),
-            modifier: sparse_vector_params
-                .modifier
-                .map(|modifier| api::grpc::qdrant::Modifier::from(modifier) as i32),
+            modifier: modifier.map(|modifier| api::grpc::qdrant::Modifier::from(modifier) as i32),
         }
     }
 }
@@ -713,8 +804,8 @@ impl From<SparseVectorParams> for api::grpc::qdrant::SparseVectorParams {
 fn grpc_to_segment_quantization_config(
     value: api::grpc::qdrant::QuantizationConfig,
 ) -> Result<QuantizationConfig, Status> {
-    let quantization = value
-        .quantization
+    let api::grpc::qdrant::QuantizationConfig { quantization } = value;
+    let quantization = quantization
         .ok_or_else(|| Status::invalid_argument("QuantizationConfig must contain quantization"))?;
     match quantization {
         api::grpc::qdrant::quantization_config::Quantization::Scalar(config) => {
@@ -735,42 +826,53 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
     fn try_from(
         collection_info_response: api::grpc::qdrant::GetCollectionInfoResponse,
     ) -> Result<Self, Self::Error> {
-        match collection_info_response.result {
+        let api::grpc::qdrant::GetCollectionInfoResponse { result, time: _ } =
+            collection_info_response;
+        match result {
             None => Err(Status::invalid_argument("Malformed CollectionInfo type")),
-            Some(collection_info_response) => Ok(Self {
-                status: CollectionStatus::try_from(collection_info_response.status)?,
-                optimizer_status: match collection_info_response.optimizer_status {
-                    None => return Err(Status::invalid_argument("Malformed OptimizerStatus type")),
-                    Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
-                        if ok {
-                            OptimizersStatus::Ok
-                        } else {
-                            OptimizersStatus::Error(error)
+            Some(collection_info_response) => {
+                let api::grpc::qdrant::CollectionInfo {
+                    status,
+                    optimizer_status,
+                    vectors_count,
+                    indexed_vectors_count,
+                    points_count,
+                    segments_count,
+                    config,
+                    payload_schema,
+                } = collection_info_response;
+                Ok(Self {
+                    status: CollectionStatus::try_from(status)?,
+                    optimizer_status: match optimizer_status {
+                        None => {
+                            return Err(Status::invalid_argument("Malformed OptimizerStatus type"));
                         }
-                    }
-                },
-                vectors_count: collection_info_response
-                    .vectors_count
-                    .map(|count| count as usize),
-                indexed_vectors_count: collection_info_response
-                    .indexed_vectors_count
-                    .map(|count| count as usize),
-                points_count: collection_info_response
-                    .points_count
-                    .map(|count| count as usize),
-                segments_count: collection_info_response.segments_count as usize,
-                config: match collection_info_response.config {
-                    None => {
-                        return Err(Status::invalid_argument("Malformed CollectionConfig type"));
-                    }
-                    Some(config) => CollectionConfig::try_from(config)?,
-                },
-                payload_schema: collection_info_response
-                    .payload_schema
-                    .into_iter()
-                    .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
-                    .try_collect()?,
-            }),
+                        Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
+                            if ok {
+                                OptimizersStatus::Ok
+                            } else {
+                                OptimizersStatus::Error(error)
+                            }
+                        }
+                    },
+                    vectors_count: vectors_count.map(|count| count as usize),
+                    indexed_vectors_count: indexed_vectors_count.map(|count| count as usize),
+                    points_count: points_count.map(|count| count as usize),
+                    segments_count: segments_count as usize,
+                    config: match config {
+                        None => {
+                            return Err(Status::invalid_argument(
+                                "Malformed CollectionConfig type",
+                            ));
+                        }
+                        Some(config) => CollectionConfig::try_from(config)?,
+                    },
+                    payload_schema: payload_schema
+                        .into_iter()
+                        .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
+                        .try_collect()?,
+                })
+            }
         }
     }
 }
@@ -806,13 +908,18 @@ impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
     type Error = Status;
 
     fn try_from(batch: BatchPersisted) -> Result<Self, Self::Error> {
-        let mut points = Vec::new();
-        let batch_vectors = BatchVectorStructInternal::from(batch.vectors);
-        let all_vectors = batch_vectors.into_all_vectors(batch.ids.len());
-        for (i, p_id) in batch.ids.into_iter().enumerate() {
+        let BatchPersisted {
+            ids,
+            vectors,
+            payloads,
+        } = batch;
+        let mut points = Vec::with_capacity(ids.len());
+        let batch_vectors = BatchVectorStructInternal::from(vectors);
+        let all_vectors = batch_vectors.into_all_vectors(ids.len());
+        for (i, p_id) in ids.into_iter().enumerate() {
             let id = Some(p_id.into());
             let vector = all_vectors.get(i).cloned();
-            let payload = batch.payloads.as_ref().and_then(|payloads| {
+            let payload = payloads.as_ref().and_then(|payloads| {
                 payloads.get(i).map(|payload| match payload {
                     None => HashMap::new(),
                     Some(payload) => payload_to_proto(payload.clone()),
@@ -822,7 +929,7 @@ impl TryFrom<BatchPersisted> for Vec<api::grpc::qdrant::PointStruct> {
 
             let point = api::grpc::qdrant::PointStruct {
                 id,
-                vectors: vectors.map(Vectors::from),
+                vectors: vectors.map(api::grpc::qdrant::Vectors::from),
                 payload: payload.unwrap_or_default(),
             };
             points.push(point);
@@ -836,11 +943,14 @@ pub fn try_points_selector_from_grpc(
     value: api::grpc::qdrant::PointsSelector,
     shard_key_selector: Option<api::grpc::qdrant::ShardKeySelector>,
 ) -> Result<PointsSelector, Status> {
-    match value.points_selector_one_of {
+    let api::grpc::qdrant::PointsSelector {
+        points_selector_one_of,
+    } = value;
+    match points_selector_one_of {
         Some(api::grpc::qdrant::points_selector::PointsSelectorOneOf::Points(points)) => {
+            let api::grpc::qdrant::PointsIdsList { ids } = points;
             Ok(PointIdsSelector(PointIdsList {
-                points: points
-                    .ids
+                points: ids
                     .into_iter()
                     .map(|p| p.try_into())
                     .collect::<Result<_, _>>()?,
@@ -859,10 +969,15 @@ pub fn try_points_selector_from_grpc(
 
 impl From<UpdateResult> for api::grpc::qdrant::UpdateResultInternal {
     fn from(res: UpdateResult) -> Self {
+        let UpdateResult {
+            operation_id,
+            status,
+            clock_tag,
+        } = res;
         Self {
-            operation_id: res.operation_id,
-            status: res.status.into(),
-            clock_tag: res.clock_tag.map(Into::into),
+            operation_id,
+            status: status.into(),
+            clock_tag: clock_tag.map(Into::into),
         }
     }
 }
@@ -877,10 +992,15 @@ impl TryFrom<api::grpc::qdrant::UpdateResultInternal> for UpdateResult {
     type Error = Status;
 
     fn try_from(res: api::grpc::qdrant::UpdateResultInternal) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::UpdateResultInternal {
+            operation_id,
+            status,
+            clock_tag,
+        } = res;
         let res = Self {
-            operation_id: res.operation_id,
-            status: res.status.try_into()?,
-            clock_tag: res.clock_tag.map(Into::into),
+            operation_id,
+            status: status.try_into()?,
+            clock_tag: clock_tag.map(ClockTag::from),
         };
 
         Ok(res)
@@ -930,16 +1050,18 @@ impl TryFrom<i32> for UpdateStatus {
 
 impl From<api::grpc::qdrant::CountResult> for CountResult {
     fn from(value: api::grpc::qdrant::CountResult) -> Self {
+        let api::grpc::qdrant::CountResult { count } = value;
         Self {
-            count: value.count as usize,
+            count: count as usize,
         }
     }
 }
 
 impl From<CountResult> for api::grpc::qdrant::CountResult {
     fn from(value: CountResult) -> Self {
+        let CountResult { count } = value;
         Self {
-            count: value.count as u64,
+            count: count as u64,
         }
     }
 }
@@ -965,7 +1087,8 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
         } = value;
 
         if let Some(sparse_indices) = &sparse_indices {
-            validate_sparse_vector_impl(&sparse_indices.data, &vector).map_err(|e| {
+            let api::grpc::qdrant::SparseIndices { data } = sparse_indices;
+            validate_sparse_vector_impl(data, &vector).map_err(|e| {
                 Status::invalid_argument(format!(
                     "Sparse indices does not match sparse vector conditions: {e}"
                 ))
@@ -977,12 +1100,14 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
 
         Ok(Self {
             query: QueryEnum::Nearest(vector_struct),
-            filter: filter.map(TryInto::try_into).transpose()?,
-            params: params.map(Into::into),
+            filter: filter.map(Filter::try_from).transpose()?,
+            params: params.map(SearchParams::from),
             limit: limit as usize,
             offset: offset.map(|v| v as usize).unwrap_or_default(),
-            with_payload: with_payload.map(TryInto::try_into).transpose()?,
-            with_vector: with_vectors.map(Into::into),
+            with_payload: with_payload
+                .map(WithPayloadInterface::try_from)
+                .transpose()?,
+            with_vector: with_vectors.map(WithVector::from),
             score_threshold: score_threshold.map(|s| s as ScoreType),
         })
     }
@@ -1042,18 +1167,27 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
 impl<'a> From<CollectionCoreSearchRequest<'a>> for api::grpc::qdrant::CoreSearchPoints {
     fn from(value: CollectionCoreSearchRequest<'a>) -> Self {
         let (collection_id, request) = value.0;
-
+        let CoreSearchRequest {
+            query,
+            filter,
+            limit,
+            with_payload,
+            with_vector,
+            params,
+            score_threshold,
+            offset,
+        } = request;
         Self {
             collection_name: collection_id,
-            query: Some(request.query.clone().into()),
-            filter: request.filter.clone().map(|f| f.into()),
-            limit: request.limit as u64,
-            with_vectors: request.with_vector.clone().map(|wv| wv.into()),
-            with_payload: request.with_payload.clone().map(|wp| wp.into()),
-            params: request.params.map(|sp| sp.into()),
-            score_threshold: request.score_threshold,
-            offset: Some(request.offset as u64),
-            vector_name: Some(request.query.get_vector_name().to_owned()),
+            query: Some(query.clone().into()),
+            filter: filter.clone().map(|f| f.into()),
+            limit: *limit as u64,
+            with_vectors: with_vector.clone().map(|wv| wv.into()),
+            with_payload: with_payload.clone().map(|wp| wp.into()),
+            params: params.map(|sp| sp.into()),
+            score_threshold: *score_threshold,
+            offset: Some(*offset as u64),
+            vector_name: Some(query.get_vector_name().to_owned()),
             read_consistency: None,
         }
     }
@@ -1063,16 +1197,19 @@ impl TryFrom<api::grpc::qdrant::WithLookup> for WithLookup {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::WithLookup) -> Result<Self, Self::Error> {
-        let with_default_payload = || Some(segment::types::WithPayloadInterface::Bool(true));
-
+        let with_default_payload = || Some(WithPayloadInterface::Bool(true));
+        let api::grpc::qdrant::WithLookup {
+            collection,
+            with_payload,
+            with_vectors,
+        } = value;
         Ok(Self {
-            collection_name: value.collection,
-            with_payload: value
-                .with_payload
+            collection_name: collection,
+            with_payload: with_payload
                 .map(|wp| wp.try_into())
                 .transpose()?
                 .or_else(with_default_payload),
-            with_vectors: value.with_vectors.map(|wv| wv.into()),
+            with_vectors: with_vectors.map(|wv| wv.into()),
         })
     }
 }
@@ -1089,8 +1226,8 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::TargetVector) -> Result<Self, Self::Error> {
-        value
-            .target
+        let api::grpc::qdrant::TargetVector { target } = value;
+        target
             .ok_or_else(|| Status::invalid_argument("Target vector is malformed"))
             .and_then(|target| match target {
                 api::grpc::qdrant::target_vector::Target::Single(vector_example) => {
@@ -1103,7 +1240,8 @@ impl TryFrom<api::grpc::qdrant::TargetVector> for RecommendExample {
 fn try_context_pair_from_grpc(
     pair: api::grpc::qdrant::ContextPair,
 ) -> Result<ContextPair<VectorInternal>, Status> {
-    match (pair.positive, pair.negative) {
+    let api::grpc::qdrant::ContextPair { positive, negative } = pair;
+    match (positive, negative) {
         (Some(positive), Some(negative)) => Ok(ContextPair {
             positive: positive.try_into()?,
             negative: negative.try_into()?,
@@ -1201,17 +1339,16 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
 impl TryFrom<PointGroup> for api::grpc::qdrant::PointGroup {
     type Error = OperationError;
     fn try_from(group: PointGroup) -> Result<Self, Self::Error> {
-        let hits: Result<_, _> = group
-            .hits
+        let PointGroup { hits, id, lookup } = group;
+        let hits: Result<_, _> = hits
             .into_iter()
             .map(api::grpc::qdrant::ScoredPoint::try_from)
             .collect();
 
         Ok(Self {
             hits: hits?,
-            id: Some(group.id.into()),
-            lookup: group
-                .lookup
+            id: Some(id.into()),
+            lookup: lookup
                 .map(api::grpc::qdrant::RetrievedPoint::try_from)
                 .transpose()?,
         })
@@ -1287,8 +1424,8 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::VectorExample) -> Result<Self, Self::Error> {
-        value
-            .example
+        let api::grpc::qdrant::VectorExample { example } = value;
+        example
             .ok_or_else(|| {
                 Status::invalid_argument(
                     "Vector example, which can be id or bare vector, is malformed",
@@ -1299,21 +1436,26 @@ impl TryFrom<api::grpc::qdrant::VectorExample> for RecommendExample {
                     Ok(Self::PointId(id.try_into()?))
                 }
                 api::grpc::qdrant::vector_example::Example::Vector(vector) => {
-                    match vector.indices {
+                    let api::grpc::qdrant::Vector {
+                        data,
+                        indices,
+                        vectors_count: _,
+                        vector: _,
+                    } = vector;
+                    match indices {
                         Some(indices) => {
-                            validate_sparse_vector_impl(&indices.data, &vector.data).map_err(
-                                |e| {
-                                    Status::invalid_argument(
-                                        format!("Sparse indices does not match sparse vector conditions: {e}"),
-                                    )
-                                },
-                            )?;
+                            let api::grpc::qdrant::SparseIndices { data: indices } = indices;
+                            validate_sparse_vector_impl(&indices, &data).map_err(|e| {
+                                Status::invalid_argument(format!(
+                                    "Sparse indices does not match sparse vector conditions: {e}"
+                                ))
+                            })?;
                             Ok(Self::Sparse(SparseVector {
-                                indices: indices.data,
-                                values: vector.data,
+                                indices,
+                                values: data,
                             }))
                         }
-                        None => Ok(Self::Dense(vector.data)),
+                        None => Ok(Self::Dense(data)),
                     }
                 }
             })
@@ -1324,27 +1466,43 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::RecommendPoints) -> Result<Self, Self::Error> {
-        let positive_ids = value
-            .positive
+        let api::grpc::qdrant::RecommendPoints {
+            positive,
+            negative,
+            strategy,
+            using,
+            lookup_from,
+            filter,
+            params,
+            with_payload,
+            with_vectors,
+            score_threshold,
+            read_consistency: _,
+            limit,
+            offset,
+            collection_name: _,
+            positive_vectors,
+            negative_vectors,
+            timeout: _,
+            shard_key_selector: _,
+        } = value;
+        let positive_ids = positive
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let positive_vectors = value
-            .positive_vectors
+        let positive_vectors = positive_vectors
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<_, _>>()?;
         let positive = [positive_ids, positive_vectors].concat();
 
-        let negative_ids = value
-            .negative
+        let negative_ids = negative
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<Vec<RecommendExample>, Self::Error>>()?;
 
-        let negative_vectors = value
-            .negative_vectors
+        let negative_vectors = negative_vectors
             .into_iter()
             .map(TryInto::try_into)
             .collect::<Result<_, _>>()?;
@@ -1353,21 +1511,20 @@ impl TryFrom<api::grpc::qdrant::RecommendPoints> for RecommendRequestInternal {
         Ok(RecommendRequestInternal {
             positive,
             negative,
-            strategy: value.strategy.map(|s| s.try_into()).transpose()?,
-            filter: value.filter.map(|f| f.try_into()).transpose()?,
-            params: value.params.map(|p| p.into()),
-            limit: value.limit as usize,
-            offset: value.offset.map(|x| x as usize),
-            with_payload: value.with_payload.map(|wp| wp.try_into()).transpose()?,
+            strategy: strategy.map(|s| s.try_into()).transpose()?,
+            filter: filter.map(|f| f.try_into()).transpose()?,
+            params: params.map(|p| p.into()),
+            limit: limit as usize,
+            offset: offset.map(|x| x as usize),
+            with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
             with_vector: Some(
-                value
-                    .with_vectors
+                with_vectors
                     .map(|with_vectors| with_vectors.into())
                     .unwrap_or_default(),
             ),
-            score_threshold: value.score_threshold,
-            using: value.using.map(|name| name.into()),
-            lookup_from: value.lookup_from.map(|x| x.into()),
+            score_threshold,
+            using: using.map(|name| name.into()),
+            lookup_from: lookup_from.map(|x| x.into()),
         })
     }
 }
@@ -1437,8 +1594,8 @@ impl TryFrom<GroupsResult> for api::grpc::qdrant::GroupsResult {
     type Error = OperationError;
 
     fn try_from(value: GroupsResult) -> Result<Self, Self::Error> {
-        let groups: Result<_, _> = value
-            .groups
+        let GroupsResult { groups } = value;
+        let groups: Result<_, _> = groups
             .into_iter()
             .map(api::grpc::qdrant::PointGroup::try_from)
             .collect();
@@ -1449,24 +1606,29 @@ impl TryFrom<GroupsResult> for api::grpc::qdrant::GroupsResult {
 
 impl From<VectorParams> for api::grpc::qdrant::VectorParams {
     fn from(value: VectorParams) -> Self {
+        let VectorParams {
+            size,
+            distance,
+            hnsw_config,
+            quantization_config,
+            on_disk,
+            datatype,
+            multivector_config,
+        } = value;
         api::grpc::qdrant::VectorParams {
-            size: value.size.get(),
-            distance: match value.distance {
+            size: size.get(),
+            distance: match distance {
                 Distance::Cosine => api::grpc::qdrant::Distance::Cosine,
                 Distance::Euclid => api::grpc::qdrant::Distance::Euclid,
                 Distance::Dot => api::grpc::qdrant::Distance::Dot,
                 Distance::Manhattan => api::grpc::qdrant::Distance::Manhattan,
             }
             .into(),
-            hnsw_config: value.hnsw_config.map(Into::into),
-            quantization_config: value.quantization_config.map(Into::into),
-            on_disk: value.on_disk,
-            datatype: value
-                .datatype
-                .map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
-            multivector_config: value
-                .multivector_config
-                .map(api::grpc::qdrant::MultiVectorConfig::from),
+            hnsw_config: hnsw_config.map(Into::into),
+            quantization_config: quantization_config.map(Into::into),
+            on_disk,
+            datatype: datatype.map(|dt| api::grpc::qdrant::Datatype::from(dt).into()),
+            multivector_config: multivector_config.map(api::grpc::qdrant::MultiVectorConfig::from),
         }
     }
 }
@@ -1483,42 +1645,65 @@ impl From<Datatype> for api::grpc::qdrant::Datatype {
 
 impl From<AliasDescription> for api::grpc::qdrant::AliasDescription {
     fn from(value: AliasDescription) -> Self {
+        let AliasDescription {
+            alias_name,
+            collection_name,
+        } = value;
         api::grpc::qdrant::AliasDescription {
-            alias_name: value.alias_name,
-            collection_name: value.collection_name,
+            alias_name,
+            collection_name,
         }
     }
 }
 
 impl From<LocalShardInfo> for api::grpc::qdrant::LocalShardInfo {
     fn from(value: LocalShardInfo) -> Self {
+        let LocalShardInfo {
+            shard_id,
+            points_count,
+            state,
+            shard_key,
+        } = value;
         Self {
-            shard_id: value.shard_id,
-            points_count: value.points_count as u64,
-            state: value.state as i32,
-            shard_key: value.shard_key.map(convert_shard_key_to_grpc),
+            shard_id,
+            points_count: points_count as u64,
+            state: state as i32,
+            shard_key: shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
 
 impl From<RemoteShardInfo> for api::grpc::qdrant::RemoteShardInfo {
     fn from(value: RemoteShardInfo) -> Self {
+        let RemoteShardInfo {
+            shard_id,
+            peer_id,
+            state,
+            shard_key,
+        } = value;
         Self {
-            shard_id: value.shard_id,
-            peer_id: value.peer_id,
-            state: value.state as i32,
-            shard_key: value.shard_key.map(convert_shard_key_to_grpc),
+            shard_id,
+            peer_id,
+            state: state as i32,
+            shard_key: shard_key.map(convert_shard_key_to_grpc),
         }
     }
 }
 
 impl From<ReshardingInfo> for api::grpc::qdrant::ReshardingInfo {
     fn from(value: ReshardingInfo) -> Self {
+        let ReshardingInfo {
+            uuid: _,
+            direction,
+            shard_id,
+            peer_id,
+            shard_key,
+        } = value;
         Self {
-            shard_id: value.shard_id,
-            peer_id: value.peer_id,
-            shard_key: value.shard_key.map(convert_shard_key_to_grpc),
-            direction: api::grpc::qdrant::ReshardingDirection::from(value.direction) as i32,
+            shard_id,
+            peer_id,
+            shard_key: shard_key.map(convert_shard_key_to_grpc),
+            direction: api::grpc::qdrant::ReshardingDirection::from(direction) as i32,
         }
     }
 }
@@ -1534,38 +1719,48 @@ impl From<ReshardingDirection> for api::grpc::qdrant::ReshardingDirection {
 
 impl From<ShardTransferInfo> for api::grpc::qdrant::ShardTransferInfo {
     fn from(value: ShardTransferInfo) -> Self {
+        let ShardTransferInfo {
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync,
+            method: _,
+            comment: _,
+        } = value;
         Self {
-            shard_id: value.shard_id,
-            to_shard_id: value.to_shard_id,
-            from: value.from,
-            to: value.to,
-            sync: value.sync,
+            shard_id,
+            to_shard_id,
+            from,
+            to,
+            sync,
         }
     }
 }
 
 impl From<CollectionClusterInfo> for api::grpc::qdrant::CollectionClusterInfoResponse {
     fn from(value: CollectionClusterInfo) -> Self {
+        let CollectionClusterInfo {
+            peer_id,
+            shard_count,
+            local_shards,
+            remote_shards,
+            shard_transfers,
+            resharding_operations,
+        } = value;
         Self {
-            peer_id: value.peer_id,
-            shard_count: value.shard_count as u64,
-            local_shards: value
-                .local_shards
+            peer_id,
+            shard_count: shard_count as u64,
+            local_shards: local_shards.into_iter().map(|shard| shard.into()).collect(),
+            remote_shards: remote_shards
                 .into_iter()
                 .map(|shard| shard.into())
                 .collect(),
-            remote_shards: value
-                .remote_shards
+            shard_transfers: shard_transfers
                 .into_iter()
                 .map(|shard| shard.into())
                 .collect(),
-            shard_transfers: value
-                .shard_transfers
-                .into_iter()
-                .map(|shard| shard.into())
-                .collect(),
-            resharding_operations: value
-                .resharding_operations
+            resharding_operations: resharding_operations
                 .into_iter()
                 .flatten()
                 .map(|info| info.into())
@@ -1578,12 +1773,19 @@ impl TryFrom<api::grpc::qdrant::ReplicateShard> for ReplicateShard {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::ReplicateShard) -> Result<Self, Self::Error> {
-        let method = value.method.map(TryInto::try_into).transpose()?;
+        let api::grpc::qdrant::ReplicateShard {
+            shard_id,
+            to_shard_id,
+            from_peer_id,
+            to_peer_id,
+            method,
+        } = value;
+        let method = method.map(TryInto::try_into).transpose()?;
         Ok(Self {
-            shard_id: value.shard_id,
-            to_shard_id: value.to_shard_id,
-            from_peer_id: value.from_peer_id,
-            to_peer_id: value.to_peer_id,
+            shard_id,
+            to_shard_id,
+            to_peer_id,
+            from_peer_id,
             method,
         })
     }
@@ -1593,12 +1795,19 @@ impl TryFrom<api::grpc::qdrant::MoveShard> for MoveShard {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::MoveShard) -> Result<Self, Self::Error> {
-        let method = value.method.map(TryInto::try_into).transpose()?;
+        let api::grpc::qdrant::MoveShard {
+            shard_id,
+            to_shard_id,
+            from_peer_id,
+            to_peer_id,
+            method,
+        } = value;
+        let method = method.map(TryInto::try_into).transpose()?;
         Ok(Self {
-            shard_id: value.shard_id,
-            to_shard_id: value.to_shard_id,
-            from_peer_id: value.from_peer_id,
-            to_peer_id: value.to_peer_id,
+            shard_id,
+            to_shard_id,
+            to_peer_id,
+            from_peer_id,
             method,
         })
     }
@@ -1608,11 +1817,17 @@ impl TryFrom<api::grpc::qdrant::AbortShardTransfer> for AbortShardTransfer {
     type Error = Status;
 
     fn try_from(value: api::grpc::qdrant::AbortShardTransfer) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::AbortShardTransfer {
+            shard_id,
+            to_shard_id,
+            from_peer_id,
+            to_peer_id,
+        } = value;
         Ok(Self {
-            shard_id: value.shard_id,
-            to_shard_id: value.to_shard_id,
-            from_peer_id: value.from_peer_id,
-            to_peer_id: value.to_peer_id,
+            shard_id,
+            to_shard_id,
+            to_peer_id,
+            from_peer_id,
         })
     }
 }
@@ -1647,27 +1862,30 @@ impl From<api::grpc::qdrant::ShardTransferMethod> for ShardTransferMethod {
 impl TryFrom<api::grpc::qdrant::CreateShardKey> for CreateShardingKey {
     type Error = Status;
 
-    fn try_from(op: CreateShardKey) -> Result<Self, Self::Error> {
+    fn try_from(op: api::grpc::qdrant::CreateShardKey) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::CreateShardKey {
+            shard_key,
+            shards_number,
+            replication_factor,
+            placement,
+        } = op;
         let res = CreateShardingKey {
-            shard_key: op
-                .shard_key
+            shard_key: shard_key
                 .and_then(convert_shard_key_from_grpc)
                 .ok_or_else(|| Status::invalid_argument("Shard key is not specified"))?,
-            shards_number: op
-                .shards_number
+            shards_number: shards_number
                 .map(NonZeroU32::try_from)
                 .transpose()
                 .map_err(|err| {
                     Status::invalid_argument(format!("Shard number cannot be zero: {err}"))
                 })?,
-            replication_factor: op
-                .replication_factor
+            replication_factor: replication_factor
                 .map(NonZeroU32::try_from)
                 .transpose()
                 .map_err(|err| {
                     Status::invalid_argument(format!("Replication factor cannot be zero: {err}"))
                 })?,
-            placement: (!op.placement.is_empty()).then_some(op.placement),
+            placement: (!placement.is_empty()).then_some(placement),
         };
         Ok(res)
     }
@@ -1677,9 +1895,9 @@ impl TryFrom<api::grpc::qdrant::DeleteShardKey> for DropShardingKey {
     type Error = Status;
 
     fn try_from(op: api::grpc::qdrant::DeleteShardKey) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::DeleteShardKey { shard_key } = op;
         Ok(DropShardingKey {
-            shard_key: op
-                .shard_key
+            shard_key: shard_key
                 .and_then(convert_shard_key_from_grpc)
                 .ok_or_else(|| Status::invalid_argument("Shard key is not specified"))?,
         })
@@ -1707,11 +1925,9 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 })
             }
             ClusterOperationsPb::DropReplica(op) => {
+                let api::grpc::qdrant::Replica { shard_id, peer_id } = op;
                 ClusterOperations::DropReplica(DropReplicaOperation {
-                    drop_replica: Replica {
-                        shard_id: op.shard_id,
-                        peer_id: op.peer_id,
-                    },
+                    drop_replica: Replica { shard_id, peer_id },
                 })
             }
             Operation::CreateShardKey(op) => {
@@ -1725,13 +1941,20 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
                 })
             }
             Operation::RestartTransfer(op) => {
+                let api::grpc::qdrant::RestartTransfer {
+                    shard_id,
+                    to_shard_id,
+                    from_peer_id,
+                    to_peer_id,
+                    method,
+                } = op;
                 ClusterOperations::RestartTransfer(RestartTransferOperation {
                     restart_transfer: RestartTransfer {
-                        shard_id: op.shard_id,
-                        to_shard_id: op.to_shard_id,
-                        from_peer_id: op.from_peer_id,
-                        to_peer_id: op.to_peer_id,
-                        method: op.method.try_into()?,
+                        shard_id,
+                        to_shard_id,
+                        from_peer_id,
+                        to_peer_id,
+                        method: ShardTransferMethod::try_from(method)?,
                     },
                 })
             }
@@ -1741,8 +1964,8 @@ impl TryFrom<ClusterOperationsPb> for ClusterOperations {
 
 impl From<api::grpc::qdrant::ShardKeySelector> for ShardSelectorInternal {
     fn from(value: api::grpc::qdrant::ShardKeySelector) -> Self {
-        let shard_keys: Vec<_> = value
-            .shard_keys
+        let api::grpc::qdrant::ShardKeySelector { shard_keys } = value;
+        let shard_keys: Vec<_> = shard_keys
             .into_iter()
             .filter_map(convert_shard_key_from_grpc)
             .collect();
@@ -1771,87 +1994,106 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
     type Error = Status;
 
     fn try_from(config: api::grpc::qdrant::CollectionConfig) -> Result<Self, Self::Error> {
+        let api::grpc::qdrant::CollectionConfig {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+        } = config;
         Ok(Self {
-            params: match config.params {
+            params: match params {
                 None => return Err(Status::invalid_argument("Malformed CollectionParams type")),
-                Some(params) => CollectionParams {
-                    vectors: match params.vectors_config {
-                        None => {
-                            return Err(Status::invalid_argument(
-                                "Expected `vectors` - configuration for vector storage",
-                            ));
-                        }
-                        Some(vector_config) => match vector_config.config {
+                Some(params) => {
+                    let api::grpc::qdrant::CollectionParams {
+                        shard_number,
+                        on_disk_payload,
+                        vectors_config,
+                        replication_factor,
+                        write_consistency_factor,
+                        read_fan_out_factor,
+                        sharding_method,
+                        sparse_vectors_config,
+                    } = params;
+                    CollectionParams {
+                        vectors: match vectors_config {
                             None => {
                                 return Err(Status::invalid_argument(
                                     "Expected `vectors` - configuration for vector storage",
                                 ));
                             }
-                            Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
-                                VectorsConfig::Single(params.try_into()?)
-                            }
-                            Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
-                                params_map,
-                            )) => VectorsConfig::Multi(
-                                params_map
-                                    .map
-                                    .into_iter()
-                                    .map(|(k, v)| Ok((k, v.try_into()?)))
-                                    .collect::<Result<BTreeMap<_, _>, Status>>()?,
-                            ),
+                            Some(vector_config) => match vector_config.config {
+                                None => {
+                                    return Err(Status::invalid_argument(
+                                        "Expected `vectors` - configuration for vector storage",
+                                    ));
+                                }
+                                Some(api::grpc::qdrant::vectors_config::Config::Params(params)) => {
+                                    VectorsConfig::Single(params.try_into()?)
+                                }
+                                Some(api::grpc::qdrant::vectors_config::Config::ParamsMap(
+                                    params_map,
+                                )) => VectorsConfig::Multi(
+                                    params_map
+                                        .map
+                                        .into_iter()
+                                        .map(|(k, v)| Ok((k, v.try_into()?)))
+                                        .collect::<Result<BTreeMap<_, _>, Status>>()?,
+                                ),
+                            },
                         },
-                    },
-                    sparse_vectors: params
-                        .sparse_vectors_config
-                        .map(|v| SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x))
-                        .transpose()?,
-                    shard_number: NonZeroU32::new(params.shard_number)
-                        .ok_or_else(|| Status::invalid_argument("`shard_number` cannot be zero"))?,
-                    on_disk_payload: params.on_disk_payload,
-                    replication_factor: NonZeroU32::new(
-                        params
-                            .replication_factor
-                            .unwrap_or_else(|| default_replication_factor().get()),
-                    )
-                    .ok_or_else(|| {
-                        Status::invalid_argument("`replication_factor` cannot be zero")
-                    })?,
-                    write_consistency_factor: NonZeroU32::new(
-                        params
-                            .write_consistency_factor
-                            .unwrap_or_else(|| default_write_consistency_factor().get()),
-                    )
-                    .ok_or_else(|| {
-                        Status::invalid_argument("`write_consistency_factor` cannot be zero")
-                    })?,
+                        sparse_vectors: sparse_vectors_config
+                            .map(|v| {
+                                SparseVectorsConfig::try_from(v).map(|SparseVectorsConfig(x)| x)
+                            })
+                            .transpose()?,
+                        shard_number: NonZeroU32::new(shard_number).ok_or_else(|| {
+                            Status::invalid_argument("`shard_number` cannot be zero")
+                        })?,
+                        on_disk_payload,
+                        replication_factor: NonZeroU32::new(
+                            replication_factor
+                                .unwrap_or_else(|| default_replication_factor().get()),
+                        )
+                        .ok_or_else(|| {
+                            Status::invalid_argument("`replication_factor` cannot be zero")
+                        })?,
+                        write_consistency_factor: NonZeroU32::new(
+                            write_consistency_factor
+                                .unwrap_or_else(|| default_write_consistency_factor().get()),
+                        )
+                        .ok_or_else(|| {
+                            Status::invalid_argument("`write_consistency_factor` cannot be zero")
+                        })?,
 
-                    read_fan_out_factor: params.read_fan_out_factor,
-                    sharding_method: params
-                        .sharding_method
-                        .map(sharding_method_from_proto)
-                        .transpose()?,
-                },
+                        read_fan_out_factor,
+                        sharding_method: sharding_method
+                            .map(sharding_method_from_proto)
+                            .transpose()?,
+                    }
+                }
             },
-            hnsw_config: match config.hnsw_config {
+            hnsw_config: match hnsw_config {
                 None => return Err(Status::invalid_argument("Malformed HnswConfig type")),
                 Some(hnsw_config) => HnswConfig::from(hnsw_config),
             },
-            optimizer_config: match config.optimizer_config {
+            optimizer_config: match optimizer_config {
                 None => return Err(Status::invalid_argument("Malformed OptimizerConfig type")),
                 Some(optimizer_config) => OptimizersConfig::try_from(optimizer_config)?,
             },
-            wal_config: match config.wal_config {
+            wal_config: match wal_config {
                 None => return Err(Status::invalid_argument("Malformed WalConfig type")),
                 Some(wal_config) => Some(WalConfig::from(wal_config)),
             },
             quantization_config: {
-                if let Some(config) = config.quantization_config {
+                if let Some(config) = quantization_config {
                     Some(QuantizationConfig::try_from(config)?)
                 } else {
                     None
                 }
             },
-            strict_mode_config: config.strict_mode_config.map(StrictModeConfig::from),
+            strict_mode_config: strict_mode_config.map(StrictModeConfig::from),
         })
     }
 }

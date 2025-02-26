@@ -25,7 +25,8 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, QueryVector, VectorRef, VectorStructInternal,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedVectorStruct, QueryVector, VectorRef,
+    VectorStructInternal,
 };
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
@@ -275,15 +276,25 @@ impl CollectionInfo {
 
 impl From<ShardInfoInternal> for CollectionInfo {
     fn from(info: ShardInfoInternal) -> Self {
+        let ShardInfoInternal {
+            status,
+            optimizer_status,
+            vectors_count,
+            indexed_vectors_count,
+            points_count,
+            segments_count,
+            config,
+            payload_schema,
+        } = info;
         Self {
-            status: info.status.into(),
-            optimizer_status: info.optimizer_status,
-            vectors_count: Some(info.vectors_count),
-            indexed_vectors_count: Some(info.indexed_vectors_count),
-            points_count: Some(info.points_count),
-            segments_count: info.segments_count,
-            config: CollectionConfig::from(info.config),
-            payload_schema: info.payload_schema,
+            status: status.into(),
+            optimizer_status,
+            vectors_count: Some(vectors_count),
+            indexed_vectors_count: Some(indexed_vectors_count),
+            points_count: Some(points_count),
+            segments_count,
+            config: CollectionConfig::from(config),
+            payload_schema,
         }
     }
 }
@@ -1983,15 +1994,25 @@ pub enum NodeType {
 
 impl From<SearchRequestInternal> for CoreSearchRequest {
     fn from(request: SearchRequestInternal) -> Self {
+        let SearchRequestInternal {
+            vector,
+            filter,
+            score_threshold,
+            limit,
+            offset,
+            params,
+            with_vector,
+            with_payload,
+        } = request;
         Self {
-            query: QueryEnum::Nearest(request.vector.into()),
-            filter: request.filter,
-            params: request.params,
-            limit: request.limit,
-            offset: request.offset.unwrap_or_default(),
-            with_payload: request.with_payload,
-            with_vector: request.with_vector,
-            score_threshold: request.score_threshold,
+            query: QueryEnum::Nearest(NamedVectorStruct::from(vector)),
+            filter,
+            params,
+            limit,
+            offset: offset.unwrap_or_default(),
+            with_payload,
+            with_vector,
+            score_threshold,
         }
     }
 }

@@ -113,24 +113,38 @@ impl ClockTag {
 
 impl From<api::grpc::qdrant::ClockTag> for ClockTag {
     fn from(tag: api::grpc::qdrant::ClockTag) -> Self {
+        let api::grpc::qdrant::ClockTag {
+            peer_id,
+            clock_id,
+            clock_tick,
+            token,
+            force,
+        } = tag;
         Self {
-            peer_id: tag.peer_id,
-            clock_id: tag.clock_id,
-            clock_tick: tag.clock_tick,
-            token: tag.token,
-            force: tag.force,
+            peer_id,
+            clock_id,
+            clock_tick,
+            token,
+            force,
         }
     }
 }
 
 impl From<ClockTag> for api::grpc::qdrant::ClockTag {
     fn from(tag: ClockTag) -> Self {
+        let ClockTag {
+            peer_id,
+            clock_id,
+            clock_tick,
+            token,
+            force,
+        } = tag;
         Self {
-            peer_id: tag.peer_id,
-            clock_id: tag.clock_id,
-            clock_tick: tag.clock_tick,
-            token: tag.token,
-            force: tag.force,
+            peer_id,
+            clock_id,
+            clock_tick,
+            token,
+            force,
         }
     }
 }
