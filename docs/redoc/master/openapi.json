@@ -14257,7 +14257,6 @@
       "FormulaQuery": {
         "type": "object",
         "required": [
-          "defaults",
           "formula"
         ],
         "properties": {
@@ -14265,6 +14264,7 @@
             "$ref": "#/components/schemas/Expression"
           },
           "defaults": {
+            "default": {},
             "type": "object",
             "additionalProperties": true
           }
