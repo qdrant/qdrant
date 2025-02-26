@@ -14292,7 +14292,25 @@
             "$ref": "#/components/schemas/NegExpression"
           },
           {
+            "$ref": "#/components/schemas/AbsExpression"
+          },
+          {
             "$ref": "#/components/schemas/DivExpression"
+          },
+          {
+            "$ref": "#/components/schemas/SqrtExpression"
+          },
+          {
+            "$ref": "#/components/schemas/PowExpression"
+          },
+          {
+            "$ref": "#/components/schemas/ExpExpression"
+          },
+          {
+            "$ref": "#/components/schemas/Log10Expression"
+          },
+          {
+            "$ref": "#/components/schemas/LnExpression"
           },
           {
             "$ref": "#/components/schemas/GeoDistance"
@@ -14338,6 +14356,17 @@
           }
         }
       },
+      "AbsExpression": {
+        "type": "object",
+        "required": [
+          "abs"
+        ],
+        "properties": {
+          "abs": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
       "DivExpression": {
         "type": "object",
         "required": [
@@ -14366,6 +14395,76 @@
             "type": "number",
             "format": "float",
             "nullable": true
+          }
+        }
+      },
+      "SqrtExpression": {
+        "type": "object",
+        "required": [
+          "sqrt"
+        ],
+        "properties": {
+          "sqrt": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "PowExpression": {
+        "type": "object",
+        "required": [
+          "pow"
+        ],
+        "properties": {
+          "pow": {
+            "$ref": "#/components/schemas/PowParams"
+          }
+        }
+      },
+      "PowParams": {
+        "type": "object",
+        "required": [
+          "base",
+          "exponent"
+        ],
+        "properties": {
+          "base": {
+            "$ref": "#/components/schemas/Expression"
+          },
+          "exponent": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "ExpExpression": {
+        "type": "object",
+        "required": [
+          "exp"
+        ],
+        "properties": {
+          "exp": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "Log10Expression": {
+        "type": "object",
+        "required": [
+          "log10"
+        ],
+        "properties": {
+          "log10": {
+            "$ref": "#/components/schemas/Expression"
+          }
+        }
+      },
+      "LnExpression": {
+        "type": "object",
+        "required": [
+          "ln"
+        ],
+        "properties": {
+          "ln": {
+            "$ref": "#/components/schemas/Expression"
           }
         }
       },
