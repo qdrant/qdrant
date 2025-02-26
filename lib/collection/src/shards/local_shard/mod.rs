@@ -840,7 +840,6 @@ impl LocalShard {
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
         // Read dir first as the directory contents would change during restore
         let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
-            .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
 
         // Filter out hidden entries
