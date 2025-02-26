@@ -6,14 +6,15 @@ use crate::rest::{Options, schema as rest};
 
 impl From<rest::Document> for grpc::Document {
     fn from(document: rest::Document) -> Self {
+        let rest::Document {
+            text,
+            model,
+            options,
+        } = document;
         Self {
-            text: document.text,
-            model: document.model,
-            options: document
-                .options
-                .options
-                .map(dict_to_proto)
-                .unwrap_or_default(),
+            text,
+            model,
+            options: options.options.map(dict_to_proto).unwrap_or_default(),
         }
     }
 }
@@ -22,11 +23,16 @@ impl TryFrom<grpc::Document> for rest::Document {
     type Error = Status;
 
     fn try_from(document: grpc::Document) -> Result<Self, Self::Error> {
+        let grpc::Document {
+            text,
+            model,
+            options,
+        } = document;
         Ok(Self {
-            text: document.text,
-            model: document.model,
+            text,
+            model,
             options: Options {
-                options: Some(proto_dict_to_json(document.options)?),
+                options: Some(proto_dict_to_json(options)?),
             },
         })
     }
@@ -34,10 +40,15 @@ impl TryFrom<grpc::Document> for rest::Document {
 
 impl From<rest::Image> for grpc::Image {
     fn from(image: rest::Image) -> Self {
+        let rest::Image {
+            image,
+            model,
+            options,
+        } = image;
         Self {
-            image: Some(json_to_proto(image.image)),
-            model: image.model,
-            options: image.options.options.map(dict_to_proto).unwrap_or_default(),
+            image: Some(json_to_proto(image)),
+            model,
+            options: options.options.map(dict_to_proto).unwrap_or_default(),
         }
     }
 }
@@ -66,14 +77,15 @@ impl TryFrom<grpc::Image> for rest::Image {
 
 impl From<rest::InferenceObject> for grpc::InferenceObject {
     fn from(object: rest::InferenceObject) -> Self {
+        let rest::InferenceObject {
+            object,
+            model,
+            options,
+        } = object;
         Self {
-            object: Some(json_to_proto(object.object)),
-            model: object.model,
-            options: object
-                .options
-                .options
-                .map(dict_to_proto)
-                .unwrap_or_default(),
+            object: Some(json_to_proto(object)),
+            model,
+            options: options.options.map(dict_to_proto).unwrap_or_default(),
         }
     }
 }
