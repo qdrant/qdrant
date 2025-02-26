@@ -33,19 +33,23 @@ pub fn internal_sync_points(
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<SyncPointsInternal> {
+    let PointSyncOperation {
+        points,
+        from_id,
+        to_id,
+    } = points_sync_operation;
     Ok(SyncPointsInternal {
         shard_id,
         clock_tag: clock_tag.map(Into::into),
         sync_points: Some(SyncPoints {
             collection_name,
             wait: Some(wait),
-            points: points_sync_operation
-                .points
+            points: points
                 .into_iter()
                 .map(api::grpc::qdrant::PointStruct::try_from)
                 .collect::<Result<Vec<_>, Status>>()?,
-            from_id: points_sync_operation.from_id.map(|x| x.into()),
-            to_id: points_sync_operation.to_id.map(|x| x.into()),
+            from_id: from_id.map(|x| x.into()),
+            to_id: to_id.map(|x| x.into()),
             ordering: ordering.map(write_ordering_to_proto),
         }),
     })
@@ -134,8 +138,8 @@ pub fn internal_update_vectors(
     wait: bool,
     ordering: Option<WriteOrdering>,
 ) -> CollectionResult<UpdateVectorsInternal> {
-    let points: Result<Vec<_>, _> = update_vectors
-        .points
+    let UpdateVectorsOp { points } = update_vectors;
+    let points: Result<Vec<_>, _> = points
         .into_iter()
         .map(|point| {
             VectorStructInternal::try_from(point.vector).map(|vector_struct| PointVectors {
@@ -394,32 +398,39 @@ pub fn internal_delete_index(
 pub fn try_scored_point_from_grpc(
     point: api::grpc::qdrant::ScoredPoint,
     with_payload: bool,
-) -> Result<ScoredPoint, tonic::Status> {
-    let id = point
-        .id
-        .ok_or_else(|| tonic::Status::invalid_argument("scored point does not have an ID"))?
+) -> Result<ScoredPoint, Status> {
+    let api::grpc::qdrant::ScoredPoint {
+        id,
+        payload,
+        score,
+        version,
+        vectors,
+        shard_key,
+        order_value,
+    } = point;
+    let id = id
+        .ok_or_else(|| Status::invalid_argument("scored point does not have an ID"))?
         .try_into()?;
 
     let payload = if with_payload {
-        Some(api::conversions::json::proto_to_payloads(point.payload)?)
+        Some(api::conversions::json::proto_to_payloads(payload)?)
     } else {
-        debug_assert!(point.payload.is_empty());
+        debug_assert!(payload.is_empty());
         None
     };
 
-    let vector = point
-        .vectors
+    let vector = vectors
         .map(|vectors| vectors.try_into())
         .transpose()
-        .map_err(|e| tonic::Status::invalid_argument(format!("Failed to parse vectors: {e}")))?;
+        .map_err(|e| Status::invalid_argument(format!("Failed to parse vectors: {e}")))?;
 
     Ok(ScoredPoint {
         id,
-        version: point.version,
-        score: point.score,
+        version,
+        score,
         payload,
         vector,
-        shard_key: convert_shard_key_from_grpc_opt(point.shard_key),
-        order_value: point.order_value.map(TryFrom::try_from).transpose()?,
+        shard_key: convert_shard_key_from_grpc_opt(shard_key),
+        order_value: order_value.map(TryFrom::try_from).transpose()?,
     })
 }

@@ -57,14 +57,23 @@ impl From<Vector> for VectorInternal {
 
 impl From<segment::types::ScoredPoint> for ScoredPoint {
     fn from(value: segment::types::ScoredPoint) -> Self {
+        let segment::types::ScoredPoint {
+            id,
+            version,
+            score,
+            payload,
+            vector,
+            shard_key,
+            order_value,
+        } = value;
         ScoredPoint {
-            id: value.id,
-            version: value.version,
-            score: value.score,
-            payload: value.payload,
-            vector: value.vector.map(VectorStructOutput::from),
-            shard_key: value.shard_key,
-            order_value: value.order_value,
+            id,
+            version,
+            score,
+            payload,
+            vector: vector.map(VectorStructOutput::from),
+            shard_key,
+            order_value,
         }
     }
 }
@@ -134,28 +143,36 @@ impl From<segment::data_types::facets::FacetValue> for FacetValue {
 
 impl From<segment::data_types::facets::FacetValueHit> for FacetValueHit {
     fn from(value: segment::data_types::facets::FacetValueHit) -> Self {
+        let segment::data_types::facets::FacetValueHit { value, count } = value;
         Self {
-            value: From::from(value.value),
-            count: value.count,
+            value: From::from(value),
+            count,
         }
     }
 }
 
 impl From<segment::data_types::facets::FacetResponse> for FacetResponse {
     fn from(value: segment::data_types::facets::FacetResponse) -> Self {
+        let segment::data_types::facets::FacetResponse { hits } = value;
         Self {
-            hits: value.hits.into_iter().map(From::from).collect(),
+            hits: hits.into_iter().map(From::from).collect(),
         }
     }
 }
 
 impl From<FacetRequestInternal> for segment::data_types::facets::FacetParams {
     fn from(value: FacetRequestInternal) -> Self {
+        let FacetRequestInternal {
+            key,
+            limit,
+            filter,
+            exact,
+        } = value;
         Self {
-            key: value.key,
-            limit: value.limit.unwrap_or(Self::DEFAULT_LIMIT),
-            filter: value.filter,
-            exact: value.exact.unwrap_or(Self::DEFAULT_EXACT),
+            key,
+            limit: limit.unwrap_or(Self::DEFAULT_LIMIT),
+            filter,
+            exact: exact.unwrap_or(Self::DEFAULT_EXACT),
         }
     }
 }
