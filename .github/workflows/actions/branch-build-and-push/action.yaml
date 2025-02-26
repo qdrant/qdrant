@@ -33,9 +33,9 @@ runs:
         
         # Build regular image for Github Registry
         # use full git commit sha
-        GIT_COMMIT_ID=$(git rev-parse HEAD)
+        GIT_COMMIT_ID="$(git rev-parse HEAD)"
         GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID} -t ghcr.io/qdrant/qdrant:$branch"
         echo "Building tag $branch-${GIT_COMMIT_ID}"
         
         # Pull, retag and push to GitHub packages
-        docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID="${GIT_COMMIT_ID}" "$GITHUB_TAG" --push --label "org.opencontainers.image.revision"="${GIT_COMMIT_ID}" .
+        docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
