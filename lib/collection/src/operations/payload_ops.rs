@@ -65,13 +65,20 @@ impl TryFrom<SetPayloadShadow> for SetPayload {
     type Error = PointsSelectorValidationError;
 
     fn try_from(value: SetPayloadShadow) -> Result<Self, Self::Error> {
-        if value.points.is_some() || value.filter.is_some() {
+        let SetPayloadShadow {
+            payload,
+            points,
+            filter,
+            shard_key,
+            key,
+        } = value;
+        if points.is_some() || filter.is_some() {
             Ok(SetPayload {
-                payload: value.payload,
-                points: value.points,
-                filter: value.filter,
-                shard_key: value.shard_key,
-                key: value.key,
+                payload,
+                points,
+                filter,
+                shard_key,
+                key,
             })
         } else {
             Err(PointsSelectorValidationError)
@@ -120,12 +127,18 @@ impl TryFrom<DeletePayloadShadow> for DeletePayload {
     type Error = PointsSelectorValidationError;
 
     fn try_from(value: DeletePayloadShadow) -> Result<Self, Self::Error> {
-        if value.points.is_some() || value.filter.is_some() {
+        let DeletePayloadShadow {
+            keys,
+            points,
+            filter,
+            shard_key,
+        } = value;
+        if points.is_some() || filter.is_some() {
             Ok(DeletePayload {
-                keys: value.keys,
-                points: value.points,
-                filter: value.filter,
-                shard_key: value.shard_key,
+                keys,
+                points,
+                filter,
+                shard_key,
             })
         } else {
             Err(PointsSelectorValidationError)
