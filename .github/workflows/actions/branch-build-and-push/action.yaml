@@ -6,8 +6,6 @@ runs:
   steps:
     - name: Execution
       shell: bash
-      env:
-        DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
       run: |
         buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit" | tr '\n' ' ')
         buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit" | tr '\n' ' ')

@@ -17,6 +17,8 @@ jobs:
           with:
             ref: ${{ github.ref.name }}
         - uses: ./.github/workflows/actions/branch-build-and-push
+          env:
+            DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
   triggered-branch-build-and-push:
     if: ${{ github.event.client_payload.triggered }}
@@ -26,3 +28,5 @@ jobs:
           with:
             ref: ${{ github.event.client_payload.version }}
         - uses: ./.github/workflows/actions/branch-build-and-push
+          env:
+            DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
