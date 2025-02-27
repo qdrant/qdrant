@@ -104,11 +104,12 @@ pub(crate) async fn transfer_resharding_stream_records(
             )));
         };
 
-        offset = replica_set
+        let (new_offset, count) = replica_set
             .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
             .await?;
 
-        progress.lock().add(TRANSFER_BATCH_SIZE);
+        offset = new_offset;
+        progress.lock().add(count);
 
         // If this is the last batch, finalize
         if offset.is_none() {
