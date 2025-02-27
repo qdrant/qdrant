@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::sync::Arc;
@@ -71,7 +72,7 @@ impl TransferTasksPool {
         let mut comment = format!(
             "Transferring records ({}/{}), started {}s ago, ETA: ",
             progress.points_transferred,
-            progress.points_total,
+            max(progress.points_transferred, progress.points_total),
             chrono::Utc::now()
                 .signed_duration_since(task.started_at)
                 .num_seconds(),
