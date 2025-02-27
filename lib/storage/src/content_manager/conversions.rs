@@ -45,7 +45,7 @@ impl From<StorageError> for Status {
                 tonic::Code::ResourceExhausted
             }
         };
-        let mut status = Status::new(error_code, format!("{error:?}"));
+        let mut status = Status::new(error_code, format!("{error}"));
         // add metadata headers
         for (header_key, header_value) in metadata_headers {
             if let Ok(metadata) = MetadataValue::from_str(&header_value) {
