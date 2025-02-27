@@ -1350,8 +1350,15 @@ impl From<tonic::Status> for CollectionError {
                 // the value is passed as a String containing an integer number of seconds
                 let retry_after = err.metadata().get("retry-after").and_then(|v| {
                     v.to_str()
+                        .inspect_err(|e| log::info!("Failed to parse retry-after header: {e}"))
                         .ok()
-                        .and_then(|v| v.parse::<u64>().ok())
+                        .and_then(|v| {
+                            v.parse::<u64>()
+                                .inspect_err(|e| {
+                                    log::info!("Failed to parse retry-after header: {e}")
+                                })
+                                .ok()
+                        })
                         .map(Duration::from_secs)
                 });
                 CollectionError::RateLimitExceeded {
