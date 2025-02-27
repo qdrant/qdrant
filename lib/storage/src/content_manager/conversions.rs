@@ -40,7 +40,8 @@ impl From<StorageError> for Status {
                 if let Some(retry_after) = retry_after {
                     // Retry-After is expressed in seconds `https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After`
                     // Ceil the value to the nearest second so clients don't retry too early
-                    metadata_headers.insert("retry-after", retry_after.as_secs().to_string());
+                    let retry_after_sec = retry_after.as_secs_f32().ceil() as u32;
+                    metadata_headers.insert("retry-after", retry_after_sec.to_string());
                 }
                 tonic::Code::ResourceExhausted
             }
