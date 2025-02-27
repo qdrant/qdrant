@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
@@ -181,7 +182,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
     }
 
     pub fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+        self.deleted.get_bit(key as usize).unwrap_or(false)
     }
 
     /// Get [`BitSlice`] representation for deleted vectors with deletion flags

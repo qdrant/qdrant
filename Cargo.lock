@@ -1232,6 +1232,7 @@ dependencies = [
 name = "common"
 version = "0.0.0"
 dependencies = [
+ "bitvec",
  "bytemuck",
  "common",
  "criterion",

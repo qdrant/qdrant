@@ -11,6 +11,7 @@ use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
+use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::mmap_ops;
@@ -545,12 +546,7 @@ impl HNSWIndex {
                 &cardinality_estimation,
                 &disposed_hw_counter,
             )
-            .filter(|&point_id| {
-                !deleted_bitslice
-                    .get(point_id as usize)
-                    .map(|x| *x)
-                    .unwrap_or(false)
-            })
+            .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
             .collect();
 
         for block_point_id in points_to_index.iter().copied() {

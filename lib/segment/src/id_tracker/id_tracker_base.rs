@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use bitvec::prelude::BitSlice;
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -89,13 +90,10 @@ pub trait IdTracker: fmt::Debug {
         &'a self,
         exclude_bitslice: &'a BitSlice,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        Box::new(self.iter_ids().filter(|point| {
-            !exclude_bitslice
-                .get(*point as usize)
-                .as_deref()
-                .copied()
-                .unwrap_or(false)
-        }))
+        Box::new(
+            self.iter_ids()
+                .filter(|point| !exclude_bitslice.get_bit(*point as usize).unwrap_or(false)),
+        )
     }
 
     /// Flush id mapping to disk
@@ -145,13 +143,13 @@ pub trait IdTracker: fmt::Debug {
         Box::new(
             (0..total)
                 .map(move |_| rng.random_range(0..total))
-                .filter(move |x| {
+                .filter(move |&x| {
                     // Check for deleted vector first, as that is more likely
                     !deleted_vector_bitslice
-                        .and_then(|d| d.get(*x as usize).as_deref().copied())
+                        .and_then(|d| d.get_bit(x as usize))
                         .unwrap_or(false)
                     // Also check point deletion for integrity
-                    && !self.is_deleted_point(*x)
+                    && !self.is_deleted_point(x)
                 }),
         )
     }

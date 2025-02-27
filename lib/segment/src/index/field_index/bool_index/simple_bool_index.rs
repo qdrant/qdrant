@@ -22,6 +22,7 @@ use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVaria
 
 mod memory {
     use bitvec::vec::BitVec;
+    use common::ext::BitSliceExt as _;
     use common::types::PointOffsetType;
 
     pub struct BooleanItem {
@@ -92,8 +93,8 @@ mod memory {
         pub fn get(&self, id: PointOffsetType) -> BooleanItem {
             debug_assert!(self.trues.len() == self.falses.len());
 
-            let has_true = self.trues.get(id as usize).map(|v| *v).unwrap_or(false);
-            let has_false = self.falses.get(id as usize).map(|v| *v).unwrap_or(false);
+            let has_true = self.trues.get_bit(id as usize).unwrap_or(false);
+            let has_false = self.falses.get_bit(id as usize).unwrap_or(false);
 
             BooleanItem::from_bools(has_true, has_false)
         }

@@ -2,6 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::ext::BitSliceExt as _;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use sparse::common::sparse_vector::SparseVector;
@@ -1062,15 +1063,9 @@ pub fn check_deleted_condition(
     point_deleted: &BitSlice,
 ) -> bool {
     // Deleted points propagate to vectors; check vector deletion for possible early return
-    !vec_deleted
-            .get(point as usize)
-            .map(|x| *x)
-            // Default to not deleted if our deleted flags failed grow
-            .unwrap_or(false)
+    // Default to not deleted if our deleted flags failed grow
+    !vec_deleted.get_bit(point as usize).unwrap_or(false)
         // Additionally check point deletion for integrity if delete propagation to vector failed
-        && !point_deleted
-            .get(point as usize)
-            .map(|x| *x)
-            // Default to deleted if the point mapping was removed from the ID tracker
-            .unwrap_or(true)
+        // Default to deleted if the point mapping was removed from the ID tracker
+        && !point_deleted.get_bit(point as usize).unwrap_or(true)
 }

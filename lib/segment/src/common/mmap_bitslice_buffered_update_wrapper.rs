@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
+use common::ext::BitSliceExt as _;
 use memory::mmap_type::MmapBitSlice;
 use parking_lot::{Mutex, RwLock};
 
@@ -43,7 +44,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         if let Some(value) = self.pending_updates.lock().get(&index) {
             Some(*value)
         } else {
-            self.bitslice.read().get(index).as_deref().copied()
+            self.bitslice.read().get_bit(index)
         }
     }
 
