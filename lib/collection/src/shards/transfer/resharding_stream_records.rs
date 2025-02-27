@@ -80,7 +80,8 @@ pub(crate) async fn transfer_resharding_stream_records(
                 "Shard {shard_id} not found"
             )));
         };
-        progress.lock().set(0, count_result.count);
+        let transfer_size = (count_result.count as f32 * hashring.resharding_transfer_fraction()) as usize;
+        progress.lock().set(0, transfer_size);
 
         replica_set.transfer_indexes().await?;
 
