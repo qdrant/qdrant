@@ -55,7 +55,7 @@ pub(super) async fn transfer_stream_records(
             .count_local(
                 Arc::new(CountRequestInternal {
                     filter: None,
-                    exact: true,
+                    exact: false,
                 }),
                 None, // no timeout
                 hw_acc,

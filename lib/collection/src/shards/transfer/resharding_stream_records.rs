@@ -69,7 +69,7 @@ pub(crate) async fn transfer_resharding_stream_records(
             .count_local(
                 Arc::new(CountRequestInternal {
                     filter: None,
-                    exact: true,
+                    exact: false,
                 }),
                 None,
                 hw_acc,
