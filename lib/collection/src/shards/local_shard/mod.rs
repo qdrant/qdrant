@@ -838,9 +838,24 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
-        // Read dir first as the directory contents would change during restore.
+        // Read dir first as the directory contents would change during restore
         let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
             .collect::<Result<Vec<_>, _>>()?;
+
+        // Filter out hidden entries
+        let entries = entries.into_iter().filter(|entry| {
+            let is_hidden = entry
+                .file_name()
+                .to_str()
+                .is_some_and(|s| s.starts_with('.'));
+            if is_hidden {
+                log::debug!(
+                    "Ignoring hidden segment in local shard during snapshot recovery: {}",
+                    entry.path().display(),
+                );
+            }
+            !is_hidden
+        });
 
         for entry in entries {
             Segment::restore_snapshot_in_place(&entry.path())?;
