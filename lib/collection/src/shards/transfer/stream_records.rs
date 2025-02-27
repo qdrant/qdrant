@@ -66,7 +66,7 @@ pub(super) async fn transfer_stream_records(
                 "Shard {shard_id} not found"
             )));
         };
-        progress.lock().points_total = count_result.count;
+        progress.lock().set(0, count_result.count);
 
         replica_set.transfer_indexes().await?;
 
@@ -94,13 +94,7 @@ pub(super) async fn transfer_stream_records(
             .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
             .await?;
 
-        {
-            let mut progress = progress.lock();
-            let transferred =
-                (progress.points_transferred + TRANSFER_BATCH_SIZE).min(progress.points_total);
-            progress.points_transferred = transferred;
-            progress.eta.set_progress(transferred);
-        }
+        progress.lock().add(TRANSFER_BATCH_SIZE);
 
         // If this is the last batch, finalize
         if offset.is_none() {
