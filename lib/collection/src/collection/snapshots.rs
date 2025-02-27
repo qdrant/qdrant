@@ -246,7 +246,8 @@ impl Collection {
         // set shard_id initialization flag
         // the file is removed after full recovery to indicate a well-formed shard
         let shard_flag = shard_initializing_flag_path(&self.path, shard_id);
-        tokio::fs::write(&shard_flag, b"").await?;
+        let flag_file = tokio::fs::File::create(&shard_flag).await?;
+        flag_file.sync_all().await?;
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
