@@ -519,13 +519,18 @@ impl ShardHolder {
         self.hash_ring_filter(shard_id)
     }
 
-    pub fn hash_ring_filter(&self, shard_id: ShardId) -> Option<hash_ring::HashRingFilter> {
+    pub fn hash_ring_router(&self, shard_id: ShardId) -> Option<&HashRingRouter> {
         if !self.contains_shard(shard_id) {
             return None;
         }
 
         let shard_key = self.shard_id_to_key_mapping.get(&shard_id).cloned();
         let router = self.rings.get(&shard_key).expect("hashring exists");
+        Some(router)
+    }
+
+    pub fn hash_ring_filter(&self, shard_id: ShardId) -> Option<hash_ring::HashRingFilter> {
+        let router = self.hash_ring_router(shard_id)?;
         let ring = match router {
             HashRingRouter::Single(ring) => ring,
             HashRingRouter::Resharding { old, new } => {
