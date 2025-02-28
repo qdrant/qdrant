@@ -198,10 +198,6 @@ impl<T: Eq + Hash> HashRingRouter<T> {
                     from.abs_diff(to) <= 1,
                     "expects resharding to only move up or down by one shard",
                 );
-                debug_assert!(
-                    from == 0 || to == 0,
-                    "should never reshard from or to zero shards",
-                );
 
                 match from.cmp(&to) {
                     Ordering::Equal => 1.0,
