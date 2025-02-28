@@ -1355,7 +1355,7 @@ impl From<tonic::Status> for CollectionError {
                         .and_then(|v| {
                             v.parse::<u64>()
                                 .inspect_err(|e| {
-                                    log::info!("Failed to parse retry-after header: {e}")
+                                    log::info!("Failed to parse retry-after value in gRPC metadata (value: {v}): {e}")
                                 })
                                 .ok()
                         })
