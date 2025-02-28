@@ -121,7 +121,8 @@ impl ShardCleanTasks {
             }
 
             let result = if let Some(timeout) = timeout {
-                tokio::time::timeout(timeout - start.elapsed(), receiver.changed()).await
+                tokio::time::timeout(timeout.saturating_sub(start.elapsed()), receiver.changed())
+                    .await
             } else {
                 Ok(receiver.changed().await)
             };
