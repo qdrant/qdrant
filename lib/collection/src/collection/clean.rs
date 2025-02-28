@@ -313,6 +313,7 @@ async fn clean_task(
         // might pass a hash ring filter into the scroll operation itself, but that will make it
         // significantly slower, because then we'll do the expensive hash ring check on every
         // point, in every segment.
+        // See: <https://github.com/qdrant/qdrant/pull/6085>
         let hashring = shard_holder.hash_ring_router(shard_id).ok_or_else(|| {
             CollectionError::service_error(format!(
                 "Shard {shard_id} cannot be cleaned, failed to get shard hash ring"
