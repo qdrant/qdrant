@@ -1131,7 +1131,7 @@ impl CollectionError {
                     retry_after,
                 } = retry_error;
                 let description = format!(
-                    "{rate_limiter_type} rate limit exceeded: Operation requires {cost} tokens but only {tokens_available} were available. Retry after {}s",
+                    "{rate_limiter_type} rate limit exceeded: Operation requires {cost} tokens but only {tokens_available:.1} were available. Retry after {}s",
                     retry_after.as_secs_f32().ceil() as u32,
                 );
                 (description, Some(retry_after))
@@ -1345,10 +1345,27 @@ impl From<tonic::Status> for CollectionError {
             tonic::Code::FailedPrecondition => CollectionError::PreConditionFailed {
                 description: format!("{err}"),
             },
-            tonic::Code::ResourceExhausted => CollectionError::RateLimitExceeded {
-                description: format!("{err}"),
-                retry_after: None,
-            },
+            tonic::Code::ResourceExhausted => {
+                // extract retry-after from metadata
+                // the value is passed as a String containing an integer number of seconds
+                let retry_after = err.metadata().get("retry-after").and_then(|v| {
+                    v.to_str()
+                        .inspect_err(|e| log::info!("Failed to parse retry-after header: {e}"))
+                        .ok()
+                        .and_then(|v| {
+                            v.parse::<u64>()
+                                .inspect_err(|e| {
+                                    log::info!("Failed to parse retry-after value in gRPC metadata (value: {v}): {e}")
+                                })
+                                .ok()
+                        })
+                        .map(Duration::from_secs)
+                });
+                CollectionError::RateLimitExceeded {
+                    description: format!("{err}"),
+                    retry_after,
+                }
+            }
             tonic::Code::Ok
             | tonic::Code::Unknown
             | tonic::Code::PermissionDenied

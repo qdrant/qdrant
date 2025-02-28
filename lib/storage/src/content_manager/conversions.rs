@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::str::FromStr;
+
 use collection::operations::config_diff::{
     CollectionParamsDiff, HnswConfigDiff, OptimizersConfigDiff, QuantizationConfigDiff,
 };
@@ -5,6 +8,7 @@ use collection::operations::conversions::sharding_method_from_proto;
 use collection::operations::types::{SparseVectorsConfig, VectorsConfigDiff};
 use segment::types::{StrictModeConfig, StrictModeMultivectorConfig, StrictModeSparseConfig};
 use tonic::Status;
+use tonic::metadata::MetadataValue;
 
 use crate::content_manager::collection_meta_ops::{
     AliasOperations, ChangeAliasesOperation, CollectionMetaOperations, CreateAlias,
@@ -16,6 +20,7 @@ use crate::content_manager::errors::StorageError;
 
 impl From<StorageError> for Status {
     fn from(error: StorageError) -> Self {
+        let mut metadata_headers = HashMap::new();
         let error_code = match &error {
             StorageError::BadInput { .. } => tonic::Code::InvalidArgument,
             StorageError::NotFound { .. } => tonic::Code::NotFound,
@@ -28,9 +33,29 @@ impl From<StorageError> for Status {
             StorageError::Forbidden { .. } => tonic::Code::PermissionDenied,
             StorageError::PreconditionFailed { .. } => tonic::Code::FailedPrecondition,
             StorageError::InferenceError { .. } => tonic::Code::InvalidArgument,
-            StorageError::RateLimitExceeded { .. } => tonic::Code::ResourceExhausted,
+            StorageError::RateLimitExceeded {
+                description: _,
+                retry_after,
+            } => {
+                if let Some(retry_after) = retry_after {
+                    // Retry-After is expressed in seconds `https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Retry-After`
+                    // Ceil the value to the nearest second so clients don't retry too early
+                    let retry_after_sec = retry_after.as_secs_f32().ceil() as u32;
+                    metadata_headers.insert("retry-after", retry_after_sec.to_string());
+                }
+                tonic::Code::ResourceExhausted
+            }
         };
-        Status::new(error_code, format!("{error}"))
+        let mut status = Status::new(error_code, format!("{error}"));
+        // add metadata headers
+        for (header_key, header_value) in metadata_headers {
+            if let Ok(metadata) = MetadataValue::from_str(&header_value) {
+                status.metadata_mut().insert(header_key, metadata);
+            } else {
+                log::info!("Failed to parse metadata header value: {}", header_value);
+            }
+        }
+        status
     }
 }
 

@@ -391,7 +391,7 @@ def check_collection_local_shards_count(peer_api_uri: str, collection_name: str,
     return get_collection_local_shards_count(peer_api_uri, collection_name) == expected_local_shard_count
 
 
-def get_collection_local_shards_count(peer_api_uri: str, collection_name: str) -> bool:
+def get_collection_local_shards_count(peer_api_uri: str, collection_name: str) -> int:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name)
     return len(collection_cluster_info["local_shards"])
 

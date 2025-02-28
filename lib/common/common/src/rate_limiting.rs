@@ -57,6 +57,7 @@ impl RateLimiter {
         } else {
             let missing_tokens = tokens - self.tokens;
             let retry_after = Duration::from_secs_f64(missing_tokens / self.tokens_per_sec);
+            debug_assert!(retry_after > Duration::from_secs(0));
             let retry_error = RetryError {
                 tokens_available: self.tokens,
                 retry_after,
