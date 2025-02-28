@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use cancel::{CancellationToken, DropGuard};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::RwLock;
-use segment::types::{Condition, Filter};
+use segment::types::ExtendedPointId;
 use tokio::sync::watch::{Receiver, Sender};
 use tokio::task::JoinHandle;
 
@@ -277,11 +277,7 @@ async fn clean_task(
             )));
         }
 
-        // Scroll batch of points with hash ring filter
-        let filter = shard_holder
-            .hash_ring_filter(shard_id)
-            .expect("hash ring filter");
-        let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
+        // Scroll next batch of points
         let mut ids = match shard
             // TODO(ratelimiter): do not rate limit or bill this scroll, part of internals
             .scroll_by(
@@ -289,7 +285,7 @@ async fn clean_task(
                 CLEAN_BATCH_SIZE + 1,
                 &false.into(),
                 &false.into(),
-                Some(&filter),
+                None,
                 None,
                 true,
                 None,
@@ -311,13 +307,32 @@ async fn clean_task(
         deleted_points += ids.len();
         let last_batch = offset.is_none();
 
+        // Filter list of point IDs after scrolling, delete points that don't belong in this shard
+        // Checking the hash ring to determine if a point belongs in the shard is very expensive.
+        // We scroll all point IDs and only filter points by the hash ring after scrolling on
+        // purpose, this way we check each point ID against the hash ring only once. Naively we
+        // might pass a hash ring filter into the scroll operation itself, but that will make it
+        // significantly slower, because then we'll do the expensive hash ring check on every
+        // point, in every segment.
+        // See: <https://github.com/qdrant/qdrant/pull/6085>
+        let hashring = shard_holder.hash_ring_router(shard_id).ok_or_else(|| {
+            CollectionError::service_error(format!(
+                "Shard {shard_id} cannot be cleaned, failed to get shard hash ring"
+            ))
+        })?;
+        let ids: Vec<ExtendedPointId> = ids
+            .into_iter()
+            // TODO: run test with this inverted?
+            .filter(|id| !hashring.is_in_shard(id, shard_id))
+            .collect();
+
         // Delete points from local shard
         // TODO(ratelimiter): do not rate limit or bill this delete, part of internals
         let delete_operation =
             OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
                 crate::operations::point_ops::PointOperations::DeletePoints { ids },
             ));
-        if let Err(err) = shard.update_local(delete_operation, true).await {
+        if let Err(err) = shard.update_local(delete_operation, last_batch).await {
             return Err(CollectionError::service_error(format!(
                 "Failed to delete points from shard: {err}",
             )));
