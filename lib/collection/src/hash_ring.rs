@@ -231,6 +231,26 @@ impl<T: Eq + Hash> HashRingRouter<T> {
     }
 }
 
+impl HashRingRouter<ShardId> {
+    /// Create local hash ring filter that matches points in the given shard ID
+    ///
+    /// In case of resharding, this filter will match points in the new hash ring and shard
+    /// distribution.
+    pub fn to_filter(&self, shard_id: ShardId) -> HashRingFilter {
+        let ring = match self {
+            HashRingRouter::Single(ring) => ring,
+            HashRingRouter::Resharding { old: _, new } => new,
+        };
+
+        debug_assert!(
+            ring.contains(&shard_id),
+            "shard ID not in resharding hash ring",
+        );
+
+        HashRingFilter::new(ring.clone(), shard_id)
+    }
+}
+
 /// List type for shard IDs
 ///
 /// Uses a `SmallVec` putting two IDs on the stack. That's the maximum number of shards we expect

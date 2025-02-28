@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
+use segment::types::{Condition, Filter};
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
@@ -80,7 +81,8 @@ pub(crate) async fn transfer_resharding_stream_records(
                 "Shard {shard_id} not found"
             )));
         };
-        let transfer_size = (count_result.count as f32 * hashring.resharding_transfer_fraction()) as usize;
+        let transfer_size =
+            (count_result.count as f32 * hashring.resharding_transfer_fraction()) as usize;
         progress.lock().set(0, transfer_size);
 
         replica_set.transfer_indexes().await?;
@@ -94,6 +96,10 @@ pub(crate) async fn transfer_resharding_stream_records(
 
     let mut offset = None;
 
+    // Use point filter to only transfer points that fall into the new shard
+    let hashring_filter = hashring.to_filter(remote_shard.id);
+    let filter = Filter::new_must(Condition::CustomIdChecker(Arc::new(hashring_filter)));
+
     loop {
         let shard_holder = shard_holder.read().await;
 
@@ -106,7 +112,7 @@ pub(crate) async fn transfer_resharding_stream_records(
         };
 
         let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&hashring), true)
+            .transfer_batch(offset, TRANSFER_BATCH_SIZE, Some(&filter), true)
             .await?;
 
         offset = new_offset;

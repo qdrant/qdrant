@@ -123,7 +123,7 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        hashring_filter: Option<&HashRingRouter>,
+        filter: Option<&Filter>,
         merge_points: bool,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Option<PointIdType>, usize)> {
@@ -138,7 +138,7 @@ impl ForwardProxyShard {
                 limit,
                 &WithPayloadInterface::Bool(true),
                 &true.into(),
-                None,
+                filter,
                 runtime_handle,
                 None,
                 None,                           // no timeout
@@ -153,18 +153,10 @@ impl ForwardProxyShard {
             Some(batch.pop().unwrap().id)
         };
 
-        let points: Result<Vec<PointStructPersisted>, String> = batch
+        let points: Vec<PointStructPersisted> = batch
             .into_iter()
-            // If using a hashring filter, only transfer points that moved, otherwise transfer all
-            .filter(|point| {
-                hashring_filter
-                    .map(|hashring| hashring.is_in_shard(&point.id, self.remote_shard.id))
-                    .unwrap_or(true)
-            })
             .map(PointStructPersisted::try_from)
-            .collect();
-
-        let points = points?;
+            .collect::<Result<_, String>>()?;
         let count = points.len();
 
         // Use sync API to leverage potentially existing points
