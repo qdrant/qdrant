@@ -1,6 +1,5 @@
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
-use crate::index::field_index::bool_index::mmap_bool_index::MmapBoolIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex};
 use crate::types::{FieldCondition, PayloadKeyType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
@@ -68,12 +67,12 @@ impl PayloadFieldIndex for MmapNullIndex {
 
     fn filter<'a>(
         &'a self,
-        condition: &'a FieldCondition,
+        _condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         todo!()
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(&self, _condition: &FieldCondition) -> Option<CardinalityEstimation> {
         todo!()
     }
 
