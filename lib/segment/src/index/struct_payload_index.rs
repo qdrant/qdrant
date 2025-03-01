@@ -84,17 +84,22 @@ impl StructPayloadIndex {
 
     fn query_field<'a>(
         &'a self,
-        field_condition: &'a FieldCondition,
+        condition: &'a PrimaryCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        let indexes = self
-            .field_indexes
-            .get(&field_condition.key)
-            .and_then(|indexes| {
-                indexes
-                    .iter()
-                    .find_map(|field_index| field_index.filter(field_condition))
-            });
-        indexes
+        match condition {
+            PrimaryCondition::Condition(field_condition) => self
+                .field_indexes
+                .get(&field_condition.key)
+                .and_then(|indexes| {
+                    indexes
+                        .iter()
+                        .find_map(|field_index| field_index.filter(field_condition))
+                }),
+            PrimaryCondition::Ids(ids) => Some(Box::new(ids.iter().copied())),
+            PrimaryCondition::IsEmpty(_) => None,
+            PrimaryCondition::IsNull(_) => None,
+            PrimaryCondition::HasVector(_) => None,
+        }
     }
 
     fn config_path(&self) -> PathBuf {
@@ -394,17 +399,8 @@ impl StructPayloadIndex {
                 .primary_clauses
                 .iter()
                 .flat_map(|clause| {
-                    match clause {
-                        PrimaryCondition::Condition(field_condition) => {
-                            self.query_field(field_condition).unwrap_or_else(
-                                || id_tracker.iter_ids(), /* index is not built */
-                            )
-                        }
-                        PrimaryCondition::Ids(ids) => Box::new(ids.iter().copied()),
-                        PrimaryCondition::IsEmpty(_) => id_tracker.iter_ids(), /* there are no fast index for IsEmpty */
-                        PrimaryCondition::IsNull(_) => id_tracker.iter_ids(),  /* no fast index for IsNull too */
-                        PrimaryCondition::HasVector(_) => id_tracker.iter_ids(), /* no fast index for HasVector */
-                    }
+                    self.query_field(clause)
+                        .unwrap_or_else(|| id_tracker.iter_ids() /* index is not built */)
                 })
                 .filter(move |&id| !visited_list.check_and_update_visited(id))
                 .filter(move |&i| struct_filtered_context.check(i));
