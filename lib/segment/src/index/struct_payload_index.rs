@@ -87,14 +87,13 @@ impl StructPayloadIndex {
         condition: &'a PrimaryCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match condition {
-            PrimaryCondition::Condition(field_condition) => self
-                .field_indexes
-                .get(&field_condition.key)
-                .and_then(|indexes| {
-                    indexes
-                        .iter()
-                        .find_map(|field_index| field_index.filter(field_condition))
-                }),
+            PrimaryCondition::Condition(field_condition) => {
+                let field_key = &field_condition.key;
+                let field_indexes = self.field_indexes.get(field_key)?;
+                field_indexes
+                    .iter()
+                    .find_map(|field_index| field_index.filter(field_condition))
+            }
             PrimaryCondition::Ids(ids) => Some(Box::new(ids.iter().copied())),
             PrimaryCondition::IsEmpty(_) => None,
             PrimaryCondition::IsNull(_) => None,
