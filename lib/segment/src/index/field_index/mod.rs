@@ -21,6 +21,7 @@ mod stat_tools;
 #[cfg(test)]
 mod tests;
 mod utils;
+pub mod null_index;
 
 pub use field_index_base::*;
 
