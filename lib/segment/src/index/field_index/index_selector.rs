@@ -20,6 +20,7 @@ use crate::data_types::index::TextIndexParams;
 use crate::index::field_index::FieldIndex;
 use crate::index::field_index::full_text_index::text_index::FullTextIndex;
 use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::null_index::mmap_null_index::MmapNullIndex;
 use crate::index::field_index::numeric_index::NumericIndex;
 use crate::json_path::JsonPath;
 use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
@@ -49,7 +50,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
-        Ok(match payload_schema.expand().as_ref() {
+        let mut indexes = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(_) => vec![FieldIndex::KeywordIndex(self.map_new(field)?)],
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
                 integer_params
@@ -80,7 +81,13 @@ impl IndexSelector<'_> {
             PayloadSchemaParams::Uuid(_) => {
                 vec![FieldIndex::UuidMapIndex(self.map_new(field)?)]
             }
-        })
+        };
+
+        if let Some(null_index) = self.new_null_index(field)? {
+            indexes.push(null_index);
+        }
+
+        Ok(indexes)
     }
 
     /// Selects index builder based on field type.
@@ -223,6 +230,15 @@ impl IndexSelector<'_> {
         })
     }
 
+    fn new_null_index(&self, field: &JsonPath) -> OperationResult<Option<FieldIndex>> {
+        Ok(match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb { .. }) => None, // ToDo: appendable index should also be created
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+                MmapNullIndex::open_if_exists(&null_dir(dir, field))?.map(FieldIndex::NullIndex)
+            }
+        })
+    }
+
     fn geo_builder(
         &self,
         field: &JsonPath,
@@ -322,4 +338,8 @@ fn text_dir(dir: &Path, field: &JsonPath) -> PathBuf {
 
 fn bool_dir(dir: &Path, field: &JsonPath) -> PathBuf {
     dir.join(format!("{}-bool", &field.filename()))
+}
+
+fn null_dir(dir: &Path, field: &JsonPath) -> PathBuf {
+    dir.join(format!("{}-null", &field.filename()))
 }

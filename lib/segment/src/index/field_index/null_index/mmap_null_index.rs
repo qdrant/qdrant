@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use common::types::PointOffsetType;
 use serde_json::Value;
 
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -26,6 +26,66 @@ pub struct MmapNullIndex {
 }
 
 impl MmapNullIndex {
+    /// Creates a new null index at the given path.
+    /// If it already exists, loads the index.
+    ///
+    /// # Arguments
+    /// - `path` - The directory where the index files should live, must be exclusive to this index.
+    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+        let has_values_dir = path.join(HAS_VALUES_DIRNAME);
+        if has_values_dir.is_dir() {
+            Self::open(path)
+        } else {
+            std::fs::create_dir_all(path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to create null-index directory: {err}, path: {path:?}"
+                ))
+            })?;
+            Self::open(path)
+        }
+    }
+
+    fn open(path: &Path) -> OperationResult<Self> {
+        if !path.is_dir() {
+            return Err(OperationError::service_error(format!(
+                "Path is not a directory {path:?}"
+            )));
+        }
+
+        let has_values_path = path.join(HAS_VALUES_DIRNAME);
+        let has_values_slice = DynamicMmapFlags::open(&has_values_path)?;
+
+        let is_null_path = path.join(IS_NULL_DIRNAME);
+        let is_null_slice = DynamicMmapFlags::open(&is_null_path)?;
+
+        Ok(Self {
+            base_dir: path.to_path_buf(),
+            has_values_slice,
+            is_null_slice,
+        })
+    }
+
+    pub fn open_if_exists(path: &Path) -> OperationResult<Option<Self>> {
+        if !path.is_dir() {
+            return Ok(None);
+        }
+
+        let has_values_path = path.join(HAS_VALUES_DIRNAME);
+        let is_null_path = path.join(IS_NULL_DIRNAME);
+
+        if has_values_path.exists() && is_null_path.exists() {
+            let has_values_slice = DynamicMmapFlags::open(&has_values_path)?;
+            let is_null_slice = DynamicMmapFlags::open(&is_null_path)?;
+            Ok(Some(Self {
+                base_dir: path.to_path_buf(),
+                has_values_slice,
+                is_null_slice,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
         let mut is_null = false;
         let mut has_values = false;
