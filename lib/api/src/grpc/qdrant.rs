@@ -6278,6 +6278,12 @@ pub struct FieldCondition {
     /// Check if datetime is within a given range
     #[prost(message, optional, tag = "8")]
     pub datetime_range: ::core::option::Option<DatetimeRange>,
+    /// Check if field is empty
+    #[prost(bool, optional, tag = "9")]
+    pub is_empty: ::core::option::Option<bool>,
+    /// Check if field is null
+    #[prost(bool, optional, tag = "10")]
+    pub is_null: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -43,6 +43,8 @@ impl ValueChecker for FieldCondition {
             geo_polygon,
             values_count,
             key: _,
+            is_empty,
+            is_null,
         } = self;
 
         r#match
@@ -66,6 +68,22 @@ impl ValueChecker for FieldCondition {
             || values_count
                 .as_ref()
                 .is_some_and(|condition| condition.check_match(payload))
+            || is_empty.is_some_and(|is_empty| match payload {
+                Value::Null => is_empty,
+                Value::Bool(_) => !is_empty,
+                Value::Number(_) => !is_empty,
+                Value::String(_) => !is_empty,
+                Value::Array(array) => array.is_empty() == is_empty,
+                Value::Object(_) => !is_empty,
+            })
+            || is_null.is_some_and(|is_null| match payload {
+                Value::Null => is_null,
+                Value::Bool(_) => !is_null,
+                Value::Number(_) => !is_null,
+                Value::String(_) => !is_null,
+                Value::Array(array) => array.iter().any(|x| x.is_null()) == is_null,
+                Value::Object(_) => !is_null,
+            })
     }
 
     fn check(&self, payload: &Value) -> bool {

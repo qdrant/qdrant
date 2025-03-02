@@ -1,12 +1,16 @@
+use std::path::PathBuf;
+
+use common::types::PointOffsetType;
+use serde_json::Value;
+
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex};
+use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
-use common::types::PointOffsetType;
-use std::path::PathBuf;
 
-const IS_EMPTY_DIRNAME: &str = "is_empty";
+const HAS_VALUES_DIRNAME: &str = "has_values";
 const IS_NULL_DIRNAME: &str = "is_null";
 
 /// Special type of payload index that is supposed to speed-up IsNull and IsEmpty conditions.
@@ -15,15 +19,41 @@ const IS_NULL_DIRNAME: &str = "is_null";
 /// in case of IsNull and IsEmpty conditions.
 pub struct MmapNullIndex {
     base_dir: PathBuf,
-    /// If true, then payload field does not contain any values.
-    is_empty_slice: DynamicMmapFlags,
+    /// If true, payload field has some values.
+    has_values_slice: DynamicMmapFlags,
     /// If true, then payload field contains null value.
     is_null_slice: DynamicMmapFlags,
 }
 
+impl MmapNullIndex {
+    pub fn add_point(&mut self, _id: PointOffsetType, _payload: &[&Value]) -> OperationResult<()> {
+        todo!()
+    }
+
+    pub fn remove_point(&mut self, _id: PointOffsetType) -> OperationResult<()> {
+        todo!()
+    }
+
+    pub fn values_count(&self, _id: PointOffsetType) -> usize {
+        todo!()
+    }
+
+    pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
+        !self.has_values_slice.get(id)
+    }
+
+    pub fn values_is_null(&self, id: PointOffsetType) -> bool {
+        self.is_null_slice.get(id)
+    }
+
+    pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
+        todo!()
+    }
+}
+
 impl PayloadFieldIndex for MmapNullIndex {
     fn count_indexed_points(&self) -> usize {
-        self.is_empty_slice.len()
+        self.has_values_slice.len()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
@@ -39,11 +69,11 @@ impl PayloadFieldIndex for MmapNullIndex {
     fn flusher(&self) -> Flusher {
         let Self {
             base_dir: _,
-            is_empty_slice,
+            has_values_slice,
             is_null_slice,
         } = self;
 
-        let is_empty_flusher = is_empty_slice.flusher();
+        let is_empty_flusher = has_values_slice.flusher();
         let is_null_flusher = is_null_slice.flusher();
 
         Box::new(move || {
@@ -56,11 +86,11 @@ impl PayloadFieldIndex for MmapNullIndex {
     fn files(&self) -> Vec<PathBuf> {
         let Self {
             base_dir: _,
-            is_empty_slice,
+            has_values_slice,
             is_null_slice,
         } = self;
 
-        let mut files = is_empty_slice.files();
+        let mut files = has_values_slice.files();
         files.extend(is_null_slice.files());
         files
     }

@@ -1373,6 +1373,8 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             values_count,
             geo_polygon,
             datetime_range,
+            is_empty,
+            is_null,
         } = value;
 
         let geo_bounding_box =
@@ -1395,6 +1397,8 @@ impl TryFrom<FieldCondition> for segment::types::FieldCondition {
             geo_radius,
             geo_polygon,
             values_count: values_count.map(Into::into),
+            is_empty,
+            is_null,
         })
     }
 }
@@ -1409,6 +1413,8 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             geo_radius,
             geo_polygon,
             values_count,
+            is_empty,
+            is_null,
         } = value;
 
         let (range, datetime_range) = match range {
@@ -1426,6 +1432,8 @@ impl From<segment::types::FieldCondition> for FieldCondition {
             geo_polygon: geo_polygon.map(Into::into),
             values_count: values_count.map(Into::into),
             datetime_range,
+            is_empty,
+            is_null,
         }
     }
 }

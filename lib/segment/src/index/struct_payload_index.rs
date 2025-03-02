@@ -37,8 +37,8 @@ use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Payload,
-    PayloadContainer, PayloadField, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    PayloadSchemaType, VectorNameBuf, infer_collection_value_type, infer_value_type,
+    PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    VectorNameBuf, infer_collection_value_type, infer_value_type,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
@@ -95,8 +95,6 @@ impl StructPayloadIndex {
                     .find_map(|field_index| field_index.filter(field_condition))
             }
             PrimaryCondition::Ids(ids) => Some(Box::new(ids.iter().copied())),
-            PrimaryCondition::IsEmpty(_) => None,
-            PrimaryCondition::IsNull(_) => None,
             PrimaryCondition::HasVector(_) => None,
         }
     }
@@ -252,59 +250,17 @@ impl StructPayloadIndex {
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
-                let full_path = JsonPath::extend_or_new(nested_path, &field.key);
+                let condition = FieldCondition::new_is_empty(field.key.clone());
 
-                let mut indexed_points = 0;
-                if let Some(field_indexes) = self.field_indexes.get(&full_path) {
-                    for index in field_indexes {
-                        indexed_points = indexed_points.max(index.count_indexed_points())
-                    }
-                    CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
-                            is_empty: PayloadField { key: full_path },
-                        })],
-                        min: 0, // It is possible, that some non-empty payloads are not indexed
-                        exp: available_points.saturating_sub(indexed_points), // Expect field type consistency
-                        max: available_points.saturating_sub(indexed_points),
-                    }
-                } else {
-                    CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::IsEmpty(IsEmptyCondition {
-                            is_empty: PayloadField { key: full_path },
-                        })],
-                        min: 0,
-                        exp: available_points / 2,
-                        max: available_points,
-                    }
-                }
+                self.estimate_field_condition(&condition, nested_path)
+                    .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
-                let full_path = JsonPath::extend_or_new(nested_path, &field.key);
+                let condition = FieldCondition::new_is_null(field.key.clone());
 
-                let mut indexed_points = 0;
-                if let Some(field_indexes) = self.field_indexes.get(&full_path) {
-                    for index in field_indexes {
-                        indexed_points = indexed_points.max(index.count_indexed_points())
-                    }
-                    CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::IsNull(IsNullCondition {
-                            is_null: PayloadField { key: full_path },
-                        })],
-                        min: 0,
-                        exp: available_points.saturating_sub(indexed_points),
-                        max: available_points.saturating_sub(indexed_points),
-                    }
-                } else {
-                    CardinalityEstimation {
-                        primary_clauses: vec![PrimaryCondition::IsNull(IsNullCondition {
-                            is_null: PayloadField { key: full_path },
-                        })],
-                        min: 0,
-                        exp: available_points / 2,
-                        max: available_points,
-                    }
-                }
+                self.estimate_field_condition(&condition, nested_path)
+                    .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::HasId(has_id) => {
                 let id_tracker_ref = self.id_tracker.borrow();

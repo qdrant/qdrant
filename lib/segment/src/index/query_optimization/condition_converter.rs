@@ -53,34 +53,51 @@ impl StructPayloadIndex {
             // We can use index for `is_empty` condition effectively only when it is not empty.
             // If the index says it is "empty", we still need to check the payload.
             Condition::IsEmpty(is_empty) => {
-                let first_field_index = field_indexes
-                    .get(&is_empty.is_empty.key)
-                    .and_then(|indexes| indexes.first());
+                let field_indexes = field_indexes.get(&is_empty.is_empty.key);
 
-                let hw = hw_counter.fork();
-                let fallback = Box::new(move |point_id| {
-                    payload_provider.with_payload(
-                        point_id,
-                        |payload| check_is_empty_condition(is_empty, &payload),
-                        &hw,
-                    )
+                let is_empty_checker = field_indexes.and_then(|field_indexes| {
+                    field_indexes
+                        .iter()
+                        .find_map(|index| get_is_empty_checker(index, true))
                 });
 
-                match first_field_index {
-                    Some(index) => get_is_empty_checker(index, fallback),
-                    None => fallback,
+                if let Some(checker) = is_empty_checker {
+                    checker
+                } else {
+                    // Fallback to reading payload
+                    let hw = hw_counter.fork();
+                    Box::new(move |point_id| {
+                        payload_provider.with_payload(
+                            point_id,
+                            |payload| check_is_empty_condition(is_empty, &payload),
+                            &hw,
+                        )
+                    })
                 }
             }
 
             Condition::IsNull(is_null) => {
-                let hw = hw_counter.fork();
-                Box::new(move |point_id| {
-                    payload_provider.with_payload(
-                        point_id,
-                        |payload| check_is_null_condition(is_null, &payload),
-                        &hw,
-                    )
-                })
+                let field_indexes = field_indexes.get(&is_null.is_null.key);
+
+                let is_null_checker = field_indexes.and_then(|field_indexes| {
+                    field_indexes
+                        .iter()
+                        .find_map(|index| get_is_null_checker(index, true))
+                });
+
+                if let Some(checker) = is_null_checker {
+                    checker
+                } else {
+                    // Fallback to reading payload
+                    let hw = hw_counter.fork();
+                    Box::new(move |point_id| {
+                        payload_provider.with_payload(
+                            point_id,
+                            |payload| check_is_null_condition(is_null, &payload),
+                            &hw,
+                        )
+                    })
+                }
             }
             // ToDo: It might be possible to make this condition faster by using `VisitedPool` instead of HashSet
             Condition::HasId(has_id) => {
@@ -199,6 +216,16 @@ pub fn field_condition_index<'a>(
         } => get_geo_polygon_checkers(index, geo_polygon.clone()),
 
         FieldCondition {
+            is_empty: Some(is_empty),
+            ..
+        } => get_is_empty_checker(index, *is_empty),
+
+        FieldCondition {
+            is_null: Some(is_null),
+            ..
+        } => get_is_null_checker(index, *is_null),
+
+        FieldCondition {
             key: _,
             r#match: None,
             range: None,
@@ -210,6 +237,8 @@ pub fn field_condition_index<'a>(
             //
             // TODO: Try to use the indices that actually support counting values.
             values_count: _,
+            is_empty: None,
+            is_null: None,
         } => None,
     }
 }
@@ -231,7 +260,8 @@ pub fn get_geo_polygon_checkers(
         | FieldIndex::IntMapIndex(_)
         | FieldIndex::KeywordIndex(_)
         | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
     }
 }
 
@@ -251,7 +281,8 @@ pub fn get_geo_radius_checkers(
         | FieldIndex::IntMapIndex(_)
         | FieldIndex::KeywordIndex(_)
         | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
     }
 }
 
@@ -271,7 +302,8 @@ pub fn get_geo_bounding_box_checkers(
         | FieldIndex::IntMapIndex(_)
         | FieldIndex::KeywordIndex(_)
         | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
     }
 }
 
@@ -303,7 +335,8 @@ pub fn get_float_range_checkers(
         | FieldIndex::IntMapIndex(_)
         | FieldIndex::KeywordIndex(_)
         | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
     }
 }
 
@@ -326,7 +359,8 @@ pub fn get_datetime_range_checkers(
         | FieldIndex::IntMapIndex(_)
         | FieldIndex::KeywordIndex(_)
         | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
     }
 }
 
@@ -334,14 +368,38 @@ pub fn get_datetime_range_checkers(
 ///
 /// * `index` - index to check first
 /// * `fallback` - Check if it is empty using plain payload
-#[inline]
-fn get_is_empty_checker<'a>(
-    index: &'a FieldIndex,
-    fallback: ConditionCheckerFn<'a>,
-) -> ConditionCheckerFn<'a> {
-    Box::new(move |point_id: PointOffsetType| {
-        // Counting on the short-circuit of the `&&` operator
-        // Only check the fallback if the index seems to be empty
-        index.values_is_empty(point_id) && fallback(point_id)
-    })
+fn get_is_empty_checker(index: &FieldIndex, is_empty: bool) -> Option<ConditionCheckerFn> {
+    match index {
+        FieldIndex::NullIndex(null_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            null_index.values_is_empty(point_id) == is_empty
+        })),
+        FieldIndex::IntIndex(_)
+        | FieldIndex::DatetimeIndex(_)
+        | FieldIndex::IntMapIndex(_)
+        | FieldIndex::KeywordIndex(_)
+        | FieldIndex::FloatIndex(_)
+        | FieldIndex::GeoIndex(_)
+        | FieldIndex::FullTextIndex(_)
+        | FieldIndex::BoolIndex(_)
+        | FieldIndex::UuidIndex(_)
+        | FieldIndex::UuidMapIndex(_) => None,
+    }
+}
+
+fn get_is_null_checker(index: &FieldIndex, is_null: bool) -> Option<ConditionCheckerFn> {
+    match index {
+        FieldIndex::NullIndex(null_index) => Some(Box::new(move |point_id: PointOffsetType| {
+            null_index.values_is_null(point_id) == is_null
+        })),
+        FieldIndex::IntIndex(_)
+        | FieldIndex::DatetimeIndex(_)
+        | FieldIndex::IntMapIndex(_)
+        | FieldIndex::KeywordIndex(_)
+        | FieldIndex::FloatIndex(_)
+        | FieldIndex::GeoIndex(_)
+        | FieldIndex::FullTextIndex(_)
+        | FieldIndex::BoolIndex(_)
+        | FieldIndex::UuidIndex(_)
+        | FieldIndex::UuidMapIndex(_) => None,
+    }
 }
