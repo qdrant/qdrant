@@ -97,9 +97,47 @@ impl PayloadFieldIndex for MmapNullIndex {
 
     fn filter<'a>(
         &'a self,
-        _condition: &'a FieldCondition,
+        condition: &'a FieldCondition,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        todo!()
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_bounding_box: _,
+            geo_radius: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty,
+            is_null,
+        } = condition;
+
+        if let Some(is_empty) = is_empty {
+            if *is_empty {
+                // If we want to iterate over all empty values, we need to do it externally
+                // as we don't know how many total values are out there
+                None
+            } else {
+                // But we can iterate over all non-empty values, as all of them should
+                // register in the index
+                let iter = (0..self.has_values_slice.len() as PointOffsetType)
+                    .filter(move |&id| self.has_values_slice.get(id));
+                Some(Box::new(iter))
+            }
+        } else if let Some(is_null) = is_null {
+            if *is_null {
+                // We DO have list of all null values, so we can iterate over them
+                // Null values are explicitly marked in the index
+                let iter = (0..self.is_null_slice.len() as PointOffsetType)
+                    .filter(move |&id| self.is_null_slice.get(id));
+                Some(Box::new(iter))
+            } else {
+                // If we want to iterate over all non-null values, we need to do it externally
+                // as we don't know how many total values are out there
+                None
+            }
+        } else {
+            None
+        }
     }
 
     fn estimate_cardinality(&self, _condition: &FieldCondition) -> Option<CardinalityEstimation> {
