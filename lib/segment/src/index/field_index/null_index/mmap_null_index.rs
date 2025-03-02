@@ -26,16 +26,51 @@ pub struct MmapNullIndex {
 }
 
 impl MmapNullIndex {
-    pub fn add_point(&mut self, _id: PointOffsetType, _payload: &[&Value]) -> OperationResult<()> {
-        todo!()
+    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        let mut is_null = false;
+        let mut has_values = false;
+        for value in payload {
+            match value {
+                Value::Null => {
+                    is_null = true;
+                }
+                Value::Bool(_) => {
+                    has_values = true;
+                }
+                Value::Number(_) => {
+                    has_values = true;
+                }
+                Value::String(_) => {
+                    has_values = true;
+                }
+                Value::Array(array) => {
+                    if array.iter().any(|v| v.is_null()) {
+                        is_null = true;
+                    }
+                }
+                Value::Object(_) => {
+                    has_values = true;
+                }
+            }
+            if is_null {
+                break;
+            }
+        }
+
+        self.has_values_slice.set_with_resize(id, has_values)?;
+        self.is_null_slice.set_with_resize(id, is_null)?;
+
+        Ok(())
     }
 
-    pub fn remove_point(&mut self, _id: PointOffsetType) -> OperationResult<()> {
-        todo!()
+    pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
+        self.has_values_slice.set_with_resize(id, false)?;
+        self.is_null_slice.set_with_resize(id, false)?;
+        Ok(())
     }
 
-    pub fn values_count(&self, _id: PointOffsetType) -> usize {
-        todo!()
+    pub fn values_count(&self, id: PointOffsetType) -> usize {
+        usize::from(self.has_values_slice.get(id))
     }
 
     pub fn values_is_empty(&self, id: PointOffsetType) -> bool {
@@ -47,7 +82,12 @@ impl MmapNullIndex {
     }
 
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
-        todo!()
+        PayloadIndexTelemetry {
+            field_name: None,
+            points_count: self.has_values_slice.len(),
+            points_values_count: self.has_values_slice.len(),
+            histogram_bucket_size: None,
+        }
     }
 }
 
@@ -140,8 +180,46 @@ impl PayloadFieldIndex for MmapNullIndex {
         }
     }
 
-    fn estimate_cardinality(&self, _condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        todo!()
+    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+        let FieldCondition {
+            key: _,
+            r#match: _,
+            range: _,
+            geo_bounding_box: _,
+            geo_radius: _,
+            geo_polygon: _,
+            values_count: _,
+            is_empty,
+            is_null,
+        } = condition;
+
+        if let Some(is_empty) = is_empty {
+            if *is_empty {
+                // If we want to iterate over all empty values, we need to do it externally
+                // as we don't know how many total values are out there
+                None
+            } else {
+                // But we can iterate over all non-empty values, as all of them should
+                // register in the index
+                Some(CardinalityEstimation::exact(
+                    self.has_values_slice.count_flags(),
+                ))
+            }
+        } else if let Some(is_null) = is_null {
+            if *is_null {
+                // We DO have list of all null values, so we can iterate over them
+                // Null values are explicitly marked in the index
+                Some(CardinalityEstimation::exact(
+                    self.is_null_slice.count_flags(),
+                ))
+            } else {
+                // If we want to iterate over all non-null values, we need to do it externally
+                // as we don't know how many total values are out there
+                None
+            }
+        } else {
+            None
+        }
     }
 
     fn payload_blocks(
