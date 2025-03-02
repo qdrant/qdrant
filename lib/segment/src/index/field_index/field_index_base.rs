@@ -19,7 +19,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
-use crate::index::field_index::null_index::mmap_null_index::MmapNullIndex;
+use crate::index::field_index::null_index::mmap_null_index::{MmapNullIndex, MmapNullIndexBuilder};
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -441,6 +441,7 @@ pub enum FieldIndexBuilder {
     BoolMmapIndex(MmapBoolIndexBuilder),
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
+    NullIndex(MmapNullIndexBuilder),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -466,6 +467,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => builder.init(),
             Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
+            Self::NullIndex(index) => index.init(),
         }
     }
 
@@ -491,6 +493,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             }
             Self::UuidIndex(index) => index.add_point(id, payload),
             Self::UuidMmapIndex(index) => index.add_point(id, payload),
+            Self::NullIndex(index) => index.add_point(id, payload),
         }
     }
 
@@ -514,6 +517,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
+            Self::NullIndex(index) => FieldIndex::NullIndex(index.finalize()?),
         })
     }
 }

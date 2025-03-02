@@ -96,7 +96,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
-        Ok(match payload_schema.expand().as_ref() {
+        let mut builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(_) => {
                 vec![self.map_builder(
                     field,
@@ -155,7 +155,13 @@ impl IndexSelector<'_> {
                     FieldIndexBuilder::UuidMmapIndex,
                 )]
             }
-        })
+        };
+
+        if let Some(null_builder) = self.null_builder(field)? {
+            builders.push(null_builder);
+        }
+
+        Ok(builders)
     }
 
     fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>> {
@@ -227,6 +233,15 @@ impl IndexSelector<'_> {
             IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
                 GeoMapIndex::new_mmap(&map_dir(dir, field))?
             }
+        })
+    }
+
+    fn null_builder(&self, field: &JsonPath) -> OperationResult<Option<FieldIndexBuilder>> {
+        Ok(match self {
+            IndexSelector::RocksDb(IndexSelectorRocksDb { .. }) => None, // ToDo: appendable index should also be created
+            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => Some(
+                FieldIndexBuilder::NullIndex(MmapNullIndex::builder(&null_dir(dir, field))?),
+            ),
         })
     }
 

@@ -5,7 +5,9 @@ use serde_json::Value;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PayloadFieldIndex};
+use crate::index::field_index::{
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
 use crate::vector_storage::dense::dynamic_mmap_flags::DynamicMmapFlags;
@@ -26,6 +28,10 @@ pub struct MmapNullIndex {
 }
 
 impl MmapNullIndex {
+    pub fn builder(path: &Path) -> OperationResult<MmapNullIndexBuilder> {
+        Ok(MmapNullIndexBuilder(Self::open_or_create(path)?))
+    }
+
     /// Creates a new null index at the given path.
     /// If it already exists, loads the index.
     ///
@@ -289,5 +295,28 @@ impl PayloadFieldIndex for MmapNullIndex {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         // No payload blocks
         Box::new(std::iter::empty())
+    }
+}
+
+pub struct MmapNullIndexBuilder(MmapNullIndex);
+
+impl FieldIndexBuilderTrait for MmapNullIndexBuilder {
+    type FieldIndexType = MmapNullIndex;
+
+    fn init(&mut self) -> OperationResult<()> {
+        // After Self is created, it is already initialized
+        Ok(())
+    }
+
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&serde_json::Value],
+    ) -> OperationResult<()> {
+        self.0.add_point(id, payload)
+    }
+
+    fn finalize(self) -> OperationResult<Self::FieldIndexType> {
+        Ok(self.0)
     }
 }
