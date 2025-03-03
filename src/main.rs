@@ -145,19 +145,20 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    remove_started_file_indicator();
-
     let settings = Settings::new(args.config_path)?;
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
 
+    // Setup logging (no logging before this point)
     let logger_handle = tracing::setup(
         settings
             .logger
             .with_top_level_directive(settings.log_level.clone()),
     )?;
+
+    remove_started_file_indicator();
 
     setup_panic_hook(reporting_enabled, reporting_id.to_string());
 
