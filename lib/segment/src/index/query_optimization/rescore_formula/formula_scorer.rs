@@ -144,7 +144,9 @@ impl FormulaScorer<'_> {
                 let right = self.eval_expression(right, point_id)?;
                 // avoid division by zero
                 if right == 0.0 {
-                    Ok(*by_zero_default)
+                    by_zero_default.ok_or_else(|| OperationError::NonFiniteNumber {
+                        expression: format!("{left}/{right}"),
+                    })
                 } else {
                     Ok(left / right)
                 }
@@ -187,7 +189,7 @@ impl FormulaScorer<'_> {
                     Ok(log_value)
                 } else {
                     Err(OperationError::NonFiniteNumber {
-                        expression: format!("log10({})", value),
+                        expression: format!("log10({value})"),
                     })
                 }
             }
@@ -198,7 +200,7 @@ impl FormulaScorer<'_> {
                     Ok(ln_value)
                 } else {
                     Err(OperationError::NonFiniteNumber {
-                        expression: format!("ln({})", value),
+                        expression: format!("ln({value})",),
                     })
                 }
             }
@@ -303,17 +305,35 @@ mod tests {
         ParsedExpression::new_payload_id(JsonPath::new(FIELD_NAME)),
         ParsedExpression::new_condition_id(0),
     ]), 2.0 * 1.0 * 85.0 * 1.0)]
-    #[case(ParsedExpression::Div {
-        left: Box::new(ParsedExpression::Constant(10.0)),
-        right: Box::new(ParsedExpression::new_score_id(0)),
-        by_zero_default: f32::INFINITY,
-    }, 10.0 / 1.0)]
+    #[case(ParsedExpression::new_div(
+        ParsedExpression::Constant(10.0), ParsedExpression::new_score_id(0), None
+    ), 10.0 / 1.0)]
     #[case(ParsedExpression::new_neg(ParsedExpression::Constant(10.0)), -10.0)]
-    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)), 21926.494)]
+    // Error cases
+    #[case(ParsedExpression::new_geo_distance(
+        GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)
+    ), 21926.494)]
     #[should_panic(
-        expected = r#"called `Result::unwrap()` on an `Err` value: VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point" }"#
+        expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point" }"#
     )]
     #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "-1^0.4" }"#)]
+    #[case(ParsedExpression::new_pow(ParsedExpression::Constant(-1.0), ParsedExpression::Constant(0.4)), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "√-3" }"#)]
+    #[case(ParsedExpression::new_sqrt(ParsedExpression::Constant(-3.0)), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "1/0" }"#)]
+    #[case(
+        ParsedExpression::new_div(
+            ParsedExpression::Constant(1.0),
+            ParsedExpression::Constant(0.0),
+            None
+        ),
+        0.0
+    )]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0)" }"#)]
+    #[case(ParsedExpression::new_log10(ParsedExpression::Constant(0.0)), 0.0)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0)" }"#)]
+    #[case(ParsedExpression::new_ln(ParsedExpression::Constant(0.0)), 0.0)]
     #[test]
     fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
         let defaults = HashMap::new();
