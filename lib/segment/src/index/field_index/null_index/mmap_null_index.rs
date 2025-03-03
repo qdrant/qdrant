@@ -326,9 +326,10 @@ impl FieldIndexBuilderTrait for MmapNullIndexBuilder {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
     use crate::json_path::JsonPath;
-    use tempfile::TempDir;
 
     #[test]
     fn test_build_and_use_null_index() {
@@ -372,8 +373,12 @@ mod tests {
         let is_null_values: Vec<_> = null_index.filter(&filter_is_null).unwrap().collect();
         let not_empty_values: Vec<_> = null_index.filter(&filter_is_not_empty).unwrap().collect();
 
-        let is_empty_values: Vec<_> = (0..n).filter(|&id| null_index.values_is_empty(id)).collect();
-        let not_null_values: Vec<_> = (0..n).filter(|&id| !null_index.values_is_null(id)).collect();
+        let is_empty_values: Vec<_> = (0..n)
+            .filter(|&id| null_index.values_is_empty(id))
+            .collect();
+        let not_null_values: Vec<_> = (0..n)
+            .filter(|&id| !null_index.values_is_null(id))
+            .collect();
 
         for i in 0..n {
             match i % 4 {
@@ -414,7 +419,9 @@ mod tests {
         }
 
         let is_null_cardinality = null_index.estimate_cardinality(&filter_is_null).unwrap();
-        let non_empty_cardinality = null_index.estimate_cardinality(&filter_is_not_empty).unwrap();
+        let non_empty_cardinality = null_index
+            .estimate_cardinality(&filter_is_not_empty)
+            .unwrap();
 
         assert_eq!(is_null_cardinality.exp, 50);
         assert_eq!(non_empty_cardinality.exp, 50);

@@ -247,8 +247,9 @@ impl ValueChecker for ValuesCount {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-    use crate::json_path::JsonPath;
+
     use super::*;
+    use crate::json_path::JsonPath;
     use crate::types::GeoPoint;
 
     #[test]
@@ -318,7 +319,6 @@ mod tests {
         };
         assert!(gte_two_countries_query.check(&countries));
     }
-
 
     #[test]
     fn test_value_checker_for_null_or_empty() {
