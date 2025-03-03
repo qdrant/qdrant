@@ -338,35 +338,35 @@ impl MetricsProvider for HardwareTelemetry {
             metrics.push(metric_family(
                 "collection_hardware_metric_cpu",
                 "CPU measurements of a collection",
-                MetricType::GAUGE,
+                MetricType::COUNTER,
                 vec![gauge(*cpu as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_payload_io_read",
                 "Total IO payload read metrics of a collection",
-                MetricType::GAUGE,
+                MetricType::COUNTER,
                 vec![gauge(*payload_io_read as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_payload_io_write",
                 "Total IO payload write metrics of a collection",
-                MetricType::GAUGE,
+                MetricType::COUNTER,
                 vec![gauge(*payload_io_write as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_vector_io_read",
                 "Total IO vector read metrics of a collection",
-                MetricType::GAUGE,
+                MetricType::COUNTER,
                 vec![gauge(*vector_io_read as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_vector_io_write",
                 "Total IO vector write metrics of a collection",
-                MetricType::GAUGE,
+                MetricType::COUNTER,
                 vec![gauge(*vector_io_write as f64, &[("id", collection)])],
             ));
         }

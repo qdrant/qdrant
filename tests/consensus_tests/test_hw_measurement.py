@@ -3,6 +3,7 @@ import pathlib
 
 from .fixtures import create_collection, upsert_random_points, get_telemetry_hw_info, update_points_payload
 from .utils import *
+from math import ceil
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
@@ -84,6 +85,17 @@ def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
         peer_hw = get_telemetry_hw_info(peer_url, COLLECTION_NAME)
 
         # Assert that each nodes telemetry has been increased by some bytes
-        assert peer_hw["payload_io_write"] >= (upsert_vectors * 5)  # 50 vectors on this node with payload of ~5 bytes
+        assert_with_upper_bound_error(peer_hw["payload_io_write"], upsert_vectors * 5)  # 50 vectors on this node with payload of ~5 bytes
 
     # TODO: also test vector updates when implemented
+
+def assert_with_upper_bound_error(inp: int, min_value: int, upper_bound_error_percent: float = 0.05):
+    """Asserts `inp` being equal to `min_value` with a max upperbound error given in percent."""
+    if inp < min_value:
+        assert False, f"Assertion {inp} >= {min_value} failed"
+
+    max_error = ceil(float(min_value) + float(min_value) * upper_bound_error_percent)
+    upper_bound = inp + max_error
+
+    if inp > upper_bound:
+        assert False, f"Assertion {inp} being below upperbound error of {upper_bound_error_percent}(={upper_bound}) failed."
