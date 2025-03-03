@@ -51,8 +51,9 @@ impl StructPayloadIndex {
                         )
                     })
                 }),
-            // We can use index for `is_empty` condition effectively only when it is not empty.
-            // If the index says it is "empty", we still need to check the payload.
+            // Use dedicated null index for `is_empty` check if it is available
+            // Otherwise we might use another index just to check if a field is not empty, if we
+            // don't have an indexed value we must still check the payload to see if its empty
             Condition::IsEmpty(is_empty) => {
                 let field_indexes = field_indexes.get(&is_empty.is_empty.key);
 
