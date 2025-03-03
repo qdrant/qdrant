@@ -398,39 +398,12 @@ impl GraphLayersBuilder {
                 let linking_level = min(level, entry_point.level);
 
                 for curr_level in (0..=linking_level).rev() {
-                    let mut visited_list = self.get_visited_list_from_pool();
-
-                    visited_list.check_and_update_visited(level_entry.idx);
-
-                    let mut search_context = SearchContext::new(level_entry, self.ef_construct);
-
-                    self._search_on_level(
-                        &mut search_context,
+                    level_entry = self.link_new_point_on_level(
+                        point_id,
                         curr_level,
-                        &mut visited_list,
                         &mut points_scorer,
+                        level_entry,
                     );
-
-                    if let Some(the_nearest) = search_context.nearest.iter_unsorted().max() {
-                        level_entry = *the_nearest;
-                    }
-
-                    if self.use_heuristic {
-                        self.link_with_heuristic(
-                            point_id,
-                            curr_level,
-                            &visited_list,
-                            &points_scorer,
-                            search_context,
-                        );
-                    } else {
-                        self.link_without_heuristic(
-                            point_id,
-                            curr_level,
-                            &points_scorer,
-                            search_context,
-                        );
-                    }
                 }
             }
         }
@@ -440,6 +413,47 @@ impl GraphLayersBuilder {
             .new_point(point_id, level, |point_id| {
                 points_scorer.check_vector(point_id)
             });
+    }
+
+    /// Link a new point on a specific level.
+    /// Returns an entry point for the level below.
+    fn link_new_point_on_level(
+        &self,
+        point_id: PointOffsetType,
+        curr_level: usize,
+        points_scorer: &mut FilteredScorer,
+        mut level_entry: ScoredPointOffset,
+    ) -> ScoredPointOffset {
+        let mut visited_list = self.get_visited_list_from_pool();
+
+        visited_list.check_and_update_visited(level_entry.idx);
+
+        let mut search_context = SearchContext::new(level_entry, self.ef_construct);
+
+        self._search_on_level(
+            &mut search_context,
+            curr_level,
+            &mut visited_list,
+            points_scorer,
+        );
+
+        if let Some(the_nearest) = search_context.nearest.iter_unsorted().max() {
+            level_entry = *the_nearest;
+        }
+
+        if self.use_heuristic {
+            self.link_with_heuristic(
+                point_id,
+                curr_level,
+                &visited_list,
+                points_scorer,
+                search_context,
+            );
+        } else {
+            self.link_without_heuristic(point_id, curr_level, points_scorer, search_context);
+        }
+
+        level_entry
     }
 
     fn link_with_heuristic(
