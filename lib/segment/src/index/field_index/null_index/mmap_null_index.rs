@@ -113,6 +113,9 @@ impl MmapNullIndex {
                     if array.iter().any(|v| v.is_null()) {
                         is_null = true;
                     }
+                    if array.iter().any(|v| !v.is_null()) {
+                        has_values = true;
+                    }
                 }
                 Value::Object(_) => {
                     has_values = true;
@@ -318,5 +321,102 @@ impl FieldIndexBuilderTrait for MmapNullIndexBuilder {
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
         Ok(self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::json_path::JsonPath;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_build_and_use_null_index() {
+        let dir = TempDir::with_prefix("test_null_index").unwrap();
+
+        let null_value = Value::Null;
+        let null_value_in_array =
+            Value::Array(vec![Value::String("test".to_string()), Value::Null]);
+
+        let mut builder = MmapNullIndex::builder(dir.path()).unwrap();
+
+        let n = 100;
+
+        for i in 0..n {
+            match i % 4 {
+                0 => builder.add_point(i, &[&null_value]).unwrap(),
+                1 => builder.add_point(i, &[&null_value_in_array]).unwrap(),
+                2 => builder.add_point(i, &[]).unwrap(),
+                3 => builder.add_point(i, &[&Value::Bool(true)]).unwrap(),
+                _ => unreachable!(),
+            }
+        }
+
+        let null_index = builder.finalize().unwrap();
+        let key = JsonPath::new("test");
+
+        let filter_is_null = FieldCondition::new_is_null(key.clone());
+
+        let filter_is_not_empty = FieldCondition {
+            key: key.clone(),
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+            is_empty: Some(false),
+            is_null: None,
+        };
+
+        let is_null_values: Vec<_> = null_index.filter(&filter_is_null).unwrap().collect();
+        let not_empty_values: Vec<_> = null_index.filter(&filter_is_not_empty).unwrap().collect();
+
+        let is_empty_values: Vec<_> = (0..n).filter(|&id| null_index.values_is_empty(id)).collect();
+        let not_null_values: Vec<_> = (0..n).filter(|&id| !null_index.values_is_null(id)).collect();
+
+        for i in 0..n {
+            match i % 4 {
+                0 => {
+                    // &[&null_value]
+                    assert!(is_null_values.contains(&i));
+                    assert!(!not_empty_values.contains(&i));
+
+                    assert!(!not_null_values.contains(&i));
+                    assert!(is_empty_values.contains(&i));
+                }
+                1 => {
+                    // &[&null_value_in_array]
+                    assert!(is_null_values.contains(&i));
+                    assert!(not_empty_values.contains(&i));
+
+                    assert!(!not_null_values.contains(&i));
+                    assert!(!is_empty_values.contains(&i));
+                }
+                2 => {
+                    // &[]
+                    assert!(!is_null_values.contains(&i));
+                    assert!(!not_empty_values.contains(&i));
+
+                    assert!(not_null_values.contains(&i));
+                    assert!(is_empty_values.contains(&i));
+                }
+                3 => {
+                    // &[&Value::Bool(true)]
+                    assert!(!is_null_values.contains(&i));
+                    assert!(not_empty_values.contains(&i));
+
+                    assert!(not_null_values.contains(&i));
+                    assert!(!is_empty_values.contains(&i));
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        let is_null_cardinality = null_index.estimate_cardinality(&filter_is_null).unwrap();
+        let non_empty_cardinality = null_index.estimate_cardinality(&filter_is_not_empty).unwrap();
+
+        assert_eq!(is_null_cardinality.exp, 50);
+        assert_eq!(non_empty_cardinality.exp, 50);
     }
 }
