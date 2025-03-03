@@ -73,7 +73,7 @@ impl ValueChecker for FieldCondition {
                 Value::Bool(_) => !is_empty,
                 Value::Number(_) => !is_empty,
                 Value::String(_) => !is_empty,
-                Value::Array(array) => array.is_empty() == is_empty,
+                Value::Array(array) => array.iter().any(|x| !x.is_null()) != is_empty,
                 Value::Object(_) => !is_empty,
             })
             || is_null.is_some_and(|is_null| match payload {
@@ -247,7 +247,7 @@ impl ValueChecker for ValuesCount {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
-
+    use crate::json_path::JsonPath;
     use super::*;
     use crate::types::GeoPoint;
 
@@ -317,5 +317,104 @@ mod tests {
             lte: None,
         };
         assert!(gte_two_countries_query.check(&countries));
+    }
+
+
+    #[test]
+    fn test_value_checker_for_null_or_empty() {
+        let array = json!([]);
+        let array_with_null = json!([null]);
+        let array_with_something = json!([true]);
+        let array_with_null_and_something = json!([true, null]);
+        let object = json!({});
+        let string = json!("string");
+        let number = json!(1);
+        let bool = json!(true);
+
+        let key = JsonPath::new("key");
+
+        let is_empty = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: Some(true),
+            is_null: None,
+        };
+
+        let is_not_empty = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: Some(false),
+            is_null: None,
+        };
+
+        let is_null = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: None,
+            is_null: Some(true),
+        };
+
+        let is_not_null = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: None,
+            is_null: Some(false),
+        };
+
+        assert!(is_empty.check_match(&array));
+        assert!(is_empty.check_match(&array_with_null));
+        assert!(!is_empty.check_match(&array_with_something));
+        assert!(!is_empty.check_match(&array_with_null_and_something));
+        assert!(!is_empty.check_match(&object));
+        assert!(!is_empty.check_match(&string));
+        assert!(!is_empty.check_match(&number));
+        assert!(!is_empty.check_match(&bool));
+
+        assert!(!is_not_empty.check_match(&array));
+        assert!(!is_not_empty.check_match(&array_with_null));
+        assert!(is_not_empty.check_match(&array_with_something));
+        assert!(is_not_empty.check_match(&array_with_null_and_something));
+        assert!(is_not_empty.check_match(&object));
+        assert!(is_not_empty.check_match(&string));
+        assert!(is_not_empty.check_match(&number));
+        assert!(is_not_empty.check_match(&bool));
+
+        assert!(!is_null.check_match(&array));
+        assert!(is_null.check_match(&array_with_null));
+        assert!(!is_null.check_match(&array_with_something));
+        assert!(is_null.check_match(&array_with_null_and_something));
+        assert!(!is_null.check_match(&object));
+        assert!(!is_null.check_match(&string));
+        assert!(!is_null.check_match(&number));
+        assert!(!is_null.check_match(&bool));
+
+        assert!(is_not_null.check_match(&array));
+        assert!(!is_not_null.check_match(&array_with_null));
+        assert!(is_not_null.check_match(&array_with_something));
+        assert!(!is_not_null.check_match(&array_with_null_and_something));
+        assert!(is_not_null.check_match(&object));
+        assert!(is_not_null.check_match(&string));
+        assert!(is_not_null.check_match(&number));
+        assert!(is_not_null.check_match(&bool));
     }
 }
