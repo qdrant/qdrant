@@ -370,42 +370,38 @@ impl GraphLayersBuilder {
             .entry_points
             .lock()
             .get_entry_point(|point_id| points_scorer.check_vector(point_id));
-        match entry_point_opt {
+        if let Some(entry_point) = entry_point_opt {
+            let mut level_entry = if entry_point.level > level {
+                // The entry point is higher than a new point
+                // Let's find closest one on same level
+
+                // greedy search for a single closest point
+                self.search_entry(
+                    entry_point.point_id,
+                    entry_point.level,
+                    level,
+                    &mut points_scorer,
+                )
+            } else {
+                ScoredPointOffset {
+                    idx: entry_point.point_id,
+                    score: points_scorer.score_internal(point_id, entry_point.point_id),
+                }
+            };
+            // minimal common level for entry points
+            let linking_level = min(level, entry_point.level);
+
+            for curr_level in (0..=linking_level).rev() {
+                level_entry = self.link_new_point_on_level(
+                    point_id,
+                    curr_level,
+                    &mut points_scorer,
+                    level_entry,
+                );
+            }
+        } else {
             // New point is a new empty entry (for this filter, at least)
             // We can't do much here, so just quit
-            None => {}
-
-            // Entry point found.
-            Some(entry_point) => {
-                let mut level_entry = if entry_point.level > level {
-                    // The entry point is higher than a new point
-                    // Let's find closest one on same level
-
-                    // greedy search for a single closest point
-                    self.search_entry(
-                        entry_point.point_id,
-                        entry_point.level,
-                        level,
-                        &mut points_scorer,
-                    )
-                } else {
-                    ScoredPointOffset {
-                        idx: entry_point.point_id,
-                        score: points_scorer.score_internal(point_id, entry_point.point_id),
-                    }
-                };
-                // minimal common level for entry points
-                let linking_level = min(level, entry_point.level);
-
-                for curr_level in (0..=linking_level).rev() {
-                    level_entry = self.link_new_point_on_level(
-                        point_id,
-                        curr_level,
-                        &mut points_scorer,
-                        level_entry,
-                    );
-                }
-            }
         }
         self.ready_list.write().set(point_id as usize, true);
         self.entry_points
