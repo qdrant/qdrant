@@ -79,7 +79,7 @@ impl VariableId {
 impl ParsedExpression {
     /// Default value for division by zero
     const fn by_zero_default() -> ScoreType {
-        f32::INFINITY
+        1.0
     }
 
     pub fn new_div(

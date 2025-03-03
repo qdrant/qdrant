@@ -156,22 +156,24 @@ impl FormulaScorer<'_> {
             ParsedExpression::Sqrt(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
                 let sqrt_value = value.sqrt();
-                if sqrt_value.is_nan() {
-                    // Undefined: Send this point to the bottom of results
-                    Ok(f32::NEG_INFINITY)
-                } else {
+                if sqrt_value.is_finite() {
                     Ok(sqrt_value)
+                } else {
+                    Err(OperationError::NonFiniteNumber {
+                        expression: format!("√{value}"),
+                    })
                 }
             }
             ParsedExpression::Pow { base, exponent } => {
                 let base_value = self.eval_expression(base, point_id)?;
                 let exponent_value = self.eval_expression(exponent, point_id)?;
                 let power = base_value.powf(exponent_value);
-                if power.is_nan() {
-                    // Undefined: Send this point to the bottom of results
-                    Ok(f32::NEG_INFINITY)
-                } else {
+                if power.is_finite() {
                     Ok(power)
+                } else {
+                    Err(OperationError::NonFiniteNumber {
+                        expression: format!("{base_value}^{exponent_value}"),
+                    })
                 }
             }
             ParsedExpression::Exp(parsed_expression) => {
@@ -180,20 +182,24 @@ impl FormulaScorer<'_> {
             }
             ParsedExpression::Log10(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
-                if value <= 0.0 {
-                    // Undefined: Send this point to the bottom of results
-                    Ok(f32::NEG_INFINITY)
+                let log_value = value.log10();
+                if log_value.is_finite() {
+                    Ok(log_value)
                 } else {
-                    Ok(value.log10())
+                    Err(OperationError::NonFiniteNumber {
+                        expression: format!("log10({})", value),
+                    })
                 }
             }
             ParsedExpression::Ln(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
-                if value <= 0.0 {
-                    // Undefined: Send this point to the bottom of results
-                    Ok(f32::NEG_INFINITY)
+                let ln_value = value.ln();
+                if ln_value.is_finite() {
+                    Ok(ln_value)
                 } else {
-                    Ok(value.ln())
+                    Err(OperationError::NonFiniteNumber {
+                        expression: format!("ln({})", value),
+                    })
                 }
             }
             ParsedExpression::Abs(expr) => {
