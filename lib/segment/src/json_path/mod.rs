@@ -1,16 +1,17 @@
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
 
 use data_encoding::BASE32_DNSSEC;
 use itertools::Itertools as _;
-use schemars::JsonSchema;
 use schemars::r#gen::SchemaGenerator;
 use schemars::schema::Schema;
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 use crate::common::anonymize::Anonymize;
-use crate::common::utils::{MultiValue, merge_map};
+use crate::common::utils::{merge_map, MultiValue};
 
 mod parse;
 
@@ -536,7 +537,22 @@ impl JsonSchema for JsonPath {
 
 impl Anonymize for JsonPath {
     fn anonymize(&self) -> Self {
-        self.clone()
+        let Self { first_key, rest } = self;
+        let first_key_hash = first_key.anonymize();
+
+        let rest_hash: Vec<_> = rest
+            .iter()
+            .map(|item| match item {
+                JsonPathItem::Key(key) => JsonPathItem::Key(key.anonymize()),
+                JsonPathItem::Index(index) => JsonPathItem::Index(*index),
+                JsonPathItem::WildcardIndex => JsonPathItem::WildcardIndex,
+            })
+            .collect();
+
+        JsonPath {
+            first_key: first_key_hash,
+            rest: rest_hash,
+        }
     }
 }
 
