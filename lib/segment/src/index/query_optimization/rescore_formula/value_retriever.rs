@@ -175,6 +175,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
             Some(Box::new(extract_fn))
         }
         FieldIndex::FullTextIndex(_) => None, // Better get it from the payload
+        FieldIndex::NullIndex(_) => None,     // There should be other index for the same field
     }
 }
 

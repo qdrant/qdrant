@@ -180,6 +180,30 @@ def test_is_empty_condition(collection_name):
     assert 7 in ids
     assert 8 in ids
 
+    response2 = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 5,
+            "filter": {
+                "should": [
+                    {
+                        "key": "city",
+                        "is_empty": True
+                    }
+                ]
+            },
+            "with_payload": True
+        }
+    )
+    assert response2.ok
+
+    json2 = response2.json()
+    ids2 = [x['id'] for x in json2['result']]
+    assert ids == ids2
+
 
 def test_is_null_condition(collection_name):
     response = request_with_validation(
@@ -208,6 +232,31 @@ def test_is_null_condition(collection_name):
 
     ids = [x['id'] for x in json['result']]
     assert 7 in ids
+
+    response2 = request_with_validation(
+        api='/collections/{collection_name}/points/search',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "vector": [0.2, 0.1, 0.9, 0.7],
+            "limit": 5,
+            "filter": {
+                "should": [
+                    {
+                        "key": "city",
+                        "is_null": True
+                    }
+                ]
+            },
+            "with_payload": True
+        }
+    )
+    assert response2.ok
+
+    json2 = response2.json()
+    ids2 = [x['id'] for x in json2['result']]
+
+    assert ids == ids2
 
     # With must_not (as recommended in docs)
     def must_not_is_null(field: str):
@@ -242,6 +291,30 @@ def test_is_null_condition(collection_name):
         assert 1 in ids
         assert 2 in ids
 
+        response2 = request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 5,
+                "filter": {
+                    "must": [
+                        {
+                            "key": field,
+                            "is_null": False
+                        }
+                    ]
+                },
+                "with_payload": True
+            }
+        )
+        assert response2.ok
+
+        json2 = response2.json()
+        ids2 = [x['id'] for x in json2['result']]
+        assert ids == ids2
+
     must_not_is_null("city")
     must_not_is_null("city[]")
 
@@ -272,11 +345,11 @@ def test_query_single_condition(collection_name):
         body={
             "filter": {
                 "must": {
-                        "key": "city",
-                        "match": {
-                            "value": "London"
-                        }
+                    "key": "city",
+                    "match": {
+                        "value": "London"
                     }
+                }
             },
             "vector": [0.2, 0.1, 0.9, 0.7],
             "limit": 3
@@ -363,7 +436,7 @@ def test_with_vectors_alias_of_with_vector(collection_name):
             method='POST',
             path_params={'collection_name': collection_name},
             body={
-                keyword: True, # <--- should make no difference
+                keyword: True,  # <--- should make no difference
                 "filter": {
                     "must": [
                         {

@@ -241,6 +241,7 @@ impl SegmentBuilder {
                 FieldIndex::GeoIndex(_) => {}
                 FieldIndex::FullTextIndex(_) => {}
                 FieldIndex::BoolIndex(_) => {}
+                FieldIndex::NullIndex(_) => {}
             }
         }
         ordering

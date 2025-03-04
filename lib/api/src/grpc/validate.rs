@@ -206,6 +206,8 @@ impl Validate for grpc::FieldCondition {
             geo_radius,
             geo_polygon,
             values_count,
+            is_empty,
+            is_null,
         } = self;
 
         let all_fields_none = r#match.is_none()
@@ -214,7 +216,9 @@ impl Validate for grpc::FieldCondition {
             && geo_bounding_box.is_none()
             && geo_radius.is_none()
             && geo_polygon.is_none()
-            && values_count.is_none();
+            && values_count.is_none()
+            && is_empty.is_none()
+            && is_null.is_none();
 
         if all_fields_none {
             let mut errors = ValidationErrors::new();

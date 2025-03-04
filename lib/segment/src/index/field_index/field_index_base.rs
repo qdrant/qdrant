@@ -19,6 +19,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
+use crate::index::field_index::null_index::mmap_null_index::{MmapNullIndex, MmapNullIndexBuilder};
 use crate::index::field_index::numeric_index::NumericIndexInner;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::telemetry::PayloadIndexTelemetry;
@@ -120,6 +121,7 @@ pub enum FieldIndex {
     BoolIndex(BoolIndex),
     UuidIndex(NumericIndex<UuidIntType, UuidPayloadType>),
     UuidMapIndex(MapIndex<UuidIntType>),
+    NullIndex(MmapNullIndex),
 }
 
 impl std::fmt::Debug for FieldIndex {
@@ -135,6 +137,7 @@ impl std::fmt::Debug for FieldIndex {
             FieldIndex::FullTextIndex(_index) => write!(f, "FullTextIndex"),
             FieldIndex::UuidIndex(_index) => write!(f, "UuidIndex"),
             FieldIndex::UuidMapIndex(_index) => write!(f, "UuidMapIndex"),
+            FieldIndex::NullIndex(_index) => write!(f, "NullIndex"),
         }
     }
 }
@@ -175,6 +178,7 @@ impl FieldIndex {
             },
             FieldIndex::UuidIndex(_) => None,
             FieldIndex::UuidMapIndex(_) => None,
+            FieldIndex::NullIndex(_) => None,
         }
     }
 
@@ -190,6 +194,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index,
             FieldIndex::UuidIndex(payload_field_index) => payload_field_index.inner(),
             FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index,
+            FieldIndex::NullIndex(payload_field_index) => payload_field_index,
         }
     }
 
@@ -205,6 +210,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(payload_field_index) => payload_field_index.load(),
             FieldIndex::UuidIndex(payload_field_index) => payload_field_index.load(),
             FieldIndex::UuidMapIndex(payload_field_index) => payload_field_index.load(),
+            FieldIndex::NullIndex(payload_field_index) => payload_field_index.load(),
         }
     }
 
@@ -220,6 +226,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.cleanup(),
             FieldIndex::UuidIndex(index) => index.cleanup(),
             FieldIndex::UuidMapIndex(index) => index.cleanup(),
+            FieldIndex::NullIndex(index) => index.cleanup(),
         }
     }
 
@@ -287,6 +294,9 @@ impl FieldIndex {
             FieldIndex::UuidMapIndex(payload_field_index) => {
                 payload_field_index.add_point(id, payload)
             }
+            FieldIndex::NullIndex(payload_field_index) => {
+                payload_field_index.add_point(id, payload)
+            }
         }
     }
 
@@ -302,6 +312,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.remove_point(point_id),
             FieldIndex::UuidIndex(index) => index.remove_point(point_id),
             FieldIndex::UuidMapIndex(index) => index.remove_point(point_id),
+            FieldIndex::NullIndex(index) => index.remove_point(point_id),
         }
     }
 
@@ -317,6 +328,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidIndex(index) => index.get_telemetry_data(),
             FieldIndex::UuidMapIndex(index) => index.get_telemetry_data(),
+            FieldIndex::NullIndex(index) => index.get_telemetry_data(),
         }
     }
 
@@ -332,6 +344,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.values_count(point_id),
             FieldIndex::UuidIndex(index) => index.values_count(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_count(point_id),
+            FieldIndex::NullIndex(index) => index.values_count(point_id),
         }
     }
 
@@ -347,6 +360,7 @@ impl FieldIndex {
             FieldIndex::FullTextIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidIndex(index) => index.values_is_empty(point_id),
             FieldIndex::UuidMapIndex(index) => index.values_is_empty(point_id),
+            FieldIndex::NullIndex(index) => index.values_is_empty(point_id),
         }
     }
 
@@ -361,7 +375,8 @@ impl FieldIndex {
             | FieldIndex::BoolIndex(_)
             | FieldIndex::UuidMapIndex(_)
             | FieldIndex::UuidIndex(_)
-            | FieldIndex::FullTextIndex(_) => None,
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_) => None,
         }
     }
 
@@ -376,7 +391,8 @@ impl FieldIndex {
             | FieldIndex::DatetimeIndex(_)
             | FieldIndex::FloatIndex(_)
             | FieldIndex::GeoIndex(_)
-            | FieldIndex::FullTextIndex(_) => None,
+            | FieldIndex::FullTextIndex(_)
+            | FieldIndex::NullIndex(_) => None,
         }
     }
 }
@@ -425,6 +441,7 @@ pub enum FieldIndexBuilder {
     BoolMmapIndex(MmapBoolIndexBuilder),
     UuidIndex(MapIndexBuilder<UuidIntType>),
     UuidMmapIndex(MapIndexMmapBuilder<UuidIntType>),
+    NullIndex(MmapNullIndexBuilder),
 }
 
 impl FieldIndexBuilderTrait for FieldIndexBuilder {
@@ -450,6 +467,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => builder.init(),
             Self::UuidIndex(index) => index.init(),
             Self::UuidMmapIndex(index) => index.init(),
+            Self::NullIndex(index) => index.init(),
         }
     }
 
@@ -475,6 +493,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             }
             Self::UuidIndex(index) => index.add_point(id, payload),
             Self::UuidMmapIndex(index) => index.add_point(id, payload),
+            Self::NullIndex(index) => index.add_point(id, payload),
         }
     }
 
@@ -498,6 +517,7 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
             Self::FullTextMmapIndex(builder) => FieldIndex::FullTextIndex(builder.finalize()?),
             Self::UuidIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
             Self::UuidMmapIndex(index) => FieldIndex::UuidMapIndex(index.finalize()?),
+            Self::NullIndex(index) => FieldIndex::NullIndex(index.finalize()?),
         })
     }
 }

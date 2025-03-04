@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use common::types::PointOffsetType;
 
-use crate::types::{FieldCondition, IsEmptyCondition, IsNullCondition, VectorNameBuf};
+use crate::types::{FieldCondition, VectorNameBuf};
 
 pub mod bool_index;
 pub(super) mod facet_index;
@@ -15,9 +15,9 @@ mod immutable_point_to_values;
 pub mod index_selector;
 pub mod map_index;
 mod mmap_point_to_values;
+pub mod null_index;
 pub mod numeric_index;
 mod stat_tools;
-
 #[cfg(test)]
 mod tests;
 mod utils;
@@ -27,8 +27,6 @@ pub use field_index_base::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrimaryCondition {
     Condition(Box<FieldCondition>),
-    IsEmpty(IsEmptyCondition),
-    IsNull(IsNullCondition),
     Ids(HashSet<PointOffsetType>),
     HasVector(VectorNameBuf),
 }
