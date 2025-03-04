@@ -75,6 +75,16 @@ fn payload_variable_retriever(
             |payload| {
                 let values = payload.get_value(&json_path);
                 let value = *values.first()?;
+
+                // not using array wildcard `[]` on a key which has an array value will return the whole
+                // array as one value, let's extract the first element if that is the case.
+                match value {
+                    serde_json::Value::Array(array) if !json_path.has_wildcard_suffix() => {
+                        return array.first().cloned();
+                    }
+                    _ => {}
+                }
+
                 Some(value.clone())
             },
             hw_counter,
@@ -252,12 +262,12 @@ mod tests {
             payload_provider.clone(),
             &hw_counter,
         );
-        for id in 0..2 {
+        for id in 0..=2 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, Some(json!(42))),
                 1 => assert_eq!(value, None),
-                2 => assert_eq!(value, Some(json!(99.0))),
+                2 => assert_eq!(value, Some(json!(99))),
                 _ => unreachable!(),
             }
         }
@@ -269,7 +279,7 @@ mod tests {
             payload_provider.clone(),
             &hw_counter,
         );
-        for id in 0..2 {
+        for id in 0..=2 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, None),
@@ -323,7 +333,7 @@ mod tests {
             payload_provider.clone(),
             &hw_counter,
         );
-        for id in 0..2 {
+        for id in 0..=2 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, Some(json!(42))),
@@ -340,7 +350,7 @@ mod tests {
             payload_provider.clone(),
             &hw_counter,
         );
-        for id in 0..2 {
+        for id in 0..=2 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, None),
