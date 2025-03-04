@@ -114,6 +114,8 @@ impl ForwardProxyShard {
     /// Move batch of points to the remote shard.
     /// Returns an offset of the next batch to be transferred.
     ///
+    /// Returns new point offset and transferred count
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
@@ -124,7 +126,7 @@ impl ForwardProxyShard {
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
         runtime_handle: &Handle,
-    ) -> CollectionResult<Option<PointIdType>> {
+    ) -> CollectionResult<(Option<PointIdType>, usize)> {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
         let _update_lock = self.update_lock.lock().await;
@@ -163,6 +165,7 @@ impl ForwardProxyShard {
             .collect();
 
         let points = points?;
+        let count = points.len();
 
         // Use sync API to leverage potentially existing points
         // Normally use SyncPoints, to completely replace everything in the target shard
@@ -190,7 +193,7 @@ impl ForwardProxyShard {
             ) // TODO: Assign clock tag!? 🤔
             .await?;
 
-        Ok(next_page_offset)
+        Ok((next_page_offset, count))
     }
 
     pub fn deconstruct(self) -> (LocalShard, RemoteShard) {
