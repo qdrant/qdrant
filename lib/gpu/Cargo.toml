@@ -26,4 +26,3 @@ zerocopy = { workspace = true }
 
 log = { workspace = true }
 parking_lot = { workspace = true }
-memory = { path = "../common/memory" }
