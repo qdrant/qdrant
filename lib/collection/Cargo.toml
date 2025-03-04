@@ -36,7 +36,6 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_cbor = { workspace = true }
 serde_json = { workspace = true }
-serde_variant = { workspace = true }
 rmp-serde = "~1.3"
 wal = { workspace = true }
 ordered-float = { workspace = true }
