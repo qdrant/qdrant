@@ -67,6 +67,8 @@ pub enum OperationError {
         field_name: PayloadKeyType,
         expected_type: String,
     },
+    #[error("The expression {expression} produced a non-finite number")]
+    NonFiniteNumber { expression: String },
 }
 
 impl OperationError {
