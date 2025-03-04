@@ -141,15 +141,19 @@ impl FormulaScorer<'_> {
                 if left == 0.0 {
                     return Ok(0.0);
                 }
-                let right = self.eval_expression(right, point_id)?;
-                // avoid division by zero
+                let mut right = self.eval_expression(right, point_id)?;
+
                 if right == 0.0 {
-                    by_zero_default.ok_or_else(|| OperationError::NonFiniteNumber {
-                        expression: format!("{left}/{right}"),
-                    })
-                } else {
-                    Ok(left / right)
+                    by_zero_default.map(|default| right = default);
                 }
+
+                let div_value = left / right;
+                if div_value.is_finite() {
+                    return Ok(div_value);
+                }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("{left}/{right} = {div_value}"),
+                })
             }
             ParsedExpression::Neg(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
@@ -159,50 +163,52 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 let sqrt_value = value.sqrt();
                 if sqrt_value.is_finite() {
-                    Ok(sqrt_value)
-                } else {
-                    Err(OperationError::NonFiniteNumber {
-                        expression: format!("√{value}"),
-                    })
+                    return Ok(sqrt_value);
                 }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("√{value} = {sqrt_value}"),
+                })
             }
             ParsedExpression::Pow { base, exponent } => {
                 let base_value = self.eval_expression(base, point_id)?;
                 let exponent_value = self.eval_expression(exponent, point_id)?;
                 let power = base_value.powf(exponent_value);
                 if power.is_finite() {
-                    Ok(power)
-                } else {
-                    Err(OperationError::NonFiniteNumber {
-                        expression: format!("{base_value}^{exponent_value}"),
-                    })
+                    return Ok(power);
                 }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("{base_value}^{exponent_value} = {power}"),
+                })
             }
             ParsedExpression::Exp(parsed_expression) => {
                 let value = self.eval_expression(parsed_expression, point_id)?;
-                Ok(value.exp())
+                let exp_value = value.exp();
+                if exp_value.is_finite() {
+                    return Ok(exp_value);
+                }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("exp({value}) = {exp_value}"),
+                })
             }
             ParsedExpression::Log10(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
                 let log_value = value.log10();
                 if log_value.is_finite() {
-                    Ok(log_value)
-                } else {
-                    Err(OperationError::NonFiniteNumber {
-                        expression: format!("log10({value})"),
-                    })
+                    return Ok(log_value);
                 }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("log10({value}) = {log_value}"),
+                })
             }
             ParsedExpression::Ln(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
                 let ln_value = value.ln();
                 if ln_value.is_finite() {
-                    Ok(ln_value)
-                } else {
-                    Err(OperationError::NonFiniteNumber {
-                        expression: format!("ln({value})",),
-                    })
+                    return Ok(ln_value);
                 }
+                Err(OperationError::NonFiniteNumber {
+                    expression: format!("ln({value}) = {ln_value}"),
+                })
             }
             ParsedExpression::Abs(expr) => {
                 let value = self.eval_expression(expr, point_id)?;
@@ -317,11 +323,11 @@ mod tests {
         expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point" }"#
     )]
     #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
-    #[should_panic(expected = r#"NonFiniteNumber { expression: "-1^0.4" }"#)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "-1^0.4 = NaN" }"#)]
     #[case(ParsedExpression::new_pow(ParsedExpression::Constant(-1.0), ParsedExpression::Constant(0.4)), 0.0)]
-    #[should_panic(expected = r#"NonFiniteNumber { expression: "√-3" }"#)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "√-3 = NaN" }"#)]
     #[case(ParsedExpression::new_sqrt(ParsedExpression::Constant(-3.0)), 0.0)]
-    #[should_panic(expected = r#"NonFiniteNumber { expression: "1/0" }"#)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "1/0 = inf" }"#)]
     #[case(
         ParsedExpression::new_div(
             ParsedExpression::Constant(1.0),
@@ -330,9 +336,9 @@ mod tests {
         ),
         0.0
     )]
-    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0)" }"#)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "log10(0) = -inf" }"#)]
     #[case(ParsedExpression::new_log10(ParsedExpression::Constant(0.0)), 0.0)]
-    #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0)" }"#)]
+    #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0) = -inf" }"#)]
     #[case(ParsedExpression::new_ln(ParsedExpression::Constant(0.0)), 0.0)]
     #[test]
     fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
