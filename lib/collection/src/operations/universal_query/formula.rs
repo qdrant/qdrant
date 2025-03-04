@@ -92,6 +92,7 @@ impl ExpressionInternal {
                 by_zero_default,
             ),
             ExpressionInternal::GeoDistance { origin, to } => {
+                payload_vars.insert(to.clone());
                 ParsedExpression::new_geo_distance(origin, to)
             }
             ExpressionInternal::Sqrt(expression_internal) => ParsedExpression::Sqrt(Box::new(

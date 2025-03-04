@@ -171,6 +171,10 @@ impl JsonPath {
         result
     }
 
+    pub fn has_wildcard_suffix(&self) -> bool {
+        self.rest.last() == Some(&JsonPathItem::WildcardIndex)
+    }
+
     /// Check if a path is included in a list of patterns.
     ///
     /// Basically, it checks if either the pattern or path is a prefix of the other.
