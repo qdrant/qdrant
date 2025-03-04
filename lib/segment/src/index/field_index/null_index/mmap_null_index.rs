@@ -121,7 +121,7 @@ impl MmapNullIndex {
                     has_values = true;
                 }
             }
-            if is_null {
+            if is_null && has_values {
                 break;
             }
         }
