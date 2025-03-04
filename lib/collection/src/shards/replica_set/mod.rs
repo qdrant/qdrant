@@ -1288,6 +1288,21 @@ impl ReplicaState {
             | ReplicaState::Listener => false,
         }
     }
+
+    /// Returns `true` if the replica state is resharding, either up or down.
+    pub fn is_resharding(&self) -> bool {
+        match self {
+            ReplicaState::Resharding | ReplicaState::ReshardingScaleDown => true,
+
+            ReplicaState::Partial
+            | ReplicaState::PartialSnapshot
+            | ReplicaState::Recovery
+            | ReplicaState::Active
+            | ReplicaState::Dead
+            | ReplicaState::Initializing
+            | ReplicaState::Listener => false,
+        }
+    }
 }
 
 /// Represents a change in replica set, due to scaling of `replication_factor`

@@ -31,7 +31,7 @@ impl ShardReplicaSet {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
-        hw_measurement: HwMeasurementAcc,
+        mut hw_measurement: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
@@ -45,6 +45,11 @@ impl ShardReplicaSet {
         let Some(state) = self.peer_state(self.this_peer_id()) else {
             return Ok(None);
         };
+
+        // Dont't measure hw when resharding
+        if state.is_resharding() {
+            hw_measurement = HwMeasurementAcc::disposable();
+        }
 
         let result = match state {
             ReplicaState::Active => {
@@ -102,7 +107,7 @@ impl ShardReplicaSet {
         wait: bool,
         ordering: WriteOrdering,
         update_only_existing: bool,
-        hw_measurement_acc: HwMeasurementAcc,
+        mut hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
@@ -112,6 +117,12 @@ impl ShardReplicaSet {
                 self.collection_id, self.shard_id
             )));
         };
+
+        // Dont't measure hw when resharding
+        let peer_state = self.peer_state(leader_peer);
+        if peer_state.map(|i| i.is_resharding()).unwrap_or(false) {
+            hw_measurement_acc = HwMeasurementAcc::disposable();
+        }
 
         // If we are the leader, run the update from this replica set
         if leader_peer == self.this_peer_id() {
