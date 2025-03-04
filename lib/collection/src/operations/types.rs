@@ -191,13 +191,9 @@ impl TryFrom<Record> for PointStructPersisted {
 /// Information about the collection configuration
 #[derive(Debug, Serialize, JsonSchema)]
 pub struct CollectionConfig {
-    #[validate(nested)]
     pub params: CollectionParams,
-    #[validate(nested)]
     pub hnsw_config: HnswConfig,
-    #[validate(nested)]
     pub optimizer_config: OptimizersConfig,
-    #[validate(nested)]
     pub wal_config: Option<WalConfig>,
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,

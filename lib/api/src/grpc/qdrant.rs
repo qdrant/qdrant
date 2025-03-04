@@ -745,18 +745,15 @@ pub struct CollectionParamsDiff {
     #[prost(uint32, optional, tag = "4")]
     pub read_fan_out_factor: ::core::option::Option<u32>,
 }
-#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CollectionConfig {
     /// Collection parameters
     #[prost(message, optional, tag = "1")]
-    #[validate(nested)]
     pub params: ::core::option::Option<CollectionParams>,
     /// Configuration of vector index
     #[prost(message, optional, tag = "2")]
-    #[validate(nested)]
     pub hnsw_config: ::core::option::Option<HnswConfigDiff>,
     /// Configuration of the optimizers
     #[prost(message, optional, tag = "3")]
@@ -766,11 +763,9 @@ pub struct CollectionConfig {
     pub wal_config: ::core::option::Option<WalConfigDiff>,
     /// Configuration of the vector quantization
     #[prost(message, optional, tag = "5")]
-    #[validate(nested)]
     pub quantization_config: ::core::option::Option<QuantizationConfig>,
     /// Configuration of strict mode.
     #[prost(message, optional, tag = "6")]
-    #[validate(nested)]
     pub strict_mode_config: ::core::option::Option<StrictModeConfig>,
 }
 #[derive(serde::Serialize)]
