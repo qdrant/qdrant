@@ -496,7 +496,7 @@ impl Inner {
         // Set initial progress on the first batch
         let is_first = transfer_from == self.started_at;
         if is_first {
-            self.update_progress(0, total as usize);
+            self.progress.lock().set(0, total as usize);
         }
 
         // Transfer batch with retries and store last transferred ID
@@ -508,7 +508,7 @@ impl Inner {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
 
                         let transferred = (idx + 1 - self.started_at) as usize;
-                        self.update_progress(transferred, total as usize);
+                        self.progress.lock().set(transferred, total as usize);
                     }
                     break;
                 }
@@ -536,12 +536,6 @@ impl Inner {
     fn set_wal_keep_from(&self, version: Option<u64>) {
         let version = version.unwrap_or(u64::MAX);
         self.wal_keep_from.store(version, Ordering::Relaxed);
-    }
-
-    fn update_progress(&self, transferred: usize, total: usize) {
-        let mut progress = self.progress.lock();
-        progress.points_transferred = transferred;
-        progress.points_total = total;
     }
 }
 

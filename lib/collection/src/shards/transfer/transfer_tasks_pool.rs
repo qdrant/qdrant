@@ -22,8 +22,8 @@ pub struct TransferTaskItem {
 }
 
 pub struct TransferTaskProgress {
-    pub points_transferred: usize,
-    pub points_total: usize,
+    points_transferred: usize,
+    points_total: usize,
     pub eta: EtaCalculator,
 }
 
@@ -48,6 +48,18 @@ impl TransferTaskProgress {
             eta: EtaCalculator::new(),
         }
     }
+
+    pub fn add(&mut self, delta: usize) {
+        self.points_transferred += delta;
+        self.points_total = max(self.points_total, self.points_transferred);
+        self.eta.set_progress(self.points_transferred);
+    }
+
+    pub fn set(&mut self, transferred: usize, total: usize) {
+        self.points_transferred = transferred;
+        self.points_total = total;
+        self.eta.set_progress(transferred);
+    }
 }
 
 impl TransferTasksPool {
@@ -69,15 +81,16 @@ impl TransferTasksPool {
         };
 
         let progress = task.progress.lock();
+        let total = max(progress.points_transferred, progress.points_total);
         let mut comment = format!(
             "Transferring records ({}/{}), started {}s ago, ETA: ",
             progress.points_transferred,
-            max(progress.points_transferred, progress.points_total),
+            total,
             chrono::Utc::now()
                 .signed_duration_since(task.started_at)
                 .num_seconds(),
         );
-        if let Some(eta) = progress.eta.estimate(progress.points_total) {
+        if let Some(eta) = progress.eta.estimate(total) {
             write!(comment, "{:.2}s", eta.as_secs_f64()).unwrap();
         } else {
             comment.push('-');

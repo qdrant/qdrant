@@ -333,6 +333,8 @@ impl ShardReplicaSet {
 
     /// Custom operation for transferring data from one shard to another during transfer
     ///
+    /// Returns new point offset and transferred count
+    ///
     /// # Cancel safety
     ///
     /// This method is cancel safe.
@@ -342,7 +344,7 @@ impl ShardReplicaSet {
         batch_size: usize,
         hashring_filter: Option<&HashRingRouter>,
         merge_points: bool,
-    ) -> CollectionResult<Option<PointIdType>> {
+    ) -> CollectionResult<(Option<PointIdType>, usize)> {
         let local = self.local.read().await;
 
         let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
