@@ -23,6 +23,6 @@ def assert_hw_measurements_equal(left: dict[str, int], right: dict[str, int]):
             assert left.get(key) == right[key]
 
 
-def assert_hw_measurements_equal_many(left: list[dict[str, int]], right: list[dict[str, int]]):
-    for left,right in zip(left, right):
+def assert_hw_measurements_equal_many(left_list: list[dict[str, int]], right_list: list[dict[str, int]]):
+    for left,right in zip(left_list, right_list):
         assert_hw_measurements_equal(left, right)

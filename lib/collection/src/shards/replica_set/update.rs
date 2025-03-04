@@ -46,7 +46,7 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
-        // Dont't measure hw when resharding
+        // Don't measure hw when resharding
         if state.is_resharding() {
             hw_measurement = HwMeasurementAcc::disposable();
         }
@@ -118,7 +118,7 @@ impl ShardReplicaSet {
             )));
         };
 
-        // Dont't measure hw when resharding
+        // Don't measure hw when resharding
         let peer_state = self.peer_state(leader_peer);
         if peer_state.map(|i| i.is_resharding()).unwrap_or(false) {
             hw_measurement_acc = HwMeasurementAcc::disposable();
