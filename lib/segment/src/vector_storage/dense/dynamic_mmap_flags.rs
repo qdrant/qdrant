@@ -145,6 +145,9 @@ impl DynamicMmapFlags {
 
     /// Set the length of the vector to the given value.
     /// If the vector is grown, the new elements will be set to `false`.
+    ///
+    /// NOTE: capacity can be up to 2x the current length.
+    ///
     /// Errors if the vector is shrunk.
     pub fn set_len(&mut self, new_len: usize) -> OperationResult<()> {
         debug_assert!(new_len >= self.status.len);
@@ -159,6 +162,7 @@ impl DynamicMmapFlags {
             )));
         }
 
+        // Capacity can be up to 2x the current length
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
@@ -208,6 +212,29 @@ impl DynamicMmapFlags {
             return false;
         }
         self.flags.replace(key, value)
+    }
+
+    /// This method will set the flag at the given index to the given value.
+    /// If current length is not enough, it will resize the flags with amortized cost (x2)
+    /// All new flags will be set to false.
+    ///
+    /// Returns previous value of the flag.
+    pub fn set_with_resize<TKey>(&mut self, key: TKey, value: bool) -> OperationResult<bool>
+    where
+        TKey: num_traits::cast::AsPrimitive<usize>,
+    {
+        let key: usize = key.as_();
+        if key >= self.status.len {
+            if value {
+                let new_len = key + 1;
+                self.set_len(new_len)?;
+            } else {
+                // Default value is false, so we don't need to resize
+                return Ok(false);
+            }
+        }
+
+        Ok(self.flags.replace(key, value))
     }
 
     pub fn flusher(&self) -> Flusher {

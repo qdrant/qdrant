@@ -618,30 +618,47 @@ fn test_integer_index_types(test_segments: &TestSegments) -> Result<()> {
         ("mmap", &test_segments.mmap_segment.payload_index.borrow()),
     ] {
         eprintln!("Checking {kind}_segment");
-        ensure!(matches!(
-            indexes
-                .field_indexes
-                .get(&JsonPath::new(INT_KEY))
-                .unwrap()
-                .as_slice(),
-            [FieldIndex::IntMapIndex(_), FieldIndex::IntIndex(_)],
-        ));
-        ensure!(matches!(
-            indexes
-                .field_indexes
-                .get(&JsonPath::new(INT_KEY_2))
-                .unwrap()
-                .as_slice(),
-            [FieldIndex::IntMapIndex(_)],
-        ));
-        ensure!(matches!(
-            indexes
-                .field_indexes
-                .get(&JsonPath::new(INT_KEY_3))
-                .unwrap()
-                .as_slice(),
-            [FieldIndex::IntIndex(_)],
-        ));
+        let field_indexes = indexes.field_indexes.get(&JsonPath::new(INT_KEY)).unwrap();
+
+        let has_map_index = field_indexes
+            .iter()
+            .any(|index| matches!(index, FieldIndex::IntMapIndex(_)));
+        let has_int_index = field_indexes
+            .iter()
+            .any(|index| matches!(index, FieldIndex::IntIndex(_)));
+
+        ensure!(has_map_index);
+        ensure!(has_int_index);
+
+        let field_indexes = indexes
+            .field_indexes
+            .get(&JsonPath::new(INT_KEY_2))
+            .unwrap();
+
+        let has_map_index = field_indexes
+            .iter()
+            .any(|index| matches!(index, FieldIndex::IntMapIndex(_)));
+        let has_int_index = field_indexes
+            .iter()
+            .any(|index| matches!(index, FieldIndex::IntIndex(_)));
+
+        ensure!(has_map_index);
+        ensure!(!has_int_index);
+
+        let field_indexes = indexes
+            .field_indexes
+            .get(&JsonPath::new(INT_KEY_3))
+            .unwrap();
+
+        let has_map_index = field_indexes
+            .iter()
+            .any(|index| matches!(index, FieldIndex::IntMapIndex(_)));
+        let has_int_index = field_indexes
+            .iter()
+            .any(|index| matches!(index, FieldIndex::IntIndex(_)));
+
+        ensure!(!has_map_index);
+        ensure!(has_int_index);
     }
     Ok(())
 }

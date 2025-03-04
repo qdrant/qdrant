@@ -1313,7 +1313,7 @@ impl From<Map<String, Value>> for Payload {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum OwnedPayloadRef<'a> {
     Ref(&'a Map<String, Value>),
     Owned(Rc<Map<String, Value>>),
@@ -2119,10 +2119,14 @@ pub struct FieldCondition {
     pub geo_polygon: Option<GeoPolygon>,
     /// Check number of values of the field
     pub values_count: Option<ValuesCount>,
+    /// Check that the field is empty, alternative syntax for `is_empty: "field_name"`
+    pub is_empty: Option<bool>,
+    /// Check that the field is null, alternative syntax for `is_null: "field_name"`
+    pub is_null: Option<bool>,
 }
 
 impl FieldCondition {
-    pub fn new_match(key: JsonPath, r#match: Match) -> Self {
+    pub fn new_match(key: PayloadKeyType, r#match: Match) -> Self {
         Self {
             key,
             r#match: Some(r#match),
@@ -2131,10 +2135,12 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            is_empty: None,
+            is_null: None,
         }
     }
 
-    pub fn new_range(key: JsonPath, range: Range<FloatPayloadType>) -> Self {
+    pub fn new_range(key: PayloadKeyType, range: Range<FloatPayloadType>) -> Self {
         Self {
             key,
             r#match: None,
@@ -2143,10 +2149,15 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            is_empty: None,
+            is_null: None,
         }
     }
 
-    pub fn new_datetime_range(key: JsonPath, datetime_range: Range<DateTimePayloadType>) -> Self {
+    pub fn new_datetime_range(
+        key: PayloadKeyType,
+        datetime_range: Range<DateTimePayloadType>,
+    ) -> Self {
         Self {
             key,
             r#match: None,
@@ -2155,10 +2166,12 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            is_empty: None,
+            is_null: None,
         }
     }
 
-    pub fn new_geo_bounding_box(key: JsonPath, geo_bounding_box: GeoBoundingBox) -> Self {
+    pub fn new_geo_bounding_box(key: PayloadKeyType, geo_bounding_box: GeoBoundingBox) -> Self {
         Self {
             key,
             r#match: None,
@@ -2167,10 +2180,12 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
+            is_empty: None,
+            is_null: None,
         }
     }
 
-    pub fn new_geo_radius(key: JsonPath, geo_radius: GeoRadius) -> Self {
+    pub fn new_geo_radius(key: PayloadKeyType, geo_radius: GeoRadius) -> Self {
         Self {
             key,
             r#match: None,
@@ -2179,10 +2194,12 @@ impl FieldCondition {
             geo_radius: Some(geo_radius),
             geo_polygon: None,
             values_count: None,
+            is_empty: None,
+            is_null: None,
         }
     }
 
-    pub fn new_geo_polygon(key: JsonPath, geo_polygon: GeoPolygon) -> Self {
+    pub fn new_geo_polygon(key: PayloadKeyType, geo_polygon: GeoPolygon) -> Self {
         Self {
             key,
             r#match: None,
@@ -2191,10 +2208,12 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: Some(geo_polygon),
             values_count: None,
+            is_empty: None,
+            is_null: None,
         }
     }
 
-    pub fn new_values_count(key: JsonPath, values_count: ValuesCount) -> Self {
+    pub fn new_values_count(key: PayloadKeyType, values_count: ValuesCount) -> Self {
         Self {
             key,
             r#match: None,
@@ -2203,6 +2222,36 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: Some(values_count),
+            is_empty: None,
+            is_null: None,
+        }
+    }
+
+    pub fn new_is_empty(key: PayloadKeyType) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+            is_empty: Some(true),
+            is_null: None,
+        }
+    }
+
+    pub fn new_is_null(key: PayloadKeyType) -> Self {
+        Self {
+            key,
+            r#match: None,
+            range: None,
+            geo_bounding_box: None,
+            geo_radius: None,
+            geo_polygon: None,
+            values_count: None,
+            is_empty: None,
+            is_null: Some(true),
         }
     }
 
@@ -2217,6 +2266,8 @@ impl FieldCondition {
                 geo_polygon: None,
                 values_count: None,
                 key: _,
+                is_empty: None,
+                is_null: None,
             }
         )
     }
@@ -2265,7 +2316,7 @@ pub struct IsNullCondition {
 }
 
 impl From<JsonPath> for IsNullCondition {
-    fn from(key: JsonPath) -> Self {
+    fn from(key: PayloadKeyType) -> Self {
         IsNullCondition {
             is_null: PayloadField { key },
         }
@@ -2273,7 +2324,7 @@ impl From<JsonPath> for IsNullCondition {
 }
 
 impl From<JsonPath> for IsEmptyCondition {
-    fn from(key: JsonPath) -> Self {
+    fn from(key: PayloadKeyType) -> Self {
         IsEmptyCondition {
             is_empty: PayloadField { key },
         }

@@ -53,6 +53,7 @@ fn get_match_value_checker(
         | (ValueVariants::Bool(_), FieldIndex::KeywordIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::UuidIndex(_))
         | (ValueVariants::Bool(_), FieldIndex::UuidMapIndex(_))
+        | (ValueVariants::Bool(_), FieldIndex::NullIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::BoolIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::DatetimeIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::FloatIndex(_))
@@ -62,6 +63,7 @@ fn get_match_value_checker(
         | (ValueVariants::Integer(_), FieldIndex::KeywordIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::UuidIndex(_))
         | (ValueVariants::Integer(_), FieldIndex::UuidMapIndex(_))
+        | (ValueVariants::Integer(_), FieldIndex::NullIndex(_))
         | (ValueVariants::String(_), FieldIndex::BoolIndex(_))
         | (ValueVariants::String(_), FieldIndex::DatetimeIndex(_))
         | (ValueVariants::String(_), FieldIndex::FloatIndex(_))
@@ -69,7 +71,8 @@ fn get_match_value_checker(
         | (ValueVariants::String(_), FieldIndex::GeoIndex(_))
         | (ValueVariants::String(_), FieldIndex::IntIndex(_))
         | (ValueVariants::String(_), FieldIndex::IntMapIndex(_))
-        | (ValueVariants::String(_), FieldIndex::UuidIndex(_)) => None,
+        | (ValueVariants::String(_), FieldIndex::UuidIndex(_))
+        | (ValueVariants::String(_), FieldIndex::NullIndex(_)) => None,
     }
 }
 
@@ -127,6 +130,7 @@ fn get_match_any_checker(
         | (AnyVariants::Integers(_), FieldIndex::KeywordIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::NullIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::DatetimeIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::FloatIndex(_))
@@ -134,7 +138,8 @@ fn get_match_any_checker(
         | (AnyVariants::Strings(_), FieldIndex::GeoIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::IntIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::IntMapIndex(_))
-        | (AnyVariants::Strings(_), FieldIndex::UuidIndex(_)) => None,
+        | (AnyVariants::Strings(_), FieldIndex::UuidIndex(_))
+        | (AnyVariants::Strings(_), FieldIndex::NullIndex(_)) => None,
     }
 }
 
@@ -188,6 +193,7 @@ fn get_match_except_checker(except: AnyVariants, index: &FieldIndex) -> Option<C
         | (AnyVariants::Strings(_), FieldIndex::FullTextIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Strings(_), FieldIndex::UuidIndex(_))
+        | (AnyVariants::Strings(_), FieldIndex::NullIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::IntIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::DatetimeIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::KeywordIndex(_))
@@ -196,7 +202,8 @@ fn get_match_except_checker(except: AnyVariants, index: &FieldIndex) -> Option<C
         | (AnyVariants::Integers(_), FieldIndex::FullTextIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::BoolIndex(_))
         | (AnyVariants::Integers(_), FieldIndex::UuidIndex(_))
-        | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_)) => None,
+        | (AnyVariants::Integers(_), FieldIndex::UuidMapIndex(_))
+        | (AnyVariants::Integers(_), FieldIndex::NullIndex(_)) => None,
     };
 
     if checker.is_none() {
@@ -225,6 +232,7 @@ fn get_match_text_checker(text: String, index: &FieldIndex) -> Option<ConditionC
         | FieldIndex::IntMapIndex(_)
         | FieldIndex::KeywordIndex(_)
         | FieldIndex::UuidIndex(_)
-        | FieldIndex::UuidMapIndex(_) => None,
+        | FieldIndex::UuidMapIndex(_)
+        | FieldIndex::NullIndex(_) => None,
     }
 }

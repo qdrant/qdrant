@@ -1045,6 +1045,8 @@ message FieldCondition {
   ValuesCount values_count = 6; // Check number of values for a specific field
   GeoPolygon geo_polygon = 7; // Check if geo point is within a given polygon
   DatetimeRange datetime_range = 8; // Check if datetime is within a given range
+  optional bool is_empty = 9; // Check if field is empty
+  optional bool is_null = 10; // Check if field is null
 }
 
 message Match {

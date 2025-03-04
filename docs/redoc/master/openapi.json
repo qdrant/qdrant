@@ -8355,7 +8355,7 @@
             ]
           },
           "geo_bounding_box": {
-            "description": "Check if points geo location lies in a given area",
+            "description": "Check if points geolocation lies in a given area",
             "anyOf": [
               {
                 "$ref": "#/components/schemas/GeoBoundingBox"
@@ -8397,6 +8397,16 @@
                 "nullable": true
               }
             ]
+          },
+          "is_empty": {
+            "description": "Check that the field is empty, alternative syntax for `is_empty: \"field_name\"`",
+            "type": "boolean",
+            "nullable": true
+          },
+          "is_null": {
+            "description": "Check that the field is null, alternative syntax for `is_null: \"field_name\"`",
+            "type": "boolean",
+            "nullable": true
           }
         }
       },

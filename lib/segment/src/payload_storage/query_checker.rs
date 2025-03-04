@@ -190,6 +190,10 @@ where
     let field_values = payload.get_value(&field_condition.key);
     let field_indexes = field_indexes.get(&field_condition.key);
 
+    if field_values.is_empty() {
+        return field_condition.check_empty();
+    }
+
     // This covers a case, when a field index affects the result of the condition.
     if let Some(field_indexes) = field_indexes {
         for p in field_values {

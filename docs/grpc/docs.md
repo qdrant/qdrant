@@ -2799,6 +2799,8 @@ The JSON representation for `Value` is a JSON value.
 | values_count | [ValuesCount](#qdrant-ValuesCount) |  | Check number of values for a specific field |
 | geo_polygon | [GeoPolygon](#qdrant-GeoPolygon) |  | Check if geo point is within a given polygon |
 | datetime_range | [DatetimeRange](#qdrant-DatetimeRange) |  | Check if datetime is within a given range |
+| is_empty | [bool](#bool) | optional | Check if field is empty |
+| is_null | [bool](#bool) | optional | Check if field is null |
 
 
 

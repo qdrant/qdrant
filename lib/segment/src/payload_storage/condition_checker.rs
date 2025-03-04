@@ -30,6 +30,33 @@ pub trait ValueChecker {
     fn check(&self, payload: &Value) -> bool {
         self._check(payload)
     }
+
+    /// Check condition in case of empty payload value
+    fn check_empty(&self) -> bool {
+        false
+    }
+}
+
+fn check_is_empty(is_empty: bool, payload_value: &Value) -> bool {
+    match payload_value {
+        Value::Null => is_empty,
+        Value::Bool(_) => !is_empty,
+        Value::Number(_) => !is_empty,
+        Value::String(_) => !is_empty,
+        Value::Array(array) => array.is_empty() == is_empty,
+        Value::Object(_) => !is_empty,
+    }
+}
+
+fn check_is_null(is_null: bool, payload_value: &Value) -> bool {
+    match payload_value {
+        Value::Null => is_null,
+        Value::Bool(_) => !is_null,
+        Value::Number(_) => !is_null,
+        Value::String(_) => !is_null,
+        Value::Array(array) => array.iter().any(|x| x.is_null()) == is_null,
+        Value::Object(_) => !is_null,
+    }
 }
 
 impl ValueChecker for FieldCondition {
@@ -43,6 +70,8 @@ impl ValueChecker for FieldCondition {
             geo_polygon,
             values_count,
             key: _,
+            is_empty,
+            is_null,
         } = self;
 
         r#match
@@ -66,17 +95,56 @@ impl ValueChecker for FieldCondition {
             || values_count
                 .as_ref()
                 .is_some_and(|condition| condition.check_match(payload))
+            || is_empty.is_some_and(|is_empty| check_is_empty(is_empty, payload))
+            || is_null.is_some_and(|is_null| check_is_null(is_null, payload))
     }
 
     fn check(&self, payload: &Value) -> bool {
-        if self.values_count.is_some() {
+        let FieldCondition {
+            r#match: _,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count,
+            key: _,
+            is_empty,
+            is_null,
+        } = self;
+
+        if values_count.is_some() {
             self.values_count
                 .as_ref()
                 .unwrap()
                 .check_count_from(payload)
+        } else if is_empty.is_some() {
+            check_is_empty(is_empty.unwrap(), payload)
+        } else if is_null.is_some() {
+            check_is_null(is_null.unwrap(), payload)
         } else {
             self._check(payload)
         }
+    }
+
+    fn check_empty(&self) -> bool {
+        let FieldCondition {
+            r#match: _,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            key: _,
+            is_empty,
+            is_null,
+        } = self;
+        if let Some(is_empty) = is_empty {
+            return *is_empty;
+        }
+        if let Some(is_null) = is_null {
+            return !*is_null;
+        }
+        false
     }
 }
 
@@ -224,6 +292,10 @@ impl ValueChecker for ValuesCount {
     fn check(&self, payload: &Value) -> bool {
         self.check_count_from(payload)
     }
+
+    fn check_empty(&self) -> bool {
+        self.check_count(0)
+    }
 }
 
 #[cfg(test)]
@@ -231,6 +303,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::json_path::JsonPath;
     use crate::types::GeoPoint;
 
     #[test]
@@ -299,5 +372,103 @@ mod tests {
             lte: None,
         };
         assert!(gte_two_countries_query.check(&countries));
+    }
+
+    #[test]
+    fn test_value_checker_for_null_or_empty() {
+        let array = json!([]);
+        let array_with_null = json!([null]);
+        let array_with_something = json!([true]);
+        let array_with_null_and_something = json!([true, null]);
+        let object = json!({});
+        let string = json!("string");
+        let number = json!(1);
+        let bool = json!(true);
+
+        let key = JsonPath::new("key");
+
+        let is_empty = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: Some(true),
+            is_null: None,
+        };
+
+        let is_not_empty = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: Some(false),
+            is_null: None,
+        };
+
+        let is_null = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: None,
+            is_null: Some(true),
+        };
+
+        let is_not_null = FieldCondition {
+            r#match: None,
+            range: None,
+            geo_radius: None,
+            geo_bounding_box: None,
+            geo_polygon: None,
+            values_count: None,
+            key: key.clone(),
+            is_empty: None,
+            is_null: Some(false),
+        };
+
+        assert!(is_empty.check(&array));
+        assert!(!is_empty.check(&array_with_null));
+        assert!(!is_empty.check(&array_with_something));
+        assert!(!is_empty.check(&array_with_null_and_something));
+        assert!(!is_empty.check(&object));
+        assert!(!is_empty.check(&string));
+        assert!(!is_empty.check(&number));
+        assert!(!is_empty.check(&bool));
+
+        assert!(!is_not_empty.check(&array));
+        assert!(is_not_empty.check(&array_with_null));
+        assert!(is_not_empty.check(&array_with_something));
+        assert!(is_not_empty.check(&array_with_null_and_something));
+        assert!(is_not_empty.check(&object));
+        assert!(is_not_empty.check(&string));
+        assert!(is_not_empty.check(&number));
+        assert!(is_not_empty.check(&bool));
+
+        assert!(!is_null.check(&array));
+        assert!(is_null.check(&array_with_null));
+        assert!(!is_null.check(&array_with_something));
+        assert!(is_null.check(&array_with_null_and_something));
+        assert!(!is_null.check(&object));
+        assert!(!is_null.check(&string));
+        assert!(!is_null.check(&number));
+        assert!(!is_null.check(&bool));
+
+        assert!(is_not_null.check(&array));
+        assert!(!is_not_null.check(&array_with_null));
+        assert!(is_not_null.check(&array_with_something));
+        assert!(!is_not_null.check(&array_with_null_and_something));
+        assert!(is_not_null.check(&object));
+        assert!(is_not_null.check(&string));
+        assert!(is_not_null.check(&number));
+        assert!(is_not_null.check(&bool));
     }
 }
