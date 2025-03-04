@@ -18,7 +18,7 @@ pub type MultiValue<T> = SmallVec<[T; 1]>;
 pub fn check_is_empty<'a>(values: impl IntoIterator<Item = &'a Value>) -> bool {
     values.into_iter().all(|x| match x {
         serde_json::Value::Null => true,
-        serde_json::Value::Array(arr) => arr.is_empty(),
+        serde_json::Value::Array(arr) => arr.iter().all(|x| x.is_null()),
         _ => false,
     })
 }

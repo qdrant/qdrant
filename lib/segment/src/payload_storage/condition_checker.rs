@@ -30,6 +30,33 @@ pub trait ValueChecker {
     fn check(&self, payload: &Value) -> bool {
         self._check(payload)
     }
+
+    /// Check condition in case of empty payload value
+    fn check_empty(&self) -> bool {
+        false
+    }
+}
+
+fn check_is_empty(is_empty: bool, payload_value: &Value) -> bool {
+    match payload_value {
+        Value::Null => is_empty,
+        Value::Bool(_) => !is_empty,
+        Value::Number(_) => !is_empty,
+        Value::String(_) => !is_empty,
+        Value::Array(array) => array.iter().any(|x| !x.is_null()) != is_empty,
+        Value::Object(_) => !is_empty,
+    }
+}
+
+fn check_is_null(is_null: bool, payload_value: &Value) -> bool {
+    match payload_value {
+        Value::Null => is_null,
+        Value::Bool(_) => !is_null,
+        Value::Number(_) => !is_null,
+        Value::String(_) => !is_null,
+        Value::Array(array) => array.iter().any(|x| x.is_null()) == is_null,
+        Value::Object(_) => !is_null,
+    }
 }
 
 impl ValueChecker for FieldCondition {
@@ -68,33 +95,56 @@ impl ValueChecker for FieldCondition {
             || values_count
                 .as_ref()
                 .is_some_and(|condition| condition.check_match(payload))
-            || is_empty.is_some_and(|is_empty| match payload {
-                Value::Null => is_empty,
-                Value::Bool(_) => !is_empty,
-                Value::Number(_) => !is_empty,
-                Value::String(_) => !is_empty,
-                Value::Array(array) => array.iter().any(|x| !x.is_null()) != is_empty,
-                Value::Object(_) => !is_empty,
-            })
-            || is_null.is_some_and(|is_null| match payload {
-                Value::Null => is_null,
-                Value::Bool(_) => !is_null,
-                Value::Number(_) => !is_null,
-                Value::String(_) => !is_null,
-                Value::Array(array) => array.iter().any(|x| x.is_null()) == is_null,
-                Value::Object(_) => !is_null,
-            })
+            || is_empty.is_some_and(|is_empty| check_is_empty(is_empty, payload))
+            || is_null.is_some_and(|is_null| check_is_null(is_null, payload))
     }
 
     fn check(&self, payload: &Value) -> bool {
-        if self.values_count.is_some() {
+        let FieldCondition {
+            r#match: _,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count,
+            key: _,
+            is_empty,
+            is_null,
+        } = self;
+
+        if values_count.is_some() {
             self.values_count
                 .as_ref()
                 .unwrap()
                 .check_count_from(payload)
+        } else if is_empty.is_some() {
+            check_is_empty(is_empty.unwrap(), payload)
+        } else if is_null.is_some() {
+            check_is_null(is_null.unwrap(), payload)
         } else {
             self._check(payload)
         }
+    }
+
+    fn check_empty(&self) -> bool {
+        let FieldCondition {
+            r#match: _,
+            range: _,
+            geo_radius: _,
+            geo_bounding_box: _,
+            geo_polygon: _,
+            values_count: _,
+            key: _,
+            is_empty,
+            is_null,
+        } = self;
+        if let Some(is_empty) = is_empty {
+            return *is_empty;
+        }
+        if let Some(is_null) = is_null {
+            return !*is_null;
+        }
+        false
     }
 }
 
@@ -241,6 +291,10 @@ impl ValueChecker for ValuesCount {
 
     fn check(&self, payload: &Value) -> bool {
         self.check_count_from(payload)
+    }
+
+    fn check_empty(&self) -> bool {
+        self.check_count(0)
     }
 }
 

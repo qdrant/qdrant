@@ -1313,7 +1313,7 @@ impl From<Map<String, Value>> for Payload {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum OwnedPayloadRef<'a> {
     Ref(&'a Map<String, Value>),
     Owned(Rc<Map<String, Value>>),
