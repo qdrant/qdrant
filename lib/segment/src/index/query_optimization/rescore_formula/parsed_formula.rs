@@ -38,7 +38,7 @@ pub enum ParsedExpression {
     Div {
         left: Box<ParsedExpression>,
         right: Box<ParsedExpression>,
-        by_zero_default: ScoreType,
+        by_zero_default: Option<ScoreType>,
     },
     Neg(Box<ParsedExpression>),
     Sqrt(Box<ParsedExpression>),
@@ -77,11 +77,6 @@ impl VariableId {
 }
 
 impl ParsedExpression {
-    /// Default value for division by zero
-    const fn by_zero_default() -> ScoreType {
-        f32::INFINITY
-    }
-
     pub fn new_div(
         left: ParsedExpression,
         right: ParsedExpression,
@@ -90,7 +85,7 @@ impl ParsedExpression {
         ParsedExpression::Div {
             left: Box::new(left),
             right: Box::new(right),
-            by_zero_default: by_zero_default.unwrap_or(Self::by_zero_default()),
+            by_zero_default,
         }
     }
 
@@ -100,6 +95,25 @@ impl ParsedExpression {
 
     pub fn new_geo_distance(origin: GeoPoint, key: JsonPath) -> Self {
         ParsedExpression::GeoDistance { origin, key }
+    }
+
+    pub fn new_pow(base: ParsedExpression, exponent: ParsedExpression) -> Self {
+        ParsedExpression::Pow {
+            base: Box::new(base),
+            exponent: Box::new(exponent),
+        }
+    }
+
+    pub fn new_sqrt(expression: ParsedExpression) -> Self {
+        ParsedExpression::Sqrt(Box::new(expression))
+    }
+
+    pub fn new_log10(expression: ParsedExpression) -> Self {
+        ParsedExpression::Log10(Box::new(expression))
+    }
+
+    pub fn new_ln(expression: ParsedExpression) -> Self {
+        ParsedExpression::Ln(Box::new(expression))
     }
 
     pub fn new_payload_id(path: JsonPath) -> Self {

@@ -2670,7 +2670,7 @@ fn unparse_expression(
         } => Variant::Div(Box::new(DivExpression {
             left: Some(Box::new(unparse_expression(*left, conditions))),
             right: Some(Box::new(unparse_expression(*right, conditions))),
-            by_zero_default: Some(by_zero_default),
+            by_zero_default,
         })),
         ParsedExpression::Sqrt(expr) => {
             Variant::Sqrt(Box::new(unparse_expression(*expr, conditions)))
