@@ -43,7 +43,7 @@ fn check_is_empty(is_empty: bool, payload_value: &Value) -> bool {
         Value::Bool(_) => !is_empty,
         Value::Number(_) => !is_empty,
         Value::String(_) => !is_empty,
-        Value::Array(array) => array.iter().any(|x| !x.is_null()) != is_empty,
+        Value::Array(array) => array.is_empty() == is_empty,
         Value::Object(_) => !is_empty,
     }
 }
@@ -435,40 +435,40 @@ mod tests {
             is_null: Some(false),
         };
 
-        assert!(is_empty.check_match(&array));
-        assert!(is_empty.check_match(&array_with_null));
-        assert!(!is_empty.check_match(&array_with_something));
-        assert!(!is_empty.check_match(&array_with_null_and_something));
-        assert!(!is_empty.check_match(&object));
-        assert!(!is_empty.check_match(&string));
-        assert!(!is_empty.check_match(&number));
-        assert!(!is_empty.check_match(&bool));
+        assert!(is_empty.check(&array));
+        assert!(!is_empty.check(&array_with_null));
+        assert!(!is_empty.check(&array_with_something));
+        assert!(!is_empty.check(&array_with_null_and_something));
+        assert!(!is_empty.check(&object));
+        assert!(!is_empty.check(&string));
+        assert!(!is_empty.check(&number));
+        assert!(!is_empty.check(&bool));
 
-        assert!(!is_not_empty.check_match(&array));
-        assert!(!is_not_empty.check_match(&array_with_null));
-        assert!(is_not_empty.check_match(&array_with_something));
-        assert!(is_not_empty.check_match(&array_with_null_and_something));
-        assert!(is_not_empty.check_match(&object));
-        assert!(is_not_empty.check_match(&string));
-        assert!(is_not_empty.check_match(&number));
-        assert!(is_not_empty.check_match(&bool));
+        assert!(!is_not_empty.check(&array));
+        assert!(is_not_empty.check(&array_with_null));
+        assert!(is_not_empty.check(&array_with_something));
+        assert!(is_not_empty.check(&array_with_null_and_something));
+        assert!(is_not_empty.check(&object));
+        assert!(is_not_empty.check(&string));
+        assert!(is_not_empty.check(&number));
+        assert!(is_not_empty.check(&bool));
 
-        assert!(!is_null.check_match(&array));
-        assert!(is_null.check_match(&array_with_null));
-        assert!(!is_null.check_match(&array_with_something));
-        assert!(is_null.check_match(&array_with_null_and_something));
-        assert!(!is_null.check_match(&object));
-        assert!(!is_null.check_match(&string));
-        assert!(!is_null.check_match(&number));
-        assert!(!is_null.check_match(&bool));
+        assert!(!is_null.check(&array));
+        assert!(is_null.check(&array_with_null));
+        assert!(!is_null.check(&array_with_something));
+        assert!(is_null.check(&array_with_null_and_something));
+        assert!(!is_null.check(&object));
+        assert!(!is_null.check(&string));
+        assert!(!is_null.check(&number));
+        assert!(!is_null.check(&bool));
 
-        assert!(is_not_null.check_match(&array));
-        assert!(!is_not_null.check_match(&array_with_null));
-        assert!(is_not_null.check_match(&array_with_something));
-        assert!(!is_not_null.check_match(&array_with_null_and_something));
-        assert!(is_not_null.check_match(&object));
-        assert!(is_not_null.check_match(&string));
-        assert!(is_not_null.check_match(&number));
-        assert!(is_not_null.check_match(&bool));
+        assert!(is_not_null.check(&array));
+        assert!(!is_not_null.check(&array_with_null));
+        assert!(is_not_null.check(&array_with_something));
+        assert!(!is_not_null.check(&array_with_null_and_something));
+        assert!(is_not_null.check(&object));
+        assert!(is_not_null.check(&string));
+        assert!(is_not_null.check(&number));
+        assert!(is_not_null.check(&bool));
     }
 }

@@ -113,7 +113,7 @@ impl MmapNullIndex {
                     if array.iter().any(|v| v.is_null()) {
                         is_null = true;
                     }
-                    if array.iter().any(|v| !v.is_null()) {
+                    if !array.is_empty() {
                         has_values = true;
                     }
                 }
