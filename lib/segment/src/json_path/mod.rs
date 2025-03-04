@@ -3,15 +3,15 @@ use std::hash::Hash;
 
 use data_encoding::BASE32_DNSSEC;
 use itertools::Itertools as _;
+use schemars::JsonSchema;
 use schemars::r#gen::SchemaGenerator;
 use schemars::schema::Schema;
-use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 use crate::common::anonymize::Anonymize;
-use crate::common::utils::{merge_map, MultiValue};
+use crate::common::utils::{MultiValue, merge_map};
 
 mod parse;
 
