@@ -124,8 +124,8 @@ impl Anonymize for ClusterTelemetry {
     fn anonymize(&self) -> Self {
         ClusterTelemetry {
             enabled: self.enabled,
-            status: self.status.clone().map(|x| x.anonymize()),
-            config: self.config.clone().map(|x| x.anonymize()),
+            status: self.status.anonymize(),
+            config: self.config.anonymize(),
             peers: None,
             metadata: None,
         }
