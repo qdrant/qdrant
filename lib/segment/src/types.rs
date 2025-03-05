@@ -4119,3 +4119,12 @@ impl Display for ShardKey {
         }
     }
 }
+
+impl Anonymize for ShardKey {
+    fn anonymize(&self) -> Self {
+        match self {
+            Self::Keyword(k) => Self::Keyword(k.anonymize()),
+            Self::Number(n) => Self::Number(*n),
+        }
+    }
+}

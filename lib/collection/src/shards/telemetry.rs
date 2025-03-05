@@ -98,7 +98,7 @@ impl Anonymize for ReplicaSetTelemetry {
     fn anonymize(&self) -> Self {
         ReplicaSetTelemetry {
             id: self.id,
-            key: self.key.clone(),
+            key: self.key.anonymize(),
             local: self.local.anonymize(),
             remote: self.remote.anonymize(),
             replicate_states: Default::default(),
