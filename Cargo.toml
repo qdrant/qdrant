@@ -253,6 +253,7 @@ members = [
     "lib/gridstore",
     "lib/collection",
     "lib/common/*",
+    "lib/macros",
     "lib/segment",
     "lib/sparse",
     "lib/storage",

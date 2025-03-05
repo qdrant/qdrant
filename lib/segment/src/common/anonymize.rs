@@ -3,7 +3,42 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
+pub use macros::Anonymize;
 
+/// This trait provides a derive macro.
+///
+/// # Usage example
+///
+/// ```ignore
+/// #[derive(Anonymize)]
+/// struct Test {
+///    foo: Foo,
+///    bar: Bar,
+///    baz: Baz,
+/// }
+/// ```
+///
+/// This will generate code that calls `anonymize()` recursively on each field:
+/// ```ignore
+/// impl Anonymize for Test {
+///     fn anonymize(&self) -> Self {
+///         Self {
+///             foo: Anonymize::anonymize(&self.foo),
+///             bar: Anonymize::anonymize(&self.bar),
+///             baz: Anonymize::anonymize(&self.baz),
+///         }
+///     }
+/// }
+/// ```
+///
+/// # Attributes
+///
+/// The following attributes can be used to customize the behavior:
+/// - `#[anonymize(true)]` to enable anonymization for a field (default).
+/// - `#[anonymize(false)]` to disable anonymization for a field.
+///   An equivalent of `#[anonymize(with = Clone::clone)]`.
+/// - `#[anonymize(value = None)]` to specify a value to replace the field with.
+/// - `#[anonymize(with = path:to:function)]` to specify a custom function.
 pub trait Anonymize {
     fn anonymize(&self) -> Self;
 }
