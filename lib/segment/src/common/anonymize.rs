@@ -77,6 +77,20 @@ impl<K: Anonymize + Eq + Ord, V: Anonymize> Anonymize for BTreeMap<K, V> {
     }
 }
 
+/// Anonymize the values of a collection, but keeps the keys intact.
+pub fn anonymize_collection_values<C, K, V>(collection: &C) -> C
+where
+    for<'a> &'a C: IntoIterator<Item = (&'a K, &'a V)>,
+    C: FromIterator<(K, V)>,
+    K: Clone,
+    V: Anonymize,
+{
+    collection
+        .into_iter()
+        .map(|(k, v)| (k.clone(), v.anonymize()))
+        .collect()
+}
+
 impl Anonymize for String {
     fn anonymize(&self) -> Self {
         let mut hasher = DefaultHasher::new();
@@ -95,6 +109,12 @@ impl Anonymize for usize {
         } else {
             *self
         }
+    }
+}
+
+impl Anonymize for bool {
+    fn anonymize(&self) -> Self {
+        *self
     }
 }
 

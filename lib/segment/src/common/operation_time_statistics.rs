@@ -15,7 +15,7 @@ use crate::common::anonymize::Anonymize;
 const AVG_DATASET_LEN: usize = 128;
 const SLIDING_WINDOW_LEN: usize = 8;
 
-#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema, Anonymize)]
 pub struct OperationDurationStatistics {
     pub count: usize,
 
@@ -25,17 +25,21 @@ pub struct OperationDurationStatistics {
 
     /// The average time taken by 128 latest operations, calculated as a weighted mean.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub avg_duration_micros: Option<f32>,
 
     /// The minimum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub min_duration_micros: Option<f32>,
 
     /// The maximum duration of the operations across all the measurements.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub max_duration_micros: Option<f32>,
 
     /// The total duration of all operations in microseconds.
+    #[anonymize(false)]
     pub total_duration_micros: u64,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,6 +50,7 @@ pub struct OperationDurationStatistics {
     /// (aka `{le="+Inf"}` in Prometheus terms) is not stored in this list, and `count` should be
     /// used instead.
     #[serde(skip)] // openapi-generator-cli crashes on this field
+    #[anonymize(with = anonymize_histogram)]
     pub duration_micros_histogram: Vec<(f32, usize)>,
 }
 
@@ -97,23 +102,11 @@ pub struct ScopeDurationMeasurer<'a> {
     success: bool,
 }
 
-impl Anonymize for OperationDurationStatistics {
-    fn anonymize(&self) -> Self {
-        Self {
-            count: self.count.anonymize(),
-            fail_count: self.fail_count.anonymize(),
-            avg_duration_micros: self.avg_duration_micros,
-            min_duration_micros: self.min_duration_micros,
-            max_duration_micros: self.max_duration_micros,
-            total_duration_micros: self.total_duration_micros,
-            last_responded: self.last_responded.anonymize(),
-            duration_micros_histogram: self
-                .duration_micros_histogram
-                .iter()
-                .map(|&(le, count)| (le, count.anonymize()))
-                .collect(),
-        }
-    }
+fn anonymize_histogram(histogram: &[(f32, usize)]) -> Vec<(f32, usize)> {
+    histogram
+        .iter()
+        .map(|(le, count)| (*le, count.anonymize()))
+        .collect()
 }
 
 impl std::ops::Add for OperationDurationStatistics {

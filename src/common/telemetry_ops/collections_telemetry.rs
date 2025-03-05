@@ -8,22 +8,23 @@ use serde::Serialize;
 use storage::content_manager::toc::TableOfContent;
 use storage::rbac::Access;
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionsAggregatedTelemetry {
     pub vectors: usize,
     pub optimizers_status: OptimizersStatus,
     pub params: CollectionParams,
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 #[serde(untagged)]
 pub enum CollectionTelemetryEnum {
     Full(CollectionTelemetry),
     Aggregated(CollectionsAggregatedTelemetry),
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionsTelemetry {
+    #[anonymize(false)]
     pub number_of_collections: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collections: Option<Vec<CollectionTelemetryEnum>>,
@@ -71,38 +72,6 @@ impl CollectionsTelemetry {
         CollectionsTelemetry {
             number_of_collections,
             collections,
-        }
-    }
-}
-
-impl Anonymize for CollectionsTelemetry {
-    fn anonymize(&self) -> Self {
-        CollectionsTelemetry {
-            number_of_collections: self.number_of_collections,
-            collections: self.collections.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for CollectionTelemetryEnum {
-    fn anonymize(&self) -> Self {
-        match self {
-            CollectionTelemetryEnum::Full(telemetry) => {
-                CollectionTelemetryEnum::Full(telemetry.anonymize())
-            }
-            CollectionTelemetryEnum::Aggregated(telemetry) => {
-                CollectionTelemetryEnum::Aggregated(telemetry.anonymize())
-            }
-        }
-    }
-}
-
-impl Anonymize for CollectionsAggregatedTelemetry {
-    fn anonymize(&self) -> Self {
-        CollectionsAggregatedTelemetry {
-            optimizers_status: self.optimizers_status.anonymize(),
-            vectors: self.vectors.anonymize(),
-            params: self.params.anonymize(),
         }
     }
 }

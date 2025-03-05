@@ -13,7 +13,8 @@ use storage::rbac::AccessRequirements;
 ))]
 use tikv_jemalloc_ctl::{epoch, stats};
 
-#[derive(Debug, Clone, Default, JsonSchema, Serialize)]
+#[derive(Debug, Clone, Default, JsonSchema, Serialize, Anonymize)]
+#[anonymize(false)]
 pub struct MemoryTelemetry {
     /// Total number of bytes in active pages allocated by the application
     pub active_bytes: usize,
@@ -51,17 +52,5 @@ impl MemoryTelemetry {
     #[cfg(target_env = "msvc")]
     pub fn collect(_access: &Access) -> Option<MemoryTelemetry> {
         None
-    }
-}
-
-impl Anonymize for MemoryTelemetry {
-    fn anonymize(&self) -> Self {
-        MemoryTelemetry {
-            active_bytes: self.active_bytes,
-            allocated_bytes: self.allocated_bytes,
-            metadata_bytes: self.metadata_bytes,
-            resident_bytes: self.resident_bytes,
-            retained_bytes: self.retained_bytes,
-        }
     }
 }

@@ -11,7 +11,9 @@ use crate::types::VectorStorageDatatype;
 pub const SPARSE_INDEX_CONFIG_FILE: &str = "sparse_index_config.json";
 
 /// Sparse index types
-#[derive(Default, Hash, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+#[derive(
+    Default, Hash, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone,
+)]
 pub enum SparseIndexType {
     /// Mutable RAM sparse index
     #[default]
@@ -41,12 +43,15 @@ impl SparseIndexType {
 }
 
 /// Configuration for sparse inverted index.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Anonymize, Copy, Clone, PartialEq, Eq, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexConfig {
     /// We prefer a full scan search upto (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
+    #[anonymize(false)]
     pub full_scan_threshold: Option<usize>,
     /// Type of sparse index
     pub index_type: SparseIndexType,
@@ -54,16 +59,6 @@ pub struct SparseIndexConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub datatype: Option<VectorStorageDatatype>,
-}
-
-impl Anonymize for SparseIndexConfig {
-    fn anonymize(&self) -> Self {
-        SparseIndexConfig {
-            full_scan_threshold: self.full_scan_threshold,
-            index_type: self.index_type,
-            datatype: self.datatype,
-        }
-    }
 }
 
 impl SparseIndexConfig {
