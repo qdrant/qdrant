@@ -207,7 +207,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Maybe propagate?
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate.
         match self.value_to_points.get(value, &hw_counter) {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,

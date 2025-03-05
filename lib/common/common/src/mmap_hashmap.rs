@@ -257,7 +257,7 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
 
         hw_counter
             .payload_index_io_read_counter()
-            .incr_delta(size_of_val(entry));
+            .incr_delta(entry.len());
 
         if !key.matches(entry) {
             return Ok(None);
