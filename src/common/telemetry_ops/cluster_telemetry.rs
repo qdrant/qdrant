@@ -142,7 +142,7 @@ impl Anonymize for ClusterStatusTelemetry {
             role: self.role,
             is_voter: self.is_voter,
             peer_id: None,
-            consensus_thread_status: self.consensus_thread_status.clone(),
+            consensus_thread_status: self.consensus_thread_status.anonymize(),
         }
     }
 }
