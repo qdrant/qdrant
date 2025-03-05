@@ -1,0 +1,52 @@
+name: Build the Docker image
+description: "Build and push a branch image to ghcr"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Execution
+      shell: bash
+      run: |
+        buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit" | tr '\n' ' ')
+        buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit" | tr '\n' ' ')
+        
+        if [ -n "$buildx_containers" ]; then
+          echo "Buildx containers to delete: $buildx_containers"
+          docker container rm -f $buildx_containers
+        fi
+        
+        if [ -n "$buildx_volumes" ]; then
+          echo "Buildx volumes to delete: $buildx_volumes"
+          docker volume rm -f $buildx_volumes
+        fi
+        
+        branch_tmp=$(git rev-parse --abbrev-ref HEAD)
+        branch=${branch_tmp//\//-} # replace all / with -
+        echo "Building branch $branch"
+        
+        # Create build container
+        docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+        docker buildx create --use
+        
+        # Authenticate on registries
+        docker login https://ghcr.io -u qdrant --password "${DOCKER_PASSWORD}"
+        
+        ARCH=${ARCH:-regular}
+        # use full git commit sha
+        GIT_COMMIT_ID="$(git rev-parse HEAD)"
+        
+        if [ "$ARCH" == "regular" ]; then
+          # Build regular image for Github Registry
+          GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID} -t ghcr.io/qdrant/qdrant:$branch"
+          echo "Building tag $branch-${GIT_COMMIT_ID}"
+  
+          # Pull, retag and push to GitHub packages
+          docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        elif [ "$ARCH" == "gpu" ]; then
+          # Build GPU images for Github Registry
+          GITHUB_TAG_NVIDIA="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}-gpu-nvidia -t ghcr.io/qdrant/qdrant:$branch-gpu-nvidia"
+          docker buildx build --platform='linux/amd64' --build-arg GPU=nvidia --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG_NVIDIA --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+
+          GITHUB_TAG_AMD="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}-gpu-amd -t ghcr.io/qdrant/qdrant:$branch-gpu-amd"
+          docker buildx build --platform='linux/amd64' --build-arg GPU=amd --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG_AMD --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        fi

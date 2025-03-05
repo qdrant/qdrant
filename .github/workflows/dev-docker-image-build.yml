@@ -5,43 +5,28 @@ on:
   push:
     branches:
       - dev
+  repository_dispatch:
+    types: [benchmark-trigger-image-build]
 
 jobs:
   branch-build-and-push:
+    if: ${{ !github.event.client_payload.triggered }}
     runs-on: [self-hosted, linux, x64]
     steps:
         - uses: actions/checkout@v4
           with:
             ref: ${{ github.ref.name }}
-        - name: Build the Docker image
-          run: |
-            buildx_containers=$(docker container ls -a -qf "name=buildx_buildkit" | tr '\n' ' ')
-            buildx_volumes=$(docker volume ls -qf "name=buildx_buildkit" | tr '\n' ' ')
+        - uses: ./.github/workflows/actions/branch-build-and-push
+          env:
+            DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
-            if [ -n "$buildx_containers" ]; then
-              echo "Buildx containers to delete: $buildx_containers"
-              docker container rm -f $buildx_containers
-            fi
-
-            if [ -n "$buildx_volumes" ]; then
-              echo "Buildx volumes to delete: $buildx_volumes"
-              docker volume rm -f $buildx_volumes
-            fi
-
-            branch=${GITHUB_REF_NAME//\//-} # replace all / with -
-            echo "Building branch $branch"
-
-            # Create build container
-            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-            docker buildx create --use
-
-            # Authenticate on registries
-            docker login https://ghcr.io -u qdrant --password ${{ secrets.GITHUB_TOKEN }}
-
-            # Build regular image for Github Registry
-            GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${{ github.sha }} -t ghcr.io/qdrant/qdrant:$branch"
-
-            # Pull, retag and push to GitHub packages
-            docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${{ github.sha }} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${{ github.sha }} .
-
-
+  triggered-branch-build-and-push:
+    if: ${{ github.event.client_payload.triggered }}
+    runs-on: [self-hosted, linux, x64]
+    steps:
+        - uses: actions/checkout@v4
+          with:
+            ref: ${{ github.event.client_payload.version }}
+        - uses: ./.github/workflows/actions/branch-build-and-push
+          env:
+            DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
