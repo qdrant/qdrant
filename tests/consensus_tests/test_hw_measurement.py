@@ -41,8 +41,8 @@ def test_no_local_shard(tmp_path: pathlib.Path):
     # Targeted non-leader node has captured all measurements
     upsert_random_points(peer_urls[0], 1000, collection_name=COLLECTION_NAME, shard_key="target_node")
     hw = get_telemetry_hw_info(targeted_node_url, COLLECTION_NAME)
-    assert hw['payload_io_write'] >= 1000 * 5  # 1k points times ~5 bytes avg payload size
-    assert hw['vector_io_write'] >= 1000 * 4 * 4  # 1k vectors of dim 4 where each dim is 4 bytes
+    assert_with_upper_bound_error(hw['payload_io_write'], 1000 * 5) # 1k points times ~5 bytes avg payload size
+    assert_with_upper_bound_error(hw['vector_io_write'], 1000 * 4 * 4)  # 1k vectors of dim 4 where each dim is 4 bytes
 
     # Leader still has no measurements
     leader_hw = get_telemetry_hw_info(peer_urls[0], COLLECTION_NAME)
