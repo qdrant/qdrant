@@ -51,7 +51,7 @@ pub struct OptimizerTelemetry {
 impl Anonymize for OptimizerTelemetry {
     fn anonymize(&self) -> Self {
         Self {
-            status: self.status.clone(),
+            status: self.status.anonymize(),
             optimizations: self.optimizations.anonymize(),
             log: self.log.anonymize(),
         }
@@ -76,7 +76,7 @@ impl Anonymize for TrackerTelemetry {
         TrackerTelemetry {
             name: self.name.clone(),
             segment_ids: self.segment_ids.anonymize(),
-            status: self.status.clone(),
+            status: self.status.anonymize(),
             start_at: self.start_at.anonymize(),
             end_at: self.end_at.anonymize(),
         }
@@ -98,7 +98,7 @@ impl Anonymize for ReplicaSetTelemetry {
     fn anonymize(&self) -> Self {
         ReplicaSetTelemetry {
             id: self.id,
-            key: self.key.clone(),
+            key: self.key.anonymize(),
             local: self.local.anonymize(),
             remote: self.remote.anonymize(),
             replicate_states: Default::default(),

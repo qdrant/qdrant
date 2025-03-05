@@ -123,6 +123,15 @@ pub enum OptimizersStatus {
     Error(String),
 }
 
+impl Anonymize for OptimizersStatus {
+    fn anonymize(&self) -> Self {
+        match self {
+            Self::Ok => Self::Ok,
+            Self::Error(e) => Self::Error(e.clone()),
+        }
+    }
+}
+
 /// Point data
 #[derive(Clone, Debug, PartialEq)]
 pub struct RecordInternal {
@@ -1812,7 +1821,7 @@ fn missing_vector_error(vector_name: &VectorName) -> CollectionError {
 impl Anonymize for VectorsConfig {
     fn anonymize(&self) -> Self {
         match self {
-            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
+            VectorsConfig::Single(params) => VectorsConfig::Single(params.anonymize()),
             VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
         }
     }

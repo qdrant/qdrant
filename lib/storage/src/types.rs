@@ -231,6 +231,18 @@ pub enum ConsensusThreadStatus {
     StoppedWithErr { err: String },
 }
 
+impl Anonymize for ConsensusThreadStatus {
+    fn anonymize(&self) -> Self {
+        match self {
+            Self::Working { last_update } => Self::Working {
+                last_update: *last_update,
+            },
+            Self::Stopped => Self::Stopped,
+            Self::StoppedWithErr { err } => Self::StoppedWithErr { err: err.clone() },
+        }
+    }
+}
+
 impl Anonymize for PeerInfo {
     fn anonymize(&self) -> Self {
         PeerInfo {
@@ -262,7 +274,7 @@ impl Anonymize for ClusterInfo {
                 .map(|(key, value)| (*key, value.anonymize()))
                 .collect(),
             raft_info: self.raft_info.anonymize(),
-            consensus_thread_status: self.consensus_thread_status.clone(),
+            consensus_thread_status: self.consensus_thread_status.anonymize(),
             message_send_failures: self.message_send_failures.clone(),
         }
     }

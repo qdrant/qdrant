@@ -102,13 +102,16 @@ impl Anonymize for OperationDurationStatistics {
         Self {
             count: self.count.anonymize(),
             fail_count: self.fail_count.anonymize(),
+            avg_duration_micros: self.avg_duration_micros,
+            min_duration_micros: self.min_duration_micros,
+            max_duration_micros: self.max_duration_micros,
+            total_duration_micros: self.total_duration_micros,
             last_responded: self.last_responded.anonymize(),
             duration_micros_histogram: self
                 .duration_micros_histogram
                 .iter()
                 .map(|&(le, count)| (le, count.anonymize()))
                 .collect(),
-            ..*self
         }
     }
 }
