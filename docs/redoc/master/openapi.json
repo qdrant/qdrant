@@ -11416,7 +11416,7 @@
             "minimum": 0
           },
           "config": {
-            "$ref": "#/components/schemas/CollectionConfigInternal"
+            "$ref": "#/components/schemas/CollectionConfigTelemetry"
           },
           "shards": {
             "type": "array",
@@ -11444,7 +11444,7 @@
           }
         }
       },
-      "CollectionConfigInternal": {
+      "CollectionConfigTelemetry": {
         "type": "object",
         "required": [
           "hnsw_config",
@@ -11479,7 +11479,7 @@
           "strict_mode_config": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeConfig"
+                "$ref": "#/components/schemas/StrictModeConfigOutput"
               },
               {
                 "nullable": true
