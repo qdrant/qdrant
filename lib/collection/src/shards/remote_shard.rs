@@ -501,13 +501,7 @@ impl RemoteShard {
         };
 
         if let Some(hw_usage) = point_operation_response.usage {
-            hw_measurement_acc.accumulate_request(
-                hw_usage.cpu as usize,
-                hw_usage.payload_io_read as usize,
-                hw_usage.payload_io_write as usize,
-                hw_usage.vector_io_read as usize,
-                hw_usage.vector_io_write as usize,
-            );
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         match point_operation_response.result {
@@ -740,14 +734,8 @@ impl ShardOperation for RemoteShard {
         // We need the `____ordered_with____` value even if the user didn't request payload
         let parse_payload = with_payload_interface.is_required() || order_by.is_some();
 
-        if let Some(usage) = scroll_response.usage {
-            hw_measurement_acc.accumulate_request(
-                usage.cpu as usize,
-                usage.payload_io_read as usize,
-                usage.payload_io_write as usize,
-                usage.vector_io_read as usize,
-                usage.vector_io_write as usize,
-            );
+        if let Some(hw_usage) = scroll_response.usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
@@ -820,14 +808,8 @@ impl ShardOperation for RemoteShard {
             usage,
         } = search_batch_response;
 
-        if let Some(usage) = usage {
-            hw_measurement_acc.accumulate_request(
-                usage.cpu as usize,
-                usage.payload_io_read as usize,
-                usage.payload_io_write as usize,
-                usage.vector_io_read as usize,
-                usage.vector_io_write as usize,
-            );
+        if let Some(hw_usage) = usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let result: Result<Vec<Vec<ScoredPoint>>, Status> = result
@@ -891,14 +873,8 @@ impl ShardOperation for RemoteShard {
             usage,
         } = count_response;
 
-        if let Some(usage) = usage {
-            hw_measurement_acc.accumulate_request(
-                usage.cpu as usize,
-                usage.payload_io_read as usize,
-                usage.payload_io_write as usize,
-                usage.vector_io_read as usize,
-                usage.vector_io_write as usize,
-            );
+        if let Some(hw_usage) = usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         result.map_or_else(
@@ -946,14 +922,8 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        if let Some(usage) = get_response.usage {
-            hw_measurement_acc.accumulate_request(
-                usage.cpu as usize,
-                usage.payload_io_read as usize,
-                usage.payload_io_write as usize,
-                usage.vector_io_read as usize,
-                usage.vector_io_write as usize,
-            );
+        if let Some(hw_usage) = get_response.usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let result: Result<Vec<RecordInternal>, Status> = get_response
@@ -1009,14 +979,8 @@ impl ShardOperation for RemoteShard {
             usage,
         } = batch_response;
 
-        if let Some(usage) = usage {
-            hw_measurement_acc.accumulate_request(
-                usage.cpu as usize,
-                usage.payload_io_read as usize,
-                usage.payload_io_write as usize,
-                usage.vector_io_read as usize,
-                usage.vector_io_write as usize,
-            );
+        if let Some(hw_usage) = usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let result = results
@@ -1086,13 +1050,7 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = response.usage {
-            hw_measurement_acc.accumulate_request(
-                hw_usage.cpu as usize,
-                hw_usage.payload_io_read as usize,
-                hw_usage.payload_io_write as usize,
-                hw_usage.vector_io_read as usize,
-                hw_usage.vector_io_write as usize,
-            );
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let hits = response

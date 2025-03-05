@@ -1,5 +1,6 @@
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
+use super::hardware_data::HardwareData;
 
 /// Collection of different types of hardware measurements.
 ///
@@ -96,6 +97,11 @@ impl HardwareCounterCell {
         self.cpu_multiplier = multiplier;
     }
 
+    /// Returns the real cpu value with multiplier applied.
+    pub fn get_cpu(&self) -> usize {
+        self.cpu_counter.get() * self.cpu_multiplier
+    }
+
     #[inline]
     pub fn cpu_counter(&self) -> &CounterCell {
         &self.cpu_counter
@@ -146,25 +152,29 @@ impl HardwareCounterCell {
         &mut self.vector_io_write_counter
     }
 
-    fn merge_to_accumulator(&self) {
+    /// Returns a copy of the current measurements made by this counter. Ignores all values from the parent accumulator.
+    pub fn get_hw_data(&self) -> HardwareData {
         let HardwareCounterCell {
-            cpu_multiplier,
-            cpu_counter,
+            cpu_multiplier: _,
+            cpu_counter: _,
             payload_io_read_counter,
             payload_io_write_counter,
             vector_io_read_counter,
             vector_io_write_counter,
-            accumulator,
+            accumulator: _,
         } = self;
 
-        let cpu_value = cpu_counter.get() * cpu_multiplier;
-        accumulator.accumulate(
-            cpu_value,
-            payload_io_read_counter.get(),
-            payload_io_write_counter.get(),
-            vector_io_read_counter.get(),
-            vector_io_write_counter.get(),
-        );
+        HardwareData {
+            cpu: self.get_cpu(),
+            payload_io_read: payload_io_read_counter.get(),
+            payload_io_write: payload_io_write_counter.get(),
+            vector_io_read: vector_io_read_counter.get(),
+            vector_io_write: vector_io_write_counter.get(),
+        }
+    }
+
+    fn merge_to_accumulator(&self) {
+        self.accumulator.accumulate(self.get_hw_data());
     }
 }
 
