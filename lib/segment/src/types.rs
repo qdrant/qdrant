@@ -862,25 +862,23 @@ impl Hash for StrictModeConfig {
             multivector_config,
             sparse_config,
         } = self;
-        (
-            enabled,
-            max_query_limit,
-            max_timeout,
-            unindexed_filtering_retrieve,
-            unindexed_filtering_update,
-            search_max_hnsw_ef,
-            search_allow_exact,
-            upsert_max_batchsize,
-            (max_collection_vector_size_bytes, max_points_count),
-            (read_rate_limit, write_rate_limit),
-            (
-                max_collection_payload_size_bytes,
-                filter_max_conditions,
-                condition_max_size,
-            ),
-            (multivector_config, sparse_config),
-        )
-            .hash(state);
+        enabled.hash(state);
+        max_query_limit.hash(state);
+        max_timeout.hash(state);
+        unindexed_filtering_retrieve.hash(state);
+        unindexed_filtering_update.hash(state);
+        search_max_hnsw_ef.hash(state);
+        search_allow_exact.hash(state);
+        upsert_max_batchsize.hash(state);
+        max_collection_vector_size_bytes.hash(state);
+        read_rate_limit.hash(state);
+        write_rate_limit.hash(state);
+        max_collection_payload_size_bytes.hash(state);
+        max_points_count.hash(state);
+        filter_max_conditions.hash(state);
+        condition_max_size.hash(state);
+        multivector_config.hash(state);
+        sparse_config.hash(state);
     }
 }
 
