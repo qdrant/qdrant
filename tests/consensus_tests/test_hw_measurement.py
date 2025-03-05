@@ -74,8 +74,8 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
         approx_points_on_node = 20 - 5
 
         # Assert that each nodes telemetry has been increased by some bytes
-        # assert_with_upper_bound_error(abs(peer_hw["payload_io_write"] - peer_hw_infos[peer_idx]["payload_io_write"]), approx_points_on_node * 5, upper_bound_error_percent=0.25)
-        # assert_with_upper_bound_error(abs(peer_hw["vector_io_write"] - peer_hw_infos[peer_idx]["vector_io_write"]), (approx_points_on_node * 4 * 4), upper_bound_error_percent=0.25)
+        assert abs(peer_hw["payload_io_write"] - peer_hw_infos[peer_idx]["payload_io_write"]) >= approx_points_on_node * 5
+        assert abs(peer_hw["vector_io_write"] - peer_hw_infos[peer_idx]["vector_io_write"]) >= (approx_points_on_node * 4 * 4)
 
     # Check that API response hardware data is equal to the data reported in telemetry!
     assert update_payload_hw_data['payload_io_write'] == total_payload_io_write - total_payload_io_write_old

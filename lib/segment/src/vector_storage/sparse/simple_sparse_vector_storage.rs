@@ -220,7 +220,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.total_vector_count as PointOffsetType;
-        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for operations.
+        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
