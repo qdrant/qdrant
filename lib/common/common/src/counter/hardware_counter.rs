@@ -1,6 +1,6 @@
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
-use super::hardware_data::HardwareData;
+use super::hardware_data::{HardwareData, RealCpuMeasurement};
 
 /// Collection of different types of hardware measurements.
 ///
@@ -10,7 +10,7 @@ use super::hardware_data::HardwareData;
 #[derive(Debug)]
 pub struct HardwareCounterCell {
     cpu_multiplier: usize,
-    pub(super) cpu_counter: CounterCell,
+    cpu_counter: CounterCell,
     pub(super) payload_io_read_counter: CounterCell,
     pub(super) payload_io_write_counter: CounterCell,
     pub(super) vector_io_read_counter: CounterCell,
@@ -98,15 +98,19 @@ impl HardwareCounterCell {
     }
 
     /// Returns the real cpu value with multiplier applied.
-    pub fn get_cpu(&self) -> usize {
-        self.cpu_counter.get() * self.cpu_multiplier
+    pub fn get_cpu(&self) -> RealCpuMeasurement {
+        RealCpuMeasurement::new(self.cpu_counter.get(), self.cpu_multiplier)
     }
 
+    /// Returns the CPU counter that can be used for counting.
+    /// Should *never* be used for reading CPU measurements! Use `.get_cpu()` for this.
     #[inline]
     pub fn cpu_counter(&self) -> &CounterCell {
         &self.cpu_counter
     }
 
+    /// Returns the CPU counter that can be used for counting.
+    /// Should *never* be used for reading CPU measurements! Use `.get_cpu()` for this.
     #[inline]
     pub fn cpu_counter_mut(&mut self) -> &mut CounterCell {
         &mut self.cpu_counter
@@ -156,7 +160,7 @@ impl HardwareCounterCell {
     pub fn get_hw_data(&self) -> HardwareData {
         let HardwareCounterCell {
             cpu_multiplier: _,
-            cpu_counter: _,
+            cpu_counter: _, // We use .get_cpu() to calculate the real CPU value.
             payload_io_read_counter,
             payload_io_write_counter,
             vector_io_read_counter,

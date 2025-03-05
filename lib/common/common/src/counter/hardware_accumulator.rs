@@ -53,7 +53,7 @@ impl HwSharedDrain {
         }
     }
 
-    /// Accumulates all values from `src` in `out_drain`.
+    /// Accumulates all values from `src` into this HwSharedDrain.
     fn accumulate_from_hw_data(&self, src: HardwareData) {
         let HwSharedDrain {
             cpu_counter,
@@ -63,7 +63,7 @@ impl HwSharedDrain {
             vector_io_write_counter,
         } = self;
 
-        cpu_counter.fetch_add(src.cpu, Ordering::Relaxed);
+        cpu_counter.fetch_add(src.cpu.get(), Ordering::Relaxed);
         payload_io_read_counter.fetch_add(src.payload_io_read, Ordering::Relaxed);
         payload_io_write_counter.fetch_add(src.payload_io_write, Ordering::Relaxed);
         vector_io_read_counter.fetch_add(src.vector_io_read, Ordering::Relaxed);
