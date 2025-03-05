@@ -4,6 +4,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use serde::{Deserialize, Serialize};
 
 use super::holders::segment_holder::SegmentId;
@@ -174,4 +175,15 @@ pub enum TrackerStatus {
     Done,
     Cancelled(String),
     Error(String),
+}
+
+impl Anonymize for TrackerStatus {
+    fn anonymize(&self) -> Self {
+        match self {
+            Self::Optimizing => Self::Optimizing,
+            Self::Done => Self::Done,
+            Self::Cancelled(e) => Self::Cancelled(e.clone()),
+            Self::Error(e) => Self::Error(e.clone()),
+        }
+    }
 }

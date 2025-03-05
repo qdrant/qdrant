@@ -24,6 +24,7 @@ use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
 use zerocopy::native_endian::U64;
 
+use crate::common::anonymize::Anonymize;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::{self, MaybeOneOrMany, MultiValue};
 use crate::data_types::index::{
@@ -710,6 +711,14 @@ pub struct StrictModeSparse {
     pub max_length: Option<usize>,
 }
 
+impl Anonymize for StrictModeSparse {
+    fn anonymize(&self) -> Self {
+        Self {
+            max_length: self.max_length,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[schemars(deny_unknown_fields)]
 pub struct StrictModeSparseConfig {
@@ -726,6 +735,14 @@ impl Merge for StrictModeSparseConfig {
     }
 }
 
+impl Anonymize for StrictModeSparseConfig {
+    fn anonymize(&self) -> Self {
+        Self {
+            config: self.config.anonymize(),
+        }
+    }
+}
+
 #[derive(
     Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge, Hash,
 )]
@@ -734,6 +751,14 @@ pub struct StrictModeMultivector {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
     pub max_vectors: Option<usize>,
+}
+
+impl Anonymize for StrictModeMultivector {
+    fn anonymize(&self) -> Self {
+        Self {
+            max_vectors: self.max_vectors,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
@@ -749,6 +774,14 @@ impl Merge for StrictModeMultivectorConfig {
         for (key, value) in other.config {
             // overwrite value if key exists
             self.config.entry(key).or_default().merge(value);
+        }
+    }
+}
+
+impl Anonymize for StrictModeMultivectorConfig {
+    fn anonymize(&self) -> Self {
+        Self {
+            config: self.config.anonymize(),
         }
     }
 }
@@ -879,6 +912,31 @@ impl Hash for StrictModeConfig {
         condition_max_size.hash(state);
         multivector_config.hash(state);
         sparse_config.hash(state);
+    }
+}
+
+impl Anonymize for StrictModeConfig {
+    fn anonymize(&self) -> Self {
+        Self {
+            enabled: self.enabled,
+            max_query_limit: self.max_query_limit,
+            max_timeout: self.max_timeout,
+            unindexed_filtering_retrieve: self.unindexed_filtering_retrieve,
+            unindexed_filtering_update: self.unindexed_filtering_update,
+            search_max_hnsw_ef: self.search_max_hnsw_ef,
+            search_allow_exact: self.search_allow_exact,
+            search_max_oversampling: self.search_max_oversampling,
+            upsert_max_batchsize: self.upsert_max_batchsize,
+            max_collection_vector_size_bytes: self.max_collection_vector_size_bytes,
+            read_rate_limit: self.read_rate_limit,
+            write_rate_limit: self.write_rate_limit,
+            max_collection_payload_size_bytes: self.max_collection_payload_size_bytes,
+            max_points_count: self.max_points_count,
+            filter_max_conditions: self.filter_max_conditions,
+            condition_max_size: self.condition_max_size,
+            multivector_config: self.multivector_config.anonymize(),
+            sparse_config: self.sparse_config.anonymize(),
+        }
     }
 }
 
@@ -4116,6 +4174,15 @@ impl Display for ShardKey {
         match self {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
+        }
+    }
+}
+
+impl Anonymize for ShardKey {
+    fn anonymize(&self) -> Self {
+        match self {
+            Self::Keyword(k) => Self::Keyword(k.anonymize()),
+            Self::Number(n) => Self::Number(*n),
         }
     }
 }

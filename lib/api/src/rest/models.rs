@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use serde;
 use serde::Serialize;
 
@@ -88,4 +89,16 @@ fn example_collections_response() -> CollectionsResponse {
 #[schemars(example = "example_collections_response")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,
+}
+
+impl Anonymize for HardwareUsage {
+    fn anonymize(&self) -> Self {
+        HardwareUsage {
+            cpu: self.cpu,
+            payload_io_read: self.payload_io_read,
+            payload_io_write: self.payload_io_write,
+            vector_io_read: self.vector_io_read,
+            vector_io_write: self.vector_io_write,
+        }
+    }
 }

@@ -38,11 +38,8 @@ impl HardwareTelemetry {
 
 impl Anonymize for HardwareTelemetry {
     fn anonymize(&self) -> Self {
-        let collection_data = self
-            .collection_data
-            .iter()
-            .map(|i| (i.0.anonymize(), i.1.clone()))
-            .collect();
-        Self { collection_data }
+        Self {
+            collection_data: self.collection_data.anonymize(),
+        }
     }
 }
