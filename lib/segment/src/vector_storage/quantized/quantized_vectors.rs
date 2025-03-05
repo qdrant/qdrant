@@ -664,13 +664,13 @@ impl QuantizedVectors {
                 }
                 QuantizationConfig::RaBitQ(RaBitQ { rabitq: rq }) => {
                     if Self::is_ram(rq.always_ram, on_disk_vector_storage) {
-                        QuantizedVectorStorage::PQRam(EncodedVectorsPQ::load(
+                        QuantizedVectorStorage::RQRam(EncodedVectorsRQ::load(
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
                         )?)
                     } else {
-                        QuantizedVectorStorage::PQMmap(EncodedVectorsPQ::load(
+                        QuantizedVectorStorage::RQMmap(EncodedVectorsRQ::load(
                             &data_path,
                             &meta_path,
                             &config.vector_parameters,
