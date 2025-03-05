@@ -51,7 +51,7 @@ pub struct OptimizerTelemetry {
 impl Anonymize for OptimizerTelemetry {
     fn anonymize(&self) -> Self {
         Self {
-            status: self.status.clone(),
+            status: self.status.anonymize(),
             optimizations: self.optimizations.anonymize(),
             log: self.log.anonymize(),
         }

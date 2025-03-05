@@ -100,7 +100,7 @@ impl Anonymize for CollectionTelemetryEnum {
 impl Anonymize for CollectionsAggregatedTelemetry {
     fn anonymize(&self) -> Self {
         CollectionsAggregatedTelemetry {
-            optimizers_status: self.optimizers_status.clone(),
+            optimizers_status: self.optimizers_status.anonymize(),
             vectors: self.vectors.anonymize(),
             params: self.params.anonymize(),
         }
