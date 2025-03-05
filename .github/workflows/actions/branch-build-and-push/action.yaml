@@ -31,11 +31,22 @@ runs:
         # Authenticate on registries
         docker login https://ghcr.io -u qdrant --password "${DOCKER_PASSWORD}"
         
-        # Build regular image for Github Registry
+        ARCH=${ARCH:-regular}
         # use full git commit sha
         GIT_COMMIT_ID="$(git rev-parse HEAD)"
-        GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID} -t ghcr.io/qdrant/qdrant:$branch"
-        echo "Building tag $branch-${GIT_COMMIT_ID}"
         
-        # Pull, retag and push to GitHub packages
-        docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        if [ "$ARCH" == "regular" ]; then
+          # Build regular image for Github Registry
+          GITHUB_TAG="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID} -t ghcr.io/qdrant/qdrant:$branch"
+          echo "Building tag $branch-${GIT_COMMIT_ID}"
+  
+          # Pull, retag and push to GitHub packages
+          docker buildx build --platform='linux/amd64,linux/arm64' --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        elif [ "$ARCH" == "gpu" ]; then
+          # Build GPU images for Github Registry
+          GITHUB_TAG_NVIDIA="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}-gpu-nvidia -t ghcr.io/qdrant/qdrant:$branch-gpu-nvidia"
+          docker buildx build --platform='linux/amd64' --build-arg GPU=nvidia --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG_NVIDIA --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+
+          GITHUB_TAG_AMD="-t ghcr.io/qdrant/qdrant:$branch-${GIT_COMMIT_ID}-gpu-amd -t ghcr.io/qdrant/qdrant:$branch-gpu-amd"
+          docker buildx build --platform='linux/amd64' --build-arg GPU=amd --build-arg GIT_COMMIT_ID=${GIT_COMMIT_ID} $GITHUB_TAG_AMD --push --label "org.opencontainers.image.revision"=${GIT_COMMIT_ID} .
+        fi
