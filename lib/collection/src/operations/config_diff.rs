@@ -1,4 +1,3 @@
-use std::hash::Hash;
 use std::num::NonZeroU32;
 
 use api::rest::MaxOptimizationThreads;
@@ -171,14 +170,25 @@ pub struct OptimizersConfigDiff {
 
 impl std::hash::Hash for OptimizersConfigDiff {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.deleted_threshold.map(f64::to_le_bytes).hash(state);
-        self.vacuum_min_vector_number.hash(state);
-        self.default_segment_number.hash(state);
-        self.max_segment_size.hash(state);
-        self.memmap_threshold.hash(state);
-        self.indexing_threshold.hash(state);
-        self.flush_interval_sec.hash(state);
-        self.max_optimization_threads.hash(state);
+        let Self {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            max_optimization_threads,
+        } = self;
+
+        deleted_threshold.map(f64::to_le_bytes).hash(state);
+        vacuum_min_vector_number.hash(state);
+        default_segment_number.hash(state);
+        max_segment_size.hash(state);
+        memmap_threshold.hash(state);
+        indexing_threshold.hash(state);
+        flush_interval_sec.hash(state);
+        max_optimization_threads.hash(state);
     }
 }
 
@@ -207,20 +217,27 @@ impl DiffConfig<OptimizersConfig> for OptimizersConfigDiff {
     where
         Self: Sized + Serialize + DeserializeOwned + Merge,
     {
+        let Self {
+            deleted_threshold,
+            vacuum_min_vector_number,
+            default_segment_number,
+            max_segment_size,
+            memmap_threshold,
+            indexing_threshold,
+            flush_interval_sec,
+            max_optimization_threads,
+        } = self;
+
         Ok(OptimizersConfig {
-            deleted_threshold: self.deleted_threshold.unwrap_or(config.deleted_threshold),
-            vacuum_min_vector_number: self
-                .vacuum_min_vector_number
+            deleted_threshold: deleted_threshold.unwrap_or(config.deleted_threshold),
+            vacuum_min_vector_number: vacuum_min_vector_number
                 .unwrap_or(config.vacuum_min_vector_number),
-            default_segment_number: self
-                .default_segment_number
-                .unwrap_or(config.default_segment_number),
-            max_segment_size: self.max_segment_size.or(config.max_segment_size),
-            memmap_threshold: self.memmap_threshold.or(config.memmap_threshold),
-            indexing_threshold: self.indexing_threshold.or(config.indexing_threshold),
-            flush_interval_sec: self.flush_interval_sec.unwrap_or(config.flush_interval_sec),
-            max_optimization_threads: self
-                .max_optimization_threads
+            default_segment_number: default_segment_number.unwrap_or(config.default_segment_number),
+            max_segment_size: max_segment_size.or(config.max_segment_size),
+            memmap_threshold: memmap_threshold.or(config.memmap_threshold),
+            indexing_threshold: indexing_threshold.or(config.indexing_threshold),
+            flush_interval_sec: flush_interval_sec.unwrap_or(config.flush_interval_sec),
+            max_optimization_threads: max_optimization_threads
                 .map_or(config.max_optimization_threads, From::from),
         })
     }
@@ -310,7 +327,7 @@ pub fn update_config<T: DeserializeOwned + Serialize, Y: DeserializeOwned + Seri
 /// - Empty string
 /// - Array or object with zero items
 ///
-/// Intended to only be used in non critical for speed places.
+/// Intended to only be used in non-critical for speed places.
 pub fn is_empty<T: Serialize>(config: &T) -> CollectionResult<bool> {
     let config_values = serde_json::to_value(config)?;
 
