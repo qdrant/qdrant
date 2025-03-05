@@ -786,6 +786,40 @@ impl Anonymize for StrictModeMultivectorConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[schemars(deny_unknown_fields)]
+pub struct StrictModeMultivectorConfigOutput {
+    #[serde(flatten)]
+    pub config: BTreeMap<VectorNameBuf, StrictModeMultivectorOutput>,
+}
+
+impl From<StrictModeMultivectorConfig> for StrictModeMultivectorConfigOutput {
+    fn from(config: StrictModeMultivectorConfig) -> Self {
+        let StrictModeMultivectorConfig { config } = config;
+        let mut new_config = StrictModeMultivectorConfigOutput::default();
+        for (key, value) in config {
+            new_config
+                .config
+                .insert(key, StrictModeMultivectorOutput::from(value));
+        }
+        new_config
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+pub struct StrictModeMultivectorOutput {
+    /// Max number of vectors in a multivector
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_vectors: Option<usize>,
+}
+
+impl From<StrictModeMultivector> for StrictModeMultivectorOutput {
+    fn from(config: StrictModeMultivector) -> Self {
+        let StrictModeMultivector { max_vectors } = config;
+        StrictModeMultivectorOutput { max_vectors }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Merge)]
 pub struct StrictModeConfig {
     // Global
@@ -803,11 +837,11 @@ pub struct StrictModeConfig {
     #[validate(range(min = 1))]
     pub max_timeout: Option<usize>,
 
-    /// Allow usage of unindexed fields in retrieval based (eg. search) filters.
+    /// Allow usage of unindexed fields in retrieval based (e.g. search) filters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_retrieve: Option<bool>,
 
-    /// Allow usage of unindexed fields in filtered updates (eg. delete by payload).
+    /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unindexed_filtering_update: Option<bool>,
 
@@ -936,6 +970,132 @@ impl Anonymize for StrictModeConfig {
             condition_max_size: self.condition_max_size,
             multivector_config: self.multivector_config.anonymize(),
             sparse_config: self.sparse_config.anonymize(),
+        }
+    }
+}
+
+// Version of the strict mode config we can present to the user
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+pub struct StrictModeConfigOutput {
+    // Global
+    /// Whether strict mode is enabled for a collection or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+
+    /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_query_limit: Option<usize>,
+
+    /// Max allowed `timeout` parameter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    pub max_timeout: Option<usize>,
+
+    /// Allow usage of unindexed fields in retrieval based (e.g. search) filters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_retrieve: Option<bool>,
+
+    /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unindexed_filtering_update: Option<bool>,
+
+    // Search
+    /// Max HNSW value allowed in search parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_hnsw_ef: Option<usize>,
+
+    /// Whether exact search is allowed or not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_allow_exact: Option<bool>,
+
+    /// Max oversampling value allowed in search.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_max_oversampling: Option<f64>,
+
+    /// Max batchsize when upserting
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub upsert_max_batchsize: Option<usize>,
+
+    /// Max size of a collections vector storage in bytes, ignoring replicas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_collection_vector_size_bytes: Option<usize>,
+
+    /// Max number of read operations per minute per replica
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_rate_limit: Option<usize>,
+
+    /// Max number of write operations per minute per replica
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub write_rate_limit: Option<usize>,
+
+    /// Max size of a collections payload storage in bytes
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_collection_payload_size_bytes: Option<usize>,
+
+    /// Max number of points estimated in a collection
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_points_count: Option<usize>,
+
+    /// Max conditions a filter can have.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter_max_conditions: Option<usize>,
+
+    /// Max size of a condition, eg. items in `MatchAny`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub condition_max_size: Option<usize>,
+
+    /// Multivector configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multivector_config: Option<StrictModeMultivectorConfigOutput>,
+
+    /// Sparse vector configuration
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparse_config: Option<StrictModeSparseConfig>,
+}
+
+impl From<StrictModeConfig> for StrictModeConfigOutput {
+    fn from(config: StrictModeConfig) -> Self {
+        let StrictModeConfig {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+            upsert_max_batchsize,
+            max_collection_vector_size_bytes,
+            read_rate_limit,
+            write_rate_limit,
+            max_collection_payload_size_bytes,
+            max_points_count,
+            filter_max_conditions,
+            condition_max_size,
+            multivector_config,
+            sparse_config,
+        } = config;
+
+        Self {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+            upsert_max_batchsize,
+            max_collection_vector_size_bytes,
+            read_rate_limit,
+            write_rate_limit,
+            max_collection_payload_size_bytes,
+            max_points_count,
+            filter_max_conditions,
+            condition_max_size,
+            multivector_config: multivector_config.map(StrictModeMultivectorConfigOutput::from),
+            sparse_config,
         }
     }
 }
@@ -4174,15 +4334,6 @@ impl Display for ShardKey {
         match self {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
-        }
-    }
-}
-
-impl Anonymize for ShardKey {
-    fn anonymize(&self) -> Self {
-        match self {
-            Self::Keyword(k) => Self::Keyword(k.anonymize()),
-            Self::Number(n) => Self::Number(*n),
         }
     }
 }
