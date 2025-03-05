@@ -7374,7 +7374,7 @@
             "description": "Sparse vector configuration",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeSparseConfig"
+                "$ref": "#/components/schemas/StrictModeSparseConfigOutput"
               },
               {
                 "nullable": true
@@ -7401,20 +7401,20 @@
           }
         }
       },
-      "StrictModeSparseConfig": {
+      "StrictModeSparseConfigOutput": {
         "type": "object",
         "additionalProperties": {
-          "$ref": "#/components/schemas/StrictModeSparse"
+          "$ref": "#/components/schemas/StrictModeSparseOutput"
         }
       },
-      "StrictModeSparse": {
+      "StrictModeSparseOutput": {
         "type": "object",
         "properties": {
           "max_length": {
             "description": "Max length of sparse vector",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }
@@ -9739,6 +9739,24 @@
         "properties": {
           "max_vectors": {
             "description": "Max number of vectors in a multivector",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "StrictModeSparseConfig": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/StrictModeSparse"
+        }
+      },
+      "StrictModeSparse": {
+        "type": "object",
+        "properties": {
+          "max_length": {
+            "description": "Max length of sparse vector",
             "type": "integer",
             "format": "uint",
             "minimum": 1,

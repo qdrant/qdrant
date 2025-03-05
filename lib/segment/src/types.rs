@@ -711,14 +711,6 @@ pub struct StrictModeSparse {
     pub max_length: Option<usize>,
 }
 
-impl Anonymize for StrictModeSparse {
-    fn anonymize(&self) -> Self {
-        Self {
-            max_length: self.max_length,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[schemars(deny_unknown_fields)]
 pub struct StrictModeSparseConfig {
@@ -735,11 +727,53 @@ impl Merge for StrictModeSparseConfig {
     }
 }
 
-impl Anonymize for StrictModeSparseConfig {
+impl Anonymize for StrictModeSparseConfigOutput {
     fn anonymize(&self) -> Self {
         Self {
             config: self.config.anonymize(),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[schemars(deny_unknown_fields)]
+pub struct StrictModeSparseConfigOutput {
+    #[serde(flatten)]
+    pub config: BTreeMap<VectorNameBuf, StrictModeSparseOutput>,
+}
+
+impl Anonymize for StrictModeSparseOutput {
+    fn anonymize(&self) -> Self {
+        Self {
+            max_length: self.max_length,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+pub struct StrictModeSparseOutput {
+    /// Max length of sparse vector
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<usize>,
+}
+
+impl From<StrictModeSparseConfig> for StrictModeSparseConfigOutput {
+    fn from(config: StrictModeSparseConfig) -> Self {
+        let StrictModeSparseConfig { config } = config;
+        let mut new_config = StrictModeSparseConfigOutput::default();
+        for (key, value) in config {
+            new_config
+                .config
+                .insert(key, StrictModeSparseOutput::from(value));
+        }
+        new_config
+    }
+}
+
+impl From<StrictModeSparse> for StrictModeSparseOutput {
+    fn from(config: StrictModeSparse) -> Self {
+        let StrictModeSparse { max_length } = config;
+        StrictModeSparseOutput { max_length }
     }
 }
 
@@ -753,7 +787,7 @@ pub struct StrictModeMultivector {
     pub max_vectors: Option<usize>,
 }
 
-impl Anonymize for StrictModeMultivector {
+impl Anonymize for StrictModeMultivectorOutput {
     fn anonymize(&self) -> Self {
         Self {
             max_vectors: self.max_vectors,
@@ -778,7 +812,7 @@ impl Merge for StrictModeMultivectorConfig {
     }
 }
 
-impl Anonymize for StrictModeMultivectorConfig {
+impl Anonymize for StrictModeMultivectorConfigOutput {
     fn anonymize(&self) -> Self {
         Self {
             config: self.config.anonymize(),
@@ -949,7 +983,7 @@ impl Hash for StrictModeConfig {
     }
 }
 
-impl Anonymize for StrictModeConfig {
+impl Anonymize for StrictModeConfigOutput {
     fn anonymize(&self) -> Self {
         Self {
             enabled: self.enabled,
@@ -1051,7 +1085,7 @@ pub struct StrictModeConfigOutput {
 
     /// Sparse vector configuration
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sparse_config: Option<StrictModeSparseConfig>,
+    pub sparse_config: Option<StrictModeSparseConfigOutput>,
 }
 
 impl From<StrictModeConfig> for StrictModeConfigOutput {
@@ -1095,7 +1129,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
             filter_max_conditions,
             condition_max_size,
             multivector_config: multivector_config.map(StrictModeMultivectorConfigOutput::from),
-            sparse_config,
+            sparse_config: sparse_config.map(StrictModeSparseConfigOutput::from),
         }
     }
 }
@@ -4334,6 +4368,15 @@ impl Display for ShardKey {
         match self {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
+        }
+    }
+}
+
+impl Anonymize for ShardKey {
+    fn anonymize(&self) -> Self {
+        match self {
+            Self::Keyword(k) => Self::Keyword(k.anonymize()),
+            Self::Number(n) => Self::Number(*n),
         }
     }
 }

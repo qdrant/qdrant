@@ -1982,6 +1982,25 @@ impl From<segment::types::StrictModeSparseConfig> for StrictModeSparseConfig {
     }
 }
 
+impl From<segment::types::StrictModeSparseConfigOutput> for StrictModeSparseConfig {
+    fn from(value: segment::types::StrictModeSparseConfigOutput) -> Self {
+        let segment::types::StrictModeSparseConfigOutput { config } = value;
+        Self {
+            sparse_config: config
+                .into_iter()
+                .map(|(name, config)| {
+                    (
+                        name,
+                        StrictModeSparse {
+                            max_length: config.max_length.map(|i| i as u64),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
 impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
     fn from(value: segment::types::StrictModeConfigOutput) -> Self {
         let segment::types::StrictModeConfigOutput {
@@ -2069,7 +2088,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
             condition_max_size: condition_max_size.map(|i| i as usize),
             multivector_config: multivector_config
                 .map(segment::types::StrictModeMultivectorConfigOutput::from),
-            sparse_config: sparse_config.map(segment::types::StrictModeSparseConfig::from),
+            sparse_config: sparse_config.map(segment::types::StrictModeSparseConfigOutput::from),
         }
     }
 }
@@ -2125,6 +2144,22 @@ impl From<segment::types::StrictModeMultivectorConfigOutput> for StrictModeMulti
                 })
                 .collect(),
         }
+    }
+}
+
+impl From<StrictModeSparseConfig> for segment::types::StrictModeSparseConfigOutput {
+    fn from(value: StrictModeSparseConfig) -> Self {
+        let StrictModeSparseConfig { sparse_config } = value;
+        let mut config = BTreeMap::new();
+        for (name, strict_config) in sparse_config {
+            config.insert(
+                name,
+                segment::types::StrictModeSparseOutput {
+                    max_length: strict_config.max_length.map(|i| i as usize),
+                },
+            );
+        }
+        Self { config }
     }
 }
 
