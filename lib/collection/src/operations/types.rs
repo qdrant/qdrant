@@ -1821,7 +1821,7 @@ fn missing_vector_error(vector_name: &VectorName) -> CollectionError {
 impl Anonymize for VectorsConfig {
     fn anonymize(&self) -> Self {
         match self {
-            VectorsConfig::Single(params) => VectorsConfig::Single(params.clone()),
+            VectorsConfig::Single(params) => VectorsConfig::Single(params.anonymize()),
             VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
         }
     }
