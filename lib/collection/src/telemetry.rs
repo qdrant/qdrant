@@ -2,10 +2,13 @@ use std::collections::HashMap;
 
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
+use segment::types::{HnswConfig, QuantizationConfig, StrictModeConfigOutput};
 use serde::Serialize;
+use uuid::Uuid;
 
-use crate::config::CollectionConfigInternal;
+use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
 use crate::operations::types::{ReshardingInfo, ShardTransferInfo};
+use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::shard::ShardId;
 use crate::shards::telemetry::ReplicaSetTelemetry;
 
@@ -13,7 +16,7 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 pub struct CollectionTelemetry {
     pub id: String,
     pub init_time_ms: u64,
-    pub config: CollectionConfigInternal,
+    pub config: CollectionConfigTelemetry,
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
@@ -46,9 +49,9 @@ impl Anonymize for CollectionTelemetry {
     }
 }
 
-impl Anonymize for CollectionConfigInternal {
+impl Anonymize for CollectionConfigTelemetry {
     fn anonymize(&self) -> Self {
-        CollectionConfigInternal {
+        CollectionConfigTelemetry {
             params: self.params.anonymize(),
             hnsw_config: self.hnsw_config.clone(),
             optimizer_config: self.optimizer_config.clone(),
@@ -78,4 +81,41 @@ pub struct ShardCleanStatusProgressTelemetry {
 #[derive(Serialize, Clone, Debug, JsonSchema)]
 pub struct ShardCleanStatusFailedTelemetry {
     pub reason: String,
+}
+
+#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq)]
+pub struct CollectionConfigTelemetry {
+    pub params: CollectionParams,
+    pub hnsw_config: HnswConfig,
+    pub optimizer_config: OptimizersConfig,
+    pub wal_config: WalConfig,
+    #[serde(default)]
+    pub quantization_config: Option<QuantizationConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict_mode_config: Option<StrictModeConfigOutput>,
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
+}
+
+impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
+    fn from(config: CollectionConfigInternal) -> Self {
+        let CollectionConfigInternal {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+            uuid,
+        } = config;
+        CollectionConfigTelemetry {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
+            uuid,
+        }
+    }
 }

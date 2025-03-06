@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::str::FromStr as _;
 use std::time::Instant;
 
@@ -1983,9 +1983,28 @@ impl From<segment::types::StrictModeSparseConfig> for StrictModeSparseConfig {
     }
 }
 
-impl From<segment::types::StrictModeConfig> for StrictModeConfig {
-    fn from(value: segment::types::StrictModeConfig) -> Self {
-        let segment::types::StrictModeConfig {
+impl From<segment::types::StrictModeSparseConfigOutput> for StrictModeSparseConfig {
+    fn from(value: segment::types::StrictModeSparseConfigOutput) -> Self {
+        let segment::types::StrictModeSparseConfigOutput { config } = value;
+        Self {
+            sparse_config: config
+                .into_iter()
+                .map(|(name, config)| {
+                    (
+                        name,
+                        StrictModeSparse {
+                            max_length: config.max_length.map(|i| i as u64),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
+    fn from(value: segment::types::StrictModeConfigOutput) -> Self {
+        let segment::types::StrictModeConfigOutput {
             enabled,
             max_query_limit,
             max_timeout,
@@ -2028,6 +2047,69 @@ impl From<segment::types::StrictModeConfig> for StrictModeConfig {
     }
 }
 
+impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
+    fn from(value: StrictModeConfig) -> Self {
+        let StrictModeConfig {
+            enabled,
+            max_query_limit,
+            max_timeout,
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef,
+            search_allow_exact,
+            search_max_oversampling,
+            upsert_max_batchsize,
+            max_collection_vector_size_bytes,
+            read_rate_limit,
+            write_rate_limit,
+            max_collection_payload_size_bytes,
+            max_points_count,
+            filter_max_conditions,
+            condition_max_size,
+            multivector_config,
+            sparse_config,
+        } = value;
+        Self {
+            enabled,
+            max_query_limit: max_query_limit.map(|i| i as usize),
+            max_timeout: max_timeout.map(|i| i as usize),
+            unindexed_filtering_retrieve,
+            unindexed_filtering_update,
+            search_max_hnsw_ef: search_max_hnsw_ef.map(|i| i as usize),
+            search_allow_exact,
+            search_max_oversampling: search_max_oversampling.map(f64::from),
+            upsert_max_batchsize: upsert_max_batchsize.map(|i| i as usize),
+            max_collection_vector_size_bytes: max_collection_vector_size_bytes.map(|i| i as usize),
+            read_rate_limit: read_rate_limit.map(|i| i as usize),
+            write_rate_limit: write_rate_limit.map(|i| i as usize),
+            max_collection_payload_size_bytes: max_collection_payload_size_bytes
+                .map(|i| i as usize),
+            max_points_count: max_points_count.map(|i| i as usize),
+            filter_max_conditions: filter_max_conditions.map(|i| i as usize),
+            condition_max_size: condition_max_size.map(|i| i as usize),
+            multivector_config: multivector_config
+                .map(segment::types::StrictModeMultivectorConfigOutput::from),
+            sparse_config: sparse_config.map(segment::types::StrictModeSparseConfigOutput::from),
+        }
+    }
+}
+
+impl From<StrictModeMultivectorConfig> for segment::types::StrictModeMultivectorConfigOutput {
+    fn from(value: StrictModeMultivectorConfig) -> Self {
+        let StrictModeMultivectorConfig { multivector_config } = value;
+        let mut config = BTreeMap::new();
+        for (name, strict_config) in multivector_config {
+            config.insert(
+                name,
+                segment::types::StrictModeMultivectorOutput {
+                    max_vectors: strict_config.max_vectors.map(|i| i as usize),
+                },
+            );
+        }
+        Self { config }
+    }
+}
+
 impl From<segment::types::StrictModeMultivectorConfig> for StrictModeMultivectorConfig {
     fn from(value: segment::types::StrictModeMultivectorConfig) -> Self {
         let segment::types::StrictModeMultivectorConfig { config } = value;
@@ -2044,6 +2126,41 @@ impl From<segment::types::StrictModeMultivectorConfig> for StrictModeMultivector
                 })
                 .collect(),
         }
+    }
+}
+
+impl From<segment::types::StrictModeMultivectorConfigOutput> for StrictModeMultivectorConfig {
+    fn from(value: segment::types::StrictModeMultivectorConfigOutput) -> Self {
+        let segment::types::StrictModeMultivectorConfigOutput { config } = value;
+        Self {
+            multivector_config: config
+                .iter()
+                .map(|(name, config)| {
+                    (
+                        name.clone(),
+                        StrictModeMultivector {
+                            max_vectors: config.max_vectors.map(|i| i as u64),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<StrictModeSparseConfig> for segment::types::StrictModeSparseConfigOutput {
+    fn from(value: StrictModeSparseConfig) -> Self {
+        let StrictModeSparseConfig { sparse_config } = value;
+        let mut config = BTreeMap::new();
+        for (name, strict_config) in sparse_config {
+            config.insert(
+                name,
+                segment::types::StrictModeSparseOutput {
+                    max_length: strict_config.max_length.map(|i| i as usize),
+                },
+            );
+        }
+        Self { config }
     }
 }
 

@@ -204,7 +204,7 @@ pub const fn default_on_disk_payload() -> bool {
     true
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Validate, Clone, PartialEq)]
 pub struct CollectionConfigInternal {
     #[validate(nested)]
     pub params: CollectionParams,

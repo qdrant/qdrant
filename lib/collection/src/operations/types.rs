@@ -31,8 +31,8 @@ use segment::data_types::vectors::{
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, Payload, PayloadIndexInfo, PayloadKeyType,
     PointIdType, QuantizationConfig, SearchParams, SeqNumberType, ShardKey,
-    SparseVectorStorageType, StrictModeConfig, VectorName, VectorNameBuf, VectorStorageDatatype,
-    WithPayloadInterface, WithVector,
+    SparseVectorStorageType, StrictModeConfigOutput, VectorName, VectorNameBuf,
+    VectorStorageDatatype, WithPayloadInterface, WithVector,
 };
 use semver::Version;
 use serde;
@@ -207,7 +207,7 @@ pub struct CollectionConfig {
     #[serde(default)]
     pub quantization_config: Option<QuantizationConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub strict_mode_config: Option<StrictModeConfig>,
+    pub strict_mode_config: Option<StrictModeConfigOutput>,
 }
 
 impl From<CollectionConfigInternal> for CollectionConfig {
@@ -229,7 +229,7 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             optimizer_config,
             wal_config: Some(wal_config),
             quantization_config,
-            strict_mode_config,
+            strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
         }
     }
 }
