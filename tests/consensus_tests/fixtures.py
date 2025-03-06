@@ -47,6 +47,23 @@ def upsert_points(
     )
 
 
+def update_points_payload(
+        peer_url,
+        points,
+        collection_name="test_collection",
+        wait="true",
+):
+    r_batch = requests.post(
+        f"{peer_url}/collections/{collection_name}/points/payload?wait={wait}",
+        json={
+            "points": points,
+            "payload": {"city": random.choice(CITIES)},
+        },
+    )
+    assert_http_ok(r_batch)
+    return r_batch.json()
+
+
 def upsert_random_points(
     peer_url,
     num,
@@ -187,3 +204,11 @@ def set_strict_mode(peer_id, collection_name, strict_mode_config):
             "strict_mode_config": strict_mode_config,
         },
     ).raise_for_status()
+
+
+def get_telemetry_hw_info(peer_url, collection):
+    r_search = requests.get(
+        f"{peer_url}/telemetry", params="details_level=3"
+    )
+    assert_http_ok(r_search)
+    return r_search.json()["result"]["hardware"]["collection_data"][collection]

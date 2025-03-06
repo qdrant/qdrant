@@ -31,6 +31,7 @@ impl ShardReplicaSet {
         &self,
         operation: OperationWithClockTag,
         wait: bool,
+        mut hw_measurement: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
@@ -45,8 +46,10 @@ impl ShardReplicaSet {
             return Ok(None);
         };
 
-        // TODO(io_measurement): Propagate measurements to caller
-        let hw_measurement = HwMeasurementAcc::disposable();
+        // Don't measure hw when resharding
+        if state.is_resharding() {
+            hw_measurement = HwMeasurementAcc::disposable();
+        }
 
         let result = match state {
             ReplicaState::Active => {
@@ -104,6 +107,7 @@ impl ShardReplicaSet {
         wait: bool,
         ordering: WriteOrdering,
         update_only_existing: bool,
+        mut hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `ShardReplicaSet::update` is not cancel safe, so this method is not cancel safe.
 
@@ -113,6 +117,12 @@ impl ShardReplicaSet {
                 self.collection_id, self.shard_id
             )));
         };
+
+        // Don't measure hw when resharding
+        let peer_state = self.peer_state(leader_peer);
+        if peer_state.is_some_and(|state| state.is_resharding()) {
+            hw_measurement_acc = HwMeasurementAcc::disposable();
+        }
 
         // If we are the leader, run the update from this replica set
         if leader_peer == self.this_peer_id() {
@@ -124,10 +134,11 @@ impl ShardReplicaSet {
                 WriteOrdering::Weak => None,
             };
 
-            self.update(operation, wait, update_only_existing).await
+            self.update(operation, wait, update_only_existing, hw_measurement_acc)
+                .await
         } else {
             // Forward the update to the designated leader
-            self.forward_update(leader_peer, operation, wait, ordering)
+            self.forward_update(leader_peer, operation, wait, ordering, hw_measurement_acc)
                 .await
                 .map_err(|err| {
                     if err.is_transient() {
@@ -179,6 +190,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         update_only_existing: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `ShardRepilcaSet::update_impl` is not cancel safe, so this method is not cancel safe.
 
@@ -194,7 +206,13 @@ impl ShardReplicaSet {
             let is_non_zero_tick = clock.current_tick().is_some();
 
             let res = self
-                .update_impl(operation.clone(), wait, &mut clock, update_only_existing)
+                .update_impl(
+                    operation.clone(),
+                    wait,
+                    &mut clock,
+                    update_only_existing,
+                    hw_measurement_acc.clone(),
+                )
                 .await?;
 
             if let Some(res) = res {
@@ -234,12 +252,11 @@ impl ShardReplicaSet {
         wait: bool,
         clock: &mut clock_set::ClockGuard,
         update_only_existing: bool,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `LocalShard::update` is not guaranteed to be cancel safe and it's impossible to cancel
         // multiple parallel updates in a way that is *guaranteed* not to introduce inconsistencies
         // between nodes, so this method is not cancel safe.
-
-        let hw_measurement_acc = HwMeasurementAcc::disposable(); // TODO(io_measurement) propagate values!
 
         let remotes = self.remotes.read().await;
         let local = self.local.read().await;
@@ -632,6 +649,7 @@ impl ShardReplicaSet {
         operation: CollectionUpdateOperations,
         wait: bool,
         ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<UpdateResult> {
         // `RemoteShard::forward_update` is cancel safe, so this method is cancel safe.
 
@@ -645,7 +663,12 @@ impl ShardReplicaSet {
         };
 
         remote_leader
-            .forward_update(OperationWithClockTag::from(operation), wait, ordering) // `clock_tag` *have to* be `None`!
+            .forward_update(
+                OperationWithClockTag::from(operation),
+                wait,
+                ordering,
+                hw_measurement_acc,
+            ) // `clock_tag` *has to* be `None`!
             .await
     }
 }

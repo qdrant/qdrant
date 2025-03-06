@@ -810,6 +810,7 @@ message UpdateBatchPoints {
 message PointsOperationResponse {
   UpdateResult result = 1;
   double time = 2; // Time spent to process
+  optional HardwareUsage usage = 3;
 }
 
 message UpdateResult {

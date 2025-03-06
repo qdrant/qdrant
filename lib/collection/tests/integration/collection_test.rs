@@ -58,8 +58,9 @@ async fn test_collection_updater_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
+    let hw_counter = HwMeasurementAcc::new();
     let insert_result = collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
         .await;
 
     match insert_result {
@@ -128,8 +129,9 @@ async fn test_collection_search_with_payload_and_vector_with_shards(shard_number
         PointInsertOperationsInternal::from(batch),
     ));
 
+    let hw_counter = HwMeasurementAcc::new();
     let insert_result = collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
         .await;
 
     match insert_result {
@@ -231,8 +233,9 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::from(batch)),
         );
 
+        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
 
@@ -246,8 +249,9 @@ async fn test_collection_loading_with_shards(shard_number: u32) {
                 key: None,
             }));
 
+        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(assign_payload, true, WriteOrdering::default())
+            .update_from_client_simple(assign_payload, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
     }
@@ -374,7 +378,12 @@ async fn test_recommendation_api_with_shards(shard_number: u32) {
 
     let hw_acc = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(
+            insert_points,
+            true,
+            WriteOrdering::default(),
+            hw_acc.clone(),
+        )
         .await
         .unwrap();
     let result = recommend_by(
@@ -432,8 +441,9 @@ async fn test_read_api_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
+    let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
         .await
         .unwrap();
 
@@ -529,8 +539,9 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         PointInsertOperationsInternal::from(batch),
     ));
 
+    let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
         .await
         .unwrap();
 
@@ -782,8 +793,14 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
         PointInsertOperationsInternal::from(batch),
     ));
 
+    let hw_counter = HwMeasurementAcc::new();
     let insert_result = collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default())
+        .update_from_client_simple(
+            insert_points,
+            true,
+            WriteOrdering::default(),
+            hw_counter.clone(),
+        )
         .await;
 
     match insert_result {
@@ -803,7 +820,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     );
 
     let delete_result = collection
-        .update_from_client_simple(delete_points, true, WriteOrdering::default())
+        .update_from_client_simple(delete_points, true, WriteOrdering::default(), hw_counter)
         .await;
 
     match delete_result {

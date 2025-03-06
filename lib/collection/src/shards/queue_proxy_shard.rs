@@ -502,7 +502,8 @@ impl Inner {
         // Transfer batch with retries and store last transferred ID
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
-            match transfer_operations_batch(&batch, &self.remote_shard).await {
+            let disposed_hw = HwMeasurementAcc::disposable(); // Internal operation
+            match transfer_operations_batch(&batch, &self.remote_shard, disposed_hw).await {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
@@ -688,6 +689,7 @@ impl ShardOperation for Inner {
 async fn transfer_operations_batch(
     batch: &[(u64, OperationWithClockTag)],
     remote_shard: &RemoteShard,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
     // TODO: naive transfer approach, transfer batch of points instead
     for (_idx, operation) in batch {
@@ -700,7 +702,12 @@ async fn transfer_operations_batch(
         }
 
         remote_shard
-            .forward_update(operation, true, WriteOrdering::Weak)
+            .forward_update(
+                operation,
+                true,
+                WriteOrdering::Weak,
+                hw_measurement_acc.clone(),
+            )
             .await?;
     }
     Ok(())

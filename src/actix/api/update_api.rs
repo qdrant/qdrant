@@ -7,6 +7,7 @@ use collection::operations::payload_ops::{DeletePayload, SetPayload};
 use collection::operations::point_ops::PointsSelector;
 use collection::operations::types::UpdateResult;
 use collection::operations::vector_ops::DeleteVectors;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
 use serde::Deserialize;
 use storage::content_manager::collection_verification::check_strict_mode;
@@ -50,10 +51,10 @@ async fn upsert_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_upsert_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -62,6 +63,7 @@ async fn upsert_points(
         params.into_inner(),
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -89,10 +91,10 @@ async fn delete_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure io of deletion
     let res = do_delete_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -101,6 +103,7 @@ async fn delete_points(
         params.into_inner(),
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -129,10 +132,10 @@ async fn update_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure update io
     let res = do_update_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -141,6 +144,7 @@ async fn update_vectors(
         params.into_inner(),
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -169,10 +173,10 @@ async fn delete_vectors(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure vector deletion io
     let response = do_delete_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -180,6 +184,7 @@ async fn delete_vectors(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -207,10 +212,10 @@ async fn set_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_set_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -218,6 +223,7 @@ async fn set_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -244,10 +250,10 @@ async fn overwrite_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_overwrite_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -255,6 +261,7 @@ async fn overwrite_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -281,10 +288,10 @@ async fn delete_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_delete_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -292,6 +299,7 @@ async fn delete_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -318,10 +326,10 @@ async fn clear_payload(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let res = do_clear_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
@@ -329,6 +337,7 @@ async fn clear_payload(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        request_hw_counter.get_counter(),
     )
     .await;
 
@@ -368,6 +377,7 @@ async fn update_batch(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        Some(params.wait),
     );
 
     let timing = Instant::now();
@@ -381,6 +391,7 @@ async fn update_batch(
         params.into_inner(),
         access,
         inference_token,
+        request_hw_counter.get_counter(),
     )
     .await;
     process_response(response, timing, request_hw_counter.to_rest_api())
@@ -404,6 +415,7 @@ async fn create_field_index(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        HwMeasurementAcc::disposable(), // TODO(io_measurement): measure payload index creation?
     )
     .await;
     process_response(response, timing, None)
@@ -426,6 +438,7 @@ async fn delete_field_index(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
+        HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await;
     process_response(response, timing, None)
