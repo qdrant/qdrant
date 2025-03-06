@@ -263,12 +263,16 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         unique_record_ids.len()
     }
 
-    fn get_query_cardinality(&self, filter: &Filter) -> CardinalityEstimation {
+    fn get_query_cardinality(
+        &self,
+        filter: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let vector_storage = self.vector_storage.borrow();
         let id_tracker = self.id_tracker.borrow();
         let payload_index = self.payload_index.borrow();
         let available_vector_count = vector_storage.available_vector_count();
-        let query_point_cardinality = payload_index.estimate_cardinality(filter);
+        let query_point_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
         adjust_to_available_vectors(
             query_point_cardinality,
             available_vector_count,
@@ -431,7 +435,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         match filter {
             Some(filter) => {
                 // if cardinality is small - use plain search
-                let query_cardinality = self.get_query_cardinality(filter);
+                let query_cardinality =
+                    self.get_query_cardinality(filter, &vector_query_context.hardware_counter());
                 let threshold = self
                     .config
                     .full_scan_threshold

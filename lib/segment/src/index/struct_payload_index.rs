@@ -68,6 +68,7 @@ impl StructPayloadIndex {
         &self,
         condition: &FieldCondition,
         nested_path: Option<&JsonPath>,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         let full_path = JsonPath::extend_or_new(nested_path, &condition.key);
         self.field_indexes.get(&full_path).and_then(|indexes| {
@@ -79,7 +80,7 @@ impl StructPayloadIndex {
 
             indexes
                 .iter()
-                .find_map(|index| index.estimate_cardinality(&full_path_condition))
+                .find_map(|index| index.estimate_cardinality(&full_path_condition, hw_counter))
         })
     }
 
@@ -242,13 +243,14 @@ impl StructPayloadIndex {
         &self,
         condition: &Condition,
         nested_path: Option<&JsonPath>,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         match condition {
             Condition::Filter(_) => panic!("Unexpected branching"),
             Condition::Nested(nested) => {
                 // propagate complete nested path in case of multiple nested layers
                 let full_path = JsonPath::extend_or_new(nested_path, &nested.array_key());
-                self.estimate_nested_cardinality(nested.filter(), &full_path)
+                self.estimate_nested_cardinality(nested.filter(), &full_path, hw_counter)
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
@@ -291,7 +293,7 @@ impl StructPayloadIndex {
                 }
             }
             Condition::Field(field_condition) => self
-                .estimate_field_condition(field_condition, nested_path)
+                .estimate_field_condition(field_condition, nested_path, hw_counter)
                 .unwrap_or_else(|| CardinalityEstimation::unknown(self.available_point_count())),
 
             Condition::CustomIdChecker(cond) => {
@@ -441,9 +443,14 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation {
+    fn estimate_cardinality(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let available_points = self.available_point_count();
-        let estimator = |condition: &Condition| self.condition_cardinality(condition, None);
+        let estimator =
+            |condition: &Condition| self.condition_cardinality(condition, None, hw_counter);
         estimate_filter(&estimator, query, available_points)
     }
 
@@ -451,10 +458,12 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         query: &Filter,
         nested_path: &JsonPath,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         let available_points = self.available_point_count();
-        let estimator =
-            |condition: &Condition| self.condition_cardinality(condition, Some(nested_path));
+        let estimator = |condition: &Condition| {
+            self.condition_cardinality(condition, Some(nested_path), hw_counter)
+        };
         estimate_filter(&estimator, query, available_points)
     }
 
@@ -464,7 +473,7 @@ impl PayloadIndex for StructPayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Vec<PointOffsetType> {
         // Assume query is already estimated to be small enough so we can iterate over all matched ids
-        let query_cardinality = self.estimate_cardinality(query);
+        let query_cardinality = self.estimate_cardinality(query, hw_counter);
         let id_tracker = self.id_tracker.borrow();
         self.iter_filtered_points(query, &*id_tracker, &query_cardinality, hw_counter)
             .collect()

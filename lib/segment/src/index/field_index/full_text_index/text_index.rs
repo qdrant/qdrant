@@ -132,11 +132,18 @@ impl FullTextIndex {
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         match self {
-            Self::Mutable(index) => index.inverted_index.estimate_cardinality(query, condition),
-            Self::Immutable(index) => index.inverted_index.estimate_cardinality(query, condition),
-            Self::Mmap(index) => index.inverted_index.estimate_cardinality(query, condition),
+            Self::Mutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
         }
     }
 
@@ -345,11 +352,14 @@ impl PayloadFieldIndex for FullTextIndex {
         None
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurements): maybe needs propagation?
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text, &hw_counter);
-            return Some(self.estimate_cardinality(&parsed_query, condition));
+            let parsed_query = self.parse_query(&text_match.text, hw_counter);
+            return Some(self.estimate_cardinality(&parsed_query, condition, hw_counter));
         }
         None
     }

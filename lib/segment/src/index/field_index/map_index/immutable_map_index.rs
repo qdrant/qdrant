@@ -5,6 +5,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
@@ -289,7 +290,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         self.value_to_points.len()
     }
 
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
+    pub fn get_count_for_value(
+        &self,
+        value: &N,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect values.
+    ) -> Option<usize> {
         self.value_to_points
             .get(value)
             .map(|entry| entry.count as usize)
@@ -301,8 +306,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .map(|(k, entry)| (k.borrow(), entry.count as usize))
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurements): Propagate?
+    pub fn iter_values_map(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
+        let hw_counter = hw_acc.get_counter_cell();
         self.value_to_points.keys().map(move |k| {
             (
                 k.borrow(),

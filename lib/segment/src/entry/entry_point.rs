@@ -203,7 +203,11 @@ pub trait SegmentEntry: PartialSnapshotEntry {
     fn has_point(&self, point_id: PointIdType) -> bool;
 
     /// Estimate available point count in this segment for given filter.
-    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation;
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation;
 
     fn vector_names(&self) -> HashSet<VectorNameBuf>;
 

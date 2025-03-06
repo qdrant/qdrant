@@ -131,10 +131,11 @@ impl PayloadFieldIndex for BoolIndex {
     fn estimate_cardinality(
         &self,
         condition: &crate::types::FieldCondition,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<super::CardinalityEstimation> {
         match self {
-            BoolIndex::Simple(index) => index.estimate_cardinality(condition),
-            BoolIndex::Mmap(index) => index.estimate_cardinality(condition),
+            BoolIndex::Simple(index) => index.estimate_cardinality(condition, hw_counter),
+            BoolIndex::Mmap(index) => index.estimate_cardinality(condition, hw_counter),
         }
     }
 
@@ -164,7 +165,10 @@ impl FacetIndex for BoolIndex {
         self.iter_values().map(FacetValueRef::Bool)
     }
 
-    fn iter_values_map(&self) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
+    fn iter_values_map(
+        &self,
+        _hw_acc: HwMeasurementAcc, // TODO(io_measurements): Fill with values
+    ) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
         self.iter_values_map()
             .map(|(value, iter)| (FacetValueRef::Bool(value), iter))
     }
@@ -214,6 +218,7 @@ mod tests {
     use std::path::Path;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -464,10 +469,16 @@ mod tests {
                 index.add_point(i as u32, &[&value]).unwrap();
             });
 
-        let cardinality = index.estimate_cardinality(&match_bool(true)).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        let cardinality = index
+            .estimate_cardinality(&match_bool(true), &hw_counter)
+            .unwrap();
         assert_eq!(cardinality.exp, 6);
 
-        let cardinality = index.estimate_cardinality(&match_bool(false)).unwrap();
+        let cardinality = index
+            .estimate_cardinality(&match_bool(false), &hw_counter)
+            .unwrap();
         assert_eq!(cardinality.exp, 6);
     }
 }

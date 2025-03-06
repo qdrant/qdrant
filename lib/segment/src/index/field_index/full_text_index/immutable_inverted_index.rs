@@ -82,8 +82,16 @@ impl InvertedIndex for ImmutableInvertedIndex {
         intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
-    fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
-        self.postings.get(token_id as usize).map(|p| p.len())
+    fn get_posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        let len = self.postings.get(token_id as usize).map(|p| p.len());
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<Option<CompressedPostingList>>() + len.unwrap_or(0));
+        len
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {

@@ -5,6 +5,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{Key, MmapHashMap};
 use common::types::PointOffsetType;
@@ -206,8 +207,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.value_to_points.keys_count()
     }
 
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate.
+    pub fn get_count_for_value(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
         match self.value_to_points.get(value, &hw_counter) {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,
@@ -267,7 +271,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         })
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
+    pub fn iter_values_map(
+        &self,
+        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Collect values.
+    ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
         self.value_to_points.iter().map(|(k, v)| {
             (
                 k,

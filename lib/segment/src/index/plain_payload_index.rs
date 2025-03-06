@@ -109,7 +109,11 @@ impl PayloadIndex for PlainPayloadIndex {
         self.save_config()
     }
 
-    fn estimate_cardinality(&self, _query: &Filter) -> CardinalityEstimation {
+    fn estimate_cardinality(
+        &self,
+        _query: &Filter,
+        _hw_counter: &HardwareCounterCell, // No measurements needed here.
+    ) -> CardinalityEstimation {
         let available_points = self.id_tracker.borrow().available_point_count();
         CardinalityEstimation {
             primary_clauses: vec![],
@@ -124,8 +128,9 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         query: &Filter,
         _nested_path: &JsonPath,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
-        self.estimate_cardinality(query)
+        self.estimate_cardinality(query, hw_counter)
     }
 
     fn query_points(

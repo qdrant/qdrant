@@ -201,13 +201,16 @@ impl InvertedIndex for MmapInvertedIndex {
         intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
-    fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
-        self.postings.get(token_id, &hw_counter).map(|p| p.len())
+    fn get_posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        self.postings.get(token_id, hw_counter).map(|p| p.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
+        let hw_counter = HardwareCounterCell::disposable(); // No propagation needed here because this function is only used for building HNSW index.
 
         self.iter_vocab().filter_map(move |(token, &token_id)| {
             self.postings

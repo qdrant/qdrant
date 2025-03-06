@@ -355,7 +355,11 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): collect values.
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),

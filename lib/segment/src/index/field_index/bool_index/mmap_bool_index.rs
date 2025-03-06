@@ -394,12 +394,23 @@ impl PayloadFieldIndex for MmapBoolIndex {
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
-                let count = self.get_slice_for(*value).count_ones();
+                let slice = self.get_slice_for(*value);
+
+                let count = slice.count_ones();
+
+                hw_counter
+                    .payload_index_io_read_counter()
+                    // We iterate over the whole slice.
+                    .incr_delta(slice.len());
 
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));

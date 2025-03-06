@@ -31,9 +31,9 @@ pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
 
     fn encode_query(&self, query: &[f32]) -> TEncodedQuery;
 
-    fn score_point(&self, query: &TEncodedQuery, i: u32, hw_couter: &HardwareCounterCell) -> f32;
+    fn score_point(&self, query: &TEncodedQuery, i: u32, hw_counter: &HardwareCounterCell) -> f32;
 
-    fn score_internal(&self, i: u32, j: u32, hw_couter: &HardwareCounterCell) -> f32;
+    fn score_internal(&self, i: u32, j: u32, hw_counter: &HardwareCounterCell) -> f32;
 }
 
 impl DistanceType {

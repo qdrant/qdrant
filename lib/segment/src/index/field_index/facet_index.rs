@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 
 use super::bool_index::BoolIndex;
@@ -16,7 +17,10 @@ pub trait FacetIndex {
     fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_;
 
     /// Get all value->point_ids mappings
-    fn iter_values_map(&self) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_;
+    fn iter_values_map(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_;
 
     /// Get all value->count mappings
     fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_;
@@ -53,12 +57,15 @@ impl<'a> FacetIndexEnum<'a> {
         }
     }
 
-    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_> {
+    pub fn iter_values_map(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> Box<dyn Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_> {
         match self {
-            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values_map(*index)),
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values_map(*index)),
-            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values_map(*index)),
-            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values_map(*index)),
+            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
+            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
+            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
+            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
         }
     }
 

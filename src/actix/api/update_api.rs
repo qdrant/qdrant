@@ -382,7 +382,6 @@ async fn update_batch(
 
     let timing = Instant::now();
 
-    // TODO(io_measurement): Measure upsertion io
     let response = do_batch_update_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,

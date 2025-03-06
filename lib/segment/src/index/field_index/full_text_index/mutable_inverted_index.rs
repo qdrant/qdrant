@@ -161,12 +161,21 @@ impl InvertedIndex for MutableInvertedIndex {
         intersect_postings_iterator(postings)
     }
 
-    fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
-        self.postings
+    fn get_posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        let len = self
+            .postings
             .get(token_id as usize)
             .and_then(|posting| posting.as_ref())
             .as_ref()
-            .map(|x| x.len())
+            .map(|x| x.len());
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<Option<PostingList>>() + len.unwrap_or(0));
+        len
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {

@@ -684,7 +684,11 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
         })
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect.
+    ) -> Option<CardinalityEstimation> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
         })) = &condition.r#match

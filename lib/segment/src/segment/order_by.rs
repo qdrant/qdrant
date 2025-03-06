@@ -32,7 +32,7 @@ impl Segment {
                 key: order_by.key.to_string(),
             })?;
 
-        let cardinality_estimation = payload_index.estimate_cardinality(condition);
+        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
 
         let start_from = order_by.start_from();
 

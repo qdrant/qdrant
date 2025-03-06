@@ -93,12 +93,14 @@ pub trait InvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
-    fn get_posting_len(&self, token_id: TokenId) -> Option<usize>;
+    fn get_posting_len(&self, token_id: TokenId, hw_counter: &HardwareCounterCell)
+    -> Option<usize>;
 
     fn estimate_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         let points_count = self.points_count();
 
@@ -107,7 +109,7 @@ pub trait InvertedIndex {
             .iter()
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
-                Some(idx) => self.get_posting_len(idx),
+                Some(idx) => self.get_posting_len(idx, hw_counter),
             })
             .collect();
         if posting_lengths.is_none() || points_count == 0 {
@@ -182,7 +184,7 @@ pub trait InvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        hw_coutner: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> bool;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;

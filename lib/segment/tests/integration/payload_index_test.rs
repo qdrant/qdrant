@@ -464,11 +464,12 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
             )
             .unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
         let estimation = test_segments
             .plain_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter);
+            .estimate_cardinality(&query_filter, &hw_counter);
 
         ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
         ensure!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -499,7 +500,7 @@ fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Re
             .struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter);
+            .estimate_cardinality(&query_filter, &hw_counter);
 
         ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
         ensure!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -567,13 +568,13 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
         .struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter);
+        .estimate_cardinality(&filter, &hw_counter);
 
     let estimation_plain = test_segments
         .plain_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter);
+        .estimate_cardinality(&filter, &hw_counter);
 
     let plain_result = test_segments
         .plain_segment
@@ -674,11 +675,13 @@ fn test_cardinality_estimation(test_segments: &TestSegments) -> Result<()> {
         },
     )));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let estimation = test_segments
         .struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter);
+        .estimate_cardinality(&filter, &hw_counter);
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -718,10 +721,12 @@ fn test_root_nested_array_filter_cardinality_estimation() {
         Filter::new_must(Condition::Field(nested_match)),
     ));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let estimation = struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter);
+        .estimate_cardinality(&filter, &hw_counter);
 
     // not empty primary clauses
     assert_eq!(estimation.primary_clauses.len(), 1);
@@ -780,10 +785,12 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
         )),
     ));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let estimation = struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter);
+        .estimate_cardinality(&filter, &hw_counter);
 
     // not empty primary clauses
     assert_eq!(estimation.primary_clauses.len(), 1);
@@ -869,11 +876,13 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
             )
             .unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let estimation = test_segments
             .struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter);
+            .estimate_cardinality(&query_filter, &hw_counter);
 
         ensure!(estimation.min <= estimation.exp, "{estimation:#?}");
         ensure!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -1075,10 +1084,12 @@ fn test_struct_payload_index_nested_fields() {
             )
             .unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let estimation = struct_segment
             .payload_index
             .borrow()
-            .estimate_cardinality(&query_filter);
+            .estimate_cardinality(&query_filter, &hw_counter);
 
         assert!(estimation.min <= estimation.exp, "{estimation:#?}");
         assert!(estimation.exp <= estimation.max, "{estimation:#?}");
@@ -1183,11 +1194,13 @@ fn test_any_matcher_cardinality_estimation(test_segments: &TestSegments) -> Resu
 
     let filter = Filter::new_must(Condition::Field(any_match.clone()));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let estimation = test_segments
         .struct_segment
         .payload_index
         .borrow()
-        .estimate_cardinality(&filter);
+        .estimate_cardinality(&filter, &hw_counter);
 
     ensure!(estimation.primary_clauses.len() == 1);
     for clause in estimation.primary_clauses.iter() {
