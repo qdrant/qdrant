@@ -141,10 +141,12 @@ impl FormulaScorer<'_> {
                 if left == 0.0 {
                     return Ok(0.0);
                 }
-                let mut right = self.eval_expression(right, point_id)?;
+                let right = self.eval_expression(right, point_id)?;
 
                 if right == 0.0 {
-                    by_zero_default.map(|default| right = default);
+                    if let Some(default) = by_zero_default {
+                        return Ok(*default);
+                    }
                 }
 
                 let div_value = left / right;
