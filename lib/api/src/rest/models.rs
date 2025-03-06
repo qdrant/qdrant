@@ -98,6 +98,7 @@ impl Anonymize for HardwareUsage {
             cpu: self.cpu,
             payload_io_read: self.payload_io_read,
             payload_io_write: self.payload_io_write,
+            payload_index_io_read: self.payload_index_io_read,
             vector_io_read: self.vector_io_read,
             vector_io_write: self.vector_io_write,
         }
