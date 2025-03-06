@@ -21,7 +21,7 @@ use segment::data_types::vectors::{
 };
 use segment::types::{
     Distance, Filter, HnswConfig, MultiVectorConfig, QuantizationConfig, SearchParams,
-    StrictModeConfig, WithPayloadInterface, WithVector,
+    StrictModeConfigOutput, WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextPair, ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::{SparseVector, validate_sparse_vector_impl};
@@ -2093,7 +2093,7 @@ impl TryFrom<api::grpc::qdrant::CollectionConfig> for CollectionConfig {
                     None
                 }
             },
-            strict_mode_config: strict_mode_config.map(StrictModeConfig::from),
+            strict_mode_config: strict_mode_config.map(StrictModeConfigOutput::from),
         })
     }
 }

@@ -52,7 +52,7 @@ use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
-use crate::telemetry::CollectionTelemetry;
+use crate::telemetry::{CollectionConfigTelemetry, CollectionTelemetry};
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -785,7 +785,7 @@ impl Collection {
         CollectionTelemetry {
             id: self.name(),
             init_time_ms: self.init_time.as_millis() as u64,
-            config: self.collection_config.read().await.clone(),
+            config: CollectionConfigTelemetry::from(self.collection_config.read().await.clone()),
             shards: shards_telemetry,
             transfers,
             resharding,

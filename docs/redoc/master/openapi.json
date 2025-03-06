@@ -6704,7 +6704,7 @@
           "strict_mode_config": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeConfig"
+                "$ref": "#/components/schemas/StrictModeConfigOutput"
               },
               {
                 "nullable": true
@@ -7253,7 +7253,7 @@
           }
         }
       },
-      "StrictModeConfig": {
+      "StrictModeConfigOutput": {
         "type": "object",
         "properties": {
           "enabled": {
@@ -7276,12 +7276,12 @@
             "nullable": true
           },
           "unindexed_filtering_retrieve": {
-            "description": "Allow usage of unindexed fields in retrieval based (eg. search) filters.",
+            "description": "Allow usage of unindexed fields in retrieval based (e.g. search) filters.",
             "type": "boolean",
             "nullable": true
           },
           "unindexed_filtering_update": {
-            "description": "Allow usage of unindexed fields in filtered updates (eg. delete by payload).",
+            "description": "Allow usage of unindexed fields in filtered updates (e.g. delete by payload).",
             "type": "boolean",
             "nullable": true
           },
@@ -7321,14 +7321,14 @@
             "description": "Max number of read operations per minute per replica",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "write_rate_limit": {
             "description": "Max number of write operations per minute per replica",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "max_collection_payload_size_bytes": {
@@ -7342,7 +7342,7 @@
             "description": "Max number of points estimated in a collection",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           },
           "filter_max_conditions": {
@@ -7363,7 +7363,7 @@
             "description": "Multivector configuration",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeMultivectorConfig"
+                "$ref": "#/components/schemas/StrictModeMultivectorConfigOutput"
               },
               {
                 "nullable": true
@@ -7374,7 +7374,7 @@
             "description": "Sparse vector configuration",
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeSparseConfig"
+                "$ref": "#/components/schemas/StrictModeSparseConfigOutput"
               },
               {
                 "nullable": true
@@ -7383,38 +7383,38 @@
           }
         }
       },
-      "StrictModeMultivectorConfig": {
+      "StrictModeMultivectorConfigOutput": {
         "type": "object",
         "additionalProperties": {
-          "$ref": "#/components/schemas/StrictModeMultivector"
+          "$ref": "#/components/schemas/StrictModeMultivectorOutput"
         }
       },
-      "StrictModeMultivector": {
+      "StrictModeMultivectorOutput": {
         "type": "object",
         "properties": {
           "max_vectors": {
             "description": "Max number of vectors in a multivector",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }
       },
-      "StrictModeSparseConfig": {
+      "StrictModeSparseConfigOutput": {
         "type": "object",
         "additionalProperties": {
-          "$ref": "#/components/schemas/StrictModeSparse"
+          "$ref": "#/components/schemas/StrictModeSparseOutput"
         }
       },
-      "StrictModeSparse": {
+      "StrictModeSparseOutput": {
         "type": "object",
         "properties": {
           "max_length": {
             "description": "Max length of sparse vector",
             "type": "integer",
             "format": "uint",
-            "minimum": 1,
+            "minimum": 0,
             "nullable": true
           }
         }
@@ -9598,6 +9598,172 @@
           }
         }
       },
+      "StrictModeConfig": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "description": "Whether strict mode is enabled for a collection or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "max_query_limit": {
+            "description": "Max allowed `limit` parameter for all APIs that don't have their own max limit.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_timeout": {
+            "description": "Max allowed `timeout` parameter.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "unindexed_filtering_retrieve": {
+            "description": "Allow usage of unindexed fields in retrieval based (e.g. search) filters.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "unindexed_filtering_update": {
+            "description": "Allow usage of unindexed fields in filtered updates (e.g. delete by payload).",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_hnsw_ef": {
+            "description": "Max HNSW value allowed in search parameters.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "search_allow_exact": {
+            "description": "Whether exact search is allowed or not.",
+            "type": "boolean",
+            "nullable": true
+          },
+          "search_max_oversampling": {
+            "description": "Max oversampling value allowed in search.",
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "upsert_max_batchsize": {
+            "description": "Max batchsize when upserting",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "max_collection_vector_size_bytes": {
+            "description": "Max size of a collections vector storage in bytes, ignoring replicas.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "read_rate_limit": {
+            "description": "Max number of read operations per minute per replica",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "write_rate_limit": {
+            "description": "Max number of write operations per minute per replica",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "max_collection_payload_size_bytes": {
+            "description": "Max size of a collections payload storage in bytes",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "max_points_count": {
+            "description": "Max number of points estimated in a collection",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
+          "filter_max_conditions": {
+            "description": "Max conditions a filter can have.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "condition_max_size": {
+            "description": "Max size of a condition, eg. items in `MatchAny`.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "multivector_config": {
+            "description": "Multivector configuration",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeMultivectorConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "sparse_config": {
+            "description": "Sparse vector configuration",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StrictModeSparseConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "StrictModeMultivectorConfig": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/StrictModeMultivector"
+        }
+      },
+      "StrictModeMultivector": {
+        "type": "object",
+        "properties": {
+          "max_vectors": {
+            "description": "Max number of vectors in a multivector",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
+      "StrictModeSparseConfig": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/StrictModeSparse"
+        }
+      },
+      "StrictModeSparse": {
+        "type": "object",
+        "properties": {
+          "max_length": {
+            "description": "Max length of sparse vector",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          }
+        }
+      },
       "UpdateCollection": {
         "description": "Operation for updating parameters of the existing collection",
         "type": "object",
@@ -11250,7 +11416,7 @@
             "minimum": 0
           },
           "config": {
-            "$ref": "#/components/schemas/CollectionConfigInternal"
+            "$ref": "#/components/schemas/CollectionConfigTelemetry"
           },
           "shards": {
             "type": "array",
@@ -11278,7 +11444,7 @@
           }
         }
       },
-      "CollectionConfigInternal": {
+      "CollectionConfigTelemetry": {
         "type": "object",
         "required": [
           "hnsw_config",
@@ -11313,7 +11479,7 @@
           "strict_mode_config": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/StrictModeConfig"
+                "$ref": "#/components/schemas/StrictModeConfigOutput"
               },
               {
                 "nullable": true
