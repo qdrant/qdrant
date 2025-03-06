@@ -120,7 +120,7 @@ impl ShardReplicaSet {
 
         // Don't measure hw when resharding
         let peer_state = self.peer_state(leader_peer);
-        if peer_state.map(|i| i.is_resharding()).unwrap_or(false) {
+        if peer_state.is_some_and(|state| state.is_resharding()) {
             hw_measurement_acc = HwMeasurementAcc::disposable();
         }
 
@@ -668,7 +668,7 @@ impl ShardReplicaSet {
                 wait,
                 ordering,
                 hw_measurement_acc,
-            ) // `clock_tag` *have to* be `None`!
+            ) // `clock_tag` *has to* be `None`!
             .await
     }
 }

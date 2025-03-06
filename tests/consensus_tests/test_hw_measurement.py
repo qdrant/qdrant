@@ -28,7 +28,7 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
         # TODO: Add tests for vector writes
 
     # Upsert ~20 vectors into each shard
-    upsert_random_points(peer_urls[0], N_PEERS * 20, collection_name=COLLECTION_NAME)
+    upsert_random_points(peer_urls[0], N_SHARDS * 20, collection_name=COLLECTION_NAME)
 
     # Check upsert
     for peer_idx in range(N_PEERS):

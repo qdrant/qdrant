@@ -19,7 +19,7 @@ impl RealCpuMeasurement {
 
     /// Returns the real CPU value.
     #[inline]
-    pub fn get(&self) -> usize {
+    pub fn get(self) -> usize {
         self.0
     }
 }
