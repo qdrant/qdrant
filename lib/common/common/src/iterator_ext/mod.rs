@@ -2,8 +2,10 @@
 use std::fmt::Debug;
 
 use check_stopped::CheckStopped;
+use on_final_count::OnFinalCount;
 
 mod check_stopped;
+mod on_final_count;
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.
@@ -25,6 +27,20 @@ pub trait IteratorExt: Iterator {
         Self: Sized,
     {
         self.check_stop_every(500, f)
+    }
+
+    /// Will execute the callback when the iterator is dropped.
+    ///
+    /// The callback receives the total number of times `.next()` was called on the iterator,
+    /// including the final one where it usually returns `None`.
+    ///
+    /// Consider subtracting 1 if the final `None` is not needed.
+    fn on_final_count<F>(self, f: F) -> OnFinalCount<Self, F>
+    where
+        F: FnMut(usize),
+        Self: Sized,
+    {
+        OnFinalCount::new(self, f)
     }
 }
 
