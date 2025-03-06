@@ -257,6 +257,9 @@ async fn clean_task(
     shard_id: ShardId,
     sender: Sender<ShardCleanStatus>,
 ) -> Result<(), CollectionError> {
+    // Do not measure the hardware usage of these deletes as clean the shard is always considered an internal operation
+    // users should not be billed for.
+
     let mut offset = None;
     let mut deleted_points = 0;
 
