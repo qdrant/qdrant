@@ -4,6 +4,7 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_data::{HardwareData, RealCpuMeasurement};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -2124,10 +2125,15 @@ pub fn into_named_vector_struct(
 
 impl From<PointsOperationResponseInternal> for PointsOperationResponse {
     fn from(resp: PointsOperationResponseInternal) -> Self {
-        let PointsOperationResponseInternal { result, time } = resp;
+        let PointsOperationResponseInternal {
+            result,
+            time,
+            usage,
+        } = resp;
         Self {
             result: result.map(Into::into),
             time,
+            usage,
         }
     }
 }
@@ -2135,10 +2141,15 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
 // TODO: Make it explicit `from_operations_response` method instead of `impl From<PointsOperationResponse>`?
 impl From<PointsOperationResponse> for PointsOperationResponseInternal {
     fn from(resp: PointsOperationResponse) -> Self {
-        let PointsOperationResponse { result, time } = resp;
+        let PointsOperationResponse {
+            result,
+            time,
+            usage,
+        } = resp;
         Self {
             result: result.map(Into::into),
             time,
+            usage,
         }
     }
 }
@@ -2599,6 +2610,26 @@ impl From<HwMeasurementAcc> for HardwareUsage {
             payload_io_write: value.get_payload_io_write() as u64,
             vector_io_read: value.get_vector_io_read() as u64,
             vector_io_write: value.get_vector_io_write() as u64,
+        }
+    }
+}
+
+impl From<HardwareUsage> for HardwareData {
+    fn from(value: HardwareUsage) -> Self {
+        let HardwareUsage {
+            cpu,
+            payload_io_read,
+            payload_io_write,
+            vector_io_read,
+            vector_io_write,
+        } = value;
+
+        HardwareData {
+            cpu: RealCpuMeasurement::new(cpu as usize, 1), // Multiplier in API already applied.
+            payload_io_read: payload_io_read as usize,
+            payload_io_write: payload_io_write as usize,
+            vector_io_read: vector_io_read as usize,
+            vector_io_write: vector_io_write as usize,
         }
     }
 }

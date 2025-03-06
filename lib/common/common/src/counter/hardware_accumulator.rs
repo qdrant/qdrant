@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::hardware_counter::HardwareCounterCell;
+use super::hardware_data::HardwareData;
 
 /// Data structure, that routes hardware measurement counters to specific location.
 /// Shared drain MUST NOT create its own counters, but only hold a reference to the existing one,
@@ -50,6 +51,23 @@ impl HwSharedDrain {
             vector_io_read_counter: vector_io_read,
             vector_io_write_counter: vector_io_write,
         }
+    }
+
+    /// Accumulates all values from `src` into this HwSharedDrain.
+    fn accumulate_from_hw_data(&self, src: HardwareData) {
+        let HwSharedDrain {
+            cpu_counter,
+            payload_io_read_counter,
+            payload_io_write_counter,
+            vector_io_read_counter,
+            vector_io_write_counter,
+        } = self;
+
+        cpu_counter.fetch_add(src.cpu.get(), Ordering::Relaxed);
+        payload_io_read_counter.fetch_add(src.payload_io_read, Ordering::Relaxed);
+        payload_io_write_counter.fetch_add(src.payload_io_write, Ordering::Relaxed);
+        vector_io_read_counter.fetch_add(src.vector_io_read, Ordering::Relaxed);
+        vector_io_write_counter.fetch_add(src.vector_io_write, Ordering::Relaxed);
     }
 }
 
@@ -115,59 +133,18 @@ impl HwMeasurementAcc {
         }
     }
 
-    pub fn accumulate(
-        &self,
-        cpu: usize,
-        payload_io_read: usize,
-        payload_io_write: usize,
-        vector_io_read: usize,
-        vector_io_write: usize,
-    ) {
-        self.accumulate_request(
-            cpu,
-            payload_io_read,
-            payload_io_write,
-            vector_io_read,
-            vector_io_write,
-        );
-
-        let HwSharedDrain {
-            cpu_counter,
-            payload_io_read_counter,
-            payload_io_write_counter,
-            vector_io_read_counter,
-            vector_io_write_counter,
-        } = &self.metrics_drain;
-        cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-        payload_io_read_counter.fetch_add(payload_io_read, Ordering::Relaxed);
-        payload_io_write_counter.fetch_add(payload_io_write, Ordering::Relaxed);
-        vector_io_read_counter.fetch_add(vector_io_read, Ordering::Relaxed);
-        vector_io_write_counter.fetch_add(vector_io_write, Ordering::Relaxed);
+    pub fn accumulate<T: Into<HardwareData>>(&self, src: T) {
+        let src = src.into();
+        self.request_drain.accumulate_from_hw_data(src);
+        self.metrics_drain.accumulate_from_hw_data(src);
     }
 
-    /// Accumulate usage values for request drain only
+    /// Accumulate usage values for request drain only.
     /// This is useful if we want to report usage, which happened on another machine
     /// So we don't want to accumulate the same usage on the current machine second time
-    pub fn accumulate_request(
-        &self,
-        cpu: usize,
-        payload_io_read: usize,
-        payload_io_write: usize,
-        vector_io_read: usize,
-        vector_io_write: usize,
-    ) {
-        let HwSharedDrain {
-            cpu_counter,
-            payload_io_read_counter,
-            payload_io_write_counter,
-            vector_io_read_counter,
-            vector_io_write_counter,
-        } = &self.request_drain;
-        cpu_counter.fetch_add(cpu, Ordering::Relaxed);
-        payload_io_read_counter.fetch_add(payload_io_read, Ordering::Relaxed);
-        payload_io_write_counter.fetch_add(payload_io_write, Ordering::Relaxed);
-        vector_io_read_counter.fetch_add(vector_io_read, Ordering::Relaxed);
-        vector_io_write_counter.fetch_add(vector_io_write, Ordering::Relaxed);
+    pub fn accumulate_request<T: Into<HardwareData>>(&self, src: T) {
+        let src = src.into();
+        self.request_drain.accumulate_from_hw_data(src);
     }
 
     pub fn get_cpu(&self) -> usize {

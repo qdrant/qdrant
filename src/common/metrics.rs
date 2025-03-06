@@ -338,36 +338,36 @@ impl MetricsProvider for HardwareTelemetry {
             metrics.push(metric_family(
                 "collection_hardware_metric_cpu",
                 "CPU measurements of a collection",
-                MetricType::GAUGE,
-                vec![gauge(*cpu as f64, &[("id", collection)])],
+                MetricType::COUNTER,
+                vec![counter(*cpu as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_payload_io_read",
                 "Total IO payload read metrics of a collection",
-                MetricType::GAUGE,
-                vec![gauge(*payload_io_read as f64, &[("id", collection)])],
+                MetricType::COUNTER,
+                vec![counter(*payload_io_read as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_payload_io_write",
                 "Total IO payload write metrics of a collection",
-                MetricType::GAUGE,
-                vec![gauge(*payload_io_write as f64, &[("id", collection)])],
+                MetricType::COUNTER,
+                vec![counter(*payload_io_write as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_vector_io_read",
                 "Total IO vector read metrics of a collection",
-                MetricType::GAUGE,
-                vec![gauge(*vector_io_read as f64, &[("id", collection)])],
+                MetricType::COUNTER,
+                vec![counter(*vector_io_read as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(
                 "collection_hardware_metric_vector_io_write",
                 "Total IO vector write metrics of a collection",
-                MetricType::GAUGE,
-                vec![gauge(*vector_io_write as f64, &[("id", collection)])],
+                MetricType::COUNTER,
+                vec![counter(*vector_io_write as f64, &[("id", collection)])],
             ));
         }
     }

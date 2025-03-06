@@ -2,7 +2,8 @@ import pathlib
 from time import sleep
 from typing import Any, Literal
 
-from .fixtures import upsert_random_points, create_collection
+from .assertions import assert_hw_measurements_equal_many
+from .fixtures import upsert_random_points, create_collection, get_telemetry_hw_info
 from .utils import *
 
 
@@ -237,8 +238,15 @@ def test_resharding_transfer(tmp_path: pathlib.Path, direction: Literal["up", "d
         # Find replica of selected shard
         peer_id, peer_uri = find_replica(shard_id, info, peer_uris, peer_ids)
 
+        # Collect all nodes hardware measurements before transferring
+        hw = [get_telemetry_hw_info(uri, COLLECTION_NAME) for uri in peer_uris]
+
         # Migrate resharding points
         migrate_points(peer_uris[0], peer_id, shard_id, target_peer_id, target_shard_id, direction)
+
+        # Assert that no hardware measurements have been measured for the transfer
+        new_hw = [get_telemetry_hw_info(uri, COLLECTION_NAME) for uri in peer_uris]
+        assert_hw_measurements_equal_many(hw, new_hw)
 
         # Assert that all points were correctly migrated
         assert_resharding_points(peer_uri, shard_id, target_peer_uri, target_shard_id)

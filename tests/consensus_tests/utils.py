@@ -79,6 +79,7 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__SERVICE__HTTP_PORT"] = str(http_port)
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     env["QDRANT__LOG_LEVEL"] = "DEBUG,raft::raft=info"
+    env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
     return env
 
 

@@ -44,8 +44,9 @@ async fn test_collection_reloading_with_shards(shard_number: u32) {
                     payloads: None,
                 }),
             ));
+        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
     }
@@ -88,8 +89,9 @@ async fn test_collection_payload_reloading_with_shards(shard_number: u32) {
                     payloads: serde_json::from_str(r#"[{ "k": "v1" } , { "k": "v2"}]"#).unwrap(),
                 }),
             ));
+        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
     }
@@ -168,8 +170,9 @@ async fn test_collection_payload_custom_payload_with_shards(shard_number: u32) {
                     .unwrap(),
                 }),
             ));
+        let hw_counter = HwMeasurementAcc::new();
         collection
-            .update_from_client_simple(insert_points, true, WriteOrdering::default())
+            .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
             .await
             .unwrap();
     }

@@ -52,6 +52,7 @@ async fn discover_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
 
     let timing = Instant::now();
@@ -106,6 +107,7 @@ async fn discover_batch_points(
         &dispatcher,
         collection.name.clone(),
         service_config.hardware_reporting(),
+        None,
     );
     let timing = Instant::now();
 
