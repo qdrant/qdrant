@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -251,7 +252,11 @@ impl PayloadFieldIndex for MmapNullIndex {
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect measurements?
+    ) -> Option<CardinalityEstimation> {
         let FieldCondition {
             key: _,
             r#match: _,

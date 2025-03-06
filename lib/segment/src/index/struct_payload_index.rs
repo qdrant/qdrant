@@ -256,14 +256,14 @@ impl StructPayloadIndex {
                 let available_points = self.available_point_count();
                 let condition = FieldCondition::new_is_empty(field.key.clone());
 
-                self.estimate_field_condition(&condition, nested_path)
+                self.estimate_field_condition(&condition, nested_path, hw_counter)
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
                 let condition = FieldCondition::new_is_null(field.key.clone());
 
-                self.estimate_field_condition(&condition, nested_path)
+                self.estimate_field_condition(&condition, nested_path, hw_counter)
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::HasId(has_id) => {
