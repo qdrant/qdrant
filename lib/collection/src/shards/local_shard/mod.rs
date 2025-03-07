@@ -1199,12 +1199,24 @@ impl LocalShard {
     /// - cost: the cost of the operation
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_read_rate_limiter(&self, cost: usize) -> CollectionResult<()> {
+    fn check_read_rate_limiter(
+        &self,
+        cost: usize,
+        hw_measurement_acc: &HwMeasurementAcc,
+        context: &str,
+    ) -> CollectionResult<()> {
+        // Do not rate limit internal operation tagged with disposable measurement
+        if hw_measurement_acc.is_disposable() {
+            return Ok(());
+        }
         if let Some(rate_limiter) = &self.read_rate_limiter {
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)
-                .map_err(|err| CollectionError::rate_limit_error(err, cost, false))?;
+                .map_err(|err| {
+                    log::debug!("Read rate limit error on {context} with {err:?}");
+                    CollectionError::rate_limit_error(err, cost, false)
+                })?;
         }
         Ok(())
     }

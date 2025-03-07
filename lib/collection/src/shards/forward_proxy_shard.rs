@@ -130,7 +130,6 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
         let _update_lock = self.update_lock.lock().await;
-        // TODO(ratelimits) this scroll should *not* be rate limited
         let mut batch = self
             .wrapped_shard
             .scroll_by(
