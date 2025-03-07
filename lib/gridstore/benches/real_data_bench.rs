@@ -13,6 +13,7 @@ fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path)
     let mut rdr = csv::Reader::from_reader(csv_file);
     let mut point_offset = storage.max_point_id();
     let hw_counter = HardwareCounterCell::new();
+    let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
     for result in rdr.records() {
         let record = result.unwrap();
         let mut payload = Payload::default();
@@ -23,7 +24,7 @@ fn append_csv_data(storage: &mut gridstore::Gridstore<Payload>, csv_path: &Path)
             );
         }
         storage
-            .put_value(point_offset, &payload, &hw_counter)
+            .put_value(point_offset, &payload, hw_counter_ref)
             .unwrap();
         point_offset += 1;
     }

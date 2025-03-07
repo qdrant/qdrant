@@ -10,11 +10,12 @@ pub fn random_data_bench(c: &mut Criterion) {
     let mut rng = rand::rng();
     c.bench_function("write random payload", |b| {
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         b.iter_batched_ref(
             || random_payload(&mut rng, 2),
             |payload| {
                 for i in 0..PAYLOAD_COUNT {
-                    storage.put_value(i, payload, &hw_counter).unwrap();
+                    storage.put_value(i, payload, hw_counter_ref).unwrap();
                 }
             },
             BatchSize::SmallInput,

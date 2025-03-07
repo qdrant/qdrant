@@ -36,7 +36,11 @@ impl SequentialCollectionHandle for PayloadStorage {
 
     fn insert(&mut self, key: u32, payload: &Payload) -> bool {
         !self
-            .put_value(key, payload, &HardwareCounterCell::new())
+            .put_value(
+                key,
+                payload,
+                HardwareCounterCell::new().ref_payload_io_write_counter(),
+            )
             .unwrap()
     }
 
@@ -45,8 +49,12 @@ impl SequentialCollectionHandle for PayloadStorage {
     }
 
     fn update(&mut self, key: &u32, payload: &Payload) -> bool {
-        self.put_value(*key, payload, &HardwareCounterCell::new())
-            .unwrap()
+        self.put_value(
+            *key,
+            payload,
+            HardwareCounterCell::new().ref_payload_io_write_counter(),
+        )
+        .unwrap()
     }
 
     fn flush(&self) -> bool {
