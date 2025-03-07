@@ -100,6 +100,8 @@ impl Default for HwSharedDrain {
 pub struct HwMeasurementAcc {
     request_drain: HwSharedDrain,
     metrics_drain: HwSharedDrain,
+    /// If this is set to true, the accumulator will not accumulate any values.
+    disposable: bool,
 }
 
 impl HwMeasurementAcc {
@@ -108,6 +110,7 @@ impl HwMeasurementAcc {
         Self {
             request_drain: HwSharedDrain::default(),
             metrics_drain: HwSharedDrain::default(),
+            disposable: false,
         }
     }
 
@@ -118,7 +121,12 @@ impl HwMeasurementAcc {
         Self {
             request_drain: HwSharedDrain::default(),
             metrics_drain: HwSharedDrain::default(),
+            disposable: true,
         }
+    }
+
+    pub fn is_disposable(&self) -> bool {
+        self.disposable
     }
 
     /// Returns a new `HardwareCounterCell` that accumulates it's measurements to the same parent than this `HwMeasurementAcc`.
@@ -130,6 +138,7 @@ impl HwMeasurementAcc {
         Self {
             request_drain: HwSharedDrain::default(),
             metrics_drain,
+            disposable: false,
         }
     }
 
@@ -180,6 +189,7 @@ impl Clone for HwMeasurementAcc {
         Self {
             request_drain: self.request_drain.clone(),
             metrics_drain: self.metrics_drain.clone(),
+            disposable: self.disposable,
         }
     }
 }
