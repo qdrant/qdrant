@@ -55,7 +55,7 @@ impl ShardReplicaSet {
             ReplicaState::Active => {
                 // Rate limit update operations on Active replica
                 // TODO(ratelimits) determine cost of update based on operation
-                self.check_write_rate_limiter(1)?;
+                self.check_write_rate_limiter(1, &hw_measurement)?;
                 local.get().update(operation, wait, hw_measurement).await
             }
 
@@ -298,7 +298,7 @@ impl ShardReplicaSet {
                     // Check write rate limiter before proceeding if replica active
                     // TODO(ratelimits) determine cost of update based on operation
 
-                    self.check_write_rate_limiter_lazy(|| {
+                    self.check_write_rate_limiter_lazy(&hw_measurement_acc, || {
                         let mut ratelimiter_cost = 1;
 
                         // Estimate the cost based on affected points if filter is available.
