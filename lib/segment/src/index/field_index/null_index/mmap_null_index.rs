@@ -431,9 +431,12 @@ mod tests {
             }
         }
 
-        let is_null_cardinality = null_index.estimate_cardinality(&filter_is_null).unwrap();
+        let hw_cell = HardwareCounterCell::new();
+        let is_null_cardinality = null_index
+            .estimate_cardinality(&filter_is_null, &hw_cell)
+            .unwrap();
         let non_empty_cardinality = null_index
-            .estimate_cardinality(&filter_is_not_empty)
+            .estimate_cardinality(&filter_is_not_empty, &hw_cell)
             .unwrap();
 
         assert_eq!(is_null_cardinality.exp, 50);

@@ -212,7 +212,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         value: &N,
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
-        match self.value_to_points.get(value, &hw_counter) {
+        match self.value_to_points.get(value, hw_counter) {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,
             Err(err) => {
