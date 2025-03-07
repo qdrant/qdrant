@@ -31,7 +31,7 @@ EXPORT float impl_and_popcnt_m128i_avx512(
         __m128i popcnt = _mm_popcnt_epi32(and);
         sum = _mm_add_epi32(sum, popcnt);
     }
-    __m128i factor = _mm_set_epi32(1, 2, 4, 8);
+    __m128i factor = _mm_set_epi32(8, 4, 2, 1);
     __m128 result_mm128 = _mm_cvtepi32_ps(_mm_mullo_epi32(sum, factor));
     HSUM128_PS(result_mm128, mul_scalar);
     return mul_scalar;

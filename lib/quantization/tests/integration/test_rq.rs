@@ -11,7 +11,7 @@ mod tests {
 
     const VECTORS_COUNT: usize = 513;
     const VECTOR_DIM: usize = 65;
-    const ERROR: f32 = VECTOR_DIM as f32 * 0.05;
+    const ERROR: f32 = VECTOR_DIM as f32 * 0.01;
 
     /*
     fn generate_number(rng: &mut rand::rngs::StdRng) -> f32 {
@@ -67,7 +67,7 @@ mod tests {
             println!("{}: {} vs {}", diff, score, orginal_score);
             assert!(diff < ERROR);
         }
-        println!("Max diff: {}", max_diff);
+        println!("Max diff: {}, error: {}", max_diff, ERROR);
     }
 
     #[test]
@@ -95,12 +95,15 @@ mod tests {
         .unwrap();
 
         let counter = HardwareCounterCell::new();
+        let mut max_diff = 0.0;
         for i in 0..VECTORS_COUNT {
             let score = encoded.score_internal(0, i as u32, &counter);
             let orginal_score = dot_similarity(&vector_data[0], &vector_data[i]);
             let diff = (score - orginal_score).abs();
+            max_diff = if diff > max_diff { diff } else { max_diff };
             println!("{}: {} vs {}", diff, score, orginal_score);
             assert!(diff < ERROR);
         }
+        println!("Max diff: {}, error: {}", max_diff, ERROR);
     }
 }

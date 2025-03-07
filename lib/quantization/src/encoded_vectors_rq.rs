@@ -35,6 +35,7 @@ struct EncodedVector {
 pub struct Metadata {
     vector_parameters: VectorParameters,
     aligned_dim: usize,
+    inv_sqrt_dim: f32,
     transform: Option<Vec<Vec<f32>>>,
 }
 
@@ -47,8 +48,9 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
     ) -> Result<Self, EncodingError> {
         assert_eq!(vector_parameters.distance_type, DistanceType::Dot);
         let aligned_dim = vector_parameters.dim.next_multiple_of(DIM_ALIGNMENT);
+        let inv_sqrt_dim = 1.0 / (vector_parameters.dim as f32).sqrt();
 
-        let mut encoded_vector = vec![0u32; 2 + aligned_dim / u32::BITS as usize];
+        let mut encoded_vector = vec![0u8; 8 + aligned_dim / u8::BITS as usize];
         for vector in data {
             if stopped.load(std::sync::atomic::Ordering::Relaxed) {
                 return Err(EncodingError::Stopped);
@@ -58,10 +60,10 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
             let mut bits_count = 0.0f32;
             let mut dot_q_o = 0.0f32;
 
-            for (chunk_index, chunk) in vector.as_ref().chunks(u32::BITS as usize).enumerate() {
-                let mut encoded_chunk = 0u32;
+            for (chunk_index, chunk) in vector.as_ref().chunks(u8::BITS as usize).enumerate() {
+                let mut encoded_chunk = 0u8;
                 for (shift, &value) in chunk.iter().enumerate() {
-                    dot_q_o += value.abs() / (vector_parameters.dim as f32).sqrt();
+                    dot_q_o += value.abs() * inv_sqrt_dim;
                     let quantized = if value >= 0.0 {
                         bits_count += 1.0;
                         1
@@ -70,19 +72,24 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
                     };
                     encoded_chunk |= quantized << shift;
                 }
-                encoded_vector[2 + chunk_index] = encoded_chunk;
+                encoded_vector[8 + chunk_index] = encoded_chunk;
             }
 
             let v_precomputed: f32 = 2.0 / (dot_q_o * (vector_parameters.dim as f32).sqrt());
-            encoded_vector[0] = u32::from_ne_bytes(v_precomputed.to_ne_bytes());
-            encoded_vector[1] = u32::from_ne_bytes(bits_count.to_ne_bytes());
 
-            storage_builder.push_vector_data(unsafe {
-                std::slice::from_raw_parts(
-                    encoded_vector.as_ptr().cast::<u8>(),
-                    encoded_vector.len() * std::mem::size_of::<u32>(),
-                )
-            });
+            let v_precomputed = v_precomputed.to_ne_bytes();
+            encoded_vector[0] = v_precomputed[0];
+            encoded_vector[1] = v_precomputed[1];
+            encoded_vector[2] = v_precomputed[2];
+            encoded_vector[3] = v_precomputed[3];
+
+            let bits_count = bits_count.to_ne_bytes();
+            encoded_vector[4] = bits_count[0];
+            encoded_vector[5] = bits_count[1];
+            encoded_vector[6] = bits_count[2];
+            encoded_vector[7] = bits_count[3];
+
+            storage_builder.push_vector_data(&encoded_vector);
         }
 
         Ok(Self {
@@ -90,6 +97,7 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
             metadata: Metadata {
                 vector_parameters: vector_parameters.clone(),
                 aligned_dim,
+                inv_sqrt_dim,
                 transform: None,
             },
         })
@@ -101,17 +109,17 @@ impl<TStorage: EncodedStorage> EncodedVectorsRQ<TStorage> {
 
     /// Decompose the encoded vector into
     fn decompose_vector(&self, i: usize) -> EncodedVector {
-        unsafe {
-            let vector_data_size = self.metadata.aligned_dim / 8 + 2 * std::mem::size_of::<f32>();
-            let v_ptr = self
-                .encoded_vectors
-                .get_vector_data(i as usize, vector_data_size)
-                .as_ptr();
-            EncodedVector {
-                v_precomputed: *v_ptr.cast::<f32>(),
-                bits_count: *v_ptr.add(std::mem::size_of::<f32>()).cast::<f32>(),
-                encoded: v_ptr.add(2 * std::mem::size_of::<f32>()).cast::<u32>(),
-            }
+        let vector_data_size = self.metadata.aligned_dim / 8 + 2 * std::mem::size_of::<f32>();
+        let vector = self
+            .encoded_vectors
+            .get_vector_data(i as usize, vector_data_size);
+        let v_precomputed =
+            f32::from_ne_bytes(vector[0..4].try_into().expect("Invalid vector data"));
+        let bits_count = f32::from_ne_bytes(vector[4..8].try_into().expect("Invalid vector data"));
+        EncodedVector {
+            v_precomputed,
+            bits_count,
+            encoded: vector[8..].as_ptr().cast(),
         }
     }
 
@@ -192,7 +200,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryRQ> for EncodedVectors
         let mut encoded_sum = 0usize;
         for (chunk_index, chunk) in query.chunks(u32::BITS as usize).enumerate() {
             for (shift, value) in chunk.iter().enumerate() {
-                let quantized = ((value - min) / delta).round() as u32 % 16;
+                let shifted_value = value - min;
+                let delted_value = shifted_value / delta;
+                let rounded_value = delted_value.round();
+                let quantized = rounded_value as u32 % 16;
                 encoded_sum += quantized as usize;
                 for b in 0..4 {
                     encoded[4 * chunk_index + b] |= ((quantized >> b) & 0b1) << shift;
@@ -248,9 +259,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryRQ> for EncodedVectors
             encoded_j = unsafe { encoded_j.add(1) };
         }
         let zeros_count = self.metadata.vector_parameters.dim as f32 - xor_product as f32;
-
-        (zeros_count as f32 - xor_product as f32)
-            / (self.metadata.vector_parameters.dim as f32).sqrt()
+        (zeros_count as f32 - xor_product as f32) / self.metadata.vector_parameters.dim as f32
     }
 }
 

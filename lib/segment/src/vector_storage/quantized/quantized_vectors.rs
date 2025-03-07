@@ -140,7 +140,14 @@ impl QuantizedVectors {
     pub fn default_rescoring(&self) -> bool {
         matches!(
             self.storage_impl,
-            QuantizedVectorStorage::BinaryRam(_) | QuantizedVectorStorage::BinaryMmap(_)
+            QuantizedVectorStorage::BinaryRam(_)
+                | QuantizedVectorStorage::BinaryMmap(_)
+                | QuantizedVectorStorage::BinaryRamMulti(_)
+                | QuantizedVectorStorage::BinaryMmapMulti(_)
+                | QuantizedVectorStorage::RQRam(_)
+                | QuantizedVectorStorage::RQMmap(_)
+                | QuantizedVectorStorage::RQRamMulti(_)
+                | QuantizedVectorStorage::RQMmapMulti(_)
         )
     }
 
