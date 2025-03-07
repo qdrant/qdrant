@@ -500,6 +500,10 @@ def check_strict_mode_enabled(peer_api_uri: str, collection_name: str) -> bool:
     strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
     return strict_mode_enabled == True
 
+def check_strict_mode_disabled(peer_api_uri: str, collection_name: str) -> bool:
+    collection_info = get_collection_info(peer_api_uri, collection_name)
+    strict_mode_enabled = collection_info["config"]["strict_mode_config"]["enabled"]
+    return strict_mode_enabled == False
 
 def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> str:
     wait_for(check_cluster_size, peer_api_uri, expected_size, headers=headers)
@@ -622,6 +626,13 @@ def wait_for_collection_local_shards_count(peer_api_uri: str, collection_name: s
 def wait_for_strict_mode_enabled(peer_api_uri: str, collection_name: str):
     try:
         wait_for(check_strict_mode_enabled, peer_api_uri, collection_name)
+    except Exception as e:
+        print_collection_cluster_info(peer_api_uri, collection_name)
+        raise e
+
+def wait_for_strict_mode_disabled(peer_api_uri: str, collection_name: str):
+    try:
+        wait_for(check_strict_mode_disabled, peer_api_uri, collection_name)
     except Exception as e:
         print_collection_cluster_info(peer_api_uri, collection_name)
         raise e

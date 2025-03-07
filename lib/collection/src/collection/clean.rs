@@ -282,7 +282,6 @@ async fn clean_task(
 
         // Scroll next batch of points
         let mut ids = match shard
-            // TODO(ratelimiter): do not rate limit or bill this scroll, part of internals
             .scroll_by(
                 offset,
                 CLEAN_BATCH_SIZE + 1,

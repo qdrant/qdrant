@@ -82,13 +82,13 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
     shard_id = collection_cluster_info["local_shards"][0]["shard_id"]
     source_peer_id = collection_cluster_info["peer_id"]
 
-    # set rate limiting
+    # Set rate limiting
     r = requests.patch(
         f"{source_uri}/collections/test_collection", json={
             "strict_mode_config": {
                 "enabled": True,
                 "write_rate_limit": 1,
-                # TODO(ratelimit) validate read limits as well "read_rate_limit": 1
+                "read_rate_limit": 1,
             }
         })
     assert_http_ok(r)
@@ -130,6 +130,18 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
     assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count - 1)
     assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
 
+    # Disable read limits to check data consistency
+    r = requests.patch(
+        f"{source_uri}/collections/test_collection", json={
+            "strict_mode_config": {
+                "enabled": False,
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for propagation of disable command
+    wait_for_strict_mode_disabled(peer_api_uris[1], "test_collection")
+
     # Check that 'search' returns the same results on all peers
     for uri in peer_api_uris:
         r = requests.post(
@@ -142,6 +154,20 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
         assert r.json()["result"][0]["id"] == 4
         assert r.json()["result"][1]["id"] == 1
         assert r.json()["result"][2]["id"] == 3
+
+    # Re enable rate limiting
+    r = requests.patch(
+        f"{source_uri}/collections/test_collection", json={
+            "strict_mode_config": {
+                "enabled": True,
+                "write_rate_limit": 1,
+                "read_rate_limit": 1,
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for propagation of disable command
+    wait_for_strict_mode_enabled(peer_api_uris[1], "test_collection")
 
     # Replicate shards back to the source peer
     r = requests.post(
@@ -161,6 +187,18 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
     assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count)
     assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
 
+    # Disable read limits to check data consistency
+    r = requests.patch(
+        f"{source_uri}/collections/test_collection", json={
+            "strict_mode_config": {
+                "enabled": False,
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for propagation of disable command
+    wait_for_strict_mode_disabled(peer_api_uris[1], "test_collection")
+
     # Check that 'search' returns the same results on all peers
     for uri in peer_api_uris:
         r = requests.post(
@@ -173,6 +211,20 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
         assert r.json()["result"][0]["id"] == 4
         assert r.json()["result"][1]["id"] == 1
         assert r.json()["result"][2]["id"] == 3
+
+    # Re enable rate limiting
+    r = requests.patch(
+        f"{source_uri}/collections/test_collection", json={
+            "strict_mode_config": {
+                "enabled": True,
+                "write_rate_limit": 1,
+                "read_rate_limit": 1,
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for propagation of enable command
+    wait_for_strict_mode_enabled(peer_api_uris[1], "test_collection")
 
     # Perform a replication for the second time with the target node active
     r = requests.post(
@@ -191,6 +243,18 @@ def test_shard_transfer_rate_limiting(tmp_path: pathlib.Path):
     # Check that the number of local shard is still the same
     assert check_collection_local_shards_count(source_uri, "test_collection", before_local_shard_count)
     assert check_collection_local_shards_count(target_uri, "test_collection", target_before_local_shard_count + 1)
+
+    # Disable read limits to check data consistency
+    r = requests.patch(
+        f"{source_uri}/collections/test_collection", json={
+            "strict_mode_config": {
+                "enabled": False,
+            }
+        })
+    assert_http_ok(r)
+
+    # Wait for propagation of disable command
+    wait_for_strict_mode_disabled(peer_api_uris[1], "test_collection")
 
     # Check that 'search' returns the same results on all peers
     for uri in peer_api_uris:

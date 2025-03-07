@@ -110,6 +110,7 @@ impl ShardOperation for LocalShard {
         }
     }
 
+    /// This call is rate limited by the read rate limiter.
     async fn scroll_by(
         &self,
         offset: Option<ExtendedPointId>,
@@ -123,7 +124,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1)?;
+        self.check_read_rate_limiter(1, &hw_measurement_acc, "scroll_by")?;
         match order_by {
             None => {
                 self.scroll_by_id(
@@ -172,6 +173,7 @@ impl ShardOperation for LocalShard {
         Ok(self.local_shard_info().await.into())
     }
 
+    /// This call is rate limited by the read rate limiter.
     async fn core_search(
         &self,
         request: Arc<CoreSearchRequestBatch>,
@@ -180,11 +182,12 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(request.searches.len())?;
+        self.check_read_rate_limiter(request.searches.len(), &hw_measurement_acc, "core_search")?;
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
 
+    /// This call is rate limited by the read rate limiter.
     async fn count(
         &self,
         request: Arc<CountRequestInternal>,
@@ -193,7 +196,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1)?;
+        self.check_read_rate_limiter(1, &hw_measurement_acc, "count")?;
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
             let all_points = tokio::time::timeout(
@@ -216,6 +219,7 @@ impl ShardOperation for LocalShard {
         Ok(CountResult { count: total_count })
     }
 
+    /// This call is rate limited by the read rate limiter.
     async fn retrieve(
         &self,
         request: Arc<PointRequestInternal>,
@@ -226,7 +230,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1)?;
+        self.check_read_rate_limiter(1, &hw_measurement_acc, "retrieve")?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
@@ -251,6 +255,7 @@ impl ShardOperation for LocalShard {
         Ok(ordered_records)
     }
 
+    /// This call is rate limited by the read rate limiter.
     async fn query_batch(
         &self,
         requests: Arc<Vec<ShardQueryRequest>>,
@@ -261,7 +266,7 @@ impl ShardOperation for LocalShard {
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
         // Check read rate limiter before proceeding
         let cost = planned_query.searches.len() + planned_query.scrolls.len();
-        self.check_read_rate_limiter(cost)?;
+        self.check_read_rate_limiter(cost, &hw_measurement_acc, "query_batch")?;
         self.do_planned_query(
             planned_query,
             search_runtime_handle,
@@ -271,6 +276,7 @@ impl ShardOperation for LocalShard {
         .await
     }
 
+    /// This call is rate limited by the read rate limiter.
     async fn facet(
         &self,
         request: Arc<FacetParams>,
@@ -279,7 +285,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1)?;
+        self.check_read_rate_limiter(1, &hw_measurement_acc, "facet")?;
         let hits = if request.exact {
             self.exact_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
                 .await?
