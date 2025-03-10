@@ -285,9 +285,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     pub fn iter_values_map(
         &self,
-        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Collect values.
+        hw_acc: HwMeasurementAcc,
     ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        self.value_to_points.iter().map(|(k, v)| {
+        let hw_counter = hw_acc.get_counter_cell();
+
+        self.value_to_points.iter().map(move |(k, v)| {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(v.len() + k.write_bytes());
+
             (
                 k,
                 Box::new(

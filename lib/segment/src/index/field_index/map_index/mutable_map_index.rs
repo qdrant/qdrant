@@ -187,11 +187,16 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
 
     pub fn iter_values_map(
         &self,
-        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Collect values.
+        hw_acc: HwMeasurementAcc,
     ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        self.map
-            .iter()
-            .map(|(k, v)| (k.borrow(), Box::new(v.iter().copied()) as IdIter))
+        let hw_cell = hw_acc.get_counter_cell();
+        self.map.iter().map(move |(k, v)| {
+            hw_cell
+                .payload_index_io_read_counter()
+                .incr_delta(v.len() + N::mmapped_size(MmapValue::as_referenced(k.borrow())));
+
+            (k.borrow(), Box::new(v.iter().copied()) as IdIter)
+        })
     }
 
     pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {

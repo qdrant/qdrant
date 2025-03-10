@@ -22,7 +22,9 @@ use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVaria
 
 mod memory {
     use bitvec::vec::BitVec;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::ext::BitSliceExt as _;
+    use common::iterator_ext::IteratorExt;
     use common::types::PointOffsetType;
 
     pub struct BooleanItem {
@@ -170,8 +172,32 @@ mod memory {
             self.indexed_count
         }
 
+        pub fn iter_has_true_measured<'a>(
+            &'a self,
+            hw_counter: &'a HardwareCounterCell,
+        ) -> impl Iterator<Item = PointOffsetType> + 'a {
+            self.trues
+                .iter_ones()
+                .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
+                    i.payload_index_io_read_counter()
+                })
+                .map(|v| v as PointOffsetType)
+        }
+
         pub fn iter_has_true(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
             self.trues.iter_ones().map(|v| v as PointOffsetType)
+        }
+
+        pub fn iter_has_false_measured<'a>(
+            &'a self,
+            hw_counter: &'a HardwareCounterCell,
+        ) -> impl Iterator<Item = PointOffsetType> + 'a {
+            self.falses
+                .iter_ones()
+                .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
+                    i.payload_index_io_read_counter()
+                })
+                .map(|v| v as PointOffsetType)
         }
 
         pub fn iter_has_false(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
@@ -338,16 +364,16 @@ impl PayloadFieldIndex for SimpleBoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
-        _hw_counter: &'a HardwareCounterCell, // TODO(io_measurement): Measure this index
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
                 if *value {
-                    Some(Box::new(self.memory.iter_has_true()))
+                    Some(Box::new(self.memory.iter_has_true_measured(hw_counter)))
                 } else {
-                    Some(Box::new(self.memory.iter_has_false()))
+                    Some(Box::new(self.memory.iter_has_false_measured(hw_counter)))
                 }
             }
             _ => None,
@@ -357,17 +383,24 @@ impl PayloadFieldIndex for SimpleBoolIndex {
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): collect values.
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
+                let memory_len;
                 let count = if *value {
+                    memory_len = self.memory.trues_count();
                     self.memory.trues_count()
                 } else {
+                    memory_len = self.memory.falses_count();
                     self.memory.falses_count()
                 };
+
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(memory_len);
 
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
