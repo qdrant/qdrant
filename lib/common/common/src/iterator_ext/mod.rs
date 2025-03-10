@@ -60,7 +60,7 @@ pub trait IteratorExt: Iterator {
     {
         OnFinalCount::new(self, move |i| {
             let hw_counter = hw_acc.get_counter_cell();
-            // Subtract one to not account for the latest `None` call.
+            // Subtract 1 to not account for the latest `None` call.
             f(&hw_counter).incr_delta(i.saturating_sub(1) * multiplier);
         })
     }
@@ -77,8 +77,8 @@ pub trait IteratorExt: Iterator {
         R: FnMut(&HardwareCounterCell) -> &CounterCell,
     {
         OnFinalCount::new(self, move |i| {
-            // Subtract one to not account for the latest `None` call.
-            f(&hw_cell).incr_delta(i.saturating_sub(1) * multiplier);
+            // Subtract 1 to not account for the latest `None` call.
+            f(hw_cell).incr_delta(i.saturating_sub(1) * multiplier);
         })
     }
 

@@ -1,4 +1,3 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use mmap_bool_index::MmapBoolIndex;
@@ -26,10 +25,13 @@ impl BoolIndex {
         }
     }
 
-    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (bool, IdIter<'_>)> + '_> {
+    pub fn iter_values_map<'a>(
+        &'a self,
+        hw_acc: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = (bool, IdIter<'a>)> + 'a> {
         match self {
-            BoolIndex::Simple(index) => Box::new(index.iter_values_map()),
-            BoolIndex::Mmap(index) => Box::new(index.iter_values_map()),
+            BoolIndex::Simple(index) => Box::new(index.iter_values_map(hw_acc)),
+            BoolIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
         }
     }
 
@@ -165,11 +167,11 @@ impl FacetIndex for BoolIndex {
         self.iter_values().map(FacetValueRef::Bool)
     }
 
-    fn iter_values_map(
-        &self,
-        _hw_acc: HwMeasurementAcc, // TODO(io_measurements): Fill with values
-    ) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
-        self.iter_values_map()
+    fn iter_values_map<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a {
+        self.iter_values_map(hw_counter)
             .map(|(value, iter)| (FacetValueRef::Bool(value), iter))
     }
 

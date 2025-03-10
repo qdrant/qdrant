@@ -76,7 +76,7 @@ impl Segment {
                 context = payload_index.struct_filtered_context(filter, hw_counter);
 
                 let iter = facet_index
-                    .iter_values_map(hw_counter.new_accumulator())
+                    .iter_values_map(hw_counter)
                     .check_stop(|| is_stopped.load(Ordering::Relaxed))
                     .filter_map(|(value, iter)| {
                         let count = iter

@@ -5,8 +5,8 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -162,6 +162,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         hw_acc: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
+        // Measue self.deleted access.
+        hw_acc
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<bool>());
+
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)
@@ -283,23 +288,24 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         })
     }
 
-    pub fn iter_values_map(
-        &self,
-        hw_acc: HwMeasurementAcc,
-    ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        let hw_counter = hw_acc.get_counter_cell();
-
+    pub fn iter_values_map<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
         self.value_to_points.iter().map(move |(k, v)| {
             hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(v.len() + k.write_bytes());
+                .incr_delta(k.write_bytes());
 
             (
                 k,
                 Box::new(
                     v.iter()
                         .copied()
-                        .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true)),
+                        .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true))
+                        .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
+                            i.payload_index_io_read_counter()
+                        }),
                 ) as IdIter,
             )
         })

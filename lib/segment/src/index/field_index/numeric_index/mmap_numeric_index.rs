@@ -204,6 +204,11 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        // Measuring self.deleted read.
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<bool>());
+
         if self.deleted.get(idx as usize) == Some(false) {
             self.point_to_values.check_values_any(
                 idx,
