@@ -771,7 +771,11 @@ impl<'s> SegmentHolder {
                         },
                     )?
                 };
-                applied_points.insert(point_id);
+
+                if is_applied {
+                    applied_points.insert(point_id);
+                }
+
                 Ok(is_applied)
             },
         )?;
