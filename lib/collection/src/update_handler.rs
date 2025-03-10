@@ -465,6 +465,12 @@ impl UpdateHandler {
         // Check if Qdrant triggered any optimizations since starting at all
         let has_triggered_any_optimizers = self.has_triggered_optimizers.load(Ordering::Relaxed);
 
+        if self.max_optimization_threads == Some(0) {
+            // Collection cannot have optimization threads. So there can be no pending optimizations
+            // This eventually returns ShardStatus::Green
+            return (has_triggered_any_optimizers, false);
+        }
+
         let excluded_ids = HashSet::<_>::default();
         let has_suboptimal_optimizers = self.optimizers.iter().any(|optimizer| {
             let nonoptimal_segment_ids =
