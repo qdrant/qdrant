@@ -19,8 +19,8 @@ use collection::operations::conversions::try_discover_request_from_grpc;
 use collection::operations::query_enum::QueryEnum;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::types::{
-    CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal, RecommendExample,
-    ScrollRequestInternal, default_exact_count,
+    CoreSearchRequest, CoreSearchRequestBatch, PointRequestInternal, ScrollRequestInternal,
+    default_exact_count,
 };
 use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -304,66 +304,14 @@ pub async fn recommend(
     access: Access,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<RecommendResponse>, Status> {
-    // TODO(luis): check if we can make this into a From impl
-    let RecommendPoints {
-        collection_name,
-        positive,
-        negative,
-        positive_vectors,
-        negative_vectors,
-        strategy,
-        filter,
-        limit,
-        offset,
-        with_payload,
-        params,
-        score_threshold,
-        using,
-        with_vectors,
-        lookup_from,
-        read_consistency,
-        timeout,
-        shard_key_selector,
-    } = recommend_points;
+    // extract a few fields from the request and convert to internal request
+    let collection_name = recommend_points.collection_name.clone();
+    let read_consistency = recommend_points.read_consistency.clone();
+    let shard_key_selector = recommend_points.shard_key_selector.clone();
+    let timeout = recommend_points.timeout;
 
-    let positive_ids = positive
-        .into_iter()
-        .map(TryInto::try_into)
-        .collect::<Result<Vec<RecommendExample>, Status>>()?;
-    let positive_vectors = positive_vectors
-        .into_iter()
-        .map(TryInto::try_into)
-        .collect::<Result<_, _>>()?;
-    let positive = [positive_ids, positive_vectors].concat();
-
-    let negative_ids = negative
-        .into_iter()
-        .map(TryInto::try_into)
-        .collect::<Result<Vec<RecommendExample>, Status>>()?;
-    let negative_vectors = negative_vectors
-        .into_iter()
-        .map(|v| RecommendExample::Dense(v.data))
-        .collect();
-    let negative = [negative_ids, negative_vectors].concat();
-
-    let request = collection::operations::types::RecommendRequestInternal {
-        positive,
-        negative,
-        strategy: strategy.map(|s| s.try_into()).transpose()?,
-        filter: filter.map(|f| f.try_into()).transpose()?,
-        params: params.map(|p| p.into()),
-        limit: limit as usize,
-        offset: offset.map(|x| x as usize),
-        with_payload: with_payload.map(|wp| wp.try_into()).transpose()?,
-        with_vector: Some(
-            with_vectors
-                .map(|selector| selector.into())
-                .unwrap_or_default(),
-        ),
-        score_threshold,
-        using: using.map(|u| u.into()),
-        lookup_from: lookup_from.map(|l| l.into()),
-    };
+    let request =
+        collection::operations::types::RecommendRequestInternal::try_from(recommend_points)?;
 
     let toc = toc_provider
         .check_strict_mode(
