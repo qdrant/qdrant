@@ -48,6 +48,11 @@ pub trait IteratorExt: Iterator {
     }
 
     /// Measures the hardware usage of an iterator.
+    ///
+    /// # Arguments
+    /// - `hw_acc`: accumulator holding a counter cell
+    /// - `multiplier`: multiplies the number of iterations by this factor.
+    /// - `f`: Closure to get the specific counter to increase from the cell inside the accumulator.
     fn measure_hw_with_acc<R>(
         self,
         hw_acc: HwMeasurementAcc,
@@ -66,6 +71,11 @@ pub trait IteratorExt: Iterator {
     }
 
     /// Measures the hardware usage of an iterator.
+    ///
+    /// # Arguments
+    /// - `hw_cell`: counter cell
+    /// - `multiplier`: multiplies the number of iterations by this factor.
+    /// - `f`: Closure to get the specific counter to increase from `hw_cell`.
     fn measure_hw_with_cell<R>(
         self,
         hw_cell: &HardwareCounterCell,

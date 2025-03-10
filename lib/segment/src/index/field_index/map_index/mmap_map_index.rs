@@ -162,7 +162,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         hw_acc: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
-        // Measue self.deleted access.
+        // Measure self.deleted access.
         hw_acc
             .payload_index_io_read_counter()
             .incr_delta(size_of::<bool>());
