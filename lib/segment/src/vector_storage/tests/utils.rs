@@ -1,5 +1,6 @@
 use std::{error, result};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use rand::seq::IteratorRandom;
 
@@ -25,12 +26,14 @@ pub fn insert_distributed_vectors(
 
     let mut vector = vec![0.; dim];
 
+    let hw_counter = HardwareCounterCell::new();
+
     for offset in start..end {
         for (item, value) in vector.iter_mut().zip(&mut *sampler) {
             *item = value;
         }
 
-        storage.insert_vector(offset, vector.as_slice().into())?;
+        storage.insert_vector(offset, vector.as_slice().into(), &hw_counter)?;
     }
 
     Ok(())

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -203,6 +204,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         deleted: bool,
         vector: Option<TypedMultiDenseVectorRef<T>>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut record = StoredMultiDenseVector {
             deleted,
@@ -217,11 +219,15 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
                 .extend_from_slice(vector.flattened_vectors);
         }
 
+        let key_enc = bincode::serialize(&key).unwrap();
+        let record_enc = bincode::serialize(&record).unwrap();
+
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(key_enc.len() + record_enc.len());
+
         // Store updated record
-        self.db_wrapper.put(
-            bincode::serialize(&key).unwrap(),
-            bincode::serialize(&record).unwrap(),
-        )?;
+        self.db_wrapper.put(key_enc, record_enc)?;
 
         Ok(())
     }
@@ -231,6 +237,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         key: PointOffsetType,
         vector: VectorRef,
         is_deleted: bool,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
@@ -273,7 +280,7 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         }
 
         self.set_deleted(key, is_deleted);
-        self.update_stored(key, is_deleted, Some(multi_vector))?;
+        self.update_stored(key, is_deleted, Some(multi_vector), hw_counter)?;
         Ok(())
     }
 }
@@ -366,8 +373,13 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         })
     }
 
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        self.insert_vector_impl(key, vector, false)
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: VectorRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.insert_vector_impl(key, vector, false, hw_counter)
     }
 
     fn update_from<'a>(
@@ -381,7 +393,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
             // Do not perform preprocessing - vectors should be already processed
             let other_vector: VectorRef = other_vector.as_vec_ref();
             let new_id = self.vectors_metadata.len() as PointOffsetType;
-            self.insert_vector_impl(new_id, other_vector, other_deleted)?;
+            self.insert_vector_impl(
+                new_id,
+                other_vector,
+                other_deleted,
+                &HardwareCounterCell::disposable(), // This function is only used by internal operations
+            )?;
         }
         let end_index = self.vectors_metadata.len() as PointOffsetType;
         Ok(start_index..end_index)
@@ -398,7 +415,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
-            self.update_stored(key, true, None)?;
+            // We don't measure deletions.
+            self.update_stored(key, true, None, &HardwareCounterCell::disposable())?;
         }
         Ok(is_deleted)
     }

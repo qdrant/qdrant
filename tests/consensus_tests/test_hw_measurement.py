@@ -1,7 +1,8 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, get_telemetry_hw_info, update_points_payload
+from .fixtures import create_collection, upsert_random_points, get_telemetry_hw_info, update_points_payload, \
+    update_points_vector
 from .utils import *
 from math import ceil
 
@@ -25,29 +26,42 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
     # Check initial insertion IO measurements are reported in telemetry
     for i in peer_hw_infos:
         assert i["payload_io_write"] > 0
-        # TODO: Add tests for vector writes
+        assert i["vector_io_write"] > 0
 
     # Upsert ~20 vectors into each shard
     upsert_random_points(peer_urls[0], N_SHARDS * 20, collection_name=COLLECTION_NAME)
 
+    total_vector_io_write = 0
     # Check upsert
     for peer_idx in range(N_PEERS):
         peer_url = peer_urls[peer_idx]
         peer_hw = get_telemetry_hw_info(peer_url, COLLECTION_NAME)
 
+        approx_points_on_node = 20 - 5
+
         # Assert that each nodes telemetry has been increased by some bytes
-        expected_delta = (19 * 5)  # ~20 vectors times avg. 5 bytes payload
-        assert abs(peer_hw["payload_io_write"] - peer_hw_infos[peer_idx]["payload_io_write"]) >= expected_delta
-        # TODO: also test for written vectors when implemented!
+        expected_payload_delta = (approx_points_on_node * 5)  # ~20 (15) vectors times avg. 5 bytes payload
+        assert abs(peer_hw["payload_io_write"] - peer_hw_infos[peer_idx]["payload_io_write"]) >= expected_payload_delta
+
+        expected_vector_delta = (approx_points_on_node * 4 * 4)  # ~20 (15) vectors times avg. 4 dim 4 bytes vector. They might not be qually distributed so we only check for 15 vectors here.
+        vector_size = abs(peer_hw["vector_io_write"] - peer_hw_infos[peer_idx]["vector_io_write"])
+        total_vector_io_write += vector_size
+        assert vector_size >= expected_vector_delta
+
+    # Ensure that all vectors have been taken accounted for
+    assert total_vector_io_write >= N_PEERS * 20 * 4 * 4
 
     peer_hw_infos = [get_telemetry_hw_info(x, COLLECTION_NAME) for x in peer_urls]
 
     total_payload_io_write_old = sum([x["payload_io_write"] for x in peer_hw_infos])
+    total_vector_io_write_old = sum([x["vector_io_write"] for x in peer_hw_infos])
 
     # Update 20 points
-    update_hw_data = update_points_payload(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]
+    update_payload_hw_data = update_points_payload(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]
+    update_vectors_hw_data = update_points_vector(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]
 
     total_payload_io_write = 0
+    total_vector_io_write = 0
 
     # Check payload update
     for peer_idx in range(N_PEERS):
@@ -55,13 +69,17 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
         peer_hw = get_telemetry_hw_info(peer_url, COLLECTION_NAME)
 
         total_payload_io_write += peer_hw["payload_io_write"]
+        total_vector_io_write += peer_hw["vector_io_write"]
+
+        approx_points_on_node = 20 - 5
 
         # Assert that each nodes telemetry has been increased by some bytes
-        assert abs(peer_hw["payload_io_write"] - peer_hw_infos[peer_idx]["payload_io_write"]) >= (19 * 5)
+        assert abs(peer_hw["payload_io_write"] - peer_hw_infos[peer_idx]["payload_io_write"]) >= approx_points_on_node * 5
+        assert abs(peer_hw["vector_io_write"] - peer_hw_infos[peer_idx]["vector_io_write"]) >= (approx_points_on_node * 4 * 4)
 
     # Check that API response hardware data is equal to the data reported in telemetry!
-    assert update_hw_data['payload_io_write'] == total_payload_io_write - total_payload_io_write_old
-    # TODO: also test vector updates when implemented
+    assert update_payload_hw_data['payload_io_write'] == total_payload_io_write - total_payload_io_write_old
+    assert update_vectors_hw_data['vector_io_write'] == total_vector_io_write - total_vector_io_write_old
 
 
 def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
@@ -79,13 +97,24 @@ def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
 
     wait_collection_points_count(peer_urls[0], COLLECTION_NAME, total_vectors)
 
+    total_vectors_metrics = 0
+
     # Check metrics getting collected on each node, despite `wait=false`.
     for peer_idx in range(N_PEERS):
         peer_url = peer_urls[peer_idx]
         peer_hw = get_telemetry_hw_info(peer_url, COLLECTION_NAME)
 
+        approx_points_on_node = upsert_vectors - 5
+
+        vector_writes = peer_hw["vector_io_write"]
+        total_vectors_metrics += vector_writes
+
         # Assert that each nodes telemetry has been increased by some bytes
         assert peer_hw["payload_io_write"] >= upsert_vectors * 5  # 50 vectors on this node with payload of ~5 bytes
+        assert_with_upper_bound_error(vector_writes, approx_points_on_node * 4 * 4,upper_bound_error_percent=0.25)  # ~50 (45) vectors on this node with 4 dim and 4 bytes
+
+    # Ensure all vectors have been accounted for
+    assert_with_upper_bound_error(total_vectors_metrics, total_vectors * 4 * 4)
 
     # TODO: also test vector updates when implemented
 

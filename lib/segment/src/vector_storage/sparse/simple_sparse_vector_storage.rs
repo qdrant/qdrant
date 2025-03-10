@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -99,6 +100,7 @@ impl SimpleSparseVectorStorage {
         key: PointOffsetType,
         deleted: bool,
         vector: Option<&SparseVector>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         // Write vector state to buffer record
         let record = StoredSparseVector {
@@ -113,11 +115,15 @@ impl SimpleSparseVectorStorage {
             }
         }
 
+        let key_enc = bincode::serialize(&key).unwrap();
+        let record_enc = bincode::serialize(&record).unwrap();
+
+        hw_counter
+            .vector_io_write_counter()
+            .incr_delta(key_enc.len() + record_enc.len());
+
         // Store updated record
-        self.db_wrapper.put(
-            bincode::serialize(&key).unwrap(),
-            bincode::serialize(&record).unwrap(),
-        )?;
+        self.db_wrapper.put(key_enc, record_enc)?;
 
         Ok(())
     }
@@ -194,12 +200,17 @@ impl VectorStorage for SimpleSparseVectorStorage {
         }
     }
 
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: VectorRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let vector: &SparseVector = vector.try_into()?;
         debug_assert!(vector.is_sorted());
         self.total_vector_count = std::cmp::max(self.total_vector_count, key as usize + 1);
         self.set_deleted(key, false);
-        self.update_stored(key, false, Some(vector))?;
+        self.update_stored(key, false, Some(vector), hw_counter)?;
         Ok(())
     }
 
@@ -209,6 +220,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.total_vector_count as PointOffsetType;
+        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
@@ -216,7 +228,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
             let new_id = self.total_vector_count as PointOffsetType;
             self.total_vector_count += 1;
             self.set_deleted(new_id, other_deleted);
-            self.update_stored(new_id, other_deleted, Some(other_vector))?;
+            self.update_stored(new_id, other_deleted, Some(other_vector), &disposed_hw)?;
         }
         Ok(start_index..self.total_vector_count as PointOffsetType)
     }
@@ -233,7 +245,12 @@ impl VectorStorage for SimpleSparseVectorStorage {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
             let old_vector = self.get_sparse_opt(key).ok().flatten();
-            self.update_stored(key, true, old_vector.as_ref())?;
+            self.update_stored(
+                key,
+                true,
+                old_vector.as_ref(),
+                &HardwareCounterCell::disposable(), // We don't measure deletions
+            )?;
         }
         Ok(is_deleted)
     }

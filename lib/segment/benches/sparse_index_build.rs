@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
@@ -60,11 +61,13 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let db = open_db(storage_dir.path(), &[DB_VECTOR_CF]).unwrap();
     let mut vector_storage = open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &stopped).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // add points to storage only once
     for idx in 0..NUM_VECTORS {
         let vec = &random_sparse_vector(&mut rnd, MAX_SPARSE_DIM);
         vector_storage
-            .insert_vector(idx as PointOffsetType, vec.into())
+            .insert_vector(idx as PointOffsetType, vec.into(), &hw_counter)
             .unwrap();
     }
 

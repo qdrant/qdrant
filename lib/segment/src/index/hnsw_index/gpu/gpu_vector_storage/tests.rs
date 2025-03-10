@@ -385,7 +385,7 @@ fn create_vector_storage_f32(
         };
         let vec_ref = VectorRef::from(&vec);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref)
+            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
             .unwrap();
     }
     vector_storage
@@ -413,7 +413,7 @@ fn create_vector_storage_f16(
         };
         let vec_ref = VectorRef::from(&vec);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref)
+            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
             .unwrap();
     }
     vector_storage
@@ -441,7 +441,7 @@ fn create_vector_storage_u8(
         };
         let vec_ref = VectorRef::from(&vec);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref)
+            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
             .unwrap();
     }
     vector_storage
@@ -482,7 +482,7 @@ fn create_vector_storage_f32_multi(
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
         let vec_ref = VectorRef::from(&multivector);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref)
+            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
             .unwrap();
     }
     vector_storage
@@ -529,7 +529,7 @@ fn create_vector_storage_f16_multi(
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
         let vec_ref = VectorRef::from(&multivector);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref)
+            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
             .unwrap();
     }
     vector_storage
@@ -576,7 +576,7 @@ fn create_vector_storage_u8_multi(
         let multivector = MultiDenseVectorInternal::new(vectors, dim);
         let vec_ref = VectorRef::from(&multivector);
         vector_storage
-            .insert_vector(i as PointOffsetType, vec_ref)
+            .insert_vector(i as PointOffsetType, vec_ref, &HardwareCounterCell::new())
             .unwrap();
     }
     vector_storage

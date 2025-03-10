@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
+
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 
@@ -19,15 +21,25 @@ pub trait ChunkedVectorStorage<T> {
 
     fn flusher(&self) -> Flusher;
 
-    fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType>;
+    fn push(
+        &mut self,
+        vector: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<VectorOffsetType>;
 
-    fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()>;
+    fn insert(
+        &mut self,
+        key: VectorOffsetType,
+        vector: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     fn insert_many(
         &mut self,
         start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
     /// Returns `count` flattened vectors starting from key. if chunk boundary is crossed, returns None

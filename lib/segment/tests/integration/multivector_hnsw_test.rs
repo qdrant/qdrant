@@ -106,6 +106,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             .insert_vector(
                 internal_id,
                 VectorRef::MultiDense(TypedMultiDenseVectorRef::from(&vector_multi)),
+                &hw_counter,
             )
             .unwrap();
     }

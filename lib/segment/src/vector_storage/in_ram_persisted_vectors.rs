@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use memory::madvise::{Advice, AdviceSetting};
 
 use crate::common::Flusher;
@@ -54,13 +55,22 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn push(&mut self, vector: &[T]) -> OperationResult<VectorOffsetType> {
-        self.mmap_storage.push(vector)
+    fn push(
+        &mut self,
+        vector: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<VectorOffsetType> {
+        self.mmap_storage.push(vector, hw_counter)
     }
 
     #[inline]
-    fn insert(&mut self, key: VectorOffsetType, vector: &[T]) -> OperationResult<()> {
-        self.mmap_storage.insert(key, vector)
+    fn insert(
+        &mut self,
+        key: VectorOffsetType,
+        vector: &[T],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.mmap_storage.insert(key, vector, hw_counter)
     }
 
     #[inline]
@@ -69,8 +79,10 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
         start_key: VectorOffsetType,
         vectors: &[T],
         count: usize,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.mmap_storage.insert_many(start_key, vectors, count)
+        self.mmap_storage
+            .insert_many(start_key, vectors, count, hw_counter)
     }
 
     #[inline]
