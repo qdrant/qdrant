@@ -540,8 +540,10 @@ impl SegmentBuilder {
                 appendable_flag,
             )?;
 
+            let hw_counter = HardwareCounterCell::disposable();
+
             for (field, payload_schema) in indexed_fields {
-                payload_index.set_indexed(&field, payload_schema)?;
+                payload_index.set_indexed(&field, payload_schema, &hw_counter)?;
                 check_process_stopped(stopped)?;
             }
 

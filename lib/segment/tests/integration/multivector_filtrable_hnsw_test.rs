@@ -170,7 +170,11 @@ fn test_multi_filterable_hnsw(
     let payload_index_ptr = segment.payload_index.clone();
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new(int_key),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
 
     let hnsw_config = HnswConfig {

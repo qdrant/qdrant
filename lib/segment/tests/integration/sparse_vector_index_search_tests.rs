@@ -393,10 +393,12 @@ fn sparse_vector_index_ram_filtered_search() {
     assert_eq!(before_result.len(), 1);
     assert_eq!(before_result[0].len(), 0);
 
+    let hw_counter = HardwareCounterCell::new();
+
     // create payload field index
     let mut payload_index = sparse_vector_index.payload_index().borrow_mut();
     payload_index
-        .set_indexed(&JsonPath::new(field_name), Keyword)
+        .set_indexed(&JsonPath::new(field_name), Keyword, &hw_counter)
         .unwrap();
     drop(payload_index);
 

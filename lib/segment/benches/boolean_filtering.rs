@@ -108,7 +108,11 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     .unwrap();
 
     index
-        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
+        .set_indexed(
+            &BOOL_KEY.parse().unwrap(),
+            PayloadSchemaType::Keyword,
+            &hw_counter,
+        )
         .unwrap();
 
     let mut group = c.benchmark_group("boolean-query-points");

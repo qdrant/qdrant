@@ -509,6 +509,8 @@ pub trait SegmentOptimizer {
             .map(|(point_id, versions)| (*point_id, *versions))
             .collect::<Vec<_>>();
 
+        let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no need for measurement.
+
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
         let old_optimized_segment_version = optimized_segment.version();
@@ -519,7 +521,12 @@ pub trait SegmentOptimizer {
             );
             match change {
                 ProxyIndexChange::Create(schema, version) => {
-                    optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                    optimized_segment.create_field_index(
+                        *version,
+                        field_name,
+                        Some(schema),
+                        &hw_counter,
+                    )?;
                 }
                 ProxyIndexChange::Delete(version) => {
                     optimized_segment.delete_field_index(*version, field_name)?;
@@ -530,11 +537,7 @@ pub trait SegmentOptimizer {
 
         for (point_id, versions) in deleted_points_snapshot {
             optimized_segment
-                .delete_point(
-                    versions.operation_version,
-                    point_id,
-                    &HardwareCounterCell::disposable(), // Internal operation, no need for measurement.
-                )
+                .delete_point(versions.operation_version, point_id, &hw_counter)
                 .unwrap();
         }
 
@@ -686,6 +689,8 @@ pub trait SegmentOptimizer {
             return Err(CollectionError::from(e));
         }
 
+        let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
+
         {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
@@ -698,7 +703,12 @@ pub trait SegmentOptimizer {
                 // Applied optimizations are not removed from `proxy_index_changes`.
                 match change {
                     ProxyIndexChange::Create(schema, version) => {
-                        optimized_segment.create_field_index(*version, field_name, Some(schema))?;
+                        optimized_segment.create_field_index(
+                            *version,
+                            field_name,
+                            Some(schema),
+                            &hw_counter,
+                        )?;
                     }
                     ProxyIndexChange::Delete(version) => {
                         optimized_segment.delete_field_index(*version, field_name)?;
@@ -720,11 +730,7 @@ pub trait SegmentOptimizer {
                     "proxied point deletes should have newer version than point in segment",
                 );
                 optimized_segment
-                    .delete_point(
-                        versions.operation_version,
-                        point_id,
-                        &HardwareCounterCell::disposable(), // Internal operation, no measurement needed!
-                    )
+                    .delete_point(versions.operation_version, point_id, &hw_counter)
                     .unwrap();
             }
 

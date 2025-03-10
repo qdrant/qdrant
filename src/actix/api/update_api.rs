@@ -402,10 +402,18 @@ async fn create_field_index(
     collection: Path<CollectionPath>,
     operation: Json<CreateFieldIndex>,
     params: Query<UpdateParams>,
+    service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
     let timing = Instant::now();
     let operation = operation.into_inner();
+
+    let request_hw_counter = get_request_hardware_counter(
+        &dispatcher,
+        collection.name.clone(),
+        service_config.hardware_reporting(),
+        Some(params.wait),
+    );
 
     let response = do_create_index(
         dispatcher.into_inner(),
@@ -414,10 +422,12 @@ async fn create_field_index(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
-        HwMeasurementAcc::disposable(), // TODO(io_measurement): measure payload index creation?
+        request_hw_counter.get_counter(),
     )
     .await;
-    process_response(response, timing, None)
+
+    println!("{:#?}", request_hw_counter.get_counter());
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 #[delete("/collections/{name}/index/{field_name}")]

@@ -45,11 +45,14 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     segment
         .create_field_index(
             0,
             &JsonPath::new(int_key),
             Some(&PayloadSchemaType::Integer.into()),
+            &hw_counter,
         )
         .unwrap();
 
@@ -64,8 +67,6 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
         &AtomicBool::new(false),
     )
     .unwrap();
-
-    let hw_counter = HardwareCounterCell::new();
 
     for n in 0..num_vectors {
         let idx = n.into();

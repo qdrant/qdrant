@@ -266,23 +266,49 @@ pub fn create_struct_payload_index(
     )
     .unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     index
-        .set_indexed(&STR_KEY.parse().unwrap(), PayloadSchemaType::Keyword)
+        .set_indexed(
+            &STR_KEY.parse().unwrap(),
+            PayloadSchemaType::Keyword,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
+        .set_indexed(
+            &INT_KEY.parse().unwrap(),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
+        .set_indexed(
+            &FLT_KEY.parse().unwrap(),
+            PayloadSchemaType::Float,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&GEO_KEY.parse().unwrap(), PayloadSchemaType::Geo)
+        .set_indexed(
+            &GEO_KEY.parse().unwrap(),
+            PayloadSchemaType::Geo,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&TEXT_KEY.parse().unwrap(), PayloadSchemaType::Text)
+        .set_indexed(
+            &TEXT_KEY.parse().unwrap(),
+            PayloadSchemaType::Text,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&BOOL_KEY.parse().unwrap(), PayloadSchemaType::Bool)
+        .set_indexed(
+            &BOOL_KEY.parse().unwrap(),
+            PayloadSchemaType::Bool,
+            &hw_counter,
+        )
         .unwrap();
 
     index

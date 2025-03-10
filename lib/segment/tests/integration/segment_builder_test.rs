@@ -104,20 +104,20 @@ fn test_building_new_defragmented_segment() {
 
     let defragment_key = JsonPath::from_str(PAYLOAD_KEY).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment1 = build_segment_1(dir.path());
     segment1
-        .create_field_index(7, &defragment_key, None)
+        .create_field_index(7, &defragment_key, None, &hw_counter)
         .unwrap();
 
     let mut segment2 = build_segment_2(dir.path());
     segment2
-        .create_field_index(17, &defragment_key, None)
+        .create_field_index(17, &defragment_key, None, &hw_counter)
         .unwrap();
 
     let mut builder =
         SegmentBuilder::new(dir.path(), temp_dir.path(), &segment1.segment_config).unwrap();
-
-    let hw_counter = HardwareCounterCell::new();
 
     // Include overlapping with segment1 to check the
     segment2
