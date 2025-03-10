@@ -748,6 +748,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ad1fa75f77bbd06f187540aa1d70ca50b80b27ce85e7f41c0ce7ff42b34ed3b"
+dependencies = [
+ "bincode_derive",
+ "serde",
+ "unty",
+]
+
+[[package]]
+name = "bincode_derive"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1cef5dd4a4457dd11529e743d18ba4fabbd5f20b6895f4c865cb257337dcf9f"
+dependencies = [
+ "virtue",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.69.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3019,7 +3039,7 @@ name = "io"
 version = "0.0.0"
 dependencies = [
  "atomicwrites",
- "bincode",
+ "bincode 2.0.0",
  "nix 0.29.0",
  "semver",
  "serde",
@@ -3319,7 +3339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74508ffbb24e36905d1718b261460e378a748029b07bcd7e06f0d18500b8194c"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "encoding",
  "kanaria",
@@ -3361,7 +3381,7 @@ version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c35944000d05a177e981f037b5f0805f283b32f05a0c35713003bef136ca8cb4"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "lindera-cc-cedict-builder",
  "lindera-core",
@@ -3399,7 +3419,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c28191456debc98af6aa5f7db77872471983e9fa2a737b1c232b6ef543aed62"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "encoding_rs",
  "log",
@@ -3427,7 +3447,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bdf5f91725e32b9a21b1656baa7030766c9bafc4de4b4ddeb8ffdde7224dd2f6"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "lindera-cc-cedict",
  "lindera-cc-cedict-builder",
@@ -3452,7 +3472,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e41f00ba7ac541b0ffd8c30e7a73f2dd197546cc5780462ec4f2e4782945a780"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "csv",
  "derive_builder",
@@ -3498,7 +3518,7 @@ version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b97a52ff0af5acb700093badaf7078051ab9ffd9071859724445a60193995f1f"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "lindera-core",
  "lindera-decompress",
@@ -3524,7 +3544,7 @@ version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6b36764b27b169aa11d24888141f206a6c246a5b195c1e67127485bac512fb6"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "lindera-core",
  "lindera-decompress",
@@ -3550,7 +3570,7 @@ version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c92a1a3564b531953f0238cbcea392f2905f7b27b449978cf9e702a80e1086d"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "lindera-assets",
  "lindera-core",
@@ -3577,7 +3597,7 @@ version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "903e558981bcb6f59870aa7d6b4bcb09e8f7db778886a6a70f67fd74c9fa2ca3"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "lindera-core",
  "lindera-dictionary",
  "once_cell",
@@ -3591,7 +3611,7 @@ version = "0.32.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d227c3ce9cbd905f865c46c65a0470fd04e89b71104d7f92baa71a212ffe1d4b"
 dependencies = [
- "bincode",
+ "bincode 1.3.3",
  "byteorder",
  "lindera-assets",
  "lindera-core",
@@ -5358,7 +5378,7 @@ checksum = "6dd5030da3aba0ec731502f74ec38e63798eea6bc8b8ba5972129afe3eababd2"
 dependencies = [
  "antidote",
  "backtrace",
- "bincode",
+ "bincode 1.3.3",
  "lazy_static",
  "libc",
  "rstack",
@@ -5742,7 +5762,7 @@ dependencies = [
  "anyhow",
  "atomic_refcell",
  "atomicwrites",
- "bincode",
+ "bincode 2.0.0",
  "bitpacking",
  "bitvec",
  "bytemuck",
@@ -6178,7 +6198,7 @@ dependencies = [
 name = "sparse"
 version = "0.1.0"
 dependencies = [
- "bincode",
+ "bincode 2.0.0",
  "bitpacking",
  "common",
  "criterion",
@@ -7096,6 +7116,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "unty"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1a88342087869553c259588a3ec9ca73ce9b2d538b7051ba5789ff236b6c129"
+
+[[package]]
 name = "unwind"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7225,6 +7251,12 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "virtue"
+version = "0.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "051eb1abcf10076295e815102942cc58f9d5e3b4560e46e53c21e8ff6f3af7b1"
 
 [[package]]
 name = "wait-timeout"

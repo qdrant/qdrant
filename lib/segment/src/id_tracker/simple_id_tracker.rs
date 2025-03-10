@@ -106,7 +106,9 @@ impl SimpleIdTracker {
         for (key, val) in mapping_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
             let internal_id: PointOffsetType =
-                bincode::deserialize::<PointOffsetType>(&val).unwrap();
+                bincode::serde::decode_from_slice(&val, bincode::config::standard())
+                    .unwrap()
+                    .0;
             if internal_id as usize >= internal_to_external.len() {
                 internal_to_external.resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
             }
@@ -152,7 +154,10 @@ impl SimpleIdTracker {
         );
         for (key, val) in versions_db_wrapper.lock_db().iter()? {
             let external_id = Self::restore_key(&key);
-            let version: SeqNumberType = bincode::deserialize(&val).unwrap();
+            let version: SeqNumberType =
+                bincode::serde::decode_from_slice(&val, bincode::config::standard())
+                    .unwrap()
+                    .0;
             let internal_id = match external_id {
                 PointIdType::NumId(idx) => external_to_internal_num.get(&idx).copied(),
                 PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
@@ -197,11 +202,18 @@ impl SimpleIdTracker {
     }
 
     fn store_key(external_id: &PointIdType) -> Vec<u8> {
-        bincode::serialize(&external_to_stored_id(external_id)).unwrap()
+        bincode::serde::encode_to_vec(
+            external_to_stored_id(external_id),
+            bincode::config::standard(),
+        )
+        .unwrap()
     }
 
     fn restore_key(data: &[u8]) -> PointIdType {
-        let stored_external_id: StoredPointId = bincode::deserialize(data).unwrap();
+        let stored_external_id: StoredPointId =
+            bincode::serde::decode_from_slice(data, bincode::config::standard())
+                .unwrap()
+                .0;
         stored_to_external_id(stored_external_id)
     }
 
@@ -216,7 +228,7 @@ impl SimpleIdTracker {
     fn persist_key(&self, external_id: &PointIdType, internal_id: usize) -> OperationResult<()> {
         self.mapping_db_wrapper.put(
             Self::store_key(external_id),
-            bincode::serialize(&internal_id).unwrap(),
+            bincode::serde::encode_to_vec(internal_id, bincode::config::standard()).unwrap(),
         )
     }
 }
@@ -248,7 +260,7 @@ impl IdTracker for SimpleIdTracker {
             self.internal_to_version[internal_id as usize] = version;
             self.versions_db_wrapper.put(
                 Self::store_key(&external_id),
-                bincode::serialize(&version).unwrap(),
+                bincode::encode_to_vec(version, bincode::config::standard()).unwrap(),
             )?;
         }
         Ok(())
@@ -379,8 +391,12 @@ mod tests {
     >(
         record: T,
     ) {
-        let binary_entity = bincode::serialize(&record).expect("serialization ok");
-        let de_record: T = bincode::deserialize(&binary_entity).expect("deserialization ok");
+        let binary_entity = bincode::serde::encode_to_vec(&record, bincode::config::standard())
+            .expect("serialization ok");
+        let de_record: T =
+            bincode::serde::decode_from_slice(&binary_entity, bincode::config::standard())
+                .expect("deserialization ok")
+                .0;
 
         assert_eq!(record, de_record);
     }

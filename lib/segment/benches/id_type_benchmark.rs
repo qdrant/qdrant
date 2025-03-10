@@ -34,7 +34,7 @@ fn id_serialization_speed(c: &mut Criterion) {
     group.bench_function("u64", |b| {
         b.iter(|| {
             let key: u64 = rng.random_range(0..100000000);
-            bincode::serialize(&key).unwrap();
+            bincode::serde::encode_to_vec(key, bincode::config::standard()).unwrap();
         });
     });
 
@@ -42,7 +42,7 @@ fn id_serialization_speed(c: &mut Criterion) {
         b.iter(|| {
             let key: u64 = rng.random_range(0..100000000);
             let new_key = u128::from(key);
-            bincode::serialize(&new_key).unwrap();
+            bincode::serde::encode_to_vec(new_key, bincode::config::standard()).unwrap();
         });
     });
 
@@ -53,7 +53,7 @@ fn id_serialization_speed(c: &mut Criterion) {
                 id: Some(key),
                 uuid: None,
             };
-            bincode::serialize(&new_key).unwrap();
+            bincode::serde::encode_to_vec(new_key, bincode::config::standard()).unwrap();
         });
     });
 
@@ -64,7 +64,7 @@ fn id_serialization_speed(c: &mut Criterion) {
                 id: None,
                 uuid: Some(Uuid::from_u128(u128::from(key))),
             };
-            bincode::serialize(&new_key).unwrap();
+            bincode::serde::encode_to_vec(new_key, bincode::config::standard()).unwrap();
         });
     });
 
@@ -72,7 +72,7 @@ fn id_serialization_speed(c: &mut Criterion) {
         b.iter(|| {
             let key: u64 = rng.random_range(0..100000000);
             let new_key = EnumIdTagged::Num(key);
-            bincode::serialize(&new_key).unwrap();
+            bincode::serde::encode_to_vec(new_key, bincode::config::standard()).unwrap();
         });
     });
 
@@ -80,7 +80,7 @@ fn id_serialization_speed(c: &mut Criterion) {
         b.iter(|| {
             let key: u64 = rng.random_range(0..100000000);
             let new_key = EnumIdTagged::Uuid(Uuid::from_u128(u128::from(key)));
-            bincode::serialize(&new_key).unwrap();
+            bincode::serde::encode_to_vec(new_key, bincode::config::standard()).unwrap();
         });
     });
 

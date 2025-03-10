@@ -65,10 +65,13 @@ impl TryFrom<StoredSparseVector> for SparseVector {
 
 impl Blob for StoredSparseVector {
     fn to_bytes(&self) -> Vec<u8> {
-        bincode::serialize(&self).expect("Sparse vector serialization should not fail")
+        bincode::serde::encode_to_vec(self, bincode::config::standard())
+            .expect("Sparse vector serialization should not fail")
     }
 
     fn from_bytes(data: &[u8]) -> Self {
-        bincode::deserialize(data).expect("Sparse vector deserialization should not fail")
+        bincode::serde::decode_from_slice(data, bincode::config::standard())
+            .expect("Sparse vector deserialization should not fail")
+            .0
     }
 }

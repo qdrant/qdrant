@@ -9,7 +9,13 @@ use serde::de::DeserializeOwned;
 
 pub fn atomic_save_bin<T: Serialize>(path: &Path, object: &T) -> Result<()> {
     let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
-    af.write(|f| bincode::serialize_into(BufWriter::new(f), object))?;
+    af.write(|f| {
+        bincode::serde::encode_into_std_write(
+            object,
+            &mut BufWriter::new(f),
+            bincode::config::standard(),
+        )
+    })?;
     Ok(())
 }
 
@@ -21,7 +27,10 @@ pub fn atomic_save_json<T: Serialize>(path: &Path, object: &T) -> Result<()> {
 
 pub fn read_bin<T: DeserializeOwned>(path: &Path) -> Result<T> {
     let file = File::open(path)?;
-    let value = bincode::deserialize_from(BufReader::new(file))?;
+    let value = bincode::serde::decode_from_std_read(
+        &mut BufReader::new(file),
+        bincode::config::standard(),
+    )?;
     Ok(value)
 }
 
@@ -71,7 +80,10 @@ pub enum Error {
     Io(#[from] io::Error),
 
     #[error("{0}")]
-    Bincode(#[from] bincode::ErrorKind),
+    BincodeDecode(#[from] bincode::error::DecodeError),
+
+    #[error("{0}")]
+    BincodeEncode(#[from] bincode::error::EncodeError),
 
     #[error("{0}")]
     SerdeJson(#[from] serde_json::Error),
@@ -98,17 +110,12 @@ where
     }
 }
 
-impl From<bincode::Error> for Error {
-    fn from(err: bincode::Error) -> Self {
-        Self::Bincode(*err)
-    }
-}
-
 impl From<Error> for io::Error {
     fn from(err: Error) -> Self {
         match err {
             Error::Io(err) => err,
-            Error::Bincode(err) => Self::other(err),
+            Error::BincodeDecode(err) => Self::other(err),
+            Error::BincodeEncode(err) => Self::other(err),
             Error::SerdeJson(err) => Self::other(err),
             Error::Generic(msg) => Self::other(msg),
         }

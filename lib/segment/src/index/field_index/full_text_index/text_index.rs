@@ -159,11 +159,13 @@ impl FullTextIndex {
     }
 
     pub(super) fn store_key(id: PointOffsetType) -> Vec<u8> {
-        bincode::serialize(&id).unwrap()
+        bincode::serde::encode_to_vec(id, bincode::config::standard()).unwrap()
     }
 
     pub(super) fn restore_key(data: &[u8]) -> PointOffsetType {
-        bincode::deserialize(data).unwrap()
+        bincode::serde::decode_from_slice(data, bincode::config::standard())
+            .unwrap()
+            .0
     }
 
     pub(super) fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {

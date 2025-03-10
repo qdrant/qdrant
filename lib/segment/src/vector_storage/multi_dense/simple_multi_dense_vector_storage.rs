@@ -135,10 +135,14 @@ fn open_simple_multi_dense_vector_storage_impl<T: PrimitiveVectorElement>(
     let db_wrapper = DatabaseColumnWrapper::new(database, database_column_name);
     db_wrapper.lock_db().iter()?;
     for (key, value) in db_wrapper.lock_db().iter()? {
-        let point_id: PointOffsetType = bincode::deserialize(&key)
-            .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?;
-        let stored_record: StoredMultiDenseVector<T> = bincode::deserialize(&value)
-            .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?;
+        let point_id: PointOffsetType =
+            bincode::serde::decode_from_slice(&key, bincode::config::standard())
+                .map_err(|_| OperationError::service_error("cannot deserialize point id from db"))?
+                .0;
+        let stored_record: StoredMultiDenseVector<T> =
+            bincode::serde::decode_from_slice(&value, bincode::config::standard())
+                .map_err(|_| OperationError::service_error("cannot deserialize record from db"))?
+                .0;
 
         // Propagate deleted flag
         if stored_record.deleted {
@@ -219,8 +223,9 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
                 .extend_from_slice(vector.flattened_vectors);
         }
 
-        let key_enc = bincode::serialize(&key).unwrap();
-        let record_enc = bincode::serialize(&record).unwrap();
+        let key_enc = bincode::serde::encode_to_vec(key, bincode::config::standard()).unwrap();
+        let record_enc =
+            bincode::serde::encode_to_vec(&record, bincode::config::standard()).unwrap();
 
         hw_counter
             .vector_io_write_counter()
