@@ -25,6 +25,7 @@ pub trait PayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Vec<FieldIndex>>>;
 
     /// Apply already built indexes
@@ -40,10 +41,11 @@ pub trait PayloadIndex {
         &mut self,
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let payload_schema = payload_schema.into();
 
-        let Some(field_index) = self.build_index(field, &payload_schema)? else {
+        let Some(field_index) = self.build_index(field, &payload_schema, hw_counter)? else {
             return Ok(());
         };
 

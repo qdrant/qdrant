@@ -80,6 +80,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     on_disk: Some(true),
                 }),
             )),
+            &hw_counter,
         )
         .unwrap();
     segment
@@ -95,6 +96,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
                     on_disk: Some(true),
                 }),
             )),
+            &hw_counter,
         )
         .unwrap();
 

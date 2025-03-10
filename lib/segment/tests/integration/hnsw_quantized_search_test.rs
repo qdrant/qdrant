@@ -76,7 +76,12 @@ fn hnsw_quantized_search_test(
     }
 
     segment
-        .create_field_index(op_num, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
+        .create_field_index(
+            op_num,
+            &JsonPath::new(STR_KEY),
+            Some(&Keyword.into()),
+            &hw_counter,
+        )
         .unwrap();
     op_num += 1;
     for n in 0..payloads_count {

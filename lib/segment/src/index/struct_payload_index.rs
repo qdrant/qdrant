@@ -144,7 +144,11 @@ impl StructPayloadIndex {
         if !is_loaded {
             debug!("Index for `{field}` was not loaded. Building...");
             // todo(ivan): decide what to do with indexes, which were not loaded
-            indexes = self.build_field_indexes(field, payload_schema)?;
+            indexes = self.build_field_indexes(
+                field,
+                payload_schema,
+                &HardwareCounterCell::disposable(), // Internal operation.
+            )?;
         }
 
         Ok(indexes)
@@ -212,6 +216,7 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect values!
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
         let mut builders = self
@@ -438,6 +443,7 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         if let Some(prev_schema) = self.config.indexed_fields.get(field) {
             // the field is already indexed with the same schema
@@ -447,7 +453,7 @@ impl PayloadIndex for StructPayloadIndex {
             }
         }
 
-        let indexes = self.build_field_indexes(field, payload_schema)?;
+        let indexes = self.build_field_indexes(field, payload_schema, hw_counter)?;
 
         Ok(Some(indexes))
     }
@@ -564,11 +570,11 @@ impl PayloadIndex for StructPayloadIndex {
             .borrow_mut()
             .overwrite(point_id, payload, hw_counter)?;
 
-        // TODO(io_measurement): Maybe add measurements to index here too.
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
+                    // TODO(io_measurement): only measure this part!
                     index.add_point(point_id, &field_value)?;
                 }
             } else {
