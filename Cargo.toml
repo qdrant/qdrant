@@ -166,7 +166,7 @@ ahash = { version = "0.8.11", features = ["serde"] }
 atomicwrites = "0.4.4"
 bytemuck = { version = "1.22.0", features = ["extern_crate_alloc", "must_cast", "transparentwrapper_extra"] }
 bytes = "1.10.1"
-chrono = { version = "0.4.39", features = ["serde"] }
+chrono = { version = "0.4.40", features = ["serde"] }
 criterion = "0.5.1"
 data-encoding = "2.8.0"
 delegate = "0.13.2"
