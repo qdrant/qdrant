@@ -334,22 +334,7 @@ pub(crate) fn clear_payload_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     let points_to_clear = points_by_filter(segments, filter, hw_counter)?;
-
-    let mut total_updated_points = 0;
-
-    for batch in points_to_clear.chunks(PAYLOAD_OP_BATCH_SIZE) {
-        let updated_points = segments.apply_points_with_conditional_move(
-            op_num,
-            batch,
-            |id, write_segment| write_segment.clear_payload(op_num, id, hw_counter),
-            |_, _, payload| payload.0.clear(),
-            |segment| segment.get_indexed_fields().is_empty(),
-            hw_counter,
-        )?;
-        total_updated_points += updated_points.len();
-    }
-
-    Ok(total_updated_points)
+    clear_payload(segments, op_num, &points_to_clear, hw_counter)
 }
 
 pub(crate) fn create_field_index(
