@@ -1323,3 +1323,58 @@ def test_strict_mode_read_rate_limiting_small_replenish(collection_name):
             return
 
     assert False, "rate limiter was never triggered"
+
+
+def test_strict_mode_unset_rate_limiting_config(collection_name):
+    # set write rate limit
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "write_rate_limit": 1,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['write_rate_limit'] == 1
+    assert 'read_rate_limit' not in new_strict_mode_config
+
+    # set read rate limit on top
+    set_strict_mode(collection_name, {
+        "read_rate_limit": 2,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['write_rate_limit'] == 1
+    assert new_strict_mode_config['read_rate_limit'] == 2
+
+    # disable only write rate limit on top
+    set_strict_mode(collection_name, {
+        "write_rate_limit": None,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['read_rate_limit'] == 2
+    # assert write rate limit is not unset because it is currently not supported
+    assert new_strict_mode_config['write_rate_limit'] == 1
