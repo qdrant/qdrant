@@ -4858,6 +4858,7 @@ dependencies = [
  "common",
  "criterion",
  "io",
+ "memory",
  "num-traits",
  "num_threads",
  "permutation_iterator",

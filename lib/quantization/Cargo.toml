@@ -21,7 +21,7 @@ permutation_iterator = "0.1.2"
 rand = { workspace = true }
 rayon = { workspace = true }
 num-traits = { workspace = true }
-
+memory = { path = "../common/memory" }
 common = { path = "../common/common" }
 io = { path = "../common/io" }
 
