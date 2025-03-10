@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::validation::MAX_MULTIVECTOR_FLATTENED_LEN;
 use rstest::rstest;
@@ -56,10 +57,12 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
+
     // Insert all points
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.into())
+            .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
             .unwrap();
     }
     // Check that all points are inserted
@@ -182,6 +185,8 @@ fn do_test_update_from_delete_points(
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
+
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -197,7 +202,7 @@ fn do_test_update_from_delete_points(
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
-                    .insert_vector(i as PointOffsetType, vec.into())
+                    .insert_vector(i as PointOffsetType, vec.into(), &hw_counter)
                     .unwrap();
                 if delete_mask[i] {
                     storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -350,7 +355,8 @@ fn test_large_multi_dense_vector_storage(
     let vectors = vec![vec![0.0; vec_dim]; vec_count];
     let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
 
-    let result = storage.insert_vector(0, VectorRef::from(&multivec));
+    let hw_counter = HardwareCounterCell::new();
+    let result = storage.insert_vector(0, VectorRef::from(&multivec), &hw_counter);
     match result {
         Ok(_) => {
             panic!("Inserting vector should fail");

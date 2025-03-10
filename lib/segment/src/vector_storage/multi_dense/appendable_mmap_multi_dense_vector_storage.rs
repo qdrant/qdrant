@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
@@ -181,7 +182,12 @@ impl<
         })
     }
 
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: VectorRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let multi_vector: TypedMultiDenseVectorRef<VectorElementType> = vector.try_into()?;
         let multi_vector = T::from_float_multivector(CowMultiVector::Borrowed(multi_vector));
         let multi_vector = multi_vector.as_vec_ref();
@@ -223,8 +229,10 @@ impl<
             offset.offset as VectorOffsetType,
             multi_vector.flattened_vectors,
             multi_vector.vectors_count(),
+            hw_counter,
         )?;
-        self.offsets.insert(key as VectorOffsetType, &[offset])?;
+        self.offsets
+            .insert(key as VectorOffsetType, &[offset], hw_counter)?;
         self.set_deleted(key, false)?;
 
         Ok(())
@@ -236,12 +244,13 @@ impl<
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.offsets.len() as PointOffsetType;
+        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector: VectorRef = other_vector.as_vec_ref();
             let new_id = self.offsets.len() as PointOffsetType;
-            self.insert_vector(new_id, other_vector)?;
+            self.insert_vector(new_id, other_vector, &disposed_hw_counter)?;
             self.set_deleted(new_id, other_deleted)?;
         }
         let end_index = self.offsets.len() as PointOffsetType;

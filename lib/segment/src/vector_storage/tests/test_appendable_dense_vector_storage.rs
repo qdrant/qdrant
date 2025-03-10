@@ -30,9 +30,11 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.as_slice().into())
+            .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
             .unwrap();
     }
 
@@ -109,10 +111,12 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 0.0, 0.0, 0.0],
     ];
     let delete_mask = [false, false, true, true, false];
+
     let id_tracker: Arc<AtomicRefCell<IdTrackerSS>> =
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
     {
         let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
         let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -127,7 +131,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
-                    .insert_vector(i as PointOffsetType, vec.as_slice().into())
+                    .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                     .unwrap();
                 if delete_mask[i] {
                     storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -185,9 +189,11 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let mut borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
+
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.as_slice().into())
+            .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
             .unwrap();
     }
 
@@ -258,9 +264,10 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
     let borrowed_id_tracker = id_tracker.borrow_mut();
 
+    let hw_counter = HardwareCounterCell::new();
     for (i, vec) in points.iter().enumerate() {
         storage
-            .insert_vector(i as PointOffsetType, vec.as_slice().into())
+            .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
             .unwrap();
     }
 

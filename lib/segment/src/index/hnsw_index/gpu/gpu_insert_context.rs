@@ -462,6 +462,7 @@ impl<'a> GpuInsertContext<'a> {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::ScoredPointOffset;
     use itertools::Itertools;
     use rand::SeedableRng;
@@ -520,7 +521,11 @@ mod tests {
         for idx in 0..(num_vectors + groups_count) {
             let v = vector_holder.get_vector(idx as PointOffsetType);
             storage
-                .insert_vector(idx as PointOffsetType, v.as_vec_ref())
+                .insert_vector(
+                    idx as PointOffsetType,
+                    v.as_vec_ref(),
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
         }
 

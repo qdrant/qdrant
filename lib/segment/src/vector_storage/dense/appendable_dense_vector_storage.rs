@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
@@ -109,11 +110,16 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
             .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
     }
 
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: VectorRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let vector: &[VectorElementType] = vector.try_into()?;
         let vector = T::slice_from_float_cow(Cow::from(vector));
         self.vectors
-            .insert(key as VectorOffsetType, vector.as_ref())?;
+            .insert(key as VectorOffsetType, vector.as_ref(), hw_counter)?;
         self.set_deleted(key, false)?;
         Ok(())
     }
@@ -124,11 +130,12 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         let start_index = self.vectors.len() as PointOffsetType;
+        let disposed_hw = HardwareCounterCell::disposable(); // This function is only used for internal operations.
         for (other_vector, other_deleted) in other_vectors {
             check_process_stopped(stopped)?;
             // Do not perform preprocessing - vectors should be already processed
             let other_vector = T::slice_from_float_cow(Cow::try_from(other_vector)?);
-            let new_id = self.vectors.push(other_vector.as_ref())?;
+            let new_id = self.vectors.push(other_vector.as_ref(), &disposed_hw)?;
             self.set_deleted(new_id as PointOffsetType, other_deleted)?;
         }
         let end_index = self.vectors.len() as PointOffsetType;

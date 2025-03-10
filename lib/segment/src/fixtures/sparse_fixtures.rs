@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
@@ -60,9 +61,10 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
 
     let num_vectors = vectors.len();
     let mut num_vectors_not_empty = 0;
+    let hw_counter = HardwareCounterCell::new();
     for (idx, vec) in vectors.enumerate() {
         borrowed_storage
-            .insert_vector(idx as PointOffsetType, (&vec).into())
+            .insert_vector(idx as PointOffsetType, (&vec).into(), &hw_counter)
             .unwrap();
         num_vectors_not_empty += usize::from(!vec.is_empty());
     }

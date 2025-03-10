@@ -211,13 +211,16 @@ impl VectorStorage for MmapSparseVectorStorage {
         }
     }
 
-    fn insert_vector(&mut self, key: PointOffsetType, vector: VectorRef) -> OperationResult<()> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate value!
-
+    fn insert_vector(
+        &mut self,
+        key: PointOffsetType,
+        vector: VectorRef,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let vector = <&SparseVector>::try_from(vector)?;
         debug_assert!(vector.is_sorted());
         self.set_deleted(key, false)?;
-        self.update_stored(key, Some(vector), &hw_counter)?;
+        self.update_stored(key, Some(vector), hw_counter)?;
         Ok(())
     }
 
@@ -298,6 +301,7 @@ mod test {
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use sparse::common::sparse_vector;
 
     use crate::vector_storage::VectorStorage;
@@ -351,12 +355,20 @@ mod test {
             values: vec![0.1, 0.2, 0.3],
         };
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let mut storage = MmapSparseVectorStorage::open_or_create(tmp_dir.path()).unwrap();
 
-            storage.insert_vector(0, VectorRef::from(&vector)).unwrap();
-            storage.insert_vector(2, VectorRef::from(&vector)).unwrap();
-            storage.insert_vector(4, VectorRef::from(&vector)).unwrap();
+            storage
+                .insert_vector(0, VectorRef::from(&vector), &hw_counter)
+                .unwrap();
+            storage
+                .insert_vector(2, VectorRef::from(&vector), &hw_counter)
+                .unwrap();
+            storage
+                .insert_vector(4, VectorRef::from(&vector), &hw_counter)
+                .unwrap();
             storage.flusher()().unwrap();
         }
 

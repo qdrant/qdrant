@@ -94,6 +94,7 @@ fn create_graph_layers_builder(
 #[cfg(test)]
 mod tests {
     use ahash::HashSet;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use common::types::PointOffsetType;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
@@ -148,7 +149,11 @@ mod tests {
         for idx in 0..num_vectors {
             let v = vector_holder.get_vector(idx as PointOffsetType);
             storage
-                .insert_vector(idx as PointOffsetType, v.as_vec_ref())
+                .insert_vector(
+                    idx as PointOffsetType,
+                    v.as_vec_ref(),
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
         }
 

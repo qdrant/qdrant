@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memory::mmap_ops;
 
@@ -174,7 +175,12 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
             .map(|vector| T::slice_to_float_cow(vector.into()).into())
     }
 
-    fn insert_vector(&mut self, _key: PointOffsetType, _vector: VectorRef) -> OperationResult<()> {
+    fn insert_vector(
+        &mut self,
+        _key: PointOffsetType,
+        _vector: VectorRef,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         panic!("Can't directly update vector in mmap storage")
     }
 
@@ -313,6 +319,8 @@ mod tests {
                 .expect("storage is missing required file");
         }
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -326,13 +334,13 @@ mod tests {
             .unwrap();
             {
                 storage2
-                    .insert_vector(0, points[0].as_slice().into())
+                    .insert_vector(0, points[0].as_slice().into(), &hw_counter)
                     .unwrap();
                 storage2
-                    .insert_vector(1, points[1].as_slice().into())
+                    .insert_vector(1, points[1].as_slice().into(), &hw_counter)
                     .unwrap();
                 storage2
-                    .insert_vector(2, points[2].as_slice().into())
+                    .insert_vector(2, points[2].as_slice().into(), &hw_counter)
                     .unwrap();
             }
             let mut iter = (0..3).map(|i| {
@@ -366,10 +374,10 @@ mod tests {
             .unwrap();
             {
                 storage2
-                    .insert_vector(3, points[3].as_slice().into())
+                    .insert_vector(3, points[3].as_slice().into(), &hw_counter)
                     .unwrap();
                 storage2
-                    .insert_vector(4, points[4].as_slice().into())
+                    .insert_vector(4, points[4].as_slice().into(), &hw_counter)
                     .unwrap();
             }
             let mut iter = (0..2).map(|i| {
@@ -421,6 +429,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -435,7 +445,7 @@ mod tests {
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                         .unwrap();
                 });
             }
@@ -543,6 +553,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -557,7 +569,7 @@ mod tests {
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                         .unwrap();
                     if delete_mask[i] {
                         storage2.delete_vector(i as PointOffsetType).unwrap();
@@ -622,6 +634,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -636,7 +650,7 @@ mod tests {
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                         .unwrap();
                 }
             }
@@ -706,6 +720,8 @@ mod tests {
         let mut storage = open_memmap_vector_storage(dir.path(), 4, Distance::Dot).unwrap();
         let borrowed_id_tracker = id_tracker.borrow_mut();
 
+        let hw_counter = HardwareCounterCell::new();
+
         {
             let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
             let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
@@ -720,7 +736,7 @@ mod tests {
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
-                        .insert_vector(i as PointOffsetType, vec.as_slice().into())
+                        .insert_vector(i as PointOffsetType, vec.as_slice().into(), &hw_counter)
                         .unwrap();
                 }
             }
