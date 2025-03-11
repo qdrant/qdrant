@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs::{create_dir_all, remove_dir};
 use std::path::PathBuf;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -126,7 +127,12 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         ValueIndexer::add_point(self, id, payload)
     }
 

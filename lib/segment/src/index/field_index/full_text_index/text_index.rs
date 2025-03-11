@@ -271,7 +271,12 @@ impl FieldIndexBuilderTrait for FullTextIndexBuilder {
         self.0.init()
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.0.add_point(id, payload)
     }
 

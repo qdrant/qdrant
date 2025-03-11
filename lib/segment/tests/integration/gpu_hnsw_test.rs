@@ -73,6 +73,8 @@ fn test_gpu_filterable_hnsw() {
 
     let int_key = "int";
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
@@ -80,8 +82,6 @@ fn test_gpu_filterable_hnsw() {
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
-
-        let hw_counter = HardwareCounterCell::new();
 
         segment
             .upsert_point(
@@ -112,7 +112,11 @@ fn test_gpu_filterable_hnsw() {
 
     payload_index_ptr
         .borrow_mut()
-        .set_indexed(&JsonPath::new(int_key), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new(int_key),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
 
     let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);

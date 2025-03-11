@@ -340,6 +340,7 @@ impl FieldIndexBuilderTrait for MmapNullIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.0.add_point(id, payload)
     }
@@ -369,12 +370,18 @@ mod tests {
 
         let n = 100;
 
+        let hw_counter = HardwareCounterCell::new();
+
         for i in 0..n {
             match i % 4 {
-                0 => builder.add_point(i, &[&null_value]).unwrap(),
-                1 => builder.add_point(i, &[&null_value_in_array]).unwrap(),
-                2 => builder.add_point(i, &[]).unwrap(),
-                3 => builder.add_point(i, &[&Value::Bool(true)]).unwrap(),
+                0 => builder.add_point(i, &[&null_value], &hw_counter).unwrap(),
+                1 => builder
+                    .add_point(i, &[&null_value_in_array], &hw_counter)
+                    .unwrap(),
+                2 => builder.add_point(i, &[], &hw_counter).unwrap(),
+                3 => builder
+                    .add_point(i, &[&Value::Bool(true)], &hw_counter)
+                    .unwrap(),
                 _ => unreachable!(),
             }
         }

@@ -415,7 +415,12 @@ pub trait FieldIndexBuilderTrait {
     /// Expected to be called exactly once before any other method.
     fn init(&mut self) -> OperationResult<()>;
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()>;
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType>;
 
@@ -480,29 +485,34 @@ impl FieldIndexBuilderTrait for FieldIndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            Self::IntIndex(index) => index.add_point(id, payload),
-            Self::IntMmapIndex(index) => index.add_point(id, payload),
-            Self::DatetimeIndex(index) => index.add_point(id, payload),
-            Self::DatetimeMmapIndex(index) => index.add_point(id, payload),
-            Self::IntMapIndex(index) => index.add_point(id, payload),
-            Self::IntMapMmapIndex(index) => index.add_point(id, payload),
-            Self::KeywordIndex(index) => index.add_point(id, payload),
-            Self::KeywordMmapIndex(index) => index.add_point(id, payload),
-            Self::FloatIndex(index) => index.add_point(id, payload),
-            Self::FloatMmapIndex(index) => index.add_point(id, payload),
-            Self::GeoIndex(index) => index.add_point(id, payload),
-            Self::GeoMmapIndex(index) => index.add_point(id, payload),
-            Self::BoolIndex(index) => index.add_point(id, payload),
-            Self::BoolMmapIndex(index) => index.add_point(id, payload),
-            Self::FullTextIndex(index) => index.add_point(id, payload),
+            Self::IntIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::IntMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::DatetimeIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::DatetimeMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::IntMapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::IntMapMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::KeywordIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::KeywordMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::FloatIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::FloatMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::GeoIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::GeoMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::BoolIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::BoolMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::FullTextIndex(index) => index.add_point(id, payload, hw_counter),
             Self::FullTextMmapIndex(builder) => {
-                FieldIndexBuilderTrait::add_point(builder, id, payload)
+                FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
             }
-            Self::UuidIndex(index) => index.add_point(id, payload),
-            Self::UuidMmapIndex(index) => index.add_point(id, payload),
-            Self::NullIndex(index) => index.add_point(id, payload),
+            Self::UuidIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::UuidMmapIndex(index) => index.add_point(id, payload, hw_counter),
+            Self::NullIndex(index) => index.add_point(id, payload, hw_counter),
         }
     }
 

@@ -451,7 +451,12 @@ where
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        values: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.0.add_point(id, values)
     }
 
@@ -478,7 +483,12 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload.iter() {
             let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
@@ -1148,6 +1158,8 @@ mod tests {
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
         <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
+        let hw_counter = HardwareCounterCell::new();
+
         match index_type {
             IndexType::Mutable | IndexType::Immutable => {
                 let mut builder =
@@ -1156,7 +1168,9 @@ mod tests {
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
                     let values: Vec<_> = values.iter().collect();
-                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                    builder
+                        .add_point(idx as PointOffsetType, &values, &hw_counter)
+                        .unwrap();
                 }
                 builder.finalize().unwrap();
             }
@@ -1166,7 +1180,9 @@ mod tests {
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
                     let values: Vec<_> = values.iter().collect();
-                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                    builder
+                        .add_point(idx as PointOffsetType, &values, &hw_counter)
+                        .unwrap();
                 }
                 builder.finalize().unwrap();
             }
@@ -1212,10 +1228,14 @@ mod tests {
 
         let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (idx, values) in data.iter().enumerate().rev() {
             let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
             let values: Vec<_> = values.iter().collect();
-            builder.add_point(idx as PointOffsetType, &values).unwrap();
+            builder
+                .add_point(idx as PointOffsetType, &values, &hw_counter)
+                .unwrap();
         }
 
         let index = builder.finalize().unwrap();

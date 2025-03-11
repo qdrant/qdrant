@@ -331,7 +331,12 @@ impl FieldIndexBuilderTrait for BoolIndexBuilder {
         self.0.db_wrapper.recreate_column_family()
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.0.add_point(id, payload)
     }
 
