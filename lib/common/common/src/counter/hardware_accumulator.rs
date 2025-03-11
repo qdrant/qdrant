@@ -13,6 +13,7 @@ pub struct HwSharedDrain {
     pub(crate) payload_io_read_counter: Arc<AtomicUsize>,
     pub(crate) payload_io_write_counter: Arc<AtomicUsize>,
     pub(crate) payload_index_io_read_counter: Arc<AtomicUsize>,
+    pub(crate) payload_index_io_write_counter: Arc<AtomicUsize>,
     pub(crate) vector_io_read_counter: Arc<AtomicUsize>,
     pub(crate) vector_io_write_counter: Arc<AtomicUsize>,
 }
@@ -34,30 +35,16 @@ impl HwSharedDrain {
         self.payload_index_io_read_counter.load(Ordering::Relaxed)
     }
 
+    pub fn get_payload_index_io_write(&self) -> usize {
+        self.payload_index_io_write_counter.load(Ordering::Relaxed)
+    }
+
     pub fn get_vector_io_write(&self) -> usize {
         self.vector_io_write_counter.load(Ordering::Relaxed)
     }
 
     pub fn get_vector_io_read(&self) -> usize {
         self.vector_io_read_counter.load(Ordering::Relaxed)
-    }
-
-    fn new(
-        cpu: Arc<AtomicUsize>,
-        payload_io_read: Arc<AtomicUsize>,
-        payload_io_write: Arc<AtomicUsize>,
-        payload_index_io_read: Arc<AtomicUsize>,
-        vector_io_read: Arc<AtomicUsize>,
-        vector_io_write: Arc<AtomicUsize>,
-    ) -> Self {
-        Self {
-            cpu_counter: cpu,
-            payload_io_read_counter: payload_io_read,
-            payload_io_write_counter: payload_io_write,
-            payload_index_io_read_counter: payload_index_io_read,
-            vector_io_read_counter: vector_io_read,
-            vector_io_write_counter: vector_io_write,
-        }
     }
 
     /// Accumulates all values from `src` into this HwSharedDrain.
@@ -67,6 +54,7 @@ impl HwSharedDrain {
             payload_io_read_counter,
             payload_io_write_counter,
             payload_index_io_read_counter,
+            payload_index_io_write_counter,
             vector_io_read_counter,
             vector_io_write_counter,
         } = self;
@@ -75,6 +63,7 @@ impl HwSharedDrain {
         payload_io_read_counter.fetch_add(src.payload_io_read, Ordering::Relaxed);
         payload_io_write_counter.fetch_add(src.payload_io_write, Ordering::Relaxed);
         payload_index_io_read_counter.fetch_add(src.payload_index_io_read, Ordering::Relaxed);
+        payload_index_io_write_counter.fetch_add(src.payload_index_io_write, Ordering::Relaxed);
         vector_io_read_counter.fetch_add(src.vector_io_read, Ordering::Relaxed);
         vector_io_write_counter.fetch_add(src.vector_io_write, Ordering::Relaxed);
     }
@@ -82,14 +71,15 @@ impl HwSharedDrain {
 
 impl Clone for HwSharedDrain {
     fn clone(&self) -> Self {
-        Self::new(
-            self.cpu_counter.clone(),
-            self.payload_io_read_counter.clone(),
-            self.payload_io_write_counter.clone(),
-            self.payload_index_io_read_counter.clone(),
-            self.vector_io_read_counter.clone(),
-            self.vector_io_write_counter.clone(),
-        )
+        HwSharedDrain {
+            cpu_counter: self.cpu_counter.clone(),
+            payload_io_read_counter: self.payload_io_read_counter.clone(),
+            payload_io_write_counter: self.payload_io_write_counter.clone(),
+            payload_index_io_read_counter: self.payload_index_io_read_counter.clone(),
+            payload_index_io_write_counter: self.payload_index_io_write_counter.clone(),
+            vector_io_read_counter: self.vector_io_read_counter.clone(),
+            vector_io_write_counter: self.vector_io_write_counter.clone(),
+        }
     }
 }
 impl Default for HwSharedDrain {
@@ -99,6 +89,7 @@ impl Default for HwSharedDrain {
             payload_io_read_counter: Arc::new(AtomicUsize::new(0)),
             payload_io_write_counter: Arc::new(AtomicUsize::new(0)),
             payload_index_io_read_counter: Arc::new(AtomicUsize::new(0)),
+            payload_index_io_write_counter: Arc::new(AtomicUsize::new(0)),
             vector_io_read_counter: Arc::new(AtomicUsize::new(0)),
             vector_io_write_counter: Arc::new(AtomicUsize::new(0)),
         }
@@ -181,6 +172,10 @@ impl HwMeasurementAcc {
 
     pub fn get_payload_index_io_read(&self) -> usize {
         self.request_drain.get_payload_index_io_read()
+    }
+
+    pub fn get_payload_index_io_write(&self) -> usize {
+        self.request_drain.get_payload_index_io_write()
     }
 
     pub fn get_vector_io_read(&self) -> usize {
