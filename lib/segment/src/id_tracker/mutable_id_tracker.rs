@@ -28,6 +28,18 @@ enum MappingChange {
     Delete(PointIdType),
 }
 
+/// Mutable in-memory ID tracker with simple file-based backing storage
+///
+/// This ID tracker simply persists all recorded point mapping and versions changes to disk by
+/// appending these changes to a file. When loading, all mappings and versions are deduplicated in memory so
+/// that only the latest mappings for a point are kept.
+///
+/// This structure may grow forever by collecting changes. It therefore relies on the optimization
+/// processes in Qdrant to eventually vacuum the segment this ID  tracker belongs to.
+/// Reoptimization will clear all collected changes and start from scratch.
+///
+/// This ID tracker primarily replaces [`SimpleIdTracker`], so that we can eliminate the use of
+/// RocksDB.
 #[derive(Debug)]
 pub struct MutableIdTracker {
     segment_path: PathBuf,
@@ -74,11 +86,33 @@ impl MutableIdTracker {
         if has_mappings {
             let mappings_file = File::open(mappings_path)?;
             let mappings_reader = std::io::BufReader::new(mappings_file);
+            let mut last_parse_error = None;
 
             for entry in std::io::BufRead::lines(mappings_reader) {
-                let entry = entry.expect("failed to parse mapping change entry");
-                let change: MappingChange =
-                    serde_json::from_str(&entry).expect("failed to parse mapping change JSON");
+                // Parse entry, do not return with error if just the last entry is corrupt
+                if let Some(err) = last_parse_error {
+                    return Err(err);
+                }
+                let change = entry
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to parse ID tracker mapping entry as string, data may be corrupted: {err}"
+                        ))
+                    })
+                    .and_then(|entry| {
+                        serde_json::from_str(&entry).map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to parse ID tracker mapping entry as JSON, data may be corrupted: {err}"
+                            ))
+                        })
+                    });
+                let change: MappingChange = match change {
+                    Ok(entry) => entry,
+                    Err(err) => {
+                        last_parse_error.replace(err);
+                        continue;
+                    }
+                };
 
                 match change {
                     MappingChange::Insert(external_id, internal_id) => {
@@ -151,6 +185,14 @@ impl MutableIdTracker {
                         deleted.set(internal_id as usize, true);
                     }
                 }
+
+                // Warn if last entry was corrupted
+                // Flush may have been interrupted, the WAL should recover the mappings
+                if last_parse_error.is_some() {
+                    log::warn!(
+                        "Last entry of ID tracker mappings is corrupt, should be recovered by WAL",
+                    );
+                }
             }
         }
 
@@ -160,11 +202,33 @@ impl MutableIdTracker {
         if has_versions {
             let versions_file = File::open(versions_path)?;
             let versions_reader = std::io::BufReader::new(versions_file);
+            let mut last_parse_error = None;
 
             for entry in std::io::BufRead::lines(versions_reader) {
-                let entry = entry.expect("failed to parse version change entry");
-                let (external_id, version): VersionChange =
-                    serde_json::from_str(&entry).expect("failed to parse version change JSON");
+                // Parse entry, do not return with error if just the last entry is corrupt
+                if let Some(err) = last_parse_error {
+                    return Err(err);
+                }
+                let change = entry
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to parse ID tracker version entry as string, data may be corrupted: {err}"
+                        ))
+                    })
+                    .and_then(|entry| {
+                        serde_json::from_str(&entry).map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to parse ID tracker version entry as JSON, data may be corrupted: {err}"
+                            ))
+                        })
+                    });
+                let (external_id, version): VersionChange = match change {
+                    Ok(entry) => entry,
+                    Err(err) => {
+                        last_parse_error.replace(err);
+                        continue;
+                    }
+                };
 
                 let internal_id = match external_id {
                     PointIdType::NumId(num) => external_to_internal_num.get(&num).copied(),
@@ -182,6 +246,14 @@ impl MutableIdTracker {
                     internal_to_version.resize(internal_id as usize + 1, 0);
                 }
                 internal_to_version[internal_id as usize] = version;
+            }
+
+            // Warn if last entry was corrupted
+            // Flush may have been interrupted, the WAL should recover the mappings
+            if last_parse_error.is_some() {
+                log::warn!(
+                    "Last entry of ID tracker version is corrupt, should be recovered by WAL",
+                );
             }
         }
 
@@ -218,22 +290,6 @@ impl MutableIdTracker {
     fn versions_path(segment_path: &Path) -> PathBuf {
         segment_path.join(FILE_VERSIONS)
     }
-
-    fn persist_mapping(&self, external_id: PointIdType, internal_id: PointOffsetType) {
-        self.pending_mappings
-            .lock()
-            .push(MappingChange::Insert(external_id, internal_id));
-    }
-
-    fn delete_mapping(&self, external_id: PointIdType) {
-        self.pending_mappings
-            .lock()
-            .push(MappingChange::Delete(external_id));
-    }
-
-    fn persist_version(&self, external_id: PointIdType, version: SeqNumberType) {
-        self.pending_versions.lock().push((external_id, version));
-    }
 }
 
 impl IdTracker for MutableIdTracker {
@@ -261,7 +317,7 @@ impl IdTracker for MutableIdTracker {
                 self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
             self.internal_to_version[internal_id as usize] = version;
-            self.persist_version(external_id, version);
+            self.pending_versions.lock().push((external_id, version));
         }
         Ok(())
     }
@@ -280,13 +336,17 @@ impl IdTracker for MutableIdTracker {
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
         self.mappings.set_link(external_id, internal_id);
-        self.persist_mapping(external_id, internal_id);
+        self.pending_mappings
+            .lock()
+            .push(MappingChange::Insert(external_id, internal_id));
         Ok(())
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
         self.mappings.drop(external_id);
-        self.delete_mapping(external_id);
+        self.pending_mappings
+            .lock()
+            .push(MappingChange::Delete(external_id));
         Ok(())
     }
 
