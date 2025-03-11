@@ -10,10 +10,10 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::Flusher;
-use crate::id_tracker::point_mappings::PointMappings;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTracker;
+use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
