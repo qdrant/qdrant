@@ -81,180 +81,32 @@ impl MutableIdTracker {
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
+        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
 
-        // Load point mappings
         if has_mappings {
-            let mappings_file = File::open(mappings_path)?;
-            let mappings_reader = std::io::BufReader::new(mappings_file);
-            let mut last_parse_error = None;
-
-            for entry in std::io::BufRead::lines(mappings_reader) {
-                // Parse entry, do not return with error if just the last entry is corrupt
-                if let Some(err) = last_parse_error {
-                    return Err(err);
-                }
-                let change = entry
-                    .map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to parse ID tracker mapping entry as string, data may be corrupted: {err}"
-                        ))
-                    })
-                    .and_then(|entry| {
-                        serde_json::from_str(&entry).map_err(|err| {
-                            OperationError::service_error(format!(
-                                "Failed to parse ID tracker mapping entry as JSON, data may be corrupted: {err}"
-                            ))
-                        })
-                    });
-                let change: MappingChange = match change {
-                    Ok(entry) => entry,
-                    Err(err) => {
-                        last_parse_error.replace(err);
-                        continue;
-                    }
-                };
-
-                match change {
-                    MappingChange::Insert(external_id, internal_id) => {
-                        // Update internal to external mapping
-                        if internal_id as usize >= internal_to_external.len() {
-                            internal_to_external
-                                .resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
-                        }
-                        let replaced_external_id = internal_to_external[internal_id as usize];
-                        internal_to_external[internal_id as usize] = external_id;
-
-                        // If point already exists, drop existing mapping
-                        if deleted
-                            .get(internal_id as usize)
-                            .is_some_and(|deleted| !deleted)
-                        {
-                            // Fixing corrupted mapping - this id should be recovered from WAL
-                            // This should not happen in normal operation, but it can happen if
-                            // the database is corrupted.
-                            log::warn!(
-                                "removing duplicated external id {external_id} in internal id {replaced_external_id}",
-                            );
-                            debug_assert!(false, "should never have to remove");
-                            match replaced_external_id {
-                                PointIdType::NumId(num) => {
-                                    external_to_internal_num.remove(&num);
-                                }
-                                PointIdType::Uuid(uuid) => {
-                                    external_to_internal_uuid.remove(&uuid);
-                                }
-                            }
-                        }
-
-                        // Mark point entry as not deleted
-                        if internal_id as usize >= deleted.len() {
-                            deleted.resize(internal_id as usize + 1, true);
-                        }
-                        deleted.set(internal_id as usize, false);
-
-                        // Set external to internal mapping
-                        match external_id {
-                            PointIdType::NumId(num) => {
-                                external_to_internal_num.insert(num, internal_id);
-                            }
-                            PointIdType::Uuid(uuid) => {
-                                external_to_internal_uuid.insert(uuid, internal_id);
-                            }
-                        }
-                    }
-                    MappingChange::Delete(external_id) => {
-                        // Remove external to internal mapping
-                        let internal_id = match external_id {
-                            PointIdType::NumId(idx) => external_to_internal_num.remove(&idx),
-                            PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(&uuid),
-                        };
-                        let Some(internal_id) = internal_id else {
-                            continue;
-                        };
-
-                        // Set internal to external mapping back to max int
-                        if (internal_id as usize) < internal_to_external.len() {
-                            internal_to_external[internal_id as usize] =
-                                PointIdType::NumId(u64::MAX);
-                        }
-
-                        // Mark internal point as deleted
-                        if internal_id as usize >= deleted.len() {
-                            deleted.resize(internal_id as usize + 1, true);
-                        }
-                        deleted.set(internal_id as usize, true);
-                    }
-                }
-
-                // Warn if last entry was corrupted
-                // Flush may have been interrupted, the WAL should recover the mappings
-                if last_parse_error.is_some() {
-                    log::warn!(
-                        "Last entry of ID tracker mappings is corrupt, should be recovered by WAL",
-                    );
-                }
-            }
+            Self::load_mappings(
+                &mappings_path,
+                &mut deleted,
+                &mut internal_to_external,
+                &mut external_to_internal_num,
+                &mut external_to_internal_uuid,
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
+            })?;
         }
 
-        // Load point versions
-        let mut internal_to_version: Vec<SeqNumberType> =
-            Vec::with_capacity(internal_to_external.len());
         if has_versions {
-            let versions_file = File::open(versions_path)?;
-            let versions_reader = std::io::BufReader::new(versions_file);
-            let mut last_parse_error = None;
-
-            for entry in std::io::BufRead::lines(versions_reader) {
-                // Parse entry, do not return with error if just the last entry is corrupt
-                if let Some(err) = last_parse_error {
-                    return Err(err);
-                }
-                let change = entry
-                    .map_err(|err| {
-                        OperationError::service_error(format!(
-                            "Failed to parse ID tracker version entry as string, data may be corrupted: {err}"
-                        ))
-                    })
-                    .and_then(|entry| {
-                        serde_json::from_str(&entry).map_err(|err| {
-                            OperationError::service_error(format!(
-                                "Failed to parse ID tracker version entry as JSON, data may be corrupted: {err}"
-                            ))
-                        })
-                    });
-                let (external_id, version): VersionChange = match change {
-                    Ok(entry) => entry,
-                    Err(err) => {
-                        last_parse_error.replace(err);
-                        continue;
-                    }
-                };
-
-                let internal_id = match external_id {
-                    PointIdType::NumId(num) => external_to_internal_num.get(&num).copied(),
-                    PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
-                };
-
-                let Some(internal_id) = internal_id else {
-                    log::debug!(
-                        "Found version: {version} without internal id, external id: {external_id}"
-                    );
-                    continue;
-                };
-
-                if internal_id as usize >= internal_to_version.len() {
-                    internal_to_version.resize(internal_id as usize + 1, 0);
-                }
-                internal_to_version[internal_id as usize] = version;
-            }
-
-            // Warn if last entry was corrupted
-            // Flush may have been interrupted, the WAL should recover the mappings
-            if last_parse_error.is_some() {
-                log::warn!(
-                    "Last entry of ID tracker version is corrupt, should be recovered by WAL",
-                );
-            }
+            Self::load_versions(
+                &versions_path,
+                &internal_to_external,
+                &external_to_internal_num,
+                &external_to_internal_uuid,
+                &mut internal_to_version,
+            )
+            .map_err(|err| {
+                OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
+            })?;
         }
 
         #[cfg(debug_assertions)]
@@ -281,6 +133,192 @@ impl MutableIdTracker {
             pending_versions: Mutex::new(vec![]),
             pending_mappings: Mutex::new(vec![]),
         })
+    }
+
+    fn load_mappings(
+        mappings_path: &Path,
+        deleted: &mut BitVec,
+        internal_to_external: &mut Vec<PointIdType>,
+        external_to_internal_num: &mut BTreeMap<u64, PointOffsetType>,
+        external_to_internal_uuid: &mut BTreeMap<Uuid, PointOffsetType>,
+    ) -> OperationResult<()> {
+        let mappings_file = File::open(mappings_path)?;
+        let mappings_reader = std::io::BufReader::new(mappings_file);
+        let mut last_parse_error = None;
+
+        for entry in std::io::BufRead::lines(mappings_reader) {
+            // Parse entry, do not return with error if just the last entry is corrupt
+            if let Some(err) = last_parse_error {
+                return Err(err);
+            }
+            let change = entry
+                .map_err(|err| {
+                    OperationError::service_error_light(format!(
+                        "ID tracker mapping entry is corrupt, cannot parse as string: {err}",
+                    ))
+                })
+                .and_then(|entry| {
+                    serde_json::from_str(&entry).map_err(|err| {
+                        OperationError::service_error_light(format!(
+                            "ID tracker mapping entry is corrupt, cannot parse as JSON: {err}",
+                        ))
+                    })
+                });
+            let change: MappingChange = match change {
+                Ok(entry) => entry,
+                Err(err) => {
+                    last_parse_error.replace(err);
+                    continue;
+                }
+            };
+
+            match change {
+                MappingChange::Insert(external_id, internal_id) => {
+                    // Update internal to external mapping
+                    if internal_id as usize >= internal_to_external.len() {
+                        internal_to_external
+                            .resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
+                    }
+                    let replaced_external_id = internal_to_external[internal_id as usize];
+                    internal_to_external[internal_id as usize] = external_id;
+
+                    // If point already exists, drop existing mapping
+                    if deleted
+                        .get(internal_id as usize)
+                        .is_some_and(|deleted| !deleted)
+                    {
+                        // Fixing corrupted mapping - this id should be recovered from WAL
+                        // This should not happen in normal operation, but it can happen if
+                        // the database is corrupted.
+                        log::warn!(
+                            "removing duplicated external id {external_id} in internal id {replaced_external_id}",
+                        );
+                        debug_assert!(false, "should never have to remove");
+                        match replaced_external_id {
+                            PointIdType::NumId(num) => {
+                                external_to_internal_num.remove(&num);
+                            }
+                            PointIdType::Uuid(uuid) => {
+                                external_to_internal_uuid.remove(&uuid);
+                            }
+                        }
+                    }
+
+                    // Mark point entry as not deleted
+                    if internal_id as usize >= deleted.len() {
+                        deleted.resize(internal_id as usize + 1, true);
+                    }
+                    deleted.set(internal_id as usize, false);
+
+                    // Set external to internal mapping
+                    match external_id {
+                        PointIdType::NumId(num) => {
+                            external_to_internal_num.insert(num, internal_id);
+                        }
+                        PointIdType::Uuid(uuid) => {
+                            external_to_internal_uuid.insert(uuid, internal_id);
+                        }
+                    }
+                }
+                MappingChange::Delete(external_id) => {
+                    // Remove external to internal mapping
+                    let internal_id = match external_id {
+                        PointIdType::NumId(idx) => external_to_internal_num.remove(&idx),
+                        PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(&uuid),
+                    };
+                    let Some(internal_id) = internal_id else {
+                        continue;
+                    };
+
+                    // Set internal to external mapping back to max int
+                    if (internal_id as usize) < internal_to_external.len() {
+                        internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
+                    }
+
+                    // Mark internal point as deleted
+                    if internal_id as usize >= deleted.len() {
+                        deleted.resize(internal_id as usize + 1, true);
+                    }
+                    deleted.set(internal_id as usize, true);
+                }
+            }
+
+            // Warn if last entry was corrupted
+            // Flush may have been interrupted, the WAL should recover the mappings
+            if last_parse_error.is_some() {
+                log::warn!(
+                    "Last entry of ID tracker mappings is corrupt, should be recovered by WAL",
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn load_versions(
+        versions_path: &Path,
+        internal_to_external: &[PointIdType],
+        external_to_internal_num: &BTreeMap<u64, PointOffsetType>,
+        external_to_internal_uuid: &BTreeMap<Uuid, PointOffsetType>,
+        internal_to_version: &mut Vec<SeqNumberType>,
+    ) -> OperationResult<()> {
+        internal_to_version.reserve(internal_to_external.len());
+
+        let versions_file = File::open(versions_path)?;
+        let versions_reader = std::io::BufReader::new(versions_file);
+        let mut last_parse_error = None;
+
+        for entry in std::io::BufRead::lines(versions_reader) {
+            // Parse entry, do not return with error if just the last entry is corrupt
+            if let Some(err) = last_parse_error {
+                return Err(err);
+            }
+            let change = entry
+                    .map_err(|err| {
+                        OperationError::service_error_light(format!(
+                            "Failed to parse ID tracker version entry as string, data may be corrupted: {err}"
+                        ))
+                    })
+                    .and_then(|entry| {
+                        serde_json::from_str(&entry).map_err(|err| {
+                            OperationError::service_error_light(format!(
+                                "Failed to parse ID tracker version entry as JSON, data may be corrupted: {err}"
+                            ))
+                        })
+                    });
+            let (external_id, version): VersionChange = match change {
+                Ok(entry) => entry,
+                Err(err) => {
+                    last_parse_error.replace(err);
+                    continue;
+                }
+            };
+
+            let internal_id = match external_id {
+                PointIdType::NumId(num) => external_to_internal_num.get(&num).copied(),
+                PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
+            };
+
+            let Some(internal_id) = internal_id else {
+                log::debug!(
+                    "Found version: {version} without internal id, external id: {external_id}"
+                );
+                continue;
+            };
+
+            if internal_id as usize >= internal_to_version.len() {
+                internal_to_version.resize(internal_id as usize + 1, 0);
+            }
+            internal_to_version[internal_id as usize] = version;
+        }
+
+        // Warn if last entry was corrupted
+        // Flush may have been interrupted, the WAL should recover the mappings
+        if last_parse_error.is_some() {
+            log::warn!("Last entry of ID tracker version is corrupt, should be recovered by WAL",);
+        }
+
+        Ok(())
     }
 
     fn mappings_path(segment_path: &Path) -> PathBuf {
@@ -423,7 +461,7 @@ impl IdTracker for MutableIdTracker {
 
             // Explicitly flush writer to catch IO errors
             writer.flush().map_err(|err| {
-                OperationError::service_error(format!(
+                OperationError::service_error_light(format!(
                     "Failed to flush ID tracker point mappings ({}): {err}",
                     mappings_path.display(),
                 ))
