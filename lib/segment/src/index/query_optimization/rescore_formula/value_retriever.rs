@@ -218,6 +218,7 @@ mod tests {
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use serde_json::{Value, from_value, json};
 
     use crate::common::utils::MultiValue;
@@ -320,13 +321,16 @@ mod tests {
         let payload_provider = PayloadProvider::new(Arc::new(AtomicRefCell::new(
             PayloadStorageEnum::InMemoryPayloadStorage(InMemoryPayloadStorage::default()),
         )));
+        let hw_counter = HardwareCounterCell::new();
 
         // Create a field index for a number.
         let dir = tempfile::tempdir().unwrap();
         let mut builder = NumericIndex::builder_mmap(dir.path(), false);
-        builder.add_point(0, &[&42.into()]).unwrap();
-        builder.add_point(1, &[]).unwrap();
-        builder.add_point(2, &[&99.into(), &55.into()]).unwrap();
+        builder.add_point(0, &[&42.into()], &hw_counter).unwrap();
+        builder.add_point(1, &[], &hw_counter).unwrap();
+        builder
+            .add_point(2, &[&99.into(), &55.into()], &hw_counter)
+            .unwrap();
         let numeric_index = builder.finalize().unwrap();
         let numeric_index = FieldIndex::IntIndex(numeric_index);
 
@@ -334,12 +338,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut builder = GeoMapIndex::mmap_builder(dir.path(), false);
 
-        builder.add_point(0, &[]).unwrap();
+        builder.add_point(0, &[], &hw_counter).unwrap();
         builder
-            .add_point(1, &[&json!({ "lat": 10.0, "lon": 20.0})])
+            .add_point(1, &[&json!({ "lat": 10.0, "lon": 20.0})], &hw_counter)
             .unwrap();
         builder
-            .add_point(2, &[&json!({"lat": 15.5, "lon": 25.5})])
+            .add_point(2, &[&json!({"lat": 15.5, "lon": 25.5})], &hw_counter)
             .unwrap();
         let geo_index = builder.finalize().unwrap();
         let geo_index = FieldIndex::GeoIndex(geo_index);

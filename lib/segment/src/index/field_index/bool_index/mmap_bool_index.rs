@@ -297,6 +297,7 @@ impl FieldIndexBuilderTrait for MmapBoolIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.0.add_point(id, payload)
     }

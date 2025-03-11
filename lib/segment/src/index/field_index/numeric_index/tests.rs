@@ -33,11 +33,16 @@ impl IndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            IndexBuilder::Mutable(builder) => builder.add_point(id, payload),
-            IndexBuilder::Immutable(builder) => builder.add_point(id, payload),
-            IndexBuilder::Mmap(builder) => builder.add_point(id, payload),
+            IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
+            IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
         }
     }
 }
@@ -82,13 +87,15 @@ fn random_index(
     let mut rng = StdRng::seed_from_u64(42);
     let (temp_dir, mut index_builder) = get_index_builder(index_type);
 
+    let hw_counter = HardwareCounterCell::new();
+
     for i in 0..num_points {
         let values = (0..values_per_point)
             .map(|_| Value::from(rng.random_range(0.0..100.0)))
             .collect_vec();
         let values = values.iter().collect_vec();
         index_builder
-            .add_point(i as PointOffsetType, &values)
+            .add_point(i as PointOffsetType, &values, &hw_counter)
             .unwrap();
     }
 
@@ -273,11 +280,13 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
         vec![2.0],
     ];
 
+    let hw_counter = HardwareCounterCell::new();
+
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         index_builder
-            .add_point(idx as PointOffsetType + 1, &values)
+            .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
             .unwrap();
     });
     let index = index_builder.finalize().unwrap();
@@ -308,11 +317,13 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
+    let hw_counter = HardwareCounterCell::new();
+
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         index_builder
-            .add_point(idx as PointOffsetType + 1, &values)
+            .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
             .unwrap();
     });
     let index = index_builder.finalize().unwrap();
@@ -368,11 +379,13 @@ fn test_numeric_index(#[case] index_type: IndexType) {
         vec![3.0],
     ];
 
+    let hw_counter = HardwareCounterCell::new();
+
     values.into_iter().enumerate().for_each(|(idx, values)| {
         let values = values.iter().map(|v| Value::from(*v)).collect_vec();
         let values = values.iter().collect_vec();
         index_builder
-            .add_point(idx as PointOffsetType + 1, &values)
+            .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
             .unwrap();
     });
     let index = index_builder.finalize().unwrap();

@@ -215,7 +215,7 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect values!
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
         let mut builders = self
@@ -229,7 +229,7 @@ impl StructPayloadIndex {
         payload_storage.iter(|point_id, point_payload| {
             let field_value = &point_payload.get_value(field);
             for builder in builders.iter_mut() {
-                builder.add_point(point_id, field_value)?;
+                builder.add_point(point_id, field_value, hw_counter)?;
             }
             Ok(true)
         })?;
