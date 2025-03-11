@@ -310,7 +310,15 @@ impl IdTracker for MutableIdTracker {
     /// This function should be called _before_ flushing the version database.
     fn mapping_flusher(&self) -> Flusher {
         let mappings_path = Self::mappings_path(&self.segment_path);
-        let pending_mappings = mem::take(&mut *self.pending_mappings.lock());
+
+        // Take out pending mappings to flush and replace it with a preallocated vector to avoid
+        // frequent reallocation on a busy segment
+        let pending_mappings = {
+            let mut pending_mappings = self.pending_mappings.lock();
+            let count = pending_mappings.len();
+            mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
+        };
+
         Box::new(move || {
             if pending_mappings.is_empty() {
                 return Ok(());
@@ -351,7 +359,14 @@ impl IdTracker for MutableIdTracker {
     /// This function should be called _after_ flushing the mapping database.
     fn versions_flusher(&self) -> Flusher {
         let versions_path = Self::versions_path(&self.segment_path);
-        let pending_versions = mem::take(&mut *self.pending_versions.lock());
+
+        // Take out pending versions to flush and replace it with a preallocated vector to avoid
+        // frequent reallocation on a busy segment
+        let pending_versions = {
+            let mut pending_versions = self.pending_versions.lock();
+            let count = pending_versions.len();
+            mem::replace(&mut *pending_versions, Vec::with_capacity(count))
+        };
 
         Box::new(move || {
             if pending_versions.is_empty() {
