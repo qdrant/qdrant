@@ -795,7 +795,15 @@ impl ShardReplicaSet {
     /// - cost: the cost of the operation
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter(&self, cost: usize) -> CollectionResult<()> {
+    fn check_write_rate_limiter(
+        &self,
+        cost: usize,
+        hw_measurement_acc: &HwMeasurementAcc,
+    ) -> CollectionResult<()> {
+        // Do not rate limit internal operation tagged with disposable measurement
+        if hw_measurement_acc.is_disposable() {
+            return Ok(());
+        }
         if let Some(rate_limiter) = &self.write_rate_limiter {
             rate_limiter
                 .lock()
@@ -806,15 +814,20 @@ impl ShardReplicaSet {
     }
 
     /// Check if the write rate limiter allows the operation to proceed
+    /// - hw_measurement_acc: the current hardware measurement accumulator
     /// - cost_fn: the cost function of the operation, evaluated lazily
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter_lazy<F>(&self, cost_fn: F) -> CollectionResult<()>
+    fn check_write_rate_limiter_lazy<F>(
+        &self,
+        hw_measurement_acc: &HwMeasurementAcc,
+        cost_fn: F,
+    ) -> CollectionResult<()>
     where
         F: Fn() -> usize,
     {
-        if self.write_rate_limiter.is_some() {
-            self.check_write_rate_limiter(cost_fn())?;
+        if self.write_rate_limiter.is_some() && !hw_measurement_acc.is_disposable() {
+            self.check_write_rate_limiter(cost_fn(), hw_measurement_acc)?;
         };
         Ok(())
     }
