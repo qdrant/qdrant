@@ -10,14 +10,16 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::id_tracker::IdTracker;
+use crate::common::Flusher;
 use crate::id_tracker::point_mappings::PointMappings;
+use crate::id_tracker::IdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
+
+type VersionChange = (PointIdType, SeqNumberType);
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -25,8 +27,6 @@ enum MappingChange {
     Insert(PointIdType, PointOffsetType),
     Delete(PointIdType),
 }
-
-type VersionChange = (PointIdType, SeqNumberType);
 
 #[derive(Debug)]
 pub struct MutableIdTracker {
@@ -43,14 +43,35 @@ pub struct MutableIdTracker {
 
 impl MutableIdTracker {
     pub fn open(segment_path: PathBuf) -> OperationResult<Self> {
+        let (mappings_path, versions_path) = (
+            Self::mappings_path(&segment_path),
+            Self::versions_path(&segment_path),
+        );
+        let (has_mappings, has_versions) = (mappings_path.is_file(), versions_path.is_file());
+
+        // Warn or error about unlikely or problematic scenarios
+        if !has_mappings && has_versions {
+            debug_assert!(
+                false,
+                "Missing mappings file for ID tracker while versions file exists, storage may be corrupted!",
+            );
+            log::error!(
+                "Missing mappings file for ID tracker while versions file exists, storage may be corrupted!",
+            );
+        }
+        if has_mappings && !has_versions {
+            log::warn!(
+                "Missing versions file for ID tracker, WAL should recover point mappings and versions",
+            );
+        }
+
         let mut deleted = BitVec::new();
         let mut internal_to_external: Vec<PointIdType> = Default::default();
         let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
         let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
 
         // Load point mappings
-        let mappings_path = Self::mappings_path(&segment_path);
-        if mappings_path.is_file() {
+        if has_mappings {
             let mappings_file = File::open(mappings_path)?;
             let mappings_reader = std::io::BufReader::new(mappings_file);
 
@@ -78,7 +99,7 @@ impl MutableIdTracker {
                             // This should not happen in normal operation, but it can happen if
                             // the database is corrupted.
                             log::warn!(
-                                "removing duplicated external id {external_id} in internal id {replaced_external_id}"
+                                "removing duplicated external id {external_id} in internal id {replaced_external_id}",
                             );
                             debug_assert!(false, "should never have to remove");
                             match replaced_external_id {
@@ -136,8 +157,7 @@ impl MutableIdTracker {
         // Load point versions
         let mut internal_to_version: Vec<SeqNumberType> =
             Vec::with_capacity(internal_to_external.len());
-        let versions_path = Self::versions_path(&segment_path);
-        if versions_path.is_file() {
+        if has_versions {
             let versions_file = File::open(versions_path)?;
             let versions_reader = std::io::BufReader::new(versions_file);
 
@@ -332,12 +352,12 @@ impl IdTracker for MutableIdTracker {
             let mut writer = BufWriter::new(file);
 
             for change in pending_mappings {
-                let entry = serde_json::to_string(&change)?;
+                let entry = serde_json::to_vec(&change)?;
                 debug_assert!(
-                    !entry.contains('\n'),
+                    !entry.contains(&b'\n'),
                     "serialized mapping change entry cannot contain new line",
                 );
-                writer.write_all(entry.as_bytes())?;
+                writer.write_all(&entry)?;
                 writer.write_all(b"\n")?;
             }
 
@@ -381,12 +401,12 @@ impl IdTracker for MutableIdTracker {
             let mut writer = BufWriter::new(file);
 
             for change in pending_versions {
-                let entry = serde_json::to_string(&change)?;
+                let entry = serde_json::to_vec(&change)?;
                 debug_assert!(
-                    !entry.contains('\n'),
+                    !entry.contains(&b'\n'),
                     "serialized version change entry cannot contain new line",
                 );
-                writer.write_all(entry.as_bytes())?;
+                writer.write_all(&entry)?;
                 writer.write_all(b"\n")?;
             }
 
