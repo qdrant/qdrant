@@ -54,6 +54,25 @@ pub enum ParsedExpression {
         origin: GeoPoint,
         key: JsonPath,
     },
+    Decay {
+        kind: DecayKind,
+        /// Value to decay
+        x: Box<ParsedExpression>,
+        /// Value at which the decay function is the highest
+        target: Option<Box<ParsedExpression>>,
+        /// Constant to shape the decay function
+        lambda: ScoreType,
+    },
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum DecayKind {
+    /// Linear decay function
+    Lin,
+    /// Gaussian decay function
+    Gauss,
+    /// Exponential decay function
+    Exp,
 }
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]

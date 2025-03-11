@@ -7,7 +7,9 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, NamedQuery, NamedVectorStruct, VectorInternal,
 };
-use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
+use segment::index::query_optimization::rescore_formula::parsed_formula::{
+    DecayKind, ParsedFormula,
+};
 use segment::types::{
     Filter, Order, ScoredPoint, SearchParams, VectorName, VectorNameBuf, WithPayloadInterface,
     WithVector,
@@ -455,6 +457,66 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                 ExpressionInternal::Log10(Box::new((*expression).try_into()?))
             }
             Variant::Ln(expression) => ExpressionInternal::Ln(Box::new((*expression).try_into()?)),
+            Variant::ExpDecay(exp_decay_expression) => {
+                let grpc::DecayParamsExpression {
+                    x,
+                    target,
+                    midpoint,
+                    scale,
+                } = *exp_decay_expression;
+
+                let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
+
+                let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
+
+                ExpressionInternal::Decay {
+                    kind: DecayKind::Exp,
+                    x: Box::new(x.try_into()?),
+                    target,
+                    midpoint,
+                    scale,
+                }
+            }
+            Variant::GaussDecay(gauss_decay_expression) => {
+                let grpc::DecayParamsExpression {
+                    x,
+                    target,
+                    midpoint,
+                    scale,
+                } = *gauss_decay_expression;
+
+                let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
+
+                let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
+
+                ExpressionInternal::Decay {
+                    kind: DecayKind::Gauss,
+                    x: Box::new(x.try_into()?),
+                    target,
+                    midpoint,
+                    scale,
+                }
+            }
+            Variant::LinDecay(lin_decay_expression) => {
+                let grpc::DecayParamsExpression {
+                    x,
+                    target,
+                    midpoint,
+                    scale,
+                } = *lin_decay_expression;
+
+                let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
+
+                let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
+
+                ExpressionInternal::Decay {
+                    kind: DecayKind::Lin,
+                    x: Box::new(x.try_into()?),
+                    target,
+                    midpoint,
+                    scale,
+                }
+            }
         };
 
         Ok(expression)

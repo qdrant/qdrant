@@ -5,13 +5,16 @@ use api::rest::GeoDistance;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    ParsedExpression, ParsedFormula, VariableId,
+    DecayKind, ParsedExpression, ParsedFormula, VariableId,
 };
 use segment::json_path::JsonPath;
 use segment::types::{Condition, GeoPoint};
 use serde_json::Value;
 
 use crate::operations::types::{CollectionError, CollectionResult};
+
+const DEFAULT_DECAY_MIDPOINT: f32 = 0.5;
+const DEFAULT_DECAY_SCALE: f32 = 1.0;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormulaInternal {
@@ -44,6 +47,13 @@ pub enum ExpressionInternal {
     GeoDistance {
         origin: GeoPoint,
         to: JsonPath,
+    },
+    Decay {
+        kind: DecayKind,
+        x: Box<ExpressionInternal>,
+        target: Option<Box<ExpressionInternal>>,
+        midpoint: Option<f32>,
+        scale: Option<f32>,
     },
 }
 
@@ -114,10 +124,66 @@ impl ExpressionInternal {
             ExpressionInternal::Abs(expression_internal) => ParsedExpression::Abs(Box::new(
                 expression_internal.parse_and_convert(payload_vars, conditions)?,
             )),
+            ExpressionInternal::Decay {
+                kind,
+                x,
+                target,
+                midpoint,
+                scale,
+            } => {
+                let lambda = decay_params_to_lambda(midpoint, scale, kind)?;
+
+                let x = x.parse_and_convert(payload_vars, conditions)?;
+
+                let target = target
+                    .map(|t| t.parse_and_convert(payload_vars, conditions))
+                    .transpose()?
+                    .map(Box::new);
+
+                ParsedExpression::Decay {
+                    kind,
+                    x: Box::new(x),
+                    target,
+                    lambda,
+                }
+            }
         };
 
         Ok(expr)
     }
+}
+
+/// Transforms the constant part of the decay function into a single `lambda` value.
+///
+/// Graphical representation of the formulas:
+/// https://www.desmos.com/calculator/15qvagvue9
+fn decay_params_to_lambda(
+    midpoint: Option<f32>,
+    scale: Option<f32>,
+    kind: DecayKind,
+) -> CollectionResult<f32> {
+    let midpoint = midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT);
+    let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE);
+
+    if midpoint <= 0.0 || midpoint >= 1.0 {
+        return Err(CollectionError::bad_input(
+            "Decay midpoint should be between 0.0 and 1.0, not inclusive.",
+        ));
+    }
+
+    if scale <= 0.0 {
+        return Err(CollectionError::bad_input(
+            "Decay scale should be non-zero positive.",
+        ));
+    }
+
+    let lambda = match kind {
+        DecayKind::Lin => (1.0 - midpoint) / scale,
+        DecayKind::Exp => midpoint.ln() / scale,
+        DecayKind::Gauss => scale.powi(2) / midpoint.ln(),
+    };
+
+    Ok(lambda)
 }
 
 impl TryFrom<FormulaInternal> for ParsedFormula {
@@ -212,6 +278,51 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::GeoDistance(GeoDistance {
                 geo_distance: rest::GeoDistanceParams { origin, to },
             }) => ExpressionInternal::GeoDistance { origin, to },
+            rest::Expression::LinDecay(rest::LinDecayExpression {
+                lin_decay:
+                    rest::DecayParamsExpression {
+                        x,
+                        target,
+                        midpoint,
+                        scale,
+                    },
+            }) => ExpressionInternal::Decay {
+                kind: DecayKind::Lin,
+                x: Box::new(ExpressionInternal::from(*x)),
+                target: target.map(|t| Box::new(ExpressionInternal::from(*t))),
+                midpoint,
+                scale,
+            },
+            rest::Expression::ExpDecay(rest::ExpDecayExpression {
+                exp_decay:
+                    rest::DecayParamsExpression {
+                        x,
+                        target,
+                        midpoint,
+                        scale,
+                    },
+            }) => ExpressionInternal::Decay {
+                kind: DecayKind::Exp,
+                x: Box::new(ExpressionInternal::from(*x)),
+                target: target.map(|t| Box::new(ExpressionInternal::from(*t))),
+                midpoint,
+                scale,
+            },
+            rest::Expression::GaussDecay(rest::GaussDecayExpression {
+                gauss_decay:
+                    rest::DecayParamsExpression {
+                        x,
+                        target,
+                        midpoint,
+                        scale,
+                    },
+            }) => ExpressionInternal::Decay {
+                kind: DecayKind::Gauss,
+                x: Box::new(ExpressionInternal::from(*x)),
+                target: target.map(|t| Box::new(ExpressionInternal::from(*t))),
+                midpoint,
+                scale,
+            },
         }
     }
 }

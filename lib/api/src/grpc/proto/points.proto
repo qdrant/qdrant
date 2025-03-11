@@ -593,6 +593,9 @@ message Expression {
         Expression exp = 12; // Exponential
         Expression log10 = 13; // Logarithm
         Expression ln = 14; // Natural logarithm
+        DecayParamsExpression exp_decay = 15; // Exponential decay
+        DecayParamsExpression gauss_decay = 16; // Gaussian decay
+        DecayParamsExpression lin_decay = 17; // Linear decay
     }
 }
 
@@ -618,6 +621,17 @@ message DivExpression {
 message PowExpression {
     Expression base = 1;
     Expression exponent = 2;
+}
+
+message DecayParamsExpression {
+    // The variable to decay
+    Expression x = 1; 
+    // The target value to start decaying from. Defaults to 0.
+    optional Expression target = 2; 
+    // The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
+    optional float scale = 3; 
+    // The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+    optional float midpoint = 4; 
 }
 
 message Query {

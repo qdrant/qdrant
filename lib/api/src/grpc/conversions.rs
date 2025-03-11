@@ -13,7 +13,7 @@ use segment::data_types::index::{
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    ParsedExpression, ParsedFormula,
+    DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
@@ -50,7 +50,9 @@ use crate::grpc::qdrant::{
     TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
     VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
-use crate::grpc::{DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression};
+use crate::grpc::{
+    DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
+};
 use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
 
@@ -2783,14 +2785,14 @@ impl Formula {
 }
 
 fn unparse_expression(
-    formula: ParsedExpression,
+    expression: ParsedExpression,
     conditions: &Vec<segment::types::Condition>,
 ) -> Expression {
     use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 
     use super::expression::Variant;
 
-    let variant = match formula {
+    let variant = match expression {
         ParsedExpression::Constant(c) => Variant::Constant(c),
         ParsedExpression::Variable(variable_id) => match variable_id {
             var_id @ VariableId::Score(_) => Variant::Variable(var_id.unparse()),
@@ -2844,9 +2846,66 @@ fn unparse_expression(
             origin: Some(GeoPoint::from(origin)),
             to: key.to_string(),
         }),
+        ParsedExpression::Decay {
+            kind,
+            target,
+            lambda,
+            x,
+        } => {
+            let (midpoint, scale) = decay_lambda_to_params(lambda, kind);
+            let params = DecayParamsExpression {
+                x: Some(Box::new(unparse_expression(*x, conditions))),
+                target: target.map(|t| Box::new(unparse_expression(*t, conditions))),
+                midpoint: Some(midpoint),
+                scale: Some(scale),
+            };
+            match kind {
+                DecayKind::Lin => Variant::LinDecay(Box::new(params)),
+                DecayKind::Exp => Variant::ExpDecay(Box::new(params)),
+                DecayKind::Gauss => Variant::GaussDecay(Box::new(params)),
+            }
+        }
     };
 
     Expression {
         variant: Some(variant),
+    }
+}
+
+/// Converts the already computed lambda value to parameters which will result in
+/// the same lambda when used in a decay function on the peer node.
+///
+/// Returns a tuple of (midpoint, scale) parameters.
+fn decay_lambda_to_params(lambda: f32, kind: DecayKind) -> (f32, f32) {
+    // We assume lambda is in the range (0, 1)
+    debug_assert!(0.0 < lambda && lambda < 1.0);
+    match kind {
+        // Linear lambda is (1.0 - midpoint) / scale,
+        // setting scale to 1.0 allows us to ignore the division,
+        // and only set the midpoint to some value.
+        //
+        // (1.0 - midpoint) / 1.0 = lambda
+        // 1.0 - midpoint = lambda
+        // midpoint = 1.0 - lambda
+        DecayKind::Lin => ((-lambda + 1.0), 1.0),
+
+        // Gauss lambda is scale^2 / ln(midpoint)
+        // setting midpoint to e allows us to ignore the division, since ln(e) = 1
+        // Then we set scale to sqrt(lambda)
+        //
+        // scale^2 / ln(e) = lambda
+        // scale^2 / 1.0 = lambda
+        // scale^2 = lambda
+        // scale = sqrt(lambda)
+        DecayKind::Gauss => (std::f32::consts::E, lambda.sqrt()),
+
+        // Exponential lambda is ln(midpoint) / scale
+        // setting midpoint to e allows us to ignore the division, since ln(e) = 1
+        // Then we set scale to 1 / lambda
+        //
+        // ln(e) / scale = lambda
+        // 1.0 / scale = lambda
+        // scale = 1.0 / lambda
+        DecayKind::Exp => (std::f32::consts::E, 1.0 / lambda),
     }
 }
