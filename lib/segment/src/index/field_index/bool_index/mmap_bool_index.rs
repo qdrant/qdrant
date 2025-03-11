@@ -30,29 +30,35 @@ pub struct MmapBoolIndex {
 }
 
 impl MmapBoolIndex {
-    pub fn builder(path: &Path) -> OperationResult<MmapBoolIndexBuilder> {
-        Ok(MmapBoolIndexBuilder(Self::open_or_create(path)?))
+    pub fn builder(path: &Path, is_on_disk: bool) -> OperationResult<MmapBoolIndexBuilder> {
+        Ok(MmapBoolIndexBuilder(Self::open_or_create(
+            path, is_on_disk,
+        )?))
     }
 
     /// Creates a new boolean index at the given path. If it already exists, loads the index.
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let falses_dir = path.join(FALSES_DIRNAME);
         if falses_dir.is_dir() {
-            Self::open(path)
+            Self::open(path, is_on_disk)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
             })?;
-            Self::open(path)
+            Self::open(path, is_on_disk)
         }
     }
 
-    fn open(path: &Path) -> OperationResult<Self> {
+    fn open(path: &Path, _is_on_disk: bool) -> OperationResult<Self> {
+        // _is_on_disk is not used, because DynamicMmapFlags are always populated.
+        // I think it is better to keep unused flag here, in case mmap will be changed to some
+        // other storage in the future.
+
         if !path.is_dir() {
             return Err(OperationError::service_error("Path is not a directory"));
         }
@@ -442,7 +448,7 @@ mod tests {
     #[test]
     fn test_files() {
         let dir = TempDir::with_prefix("test_mmap_bool_index").unwrap();
-        let index = MmapBoolIndex::open_or_create(dir.path()).unwrap();
+        let index = MmapBoolIndex::open_or_create(dir.path(), false).unwrap();
 
         let reported = index.files().into_iter().collect::<HashSet<_>>();
 

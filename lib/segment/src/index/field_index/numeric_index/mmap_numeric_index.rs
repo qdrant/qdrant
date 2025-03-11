@@ -78,7 +78,11 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericIndexPairsIterat
 }
 
 impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
-    pub fn build(in_memory_index: InMemoryNumericIndex<T>, path: &Path) -> OperationResult<Self> {
+    pub fn build(
+        in_memory_index: InMemoryNumericIndex<T>,
+        path: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<Self> {
         create_dir_all(path)?;
 
         let pairs_path = path.join(PAIRS_PATH);
@@ -139,10 +143,10 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             }
         }
 
-        Self::load(path)
+        Self::load(path, is_on_disk)
     }
 
-    pub fn load(path: &Path) -> OperationResult<Self> {
+    pub fn load(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let pairs_path = path.join(PAIRS_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
@@ -152,11 +156,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
+        let do_populate = !is_on_disk;
         let map = unsafe {
             MmapSlice::try_from(mmap_ops::open_write_mmap(
                 &pairs_path,
                 AdviceSetting::Global,
-                false,
+                do_populate,
             )?)?
         };
         let point_to_values = MmapPointToValues::open(path)?;

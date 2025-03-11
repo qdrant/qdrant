@@ -59,7 +59,10 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
             db, COLUMN_NAME
         )),
         IndexType::Mmap => IndexBuilder::Mmap(
-            NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_mmap(temp_dir.path()),
+            NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_mmap(
+                temp_dir.path(),
+                false,
+            ),
         ),
     };
     match &mut builder {
@@ -316,7 +319,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
             NumericIndexInner::<FloatPayloadType>::new_memory(db.unwrap(), COLUMN_NAME, true)
         }
         IndexType::Mmap => {
-            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path()).unwrap()
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false).unwrap()
         }
     };
     new_index.load().unwrap();

@@ -14,9 +14,7 @@ use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndexBuilderTrait as _;
 use super::field_index::facet_index::FacetIndexEnum;
-use super::field_index::index_selector::{
-    IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
-};
+use super::field_index::index_selector::{IndexSelector, IndexSelectorMmap, IndexSelectorRocksDb};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
@@ -125,7 +123,7 @@ impl StructPayloadIndex {
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let mut indexes = self
-            .selector(payload_schema)
+            .selector(payload_schema, true) // ToDo: don't force rocksdb
             .new_index(field, payload_schema)?;
 
         let mut is_loaded = true;
@@ -190,8 +188,9 @@ impl StructPayloadIndex {
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
+        let force_rocksdb = true; // ToDo(mmap-paylaod-index): don't force rocksdb
         let mut builders = self
-            .selector(payload_schema)
+            .selector(payload_schema, force_rocksdb)
             .index_builder(field, payload_schema)?;
 
         for index in &mut builders {
@@ -364,10 +363,24 @@ impl StructPayloadIndex {
         }
     }
 
-    fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector {
-        let is_immutable_segment = !self.is_appendable;
-        if payload_schema.is_on_disk() && (is_immutable_segment || payload_schema.is_mutable()) {
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir: &self.path })
+    /// Select which type of PayloadIndex to use for the field
+    fn selector(&self, payload_schema: &PayloadFieldSchema, force_rocksdb: bool) -> IndexSelector {
+        let is_on_disk = payload_schema.is_on_disk();
+
+        if self.is_appendable {
+            // If segment is mutable, always use rocksdb unless we have a better option
+            return IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db: &self.db,
+                is_appendable: self.is_appendable,
+            });
+        }
+
+        if is_on_disk || !force_rocksdb {
+            // RocksDb can't be on-disk
+            IndexSelector::Mmap(IndexSelectorMmap {
+                dir: &self.path,
+                is_on_disk,
+            })
         } else {
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db: &self.db,

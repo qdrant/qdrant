@@ -29,7 +29,7 @@ use crate::types::{PayloadFieldSchema, PayloadSchemaParams};
 #[derive(Copy, Clone)]
 pub enum IndexSelector<'a> {
     RocksDb(IndexSelectorRocksDb<'a>),
-    OnDisk(IndexSelectorOnDisk<'a>),
+    Mmap(IndexSelectorMmap<'a>),
 }
 
 #[derive(Copy, Clone)]
@@ -39,8 +39,9 @@ pub struct IndexSelectorRocksDb<'a> {
 }
 
 #[derive(Copy, Clone)]
-pub struct IndexSelectorOnDisk<'a> {
+pub struct IndexSelectorMmap<'a> {
     pub dir: &'a Path,
+    pub is_on_disk: bool,
 }
 
 impl IndexSelector<'_> {
@@ -169,8 +170,8 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 MapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
             }
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                MapIndex::new_mmap(&map_dir(dir, field))?
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
         })
     }
@@ -185,8 +186,8 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
                 make_rocksdb(MapIndex::builder(Arc::clone(db), &field.to_string()))
             }
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                make_mmap(MapIndex::mmap_builder(&map_dir(dir, field)))
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                make_mmap(MapIndex::mmap_builder(&map_dir(dir, field), *is_on_disk))
             }
         }
     }
@@ -199,8 +200,8 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 NumericIndex::new(Arc::clone(db), &field.to_string(), *is_appendable)
             }
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                NumericIndex::new_mmap(&numeric_dir(dir, field))?
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
             }
         })
     }
@@ -219,9 +220,9 @@ impl IndexSelector<'_> {
                 db,
                 is_appendable: _,
             }) => make_rocksdb(NumericIndex::builder(Arc::clone(db), &field.to_string())),
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                make_mmap(NumericIndex::builder_mmap(&numeric_dir(dir, field)))
-            }
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
+                NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
+            ),
         }
     }
 
@@ -230,8 +231,8 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
                 GeoMapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
             }
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                GeoMapIndex::new_mmap(&map_dir(dir, field))?
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                GeoMapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
             }
         })
     }
@@ -239,7 +240,8 @@ impl IndexSelector<'_> {
     fn null_builder(&self, field: &JsonPath) -> OperationResult<Option<FieldIndexBuilder>> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { .. }) => None, // ToDo: appendable index should also be created
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => Some(
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => Some(
+                // null index is always on disk
                 FieldIndexBuilder::NullIndex(MmapNullIndex::builder(&null_dir(dir, field))?),
             ),
         })
@@ -248,7 +250,8 @@ impl IndexSelector<'_> {
     fn new_null_index(&self, field: &JsonPath) -> OperationResult<Option<FieldIndex>> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { .. }) => None, // ToDo: appendable index should also be created
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
+                // null index is always on disk
                 MmapNullIndex::open_if_exists(&null_dir(dir, field))?.map(FieldIndex::NullIndex)
             }
         })
@@ -264,8 +267,8 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
                 make_rocksdb(GeoMapIndex::builder(Arc::clone(db), &field.to_string()))
             }
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                make_mmap(GeoMapIndex::mmap_builder(&map_dir(dir, field)))
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                make_mmap(GeoMapIndex::mmap_builder(&map_dir(dir, field), *is_on_disk))
             }
         }
     }
@@ -284,8 +287,8 @@ impl IndexSelector<'_> {
                     *is_appendable,
                 )
             }
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
-                FullTextIndex::new_mmap(text_dir(dir, field), config)?
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                FullTextIndex::new_mmap(text_dir(dir, field), config, *is_on_disk)?
             }
         })
     }
@@ -300,10 +303,11 @@ impl IndexSelector<'_> {
                 config,
                 &field.to_string(),
             )),
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir }) => {
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 FieldIndexBuilder::FullTextMmapIndex(FullTextIndex::builder_mmap(
                     text_dir(dir, field),
                     config,
+                    *is_on_disk,
                 ))
             }
         }
@@ -314,10 +318,11 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(index_selector_rocks_db) => Ok(FieldIndexBuilder::BoolIndex(
                 SimpleBoolIndex::builder(index_selector_rocks_db.db.clone(), &field.to_string()),
             )),
-            IndexSelector::OnDisk(index_selector_on_disk) => {
-                let dir = bool_dir(index_selector_on_disk.dir, field);
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                let dir = bool_dir(dir, field);
                 Ok(FieldIndexBuilder::BoolMmapIndex(MmapBoolIndex::builder(
                     &dir,
+                    *is_on_disk,
                 )?))
             }
         }
@@ -331,9 +336,12 @@ impl IndexSelector<'_> {
                     &field.to_string(),
                 )))
             }
-            IndexSelector::OnDisk(index_selector_on_disk) => {
-                let dir = bool_dir(index_selector_on_disk.dir, field);
-                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(&dir)?))
+            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
+                let dir = bool_dir(dir, field);
+                FieldIndex::BoolIndex(BoolIndex::Mmap(MmapBoolIndex::open_or_create(
+                    &dir,
+                    *is_on_disk,
+                )?))
             }
         })
     }

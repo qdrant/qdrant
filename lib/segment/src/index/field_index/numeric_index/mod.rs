@@ -173,8 +173,10 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         }
     }
 
-    pub fn new_mmap(path: &Path) -> OperationResult<Self> {
-        Ok(NumericIndexInner::Mmap(MmapNumericIndex::load(path)?))
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+        Ok(NumericIndexInner::Mmap(MmapNumericIndex::load(
+            path, is_on_disk,
+        )?))
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
@@ -423,9 +425,9 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
         }
     }
 
-    pub fn new_mmap(path: &Path) -> OperationResult<Self> {
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         Ok(Self {
-            inner: NumericIndexInner::new_mmap(path)?,
+            inner: NumericIndexInner::new_mmap(path, is_on_disk)?,
             _phantom: PhantomData,
         })
     }
@@ -449,13 +451,14 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
         }
     }
 
-    pub fn builder_mmap(path: &Path) -> NumericIndexMmapBuilder<T, P>
+    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> NumericIndexMmapBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
     {
         NumericIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryNumericIndex::default(),
+            is_on_disk,
             _phantom: PhantomData,
         }
     }
@@ -562,6 +565,7 @@ where
 {
     path: PathBuf,
     in_memory_index: InMemoryNumericIndex<T>,
+    is_on_disk: bool,
     _phantom: PhantomData<P>,
 }
 
@@ -592,7 +596,7 @@ where
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
-        let inner = MmapNumericIndex::build(self.in_memory_index, &self.path)?;
+        let inner = MmapNumericIndex::build(self.in_memory_index, &self.path, self.is_on_disk)?;
         Ok(NumericIndex {
             inner: NumericIndexInner::Mmap(inner),
             _phantom: PhantomData,

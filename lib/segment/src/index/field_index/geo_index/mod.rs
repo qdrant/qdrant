@@ -52,8 +52,10 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn new_mmap(path: &Path) -> OperationResult<Self> {
-        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::load(path)?)))
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::load(
+            path, is_on_disk,
+        )?)))
     }
 
     pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
@@ -69,10 +71,11 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn mmap_builder(path: &Path) -> GeoMapIndexMmapBuilder {
+    pub fn mmap_builder(path: &Path, is_on_disk: bool) -> GeoMapIndexMmapBuilder {
         GeoMapIndexMmapBuilder {
             path: path.to_owned(),
             in_memory_index: InMemoryGeoMapIndex::new(),
+            is_on_disk,
         }
     }
 
@@ -399,6 +402,7 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
 pub struct GeoMapIndexMmapBuilder {
     path: PathBuf,
     in_memory_index: InMemoryGeoMapIndex,
+    is_on_disk: bool,
 }
 
 impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
@@ -420,6 +424,7 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
         Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::new(
             self.in_memory_index,
             &self.path,
+            self.is_on_disk,
         )?)))
     }
 }
@@ -691,6 +696,7 @@ mod tests {
         FieldCondition::new_geo_bounding_box(JsonPath::new(key), geo_bounding_box)
     }
 
+    #[cfg(feature = "testing")]
     fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
         let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
         let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
@@ -701,7 +707,9 @@ mod tests {
             IndexType::Immutable => {
                 IndexBuilder::Immutable(GeoMapIndex::builder_immutable(db.clone(), FIELD_NAME))
             }
-            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::mmap_builder(temp_dir.path())),
+            IndexType::Mmap => {
+                IndexBuilder::Mmap(GeoMapIndex::mmap_builder(temp_dir.path(), false))
+            }
         };
         match &mut builder {
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
@@ -1201,7 +1209,7 @@ mod tests {
         let mut new_index = match index_type {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
-            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path()).unwrap(),
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
         };
         new_index.load().unwrap();
 
@@ -1260,7 +1268,7 @@ mod tests {
         let mut new_index = match index_type {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
-            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path()).unwrap(),
+            IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
         };
         new_index.load().unwrap();
         assert_eq!(new_index.points_count(), 1);

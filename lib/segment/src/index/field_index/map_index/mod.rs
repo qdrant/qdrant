@@ -89,19 +89,22 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    pub fn new_mmap(path: &Path) -> OperationResult<Self> {
-        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::load(path)?)))
+    pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
+        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::load(
+            path, is_on_disk,
+        )?)))
     }
 
     pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
         MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
     }
 
-    pub fn mmap_builder(path: &Path) -> MapIndexMmapBuilder<N> {
+    pub fn mmap_builder(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
         MapIndexMmapBuilder {
             path: path.to_owned(),
             point_to_values: Default::default(),
             values_to_points: Default::default(),
+            is_on_disk,
         }
     }
 
@@ -443,6 +446,7 @@ pub struct MapIndexMmapBuilder<N: MapIndexKey + ?Sized> {
     path: PathBuf,
     point_to_values: Vec<Vec<N::Owned>>,
     values_to_points: HashMap<N::Owned, Vec<PointOffsetType>>,
+    is_on_disk: bool,
 }
 
 impl<N: MapIndexKey + ?Sized> FieldIndexBuilderTrait for MapIndexMmapBuilder<N>
@@ -480,6 +484,7 @@ where
             &self.path,
             self.point_to_values,
             self.values_to_points,
+            self.is_on_disk,
         )?)))
     }
 }
@@ -1095,7 +1100,7 @@ mod tests {
                 builder.finalize().unwrap();
             }
             IndexType::Mmap => {
-                let mut builder = MapIndex::<N>::mmap_builder(path);
+                let mut builder = MapIndex::<N>::mmap_builder(path, false);
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1121,7 +1126,7 @@ mod tests {
                 FIELD_NAME,
                 false,
             ),
-            IndexType::Mmap => MapIndex::<N>::new_mmap(path).unwrap(),
+            IndexType::Mmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
         };
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
@@ -1141,7 +1146,7 @@ mod tests {
     #[test]
     fn test_index_non_ascending_insertion() {
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(temp_dir.path());
+        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(temp_dir.path(), false);
         builder.init().unwrap();
 
         let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
