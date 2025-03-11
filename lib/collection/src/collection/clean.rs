@@ -329,7 +329,6 @@ async fn clean_task(
             .collect();
 
         // Delete points from local shard
-        // TODO(ratelimiter): do not rate limit or bill this delete, part of internals
         let delete_operation =
             OperationWithClockTag::from(CollectionUpdateOperations::PointOperation(
                 crate::operations::point_ops::PointOperations::DeletePoints { ids },
