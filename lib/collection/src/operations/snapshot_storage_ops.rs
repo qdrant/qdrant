@@ -162,7 +162,7 @@ pub async fn list_snapshot_descriptions(
         snapshots.push(SnapshotDescription {
             name: get_filename(meta.location.as_ref())?,
             creation_time: Some(meta.last_modified.naive_local()),
-            size: meta.size as u64,
+            size: meta.size,
             checksum: None,
         });
     }
