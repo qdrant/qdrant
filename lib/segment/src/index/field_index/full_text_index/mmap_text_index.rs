@@ -133,7 +133,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
         payload: &[&Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        ValueIndexer::add_point(self, id, payload)
+        ValueIndexer::add_point(self, id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
