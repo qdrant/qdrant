@@ -14,7 +14,7 @@ workspace = true
 
 [dependencies]
 atomicwrites = { workspace = true }
-bincode = "1.3.3"
+bincode = { workspace = true }
 nix = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
