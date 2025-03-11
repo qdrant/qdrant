@@ -141,8 +141,10 @@ fn test_set_empty_payload() {
 
     assert_ne!(values_count, 0);
 
+    let hw_counter = HardwareCounterCell::new();
+
     let payload = serde_json::json!(null);
-    index.add_point(point_id, &[&payload]).unwrap();
+    index.add_point(point_id, &[&payload], &hw_counter).unwrap();
 
     let values_count = index.inner().get_values(point_id).unwrap().count();
 

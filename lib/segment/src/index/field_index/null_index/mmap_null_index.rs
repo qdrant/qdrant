@@ -98,7 +98,12 @@ impl MmapNullIndex {
         }
     }
 
-    pub fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    pub fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Measure values.
+    ) -> OperationResult<()> {
         let mut is_null = false;
         let mut has_values = false;
         for value in payload {
@@ -342,7 +347,7 @@ impl FieldIndexBuilderTrait for MmapNullIndexBuilder {
         payload: &[&serde_json::Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.0.add_point(id, payload)
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {

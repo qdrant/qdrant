@@ -574,8 +574,7 @@ impl PayloadIndex for StructPayloadIndex {
             let field_value = payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
-                    // TODO(io_measurement): only measure this part!
-                    index.add_point(point_id, &field_value)?;
+                    index.add_point(point_id, &field_value, hw_counter)?;
                 }
             } else {
                 for index in field_index {
@@ -611,7 +610,7 @@ impl PayloadIndex for StructPayloadIndex {
             let field_value = updated_payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
-                    index.add_point(point_id, &field_value)?;
+                    index.add_point(point_id, &field_value, hw_counter)?;
                 }
             } else {
                 for index in field_index {
