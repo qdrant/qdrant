@@ -54,7 +54,7 @@ impl MmapBoolIndex {
         }
     }
 
-    fn open(path: &Path, _is_on_disk: bool) -> OperationResult<Self> {
+    fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         // _is_on_disk is not used, because DynamicMmapFlags are always populated.
         // I think it is better to keep unused flag here, in case mmap will be changed to some
         // other storage in the future.
@@ -63,13 +63,14 @@ impl MmapBoolIndex {
             return Err(OperationError::service_error("Path is not a directory"));
         }
 
+        let populate = !is_on_disk;
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicMmapFlags::open(&trues_path)?;
+        let trues_slice = DynamicMmapFlags::open(&trues_path, populate)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicMmapFlags::open(&falses_path)?;
+        let falses_slice = DynamicMmapFlags::open(&falses_path, populate)?;
 
         Ok(Self {
             base_dir: path.to_path_buf(),

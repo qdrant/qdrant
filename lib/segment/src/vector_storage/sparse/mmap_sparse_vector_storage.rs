@@ -61,9 +61,13 @@ impl MmapSparseVectorStorage {
             ))
         })?;
 
+        // Payload storage does not need to be populated
+        // as it is not required in the index search step
+        let populate = false;
+
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = DynamicMmapFlags::open(&deleted_path)?;
+        let deleted = DynamicMmapFlags::open(&deleted_path, populate)?;
 
         let deleted_count = deleted.count_flags();
         let next_point_offset = deleted
@@ -98,9 +102,13 @@ impl MmapSparseVectorStorage {
             ))
         })?;
 
+        // Payload storage does not need to be populated
+        // as it is not required in the index search step
+        let populate = false;
+
         // Deleted flags
         let deleted_path = path.join(DELETED_DIRNAME);
-        let deleted = DynamicMmapFlags::open(&deleted_path)?;
+        let deleted = DynamicMmapFlags::open(&deleted_path, populate)?;
 
         Ok(Self {
             storage: Arc::new(RwLock::new(storage)),

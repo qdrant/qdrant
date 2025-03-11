@@ -89,7 +89,7 @@ impl DynamicMmapFlags {
         self.status.len == 0
     }
 
-    pub fn open(directory: &Path) -> OperationResult<Self> {
+    pub fn open(directory: &Path, populate: bool) -> OperationResult<Self> {
         fs::create_dir_all(directory)?;
         let status_mmap = ensure_status_file(directory)?;
         let mut status: MmapType<DynamicMmapStatus> = unsafe { MmapType::try_from(status_mmap)? };
@@ -105,7 +105,7 @@ impl DynamicMmapFlags {
         }
 
         // Open first mmap
-        let (flags, flags_flusher) = Self::open_mmap(status.len, directory)?;
+        let (flags, flags_flusher) = Self::open_mmap(status.len, directory, populate)?;
         Ok(Self {
             flags,
             flags_flusher: Arc::new(Mutex::new(Some(flags_flusher))),
@@ -117,6 +117,7 @@ impl DynamicMmapFlags {
     fn open_mmap(
         num_flags: usize,
         directory: &Path,
+        populate: bool,
     ) -> OperationResult<(MmapBitSlice, MmapFlusher)> {
         let capacity_bytes = mmap_capacity_bytes(num_flags);
 
@@ -133,9 +134,13 @@ impl DynamicMmapFlags {
 
         flags_mmap.madvise(madvise::get_global())?;
 
-        #[cfg(unix)]
-        if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
-            log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
+        if populate {
+            flags_mmap.populate();
+        } else {
+            #[cfg(unix)]
+            if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
+                log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
+            }
         }
 
         let flags = MmapBitSlice::try_from(flags_mmap, 0)?;
@@ -166,7 +171,9 @@ impl DynamicMmapFlags {
         let current_capacity = mmap_max_current_size(self.status.len);
 
         if new_len > current_capacity {
-            let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory)?;
+            // Don't read the whole file on resize
+            let populate = false;
+            let (flags, flags_flusher) = Self::open_mmap(new_len, &self.directory, populate)?;
 
             // Swap operation. It is important this section is not interrupted by errors.
             {
@@ -288,7 +295,7 @@ mod tests {
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
 
         {
-            let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
+            let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
             dynamic_flags.set_len(num_flags).unwrap();
             random_flags
                 .iter()
@@ -307,7 +314,7 @@ mod tests {
         }
 
         {
-            let dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
+            let dynamic_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
             assert_eq!(dynamic_flags.status.len, num_flags * 2);
             for (i, flag) in random_flags.iter().enumerate() {
                 assert_eq!(dynamic_flags.get(i), *flag);
@@ -323,7 +330,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // Create randomized dynamic mmap flags to test counting
-        let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
+        let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), true).unwrap();
         dynamic_flags.set_len(num_flags).unwrap();
         let random_flags: Vec<bool> = iter::repeat_with(|| rng.random()).take(num_flags).collect();
         random_flags
