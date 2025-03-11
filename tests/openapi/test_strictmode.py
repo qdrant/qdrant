@@ -1091,7 +1091,7 @@ def test_strict_mode_write_rate_limiting(collection_name):
         assert response.ok, "Rate limiting should be disabled now"
 
 
-def test_strict_mode_write_rate_limiting_update_op(collection_name):
+def test_strict_mode_write_rate_limiting_filtered_update_op(collection_name):
     set_strict_mode(collection_name, {
         "enabled": True,
         "write_rate_limit": 7,
@@ -1131,6 +1131,47 @@ def test_strict_mode_write_rate_limiting_update_op(collection_name):
     assert response.status_code == 429
     assert "Rate limiting exceeded: Write rate limit exceeded: Operation requires 5 tokens but only" in response.json()['status']['error']
 
+def test_strict_mode_write_rate_limiting_batch_update_op(collection_name):
+    def upsert_points(ids: list[int]):
+        length = len(ids)
+        payloads = [{} for _ in range(length)]
+        vectors = [[1, 2, 3, 5] for _ in range(length)]
+        return request_with_validation(
+            api='/collections/{collection_name}/points/batch',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "operations": [
+                    {
+                        "upsert": {
+                            "batch": {
+                                "ids": ids,
+                                "payloads": payloads,
+                                "vectors": vectors
+                            }
+                        }
+                    }
+                ]
+            }
+        )
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "write_rate_limit": 10,
+    })
+
+    # validate that updates with 11 points will never be allowed
+    response = upsert_points([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    assert response.status_code == 429
+    assert "Rate limiting exceeded: Write rate limit exceeded, request larger than than rate limiter capacity, please try to split your request" in response.json()['status']['error']
+
+    # validate that updates with 10 points is allowed because there are enough tokens for each point
+    upsert_points([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).raise_for_status()
+
+    # doing it again fails because we already consumed 10 tokens
+    response = upsert_points([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    assert response.status_code == 429
+    assert "Rate limiting exceeded: Write rate limit exceeded: Operation requires 10 tokens but only 0.0 were available. Retry after 60s" in response.json()['status']['error']
 
 def test_filter_many_conditions(collection_name):
     def search_request(condition_count: int):

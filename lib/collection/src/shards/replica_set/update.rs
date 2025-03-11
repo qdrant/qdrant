@@ -10,7 +10,7 @@ use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
 use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
-use crate::shards::shard::PeerId;
+use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_trait::ShardOperation as _;
 
 /// Maximum number of attempts for applying an update with a new clock.
@@ -54,8 +54,7 @@ impl ShardReplicaSet {
         let result = match state {
             ReplicaState::Active => {
                 // Rate limit update operations on Active replica
-                // TODO(ratelimits) determine cost of update based on operation
-                self.check_write_rate_limiter(1, &hw_measurement)?;
+                self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)?;
                 local.get().update(operation, wait, hw_measurement).await
             }
 
@@ -296,19 +295,11 @@ impl ShardReplicaSet {
 
                 if self.peer_is_active(this_peer_id) {
                     // Check write rate limiter before proceeding if replica active
-                    // TODO(ratelimits) determine cost of update based on operation
-
-                    self.check_write_rate_limiter_lazy(&hw_measurement_acc, || {
-                        let mut ratelimiter_cost = 1;
-
-                        // Estimate the cost based on affected points if filter is available.
-                        match local.estimate_request_cardinality(&operation.operation) {
-                            Ok(est) => ratelimiter_cost = 1.max(est.exp),
-                            Err(err) => log::error!("Estimating cardinality: {err:?}"),
-                        }
-
-                        ratelimiter_cost
-                    })?;
+                    self.check_operation_write_rate_limiter(
+                        &hw_measurement_acc,
+                        local,
+                        &operation,
+                    )?;
                 }
 
                 let operation = operation.clone();
@@ -539,6 +530,29 @@ impl ShardReplicaSet {
             .expect("successes is not empty");
 
         Ok(Some(res))
+    }
+
+    /// Check write rate limiter for the operation
+    ///
+    /// Lazily compute the cost of the operation and check against the write rate limiter
+    fn check_operation_write_rate_limiter(
+        &self,
+        hw_measurement: &HwMeasurementAcc,
+        local: &Shard,
+        operation: &OperationWithClockTag,
+    ) -> CollectionResult<()> {
+        self.check_write_rate_limiter_lazy(hw_measurement, || {
+            let mut ratelimiter_cost = 1;
+
+            // Estimate the cost based on affected points if filter is available.
+            match local.estimate_request_cardinality(&operation.operation) {
+                Ok(est) => ratelimiter_cost = 1.max(est.exp),
+                Err(err) => log::error!("Estimating cardinality: {err:?}"),
+            }
+
+            ratelimiter_cost
+        })?;
+        Ok(())
     }
 
     /// Whether to send updates to the given peer
