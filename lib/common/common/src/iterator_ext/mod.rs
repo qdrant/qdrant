@@ -92,7 +92,7 @@ pub trait IteratorExt: Iterator {
         })
     }
 
-    /// Measures the hardware usage of an iterator.
+    /// Measures the hardware usage of an iterator with the size of a single value being represented as a fraction.
     fn measure_hw_with_cell_and_fraction<R>(
         self,
         hw_cell: &HardwareCounterCell,
@@ -105,7 +105,7 @@ pub trait IteratorExt: Iterator {
     {
         OnFinalCount::new(self, move |i| {
             // Subtract one to not account for the latest `None` call.
-            f(&hw_cell).incr_delta(i.saturating_sub(1) / fraction);
+            f(hw_cell).incr_delta(i.saturating_sub(1) / fraction);
         })
     }
 }

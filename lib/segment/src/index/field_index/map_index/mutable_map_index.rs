@@ -196,17 +196,17 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
         self.map.iter().map(move |(k, v)| {
-            let size = N::mmapped_size(MmapValue::as_referenced(k.borrow()));
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(N::mmapped_size(MmapValue::as_referenced(k.borrow())));
 
             (
                 k.borrow(),
-                Box::new(
-                    v.iter()
-                        .copied()
-                        .measure_hw_with_cell(hw_counter, size, |i| {
-                            i.payload_index_io_read_counter()
-                        }),
-                ) as IdIter,
+                Box::new(v.iter().copied().measure_hw_with_cell(
+                    hw_counter,
+                    size_of::<PointOffsetType>(),
+                    |i| i.payload_index_io_read_counter(),
+                )) as IdIter,
             )
         })
     }
