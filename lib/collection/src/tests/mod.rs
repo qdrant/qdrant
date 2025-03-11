@@ -9,20 +9,26 @@ mod snapshot_test;
 mod sparse_vectors_validation_tests;
 mod wal_recovery_test;
 
+use std::panic;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
+use fixtures::{create_collection_config, upsert_operation};
 use futures::future::join_all;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rand::Rng;
+use rstest::rstest;
 use segment::data_types::vectors::only_default_vector;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{Distance, PointIdType};
 use tempfile::Builder;
+use tokio::runtime::Handle;
+use tokio::sync::RwLock as TokioRwLock;
 use tokio::time::{Instant, sleep};
 
 use crate::collection::Collection;
@@ -34,8 +40,11 @@ use crate::collection_manager::holders::segment_holder::{LockedSegment, SegmentH
 use crate::collection_manager::optimizers::TrackerStatus;
 use crate::collection_manager::optimizers::segment_optimizer::OptimizerThresholds;
 use crate::config::CollectionParams;
-use crate::operations::types::VectorsConfig;
+use crate::operations::types::{ShardStatus, VectorsConfig};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
+use crate::save_on_disk::SaveOnDisk;
+use crate::shards::local_shard::LocalShard;
+use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{Optimizer, UpdateHandler};
 
 #[tokio::test]
@@ -341,4 +350,69 @@ fn check_version_upgrade() {
         &"0.4.1".parse().unwrap(),
         &"0.4.2".parse().unwrap()
     ));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[rstest]
+#[case::auto_optimization_threads(None, ShardStatus::Yellow)]
+#[case::no_optimization_threads(Some(0), ShardStatus::Green)]
+#[case::single_optimization_thread(Some(1), ShardStatus::Yellow)]
+async fn test_shard_status_based_on_optimization(
+    #[case] max_optimization_threads_value: Option<usize>,
+    #[case] expected_shard_status: ShardStatus,
+) {
+    let collection_name = "test_collection".to_string();
+    let collection_dir = Builder::new().prefix(&collection_name).tempdir().unwrap();
+
+    let mut config = create_collection_config();
+    config.optimizer_config.max_optimization_threads = max_optimization_threads_value;
+    config.optimizer_config.default_segment_number = 4;
+
+    let current_runtime: Handle = Handle::current();
+
+    let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();
+    let payload_index_schema_file = payload_index_schema_dir.path().join("payload-schema.json");
+    let payload_index_schema =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_index_schema_file).unwrap());
+
+    let collection_config = Arc::new(TokioRwLock::new(config.clone()));
+
+    let shard = LocalShard::build(
+        0,
+        collection_name.clone(),
+        collection_dir.path(),
+        collection_config.clone(),
+        Arc::new(Default::default()),
+        payload_index_schema.clone(),
+        current_runtime.clone(),
+        current_runtime.clone(),
+        ResourceBudget::default(),
+        config.optimizer_config.clone(),
+    )
+    .await
+    .unwrap();
+
+    let upsert_ops = upsert_operation();
+    let hw_acc = HwMeasurementAcc::new();
+    shard
+        .update(upsert_ops.into(), true, hw_acc.clone())
+        .await
+        .unwrap();
+
+    // This should trigger segment merge optimizer if we have optimizer threads (i.e. != Some(0))
+    {
+        let mut collection_config_guard = collection_config.write().await;
+        collection_config_guard
+            .optimizer_config
+            .default_segment_number = 1;
+    }
+
+    let info = shard.local_shard_info().await;
+    assert_eq!(info.status, ShardStatus::Green);
+
+    // This recreates optimizers based on updated collection config
+    shard.on_optimizer_config_update().await.unwrap();
+
+    let info = shard.local_shard_info().await;
+    assert_eq!(info.status, expected_shard_status);
 }
