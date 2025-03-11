@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::common::Flusher;
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTracker;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
@@ -316,10 +316,11 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             }
 
+            // Open file in append mode to write new changes to the end
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(mappings_path)?;
+                .open(&mappings_path)?;
             let mut writer = BufWriter::new(file);
 
             for change in pending_mappings {
@@ -332,7 +333,13 @@ impl IdTracker for MutableIdTracker {
                 writer.write_all(b"\n")?;
             }
 
-            writer.flush()?;
+            // Explicitly flush writer to catch IO errors
+            writer.flush().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to flush ID tracker point mappings ({}): {err}",
+                    mappings_path.display(),
+                ))
+            })?;
             drop(writer);
 
             Ok(())
@@ -345,15 +352,17 @@ impl IdTracker for MutableIdTracker {
     fn versions_flusher(&self) -> Flusher {
         let versions_path = Self::versions_path(&self.segment_path);
         let pending_versions = mem::take(&mut *self.pending_versions.lock());
+
         Box::new(move || {
             if pending_versions.is_empty() {
                 return Ok(());
             }
 
+            // Open file in append mode to write new changes to the end
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(versions_path)?;
+                .open(&versions_path)?;
             let mut writer = BufWriter::new(file);
 
             for change in pending_versions {
@@ -366,7 +375,13 @@ impl IdTracker for MutableIdTracker {
                 writer.write_all(b"\n")?;
             }
 
-            writer.flush()?;
+            // Explicitly flush writer to catch IO errors
+            writer.flush().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to flush ID tracker point versions ({}): {err}",
+                    versions_path.display(),
+                ))
+            })?;
             drop(writer);
 
             Ok(())
