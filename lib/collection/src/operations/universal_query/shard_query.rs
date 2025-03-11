@@ -1,6 +1,6 @@
 use api::conversions::json::proto_to_json;
 use api::grpc::conversions::grpc_condition_into_condition;
-use api::grpc::qdrant as grpc;
+use api::grpc::{DecayParamsExpression, qdrant as grpc};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
@@ -457,70 +457,43 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                 ExpressionInternal::Log10(Box::new((*expression).try_into()?))
             }
             Variant::Ln(expression) => ExpressionInternal::Ln(Box::new((*expression).try_into()?)),
-            Variant::ExpDecay(exp_decay_expression) => {
-                let grpc::DecayParamsExpression {
-                    x,
-                    target,
-                    midpoint,
-                    scale,
-                } = *exp_decay_expression;
-
-                let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
-
-                let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
-
-                ExpressionInternal::Decay {
-                    kind: DecayKind::Exp,
-                    x: Box::new(x.try_into()?),
-                    target,
-                    midpoint,
-                    scale,
-                }
+            Variant::LinDecay(decay_params) => {
+                try_from_decay_params(*decay_params, DecayKind::Lin)?
             }
-            Variant::GaussDecay(gauss_decay_expression) => {
-                let grpc::DecayParamsExpression {
-                    x,
-                    target,
-                    midpoint,
-                    scale,
-                } = *gauss_decay_expression;
-
-                let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
-
-                let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
-
-                ExpressionInternal::Decay {
-                    kind: DecayKind::Gauss,
-                    x: Box::new(x.try_into()?),
-                    target,
-                    midpoint,
-                    scale,
-                }
+            Variant::ExpDecay(decay_params) => {
+                try_from_decay_params(*decay_params, DecayKind::Exp)?
             }
-            Variant::LinDecay(lin_decay_expression) => {
-                let grpc::DecayParamsExpression {
-                    x,
-                    target,
-                    midpoint,
-                    scale,
-                } = *lin_decay_expression;
-
-                let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
-
-                let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
-
-                ExpressionInternal::Decay {
-                    kind: DecayKind::Lin,
-                    x: Box::new(x.try_into()?),
-                    target,
-                    midpoint,
-                    scale,
-                }
+            Variant::GaussDecay(decay_params) => {
+                try_from_decay_params(*decay_params, DecayKind::Gauss)?
             }
         };
 
         Ok(expression)
     }
+}
+
+fn try_from_decay_params(
+    params: DecayParamsExpression,
+    kind: DecayKind,
+) -> Result<ExpressionInternal, Status> {
+    let grpc::DecayParamsExpression {
+        x,
+        target,
+        midpoint,
+        scale,
+    } = params;
+
+    let x = *x.ok_or_else(|| tonic::Status::invalid_argument("missing field: x"))?;
+
+    let target = target.map(|t| (*t).try_into()).transpose()?.map(Box::new);
+
+    Ok(ExpressionInternal::Decay {
+        kind,
+        x: Box::new(x.try_into()?),
+        target,
+        midpoint,
+        scale,
+    })
 }
 
 impl From<api::grpc::qdrant::Fusion> for FusionInternal {
