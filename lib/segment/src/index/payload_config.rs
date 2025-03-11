@@ -13,6 +13,11 @@ pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "config.json";
 #[derive(Debug, Default, Deserialize, Serialize, Clone)]
 pub struct PayloadConfig {
     pub indexed_fields: HashMap<PayloadKeyType, PayloadFieldSchema>,
+
+    /// If true, don't create/initialize RocksDB for payload index
+    /// This is required for migrating away from RocksDB in favor of the
+    /// custom storage engine
+    pub skip_rocksdb: Option<bool>,
 }
 
 impl PayloadConfig {
