@@ -19,9 +19,6 @@ use crate::types::{PointIdType, SeqNumberType};
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
-/// Point ID used in internal to external mapping if not set
-const UNSET_POINT_ID: PointIdType = PointIdType::NumId(u64::MAX);
-
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum MappingChange {
@@ -66,13 +63,17 @@ impl MutableIdTracker {
                     MappingChange::Insert(external_id, internal_id) => {
                         // Update internal to external mapping
                         if internal_id as usize >= internal_to_external.len() {
-                            internal_to_external.resize(internal_id as usize + 1, UNSET_POINT_ID);
+                            internal_to_external
+                                .resize(internal_id as usize + 1, PointIdType::NumId(u64::MAX));
                         }
                         let replaced_external_id = internal_to_external[internal_id as usize];
                         internal_to_external[internal_id as usize] = external_id;
 
-                        // Remove left over point in internal to external mapping
-                        if replaced_external_id != UNSET_POINT_ID {
+                        // If point already exists, drop existing mapping
+                        if deleted
+                            .get(internal_id as usize)
+                            .is_some_and(|deleted| !deleted)
+                        {
                             // Fixing corrupted mapping - this id should be recovered from WAL
                             // This should not happen in normal operation, but it can happen if
                             // the database is corrupted.
@@ -90,6 +91,12 @@ impl MutableIdTracker {
                             }
                         }
 
+                        // Mark point entry as not deleted
+                        if internal_id as usize >= deleted.len() {
+                            deleted.resize(internal_id as usize + 1, true);
+                        }
+                        deleted.set(internal_id as usize, false);
+
                         // Set external to internal mapping
                         match external_id {
                             PointIdType::NumId(num) => {
@@ -99,11 +106,6 @@ impl MutableIdTracker {
                                 external_to_internal_uuid.insert(uuid, internal_id);
                             }
                         }
-
-                        // New point is not deleted
-                        if (internal_id as usize) < deleted.len() {
-                            deleted.set(internal_id as usize, false);
-                        }
                     }
                     MappingChange::Delete(external_id) => {
                         // Remove external to internal mapping
@@ -111,19 +113,19 @@ impl MutableIdTracker {
                             PointIdType::NumId(idx) => external_to_internal_num.remove(&idx),
                             PointIdType::Uuid(uuid) => external_to_internal_uuid.remove(&uuid),
                         };
-
                         let Some(internal_id) = internal_id else {
                             continue;
                         };
 
-                        // Set internal to external mapping to max int
+                        // Set internal to external mapping back to max int
                         if (internal_id as usize) < internal_to_external.len() {
-                            internal_to_external[internal_id as usize] = UNSET_POINT_ID;
+                            internal_to_external[internal_id as usize] =
+                                PointIdType::NumId(u64::MAX);
                         }
 
                         // Mark internal point as deleted
                         if internal_id as usize >= deleted.len() {
-                            deleted.resize(internal_id as usize + 1, false);
+                            deleted.resize(internal_id as usize + 1, true);
                         }
                         deleted.set(internal_id as usize, true);
                     }
