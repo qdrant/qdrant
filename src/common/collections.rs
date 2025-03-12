@@ -20,6 +20,7 @@ use collection::shards::replica_set;
 use collection::shards::resharding::ReshardKey;
 use collection::shards::shard::{PeerId, ShardId, ShardsPlacement};
 use collection::shards::transfer::{ShardTransfer, ShardTransferKey, ShardTransferRestart};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::SliceRandom;
 use rand::seq::IteratorRandom;
@@ -280,6 +281,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -316,6 +318,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -347,6 +350,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -374,6 +378,7 @@ pub async fn do_update_collection_cluster(
                     CollectionMetaOperations::UpdateCollection(update_operation),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -447,6 +452,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -485,6 +491,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -529,6 +536,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -650,6 +658,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -676,6 +685,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -696,6 +706,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -747,6 +758,7 @@ pub async fn do_update_collection_cluster(
                     }),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -776,6 +788,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }
@@ -805,6 +818,7 @@ pub async fn do_update_collection_cluster(
                     ),
                     access,
                     wait_timeout,
+                    HwMeasurementAcc::disposable(), // Operation type not measured
                 )
                 .await
         }

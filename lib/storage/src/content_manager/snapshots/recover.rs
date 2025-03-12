@@ -6,6 +6,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::{PeerId, ShardId};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use crate::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollectionOperation,
@@ -149,7 +150,12 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 )?);
             dispatcher
-                .submit_collection_meta_op(operation, access, None)
+                .submit_collection_meta_op(
+                    operation,
+                    access,
+                    None,
+                    HwMeasurementAcc::disposable(), // Internal API.
+                )
                 .await?;
             toc.get_collection(&collection_pass).await?
         }

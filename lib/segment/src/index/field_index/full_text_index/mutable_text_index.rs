@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::inverted_index::InvertedIndex;
@@ -46,7 +47,12 @@ impl MutableFullTextIndex {
         Ok(true)
     }
 
-    pub fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+    pub fn add_many(
+        &mut self,
+        idx: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -60,7 +66,8 @@ impl MutableFullTextIndex {
         }
 
         let document = self.inverted_index.document_from_tokens(&tokens);
-        self.inverted_index.index_document(idx, document)?;
+        self.inverted_index
+            .index_document(idx, document, hw_counter)?;
 
         let db_idx = FullTextIndex::store_key(idx);
         let db_document = FullTextIndex::serialize_document_tokens(tokens)?;

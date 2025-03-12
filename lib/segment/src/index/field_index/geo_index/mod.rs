@@ -432,13 +432,14 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&Value],
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Measure values.
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let values = payload
             .iter()
             .flat_map(|value| <GeoMapIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
-        self.in_memory_index.add_many_geo_points(id, &values)
+        self.in_memory_index
+            .add_many_geo_points(id, &values, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -453,9 +454,14 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
 impl ValueIndexer for GeoMapIndex {
     type ValueType = GeoPoint;
 
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<GeoPoint>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values),
+            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values, hw_counter),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),

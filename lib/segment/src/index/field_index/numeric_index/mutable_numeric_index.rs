@@ -260,11 +260,17 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         &mut self,
         idx: PointOffsetType,
         values: Vec<T>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let mut counter = 0;
         for value in &values {
             let key = value.encode_key(idx);
             self.db_wrapper.put(&key, idx.to_be_bytes())?;
+            counter += size_of_val(&key) + size_of_val(&idx);
         }
+        hw_counter
+            .payload_index_io_write_counter()
+            .incr_delta(counter);
         self.in_memory_index.add_many_to_list(idx, values);
         Ok(())
     }

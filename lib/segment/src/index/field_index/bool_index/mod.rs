@@ -190,10 +190,11 @@ impl ValueIndexer for BoolIndex {
         &mut self,
         id: common::types::PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> crate::common::operation_error::OperationResult<()> {
         match self {
-            BoolIndex::Simple(index) => index.add_many(id, values),
-            BoolIndex::Mmap(index) => index.add_many(id, values),
+            BoolIndex::Simple(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Mmap(index) => index.add_many(id, values, hw_counter),
         }
     }
 

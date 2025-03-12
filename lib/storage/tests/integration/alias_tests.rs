@@ -6,6 +6,7 @@ use collection::operations::verification::new_unchecked_verification_pass;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::channel_service::ChannelService;
 use common::budget::ResourceBudget;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use memory::madvise;
 use segment::types::Distance;
 use storage::content_manager::collection_meta_ops::{
@@ -123,6 +124,7 @@ fn test_alias_operation() {
                 ),
                 FULL_ACCESS,
                 None,
+                HwMeasurementAcc::new(),
             ),
         )
         .unwrap();
@@ -138,6 +140,7 @@ fn test_alias_operation() {
             }),
             FULL_ACCESS,
             None,
+            HwMeasurementAcc::new(),
         ))
         .unwrap();
 
@@ -163,6 +166,7 @@ fn test_alias_operation() {
             }),
             FULL_ACCESS,
             None,
+            HwMeasurementAcc::new(),
         ))
         .unwrap();
 

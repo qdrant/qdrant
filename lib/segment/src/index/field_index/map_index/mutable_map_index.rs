@@ -44,6 +44,7 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         &mut self,
         idx: PointOffsetType,
         values: Vec<Q>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>
     where
         Q: Into<N::Owned>,
@@ -63,6 +64,9 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             self.point_to_values[idx as usize].push(entry.key().clone());
             let db_record = MapIndex::encode_db_record(entry.key().borrow(), idx);
             entry.or_default().insert(idx);
+            hw_counter
+                .payload_index_io_write_counter()
+                .incr_delta(db_record.len());
             self.db_wrapper.put(db_record, [])?;
         }
         self.indexed_points += 1;

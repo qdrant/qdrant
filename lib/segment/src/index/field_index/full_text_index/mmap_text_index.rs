@@ -94,6 +94,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
@@ -108,7 +109,8 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
         }
 
         let document = self.mutable_index.document_from_tokens(&tokens);
-        self.mutable_index.index_document(id, document)?;
+        self.mutable_index
+            .index_document(id, document, hw_counter)?;
 
         Ok(())
     }

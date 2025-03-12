@@ -5,6 +5,7 @@ use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
 use actix_web_validator::{Json, Path, Query};
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::verification::new_unchecked_verification_pass;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Deserialize;
 use storage::content_manager::collection_meta_ops::{
     ChangeAliasesOperation, CollectionMetaOperations, CreateCollection, CreateCollectionOperation,
@@ -126,6 +127,7 @@ async fn create_collection(
             CollectionMetaOperations::CreateCollection(create_collection_op),
             access,
             query.timeout(),
+            HwMeasurementAcc::disposable(), // API unmeasured
         )
         .await;
     process_response(response, timing, None)
@@ -149,6 +151,7 @@ async fn update_collection(
             )),
             access,
             query.timeout(),
+            HwMeasurementAcc::disposable(), // API unmeasured
         )
         .await;
     process_response(response, timing, None)
@@ -169,6 +172,7 @@ async fn delete_collection(
             )),
             access,
             query.timeout(),
+            HwMeasurementAcc::disposable(), // API unmeasured
         )
         .await;
     process_response(response, timing, None)
@@ -187,6 +191,7 @@ async fn update_aliases(
             CollectionMetaOperations::ChangeAliases(operation.0),
             access,
             query.timeout(),
+            HwMeasurementAcc::disposable(), // API unmeasured
         )
         .await;
     process_response(response, timing, None)
