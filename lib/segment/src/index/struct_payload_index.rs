@@ -160,10 +160,11 @@ impl StructPayloadIndex {
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
         } else {
-            let mut new_config = PayloadConfig::default();
-            if !is_appendable {
-                new_config.skip_rocksdb = Some(true);
-            }
+            let new_config = PayloadConfig::default();
+            // ToDo(mmap-paylaod-index): uncomment before minor release
+            // if !is_appendable {
+            //     new_config.skip_rocksdb = Some(true);
+            // }
             new_config
         };
 
