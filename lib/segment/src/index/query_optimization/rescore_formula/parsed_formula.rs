@@ -164,15 +164,15 @@ impl ParsedExpression {
         let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE);
 
         if midpoint <= 0.0 || midpoint >= 1.0 {
-            return Err(OperationError::validation_error(
-                "Decay midpoint should be between 0.0 and 1.0, not inclusive.",
-            ));
+            return Err(OperationError::validation_error(format!(
+                "Decay midpoint should be between 0.0 and 1.0 (exclusive), got {midpoint}."
+            )));
         }
 
         if scale <= 0.0 {
-            return Err(OperationError::validation_error(
-                "Decay scale should be non-zero positive.",
-            ));
+            return Err(OperationError::validation_error(format!(
+                "Decay scale should be non-zero positive, got {scale}."
+            )));
         }
 
         let lambda = match kind {
