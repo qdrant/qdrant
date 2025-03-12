@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -247,7 +247,7 @@ impl IdTracker for MutableIdTracker {
             }
 
             // Open file in append mode to write new changes to the end
-            let file = OpenOptions::new()
+            let file = File::options()
                 .create(true)
                 .append(true)
                 .open(&mappings_path)?;
@@ -284,7 +284,7 @@ impl IdTracker for MutableIdTracker {
             }
 
             // Open file in append mode to write new changes to the end
-            let file = OpenOptions::new()
+            let file = File::options()
                 .create(true)
                 .append(true)
                 .open(&versions_path)?;
