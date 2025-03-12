@@ -405,13 +405,14 @@ async fn test_shard_status_based_on_optimization(
         collection_config_guard
             .optimizer_config
             .default_segment_number = 1;
+        drop(collection_config_guard);
+
+        let info = shard.local_shard_info().await;
+        assert_eq!(info.status, ShardStatus::Green);
+
+        // This recreates optimizers based on updated collection config
+        shard.on_optimizer_config_update().await.unwrap();
     }
-
-    let info = shard.local_shard_info().await;
-    assert_eq!(info.status, ShardStatus::Green);
-
-    // This recreates optimizers based on updated collection config
-    shard.on_optimizer_config_update().await.unwrap();
 
     let info = shard.local_shard_info().await;
     assert_eq!(info.status, expected_shard_status);
