@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -256,7 +257,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
-        self.deleted.get(key as usize).map(|b| *b).unwrap_or(false)
+        self.deleted.get_bit(key as usize).unwrap_or(false)
     }
 
     fn deleted_vector_count(&self) -> usize {

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -115,13 +116,7 @@ impl<T: Encodable + Numericable> Iterator for NumericKeySortedVecIterator<'_, T>
     fn next(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
             let key = self.set.data[self.start_index].clone();
-            let deleted = self
-                .set
-                .deleted
-                .get(self.start_index)
-                .as_deref()
-                .copied()
-                .unwrap_or(true);
+            let deleted = self.set.deleted.get_bit(self.start_index).unwrap_or(true);
             self.start_index += 1;
             if deleted {
                 continue;
@@ -136,13 +131,7 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIter
     fn next_back(&mut self) -> Option<Self::Item> {
         while self.start_index < self.end_index {
             let key = self.set.data[self.end_index - 1].clone();
-            let deleted = self
-                .set
-                .deleted
-                .get(self.end_index - 1)
-                .as_deref()
-                .copied()
-                .unwrap_or(true);
+            let deleted = self.set.deleted.get_bit(self.end_index - 1).unwrap_or(true);
             self.end_index -= 1;
             if deleted {
                 continue;
