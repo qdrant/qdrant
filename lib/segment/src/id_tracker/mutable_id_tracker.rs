@@ -260,6 +260,12 @@ impl IdTracker for MutableIdTracker {
                 ))
             })?;
 
+            // Explicitly fsync file contents to ensure durability
+            let file = writer.into_inner().unwrap();
+            if let Err(err) = file.sync_all() {
+                log::warn!("Failed to fsync ID tracker point mappings: {err}");
+            }
+
             Ok(())
         })
     }
@@ -296,6 +302,12 @@ impl IdTracker for MutableIdTracker {
                     versions_path.display(),
                 ))
             })?;
+
+            // Explicitly fsync file contents to ensure durability
+            let file = writer.into_inner().unwrap();
+            if let Err(err) = file.sync_all() {
+                log::warn!("Failed to fsync ID tracker point versions: {err}");
+            }
 
             Ok(())
         })
