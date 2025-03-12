@@ -121,9 +121,7 @@ impl SimpleIdTracker {
                 // This should not happen in normal operation, but it can happen if
                 // the database is corrupted.
                 log::warn!(
-                    "removing duplicated external id {} in internal id {}",
-                    external_id,
-                    replaced_id
+                    "removing duplicated external id {external_id} in internal id {replaced_id}",
                 );
                 match replaced_id {
                     PointIdType::NumId(idx) => {
@@ -146,7 +144,8 @@ impl SimpleIdTracker {
             }
         }
 
-        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
+        let mut internal_to_version: Vec<SeqNumberType> =
+            Vec::with_capacity(internal_to_external.len());
         let versions_db_wrapper = DatabaseColumnScheduledUpdateWrapper::new(
             DatabaseColumnWrapper::new(store, DB_VERSIONS_CF),
         );
@@ -164,23 +163,21 @@ impl SimpleIdTracker {
                 internal_to_version[internal_id as usize] = version;
             } else {
                 log::debug!(
-                    "Found version: {} without internal id, external id: {}",
-                    version,
-                    external_id
+                    "Found version: {version} without internal id, external id: {external_id}"
                 );
             }
         }
+
         #[cfg(debug_assertions)]
-        {
-            for (idx, id) in external_to_internal_num.iter() {
-                debug_assert!(
-                    internal_to_external[*id as usize] == PointIdType::NumId(*idx),
-                    "Internal id {id} is mapped to external id {}, but should be {}",
-                    internal_to_external[*id as usize],
-                    PointIdType::NumId(*idx)
-                );
-            }
+        for (idx, id) in external_to_internal_num.iter() {
+            debug_assert!(
+                internal_to_external[*id as usize] == PointIdType::NumId(*idx),
+                "Internal id {id} is mapped to external id {}, but should be {}",
+                internal_to_external[*id as usize],
+                PointIdType::NumId(*idx),
+            );
         }
+
         let mappings = PointMappings::new(
             deleted,
             internal_to_external,
@@ -213,7 +210,11 @@ impl SimpleIdTracker {
         Ok(())
     }
 
-    fn persist_key(&self, external_id: &PointIdType, internal_id: usize) -> OperationResult<()> {
+    fn persist_key(
+        &self,
+        external_id: &PointIdType,
+        internal_id: PointOffsetType,
+    ) -> OperationResult<()> {
         self.mapping_db_wrapper.put(
             Self::store_key(external_id),
             bincode::serialize(&internal_id).unwrap(),
@@ -239,7 +240,7 @@ impl IdTracker for SimpleIdTracker {
                         log::info!(
                             "Resizing versions is initializing larger range {} -> {}",
                             self.internal_to_version.len(),
-                            internal_id + 1
+                            internal_id + 1,
                         );
                     }
                 }
@@ -348,9 +349,9 @@ impl IdTracker for SimpleIdTracker {
         }
         for external_id in to_remove {
             self.drop(external_id)?;
-            #[cfg(debug_assertions)] // Only for dev builds
+            #[cfg(debug_assertions)]
             {
-                log::debug!("dropped version for point {} without version", external_id);
+                log::debug!("dropped version for point {external_id} without version");
             }
         }
         Ok(())
