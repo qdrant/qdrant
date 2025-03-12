@@ -55,10 +55,6 @@ impl MmapBoolIndex {
     }
 
     fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        // _is_on_disk is not used, because DynamicMmapFlags are always populated.
-        // I think it is better to keep unused flag here, in case mmap will be changed to some
-        // other storage in the future.
-
         if !path.is_dir() {
             return Err(OperationError::service_error("Path is not a directory"));
         }
