@@ -70,7 +70,7 @@ impl PayloadStorage for MmapPayloadStorage {
     ) -> OperationResult<()> {
         self.storage
             .write()
-            .put_value(point_id, payload, hw_counter)
+            .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())
             .map_err(OperationError::service_error)?;
         Ok(())
     }
@@ -86,12 +86,16 @@ impl PayloadStorage for MmapPayloadStorage {
             Some(mut point_payload) => {
                 point_payload.merge(payload);
                 guard
-                    .put_value(point_id, &point_payload, hw_counter)
+                    .put_value(
+                        point_id,
+                        &point_payload,
+                        hw_counter.ref_payload_io_write_counter(),
+                    )
                     .map_err(OperationError::service_error)?;
             }
             None => {
                 guard
-                    .put_value(point_id, payload, hw_counter)
+                    .put_value(point_id, payload, hw_counter.ref_payload_io_write_counter())
                     .map_err(OperationError::service_error)?;
             }
         }
@@ -110,14 +114,22 @@ impl PayloadStorage for MmapPayloadStorage {
             Some(mut point_payload) => {
                 point_payload.merge_by_key(payload, key);
                 guard
-                    .put_value(point_id, &point_payload, hw_counter)
+                    .put_value(
+                        point_id,
+                        &point_payload,
+                        hw_counter.ref_payload_io_write_counter(),
+                    )
                     .map_err(OperationError::service_error)?;
             }
             None => {
                 let mut dest_payload = Payload::default();
                 dest_payload.merge_by_key(payload, key);
                 guard
-                    .put_value(point_id, &dest_payload, hw_counter)
+                    .put_value(
+                        point_id,
+                        &dest_payload,
+                        hw_counter.ref_payload_io_write_counter(),
+                    )
                     .map_err(OperationError::service_error)?;
             }
         }
@@ -147,7 +159,11 @@ impl PayloadStorage for MmapPayloadStorage {
                 let res = payload.remove(key);
                 if !res.is_empty() {
                     guard
-                        .put_value(point_id, &payload, hw_counter)
+                        .put_value(
+                            point_id,
+                            &payload,
+                            hw_counter.ref_payload_io_write_counter(),
+                        )
                         .map_err(OperationError::service_error)?;
                 }
                 Ok(res)

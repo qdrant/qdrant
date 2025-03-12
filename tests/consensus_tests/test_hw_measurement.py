@@ -1,8 +1,8 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, get_telemetry_hw_info, update_points_payload, \
-    update_points_vector
+from .fixtures import create_collection, get_telemetry_hw_info, update_points_payload, \
+    update_points_vector, upsert_random_points
 from .utils import *
 from math import ceil
 
@@ -15,11 +15,47 @@ N_REPLICAS = 1
 COLLECTION_NAME = "test_collection_hw_counting"
 
 
+def test_no_local_shard(tmp_path: pathlib.Path):
+    peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, 2)
+
+    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=1, replication_factor=N_REPLICAS, sharding_method="custom", sparse_vectors=False)
+
+    wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
+
+    collection_info = get_cluster_info(peer_urls[0])
+    targeted_node_id = 0  # Non leader node
+    for peer_id, peer_info in collection_info['peers'].items():
+        peer_id = int(peer_id)
+        if peer_id != int(collection_info['peer_id']):
+            targeted_node_id = peer_id
+            break
+
+    targeted_node_url = peer_urls[1]
+    create_shard_key("target_node", peer_urls[0], collection=COLLECTION_NAME, placement=[targeted_node_id])
+
+    hw_before = get_telemetry_hw_info(targeted_node_url, COLLECTION_NAME)
+    if hw_before is not None:
+        assert hw_before['payload_io_write'] == 0
+        assert hw_before['vector_io_write'] == 0
+
+    # Targeted non-leader node has captured all measurements
+    upsert_random_points(peer_urls[0], 1000, collection_name=COLLECTION_NAME, shard_key="target_node", with_sparse_vector=False)
+    hw = get_telemetry_hw_info(targeted_node_url, COLLECTION_NAME)
+    assert_with_upper_bound_error(hw['payload_io_write'], 1000 * 20, upper_bound_error_percent=0.2) # 1k points times ~5 bytes avg payload size
+    assert_with_upper_bound_error(hw['vector_io_write'], 1000 * 4 * 4,upper_bound_error_percent=0.2)  # 1k vectors of dim 4 where each dim is 4 bytes
+
+    # Leader still has no measurements
+    leader_hw = get_telemetry_hw_info(peer_urls[0], COLLECTION_NAME)
+    if hw_before is not None:
+        assert leader_hw['payload_io_write'] == 0
+        assert leader_hw['vector_io_write'] == 0
+
+
 def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
-    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS)
+    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS, sparse_vectors=False)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
-    upsert_random_points(peer_urls[0], 200, collection_name=COLLECTION_NAME)
+    upsert_random_points(peer_urls[0], 200, collection_name=COLLECTION_NAME, with_sparse_vector=False)
 
     peer_hw_infos = [get_telemetry_hw_info(x, COLLECTION_NAME) for x in peer_urls]
 
@@ -29,7 +65,7 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
         assert i["vector_io_write"] > 0
 
     # Upsert ~20 vectors into each shard
-    upsert_random_points(peer_urls[0], N_SHARDS * 20, collection_name=COLLECTION_NAME)
+    upsert_random_points(peer_urls[0], N_SHARDS * 20, collection_name=COLLECTION_NAME, with_sparse_vector=False)
 
     total_vector_io_write = 0
     # Check upsert
@@ -84,7 +120,7 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
 
 def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
     peer_urls, peer_dirs, bootstrap_url = start_cluster(tmp_path, N_PEERS)
-    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS)
+    create_collection(peer_urls[0], collection=COLLECTION_NAME, shard_number=N_SHARDS, replication_factor=N_REPLICAS, sparse_vectors=False)
     wait_collection_exists_and_active_on_all_peers(collection_name=COLLECTION_NAME, peer_api_uris=peer_urls)
 
     check_collection_points_count(peer_urls[0], COLLECTION_NAME, 0)
@@ -93,7 +129,7 @@ def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
     total_vectors = upsert_vectors * N_PEERS  # 200 vectors
 
     # Upsert 200 points without waiting
-    upsert_random_points(peer_urls[0], total_vectors, collection_name=COLLECTION_NAME, wait="false")
+    upsert_random_points(peer_urls[0], total_vectors, collection_name=COLLECTION_NAME, wait="false", with_sparse_vector=False)
 
     wait_collection_points_count(peer_urls[0], COLLECTION_NAME, total_vectors)
 
@@ -126,4 +162,4 @@ def assert_with_upper_bound_error(inp: int, min_value: int, upper_bound_error_pe
     upper_bound = ceil(float(min_value) + float(min_value) * upper_bound_error_percent)
 
     if inp > upper_bound:
-        assert False, f"Assertion {inp} being below upperbound error of {upper_bound_error_percent}(={upper_bound}) failed."
+        assert False, f"Assertion {inp} < {upper_bound} (upperbound) failed. Allowed error = {upper_bound_error_percent}"
