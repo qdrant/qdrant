@@ -13,9 +13,6 @@ use serde_json::Value;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 
-const DEFAULT_DECAY_MIDPOINT: f32 = 0.5;
-const DEFAULT_DECAY_SCALE: f32 = 1.0;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormulaInternal {
     pub formula: ExpressionInternal,
@@ -131,7 +128,7 @@ impl ExpressionInternal {
                 midpoint,
                 scale,
             } => {
-                let lambda = decay_params_to_lambda(midpoint, scale, kind)?;
+                let lambda = ParsedExpression::decay_params_to_lambda(midpoint, scale, kind)?;
 
                 let x = x.parse_and_convert(payload_vars, conditions)?;
 
@@ -151,39 +148,6 @@ impl ExpressionInternal {
 
         Ok(expr)
     }
-}
-
-/// Transforms the constant part of the decay function into a single `lambda` value.
-///
-/// Graphical representation of the formulas:
-/// https://www.desmos.com/calculator/15qvagvue9
-fn decay_params_to_lambda(
-    midpoint: Option<f32>,
-    scale: Option<f32>,
-    kind: DecayKind,
-) -> CollectionResult<f32> {
-    let midpoint = midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT);
-    let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE);
-
-    if midpoint <= 0.0 || midpoint >= 1.0 {
-        return Err(CollectionError::bad_input(
-            "Decay midpoint should be between 0.0 and 1.0, not inclusive.",
-        ));
-    }
-
-    if scale <= 0.0 {
-        return Err(CollectionError::bad_input(
-            "Decay scale should be non-zero positive.",
-        ));
-    }
-
-    let lambda = match kind {
-        DecayKind::Lin => (1.0 - midpoint) / scale,
-        DecayKind::Exp => midpoint.ln() / scale,
-        DecayKind::Gauss => scale.powi(2) / midpoint.ln(),
-    };
-
-    Ok(lambda)
 }
 
 impl TryFrom<FormulaInternal> for ParsedFormula {

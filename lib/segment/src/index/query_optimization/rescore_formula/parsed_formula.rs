@@ -1,13 +1,17 @@
 use std::collections::{HashMap, HashSet};
+use std::ops::Neg;
 use std::str::FromStr;
 
 use common::types::ScoreType;
 use serde_json::Value;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::{JsonPath, JsonPathItem};
 use crate::types::{Condition, GeoPoint};
 
 const SCORE_KEYWORD: &str = "score";
+const DEFAULT_DECAY_MIDPOINT: f32 = 0.5;
+const DEFAULT_DECAY_SCALE: f32 = 1.0;
 
 pub type ConditionId = usize;
 
@@ -146,6 +150,92 @@ impl ParsedExpression {
     pub fn new_condition_id(index: ConditionId) -> Self {
         ParsedExpression::Variable(VariableId::Condition(index))
     }
+
+    /// Transforms the constant part of the decay function into a single `lambda` value.
+    ///
+    /// Graphical representation of the formulas:
+    /// https://www.desmos.com/calculator/15qvagvue9
+    pub fn decay_params_to_lambda(
+        midpoint: Option<f32>,
+        scale: Option<f32>,
+        kind: DecayKind,
+    ) -> OperationResult<f32> {
+        let midpoint = midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT);
+        let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE);
+
+        if midpoint <= 0.0 || midpoint >= 1.0 {
+            dbg!(midpoint);
+            return Err(OperationError::validation_error(
+                "Decay midpoint should be between 0.0 and 1.0, not inclusive.",
+            ));
+        }
+
+        if scale <= 0.0 {
+            return Err(OperationError::validation_error(
+                "Decay scale should be non-zero positive.",
+            ));
+        }
+
+        let lambda = match kind {
+            DecayKind::Lin => (1.0 - midpoint) / scale,
+            DecayKind::Exp => midpoint.ln() / scale,
+            DecayKind::Gauss => scale.powi(2) / midpoint.ln(),
+        };
+
+        Ok(lambda)
+    }
+
+    /// Converts the already computed lambda value to parameters which will result in
+    /// the same lambda when used in a decay function on the peer node.
+    ///
+    /// Returns a tuple of (midpoint, scale) parameters.
+    pub fn decay_lambda_to_params(lambda: f32, kind: DecayKind) -> (f32, f32) {
+        match kind {
+            DecayKind::Lin => {
+                // We assume lambda is in the range (0, 1)
+                debug_assert!(0.0 < lambda && lambda < 1.0);
+
+                // Linear lambda is (1.0 - midpoint) / scale,
+                // setting scale to 1.0 allows us to ignore the division,
+                // and only set the midpoint to some value.
+                //
+                // (1.0 - midpoint) / 1.0 = lambda
+                // 1.0 - midpoint = lambda
+                // midpoint = 1.0 - lambda
+                ((-lambda + 1.0), 1.0)
+            }
+
+            DecayKind::Gauss => {
+                // We assume lambda is non-zero negative
+                debug_assert!(lambda < 0.0);
+
+                // Gauss lambda is scale^2 / ln(midpoint)
+                // setting midpoint to 1/e (0.3678...) allows us to ignore the division, since ln(1/e) = -1
+                // Then we set scale to sqrt(-lambda)
+                //
+                // scale^2 / ln(1/e) = lambda
+                // scale^2 / -1.0 = lambda
+                // -scale^2 = lambda
+                // scale^2 = -lambda
+                // scale = sqrt(-lambda)
+                (1.0 / std::f32::consts::E, lambda.neg().sqrt())
+            }
+
+            DecayKind::Exp => {
+                // We assume lambda is non-zero negative
+                debug_assert!(lambda < 0.0);
+
+                // Exponential lambda is ln(midpoint) / scale
+                // setting midpoint to 1/e (0.3678...) allows us to ignore the division, since ln(1/e) = -1
+                // Then we set scale to -1 / lambda
+                //
+                // ln(1/e) / scale = lambda
+                // -1.0 / scale = lambda
+                // scale = -1.0 / lambda
+                (1.0 / std::f32::consts::E, -1.0 / lambda)
+            }
+        }
+    }
 }
 
 impl FromStr for VariableId {
@@ -189,6 +279,8 @@ impl FromStr for VariableId {
 
 #[cfg(test)]
 mod tests {
+    use common::math::is_close;
+
     use super::*;
 
     #[test]
@@ -227,5 +319,43 @@ mod tests {
             VariableId::Payload("field[0]".parse().unwrap())
         );
         assert!(VariableId::from_str("").is_err());
+    }
+
+    /// Tests that lambda can be communicated to peers in the form of its components, and be recalculated appropriately
+    fn check_lambda_round_trip(lambda: f32, kind: DecayKind) {
+        let (midpoint, scale) = ParsedExpression::decay_lambda_to_params(lambda, kind);
+
+        // Convert back to lambda
+        let lambda_roundtrip =
+            ParsedExpression::decay_params_to_lambda(Some(midpoint), Some(scale), kind).unwrap();
+
+        // Check that the roundtrip conversion preserves the value
+        assert!(
+            is_close(lambda, lambda_roundtrip),
+            "Lambda roundtrip failed for {kind:?}: {lambda} -> ({midpoint}, {scale}) -> {lambda_roundtrip}",
+        );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn test_lin_decay_lambda_params_roundtrip(
+            lambda in 0.000001f32..1.0f32
+        ) {
+            check_lambda_round_trip(lambda, DecayKind::Lin);
+        }
+
+        #[test]
+        fn test_exp_decay_lambda_params_roundtrip(
+            lambda in -1_000_000.0..-0.000_000_1f32
+        ) {
+            check_lambda_round_trip(lambda, DecayKind::Exp);
+        }
+
+        #[test]
+        fn test_gauss_decay_lambda_params_roundtrip(
+            lambda in -100_000_000.0..-0.0f32
+        ) {
+            check_lambda_round_trip(lambda, DecayKind::Gauss);
+        }
     }
 }
