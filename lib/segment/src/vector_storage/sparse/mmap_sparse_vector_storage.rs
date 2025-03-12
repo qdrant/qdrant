@@ -151,7 +151,11 @@ impl MmapSparseVectorStorage {
         if let Some(vector) = vector {
             // upsert vector
             storage_guard
-                .put_value(key, &StoredSparseVector::from(vector), hw_counter)
+                .put_value(
+                    key,
+                    &StoredSparseVector::from(vector),
+                    hw_counter.ref_vector_io_write_counter(),
+                )
                 .map_err(OperationError::service_error)?;
         } else {
             // delete vector
@@ -229,7 +233,7 @@ impl VectorStorage for MmapSparseVectorStorage {
         other_vectors: &'a mut impl Iterator<Item = (CowVector<'a>, bool)>,
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate value!
+        let hw_counter = HardwareCounterCell::disposable(); // This function is only used for internal operations. No need to measure.
         let start_index = self.next_point_offset as PointOffsetType;
         for (other_vector, other_deleted) in
             other_vectors.check_stop(|| stopped.load(Ordering::Relaxed))
@@ -277,7 +281,7 @@ impl VectorStorage for MmapSparseVectorStorage {
     ) -> crate::common::operation_error::OperationResult<bool> {
         let was_deleted = !self.set_deleted(key, true)?;
 
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): propagate value!
+        let hw_counter = HardwareCounterCell::disposable(); // Deletions not measured
         self.update_stored(key, None, &hw_counter)?;
 
         Ok(was_deleted)

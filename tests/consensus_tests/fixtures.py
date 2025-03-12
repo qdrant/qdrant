@@ -140,22 +140,27 @@ def create_collection(
     indexing_threshold=20000,
     headers={},
     strict_mode=None,
+    sparse_vectors=True,
 ):
+    payload = {
+        "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
+        "shard_number": shard_number,
+        "replication_factor": replication_factor,
+        "write_consistency_factor": write_consistency_factor,
+        "sharding_method": sharding_method,
+        "optimizers_config": {
+            "indexing_threshold": indexing_threshold,
+        },
+        "strict_mode_config": strict_mode,
+    }
+
+    if sparse_vectors:
+       payload["sparse_vectors"] = {"sparse-text": {}}
+
     # Create collection in peer_url
     r_batch = requests.put(
         f"{peer_url}/collections/{collection}?timeout={timeout}",
-        json={
-            "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
-            "sparse_vectors": {"sparse-text": {}},
-            "shard_number": shard_number,
-            "replication_factor": replication_factor,
-            "write_consistency_factor": write_consistency_factor,
-            "sharding_method": sharding_method,
-            "optimizers_config": {
-                "indexing_threshold": indexing_threshold,
-            },
-            "strict_mode_config": strict_mode,
-        },
+        json=payload,
         headers=headers,
     )
     assert_http_ok(r_batch)
@@ -227,4 +232,8 @@ def get_telemetry_hw_info(peer_url, collection):
         f"{peer_url}/telemetry", params="details_level=3"
     )
     assert_http_ok(r_search)
-    return r_search.json()["result"]["hardware"]["collection_data"][collection]
+    hw = r_search.json()["result"]["hardware"]["collection_data"]
+    if collection in hw:
+        return hw[collection]
+    else:
+        return None

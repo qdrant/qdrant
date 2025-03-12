@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::referenced_counter::HwMetricRefCounter;
 use io::file_operations::atomic_save_json;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
@@ -326,7 +327,7 @@ impl<V: Blob> Gridstore<V> {
         &mut self,
         point_offset: PointOffset,
         value: &V,
-        hw_counter: &HardwareCounterCell,
+        hw_counter: HwMetricRefCounter,
     ) -> Result<bool> {
         // This function needs to NOT corrupt data in case of a crash.
         //
@@ -380,7 +381,7 @@ impl<V: Blob> Gridstore<V> {
         let comp_value = self.compress(value_bytes);
         let value_size = comp_value.len();
 
-        hw_counter.payload_io_write_counter().incr_delta(value_size);
+        hw_counter.incr_delta(value_size);
 
         let required_blocks = Self::blocks_for_value(value_size, self.config.block_size_bytes);
         let (start_page_id, block_offset) =
@@ -558,10 +559,11 @@ mod tests {
         let (_dir, mut storage) = empty_storage();
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter = hw_counter.ref_payload_io_write_counter();
 
         // TODO: should we actually use the pages for empty values?
         let payload = Payload::default();
-        storage.put_value(0, &payload, &hw_counter).unwrap();
+        storage.put_value(0, &payload, hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -583,8 +585,9 @@ mod tests {
         );
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter = hw_counter.ref_payload_io_write_counter();
 
-        storage.put_value(0, &payload, &hw_counter).unwrap();
+        storage.put_value(0, &payload, hw_counter).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -610,7 +613,8 @@ mod tests {
         );
 
         let hw_counter = HardwareCounterCell::new();
-        storage.put_value(0, &payload, &hw_counter).unwrap();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
         let files = storage.files();
@@ -646,9 +650,10 @@ mod tests {
             .collect::<Vec<_>>();
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         for (point_offset, payload) in payloads.iter() {
             storage
-                .put_value(*point_offset, payload, &hw_counter)
+                .put_value(*point_offset, payload, hw_counter_ref)
                 .unwrap();
 
             let stored_payload = storage.get_value(*point_offset, &hw_counter);
@@ -676,7 +681,8 @@ mod tests {
         );
 
         let hw_counter = HardwareCounterCell::new();
-        storage.put_value(0, &payload, &hw_counter).unwrap();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.len(), 1);
 
         let page_mapping = storage.get_pointer(0).unwrap();
@@ -709,8 +715,9 @@ mod tests {
             serde_json::Value::String("value".to_string()),
         );
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
-        storage.put_value(0, &payload, &hw_counter).unwrap();
+        storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -730,7 +737,9 @@ mod tests {
             serde_json::Value::String("updated".to_string()),
         );
 
-        storage.put_value(0, &updated_payload, &hw_counter).unwrap();
+        storage
+            .put_value(0, &updated_payload, hw_counter_ref)
+            .unwrap();
         assert_eq!(storage.pages.len(), 1);
         assert_eq!(storage.tracker.read().mapping_len(), 1);
 
@@ -807,13 +816,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
         // apply operations to storage and model_hashmap
         for operation in operations {
             match operation {
                 Operation::Put(point_offset, payload) => {
                     storage
-                        .put_value(point_offset, &payload, &hw_counter)
+                        .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
@@ -827,7 +837,7 @@ mod tests {
                 }
                 Operation::Update(point_offset, payload) => {
                     storage
-                        .put_value(point_offset, &payload, &hw_counter)
+                        .put_value(point_offset, &payload, hw_counter_ref)
                         .unwrap();
                     model_hashmap.insert(point_offset, payload);
                 }
@@ -887,7 +897,8 @@ mod tests {
         payload.0.insert("huge".to_string(), huge_value);
 
         let hw_counter = HardwareCounterCell::new();
-        storage.put_value(0, &payload, &hw_counter).unwrap();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        storage.put_value(0, &payload, hw_counter_ref).unwrap();
         assert_eq!(storage.pages.len(), 2);
 
         let page_mapping = storage.get_pointer(0).unwrap();
@@ -928,9 +939,10 @@ mod tests {
         );
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         {
             let mut storage = Gridstore::new(path.clone(), Default::default()).unwrap();
-            storage.put_value(0, &payload, &hw_counter).unwrap();
+            storage.put_value(0, &payload, hw_counter_ref).unwrap();
             assert_eq!(storage.pages.len(), 1);
 
             let page_mapping = storage.get_pointer(0).unwrap();
@@ -967,6 +979,7 @@ mod tests {
             let csv_file = File::open(csv_path).expect("file should open");
 
             let hw_counter = HardwareCounterCell::new();
+            let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
             let mut rdr = csv::Reader::from_reader(csv_file);
             let mut point_offset = init_offset;
@@ -980,7 +993,7 @@ mod tests {
                     );
                 }
                 storage
-                    .put_value(point_offset, &payload, &hw_counter)
+                    .put_value(point_offset, &payload, hw_counter_ref)
                     .unwrap();
                 point_offset += 1;
             }
@@ -1050,6 +1063,7 @@ mod tests {
         storage_double_pass_is_consistent(&storage, 0);
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
 
         // update values shifting point offset by 1 to the right
         // loop from the end to the beginning to avoid overwriting
@@ -1058,14 +1072,14 @@ mod tests {
             let payload = storage.get_value(i as u32, &hw_counter).unwrap();
             // move first write to the right
             storage
-                .put_value(i as u32 + offset, &payload, &hw_counter)
+                .put_value(i as u32 + offset, &payload, hw_counter_ref)
                 .unwrap();
             // move second write to the right
             storage
                 .put_value(
                     i as u32 + offset + EXPECTED_LEN as u32,
                     &payload,
-                    &hw_counter,
+                    hw_counter_ref,
                 )
                 .unwrap();
         }
@@ -1105,11 +1119,12 @@ mod tests {
         let mut storage = Gridstore::new(dir.path().to_path_buf(), options).unwrap();
 
         let hw_counter = HardwareCounterCell::new();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         let payload = minimal_payload();
         let last_point_id = 3 * blocks_per_page as u32;
         for point_offset in 0..=last_point_id {
             storage
-                .put_value(point_offset, &payload, &hw_counter)
+                .put_value(point_offset, &payload, hw_counter_ref)
                 .unwrap();
         }
 
