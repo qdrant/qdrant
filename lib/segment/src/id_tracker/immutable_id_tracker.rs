@@ -959,11 +959,11 @@ pub(super) mod test {
         for (external_id, internal_id) in immutable_id_tracker.iter_from(None) {
             assert_eq!(
                 simple_id_tracker.internal_version(internal_id).unwrap(),
-                simple_id_tracker.internal_version(internal_id).unwrap()
+                immutable_id_tracker.internal_version(internal_id).unwrap()
             );
             assert_eq!(
                 simple_id_tracker.external_id(internal_id),
-                simple_id_tracker.external_id(internal_id)
+                immutable_id_tracker.external_id(internal_id)
             );
             assert_eq!(
                 external_id,
