@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use itertools::Either;
@@ -383,8 +384,14 @@ impl StructPayloadIndex {
                 .primary_clauses
                 .iter()
                 .flat_map(move |clause| {
-                    self.query_field(clause, hw_counter)
-                        .unwrap_or_else(|| id_tracker.iter_ids() /* index is not built */)
+                    self.query_field(clause, hw_counter).unwrap_or_else(|| {
+                        // index is not built
+                        Box::new(id_tracker.iter_ids().measure_hw_with_cell(
+                            hw_counter,
+                            size_of::<PointOffsetType>(),
+                            |i| i.cpu_counter(),
+                        ))
+                    })
                 })
                 .filter(move |&id| !visited_list.check_and_update_visited(id))
                 .filter(move |&i| struct_filtered_context.check(i));

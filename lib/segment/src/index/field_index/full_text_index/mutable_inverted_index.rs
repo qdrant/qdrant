@@ -88,7 +88,9 @@ impl InvertedIndex for MutableInvertedIndex {
         if self.point_to_docs.len() <= point_id as usize {
             let new_len = point_id as usize + 1;
 
-            counter.incr_delta(new_len - self.point_to_docs.len());
+            // Only measure the overhead of `Document` here since we account for the tokens a few lines below.
+            counter
+                .incr_delta((new_len - self.point_to_docs.len()) * size_of::<Option<Document>>());
 
             self.point_to_docs.resize_with(new_len, Default::default);
         }

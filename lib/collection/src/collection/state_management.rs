@@ -233,7 +233,7 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
+            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable()) // This function is only used in consensus and thus an unmeasured internal operation.
                 .await?;
         }
         Ok(())
