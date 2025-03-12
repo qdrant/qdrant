@@ -792,43 +792,29 @@ impl ShardReplicaSet {
     }
 
     /// Check if the write rate limiter allows the operation to proceed
-    /// - cost: the cost of the operation
-    ///
-    /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter(
-        &self,
-        cost: usize,
-        hw_measurement_acc: &HwMeasurementAcc,
-    ) -> CollectionResult<()> {
-        // Do not rate limit internal operation tagged with disposable measurement
-        if hw_measurement_acc.is_disposable() {
-            return Ok(());
-        }
-        if let Some(rate_limiter) = &self.write_rate_limiter {
-            rate_limiter
-                .lock()
-                .try_consume(cost as f64)
-                .map_err(|err| CollectionError::rate_limit_error(err, cost, true))?;
-        }
-        Ok(())
-    }
-
-    /// Check if the write rate limiter allows the operation to proceed
     /// - hw_measurement_acc: the current hardware measurement accumulator
-    /// - cost_fn: the cost function of the operation, evaluated lazily
+    /// - cost_fn: the cost of the operation called lazily
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_write_rate_limiter_lazy<F>(
+    fn check_write_rate_limiter<F>(
         &self,
         hw_measurement_acc: &HwMeasurementAcc,
         cost_fn: F,
     ) -> CollectionResult<()>
     where
-        F: Fn() -> usize,
+        F: FnOnce() -> usize,
     {
-        if self.write_rate_limiter.is_some() && !hw_measurement_acc.is_disposable() {
-            self.check_write_rate_limiter(cost_fn(), hw_measurement_acc)?;
-        };
+        // Do not rate limit internal operation tagged with disposable measurement
+        if hw_measurement_acc.is_disposable() {
+            return Ok(());
+        }
+        if let Some(rate_limiter) = &self.write_rate_limiter {
+            let cost = cost_fn();
+            rate_limiter
+                .lock()
+                .try_consume(cost as f64)
+                .map_err(|err| CollectionError::rate_limit_error(err, cost, true))?;
+        }
         Ok(())
     }
 
