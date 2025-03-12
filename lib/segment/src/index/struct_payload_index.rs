@@ -129,7 +129,7 @@ impl StructPayloadIndex {
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
         let mut indexes = self
-            .selector(payload_schema) // ToDo: don't force rocksdb
+            .selector(payload_schema)
             .new_index(field, payload_schema)?;
 
         let mut is_loaded = true;
