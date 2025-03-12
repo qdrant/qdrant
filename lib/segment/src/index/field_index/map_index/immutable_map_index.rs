@@ -5,6 +5,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -15,6 +17,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
+use crate::index::field_index::mmap_point_to_values::{MMAP_PTV_ACCESS_OVERHEAD, MmapValue};
 
 pub struct ImmutableMapIndex<N: MapIndexKey + ?Sized> {
     value_to_points: HashMap<N::Owned, ContainerSegment>,
@@ -247,9 +250,23 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         Ok(result)
     }
 
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
-        self.point_to_values
-            .check_values_any(idx, |v| check_fn(v.borrow()))
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool {
+        // Overhead of accessing the index.
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
+
+        self.point_to_values.check_values_any(idx, |v| {
+            let v: &N = v.borrow();
+            let size = <N as MmapValue>::mmapped_size((*v).as_referenced());
+            hw_counter.payload_index_io_read_counter().incr_delta(size);
+            check_fn(v)
+        })
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
@@ -285,17 +302,26 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     }
 
     pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        self.value_to_points.keys().map(|k| {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurements): Propagate?
+        self.value_to_points.keys().map(move |k| {
             (
                 k.borrow(),
-                Box::new(self.get_iterator(k.borrow()).copied()) as IdIter,
+                Box::new(self.get_iterator(k.borrow(), &hw_counter).copied()) as IdIter,
             )
         })
     }
 
-    pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
+    pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(BUCKET_OFFSET_OVERHEAD);
+
         if let Some(entry) = self.value_to_points.get(value) {
             let range = entry.range.start as usize..entry.range.end as usize;
+
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(range.len());
 
             let deleted_flags = self
                 .deleted_value_to_points_container

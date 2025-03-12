@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -328,6 +329,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
+        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Measure this index
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {

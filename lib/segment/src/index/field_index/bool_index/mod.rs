@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use mmap_bool_index::MmapBoolIndex;
 use simple_bool_index::SimpleBoolIndex;
@@ -113,10 +114,11 @@ impl PayloadFieldIndex for BoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = common::types::PointOffsetType> + 'a>> {
         match self {
-            BoolIndex::Simple(index) => index.filter(condition),
-            BoolIndex::Mmap(index) => index.filter(condition),
+            BoolIndex::Simple(index) => index.filter(condition, hw_acc),
+            BoolIndex::Mmap(index) => index.filter(condition, hw_acc),
         }
     }
 
@@ -205,6 +207,7 @@ impl ValueIndexer for BoolIndex {
 mod tests {
     use std::path::Path;
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use rstest::rstest;
     use serde_json::json;
@@ -279,7 +282,11 @@ mod tests {
 
         index.add_point(0, &[&given]).unwrap();
 
-        let count = index.filter(&match_bool(match_on)).unwrap().count();
+        let hw_counter = HwMeasurementAcc::new();
+        let count = index
+            .filter(&match_bool(match_on), hw_counter)
+            .unwrap()
+            .count();
 
         assert_eq!(count, expected_count);
     }
@@ -336,10 +343,17 @@ mod tests {
         let mut new_index = I::open_at(tmp_dir.path());
         assert!(new_index.load().unwrap());
 
-        let point_offsets = new_index.filter(&match_bool(false)).unwrap().collect_vec();
+        let hw_counter = HwMeasurementAcc::new();
+        let point_offsets = new_index
+            .filter(&match_bool(false), hw_counter.clone())
+            .unwrap()
+            .collect_vec();
         assert_eq!(point_offsets, vec![1, 2, 3, 5, 6, 10]);
 
-        let point_offsets = new_index.filter(&match_bool(true)).unwrap().collect_vec();
+        let point_offsets = new_index
+            .filter(&match_bool(true), hw_counter)
+            .unwrap()
+            .collect_vec();
         assert_eq!(point_offsets, vec![0, 2, 3, 4, 6, 11]);
 
         assert_eq!(new_index.count_indexed_points(), 9);
@@ -361,14 +375,24 @@ mod tests {
         let idx = 1000;
         index.add_point(idx, &[&before]).unwrap();
 
-        let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
+        let hw_counter = HwMeasurementAcc::new();
+        let point_offsets = index
+            .filter(&match_bool(false), hw_counter.clone())
+            .unwrap()
+            .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
         index.add_point(idx, &[&after]).unwrap();
 
-        let point_offsets = index.filter(&match_bool(true)).unwrap().collect_vec();
+        let point_offsets = index
+            .filter(&match_bool(true), hw_counter.clone())
+            .unwrap()
+            .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
-        let point_offsets = index.filter(&match_bool(false)).unwrap().collect_vec();
+        let point_offsets = index
+            .filter(&match_bool(false), hw_counter.clone())
+            .unwrap()
+            .collect_vec();
         assert!(point_offsets.is_empty());
     }
 

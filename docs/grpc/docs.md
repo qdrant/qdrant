@@ -3034,6 +3034,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | cpu | [uint64](#uint64) |  |  |
 | payload_io_read | [uint64](#uint64) |  |  |
 | payload_io_write | [uint64](#uint64) |  |  |
+| payload_index_io_read | [uint64](#uint64) |  |  |
 | vector_io_read | [uint64](#uint64) |  |  |
 | vector_io_write | [uint64](#uint64) |  |  |
 

@@ -7,6 +7,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use ahash::HashMap;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
 use indexmap::IndexSet;
@@ -114,11 +116,16 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool {
         match self {
-            MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
-            MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
-            MapIndex::Mmap(index) => index.check_values_any(idx, check_fn),
+            MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }
 
@@ -177,11 +184,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
+    fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
         match self {
-            MapIndex::Mutable(index) => index.get_iterator(value),
-            MapIndex::Immutable(index) => index.get_iterator(value),
-            MapIndex::Mmap(index) => index.get_iterator(value),
+            MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
         }
     }
 
@@ -405,10 +412,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         A: BuildHasher,
         K: Borrow<N> + Hash + Eq,
     {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Maybe propagate?
         Box::new(
             self.iter_values()
                 .filter(|key| !excluded.contains((*key).borrow()))
-                .flat_map(|key| self.get_iterator(key.borrow()).copied())
+                .flat_map(move |key| self.get_iterator(key.borrow(), &hw_counter).copied())
                 .unique(),
         )
     }
@@ -508,22 +516,31 @@ impl PayloadFieldIndex for MapIndex<str> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(keyword) => {
-                    Some(Box::new(self.get_iterator(keyword.as_str()).copied()))
+                    let hw_counter = hw_acc.get_counter_cell();
+                    Some(Box::new(
+                        self.get_iterator(keyword.as_str(), &hw_counter).copied(),
+                    ))
                 }
                 ValueVariants::Integer(_) => None,
                 ValueVariants::Bool(_) => None,
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Strings(keywords) => Some(Box::new(
-                    keywords
-                        .iter()
-                        .flat_map(|keyword| self.get_iterator(keyword.as_str()).copied())
-                        .unique(),
-                )),
+                AnyVariants::Strings(keywords) => {
+                    let hw_counter = hw_acc.get_counter_cell();
+                    Some(Box::new(
+                        keywords
+                            .iter()
+                            .flat_map(move |keyword| {
+                                self.get_iterator(keyword.as_str(), &hw_counter).copied()
+                            })
+                            .unique(),
+                    ))
+                }
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
                         Some(Box::new(iter::empty()))
@@ -645,18 +662,23 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
                     let uuid = Uuid::from_str(uuid_string).ok()?;
-                    Some(Box::new(self.get_iterator(&uuid.as_u128()).copied()))
+                    let hw_counter = hw_acc.get_counter_cell();
+                    Some(Box::new(
+                        self.get_iterator(&uuid.as_u128(), &hw_counter).copied(),
+                    ))
                 }
                 ValueVariants::Integer(_) => None,
                 ValueVariants::Bool(_) => None,
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Strings(uuids_string) => {
+                    let hw_counter = hw_acc.get_counter_cell();
                     let uuids: Result<IndexSet<u128>, _> = uuids_string
                         .iter()
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
@@ -667,7 +689,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     Some(Box::new(
                         uuids
                             .into_iter()
-                            .flat_map(|uuid| self.get_iterator(&uuid).copied())
+                            .flat_map(move |uuid| self.get_iterator(&uuid, &hw_counter).copied())
                             .unique(),
                     ))
                 }
@@ -686,11 +708,13 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
+                    let hw_counter = hw_acc.get_counter_cell();
+
                     let excluded_uuids = uuids.ok()?;
                     let exclude_iter = self
                         .iter_values()
                         .filter(move |key| !excluded_uuids.contains(*key))
-                        .flat_map(|key| self.get_iterator(key).copied())
+                        .flat_map(move |key| self.get_iterator(key, &hw_counter).copied())
                         .unique();
                     Some(Box::new(exclude_iter))
                 }
@@ -823,12 +847,14 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
-                    Some(Box::new(self.get_iterator(integer).copied()))
+                    let hw_counter = hw_acc.get_counter_cell();
+                    Some(Box::new(self.get_iterator(integer, &hw_counter).copied()))
                 }
                 ValueVariants::Bool(_) => None,
             },
@@ -840,12 +866,17 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         None
                     }
                 }
-                AnyVariants::Integers(integers) => Some(Box::new(
-                    integers
-                        .iter()
-                        .flat_map(|integer| self.get_iterator(integer).copied())
-                        .unique(),
-                )),
+                AnyVariants::Integers(integers) => {
+                    let hw_counter = hw_acc.get_counter_cell();
+                    Some(Box::new(
+                        integers
+                            .iter()
+                            .flat_map(move |integer| {
+                                self.get_iterator(integer, &hw_counter).copied()
+                            })
+                            .unique(),
+                    ))
+                }
             },
             Some(Match::Except(MatchExcept { except })) => match except {
                 AnyVariants::Strings(other) => {
