@@ -164,7 +164,6 @@ impl ParsedExpression {
         let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE);
 
         if midpoint <= 0.0 || midpoint >= 1.0 {
-            dbg!(midpoint);
             return Err(OperationError::validation_error(
                 "Decay midpoint should be between 0.0 and 1.0, not inclusive.",
             ));
