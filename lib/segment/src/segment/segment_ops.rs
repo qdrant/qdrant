@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread::{self, JoinHandle};
 
 use bitvec::prelude::BitVec;
@@ -11,8 +11,8 @@ use io::file_operations::{atomic_save_json, read_json};
 use memory::mmap_ops;
 
 use super::{
-    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
-    Segment,
+    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_MANIFEST_FILE, SEGMENT_STATE_FILE,
+    SNAPSHOT_FILES_PATH, SNAPSHOT_PATH, Segment,
 };
 use crate::common::operation_error::{
     OperationError, OperationResult, SegmentFailedState, get_service_error,
@@ -20,6 +20,7 @@ use crate::common::operation_error::{
 use crate::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use crate::common::{check_named_vectors, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
+use crate::data_types::segment_manifest::SegmentManifest;
 use crate::data_types::vectors::VectorInternal;
 use crate::entry::entry_point::SegmentEntry;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -439,8 +440,14 @@ impl Segment {
     ///
     /// - `segment.restore_snapshot("foo/bar/segment-id.tar")`  (tar archive)
     /// - `segment.restore_snapshot("foo/bar/segment-id")`      (directory)
-    pub fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
-        restore_snapshot_in_place(snapshot_path).map_err(|err| {
+    pub fn restore_snapshot_in_place(snapshot_path: &Path, partial: bool) -> OperationResult<()> {
+        let result = if !partial {
+            restore_snapshot_in_place(snapshot_path).map(|_| ())
+        } else {
+            restore_partial_snapshot_in_place(snapshot_path).map(|_| ())
+        };
+
+        result.map_err(|err| {
             OperationError::service_error(format!(
                 "Failed to restore snapshot from {snapshot_path:?}: {err}",
             ))
@@ -668,7 +675,7 @@ impl Segment {
     }
 }
 
-fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
+fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<PathBuf> {
     let segments_dir = snapshot_path
         .parent()
         .ok_or_else(|| OperationError::service_error("Cannot extract parent path"))?;
@@ -691,18 +698,21 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         }
     };
 
+    let segment_dir = segments_dir.join(segment_id);
+
     if !is_tar {
         log::info!("Snapshot format: {:?}", SnapshotFormat::Streamable);
         unpack_snapshot(snapshot_path)?;
     } else {
-        let segment_path = segments_dir.join(segment_id);
-        open_snapshot_archive_with_validation(snapshot_path)?.unpack(&segment_path)?;
+        // TODO: also implement segment manifest handling in non-streamable snapshots
 
-        let inner_path = segment_path.join(SNAPSHOT_PATH);
+        open_snapshot_archive_with_validation(snapshot_path)?.unpack(&segment_dir)?;
+
+        let inner_path = segment_dir.join(SNAPSHOT_PATH);
         if inner_path.is_dir() {
             log::info!("Snapshot format: {:?}", SnapshotFormat::Regular);
             unpack_snapshot(&inner_path)?;
-            utils::fs::move_all(&inner_path, &segment_path)?;
+            utils::fs::move_all(&inner_path, &segment_dir)?;
             std::fs::remove_dir(&inner_path)?;
         } else {
             log::info!("Snapshot format: {:?}", SnapshotFormat::Ancient);
@@ -712,21 +722,161 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         std::fs::remove_file(snapshot_path)?;
     }
 
+    Ok(segment_dir)
+}
+
+// TODO: implement this properly!
+fn restore_partial_snapshot_in_place(
+    snapshot_path: &Path,
+    // TODO: also add segment path to copy base from?
+) -> OperationResult<()> {
+    let segment_dir = restore_snapshot_in_place(snapshot_path)?;
+    let segment_id = segment_dir.file_name().unwrap().to_str().unwrap();
+
+    // TODO: grab file name from constant somewhere
+    let segment_manifest_path = segment_dir.join(super::SEGMENT_MANIFEST_FILE);
+
+    if !segment_manifest_path.is_file() {
+        return Err(OperationError::service_error(
+            "Invalid partial snapshot, missing segment manifest file",
+        ));
+    }
+
+    //
+
+    let segment_manifest_bytes = std::fs::read(&segment_manifest_path)?;
+    let segment_manifest: SegmentManifest = serde_json::from_slice(&segment_manifest_bytes)?;
+
+    debug_assert_eq!(
+        segment_manifest.segment_id, segment_id,
+        "segment id does not match with manifest",
+    );
+
+    // TODO: do not clone here
+    let mut files = segment_manifest.file_versions.clone();
+    let mut files_seen: Vec<PathBuf> = Vec::with_capacity(segment_manifest.file_versions.len());
+    let mut files_to_delete: HashSet<PathBuf> = HashSet::new();
+
+    // TODO: maybe not mutable?
+    let mut walker = walkdir::WalkDir::new(&segment_dir)
+        .follow_links(false)
+        // If deleting files, delete contents first
+        .contents_first(true)
+        // Only contents inside snapshot path
+        .min_depth(1)
+        .into_iter();
+
+    log::warn!("### FILES WALKER:");
+    for file in walker {
+        // TODO: do not unwrap
+        let file = file.unwrap();
+
+        let path = file.path();
+
+        // TODO: do not unwrap
+        let path = path.strip_prefix(&segment_dir).unwrap();
+
+        if !file.file_type().is_file() {
+            if !files_seen.iter().any(|seen| seen.starts_with(path)) {
+                files_to_delete.insert(path.to_path_buf());
+            }
+            continue;
+        }
+
+        if let Some((file, _version)) = files.remove_entry(path) {
+            files_seen.push(path.to_path_buf());
+        } else {
+            files_to_delete.insert(path.to_path_buf());
+        }
+    }
+
+    // Whitelist some files, including segment configuration and version information
+    files_to_delete.remove(Path::new("segment.json"));
+    files_to_delete.remove(Path::new("version.info"));
+
+    // TODO: get list of rocksdb files?
+
+    dbg!(&segment_dir, &files, files_seen, &files_to_delete);
+
+    // Remove special files
+    files.retain(|path, _version| path.to_str().is_none_or(|path| !path.starts_with("::")));
+
+    // We must have all files listed in segment manifest
+    if !files.is_empty() {
+        return Err(OperationError::service_error(
+            "Missing files after restoring partial snapshot",
+        ));
+    }
+
+    // // TODO: do not delete while running?
+    // for file_to_delete in files_to_delete {
+    //     let path = segment_dir.join(file_to_delete);
+    //     std::fs::remove_file(path).expect("failed to delete file");
+    // }
+
+    // // TODO: handle file manifest. Drop files (and directories) that are not listed?
+    // for (file, version) in segment_manifest.file_versions {
+    //     // TODO: handle special files for rocksdb?
+    //     if file.to_str().is_some_and(|path| path.starts_with("::")) {
+    //         continue;
+    //     }
+
+    //     let path = segment_dir.join(&file);
+
+    //     if !path.is_file() {
+    //         return Err(OperationError::service_error(format!(
+    //             "Missing file in partial snapshot: {:?} (version: {version:?})",
+    //             file.display(),
+    //         )));
+    //     }
+
+    //     // TODO: remove after debug!
+    //     log::info!("HAS FILE: {}", path.display());
+    // }
+
+    // TODO: scroll over all manifest entries, we must have all files!
+    // TODO: rocksdb backup is already restored?
+    // TODO: delete files_to_delete
+
+    // Drop segment manifest file
+    if let Err(err) = std::fs::remove_file(segment_manifest_path) {
+        log::warn!(
+            "Failed to remove segment manifest file while restoring partial snapshot: {err:?}",
+        );
+    }
+
     Ok(())
 }
 
 fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
     let db_backup_path = segment_path.join(DB_BACKUP_PATH);
-    crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
-    std::fs::remove_dir_all(&db_backup_path)?;
-
     let payload_index_db_backup = segment_path.join(PAYLOAD_DB_BACKUP_PATH);
+    let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
+    let manifest_path = segment_path.join(SEGMENT_MANIFEST_FILE);
+
+    let has_manifest_file = manifest_path.is_file();
+
+    // Move segment manifest into files, so that we extract it along with other files
+    // TODO: structure it differently?
+    if has_manifest_file {
+        debug_assert!(
+            files_path.is_dir(),
+            "Must have files directory in partial snapshot",
+        );
+        let new_manifest_path = files_path.join(SEGMENT_MANIFEST_FILE);
+        std::fs::rename(manifest_path, new_manifest_path)?;
+    }
+
+    if !has_manifest_file || db_backup_path.is_dir() {
+        crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
+        std::fs::remove_dir_all(&db_backup_path)?;
+    }
+
     if payload_index_db_backup.is_dir() {
         StructPayloadIndex::restore_database_snapshot(&payload_index_db_backup, segment_path)?;
         std::fs::remove_dir_all(&payload_index_db_backup)?;
     }
 
-    let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
     utils::fs::move_all(&files_path, segment_path)?;
     std::fs::remove_dir(&files_path)?;
 

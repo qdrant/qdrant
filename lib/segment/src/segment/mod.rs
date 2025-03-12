@@ -36,6 +36,9 @@ use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 
 pub const SEGMENT_STATE_FILE: &str = "segment.json";
 
+/// Segment manifest file name in partial segment snapshot
+const SEGMENT_MANIFEST_FILE: &str = "segment_manifest.json";
+
 const SNAPSHOT_PATH: &str = "snapshot";
 
 // Sub-directories of `SNAPSHOT_PATH`:

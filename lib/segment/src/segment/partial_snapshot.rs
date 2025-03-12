@@ -42,12 +42,18 @@ impl PartialSnapshotEntry for Segment {
         })?;
 
         let tar = tar.descend(Path::new(&segment_id))?;
-        tar.blocking_append_data(&updated_manifest_json, Path::new("segment_manifest.json"))?;
+        tar.blocking_append_data(
+            &updated_manifest_json,
+            Path::new(super::SEGMENT_MANIFEST_FILE),
+        )?;
 
         match manifests.get(segment_id) {
             Some(manifest) => {
                 let updated_files = updated_files(manifest, &updated_manifest);
-                snapshot_files(self, temp_path, &tar, |path| updated_files.contains(path))?;
+                snapshot_files(self, temp_path, &tar, |path| {
+                    // TODO: do files here have files/ prefix?
+                    updated_files.contains(path)
+                })?;
             }
 
             None => {

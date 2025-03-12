@@ -858,7 +858,10 @@ impl LocalShard {
         });
 
         for entry in entries {
-            Segment::restore_snapshot_in_place(&entry.path())?;
+            // TODO: pass partial flag?
+            // TODO: revert to false after testing?
+            let partial = true;
+            Segment::restore_snapshot_in_place(&entry.path(), partial)?;
         }
 
         Ok(())

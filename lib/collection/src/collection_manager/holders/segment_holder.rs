@@ -18,6 +18,7 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWrit
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -1346,7 +1347,9 @@ impl<'s> SegmentHolder {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
 
+        let mut manifests = SegmentManifests::default();
         let mut snapshotted_segments = HashSet::<String>::new();
+
         Self::proxy_all_segments_and_apply(
             segments,
             segments_path,
@@ -1354,7 +1357,16 @@ impl<'s> SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, tar, format, &mut snapshotted_segments)?;
+
+                // TODO: take partial snapshot for now to allow testing
+                // read_segment.take_snapshot(temp_dir, tar, format, &mut snapshotted_segments)?;
+                read_segment.take_partial_snapshot(
+                    temp_dir,
+                    tar,
+                    &manifests,
+                    &mut snapshotted_segments,
+                )?;
+
                 Ok(())
             },
         )

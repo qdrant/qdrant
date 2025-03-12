@@ -20,11 +20,32 @@ pub fn create(db: &rocksdb::DB, backup_path: &Path) -> OperationResult<()> {
 }
 
 pub fn restore(backup_path: &Path, restore_path: &Path) -> OperationResult<()> {
-    backup_engine(backup_path)?
+    let result = backup_engine(backup_path)?
         .restore_from_latest_backup(restore_path, restore_path, &Default::default())
         .map_err(|err| {
             OperationError::service_error(format!("failed to restore RocksDB backup: {err}"))
-        })
+        });
+
+    // TODO: hack to list what RocksDB files belong to the database after recovery
+    let files = walkdir::WalkDir::new(restore_path)
+        .follow_links(false)
+        // Only list file contents in current directory
+        .min_depth(1)
+        .max_depth(1)
+        .into_iter()
+        .filter_entry(|entry| entry.file_type().is_file())
+        .map(|entry| entry.unwrap().path().to_path_buf())
+        .collect::<Vec<_>>();
+    dbg!(files);
+    // log::warn!("TREE IN {}", restore_path.display());
+    // std::process::Command::new("tree")
+    //     .arg("-L")
+    //     .arg("1")
+    //     .arg(restore_path)
+    //     .status()
+    //     .unwrap();
+
+    result
 }
 
 fn backup_engine(path: &Path) -> OperationResult<rocksdb::backup::BackupEngine> {
