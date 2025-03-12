@@ -792,6 +792,16 @@ pub(super) mod tests {
         // Point should still be gone
         let id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
         assert_eq!(id_tracker.internal_id(point_to_delete), None);
+
+        old_mappings
+            .iter_internal_raw()
+            .zip(id_tracker.mappings.iter_internal_raw())
+            .for_each(
+                |((old_internal, old_external), (new_internal, new_external))| {
+                    assert_eq!(old_internal, new_internal);
+                    assert_eq!(old_external, new_external);
+                },
+            );
     }
 
     const DEFAULT_VERSION: SeqNumberType = 42;
