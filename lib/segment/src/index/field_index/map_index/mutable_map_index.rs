@@ -138,17 +138,25 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             .payload_index_io_read_counter()
             .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
 
-        self.point_to_values
+        let mut hw_counter_val = 0;
+
+        let res = self
+            .point_to_values
             .get(idx as usize)
             .map(|values| {
                 values.iter().any(|v| {
                     let item: &N = v.borrow();
-                    let size = <N as MmapValue>::mmapped_size(item.as_referenced());
-                    hw_acc.payload_index_io_read_counter().incr_delta(size);
+                    hw_counter_val += N::mmapped_size(item.as_referenced());
                     check_fn(item)
                 })
             })
-            .unwrap_or(false)
+            .unwrap_or(false);
+
+        hw_acc
+            .payload_index_io_read_counter()
+            .incr_delta(hw_counter_val);
+
+        res
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {

@@ -426,7 +426,6 @@ async fn create_field_index(
     )
     .await;
 
-    println!("{:#?}", request_hw_counter.get_counter());
     process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
