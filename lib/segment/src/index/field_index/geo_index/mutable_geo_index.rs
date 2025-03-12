@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use parking_lot::RwLock;
@@ -179,8 +180,8 @@ impl MutableGeoMapIndex {
             pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
-            pub fn points_of_hash(&self, hash: &GeoHash) -> usize;
-            pub fn values_of_hash(&self, hash: &GeoHash) -> usize;
+            pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize;
+            pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize;
             pub fn stored_sub_regions(
                 &self,
                 geo: GeoHash,
@@ -232,11 +233,17 @@ impl InMemoryGeoMapIndex {
             .map(|(hash, count)| (hash, *count))
     }
 
-    pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
+    pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<GeoHash>());
         self.points_per_hash.get(hash).copied().unwrap_or(0)
     }
 
-    pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
+    pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<GeoHash>());
         self.values_per_hash.get(hash).copied().unwrap_or(0)
     }
 

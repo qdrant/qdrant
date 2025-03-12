@@ -107,19 +107,19 @@ impl GeoMapIndex {
         }
     }
 
-    fn points_of_hash(&self, hash: &GeoHash) -> usize {
+    fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.points_of_hash(hash),
+            GeoMapIndex::Mutable(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Immutable(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter),
         }
     }
 
-    fn values_of_hash(&self, hash: &GeoHash) -> usize {
+    fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.values_of_hash(hash),
+            GeoMapIndex::Mutable(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Immutable(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter),
         }
     }
 
@@ -214,7 +214,11 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
+    pub fn match_cardinality(
+        &self,
+        values: &[GeoHash],
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return CardinalityEstimation::exact(0);
@@ -224,12 +228,12 @@ impl GeoMapIndex {
             return CardinalityEstimation::exact(0);
         };
 
-        let total_points = self.points_of_hash(&common_hash);
-        let total_values = self.values_of_hash(&common_hash);
+        let total_points = self.points_of_hash(&common_hash, hw_counter);
+        let total_values = self.values_of_hash(&common_hash, hw_counter);
 
         let (sum, maximum_per_hash) = values
             .iter()
-            .map(|region| self.points_of_hash(region))
+            .map(|region| self.points_of_hash(region, hw_counter))
             .fold((0, 0), |(sum, maximum), count| {
                 (sum + count, max(maximum, count))
             });
@@ -547,11 +551,11 @@ impl PayloadFieldIndex for GeoMapIndex {
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell, // Nothing to measure here.
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
-            let mut estimation = self.match_cardinality(&geo_hashes);
+            let mut estimation = self.match_cardinality(&geo_hashes, hw_counter);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -560,7 +564,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
-            let mut estimation = self.match_cardinality(&geo_hashes);
+            let mut estimation = self.match_cardinality(&geo_hashes, hw_counter);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -572,10 +576,10 @@ impl PayloadFieldIndex for GeoMapIndex {
                 polygon_hashes_estimation(geo_polygon, GEO_QUERY_MAX_REGION);
             // The polygon cardinality estimation should consider its exterior and interiors.
             // Therefore, we compute exterior estimation first and then subtract all interior estimation.
-            let mut exterior_estimation = self.match_cardinality(&exterior_hashes);
+            let mut exterior_estimation = self.match_cardinality(&exterior_hashes, hw_counter);
 
             for interior in &interior_hashes {
-                let interior_estimation = self.match_cardinality(interior);
+                let interior_estimation = self.match_cardinality(interior, hw_counter);
                 exterior_estimation.min = max(0, exterior_estimation.min - interior_estimation.max);
                 exterior_estimation.max = max(
                     exterior_estimation.min,
@@ -1048,7 +1052,8 @@ mod tests {
     #[case(IndexType::Mmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
-        let top_level_points = field_index.points_of_hash(&Default::default());
+        let hw_counter = HardwareCounterCell::new();
+        let top_level_points = field_index.points_of_hash(&Default::default(), &hw_counter);
         assert_eq!(top_level_points, 1_000);
         let block_hashes = field_index.large_hashes(100).collect_vec();
         assert!(!block_hashes.is_empty());
@@ -1358,39 +1363,41 @@ mod tests {
         let hashes_with_interior =
             polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let (field_index, _, _) = build_random_index(0, 0, index_type);
         assert!(
             field_index
-                .match_cardinality(&hashes)
+                .match_cardinality(&hashes, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
         assert!(
             field_index
-                .match_cardinality(&hashes_with_interior)
+                .match_cardinality(&hashes_with_interior, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
         let (field_index, _, _) = build_random_index(0, 100, index_type);
         assert!(
             field_index
-                .match_cardinality(&hashes)
+                .match_cardinality(&hashes, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
         assert!(
             field_index
-                .match_cardinality(&hashes_with_interior)
+                .match_cardinality(&hashes_with_interior, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
         let (field_index, _, _) = build_random_index(100, 100, index_type);
         assert!(
             !field_index
-                .match_cardinality(&hashes)
+                .match_cardinality(&hashes, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
         assert!(
             !field_index
-                .match_cardinality(&hashes_with_interior)
+                .match_cardinality(&hashes_with_interior, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
     }
