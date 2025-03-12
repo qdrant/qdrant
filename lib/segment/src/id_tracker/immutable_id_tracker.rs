@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
 use byteorder::{ReadBytesExt, WriteBytesExt};
+use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
@@ -114,8 +115,7 @@ impl ImmutableIdTracker {
 
             internal_to_external.set(internal_id, external_id);
 
-            let point_deleted = deleted.get(i).as_deref().copied().unwrap_or(false);
-
+            let point_deleted = deleted.get_bit(i).unwrap_or(false);
             if point_deleted {
                 continue;
             }
