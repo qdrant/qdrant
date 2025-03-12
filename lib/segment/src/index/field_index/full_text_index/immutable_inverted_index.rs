@@ -29,6 +29,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self,
         _idx: PointOffsetType,
         _document: super::inverted_index::Document,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
             "Can't add values to immutable text index",

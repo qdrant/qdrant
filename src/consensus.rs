@@ -1414,6 +1414,7 @@ mod tests {
     use collection::operations::vector_params_builder::VectorParamsBuilder;
     use collection::shards::channel_service::ChannelService;
     use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::types::Distance;
     use slog::Drain;
     use storage::content_manager::collection_meta_ops::{
@@ -1539,6 +1540,7 @@ mod tests {
                     ),
                     Access::full("For test"),
                     None,
+                    HwMeasurementAcc::new(),
                 ),
             )
             .unwrap();

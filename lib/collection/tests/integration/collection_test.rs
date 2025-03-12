@@ -541,7 +541,12 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     let hw_counter = HwMeasurementAcc::new();
     collection
-        .update_from_client_simple(insert_points, true, WriteOrdering::default(), hw_counter)
+        .update_from_client_simple(
+            insert_points,
+            true,
+            WriteOrdering::default(),
+            hw_counter.clone(),
+        )
         .await
         .unwrap();
 
@@ -550,6 +555,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_FLOAT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
+            hw_counter.clone(),
         )
         .await
         .unwrap();
@@ -559,6 +565,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             PRICE_INT_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
             true,
+            hw_counter.clone(),
         )
         .await
         .unwrap();
@@ -568,6 +575,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             MULTI_VALUE_KEY.parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
             true,
+            hw_counter.clone(),
         )
         .await
         .unwrap();

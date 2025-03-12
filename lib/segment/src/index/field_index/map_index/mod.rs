@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
 use std::fmt::{Debug, Display};
 use std::hash::{BuildHasher, Hash};
 use std::iter;
@@ -487,7 +488,7 @@ where
         &mut self,
         id: PointOffsetType,
         payload: &[&Value],
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Measure values.
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload.iter() {
@@ -501,9 +502,25 @@ where
         }
 
         self.point_to_values[id as usize].extend(flatten_values.clone());
+
+        let mut hw_counter_val = 0;
+
         for value in flatten_values {
-            self.values_to_points.entry(value).or_default().push(id);
+            let entry = self.values_to_points.entry(value);
+
+            if let Entry::Vacant(e) = &entry {
+                let size = N::mmapped_size(N::as_referenced(e.key().borrow()));
+                hw_counter_val += size;
+            }
+
+            hw_counter_val += size_of_val(&id);
+            entry.or_default().push(id);
         }
+
+        hw_counter
+            .payload_index_io_write_counter()
+            .incr_delta(hw_counter_val);
+
         Ok(())
     }
 
@@ -1045,9 +1062,14 @@ where
 impl ValueIndexer for MapIndex<str> {
     type ValueType = String;
 
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -1076,9 +1098,10 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -1107,9 +1130,10 @@ impl ValueIndexer for MapIndex<UuidIntType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),

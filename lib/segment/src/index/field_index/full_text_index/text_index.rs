@@ -288,9 +288,14 @@ impl FieldIndexBuilderTrait for FullTextIndexBuilder {
 impl ValueIndexer for FullTextIndex {
     type ValueType = String;
 
-    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        idx: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.add_many(idx, values),
+            Self::Mutable(index) => index.add_many(idx, values, hw_counter),
             Self::Immutable(_) => Err(OperationError::service_error(
                 "Cannot add values to immutable text index",
             )),

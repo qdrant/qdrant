@@ -14,6 +14,7 @@ use collection::common::is_ready::IsReady;
 use collection::operations::types::PeerMetadata;
 use collection::shards::CollectionId;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::defaults;
 use futures::future::join_all;
 use parking_lot::{Mutex, RwLock};
@@ -491,9 +492,10 @@ impl<C: CollectionContainer> ConsensusManager<C> {
     pub fn apply_normal_entry(&self, entry: &RaftEntry) -> Result<bool, StorageError> {
         let operation: ConsensusOperations = entry.try_into()?;
         let on_apply = self.on_consensus_op_apply.lock().remove(&operation);
+        let hw_acc = HwMeasurementAcc::disposable(); // This function is only used for internal operations.
         let result = match operation {
             ConsensusOperations::CollectionMeta(operation) => {
-                self.toc.perform_collection_meta_op(*operation)
+                self.toc.perform_collection_meta_op(*operation, hw_acc)
             }
 
             ConsensusOperations::AddPeer { .. } | ConsensusOperations::RemovePeer(_) => {
@@ -1110,6 +1112,7 @@ mod tests {
     use std::sync::{Arc, mpsc};
 
     use collection::shards::shard::PeerId;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use proptest::prelude::*;
     use raft::eraftpb::{
         ConfChange, ConfChangeSingle, ConfChangeType, ConfChangeV2, Entry, EntryType,
@@ -1224,6 +1227,7 @@ mod tests {
         fn perform_collection_meta_op(
             &self,
             _operation: crate::content_manager::collection_meta_ops::CollectionMetaOperations,
+            _hw_acc: HwMeasurementAcc,
         ) -> Result<bool, crate::content_manager::errors::StorageError> {
             Ok(true)
         }

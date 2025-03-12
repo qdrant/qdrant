@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use api::rest::models::HardwareUsage;
 use collection::config::ShardingMethod;
 use collection::operations::verification::VerificationPass;
-use common::counter::hardware_accumulator::HwSharedDrain;
+use common::counter::hardware_accumulator::{HwMeasurementAcc, HwSharedDrain};
 use common::defaults::CONSENSUS_META_OP_WAIT;
 use segment::types::default_shard_number_per_node_const;
 
@@ -68,6 +68,7 @@ impl Dispatcher {
         operation: CollectionMetaOperations,
         access: Access,
         wait_timeout: Option<Duration>,
+        hw_acc: HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         access.check_collection_meta_operation(&operation)?;
 
@@ -218,7 +219,7 @@ impl Dispatcher {
             if let CollectionMetaOperations::CreateCollection(_) = &operation {
                 self.toc.check_write_lock()?;
             }
-            self.toc.perform_collection_meta_op(operation).await
+            self.toc.perform_collection_meta_op(operation, hw_acc).await
         }
     }
 

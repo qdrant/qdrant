@@ -102,7 +102,7 @@ impl MmapNullIndex {
         &mut self,
         id: PointOffsetType,
         payload: &[&Value],
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Measure values.
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let mut is_null = false;
         let mut has_values = false;
@@ -137,15 +137,23 @@ impl MmapNullIndex {
             }
         }
 
-        self.has_values_slice.set_with_resize(id, has_values)?;
-        self.is_null_slice.set_with_resize(id, is_null)?;
+        let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
+
+        self.has_values_slice
+            .set_with_resize(id, has_values, hw_counter_ref)?;
+        self.is_null_slice
+            .set_with_resize(id, is_null, hw_counter_ref)?;
 
         Ok(())
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.has_values_slice.set_with_resize(id, false)?;
-        self.is_null_slice.set_with_resize(id, false)?;
+        let disposed_hw = HardwareCounterCell::disposable(); // Deleting is unmeasured OP.
+        let disposed_hw = disposed_hw.ref_payload_index_io_write_counter();
+
+        self.has_values_slice
+            .set_with_resize(id, false, disposed_hw)?;
+        self.is_null_slice.set_with_resize(id, false, disposed_hw)?;
         Ok(())
     }
 

@@ -702,7 +702,12 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, wait_timeout)
+        .submit_collection_meta_op(
+            consensus_op,
+            access,
+            wait_timeout,
+            hw_measurement_acc.clone(),
+        )
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -776,7 +781,12 @@ pub async fn do_delete_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(consensus_op, access, wait_timeout)
+        .submit_collection_meta_op(
+            consensus_op,
+            access,
+            wait_timeout,
+            hw_measurement_acc.clone(),
+        )
         .await?;
 
     do_delete_index_internal(

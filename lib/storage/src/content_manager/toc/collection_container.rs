@@ -7,6 +7,7 @@ use collection::shards::CollectionId;
 use collection::shards::collection_shard_distribution::CollectionShardDistribution;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::PeerId;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use super::TableOfContent;
 use crate::content_manager::collection_meta_ops::*;
@@ -20,8 +21,9 @@ impl CollectionContainer for TableOfContent {
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
+        hw_acc: HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
-        self.perform_collection_meta_op_sync(operation)
+        self.perform_collection_meta_op_sync(operation, hw_acc)
     }
 
     fn collections_snapshot(&self) -> consensus_manager::CollectionsSnapshot {
