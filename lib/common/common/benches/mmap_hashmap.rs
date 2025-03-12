@@ -1,3 +1,4 @@
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{MmapHashMap, gen_ident, gen_map};
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
@@ -21,8 +22,14 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
     let mmap = MmapHashMap::<str, u32>::open(&mmap_path).unwrap();
 
     let mut it = keys.iter().cycle();
+    let hw_counter = HardwareCounterCell::new();
     c.bench_function("get", |b| {
-        b.iter(|| mmap.get(it.next().unwrap()).iter().copied().max())
+        b.iter(|| {
+            mmap.get(it.next().unwrap(), &hw_counter)
+                .iter()
+                .copied()
+                .max()
+        })
     });
 
     drop(tmpdir);

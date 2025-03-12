@@ -16,6 +16,7 @@ use rand::Rng as _;
 use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use crate::counter::hardware_counter::HardwareCounterCell;
 use crate::zeros::WriteZerosExt as _;
 
 type ValuesLen = u32;
@@ -56,6 +57,8 @@ struct Header {
 }
 
 const PADDING_SIZE: usize = 4096;
+
+pub const BUCKET_OFFSET_OVERHEAD: usize = size_of::<BucketOffset>();
 
 type BucketOffset = u64;
 
@@ -241,12 +244,20 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
     }
 
     /// Get the values associated with the `key`.
-    pub fn get(&self, key: &K) -> io::Result<Option<&[V]>> {
+    pub fn get(&self, key: &K, hw_counter: &HardwareCounterCell) -> io::Result<Option<&[V]>> {
         let Some(hash) = self.phf.get(key) else {
             return Ok(None);
         };
 
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(BUCKET_OFFSET_OVERHEAD);
+
         let entry = self.get_entry(hash as usize)?;
+
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(entry.len());
 
         if !key.matches(entry) {
             return Ok(None);
@@ -508,9 +519,10 @@ mod tests {
         let mmap = MmapHashMap::<K, u32>::open(&tmpdir.path().join("map")).unwrap();
 
         // Non-existing keys should return None
+        let hw_counter = HardwareCounterCell::new();
         for _ in 0..1000 {
             let key = repeat_until(|| generator(&mut rng), |key| !map.contains_key(key));
-            assert!(mmap.get(as_ref(&key)).unwrap().is_none());
+            assert!(mmap.get(as_ref(&key), &hw_counter).unwrap().is_none());
         }
 
         // check keys iterator
@@ -529,7 +541,7 @@ mod tests {
         // Existing keys should return the correct values
         for (k, v) in map {
             assert_eq!(
-                mmap.get(as_ref(&k)).unwrap().unwrap(),
+                mmap.get(as_ref(&k), &hw_counter).unwrap().unwrap(),
                 &v.into_iter().collect::<Vec<_>>()
             );
         }
@@ -541,6 +553,7 @@ mod tests {
         let tmpdir = tempfile::Builder::new().tempdir().unwrap();
 
         let mut map: HashMap<i64, BTreeSet<u64>> = Default::default();
+        let hw_counter = HardwareCounterCell::new();
 
         for key in 0..10i64 {
             map.insert(key, (0..100).map(|_| rng.random_range(0..=1000)).collect());
@@ -556,11 +569,11 @@ mod tests {
 
         for (k, v) in map {
             assert_eq!(
-                mmap.get(&k).unwrap().unwrap(),
+                mmap.get(&k, &hw_counter).unwrap().unwrap(),
                 &v.into_iter().collect::<Vec<_>>()
             );
         }
 
-        assert!(mmap.get(&100).unwrap().is_none())
+        assert!(mmap.get(&100, &hw_counter).unwrap().is_none())
     }
 }

@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use match_converter::get_match_checkers;
@@ -35,9 +36,10 @@ impl StructPayloadIndex {
             Condition::Field(field_condition) => field_indexes
                 .get(&field_condition.key)
                 .and_then(|indexes| {
-                    indexes
-                        .iter()
-                        .find_map(|index| field_condition_index(index, field_condition))
+                    indexes.iter().find_map(move |index| {
+                        let hw_acc = hw_counter.new_accumulator();
+                        field_condition_index(index, field_condition, hw_acc)
+                    })
                 })
                 .unwrap_or_else(|| {
                     let hw = hw_counter.fork();
@@ -195,31 +197,32 @@ impl StructPayloadIndex {
 pub fn field_condition_index<'a>(
     index: &'a FieldIndex,
     field_condition: &FieldCondition,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn<'a>> {
     match field_condition {
         FieldCondition {
             r#match: Some(cond_match),
             ..
-        } => get_match_checkers(index, cond_match.clone()),
+        } => get_match_checkers(index, cond_match.clone(), hw_acc),
 
         FieldCondition {
             range: Some(cond), ..
-        } => get_range_checkers(index, cond.clone()),
+        } => get_range_checkers(index, cond.clone(), hw_acc),
 
         FieldCondition {
             geo_radius: Some(geo_radius),
             ..
-        } => get_geo_radius_checkers(index, geo_radius.clone()),
+        } => get_geo_radius_checkers(index, geo_radius.clone(), hw_acc),
 
         FieldCondition {
             geo_bounding_box: Some(geo_bounding_box),
             ..
-        } => get_geo_bounding_box_checkers(index, geo_bounding_box.clone()),
+        } => get_geo_bounding_box_checkers(index, geo_bounding_box.clone(), hw_acc),
 
         FieldCondition {
             geo_polygon: Some(geo_polygon),
             ..
-        } => get_geo_polygon_checkers(index, geo_polygon.clone()),
+        } => get_geo_polygon_checkers(index, geo_polygon.clone(), hw_acc),
 
         FieldCondition {
             is_empty: Some(is_empty),
@@ -252,11 +255,15 @@ pub fn field_condition_index<'a>(
 pub fn get_geo_polygon_checkers(
     index: &FieldIndex,
     geo_polygon: GeoPolygon,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
     let polygon_wrapper = geo_polygon.convert();
+    let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.check_values_any(point_id, |value| polygon_wrapper.check_point(value))
+            geo_index.check_values_any(point_id, &hw_counter, |value| {
+                polygon_wrapper.check_point(value)
+            })
         })),
         FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
@@ -274,10 +281,12 @@ pub fn get_geo_polygon_checkers(
 pub fn get_geo_radius_checkers(
     index: &FieldIndex,
     geo_radius: GeoRadius,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
+    let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.check_values_any(point_id, |value| geo_radius.check_point(value))
+            geo_index.check_values_any(point_id, &hw_counter, |value| geo_radius.check_point(value))
         })),
         FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
@@ -295,10 +304,14 @@ pub fn get_geo_radius_checkers(
 pub fn get_geo_bounding_box_checkers(
     index: &FieldIndex,
     geo_bounding_box: GeoBoundingBox,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
+    let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::GeoIndex(geo_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            geo_index.check_values_any(point_id, |value| geo_bounding_box.check_point(value))
+            geo_index.check_values_any(point_id, &hw_counter, |value| {
+                geo_bounding_box.check_point(value)
+            })
         })),
         FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
@@ -313,26 +326,32 @@ pub fn get_geo_bounding_box_checkers(
     }
 }
 
-pub fn get_range_checkers(index: &FieldIndex, range: RangeInterface) -> Option<ConditionCheckerFn> {
+pub fn get_range_checkers(
+    index: &FieldIndex,
+    range: RangeInterface,
+    hw_acc: HwMeasurementAcc,
+) -> Option<ConditionCheckerFn> {
     match range {
-        RangeInterface::Float(range) => get_float_range_checkers(index, range),
-        RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range),
+        RangeInterface::Float(range) => get_float_range_checkers(index, range, hw_acc),
+        RangeInterface::DateTime(range) => get_datetime_range_checkers(index, range, hw_acc),
     }
 }
 
 pub fn get_float_range_checkers(
     index: &FieldIndex,
     range: Range<FloatPayloadType>,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
+    let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::IntIndex(num_index) => {
             let range = range.map(|f| f as IntPayloadType);
             Some(Box::new(move |point_id: PointOffsetType| {
-                num_index.check_values_any(point_id, |value| range.check_range(*value))
+                num_index.check_values_any(point_id, |value| range.check_range(*value), &hw_counter)
             }))
         }
         FieldIndex::FloatIndex(num_index) => Some(Box::new(move |point_id: PointOffsetType| {
-            num_index.check_values_any(point_id, |value| range.check_range(*value))
+            num_index.check_values_any(point_id, |value| range.check_range(*value), &hw_counter)
         })),
         FieldIndex::BoolIndex(_)
         | FieldIndex::DatetimeIndex(_)
@@ -349,12 +368,14 @@ pub fn get_float_range_checkers(
 pub fn get_datetime_range_checkers(
     index: &FieldIndex,
     range: Range<DateTimePayloadType>,
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
     match index {
         FieldIndex::DatetimeIndex(num_index) => {
             let range = range.map(|dt| dt.timestamp());
+            let hw_counter = hw_acc.get_counter_cell();
             Some(Box::new(move |point_id: PointOffsetType| {
-                num_index.check_values_any(point_id, |value| range.check_range(*value))
+                num_index.check_values_any(point_id, |value| range.check_range(*value), &hw_counter)
             }))
         }
         FieldIndex::BoolIndex(_)

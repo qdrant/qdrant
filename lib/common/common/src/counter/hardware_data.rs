@@ -6,6 +6,7 @@ pub struct HardwareData {
     pub payload_io_write: usize,
     pub vector_io_read: usize,
     pub vector_io_write: usize,
+    pub payload_index_io_read: usize,
 }
 
 /// Wrapper type to ensure we properly apply cpu-multiplier everywhere.

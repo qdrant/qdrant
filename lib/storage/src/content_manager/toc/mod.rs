@@ -680,6 +680,7 @@ impl TableOfContent {
                     cpu: i.get_cpu(),
                     payload_io_read: i.get_payload_io_read(),
                     payload_io_write: i.get_payload_io_write(),
+                    payload_index_io_read: i.get_payload_index_io_read(),
                     vector_io_read: i.get_vector_io_read(),
                     vector_io_write: i.get_vector_io_write(),
                 };

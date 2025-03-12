@@ -5,6 +5,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{Key, MmapHashMap};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -154,13 +155,21 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        hw_acc: &HardwareCounterCell,
+        check_fn: impl Fn(&N) -> bool,
+    ) -> bool {
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)
             .is_some_and(|_| {
-                self.point_to_values
-                    .check_values_any(idx, |v| check_fn(N::from_referenced(&v)))
+                self.point_to_values.check_values_any(
+                    idx,
+                    |v| check_fn(N::from_referenced(&v)),
+                    hw_acc,
+                )
             })
     }
 
@@ -198,7 +207,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     }
 
     pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        match self.value_to_points.get(value) {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate.
+        match self.value_to_points.get(value, &hw_counter) {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,
             Err(err) => {
@@ -212,13 +222,24 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         }
     }
 
-    pub fn get_iterator(&self, value: &N) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
-        match self.value_to_points.get(value) {
-            Ok(Some(slice)) => Box::new(
-                slice
-                    .iter()
-                    .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
-            ),
+    pub fn get_iterator(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
+        match self.value_to_points.get(value, hw_counter) {
+            Ok(Some(slice)) => {
+                // We're iterating over the whole (mmapped) slice
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(size_of_val(slice));
+
+                Box::new(
+                    slice
+                        .iter()
+                        .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
+                )
+            }
             Ok(None) => Box::new(iter::empty()),
             Err(err) => {
                 debug_assert!(

@@ -14,6 +14,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::DateTime;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use mmap_numeric_index::MmapNumericIndex;
@@ -239,11 +241,18 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         }
     }
 
-    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         match self {
-            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
-            NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
-            NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn),
+            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn, hw_counter),
+            NumericIndexInner::Immutable(index) => {
+                index.check_values_any(idx, check_fn, hw_counter)
+            }
+            NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn, hw_counter),
         }
     }
 
@@ -357,11 +366,17 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         self.values_count(idx) == 0
     }
 
-    pub fn point_ids_by_value(&self, value: &T) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn point_ids_by_value(
+        &self,
+        value: &T,
+        hw_acc: HwMeasurementAcc,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let start = Bound::Included(Point::new(*value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(*value, PointOffsetType::MAX));
         match &self {
-            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
+            NumericIndexInner::Mutable(mutable) => {
+                Box::new(mutable.values_range(start, end, hw_acc))
+            }
             NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
             NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end)),
         }
@@ -470,7 +485,7 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
 
     delegate! {
         to self.inner {
-            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool;
+            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool, hw_counter: &HardwareCounterCell) -> bool;
             pub fn cleanup(self) -> OperationResult<()>;
             pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry;
             pub fn load(&mut self) -> OperationResult<bool>;
@@ -628,6 +643,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
     fn filter(
         &self,
         condition: &FieldCondition,
+        hw_acc: HwMeasurementAcc,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
@@ -637,7 +653,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let value = T::from_u128(uuid.as_u128());
-                return Some(self.point_ids_by_value(&value));
+                return Some(self.point_ids_by_value(&value, hw_acc));
             }
         }
 
@@ -659,7 +675,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
         Some(match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound))
+                Box::new(index.values_range(start_bound, end_bound, hw_acc))
             }
             NumericIndexInner::Immutable(index) => {
                 Box::new(index.values_range(start_bound, end_bound))

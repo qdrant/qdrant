@@ -331,6 +331,7 @@ impl MetricsProvider for HardwareTelemetry {
                 cpu,
                 payload_io_read,
                 payload_io_write,
+                payload_index_io_read,
                 vector_io_read,
                 vector_io_write,
             } = hw_info;
@@ -347,6 +348,13 @@ impl MetricsProvider for HardwareTelemetry {
                 "Total IO payload read metrics of a collection",
                 MetricType::COUNTER,
                 vec![counter(*payload_io_read as f64, &[("id", collection)])],
+            ));
+
+            metrics.push(metric_family(
+                "collection_hardware_metric_payload_index_io_read",
+                "Total IO payload index read metrics of a collection",
+                MetricType::GAUGE,
+                vec![gauge(*payload_index_io_read as f64, &[("id", collection)])],
             ));
 
             metrics.push(metric_family(

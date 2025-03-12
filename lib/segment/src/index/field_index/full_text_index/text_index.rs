@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -314,6 +315,7 @@ impl PayloadFieldIndex for FullTextIndex {
     fn filter(
         &self,
         condition: &FieldCondition,
+        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Implement measurements
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
             let parsed_query = self.parse_query(&text_match.text);

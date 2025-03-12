@@ -1154,6 +1154,7 @@ message HardwareUsage {
   uint64 cpu = 1;
   uint64 payload_io_read = 2;
   uint64 payload_io_write = 3;
-  uint64 vector_io_read = 4;
-  uint64 vector_io_write = 5;
+  uint64 payload_index_io_read = 4;
+  uint64 vector_io_read = 5;
+  uint64 vector_io_write = 6;
 }
