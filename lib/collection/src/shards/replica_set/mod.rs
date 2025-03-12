@@ -802,7 +802,7 @@ impl ShardReplicaSet {
         cost_fn: F,
     ) -> CollectionResult<()>
     where
-        F: Fn() -> usize,
+        F: FnOnce() -> usize,
     {
         // Do not rate limit internal operation tagged with disposable measurement
         if hw_measurement_acc.is_disposable() {
