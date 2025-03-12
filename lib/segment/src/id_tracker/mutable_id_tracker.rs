@@ -361,20 +361,9 @@ fn load_mappings(
 ) -> OperationResult<()> {
     let mappings_file = File::open(mappings_path)?;
     let mappings_reader = std::io::BufReader::new(mappings_file);
-    let mut last_parse_error = None;
 
     for entry in std::io::BufRead::lines(mappings_reader) {
-        // Parse entry, do not return with error if just the last entry is corrupt
-        if let Some(err) = last_parse_error {
-            return Err(err);
-        }
-        let change = match parse_mapping(entry) {
-            Ok(entry) => entry,
-            Err(err) => {
-                last_parse_error.replace(err);
-                continue;
-            }
-        };
+        let change = parse_mapping(entry)?;
 
         match change {
             MappingChange::Insert(external_id, internal_id) => {
@@ -448,12 +437,6 @@ fn load_mappings(
                 deleted.set(internal_id as usize, true);
             }
         }
-
-        // Warn if last entry was corrupted
-        // Flush may have been interrupted, the WAL should recover the mappings
-        if last_parse_error.is_some() {
-            log::warn!("Last entry of ID tracker mappings is corrupt, should be recovered by WAL",);
-        }
     }
 
     Ok(())
@@ -470,20 +453,9 @@ fn load_versions(
 
     let versions_file = File::open(versions_path)?;
     let versions_reader = std::io::BufReader::new(versions_file);
-    let mut last_parse_error = None;
 
     for entry in std::io::BufRead::lines(versions_reader) {
-        // Parse entry, do not return with error if just the last entry is corrupt
-        if let Some(err) = last_parse_error {
-            return Err(err);
-        }
-        let (external_id, version) = match parse_version(entry) {
-            Ok(entry) => entry,
-            Err(err) => {
-                last_parse_error.replace(err);
-                continue;
-            }
-        };
+        let (external_id, version) = parse_version(entry)?;
 
         let internal_id = match external_id {
             PointIdType::NumId(num) => external_to_internal_num.get(&num).copied(),
@@ -499,12 +471,6 @@ fn load_versions(
             internal_to_version.resize(internal_id as usize + 1, 0);
         }
         internal_to_version[internal_id as usize] = version;
-    }
-
-    // Warn if last entry was corrupted
-    // Flush may have been interrupted, the WAL should recover the mappings
-    if last_parse_error.is_some() {
-        log::warn!("Last entry of ID tracker version is corrupt, should be recovered by WAL",);
     }
 
     Ok(())
