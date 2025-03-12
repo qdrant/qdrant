@@ -47,11 +47,9 @@ pub struct MutableIdTracker {
     mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
-    // TODO: change to hash map to persist frequent updates to same point more efficiently
     pending_versions: Mutex<Vec<VersionChange>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
-    // TODO: change to hash map to persist frequent updates to same point more efficiently
     pending_mappings: Mutex<Vec<MappingChange>>,
 }
 
@@ -383,11 +381,9 @@ fn load_mappings(
                     // Fixing corrupted mapping - this id should be recovered from WAL
                     // This should not happen in normal operation, but it can happen if
                     // the database is corrupted.
-                    // TODO: remove warning for this type of storage?
                     log::warn!(
                         "removing duplicated external id {external_id} in internal id {replaced_external_id}",
                     );
-                    // TODO: keep debug assert?
                     debug_assert!(false, "should never have to remove");
                     match replaced_external_id {
                         PointIdType::NumId(num) => {
