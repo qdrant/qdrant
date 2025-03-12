@@ -167,20 +167,20 @@ impl StructPayloadIndex {
             new_config
         };
 
-        let use_rocksdb = config.skip_rocksdb.unwrap_or(false);
+        let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
 
         let storage_type = if is_appendable {
             let db = open_db_with_existing_cf(path).map_err(|err| {
                 OperationError::service_error(format!("RocksDB open error: {err}"))
             })?;
             StorageType::Appendable(db)
-        } else if use_rocksdb {
+        } else if skip_rocksdb {
+            StorageType::NonAppendable
+        } else {
             let db = open_db_with_existing_cf(path).map_err(|err| {
                 OperationError::service_error(format!("RocksDB open error: {err}"))
             })?;
             StorageType::NonAppendableRocksDb(db)
-        } else {
-            StorageType::NonAppendable
         };
 
         let mut index = StructPayloadIndex {
