@@ -541,7 +541,7 @@ impl ShardReplicaSet {
         local: &Shard,
         operation: &OperationWithClockTag,
     ) -> CollectionResult<()> {
-        self.check_write_rate_limiter_lazy(hw_measurement, || {
+        self.check_write_rate_limiter(hw_measurement, || {
             let mut ratelimiter_cost = 1;
 
             // Estimate the cost based on affected points if filter is available.
