@@ -275,29 +275,7 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             }
 
-            // Open file in append mode to write new changes to the end
-            let file = File::options()
-                .create(true)
-                .append(true)
-                .open(&versions_path)?;
-            let mut writer = BufWriter::new(file);
-
-            write_versions(&mut writer, &pending_versions).map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to persist ID tracker point versions ({}): {err}",
-                    versions_path.display(),
-                ))
-            })?;
-
-            // Explicitly fsync file contents to ensure durability
-            let file = writer.into_inner().unwrap();
-            file.sync_all().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to fsync ID tracker point mappings: {err}",
-                ))
-            })?;
-
-            Ok(())
+            store_version_changes(&versions_path, &pending_versions)
         })
     }
 
@@ -626,10 +604,36 @@ fn load_versions(
     Ok(internal_to_version)
 }
 
-fn write_versions<T>(writer: &mut BufWriter<T>, changes: &[VersionChange]) -> OperationResult<()>
-where
-    T: Write,
-{
+/// Store new version changes, appending them to the given file
+fn store_version_changes(versions_path: &Path, changes: &[VersionChange]) -> OperationResult<()> {
+    // Open file in append mode to write new changes to the end
+    let file = File::options()
+        .create(true)
+        .append(true)
+        .open(versions_path)?;
+    let mut writer = BufWriter::new(file);
+
+    write_version_changes(&mut writer, changes).map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to persist ID tracker point versions ({}): {err}",
+            versions_path.display(),
+        ))
+    })?;
+
+    // Explicitly fsync file contents to ensure durability
+    let file = writer.into_inner().unwrap();
+    file.sync_all().map_err(|err| {
+        OperationError::service_error(format!("Failed to fsync ID tracker point versions: {err}"))
+    })?;
+
+    Ok(())
+}
+
+/// Serializes pending point version changes into the given writer
+fn write_version_changes<W: Write>(
+    mut writer: W,
+    changes: &[VersionChange],
+) -> OperationResult<()> {
     for change in changes {
         let entry = serde_json::to_vec(change)?;
         debug_assert!(
@@ -641,9 +645,7 @@ where
     }
 
     // Explicitly flush writer to catch IO errors
-    writer
-        .flush()
-        .map_err(|err| OperationError::service_error(format!("Failed to flush: {err}")))?;
+    writer.flush()?;
 
     Ok(())
 }
