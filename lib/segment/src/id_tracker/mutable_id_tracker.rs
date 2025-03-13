@@ -523,7 +523,7 @@ fn read_mappings<R: Read>(reader: R) -> OperationResult<PointMappings> {
 ///
 /// This function reads exact one entry which means after calling this function, the reader
 /// will be at the start of the next entry.
-fn read_entry<R: Read>(mut reader: R) -> io::Result<MappingChange> {
+fn read_entry<R: Read>(reader: &mut R) -> io::Result<MappingChange> {
     let change_type = reader.read_u8()?;
     let change_type = MappingChangeType::from_byte(change_type).ok_or_else(|| {
         io::Error::new(
@@ -923,7 +923,7 @@ pub(super) mod tests {
 
             write_entry(&mut buf, change).unwrap();
 
-            let got_change = read_entry(&*buf).unwrap();
+            let got_change = read_entry(&mut buf.as_slice()).unwrap();
 
             assert_eq!(change, got_change);
         }
