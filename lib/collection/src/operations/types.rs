@@ -80,7 +80,7 @@ pub enum CollectionStatus {
 /// Current state of the shard (supports same states as the collection)
 ///
 /// `Green` - all good. `Yellow` - optimization is running, 'Grey' - optimizations are possible but not triggered, `Red` - some operations failed and was not recovered
-#[derive(Debug, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardStatus {
     // Shard is completely ready for requests
@@ -113,23 +113,17 @@ pub struct CollectionExistence {
 }
 
 /// Current state of the collection
-#[derive(Debug, Default, Serialize, JsonSchema, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Debug, Default, Serialize, JsonSchema, Anonymize, PartialEq, Eq, PartialOrd, Ord, Clone,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum OptimizersStatus {
     /// Optimizers are reporting as expected
     #[default]
     Ok,
     /// Something wrong happened with optimizers
+    #[anonymize(false)]
     Error(String),
-}
-
-impl Anonymize for OptimizersStatus {
-    fn anonymize(&self) -> Self {
-        match self {
-            Self::Ok => Self::Ok,
-            Self::Error(e) => Self::Error(e.clone()),
-        }
-    }
 }
 
 /// Point data
@@ -1473,7 +1467,9 @@ impl RecordInternal {
     }
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Datatype {
     #[default]
@@ -1493,8 +1489,11 @@ impl From<Datatype> for VectorStorageDatatype {
 }
 
 /// Params of single vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq,
+)]
 #[serde(rename_all = "snake_case")]
+#[anonymize(false)]
 pub struct VectorParams {
     /// Size of a vectors used
     #[validate(custom(function = "validate_nonzerou64_range_min_1_max_65536"))]
@@ -1549,16 +1548,12 @@ fn is_hnsw_diff_empty(hnsw_config: &Option<HnswConfigDiff>) -> bool {
         .unwrap_or(true)
 }
 
-impl Anonymize for VectorParams {
-    fn anonymize(&self) -> Self {
-        self.clone()
-    }
-}
-
 /// If used, include weight modification, which will be applied to sparse vectors at query time:
 /// None - no modification (default)
 /// Idf - inverse document frequency, based on statistics of the collection
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Modifier {
     #[default]
@@ -1567,7 +1562,9 @@ pub enum Modifier {
 }
 
 /// Params of single sparse vector data storage
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorParams {
     /// Custom params for index. If none - values from collection configuration are used.
@@ -1586,23 +1583,17 @@ impl SparseVectorParams {
     }
 }
 
-impl Anonymize for SparseVectorParams {
-    fn anonymize(&self) -> Self {
-        Self {
-            index: self.index.anonymize(),
-            modifier: self.modifier.clone(),
-        }
-    }
-}
-
 /// Configuration for sparse inverted index.
-#[derive(Debug, Hash, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Hash, Deserialize, Serialize, JsonSchema, Anonymize, Copy, Clone, PartialEq, Eq, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseIndexParams {
     /// We prefer a full scan search upto (excluding) this number of vectors.
     ///
     /// Note: this is number of vectors, not KiloBytes.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub full_scan_threshold: Option<usize>,
     /// Store index on disk. If set to false, the index will be stored in RAM. Default: false
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1619,16 +1610,6 @@ pub struct SparseIndexParams {
     ///   actual vector data does not need to conform to this range.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub datatype: Option<Datatype>,
-}
-
-impl Anonymize for SparseIndexParams {
-    fn anonymize(&self) -> Self {
-        SparseIndexParams {
-            full_scan_threshold: self.full_scan_threshold,
-            on_disk: self.on_disk,
-            datatype: self.datatype,
-        }
-    }
 }
 
 impl SparseIndexParams {
@@ -1659,7 +1640,7 @@ impl SparseIndexParams {
 ///          "distance": "Cosine"
 ///      }
 /// }
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case", untagged)]
 pub enum VectorsConfig {
     Single(VectorParams),
@@ -1815,15 +1796,6 @@ fn missing_vector_error(vector_name: &VectorName) -> CollectionError {
             "Vectors configuration is not compatible: \
              origin collection have vector {vector_name}, while other collection does not"
         ),
-    }
-}
-
-impl Anonymize for VectorsConfig {
-    fn anonymize(&self) -> Self {
-        match self {
-            VectorsConfig::Single(params) => VectorsConfig::Single(params.anonymize()),
-            VectorsConfig::Multi(params) => VectorsConfig::Multi(params.anonymize()),
-        }
     }
 }
 

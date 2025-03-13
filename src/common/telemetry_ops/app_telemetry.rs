@@ -20,7 +20,7 @@ impl AppBuildTelemetryCollector {
     }
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppFeaturesTelemetry {
     pub debug: bool,
     pub web_feature: bool,
@@ -29,14 +29,18 @@ pub struct AppFeaturesTelemetry {
     pub gpu: bool,
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct RunningEnvironmentTelemetry {
+    #[anonymize(false)]
     distribution: Option<String>,
+    #[anonymize(false)]
     distribution_version: Option<String>,
     is_docker: bool,
+    #[anonymize(false)]
     cores: Option<usize>,
     ram_size: Option<usize>,
     disk_size: Option<usize>,
+    #[anonymize(false)]
     cpu_flags: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     cpu_endian: Option<CpuEndian>,
@@ -44,9 +48,11 @@ pub struct RunningEnvironmentTelemetry {
     gpu_devices: Option<Vec<GpuDeviceTelemetry>>,
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct AppBuildTelemetry {
+    #[anonymize(false)]
     pub name: String,
+    #[anonymize(false)]
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub features: Option<AppFeaturesTelemetry>,
@@ -157,7 +163,7 @@ fn get_system_data() -> RunningEnvironmentTelemetry {
     }
 }
 
-#[derive(Serialize, Clone, Copy, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Copy, Debug, JsonSchema, Anonymize)]
 #[serde(rename_all = "snake_case")]
 pub enum CpuEndian {
     Little,
@@ -178,57 +184,8 @@ impl CpuEndian {
     }
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct GpuDeviceTelemetry {
+    #[anonymize(false)]
     pub name: String,
-}
-
-impl Anonymize for GpuDeviceTelemetry {
-    fn anonymize(&self) -> Self {
-        GpuDeviceTelemetry {
-            name: self.name.clone(),
-        }
-    }
-}
-
-impl Anonymize for AppFeaturesTelemetry {
-    fn anonymize(&self) -> Self {
-        AppFeaturesTelemetry {
-            debug: self.debug,
-            web_feature: self.web_feature,
-            service_debug_feature: self.service_debug_feature,
-            recovery_mode: self.recovery_mode,
-            gpu: self.gpu,
-        }
-    }
-}
-
-impl Anonymize for AppBuildTelemetry {
-    fn anonymize(&self) -> Self {
-        AppBuildTelemetry {
-            name: self.name.clone(),
-            version: self.version.clone(),
-            features: self.features.anonymize(),
-            system: self.system.anonymize(),
-            jwt_rbac: self.jwt_rbac,
-            hide_jwt_dashboard: self.hide_jwt_dashboard,
-            startup: self.startup.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for RunningEnvironmentTelemetry {
-    fn anonymize(&self) -> Self {
-        RunningEnvironmentTelemetry {
-            distribution: self.distribution.clone(),
-            distribution_version: self.distribution_version.clone(),
-            is_docker: self.is_docker,
-            cores: self.cores,
-            ram_size: self.ram_size.anonymize(),
-            disk_size: self.disk_size.anonymize(),
-            cpu_flags: self.cpu_flags.clone(),
-            cpu_endian: self.cpu_endian,
-            gpu_devices: self.gpu_devices.anonymize(),
-        }
-    }
 }

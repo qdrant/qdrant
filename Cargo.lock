@@ -3755,6 +3755,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8dd856d451cc0da70e2ef2ce95a18e39a93b7558bedf10201ad28503f918568"
 
 [[package]]
+name = "macros"
+version = "0.1.0"
+dependencies = [
+ "prettyplease 0.2.17",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
 name = "matchers"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5827,6 +5837,7 @@ dependencies = [
  "lazy_static",
  "log",
  "macro_rules_attribute",
+ "macros",
  "memmap2",
  "memory",
  "merge",

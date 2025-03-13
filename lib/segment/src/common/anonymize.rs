@@ -3,7 +3,42 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
+pub use macros::Anonymize;
 
+/// This trait provides a derive macro.
+///
+/// # Usage example
+///
+/// ```ignore
+/// #[derive(Anonymize)]
+/// struct Test {
+///    foo: Foo,
+///    bar: Bar,
+///    baz: Baz,
+/// }
+/// ```
+///
+/// This will generate code that calls `anonymize()` recursively on each field:
+/// ```ignore
+/// impl Anonymize for Test {
+///     fn anonymize(&self) -> Self {
+///         Self {
+///             foo: Anonymize::anonymize(&self.foo),
+///             bar: Anonymize::anonymize(&self.bar),
+///             baz: Anonymize::anonymize(&self.baz),
+///         }
+///     }
+/// }
+/// ```
+///
+/// # Attributes
+///
+/// The following attributes can be used to customize the behavior:
+/// - `#[anonymize(true)]` to enable anonymization for a field (default).
+/// - `#[anonymize(false)]` to disable anonymization for a field.
+///   An equivalent of `#[anonymize(with = Clone::clone)]`.
+/// - `#[anonymize(value = None)]` to specify a value to replace the field with.
+/// - `#[anonymize(with = path:to:function)]` to specify a custom function.
 pub trait Anonymize {
     fn anonymize(&self) -> Self;
 }
@@ -42,6 +77,20 @@ impl<K: Anonymize + Eq + Ord, V: Anonymize> Anonymize for BTreeMap<K, V> {
     }
 }
 
+/// Anonymize the values of a collection, but keeps the keys intact.
+pub fn anonymize_collection_values<C, K, V>(collection: &C) -> C
+where
+    for<'a> &'a C: IntoIterator<Item = (&'a K, &'a V)>,
+    C: FromIterator<(K, V)>,
+    K: Clone,
+    V: Anonymize,
+{
+    collection
+        .into_iter()
+        .map(|(k, v)| (k.clone(), v.anonymize()))
+        .collect()
+}
+
 impl Anonymize for String {
     fn anonymize(&self) -> Self {
         let mut hasher = DefaultHasher::new();
@@ -63,10 +112,35 @@ impl Anonymize for usize {
     }
 }
 
+impl Anonymize for bool {
+    fn anonymize(&self) -> Self {
+        *self
+    }
+}
+
 impl Anonymize for DateTime<Utc> {
     fn anonymize(&self) -> Self {
         let coeff: f32 = rand::random();
 
         *self + chrono::Duration::try_seconds(((coeff * 20.0) - 10.0) as i64).unwrap_or_default()
+    }
+}
+
+impl Anonymize for serde_json::Value {
+    fn anonymize(&self) -> Self {
+        match self {
+            serde_json::Value::Null => serde_json::Value::Null,
+            serde_json::Value::Bool(b) => serde_json::Value::Bool(b.anonymize()),
+            serde_json::Value::Number(n) => serde_json::Value::Number(n.clone()),
+            serde_json::Value::String(s) => serde_json::Value::String(s.anonymize()),
+            serde_json::Value::Array(a) => {
+                serde_json::Value::Array(a.iter().map(|v| v.anonymize()).collect())
+            }
+            serde_json::Value::Object(o) => serde_json::Value::Object(
+                o.iter()
+                    .map(|(k, v)| (k.anonymize(), v.anonymize()))
+                    .collect(),
+            ),
+        }
     }
 }

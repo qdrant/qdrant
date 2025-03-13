@@ -15,7 +15,7 @@ use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
+use segment::common::anonymize::{Anonymize, anonymize_collection_values};
 use segment::types::{CollectionConfigDefaults, HnswConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -136,7 +136,7 @@ const fn default_mmap_advice() -> madvise::Advice {
 }
 
 /// Information of a peer in the cluster
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Anonymize, Debug, Serialize, JsonSchema, Clone)]
 pub struct PeerInfo {
     pub uri: String,
     // ToDo: How long ago was the last communication? In milliseconds
@@ -144,7 +144,8 @@ pub struct PeerInfo {
 }
 
 /// Summary information about the current raft state
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
+#[anonymize(false)]
 pub struct RaftInfo {
     /// Raft divides time into terms of arbitrary length, each beginning with an election.
     /// If a candidate wins the election, it remains the leader for the rest of the term.
@@ -164,7 +165,7 @@ pub struct RaftInfo {
 }
 
 /// Role of the peer in the consensus
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, JsonSchema, Anonymize)]
 pub enum StateRole {
     // The node is a follower of the leader.
     Follower,
@@ -197,11 +198,13 @@ pub struct MessageSendErrors {
 }
 
 /// Description of enabled cluster
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
 pub struct ClusterInfo {
     /// ID of this peer
+    #[anonymize(false)]
     pub peer_id: PeerId,
     /// Peers composition of the cluster with main information
+    #[anonymize(with = anonymize_collection_values)]
     pub peers: HashMap<PeerId, PeerInfo>,
     /// Status of the Raft consensus
     pub raft_info: RaftInfo,
@@ -209,11 +212,12 @@ pub struct ClusterInfo {
     pub consensus_thread_status: ConsensusThreadStatus,
     /// Consequent failures of message send operations in consensus by peer address.
     /// On the first success to send to that peer - entry is removed from this hashmap.
+    #[anonymize(false)]
     pub message_send_failures: HashMap<String, MessageSendErrors>,
 }
 
 /// Information about current cluster status and structure
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(tag = "status")]
 #[serde(rename_all = "snake_case")]
 pub enum ClusterStatus {
@@ -222,71 +226,12 @@ pub enum ClusterStatus {
 }
 
 /// Information about current consensus thread status
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(tag = "consensus_thread_status")]
 #[serde(rename_all = "snake_case")]
+#[anonymize(false)]
 pub enum ConsensusThreadStatus {
     Working { last_update: DateTime<Utc> },
     Stopped,
     StoppedWithErr { err: String },
-}
-
-impl Anonymize for ConsensusThreadStatus {
-    fn anonymize(&self) -> Self {
-        match self {
-            Self::Working { last_update } => Self::Working {
-                last_update: *last_update,
-            },
-            Self::Stopped => Self::Stopped,
-            Self::StoppedWithErr { err } => Self::StoppedWithErr { err: err.clone() },
-        }
-    }
-}
-
-impl Anonymize for PeerInfo {
-    fn anonymize(&self) -> Self {
-        PeerInfo {
-            uri: self.uri.anonymize(),
-        }
-    }
-}
-
-impl Anonymize for RaftInfo {
-    fn anonymize(&self) -> Self {
-        RaftInfo {
-            term: self.term,
-            commit: self.commit,
-            pending_operations: self.pending_operations,
-            leader: self.leader,
-            role: self.role,
-            is_voter: self.is_voter,
-        }
-    }
-}
-
-impl Anonymize for ClusterInfo {
-    fn anonymize(&self) -> Self {
-        ClusterInfo {
-            peer_id: self.peer_id,
-            peers: self
-                .peers
-                .iter()
-                .map(|(key, value)| (*key, value.anonymize()))
-                .collect(),
-            raft_info: self.raft_info.anonymize(),
-            consensus_thread_status: self.consensus_thread_status.anonymize(),
-            message_send_failures: self.message_send_failures.clone(),
-        }
-    }
-}
-
-impl Anonymize for ClusterStatus {
-    fn anonymize(&self) -> Self {
-        match self {
-            ClusterStatus::Disabled => ClusterStatus::Disabled,
-            ClusterStatus::Enabled(cluster_info) => {
-                ClusterStatus::Enabled(cluster_info.anonymize())
-            }
-        }
-    }
 }

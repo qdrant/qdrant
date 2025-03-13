@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::types::{HnswConfig, QuantizationConfig};
 use serde::{Deserialize, Serialize};
@@ -20,7 +21,8 @@ pub const DEFAULT_INDEXING_THRESHOLD_KB: usize = 20_000;
 const SEGMENTS_PATH: &str = "segments";
 const TEMP_SEGMENTS_PATH: &str = "temp_segments";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq)]
+#[anonymize(false)]
 pub struct OptimizersConfig {
     /// The minimal fraction of deleted vectors in a segment, required to perform segment optimization
     #[validate(range(min = 0.0, max = 1.0))]

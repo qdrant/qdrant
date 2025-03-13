@@ -211,7 +211,17 @@ impl From<CompactExtendedPointId> for ExtendedPointId {
 
 /// Type of internal tags, build from payload
 #[derive(
-    Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, FromPrimitive, PartialEq, Eq, Hash,
+    Debug,
+    Deserialize,
+    Serialize,
+    JsonSchema,
+    Anonymize,
+    Clone,
+    Copy,
+    FromPrimitive,
+    PartialEq,
+    Eq,
+    Hash,
 )]
 /// Distance function types used to compare vectors
 pub enum Distance {
@@ -303,7 +313,7 @@ impl PartialEq for ScoredPoint {
 }
 
 /// Type of segment
-#[derive(Debug, Serialize, JsonSchema, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SegmentType {
     // There are no index built for the segment, all operations are available
@@ -315,7 +325,7 @@ pub enum SegmentType {
 }
 
 /// Display payload field type & index information
-#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct PayloadIndexInfo {
     pub data_type: PayloadSchemaType,
@@ -342,7 +352,7 @@ impl PayloadIndexInfo {
     }
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataInfo {
     pub num_vectors: usize,
@@ -351,7 +361,7 @@ pub struct VectorDataInfo {
 }
 
 /// Aggregated information about segment
-#[derive(Debug, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentInfo {
     pub segment_type: SegmentType,
@@ -482,7 +492,7 @@ pub const fn default_write_consistency_factor_const() -> u32 {
 }
 
 /// Vector index configuration
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type", content = "options")]
 pub enum Indexes {
@@ -504,8 +514,9 @@ impl Indexes {
 }
 
 /// Config of HNSW index
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[anonymize(false)]
 pub struct HnswConfig {
     /// Number of edges per node in the index graph. Larger the value - more accurate the search, more space required.
     pub m: usize,
@@ -654,8 +665,9 @@ pub struct BinaryQuantization {
     pub binary: BinaryQuantizationConfig,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged, rename_all = "snake_case")]
+#[anonymize(false)]
 pub enum QuantizationConfig {
     Scalar(ScalarQuantization),
     Product(ProductQuantization),
@@ -727,33 +739,18 @@ impl Merge for StrictModeSparseConfig {
     }
 }
 
-impl Anonymize for StrictModeSparseConfigOutput {
-    fn anonymize(&self) -> Self {
-        Self {
-            config: self.config.anonymize(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
 #[schemars(deny_unknown_fields)]
 pub struct StrictModeSparseConfigOutput {
     #[serde(flatten)]
     pub config: BTreeMap<VectorNameBuf, StrictModeSparseOutput>,
 }
 
-impl Anonymize for StrictModeSparseOutput {
-    fn anonymize(&self) -> Self {
-        Self {
-            max_length: self.max_length,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
 pub struct StrictModeSparseOutput {
     /// Max length of sparse vector
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub max_length: Option<usize>,
 }
 
@@ -787,14 +784,6 @@ pub struct StrictModeMultivector {
     pub max_vectors: Option<usize>,
 }
 
-impl Anonymize for StrictModeMultivectorOutput {
-    fn anonymize(&self) -> Self {
-        Self {
-            max_vectors: self.max_vectors,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Default, Hash)]
 #[schemars(deny_unknown_fields)]
 pub struct StrictModeMultivectorConfig {
@@ -812,15 +801,7 @@ impl Merge for StrictModeMultivectorConfig {
     }
 }
 
-impl Anonymize for StrictModeMultivectorConfigOutput {
-    fn anonymize(&self) -> Self {
-        Self {
-            config: self.config.anonymize(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
 #[schemars(deny_unknown_fields)]
 pub struct StrictModeMultivectorConfigOutput {
     #[serde(flatten)]
@@ -840,10 +821,11 @@ impl From<StrictModeMultivectorConfig> for StrictModeMultivectorConfigOutput {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
 pub struct StrictModeMultivectorOutput {
     /// Max number of vectors in a multivector
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub max_vectors: Option<usize>,
 }
 
@@ -983,33 +965,8 @@ impl Hash for StrictModeConfig {
     }
 }
 
-impl Anonymize for StrictModeConfigOutput {
-    fn anonymize(&self) -> Self {
-        Self {
-            enabled: self.enabled,
-            max_query_limit: self.max_query_limit,
-            max_timeout: self.max_timeout,
-            unindexed_filtering_retrieve: self.unindexed_filtering_retrieve,
-            unindexed_filtering_update: self.unindexed_filtering_update,
-            search_max_hnsw_ef: self.search_max_hnsw_ef,
-            search_allow_exact: self.search_allow_exact,
-            search_max_oversampling: self.search_max_oversampling,
-            upsert_max_batchsize: self.upsert_max_batchsize,
-            max_collection_vector_size_bytes: self.max_collection_vector_size_bytes,
-            read_rate_limit: self.read_rate_limit,
-            write_rate_limit: self.write_rate_limit,
-            max_collection_payload_size_bytes: self.max_collection_payload_size_bytes,
-            max_points_count: self.max_points_count,
-            filter_max_conditions: self.filter_max_conditions,
-            condition_max_size: self.condition_max_size,
-            multivector_config: self.multivector_config.anonymize(),
-            sparse_config: self.sparse_config.anonymize(),
-        }
-    }
-}
-
 // Version of the strict mode config we can present to the user
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Default)]
 pub struct StrictModeConfigOutput {
     // Global
     /// Whether strict mode is enabled for a collection or not.
@@ -1019,11 +976,13 @@ pub struct StrictModeConfigOutput {
     /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
+    #[anonymize(false)]
     pub max_query_limit: Option<usize>,
 
     /// Max allowed `timeout` parameter.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
+    #[anonymize(false)]
     pub max_timeout: Option<usize>,
 
     /// Allow usage of unindexed fields in retrieval based (e.g. search) filters.
@@ -1037,6 +996,7 @@ pub struct StrictModeConfigOutput {
     // Search
     /// Max HNSW value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub search_max_hnsw_ef: Option<usize>,
 
     /// Whether exact search is allowed or not.
@@ -1045,38 +1005,47 @@ pub struct StrictModeConfigOutput {
 
     /// Max oversampling value allowed in search.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub search_max_oversampling: Option<f64>,
 
     /// Max batchsize when upserting
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub upsert_max_batchsize: Option<usize>,
 
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub max_collection_vector_size_bytes: Option<usize>,
 
     /// Max number of read operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub read_rate_limit: Option<usize>,
 
     /// Max number of write operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub write_rate_limit: Option<usize>,
 
     /// Max size of a collections payload storage in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub max_collection_payload_size_bytes: Option<usize>,
 
     /// Max number of points estimated in a collection
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub max_points_count: Option<usize>,
 
     /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub filter_max_conditions: Option<usize>,
 
     /// Max size of a condition, eg. items in `MatchAny`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub condition_max_size: Option<usize>,
 
     /// Multivector configuration
@@ -1156,7 +1125,9 @@ impl Default for Indexes {
 }
 
 /// Type of payload storage
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq)]
+#[derive(
+    Anonymize, Default, Debug, Deserialize, Serialize, JsonSchema, Copy, Clone, PartialEq, Eq,
+)]
 #[serde(tag = "type", content = "options", rename_all = "snake_case")]
 pub enum PayloadStorageType {
     // Store payload in memory and use persistence storage only if vectors are changed
@@ -1174,7 +1145,7 @@ impl PayloadStorageType {
     }
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Anonymize, Default, Debug, Deserialize, Serialize, JsonSchema, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentConfig {
     #[serde(default)]
@@ -1247,7 +1218,9 @@ impl SegmentConfig {
 }
 
 /// Storage types for vectors
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+#[derive(
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone,
+)]
 pub enum VectorStorageType {
     /// Storage in memory (RAM)
     ///
@@ -1270,7 +1243,9 @@ pub enum VectorStorageType {
 }
 
 /// Storage types for vectors
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone)]
+#[derive(
+    Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum VectorStorageDatatype {
     // Single-precision floating point
@@ -1282,14 +1257,18 @@ pub enum VectorStorageDatatype {
     Uint8,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct MultiVectorConfig {
     /// How to compare multivector points
     pub comparator: MultiVectorComparator,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Eq, PartialEq, Copy, Clone, Hash)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Anonymize, Eq, PartialEq, Copy, Clone, Hash,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MultiVectorComparator {
     #[default]
@@ -1307,7 +1286,7 @@ impl VectorStorageType {
 }
 
 /// Config of single vector data storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct VectorDataConfig {
     /// Size/dimensionality of the vectors used
@@ -1347,7 +1326,7 @@ impl VectorDataConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, Default)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SparseVectorStorageType {
     /// Storage on disk
@@ -1360,7 +1339,7 @@ pub enum SparseVectorStorageType {
 }
 
 /// Config of single sparse vector data storage
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Validate)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SparseVectorDataConfig {
     /// Sparse inverted index config
@@ -1631,7 +1610,9 @@ pub enum PayloadVariant<T> {
 }
 
 /// All possible names of payload types
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, PartialEq, Hash, Eq, EnumIter,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum PayloadSchemaType {
     Keyword,
@@ -1665,8 +1646,9 @@ impl PayloadSchemaType {
 }
 
 /// Payload type with parameters
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
+#[anonymize(false)]
 pub enum PayloadSchemaParams {
     Keyword(KeywordIndexParams),
     Integer(IntegerIndexParams),
@@ -4336,12 +4318,13 @@ fn shard_key_number_example() -> u64 {
     12
 }
 
-#[derive(Deserialize, Serialize, JsonSchema, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Deserialize, Serialize, JsonSchema, Anonymize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ShardKey {
     #[schemars(example = "shard_key_string_example")]
     Keyword(String),
     #[schemars(example = "shard_key_number_example")]
+    #[anonymize(false)]
     Number(u64),
 }
 
@@ -4368,15 +4351,6 @@ impl Display for ShardKey {
         match self {
             ShardKey::Keyword(keyword) => write!(f, "\"{keyword}\""),
             ShardKey::Number(number) => write!(f, "{number}"),
-        }
-    }
-}
-
-impl Anonymize for ShardKey {
-    fn anonymize(&self) -> Self {
-        match self {
-            Self::Keyword(k) => Self::Keyword(k.anonymize()),
-            Self::Number(n) => Self::Number(*n),
         }
     }
 }
