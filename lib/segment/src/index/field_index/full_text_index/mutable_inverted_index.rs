@@ -144,7 +144,7 @@ impl InvertedIndex for MutableInvertedIndex {
                     let postings = self.postings.get(idx as usize).unwrap().as_ref();
                     hw_counter.incr_delta(
                         size_of::<Option<PostingList>>()
-                            + postings.map(|i| i.len()).unwrap_or(0) * size_of::<u32>(),
+                            + postings.map(|i| i.len()).unwrap_or(0) * size_of::<PointOffsetType>(),
                     );
                     postings
                 }
@@ -173,9 +173,9 @@ impl InvertedIndex for MutableInvertedIndex {
             .and_then(|posting| posting.as_ref())
             .as_ref()
             .map(|x| x.len());
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<Option<PostingList>>() + len.unwrap_or(0) * size_of::<u32>());
+        hw_counter.payload_index_io_read_counter().incr_delta(
+            size_of::<Option<PostingList>>() + len.unwrap_or(0) * size_of::<PointOffsetType>(),
+        );
         len
     }
 
