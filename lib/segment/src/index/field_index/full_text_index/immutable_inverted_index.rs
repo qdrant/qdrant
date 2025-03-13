@@ -60,7 +60,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
                     let postings = self.postings.get(idx as usize);
                     hw_counter.incr_delta(
                         size_of::<Option<CompressedPostingList>>()
-                            + postings.map(|i| i.len()).unwrap_or(0),
+                            + postings.map(|i| i.len()).unwrap_or(0) * size_of::<u32>(),
                     );
                     postings
                 }
@@ -88,9 +88,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
         let len = self.postings.get(token_id as usize).map(|p| p.len());
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<Option<CompressedPostingList>>() + len.unwrap_or(0));
+        hw_counter.payload_index_io_read_counter().incr_delta(
+            size_of::<Option<CompressedPostingList>>() + len.unwrap_or(0) * size_of::<u32>(),
+        );
         len
     }
 
