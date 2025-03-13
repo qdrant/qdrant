@@ -125,3 +125,22 @@ impl Anonymize for DateTime<Utc> {
         *self + chrono::Duration::try_seconds(((coeff * 20.0) - 10.0) as i64).unwrap_or_default()
     }
 }
+
+impl Anonymize for serde_json::Value {
+    fn anonymize(&self) -> Self {
+        match self {
+            serde_json::Value::Null => serde_json::Value::Null,
+            serde_json::Value::Bool(b) => serde_json::Value::Bool(b.anonymize()),
+            serde_json::Value::Number(n) => serde_json::Value::Number(n.clone()),
+            serde_json::Value::String(s) => serde_json::Value::String(s.anonymize()),
+            serde_json::Value::Array(a) => {
+                serde_json::Value::Array(a.iter().map(|v| v.anonymize()).collect())
+            }
+            serde_json::Value::Object(o) => serde_json::Value::Object(
+                o.iter()
+                    .map(|(k, v)| (k.anonymize(), v.anonymize()))
+                    .collect(),
+            ),
+        }
+    }
+}
