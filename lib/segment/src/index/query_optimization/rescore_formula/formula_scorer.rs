@@ -238,6 +238,7 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.abs())
             }
+            // Interactive formulas in https://www.desmos.com/calculator/htg0vrfmks
             ParsedExpression::Decay {
                 kind,
                 target,
@@ -302,12 +303,12 @@ impl FormulaScorer<'_> {
 
 fn exp_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
     let diff = (x - target).abs();
-    (diff * lambda).exp()
+    (lambda * diff).exp()
 }
 
 fn gauss_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
     let diff = (x - target).abs();
-    ((diff * diff) / lambda).exp()
+    (lambda * (diff * diff)).exp()
 }
 
 fn linear_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {

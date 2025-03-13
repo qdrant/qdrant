@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use std::ops::Neg;
 use std::str::FromStr;
 
 use common::types::ScoreType;
@@ -154,7 +153,7 @@ impl ParsedExpression {
     /// Transforms the constant part of the decay function into a single `lambda` value.
     ///
     /// Graphical representation of the formulas:
-    /// https://www.desmos.com/calculator/15qvagvue9
+    /// https://www.desmos.com/calculator/htg0vrfmks
     pub fn decay_params_to_lambda(
         midpoint: Option<f32>,
         scale: Option<f32>,
@@ -178,7 +177,7 @@ impl ParsedExpression {
         let lambda = match kind {
             DecayKind::Lin => (1.0 - midpoint) / scale,
             DecayKind::Exp => midpoint.ln() / scale,
-            DecayKind::Gauss => scale.powi(2) / midpoint.ln(),
+            DecayKind::Gauss => midpoint.ln() / scale.powi(2),
         };
 
         Ok(lambda)
@@ -201,7 +200,7 @@ impl ParsedExpression {
                 // (1.0 - midpoint) / 1.0 = lambda
                 // 1.0 - midpoint = lambda
                 // midpoint = 1.0 - lambda
-                ((-lambda + 1.0), 1.0)
+                (1.0 - lambda, 1.0)
             }
 
             DecayKind::Gauss => {
@@ -212,12 +211,11 @@ impl ParsedExpression {
                 // setting midpoint to 1/e (0.3678...) allows us to ignore the division, since ln(1/e) = -1
                 // Then we set scale to sqrt(-lambda)
                 //
-                // scale^2 / ln(1/e) = lambda
-                // scale^2 / -1.0 = lambda
-                // -scale^2 = lambda
-                // scale^2 = -lambda
-                // scale = sqrt(-lambda)
-                (1.0 / std::f32::consts::E, lambda.neg().sqrt())
+                // ln(1/e) / scale^2 = lambda
+                // -1.0 / scale^2 = lambda
+                // scale^2 = -1.0 / lambda
+                // scale = sqrt(-1.0 / lambda)
+                (1.0 / std::f32::consts::E, (-1.0 / lambda).sqrt())
             }
 
             DecayKind::Exp => {
