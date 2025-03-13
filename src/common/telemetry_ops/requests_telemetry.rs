@@ -4,7 +4,7 @@ use std::sync::Arc;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
+use segment::common::anonymize::{Anonymize, anonymize_collection_values};
 use segment::common::operation_time_statistics::{
     OperationDurationStatistics, OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -18,8 +18,9 @@ pub struct WebApiTelemetry {
     pub responses: HashMap<String, HashMap<HttpStatusCode, OperationDurationStatistics>>,
 }
 
-#[derive(Serialize, Clone, Default, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Default, Debug, JsonSchema, Anonymize)]
 pub struct GrpcTelemetry {
+    #[anonymize(with = anonymize_collection_values)]
     pub responses: HashMap<String, OperationDurationStatistics>,
 }
 
@@ -143,7 +144,7 @@ impl WebApiTelemetry {
     }
 }
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct RequestsTelemetry {
     pub rest: WebApiTelemetry,
     pub grpc: GrpcTelemetry,
@@ -167,40 +168,14 @@ impl RequestsTelemetry {
     }
 }
 
-impl Anonymize for RequestsTelemetry {
-    fn anonymize(&self) -> Self {
-        let rest = self.rest.anonymize();
-        let grpc = self.grpc.anonymize();
-        Self { rest, grpc }
-    }
-}
-
 impl Anonymize for WebApiTelemetry {
     fn anonymize(&self) -> Self {
         let responses = self
             .responses
             .iter()
-            .map(|(key, value)| {
-                let value: HashMap<_, _> = value
-                    .iter()
-                    .map(|(key, value)| (*key, value.anonymize()))
-                    .collect();
-                (key.clone(), value)
-            })
+            .map(|(key, value)| (key.clone(), anonymize_collection_values(value)))
             .collect();
 
         WebApiTelemetry { responses }
-    }
-}
-
-impl Anonymize for GrpcTelemetry {
-    fn anonymize(&self) -> Self {
-        let responses = self
-            .responses
-            .iter()
-            .map(|(key, value)| (key.clone(), value.anonymize()))
-            .collect();
-
-        GrpcTelemetry { responses }
     }
 }

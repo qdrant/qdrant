@@ -30,8 +30,9 @@ pub struct TelemetryCollector {
 }
 
 // Whole telemetry data
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct TelemetryData {
+    #[anonymize(false)]
     id: String,
     pub(crate) app: AppBuildTelemetry,
     pub(crate) collections: CollectionsTelemetry,
@@ -43,20 +44,6 @@ pub struct TelemetryData {
     pub(crate) memory: Option<MemoryTelemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hardware: Option<HardwareTelemetry>,
-}
-
-impl Anonymize for TelemetryData {
-    fn anonymize(&self) -> Self {
-        TelemetryData {
-            id: self.id.clone(),
-            app: self.app.anonymize(),
-            collections: self.collections.anonymize(),
-            cluster: self.cluster.anonymize(),
-            requests: self.requests.anonymize(),
-            memory: self.memory.anonymize(),
-            hardware: self.hardware.anonymize(),
-        }
-    }
 }
 
 impl TelemetryCollector {

@@ -7,7 +7,7 @@ use serde::Serialize;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
 
-#[derive(Serialize, Clone, Debug, JsonSchema)]
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct HardwareTelemetry {
     pub(crate) collection_data: HashMap<String, HardwareUsage>,
 }
@@ -33,13 +33,5 @@ impl HardwareTelemetry {
         };
 
         Self { collection_data }
-    }
-}
-
-impl Anonymize for HardwareTelemetry {
-    fn anonymize(&self) -> Self {
-        Self {
-            collection_data: self.collection_data.anonymize(),
-        }
     }
 }

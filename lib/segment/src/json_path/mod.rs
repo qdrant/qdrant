@@ -15,17 +15,18 @@ use crate::common::utils::{MultiValue, merge_map};
 
 mod parse;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Anonymize)]
 pub struct JsonPath {
     pub first_key: String,
     pub rest: Vec<JsonPathItem>,
 }
 
-#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq, Anonymize)]
 pub enum JsonPathItem {
     /// A key in a JSON object, e.g. `.foo`
     Key(String),
     /// An index in a JSON array, e.g. `[3]`
+    #[anonymize(false)]
     Index(usize),
     /// All indices in a JSON array, i.e. `[]`
     WildcardIndex,
@@ -532,27 +533,6 @@ impl JsonSchema for JsonPath {
 
     fn json_schema(generator: &mut SchemaGenerator) -> Schema {
         String::json_schema(generator)
-    }
-}
-
-impl Anonymize for JsonPath {
-    fn anonymize(&self) -> Self {
-        let Self { first_key, rest } = self;
-        let first_key_hash = first_key.anonymize();
-
-        let rest_hash: Vec<_> = rest
-            .iter()
-            .map(|item| match item {
-                JsonPathItem::Key(key) => JsonPathItem::Key(key.anonymize()),
-                JsonPathItem::Index(index) => JsonPathItem::Index(*index),
-                JsonPathItem::WildcardIndex => JsonPathItem::WildcardIndex,
-            })
-            .collect();
-
-        JsonPath {
-            first_key: first_key_hash,
-            rest: rest_hash,
-        }
     }
 }
 

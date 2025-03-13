@@ -49,8 +49,9 @@ pub struct ApiResponse<D> {
 }
 
 /// Usage of the hardware resources, spent to process the request
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
 #[serde(rename_all = "snake_case")]
+#[anonymize(false)]
 pub struct HardwareUsage {
     pub cpu: usize,
     pub payload_io_read: usize,
@@ -90,17 +91,4 @@ fn example_collections_response() -> CollectionsResponse {
 #[schemars(example = "example_collections_response")]
 pub struct CollectionsResponse {
     pub collections: Vec<CollectionDescription>,
-}
-
-impl Anonymize for HardwareUsage {
-    fn anonymize(&self) -> Self {
-        HardwareUsage {
-            cpu: self.cpu,
-            payload_io_read: self.payload_io_read,
-            payload_io_write: self.payload_io_write,
-            payload_index_io_read: self.payload_index_io_read,
-            vector_io_read: self.vector_io_read,
-            vector_io_write: self.vector_io_write,
-        }
-    }
 }

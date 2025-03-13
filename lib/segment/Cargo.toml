@@ -110,6 +110,7 @@ gridstore = { path = "../gridstore" }
 common = { path = "../common/common" }
 io = { path = "../common/io" }
 issues = { path = "../common/issues" }
+macros = { path = "../macros" }
 memory = { path = "../common/memory" }
 quantization = { path = "../quantization" }
 sparse = { path = "../sparse" }

@@ -31,7 +31,8 @@ use crate::optimizers_builder::OptimizersConfig;
 
 pub const COLLECTION_CONFIG_FILE: &str = "config.json";
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]
+#[anonymize(false)]
 pub struct WalConfig {
     /// Size of a single WAL segment in MB
     #[validate(range(min = 1))]
@@ -62,7 +63,9 @@ impl Default for WalConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, PartialEq, Eq, Hash, Clone, Copy, Default)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Anonymize, PartialEq, Eq, Hash, Clone, Copy, Default,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ShardingMethod {
     #[default]
@@ -70,7 +73,7 @@ pub enum ShardingMethod {
     Custom,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Anonymize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct CollectionParams {
     /// Configuration of the vector storage
@@ -79,6 +82,7 @@ pub struct CollectionParams {
     pub vectors: VectorsConfig,
     /// Number of shards the collection has
     #[serde(default = "default_shard_number")]
+    #[anonymize(false)]
     pub shard_number: NonZeroU32,
     /// Sharding method
     /// Default is Auto - points are distributed across all available shards
@@ -88,18 +92,21 @@ pub struct CollectionParams {
     pub sharding_method: Option<ShardingMethod>,
     /// Number of replicas for each shard
     #[serde(default = "default_replication_factor")]
+    #[anonymize(false)]
     pub replication_factor: NonZeroU32,
     /// Defines how many replicas should apply the operation for us to consider it successful.
     /// Increasing this number will make the collection more resilient to inconsistencies, but will
     /// also make it fail if not enough replicas are available.
     /// Does not have any performance impact.
     #[serde(default = "default_write_consistency_factor")]
+    #[anonymize(false)]
     pub write_consistency_factor: NonZeroU32,
     /// Defines how many additional replicas should be processing read request at the same time.
     /// Default value is Auto, which means that fan-out will be determined automatically based on
     /// the busyness of the local replica.
     /// Having more than 0 might be useful to smooth latency spikes of individual nodes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub read_fan_out_factor: Option<u32>,
     /// If true - point's payload will not be stored in memory.
     /// It will be read from the disk every time it is requested.
@@ -170,21 +177,6 @@ impl CollectionParams {
         }
 
         Ok(())
-    }
-}
-
-impl Anonymize for CollectionParams {
-    fn anonymize(&self) -> Self {
-        CollectionParams {
-            vectors: self.vectors.anonymize(),
-            shard_number: self.shard_number,
-            sharding_method: self.sharding_method,
-            replication_factor: self.replication_factor,
-            write_consistency_factor: self.write_consistency_factor,
-            read_fan_out_factor: self.read_fan_out_factor,
-            on_disk_payload: self.on_disk_payload,
-            sparse_vectors: self.sparse_vectors.anonymize(),
-        }
     }
 }
 
