@@ -1,0 +1,66 @@
+name: Test release artifacts
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ '**' ]
+
+jobs:
+  build-linux-binaries:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-multilib clang cmake protobuf-compiler
+          rustup default stable
+          rustup update
+          rustup show
+          cargo -Vv
+      - uses: actions/checkout@v4
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cross-compilation tools
+        with:
+          target: ${{ matrix.target }}
+        if: startsWith(matrix.os, 'ubuntu') && contains(matrix.target, '-musl')
+        uses: taiki-e/setup-cross-toolchain-action@v1
+      - name: Build and publish
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: qdrant
+          target: ${{ matrix.target }}
+          # Do not publish as part of release
+          dry-run: true
+      - name: Separate debug symbols and strip binary
+        run: |
+          # Test for debugging CI
+          ls -lah
+          ls target/release -lah
+          strip --only-keep-debug qdrant.debug target/release/qdrant
+          strip --strip-debug --strip-unneeded target/release/qdrant
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary
+          path: target/release/qdrant
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-symbols
+          path: qdrant.debug
