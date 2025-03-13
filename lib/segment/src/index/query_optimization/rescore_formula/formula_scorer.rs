@@ -307,8 +307,8 @@ fn exp_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
 }
 
 fn gauss_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
-    let diff = (x - target).abs();
-    (lambda * (diff * diff)).exp()
+    let diff = x - target;
+    (lambda * diff * diff).exp()
 }
 
 fn linear_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
