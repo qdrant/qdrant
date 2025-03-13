@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -216,7 +217,15 @@ impl SimpleBoolIndex {
         }
     }
 
-    pub fn check_values_any(&self, point_id: PointOffsetType, is_true: bool) -> bool {
+    pub fn check_values_any(
+        &self,
+        point_id: PointOffsetType,
+        is_true: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<bool>());
         if is_true {
             self.values_has_true(point_id)
         } else {

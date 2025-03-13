@@ -228,4 +228,25 @@ mod test {
 
         assert_eq!(accumulator.get_cpu(), 1);
     }
+
+    #[test]
+    fn test_hw_counter_new_accumulator() {
+        let accumulator = HwMeasurementAcc::new();
+
+        {
+            let counter = accumulator.get_counter_cell();
+
+            {
+                let acc = counter.new_accumulator();
+                {
+                    let cell = acc.get_counter_cell();
+                    cell.cpu_counter().incr_delta(42);
+                }
+            }
+
+            counter.cpu_counter().incr_delta(27);
+        }
+
+        assert_eq!(accumulator.get_cpu(), 69);
+    }
 }

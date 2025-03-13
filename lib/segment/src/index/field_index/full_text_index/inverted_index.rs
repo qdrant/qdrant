@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde::{Deserialize, Serialize};
 
@@ -43,10 +44,15 @@ pub struct ParsedQuery {
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, document: &Document) -> bool {
+    pub fn check_match(&self, document: &Document, hw_counter: &HardwareCounterCell) -> bool {
         if self.tokens.contains(&None) {
             return false;
         }
+
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(self.tokens.len() + document.tokens().len());
+
         // Check that all tokens are in document
         self.tokens
             .iter()
@@ -81,7 +87,11 @@ pub trait InvertedIndex {
 
     fn remove_document(&mut self, idx: PointOffsetType) -> bool;
 
-    fn filter(&self, query: &ParsedQuery) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
+    fn filter(
+        &self,
+        query: &ParsedQuery,
+        hw_counter: &HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
 
     fn get_posting_len(&self, token_id: TokenId) -> Option<usize>;
 
@@ -168,7 +178,12 @@ pub trait InvertedIndex {
             .filter_map(map_filter_condition)
     }
 
-    fn check_match(&self, parsed_query: &ParsedQuery, point_id: PointOffsetType) -> bool;
+    fn check_match(
+        &self,
+        parsed_query: &ParsedQuery,
+        point_id: PointOffsetType,
+        hw_coutner: &HardwareCounterCell,
+    ) -> bool;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
 
@@ -176,13 +191,14 @@ pub trait InvertedIndex {
 
     fn points_count(&self) -> usize;
 
-    fn get_token_id(&self, token: &str) -> Option<TokenId>;
+    fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId>;
 }
 
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
+    use common::counter::hardware_counter::HardwareCounterCell;
     use rand::Rng;
     use rand::seq::SliceRandom;
     use rstest::rstest;
@@ -295,16 +311,18 @@ mod tests {
 
         MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mmap = MmapInvertedIndex::open(path, false).unwrap();
 
         // Check same vocabulary
         for (token, token_id) in immutable.vocab.iter() {
-            assert_eq!(mmap.get_token_id(token), Some(*token_id));
+            assert_eq!(mmap.get_token_id(token, &hw_counter), Some(*token_id));
         }
 
         // Check same postings
         for (token_id, posting) in immutable.postings.iter().enumerate() {
-            let chunk_reader = mmap.postings.get(token_id as u32).unwrap();
+            let chunk_reader = mmap.postings.get(token_id as u32, &hw_counter).unwrap();
 
             for point_id in posting.iter() {
                 assert!(chunk_reader.contains(point_id));
@@ -352,14 +370,20 @@ mod tests {
             .map(|query| to_parsed_query(query, |token| mutable.vocab.get(&token).copied()))
             .collect();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let imm_parsed_queries: Vec<_> = queries
             .into_iter()
-            .map(|query| to_parsed_query(query, |token| mmap_index.get_token_id(&token)))
+            .map(|query| {
+                to_parsed_query(query, |token| mmap_index.get_token_id(&token, &hw_counter))
+            })
             .collect();
 
         for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {
-            let mut_filtered = mutable.filter(mut_query).collect::<Vec<_>>();
-            let imm_filtered = mmap_index.filter(imm_query).collect::<Vec<_>>();
+            let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
+            let imm_filtered = mmap_index
+                .filter(imm_query, &hw_counter)
+                .collect::<Vec<_>>();
 
             assert_eq!(mut_filtered, imm_filtered);
         }
@@ -378,8 +402,10 @@ mod tests {
         // Check congruence after deletion
 
         for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {
-            let mut_filtered = mutable.filter(mut_query).collect::<Vec<_>>();
-            let imm_filtered = mmap_index.filter(imm_query).collect::<Vec<_>>();
+            let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
+            let imm_filtered = mmap_index
+                .filter(imm_query, &hw_counter)
+                .collect::<Vec<_>>();
 
             assert_eq!(mut_filtered, imm_filtered);
         }
