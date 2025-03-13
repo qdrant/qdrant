@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::MmapHashMap;
+use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
@@ -272,8 +272,12 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
+        hw_counter.payload_index_io_read_counter().incr_delta(
+            READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+        );
+
         self.vocab
-            .get(token, hw_counter)
+            .get(token)
             .ok()
             .flatten()
             .and_then(<[TokenId]>::first)
