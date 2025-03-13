@@ -256,6 +256,8 @@ impl FormulaScorer<'_> {
                     DecayKind::Gauss => gauss_decay(x, target, *lambda),
                     DecayKind::Lin => linear_decay(x, target, *lambda),
                 };
+
+                // All decay functions have a range of [0, 1], no need to check for bounds
                 Ok(decay)
             }
         }
