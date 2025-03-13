@@ -929,6 +929,54 @@ pub(super) mod tests {
         }
     }
 
+    /// Some more special test cases for deserializing point mappings.
+    #[test]
+    fn test_point_mappings_deserializing_special() {
+        // Empty reader creates empty mappings
+        let buf = b"";
+        assert_eq!(read_mappings(&buf[..]).unwrap().total_point_count(), 0);
+
+        // Corrupt if reading invalid type byte
+        let buf = b"\x00";
+        assert!(
+            read_mappings(&buf[..])
+                .unwrap_err()
+                .to_string()
+                .contains("Corrupted ID tracker mapping storage")
+        );
+
+        let buf = b"malformed!";
+        assert!(read_mappings(&buf[..]).is_err());
+
+        // Empty if change is not fully written
+        let buf = b"\x01\x01\x00\x00\x00\x00";
+        assert_eq!(read_mappings(&buf[..]).unwrap().total_point_count(), 0);
+
+        // Exactly one entry
+        let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00";
+        assert_eq!(
+            read_mappings(&buf[..])
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+
+        // Exactly one entry and a malformed second one
+        let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01\x00";
+        assert!(
+            read_mappings(&buf[..])
+                .unwrap_err()
+                .to_string()
+                .contains("Corrupted ID tracker mapping storage")
+        );
+
+        // Exactly one entry and an incomplete second one
+        let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00";
+        let mappings = read_mappings(&buf[..]).unwrap();
+        assert_eq!(mappings.total_point_count(), 1);
+        assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
+    }
+
     const DEFAULT_VERSION: SeqNumberType = 42;
 
     fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
