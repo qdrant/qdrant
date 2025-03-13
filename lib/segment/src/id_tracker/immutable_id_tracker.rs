@@ -30,27 +30,19 @@ pub const DELETED_FILE_NAME: &str = "id_tracker.deleted";
 pub const MAPPINGS_FILE_NAME: &str = "id_tracker.mappings";
 pub const VERSION_MAPPING_FILE_NAME: &str = "id_tracker.versions";
 
-const EXTERNAL_ID_NUMBER_BYTE: u8 = 0;
-const EXTERNAL_ID_UUID_BYTE: u8 = 1;
-
+#[derive(Copy, Clone)]
+#[repr(u8)]
 enum ExternalIdType {
-    Number,
-    Uuid,
+    Number = 0,
+    Uuid = 1,
 }
 
 impl ExternalIdType {
     fn from_byte(byte: u8) -> Option<Self> {
         match byte {
-            EXTERNAL_ID_NUMBER_BYTE => Some(Self::Number),
-            EXTERNAL_ID_UUID_BYTE => Some(Self::Uuid),
+            x if x == Self::Number as u8 => Some(Self::Number),
+            x if x == Self::Uuid as u8 => Some(Self::Uuid),
             _ => None,
-        }
-    }
-
-    fn to_byte(&self) -> u8 {
-        match self {
-            Self::Number => EXTERNAL_ID_NUMBER_BYTE,
-            Self::Uuid => EXTERNAL_ID_UUID_BYTE,
         }
     }
 
@@ -216,7 +208,7 @@ impl ImmutableIdTracker {
         external_id: PointIdType,
     ) -> OperationResult<()> {
         // Byte to distinguish between Number and UUID
-        writer.write_u8(ExternalIdType::from_point_id(&external_id).to_byte())?;
+        writer.write_u8(ExternalIdType::from_point_id(&external_id) as u8)?;
 
         // Serializing External ID
         match external_id {
@@ -364,8 +356,7 @@ fn mmap_size<T>(len: usize) -> usize {
 
 /// Returns the required mmap filesize for a `BitSlice`.
 fn bitmap_mmap_size(number_of_elements: usize) -> usize {
-    const BITS_TO_BYTES: usize = 8; // .len() returns bits but we want bytes!
-    mmap_size::<usize>(number_of_elements.div_ceil(BITS_TO_BYTES))
+    mmap_size::<usize>(number_of_elements.div_ceil(u8::BITS as usize))
 }
 
 impl IdTracker for ImmutableIdTracker {
