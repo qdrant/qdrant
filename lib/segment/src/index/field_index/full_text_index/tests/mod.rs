@@ -154,6 +154,8 @@ fn get_texts() -> Vec<String> {
 #[case(true)]
 #[case(false)]
 fn test_prefix_search(#[case] immutable: bool) {
+    use common::counter::hardware_counter::HardwareCounterCell;
+
     let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
     let config = TextIndexParams {
         r#type: TextIndexType::Text,
@@ -169,6 +171,8 @@ fn test_prefix_search(#[case] immutable: bool) {
         .make_empty()
         .unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     let texts = get_texts();
 
     for (i, text) in texts.iter().enumerate() {
@@ -182,22 +186,22 @@ fn test_prefix_search(#[case] immutable: bool) {
         index.load().unwrap();
     }
 
-    let res: Vec<_> = index.query("ROBO").collect();
+    let res: Vec<_> = index.query("ROBO", &hw_counter).collect();
 
-    let query = index.parse_query("ROBO");
+    let query = index.parse_query("ROBO", &hw_counter);
 
     for idx in res.iter().copied() {
-        assert!(index.check_match(&query, idx));
+        assert!(index.check_match(&query, idx, &hw_counter));
     }
 
     assert_eq!(res.len(), 3);
 
-    let res: Vec<_> = index.query("q231").collect();
+    let res: Vec<_> = index.query("q231", &hw_counter).collect();
 
-    let query = index.parse_query("q231");
+    let query = index.parse_query("q231", &hw_counter);
 
     for idx in [1, 2, 3] {
-        assert!(!index.check_match(&query, idx));
+        assert!(!index.check_match(&query, idx, &hw_counter));
     }
 
     assert_eq!(res.len(), 0);

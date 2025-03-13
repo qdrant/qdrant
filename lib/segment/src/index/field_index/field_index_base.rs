@@ -2,6 +2,7 @@ use std::fmt::Formatter;
 use std::path::PathBuf;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -156,6 +157,7 @@ impl FieldIndex {
         &self,
         condition: &FieldCondition,
         payload_value: &Value,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<bool> {
         match self {
             FieldIndex::IntIndex(_) => None,
@@ -167,10 +169,10 @@ impl FieldIndex {
             FieldIndex::BoolIndex(_) => None,
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
                 Some(Match::Text(MatchText { text })) => {
-                    let query = full_text_index.parse_query(text);
+                    let query = full_text_index.parse_query(text, hw_counter);
                     for value in FullTextIndex::get_values(payload_value) {
-                        let document = full_text_index.parse_document(&value);
-                        if query.check_match(&document) {
+                        let document = full_text_index.parse_document(&value, hw_counter);
+                        if query.check_match(&document, hw_counter) {
                             return Some(true);
                         }
                     }

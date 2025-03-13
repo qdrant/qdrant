@@ -49,9 +49,9 @@ fn get_match_value_checker(
             }))
         }
         (ValueVariants::Bool(is_true), FieldIndex::BoolIndex(index)) => {
+            let hw_counter = hw_acc.get_counter_cell();
             Some(Box::new(move |point_id: PointOffsetType| {
-                // TODO(io_measurement): implement measurement
-                index.check_values_any(point_id, is_true)
+                index.check_values_any(point_id, is_true, &hw_counter)
             }))
         }
         (ValueVariants::Bool(_), FieldIndex::DatetimeIndex(_))
@@ -249,13 +249,14 @@ fn get_match_except_checker(
 fn get_match_text_checker(
     text: String,
     index: &FieldIndex,
-    _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Implement measurements
+    hw_acc: HwMeasurementAcc,
 ) -> Option<ConditionCheckerFn> {
+    let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::FullTextIndex(full_text_index) => {
-            let parsed_query = full_text_index.parse_query(&text);
+            let parsed_query = full_text_index.parse_query(&text, &hw_counter);
             Some(Box::new(move |point_id: PointOffsetType| {
-                full_text_index.check_match(&parsed_query, point_id)
+                full_text_index.check_match(&parsed_query, point_id, &hw_counter)
             }))
         }
         FieldIndex::BoolIndex(_)
