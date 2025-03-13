@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 
 use bitvec::prelude::{BitSlice, BitVec};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::point_mappings::FileEndianess;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::id_tracker::IdTracker;
@@ -21,14 +23,45 @@ const FILE_VERSIONS: &str = "id_tracker.versions";
 
 type VersionChange = (PointIdType, SeqNumberType);
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MappingChange {
     Insert(PointIdType, PointOffsetType),
     Delete(PointIdType),
 }
 
-/// Mutable in-memory ID tracker with simple file-based backing storage
+impl MappingChange {
+    fn change_type(&self) -> MappingChangeType {
+        match self {
+            Self::Insert(PointIdType::NumId(_), _) => MappingChangeType::InsertNum,
+            Self::Insert(PointIdType::Uuid(_), _) => MappingChangeType::InsertUuid,
+            Self::Delete(PointIdType::NumId(_)) => MappingChangeType::DeleteNum,
+            Self::Delete(PointIdType::Uuid(_)) => MappingChangeType::DeleteUuid,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+#[repr(u8)]
+enum MappingChangeType {
+    InsertNum = 1,
+    InsertUuid = 2,
+    DeleteNum = 3,
+    DeleteUuid = 4,
+}
+
+impl MappingChangeType {
+    fn from_byte(byte: u8) -> Option<Self> {
+        match byte {
+            x if x == Self::InsertNum as u8 => Some(Self::InsertNum),
+            x if x == Self::InsertUuid as u8 => Some(Self::InsertUuid),
+            x if x == Self::DeleteNum as u8 => Some(Self::DeleteNum),
+            x if x == Self::DeleteUuid as u8 => Some(Self::DeleteUuid),
+            _ => None,
+        }
+    }
+}
+
+/// Mutable in-memory ID tracker with simple file based backing storage
 ///
 /// This ID tracker simply persists all recorded point mapping and versions changes to disk by
 /// appending these changes to a file. When loading, all mappings and versions are deduplicated in memory so
@@ -77,44 +110,21 @@ impl MutableIdTracker {
             );
         }
 
-        let mut deleted = BitVec::new();
-        let mut internal_to_external: Vec<PointIdType> = Default::default();
-        let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
-        let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
-        let mut internal_to_version: Vec<SeqNumberType> = Default::default();
-
-        if has_mappings {
-            load_mappings(
-                &mappings_path,
-                &mut deleted,
-                &mut internal_to_external,
-                &mut external_to_internal_num,
-                &mut external_to_internal_uuid,
-            )
-            .map_err(|err| {
+        let mappings = if has_mappings {
+            load_mappings(&mappings_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker mappings: {err}"))
-            })?;
-        }
+            })?
+        } else {
+            PointMappings::default()
+        };
 
-        if has_versions {
-            load_versions(
-                &versions_path,
-                &internal_to_external,
-                &external_to_internal_num,
-                &external_to_internal_uuid,
-                &mut internal_to_version,
-            )
-            .map_err(|err| {
+        let internal_to_version = if has_versions {
+            load_versions(&versions_path, &mappings).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
-            })?;
-        }
-
-        let mappings = PointMappings::new(
-            deleted,
-            internal_to_external,
-            external_to_internal_num,
-            external_to_internal_uuid,
-        );
+            })?
+        } else {
+            vec![]
+        };
 
         #[cfg(debug_assertions)]
         mappings.assert_mappings();
@@ -123,8 +133,8 @@ impl MutableIdTracker {
             segment_path,
             internal_to_version,
             mappings,
-            pending_versions: Mutex::new(vec![]),
-            pending_mappings: Mutex::new(vec![]),
+            pending_versions: Default::default(),
+            pending_mappings: Default::default(),
         })
     }
 }
@@ -241,29 +251,7 @@ impl IdTracker for MutableIdTracker {
                 return Ok(());
             }
 
-            // Open file in append mode to write new changes to the end
-            let file = File::options()
-                .create(true)
-                .append(true)
-                .open(&mappings_path)?;
-            let mut writer = BufWriter::new(file);
-
-            write_mappings(&mut writer, &pending_mappings).map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to persist ID tracker point mappings ({}): {err}",
-                    mappings_path.display(),
-                ))
-            })?;
-
-            // Explicitly fsync file contents to ensure durability
-            let file = writer.into_inner().unwrap();
-            file.sync_all().map_err(|err| {
-                OperationError::service_error(format!(
-                    "Failed to fsync ID tracker point mappings: {err}",
-                ))
-            })?;
-
-            Ok(())
+            store_mapping_changes(&mappings_path, pending_mappings)
         })
     }
 
@@ -361,20 +349,91 @@ fn versions_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_VERSIONS)
 }
 
-fn load_mappings(
-    mappings_path: &Path,
-    deleted: &mut BitVec,
-    internal_to_external: &mut Vec<PointIdType>,
-    external_to_internal_num: &mut BTreeMap<u64, PointOffsetType>,
-    external_to_internal_uuid: &mut BTreeMap<Uuid, PointOffsetType>,
+/// Store new mapping changes, appending them to the given file
+fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> OperationResult<()> {
+    // Open file in append mode to write new changes to the end
+    let file = File::options()
+        .create(true)
+        .append(true)
+        .open(mappings_path)?;
+    let mut writer = BufWriter::new(file);
+
+    write_mapping_changes(&mut writer, changes).map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to persist ID tracker point mappings ({}): {err}",
+            mappings_path.display(),
+        ))
+    })?;
+
+    // Explicitly fsync file contents to ensure durability
+    let file = writer.into_inner().unwrap();
+    file.sync_all().map_err(|err| {
+        OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
+    })?;
+
+    Ok(())
+}
+
+/// Serializes pending point mapping changes into the given writer
+///
+/// ## File format
+///
+/// All entries have a variable size and are simply concatenated. Each entry has a 1-byte header
+/// which specifies the change type and implies the length of the entry.
+///
+/// See [`read_entry`] and [`write_entry`] for more details.
+fn write_mapping_changes<W: Write>(
+    mut writer: W,
+    changes: Vec<MappingChange>,
 ) -> OperationResult<()> {
+    for change in changes {
+        write_entry(&mut writer, change)?;
+    }
+
+    // Explicitly flush writer to catch IO errors
+    writer.flush()?;
+
+    Ok(())
+}
+
+/// Load point mappings from the given file
+fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     let mappings_file = File::open(mappings_path)?;
-    let mappings_reader = std::io::BufReader::new(mappings_file);
+    let mappings_reader = BufReader::new(mappings_file);
+    read_mappings(mappings_reader)
+}
 
-    for entry in std::io::BufRead::lines(mappings_reader) {
-        let change = parse_mapping(entry)?;
+/// Iterate over mapping changes from the given reader
+///
+/// The iterator ends when the end of the file is reached, or when an error occurred.
+///
+/// ## Error
+///
+/// An error item is returned if reading a mapping change fails due to malformed data. Then the
+/// iterator will not produce any more items.
+fn read_mappings_iter<R: Read>(
+    mut reader: R,
+) -> impl Iterator<Item = OperationResult<MappingChange>> {
+    std::iter::from_fn(move || match read_entry(&mut reader) {
+        Ok(entry) => Some(Ok(entry)),
+        // Done reading if end of file is reached
+        Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => None,
+        // Propagate deserialization error
+        Err(err) => Some(Err(err.into())),
+    })
+    // Can't read any more data reliably after first error
+    .take_while_inclusive(|item| item.is_ok())
+}
 
-        match change {
+/// Read point mappings from the given reader
+fn read_mappings<R: Read>(reader: R) -> OperationResult<PointMappings> {
+    let mut deleted = BitVec::new();
+    let mut internal_to_external: Vec<PointIdType> = Default::default();
+    let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
+    let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
+
+    for change in read_mappings_iter(reader) {
+        match change? {
             MappingChange::Insert(external_id, internal_id) => {
                 // Update internal to external mapping
                 if internal_id as usize >= internal_to_external.len() {
@@ -446,30 +505,110 @@ fn load_mappings(
         }
     }
 
+    let mappings = PointMappings::new(
+        deleted,
+        internal_to_external,
+        external_to_internal_num,
+        external_to_internal_uuid,
+    );
+
+    Ok(mappings)
+}
+
+/// Deserialize a single mapping change entry from the given reader
+///
+/// This function reads exact one entry which means after calling this function, the reader
+/// will be at the start of the next entry.
+fn read_entry<R: Read>(mut reader: R) -> io::Result<MappingChange> {
+    let change_type = reader.read_u8()?;
+    let change_type = MappingChangeType::from_byte(change_type).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Corrupted ID tracker mapping storage, got malformed mapping change byte {change_type:#04X}"),
+        )
+    })?;
+
+    match change_type {
+        MappingChangeType::InsertNum => {
+            let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
+            let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
+            Ok(MappingChange::Insert(external_id, internal_id))
+        }
+        MappingChangeType::InsertUuid => {
+            let external_id =
+                PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
+            let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
+            Ok(MappingChange::Insert(external_id, internal_id))
+        }
+        MappingChangeType::DeleteNum => {
+            let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
+            Ok(MappingChange::Delete(external_id))
+        }
+        MappingChangeType::DeleteUuid => {
+            let external_id =
+                PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
+            Ok(MappingChange::Delete(external_id))
+        }
+    }
+}
+
+/// Serialize a single mapping change and write it into the given writer
+///
+/// # File format
+///
+/// Each change entry has a variable size. We first write a 1-byte header to define the change
+/// type. The change type implies how long the entry is.
+///
+/// Insertion changes are serialized as follows:
+///
+/// +-----------------------+-----------------------+------------------+
+/// | MappingChangeType: u8 | Number/UUID: u64/u128 | Internal ID: u32 |
+/// +-----------------------+-----------------------+------------------+
+///
+/// Deletion changes are serialized as follows:
+///
+/// +-----------------------+-----------------------+
+/// | MappingChangeType: u8 | Number/UUID: u64/u128 |
+/// +-----------------------+-----------------------+
+fn write_entry<W: Write>(mut writer: W, change: MappingChange) -> OperationResult<()> {
+    // Byte to identity type of change
+    writer.write_u8(change.change_type() as u8)?;
+
+    // Serialize mapping change
+    match change {
+        MappingChange::Insert(PointIdType::NumId(external_id), internal_id) => {
+            writer.write_u64::<FileEndianess>(external_id)?;
+            writer.write_u32::<FileEndianess>(internal_id)?;
+        }
+        MappingChange::Insert(PointIdType::Uuid(external_id), internal_id) => {
+            writer.write_u128::<FileEndianess>(external_id.to_u128_le())?;
+            writer.write_u32::<FileEndianess>(internal_id)?;
+        }
+        MappingChange::Delete(PointIdType::NumId(external_id)) => {
+            writer.write_u64::<FileEndianess>(external_id)?;
+        }
+        MappingChange::Delete(PointIdType::Uuid(external_id)) => {
+            writer.write_u128::<FileEndianess>(external_id.to_u128_le())?;
+        }
+    }
+
     Ok(())
 }
 
 fn load_versions(
     versions_path: &Path,
-    internal_to_external: &[PointIdType],
-    external_to_internal_num: &BTreeMap<u64, PointOffsetType>,
-    external_to_internal_uuid: &BTreeMap<Uuid, PointOffsetType>,
-    internal_to_version: &mut Vec<SeqNumberType>,
-) -> OperationResult<()> {
-    internal_to_version.reserve(internal_to_external.len());
+    mappings: &PointMappings,
+) -> OperationResult<Vec<SeqNumberType>> {
+    let mut internal_to_version: Vec<SeqNumberType> =
+        Vec::with_capacity(mappings.total_point_count());
 
     let versions_file = File::open(versions_path)?;
-    let versions_reader = std::io::BufReader::new(versions_file);
+    let versions_reader = BufReader::new(versions_file);
 
-    for entry in std::io::BufRead::lines(versions_reader) {
+    for entry in io::BufRead::lines(versions_reader) {
         let (external_id, version) = parse_version(entry)?;
 
-        let internal_id = match external_id {
-            PointIdType::NumId(num) => external_to_internal_num.get(&num).copied(),
-            PointIdType::Uuid(uuid) => external_to_internal_uuid.get(&uuid).copied(),
-        };
-
-        let Some(internal_id) = internal_id else {
+        let Some(internal_id) = mappings.internal_id(&external_id) else {
             log::debug!("Found version: {version} without internal id, external id: {external_id}");
             continue;
         };
@@ -480,61 +619,7 @@ fn load_versions(
         internal_to_version[internal_id as usize] = version;
     }
 
-    Ok(())
-}
-
-fn parse_mapping(change: std::io::Result<String>) -> OperationResult<MappingChange> {
-    change
-        .map_err(|err| {
-            OperationError::service_error_light(format!(
-                "ID tracker mapping entry is corrupt, cannot parse as string: {err}",
-            ))
-        })
-        .and_then(|change| {
-            serde_json::from_str(&change).map_err(|err| {
-                OperationError::service_error_light(format!(
-                    "ID tracker mapping entry is corrupt, cannot parse as JSON: {err}",
-                ))
-            })
-        })
-}
-
-fn parse_version(change: std::io::Result<String>) -> OperationResult<VersionChange> {
-    change
-        .map_err(|err| {
-            OperationError::service_error_light(format!(
-                "Failed to parse ID tracker version entry as string, data may be corrupted: {err}"
-            ))
-        })
-        .and_then(|change| {
-            serde_json::from_str(&change).map_err(|err| {
-                OperationError::service_error_light(format!(
-                    "Failed to parse ID tracker version entry as JSON, data may be corrupted: {err}"
-                ))
-            })
-        })
-}
-
-fn write_mappings<T>(writer: &mut BufWriter<T>, changes: &[MappingChange]) -> OperationResult<()>
-where
-    T: Write,
-{
-    for change in changes {
-        let entry = serde_json::to_vec(change)?;
-        debug_assert!(
-            !entry.contains(&b'\n'),
-            "serialized mapping change entry cannot contain new line",
-        );
-        writer.write_all(&entry)?;
-        writer.write_all(b"\n")?;
-    }
-
-    // Explicitly flush writer to catch IO errors
-    writer
-        .flush()
-        .map_err(|err| OperationError::service_error(format!("Failed to flush: {err}")))?;
-
-    Ok(())
+    Ok(internal_to_version)
 }
 
 fn write_versions<T>(writer: &mut BufWriter<T>, changes: &[VersionChange]) -> OperationResult<()>
@@ -557,6 +642,22 @@ where
         .map_err(|err| OperationError::service_error(format!("Failed to flush: {err}")))?;
 
     Ok(())
+}
+
+fn parse_version(change: io::Result<String>) -> OperationResult<VersionChange> {
+    change
+        .map_err(|err| {
+            OperationError::service_error_light(format!(
+                "Failed to parse ID tracker version entry as string, data may be corrupted: {err}"
+            ))
+        })
+        .and_then(|change| {
+            serde_json::from_str(&change).map_err(|err| {
+                OperationError::service_error_light(format!(
+                    "Failed to parse ID tracker version entry as JSON, data may be corrupted: {err}"
+                ))
+            })
+        })
 }
 
 #[cfg(test)]
