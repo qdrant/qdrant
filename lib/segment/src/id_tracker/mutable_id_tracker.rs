@@ -672,6 +672,7 @@ pub(super) mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
     use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
@@ -896,6 +897,32 @@ pub(super) mod tests {
                     assert_eq!(old_external, new_external);
                 },
             );
+    }
+
+    /// Tests de/serializing of only single ID mappings.
+    #[test]
+    fn test_point_mappings_de_serialization_single() {
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        const SIZE: usize = 400_000;
+
+        let mappings = CompressedPointMappings::random(&mut rng, SIZE as u32);
+
+        for i in 0..SIZE {
+            let mut buf = vec![];
+
+            let internal_id = i as PointOffsetType;
+
+            let expected_external = mappings.external_id(internal_id).unwrap();
+
+            let change = MappingChange::Insert(expected_external, internal_id);
+
+            write_entry(&mut buf, change).unwrap();
+
+            let got_change = read_entry(&*buf).unwrap();
+
+            assert_eq!(change, got_change);
+        }
     }
 
     const DEFAULT_VERSION: SeqNumberType = 42;
