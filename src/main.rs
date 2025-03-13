@@ -465,6 +465,10 @@ fn main() -> anyhow::Result<()> {
         log::info!("Telemetry reporting disabled");
     }
 
+    if settings.service.hardware_reporting == Some(true) {
+        log::info!("Hardware reporting enabled");
+    }
+
     // Setup subscribers to listen for issue-able events
     issues_setup::setup_subscribers(&settings);
 
