@@ -594,15 +594,6 @@ fn store_version_changes(
         .write(true)
         .truncate(false)
         .open(versions_path)?;
-
-    // Grow file if needed
-    let highest_index = *changes.keys().max().unwrap();
-    let current_size = file.metadata()?.len();
-    let required_size = (u64::from(highest_index) + 1) * VERSION_ELEMENT_SIZE;
-    if required_size > current_size {
-        file.set_len(required_size)?;
-    }
-
     let mut writer = BufWriter::new(file);
 
     write_version_changes(&mut writer, changes).map_err(|err| {
