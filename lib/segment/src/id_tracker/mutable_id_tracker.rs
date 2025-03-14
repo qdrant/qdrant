@@ -4,6 +4,7 @@ use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 
+use ahash::AHashMap;
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
@@ -21,7 +22,7 @@ use crate::types::{PointIdType, SeqNumberType};
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
-type VersionChange = (PointIdType, SeqNumberType);
+type VersionChange = (PointOffsetType, SeqNumberType);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MappingChange {
@@ -80,7 +81,7 @@ pub struct MutableIdTracker {
     mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
-    pending_versions: Mutex<Vec<VersionChange>>,
+    pending_versions: Mutex<AHashMap<PointOffsetType, SeqNumberType>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
     pending_mappings: Mutex<Vec<MappingChange>>,
@@ -149,23 +150,21 @@ impl IdTracker for MutableIdTracker {
         internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        if let Some(external_id) = self.external_id(internal_id) {
-            if internal_id as usize >= self.internal_to_version.len() {
-                #[cfg(debug_assertions)]
-                {
-                    if internal_id as usize > self.internal_to_version.len() + 1 {
-                        log::info!(
-                            "Resizing versions is initializing larger range {} -> {}",
-                            self.internal_to_version.len(),
-                            internal_id + 1,
-                        );
-                    }
+        if internal_id as usize >= self.internal_to_version.len() {
+            #[cfg(debug_assertions)]
+            {
+                if internal_id as usize > self.internal_to_version.len() + 1 {
+                    log::info!(
+                        "Resizing versions is initializing larger range {} -> {}",
+                        self.internal_to_version.len(),
+                        internal_id + 1,
+                    );
                 }
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
-            self.internal_to_version[internal_id as usize] = version;
-            self.pending_versions.lock().push((external_id, version));
+            self.internal_to_version.resize(internal_id as usize + 1, 0);
         }
+        self.internal_to_version[internal_id as usize] = version;
+        self.pending_versions.lock().insert(internal_id, version);
         Ok(())
     }
 
@@ -266,7 +265,7 @@ impl IdTracker for MutableIdTracker {
         let pending_versions = {
             let mut pending_versions = self.pending_versions.lock();
             let count = pending_versions.len();
-            mem::replace(&mut *pending_versions, Vec::with_capacity(count))
+            mem::replace(&mut *pending_versions, AHashMap::with_capacity(count))
         };
 
         Box::new(move || {
@@ -585,13 +584,7 @@ fn load_versions(
     let versions_reader = BufReader::new(versions_file);
 
     for entry in io::BufRead::lines(versions_reader) {
-        let (external_id, version) = parse_version(entry)?;
-
-        let Some(internal_id) = mappings.internal_id(&external_id) else {
-            log::debug!("Found version: {version} without internal id, external id: {external_id}");
-            continue;
-        };
-
+        let (internal_id, version) = parse_version(entry)?;
         if internal_id as usize >= internal_to_version.len() {
             internal_to_version.resize(internal_id as usize + 1, 0);
         }
@@ -602,7 +595,10 @@ fn load_versions(
 }
 
 /// Store new version changes, appending them to the given file
-fn store_version_changes(versions_path: &Path, changes: &[VersionChange]) -> OperationResult<()> {
+fn store_version_changes(
+    versions_path: &Path,
+    changes: &AHashMap<PointOffsetType, SeqNumberType>,
+) -> OperationResult<()> {
     // Open file in append mode to write new changes to the end
     let file = File::options()
         .create(true)
@@ -629,10 +625,11 @@ fn store_version_changes(versions_path: &Path, changes: &[VersionChange]) -> Ope
 /// Serializes pending point version changes into the given writer
 fn write_version_changes<W: Write>(
     mut writer: W,
-    changes: &[VersionChange],
+    changes: &AHashMap<PointOffsetType, SeqNumberType>,
 ) -> OperationResult<()> {
-    for change in changes {
-        let entry = serde_json::to_vec(change)?;
+    for (internal_id, version) in changes {
+        let change: VersionChange = (*internal_id, *version);
+        let entry = serde_json::to_vec(&change)?;
         debug_assert!(
             !entry.contains(&b'\n'),
             "serialized version change entry cannot contain new line",
