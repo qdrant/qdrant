@@ -54,7 +54,9 @@ pub struct MutableIdTracker {
 }
 
 impl MutableIdTracker {
-    pub fn open(segment_path: PathBuf) -> OperationResult<Self> {
+    pub fn open(segment_path: impl Into<PathBuf>) -> OperationResult<Self> {
+        let segment_path = segment_path.into();
+
         let (mappings_path, versions_path) =
             (mappings_path(&segment_path), versions_path(&segment_path));
         let (has_mappings, has_versions) = (mappings_path.is_file(), versions_path.is_file());
@@ -562,4 +564,405 @@ where
         .map_err(|err| OperationError::service_error(format!("Failed to flush: {err}")))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use std::collections::{HashMap, HashSet};
+
+    use itertools::Itertools;
+    use rand::Rng;
+    use rand::prelude::*;
+    use tempfile::Builder;
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::id_tracker::in_memory_id_tracker::InMemoryIdTracker;
+    use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
+
+    const RAND_SEED: u64 = 42;
+
+    #[test]
+    fn test_iterator() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let mut id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+
+        id_tracker.set_link(200.into(), 0).unwrap();
+        id_tracker.set_link(100.into(), 1).unwrap();
+        id_tracker.set_link(150.into(), 2).unwrap();
+        id_tracker.set_link(120.into(), 3).unwrap();
+        id_tracker.set_link(180.into(), 4).unwrap();
+        id_tracker.set_link(110.into(), 5).unwrap();
+        id_tracker.set_link(115.into(), 6).unwrap();
+        id_tracker.set_link(190.into(), 7).unwrap();
+        id_tracker.set_link(177.into(), 8).unwrap();
+        id_tracker.set_link(118.into(), 9).unwrap();
+
+        let first_four = id_tracker.iter_from(None).take(4).collect_vec();
+
+        assert_eq!(first_four.len(), 4);
+        assert_eq!(first_four[0].0, 100.into());
+
+        let last = id_tracker.iter_from(Some(first_four[3].0)).collect_vec();
+        assert_eq!(last.len(), 7);
+    }
+
+    pub const TEST_POINTS: &[PointIdType] = &[
+        PointIdType::NumId(100),
+        PointIdType::Uuid(Uuid::from_u128(123_u128)),
+        PointIdType::Uuid(Uuid::from_u128(156_u128)),
+        PointIdType::NumId(150),
+        PointIdType::NumId(120),
+        PointIdType::Uuid(Uuid::from_u128(12_u128)),
+        PointIdType::NumId(180),
+        PointIdType::NumId(110),
+        PointIdType::NumId(115),
+        PointIdType::Uuid(Uuid::from_u128(673_u128)),
+        PointIdType::NumId(190),
+        PointIdType::NumId(177),
+        PointIdType::Uuid(Uuid::from_u128(971_u128)),
+    ];
+
+    #[test]
+    fn test_mixed_types_iterator() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let id_tracker = make_mutable_tracker(segment_dir.path());
+
+        let sorted_from_tracker = id_tracker.iter_from(None).map(|(k, _)| k).collect_vec();
+
+        let mut values = TEST_POINTS.to_vec();
+        values.sort();
+
+        assert_eq!(sorted_from_tracker, values);
+    }
+
+    #[test]
+    fn test_load_store() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let (old_mappings, old_versions) = {
+            let id_tracker = make_mutable_tracker(segment_dir.path());
+            (id_tracker.mappings, id_tracker.internal_to_version)
+        };
+
+        let mut loaded_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+
+        assert_eq!(
+            old_versions.len(),
+            loaded_id_tracker.internal_to_version.len(),
+        );
+        for i in 0..old_versions.len() {
+            assert_eq!(
+                old_versions.get(i),
+                loaded_id_tracker.internal_to_version.get(i),
+                "Version mismatch at index {i}",
+            );
+        }
+
+        assert_eq!(old_mappings, loaded_id_tracker.mappings);
+
+        loaded_id_tracker.drop(PointIdType::NumId(180)).unwrap();
+    }
+
+    /// Mutates an ID tracker and stores it to disk. Tests whether loading results in the exact same
+    /// ID tracker.
+    #[test]
+    fn test_store_load_mutated() {
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let (dropped_points, custom_version) = {
+            let mut id_tracker = make_mutable_tracker(segment_dir.path());
+
+            let mut dropped_points = HashSet::new();
+            let mut custom_version = HashMap::new();
+
+            for (index, point) in TEST_POINTS.iter().enumerate() {
+                if index % 2 == 0 {
+                    continue;
+                }
+
+                if index % 3 == 0 {
+                    id_tracker.drop(*point).unwrap();
+                    dropped_points.insert(*point);
+                    continue;
+                }
+
+                if index % 5 == 0 {
+                    let new_version = rng.next_u64();
+                    id_tracker
+                        .set_internal_version(index as PointOffsetType, new_version)
+                        .unwrap();
+                    custom_version.insert(index as PointOffsetType, new_version);
+                }
+            }
+
+            id_tracker.mapping_flusher()().unwrap();
+            id_tracker.versions_flusher()().unwrap();
+
+            (dropped_points, custom_version)
+        };
+
+        let id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+        for (index, point) in TEST_POINTS.iter().enumerate() {
+            let internal_id = index as PointOffsetType;
+
+            if dropped_points.contains(point) {
+                assert!(id_tracker.is_deleted_point(internal_id));
+                assert_eq!(id_tracker.external_id(internal_id), None);
+                assert!(id_tracker.mappings.internal_id(point).is_none());
+
+                continue;
+            }
+
+            // Check version
+            let expect_version = custom_version
+                .get(&internal_id)
+                .copied()
+                .unwrap_or(DEFAULT_VERSION);
+
+            assert_eq!(
+                id_tracker.internal_version(internal_id),
+                Some(expect_version),
+            );
+
+            // Check that unmodified points still haven't changed.
+            assert_eq!(
+                id_tracker.external_id(index as PointOffsetType),
+                Some(*point),
+            );
+        }
+    }
+
+    #[test]
+    fn test_all_points_have_version() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let id_tracker = make_mutable_tracker(segment_dir.path());
+        for i in id_tracker.iter_ids() {
+            assert!(id_tracker.internal_version(i).is_some());
+        }
+    }
+
+    #[test]
+    fn test_point_deletion_correctness() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mut id_tracker = make_mutable_tracker(segment_dir.path());
+
+        let deleted_points = id_tracker.total_point_count() - id_tracker.available_point_count();
+
+        let point_to_delete = PointIdType::NumId(100);
+
+        assert!(id_tracker.iter_external().contains(&point_to_delete));
+
+        assert_eq!(id_tracker.internal_id(point_to_delete), Some(0));
+
+        id_tracker.drop(point_to_delete).unwrap();
+
+        let point_exists = id_tracker.internal_id(point_to_delete).is_some()
+            && id_tracker.iter_external().contains(&point_to_delete)
+            && id_tracker.iter_from(None).any(|i| i.0 == point_to_delete);
+
+        assert!(!point_exists);
+
+        let new_deleted_points =
+            id_tracker.total_point_count() - id_tracker.available_point_count();
+
+        assert_eq!(new_deleted_points, deleted_points + 1);
+    }
+
+    #[test]
+    fn test_point_deletion_persists_reload() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+
+        let point_to_delete = PointIdType::NumId(100);
+
+        let old_mappings = {
+            let mut id_tracker = make_mutable_tracker(segment_dir.path());
+            let intetrnal_id = id_tracker
+                .internal_id(point_to_delete)
+                .expect("Point to delete exists.");
+            assert!(!id_tracker.is_deleted_point(intetrnal_id));
+            id_tracker.drop(point_to_delete).unwrap();
+            id_tracker.mapping_flusher()().unwrap();
+            id_tracker.versions_flusher()().unwrap();
+            id_tracker.mappings
+        };
+
+        // Point should still be gone
+        let id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+        assert_eq!(id_tracker.internal_id(point_to_delete), None);
+
+        old_mappings
+            .iter_internal_raw()
+            .zip(id_tracker.mappings.iter_internal_raw())
+            .for_each(
+                |((old_internal, old_external), (new_internal, new_external))| {
+                    assert_eq!(old_internal, new_internal);
+                    assert_eq!(old_external, new_external);
+                },
+            );
+    }
+
+    const DEFAULT_VERSION: SeqNumberType = 42;
+
+    fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
+        let mut id_tracker = InMemoryIdTracker::new();
+
+        for value in TEST_POINTS.iter() {
+            let internal_id = id_tracker.total_point_count() as PointOffsetType;
+            id_tracker.set_link(*value, internal_id).unwrap();
+            id_tracker
+                .set_internal_version(internal_id, DEFAULT_VERSION)
+                .unwrap()
+        }
+
+        id_tracker
+    }
+
+    fn make_mutable_tracker(path: &Path) -> MutableIdTracker {
+        let mut id_tracker =
+            MutableIdTracker::open(path).expect("failed to open mutable ID tracker");
+
+        for value in TEST_POINTS.iter() {
+            let internal_id = id_tracker.total_point_count() as PointOffsetType;
+            id_tracker.set_link(*value, internal_id).unwrap();
+            id_tracker
+                .set_internal_version(internal_id, DEFAULT_VERSION)
+                .unwrap()
+        }
+
+        id_tracker.mapping_flusher()().expect("failed to flush ID tracker mappings");
+        id_tracker.versions_flusher()().expect("failed to flush ID tracker versions");
+
+        id_tracker
+    }
+
+    #[test]
+    fn test_id_tracker_equal() {
+        let in_memory_id_tracker = make_in_memory_tracker_from_memory();
+
+        let mutable_id_tracker_dir = Builder::new()
+            .prefix("segment_dir_mutable")
+            .tempdir()
+            .unwrap();
+        let mutable_id_tracker = make_mutable_tracker(mutable_id_tracker_dir.path());
+
+        assert_eq!(
+            in_memory_id_tracker.available_point_count(),
+            mutable_id_tracker.available_point_count(),
+        );
+        assert_eq!(
+            in_memory_id_tracker.total_point_count(),
+            mutable_id_tracker.total_point_count(),
+        );
+
+        for (internal, external) in TEST_POINTS.iter().enumerate() {
+            let internal = internal as PointOffsetType;
+
+            assert_eq!(
+                in_memory_id_tracker.internal_id(*external),
+                mutable_id_tracker.internal_id(*external),
+            );
+
+            assert_eq!(
+                in_memory_id_tracker
+                    .internal_version(internal)
+                    .unwrap_or_default(),
+                mutable_id_tracker
+                    .internal_version(internal)
+                    .unwrap_or_default(),
+            );
+
+            assert_eq!(
+                in_memory_id_tracker.external_id(internal),
+                mutable_id_tracker.external_id(internal),
+            );
+        }
+    }
+
+    #[test]
+    fn simple_id_tracker_vs_mutable_tracker_congruence() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let db = open_db(segment_dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        let mut mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+        let mut simple_id_tracker = SimpleIdTracker::open(db).unwrap();
+
+        // Insert 100 random points into id_tracker
+
+        let num_points = 200;
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        for _ in 0..num_points {
+            // Generate num id in range from 0 to 100
+
+            let point_id = PointIdType::NumId(rng.random_range(0..num_points as u64));
+
+            let version = rng.random_range(0..1000);
+
+            let internal_id_mmap = mutable_id_tracker.total_point_count() as PointOffsetType;
+            let internal_id_simple = simple_id_tracker.total_point_count() as PointOffsetType;
+
+            assert_eq!(internal_id_mmap, internal_id_simple);
+
+            if mutable_id_tracker.internal_id(point_id).is_some() {
+                mutable_id_tracker.drop(point_id).unwrap();
+            }
+            mutable_id_tracker
+                .set_link(point_id, internal_id_mmap)
+                .unwrap();
+            mutable_id_tracker
+                .set_internal_version(internal_id_mmap, version)
+                .unwrap();
+
+            if simple_id_tracker.internal_id(point_id).is_some() {
+                simple_id_tracker.drop(point_id).unwrap();
+            }
+            simple_id_tracker
+                .set_link(point_id, internal_id_simple)
+                .unwrap();
+            simple_id_tracker
+                .set_internal_version(internal_id_simple, version)
+                .unwrap();
+        }
+
+        fn check_trackers(a: &SimpleIdTracker, b: &MutableIdTracker) {
+            for (external_id, internal_id) in a.iter_from(None) {
+                assert_eq!(
+                    a.internal_version(internal_id).unwrap(),
+                    b.internal_version(internal_id).unwrap()
+                );
+                assert_eq!(a.external_id(internal_id), b.external_id(internal_id));
+                assert_eq!(external_id, b.external_id(internal_id).unwrap());
+                assert_eq!(
+                    a.external_id(internal_id).unwrap(),
+                    b.external_id(internal_id).unwrap()
+                );
+            }
+
+            for (external_id, internal_id) in b.iter_from(None) {
+                assert_eq!(
+                    a.internal_version(internal_id).unwrap(),
+                    b.internal_version(internal_id).unwrap()
+                );
+                assert_eq!(a.external_id(internal_id), b.external_id(internal_id));
+                assert_eq!(external_id, a.external_id(internal_id).unwrap());
+                assert_eq!(
+                    a.external_id(internal_id).unwrap(),
+                    b.external_id(internal_id).unwrap()
+                );
+            }
+        }
+
+        check_trackers(&simple_id_tracker, &mutable_id_tracker);
+
+        // Persist and reload mutable tracker and test again
+        mutable_id_tracker.mapping_flusher()().unwrap();
+        mutable_id_tracker.versions_flusher()().unwrap();
+        drop(mutable_id_tracker);
+        let mutable_id_tracker = MutableIdTracker::open(segment_dir.path()).unwrap();
+
+        check_trackers(&simple_id_tracker, &mutable_id_tracker);
+    }
 }

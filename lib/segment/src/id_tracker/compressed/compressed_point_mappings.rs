@@ -168,7 +168,7 @@ impl CompressedPointMappings {
         self.internal_to_external
             .iter()
             .enumerate()
-            .map(|(offset, point_id)| (offset as PointOffsetType, point_id))
+            .map(|(offset, point_id)| (offset as _, point_id))
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
