@@ -16,8 +16,10 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::types::GeoPoint;
 
-const DEFAULT_SCORE: ScoreType = 0.0;
-const DEFAULT_DECAY_TARGET: ScoreType = 0.0;
+const DEFAULT_SCORE: PreciseScore = 0.0;
+const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
+
+pub type PreciseScore = f64;
 
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
@@ -90,6 +92,7 @@ impl FormulaScorer<'_> {
     /// Evaluate the formula for the given point
     pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.eval_expression(&self.formula, point_id)
+            .map(|score| score as ScoreType)
     }
 
     /// Evaluate the expression recursively
@@ -97,7 +100,7 @@ impl FormulaScorer<'_> {
         &self,
         expression: &ParsedExpression,
         point_id: PointOffsetType,
-    ) -> OperationResult<ScoreType> {
+    ) -> OperationResult<PreciseScore> {
         match expression {
             ParsedExpression::Constant(c) => Ok(*c),
             ParsedExpression::Variable(v) => match v {
@@ -105,13 +108,12 @@ impl FormulaScorer<'_> {
                     .prefetches_scores
                     .get(*prefetch_idx)
                     .and_then(|scores| scores.get(&point_id))
-                    .copied()
+                    .map(|score| *score as PreciseScore)
                     .or_else(|| {
                         self.defaults
                             // if there is no score, or it isn't a number, we use the default score
                             .get(&VariableId::Score(*prefetch_idx))
                             .and_then(|value| value.as_f64())
-                            .map(|score| score as ScoreType)
                     })
                     .unwrap_or(DEFAULT_SCORE)),
                 VariableId::Payload(path) => {
@@ -135,7 +137,7 @@ impl FormulaScorer<'_> {
                     serde_json::from_value::<GeoPoint>,
                 )?;
 
-                Ok(Haversine.distance((*origin).into(), value.into()) as ScoreType)
+                Ok(Haversine::distance((*origin).into(), value.into()))
             }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
@@ -438,7 +440,7 @@ mod tests {
     #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0) = -inf" }"#)]
     #[case(ParsedExpression::new_ln(ParsedExpression::Constant(0.0)), 0.0)]
     #[test]
-    fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
+    fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: PreciseScore) {
         let defaults = HashMap::new();
         let scorer_fixture = make_formula_scorer(&defaults);
 
