@@ -98,9 +98,7 @@ impl FormulaScorer<'_> {
                     })
                     .unwrap_or(DEFAULT_SCORE)),
                 VariableId::Payload(path) => Ok(self
-                    .payload_retrievers
-                    .get(path)
-                    .and_then(|retriever| retriever(point_id))
+                    .get_payload_value(path, point_id)
                     .and_then(|value| value.as_f64())
                     .or_else(|| {
                         self.defaults
@@ -114,6 +112,22 @@ impl FormulaScorer<'_> {
                     let score = if value { 1.0 } else { 0.0 };
                     Ok(score)
                 }
+            },
+            ParsedExpression::GeoDistance { origin, key } => {
+                let value: GeoPoint = self
+                    .get_payload_value(key, point_id)
+                    .and_then(|value| serde_json::from_value::<GeoPoint>(value).ok())
+                    .or_else(|| {
+                        self.defaults
+                            .get(&VariableId::Payload(key.clone()))
+                            .and_then(|value| serde_json::from_value(value.clone()).ok())
+                    })
+                    .ok_or_else(|| OperationError::VariableTypeError {
+                        field_name: key.clone(),
+                        expected_type: "geo point".into(),
+                    })?;
+
+                Ok(Haversine::distance((*origin).into(), value.into()) as ScoreType)
             },
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
@@ -216,25 +230,13 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.abs())
             }
-            ParsedExpression::GeoDistance { origin, key } => {
-                let value: GeoPoint = self
-                    .payload_retrievers
-                    .get(key)
-                    .and_then(|retriever| retriever(point_id))
-                    .and_then(|value| serde_json::from_value(value).ok())
-                    .or_else(|| {
-                        self.defaults
-                            .get(&VariableId::Payload(key.clone()))
-                            .and_then(|value| serde_json::from_value(value.clone()).ok())
-                    })
-                    .ok_or_else(|| OperationError::VariableTypeError {
-                        field_name: key.clone(),
-                        expected_type: "geo point".into(),
-                    })?;
-
-                Ok(Haversine::distance((*origin).into(), value.into()) as ScoreType)
-            }
         }
+    }
+
+    fn get_payload_value(&self, json_path: &JsonPath, point_id: PointOffsetType) -> Option<Value> {
+        self.payload_retrievers
+            .get(json_path)
+            .and_then(|retriever| retriever(point_id))
     }
 }
 
