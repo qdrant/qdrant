@@ -99,7 +99,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let mut sorted_ids = ids.to_vec();
         sorted_ids.sort_unstable();
 
-        let cpu_counter = self.hardware_counter.cpu_counter_mut();
+        let cpu_counter = self.hardware_counter.cpu_counter();
 
         for id in sorted_ids {
             // check for cancellation
@@ -124,7 +124,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
 
             // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
             // as measurement for CPU usage of plain search.
-            cpu_counter.incr_delta_mut(indices.len() + self.query.indices.len());
+            cpu_counter.incr_delta(indices.len() + self.query.indices.len());
 
             // reconstruct sparse vector and score against query
             let sparse_vector = RemappedSparseVector { indices, values };
@@ -259,10 +259,12 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             // Measure CPU usage of indexed sparse search.
             // Assume the complexity of the search as total volume of the posting lists
             // that are traversed in the batched search.
-            let cpu_counter = self.hardware_counter.cpu_counter_mut();
+            let mut num_ids = 0;
+
             for posting in self.postings_iterators.iter() {
-                cpu_counter.incr_delta_mut(posting.posting_list_iterator.len_to_end());
+                num_ids += posting.posting_list_iterator.len_to_end();
             }
+            self.hardware_counter.cpu_counter().incr_delta(num_ids);
         }
 
         let mut best_min_score = f32::MIN;

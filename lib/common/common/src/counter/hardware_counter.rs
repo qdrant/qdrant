@@ -99,21 +99,9 @@ impl HardwareCounterCell {
         &self.cpu_counter
     }
 
-    /// Returns the CPU counter that can be used for counting.
-    /// Should *never* be used for reading CPU measurements! Use `.get_cpu()` for this.
-    #[inline]
-    pub fn cpu_counter_mut(&mut self) -> &mut CounterCell {
-        &mut self.cpu_counter
-    }
-
     #[inline]
     pub fn payload_io_read_counter(&self) -> &CounterCell {
         &self.payload_io_read_counter
-    }
-
-    #[inline]
-    pub fn payload_io_read_counter_mut(&mut self) -> &mut CounterCell {
-        &mut self.payload_io_read_counter
     }
 
     #[inline]
@@ -127,28 +115,13 @@ impl HardwareCounterCell {
     }
 
     #[inline]
-    pub fn payload_io_write_mut(&mut self) -> &mut CounterCell {
-        &mut self.payload_io_write_counter
-    }
-
-    #[inline]
     pub fn vector_io_read(&self) -> &CounterCell {
         &self.vector_io_read_counter
     }
 
     #[inline]
-    pub fn vector_io_read_mut(&mut self) -> &mut CounterCell {
-        &mut self.vector_io_read_counter
-    }
-
-    #[inline]
     pub fn vector_io_write_counter(&self) -> &CounterCell {
         &self.vector_io_write_counter
-    }
-
-    #[inline]
-    pub fn vector_io_write_mut(&mut self) -> &mut CounterCell {
-        &mut self.vector_io_write_counter
     }
 
     /// Returns a copy of the current measurements made by this counter. Ignores all values from the parent accumulator.

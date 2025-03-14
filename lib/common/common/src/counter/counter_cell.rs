@@ -47,31 +47,10 @@ impl CounterCell {
         self.set(self.get() + delta);
     }
 
-    /// Increases the counter by 1. This should be preferred over `incr` if you have mutable
-    /// access to the counter, since this method is likely faster: <https://stackoverflow.com/a/55169016>
-    #[inline]
-    pub fn incr_mut(&mut self) {
-        self.incr_delta_mut(1);
-    }
-
-    /// Increases the counter by `delta`. This should be preferred over
-    /// `incr_delta` if you have mutable access to the counter, since
-    /// this method is likely faster: <https://stackoverflow.com/a/55169016>
-    #[inline]
-    pub fn incr_delta_mut(&mut self, delta: usize) {
-        *self.counter.get_mut() += delta;
-    }
-
     /// Multiply the counters value by `amount`.
     #[inline]
     pub fn multiplied(&self, amount: usize) {
         self.set(self.get() * amount)
-    }
-
-    /// Multiply the counters value by `amount`.
-    #[inline]
-    pub fn multiplied_mut(&mut self, amount: usize) {
-        *self.counter.get_mut() *= amount;
     }
 
     /// Resets the counter to 0.
