@@ -4,7 +4,6 @@ use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 
-use ahash::AHashMap;
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
@@ -81,7 +80,7 @@ pub struct MutableIdTracker {
     mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
-    pending_versions: Mutex<AHashMap<PointOffsetType, SeqNumberType>>,
+    pending_versions: Mutex<BTreeMap<PointOffsetType, SeqNumberType>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
     pending_mappings: Mutex<Vec<MappingChange>>,
@@ -259,14 +258,7 @@ impl IdTracker for MutableIdTracker {
     /// This function should be called _after_ flushing the mapping database.
     fn versions_flusher(&self) -> Flusher {
         let versions_path = versions_path(&self.segment_path);
-
-        // Take out pending versions to flush and replace it with a preallocated vector to avoid
-        // frequent reallocation on a busy segment
-        let pending_versions = {
-            let mut pending_versions = self.pending_versions.lock();
-            let count = pending_versions.len();
-            mem::replace(&mut *pending_versions, AHashMap::with_capacity(count))
-        };
+        let pending_versions = mem::take(&mut *self.pending_versions.lock());
 
         Box::new(move || {
             if pending_versions.is_empty() {
@@ -594,10 +586,10 @@ fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
 /// Store new version changes, appending them to the given file
 fn store_version_changes(
     versions_path: &Path,
-    changes: AHashMap<PointOffsetType, SeqNumberType>,
+    changes: BTreeMap<PointOffsetType, SeqNumberType>,
 ) -> OperationResult<()> {
     // Create or open file
-    let mut file = File::options()
+    let file = File::options()
         .create(true)
         .write(true)
         .truncate(false)
@@ -611,7 +603,9 @@ fn store_version_changes(
         file.set_len(required_size)?;
     }
 
-    write_version_changes(&mut file, changes).map_err(|err| {
+    let mut writer = BufWriter::new(file);
+
+    write_version_changes(&mut writer, changes).map_err(|err| {
         OperationError::service_error(format!(
             "Failed to persist ID tracker point versions ({}): {err}",
             versions_path.display(),
@@ -619,6 +613,7 @@ fn store_version_changes(
     })?;
 
     // Explicitly fsync file contents to ensure durability
+    let file = writer.into_inner().unwrap();
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point versions: {err}"))
     })?;
@@ -629,15 +624,40 @@ fn store_version_changes(
 /// Serializes pending point version changes into the given writer
 fn write_version_changes<W>(
     mut writer: W,
-    changes: AHashMap<PointOffsetType, SeqNumberType>,
+    changes: BTreeMap<PointOffsetType, SeqNumberType>,
 ) -> OperationResult<()>
 where
     W: Write + Seek,
 {
+    let mut position = writer.stream_position()?;
+
+    // Write all changes, must be ordered by internal ID, see optimization note below
     for (internal_id, version) in changes {
         let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE;
-        writer.seek(io::SeekFrom::Start(offset))?;
+
+        // Seek to correct position if not already at it
+        //
+        // This assumes we're using a BufWriter. We only explicitly seek if not at the correct
+        // position already, because seeking is expensive. When we seek it automatically flushes
+        // our buffered writes to durable storage even if our position didn't change. This
+        // optimization significantly improves performance when writing a large batch of versions
+        // by reducing the number of flushes and syscalls.
+        // See: <https://doc.rust-lang.org/std/io/trait.Seek.html#tymethod.seek>
+        //
+        // We track the position ourselves because using `stream_position()` as getter also invokes
+        // a seek, causing an explicit flush.
+        //
+        // Now we only flush if:
+        // - we seek to a new position because there's a gap in versions to update
+        // - our write buffer is full
+        // - after writing all versions
+        if offset != position {
+            position = writer.seek(io::SeekFrom::Start(offset))?;
+        }
+
+        // Write version and update position
         writer.write_u64::<FileEndianess>(version)?;
+        position += size_of::<u64>() as u64;
     }
 
     // Explicitly flush writer to catch IO errors
