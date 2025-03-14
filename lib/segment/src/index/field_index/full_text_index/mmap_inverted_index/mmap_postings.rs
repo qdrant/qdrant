@@ -94,7 +94,7 @@ impl MmapPostings {
     /// ```
     fn get_reader<'a>(
         &'a self,
-        header: &'a PostingListHeader,
+        header: &PostingListHeader,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<ChunkReader<'a>> {
         let counter = hw_counter.payload_index_io_read_counter();

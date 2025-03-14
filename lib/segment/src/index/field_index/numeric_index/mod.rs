@@ -643,7 +643,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
     fn filter<'a>(
         &'a self,
-        condition: &'a FieldCondition,
+        condition: &FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(Match::Value(MatchValue {
