@@ -176,11 +176,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn get_count_for_value(&self, value: &N) -> Option<usize> {
+    fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
         match self {
-            MapIndex::Mutable(index) => index.get_count_for_value(value),
-            MapIndex::Immutable(index) => index.get_count_for_value(value),
-            MapIndex::Mmap(index) => index.get_count_for_value(value),
+            MapIndex::Mutable(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::Immutable(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
         }
     }
 
@@ -208,11 +208,14 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    pub fn iter_values_map(&self) -> Box<dyn Iterator<Item = (&N, IdIter<'_>)> + '_> {
+    pub fn iter_values_map(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> Box<dyn Iterator<Item = (&N, IdIter<'_>)> + '_> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
-            MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
-            MapIndex::Mmap(index) => Box::new(index.iter_values_map()),
+            MapIndex::Mutable(index) => Box::new(index.iter_values_map(hw_acc)),
+            MapIndex::Immutable(index) => Box::new(index.iter_values_map(hw_acc)),
+            MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
         }
     }
 
@@ -228,8 +231,12 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn match_cardinality(&self, value: &N) -> CardinalityEstimation {
-        let values_count = self.get_count_for_value(value).unwrap_or(0);
+    fn match_cardinality(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
+        let values_count = self.get_count_for_value(value, hw_counter).unwrap_or(0);
 
         CardinalityEstimation::exact(values_count)
     }
@@ -307,6 +314,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     fn except_cardinality<'a>(
         &'a self,
         excluded: impl Iterator<Item = &'a N>,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         // Minimal case: we exclude as many points as possible.
         // In this case, excluded points do not have any other values except excluded ones.
@@ -350,7 +358,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         // max = min(60, 20) = 20
 
         let excluded_value_counts: Vec<_> = excluded
-            .map(|val| self.get_count_for_value(val.borrow()).unwrap_or(0))
+            .map(|val| {
+                self.get_count_for_value(val.borrow(), hw_counter)
+                    .unwrap_or(0)
+            })
             .collect();
         let total_excluded_value_count: usize = excluded_value_counts.iter().sum();
 
@@ -407,16 +418,16 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     fn except_set<'a, K, A>(
         &'a self,
         excluded: &'a IndexSet<K, A>,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
     where
         A: BuildHasher,
         K: Borrow<N> + Hash + Eq,
     {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Maybe propagate?
         Box::new(
             self.iter_values()
                 .filter(|key| !excluded.contains((*key).borrow()))
-                .flat_map(move |key| self.get_iterator(key.borrow(), &hw_counter).copied())
+                .flat_map(move |key| self.get_iterator(key.borrow(), hw_counter).copied())
                 .unique(),
         )
     }
@@ -516,31 +527,25 @@ impl PayloadFieldIndex for MapIndex<str> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
-                ValueVariants::String(keyword) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(
-                        self.get_iterator(keyword.as_str(), &hw_counter).copied(),
-                    ))
-                }
+                ValueVariants::String(keyword) => Some(Box::new(
+                    self.get_iterator(keyword.as_str(), hw_counter).copied(),
+                )),
                 ValueVariants::Integer(_) => None,
                 ValueVariants::Bool(_) => None,
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Strings(keywords) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(
-                        keywords
-                            .iter()
-                            .flat_map(move |keyword| {
-                                self.get_iterator(keyword.as_str(), &hw_counter).copied()
-                            })
-                            .unique(),
-                    ))
-                }
+                AnyVariants::Strings(keywords) => Some(Box::new(
+                    keywords
+                        .iter()
+                        .flat_map(move |keyword| {
+                            self.get_iterator(keyword.as_str(), hw_counter).copied()
+                        })
+                        .unique(),
+                )),
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
                         Some(Box::new(iter::empty()))
@@ -550,7 +555,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             Some(Match::Except(MatchExcept { except })) => match except {
-                AnyVariants::Strings(keywords) => Some(self.except_set(keywords)),
+                AnyVariants::Strings(keywords) => Some(self.except_set(keywords, hw_counter)),
                 AnyVariants::Integers(other) => {
                     if other.is_empty() {
                         Some(Box::new(iter::empty()))
@@ -563,11 +568,15 @@ impl PayloadFieldIndex for MapIndex<str> {
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(keyword) => {
-                    let mut estimation = self.match_cardinality(keyword.as_str());
+                    let mut estimation = self.match_cardinality(keyword.as_str(), hw_counter);
                     estimation
                         .primary_clauses
                         .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -580,7 +589,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 AnyVariants::Strings(keywords) => {
                     let estimations = keywords
                         .iter()
-                        .map(|keyword| self.match_cardinality(keyword.as_str()))
+                        .map(|keyword| self.match_cardinality(keyword.as_str(), hw_counter))
                         .collect::<Vec<_>>();
                     let estimation = if estimations.is_empty() {
                         CardinalityEstimation::exact(0)
@@ -605,7 +614,7 @@ impl PayloadFieldIndex for MapIndex<str> {
             },
             Some(Match::Except(MatchExcept { except })) => match except {
                 AnyVariants::Strings(keywords) => {
-                    Some(self.except_cardinality(keywords.iter().map(|k| k.as_str())))
+                    Some(self.except_cardinality(keywords.iter().map(|k| k.as_str()), hw_counter))
                 }
                 AnyVariants::Integers(others) => {
                     if others.is_empty() {
@@ -628,7 +637,13 @@ impl PayloadFieldIndex for MapIndex<str> {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.iter_values()
-                .map(|value| (value, self.get_count_for_value(value).unwrap_or(0)))
+                .map(|value| {
+                    (
+                        value,
+                        self.get_count_for_value(value, &HardwareCounterCell::disposable()) // Payload_blocks only used in HNSW building, which is unmeasured.
+                            .unwrap_or(0),
+                    )
+                })
                 .filter(move |(_value, count)| *count > threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), value.to_string().into()),
@@ -662,15 +677,14 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
                     let uuid = Uuid::from_str(uuid_string).ok()?;
-                    let hw_counter = hw_acc.get_counter_cell();
                     Some(Box::new(
-                        self.get_iterator(&uuid.as_u128(), &hw_counter).copied(),
+                        self.get_iterator(&uuid.as_u128(), hw_counter).copied(),
                     ))
                 }
                 ValueVariants::Integer(_) => None,
@@ -678,7 +692,6 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Strings(uuids_string) => {
-                    let hw_counter = hw_acc.get_counter_cell();
                     let uuids: Result<IndexSet<u128>, _> = uuids_string
                         .iter()
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
@@ -689,7 +702,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     Some(Box::new(
                         uuids
                             .into_iter()
-                            .flat_map(move |uuid| self.get_iterator(&uuid, &hw_counter).copied())
+                            .flat_map(move |uuid| self.get_iterator(&uuid, hw_counter).copied())
                             .unique(),
                     ))
                 }
@@ -708,13 +721,11 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
-                    let hw_counter = hw_acc.get_counter_cell();
-
                     let excluded_uuids = uuids.ok()?;
                     let exclude_iter = self
                         .iter_values()
                         .filter(move |key| !excluded_uuids.contains(*key))
-                        .flat_map(move |key| self.get_iterator(key, &hw_counter).copied())
+                        .flat_map(move |key| self.get_iterator(key, hw_counter).copied())
                         .unique();
                     Some(Box::new(exclude_iter))
                 }
@@ -730,12 +741,16 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
                     let uuid = Uuid::from_str(uuid_string).ok()?;
-                    let mut estimation = self.match_cardinality(&uuid.as_u128());
+                    let mut estimation = self.match_cardinality(&uuid.as_u128(), hw_counter);
                     estimation
                         .primary_clauses
                         .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -755,7 +770,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 
                     let estimations = uuids
                         .into_iter()
-                        .map(|uuid| self.match_cardinality(&uuid))
+                        .map(|uuid| self.match_cardinality(&uuid, hw_counter))
                         .collect::<Vec<_>>();
                     let estimation = if estimations.is_empty() {
                         CardinalityEstimation::exact(0)
@@ -787,7 +802,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
 
                     let excluded_uuids = uuids.ok()?;
 
-                    Some(self.except_cardinality(excluded_uuids.iter()))
+                    Some(self.except_cardinality(excluded_uuids.iter(), hw_counter))
                 }
                 AnyVariants::Integers(other) => {
                     if other.is_empty() {
@@ -810,7 +825,13 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.iter_values()
-                .map(|value| (value, self.get_count_for_value(value).unwrap_or(0)))
+                .map(move |value| {
+                    (
+                        value,
+                        self.get_count_for_value(value, &HardwareCounterCell::disposable()) // payload_blocks only used in HNSW building, which is unmeasured.
+                            .unwrap_or(0),
+                    )
+                })
                 .filter(move |(_value, count)| *count >= threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(
@@ -847,14 +868,13 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(self.get_iterator(integer, &hw_counter).copied()))
+                    Some(Box::new(self.get_iterator(integer, hw_counter).copied()))
                 }
                 ValueVariants::Bool(_) => None,
             },
@@ -866,17 +886,12 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         None
                     }
                 }
-                AnyVariants::Integers(integers) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(
-                        integers
-                            .iter()
-                            .flat_map(move |integer| {
-                                self.get_iterator(integer, &hw_counter).copied()
-                            })
-                            .unique(),
-                    ))
-                }
+                AnyVariants::Integers(integers) => Some(Box::new(
+                    integers
+                        .iter()
+                        .flat_map(move |integer| self.get_iterator(integer, hw_counter).copied())
+                        .unique(),
+                )),
             },
             Some(Match::Except(MatchExcept { except })) => match except {
                 AnyVariants::Strings(other) => {
@@ -886,18 +901,22 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         None
                     }
                 }
-                AnyVariants::Integers(integers) => Some(self.except_set(integers)),
+                AnyVariants::Integers(integers) => Some(self.except_set(integers, hw_counter)),
             },
             _ => None,
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
-                    let mut estimation = self.match_cardinality(integer);
+                    let mut estimation = self.match_cardinality(integer, hw_counter);
                     estimation
                         .primary_clauses
                         .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -918,7 +937,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                 AnyVariants::Integers(integers) => {
                     let estimations = integers
                         .iter()
-                        .map(|integer| self.match_cardinality(integer))
+                        .map(|integer| self.match_cardinality(integer, hw_counter))
                         .collect::<Vec<_>>();
                     let estimation = if estimations.is_empty() {
                         CardinalityEstimation::exact(0)
@@ -942,7 +961,9 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         None
                     }
                 }
-                AnyVariants::Integers(integers) => Some(self.except_cardinality(integers.iter())),
+                AnyVariants::Integers(integers) => {
+                    Some(self.except_cardinality(integers.iter(), hw_counter))
+                }
             },
             _ => None,
         }
@@ -955,7 +976,13 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         Box::new(
             self.iter_values()
-                .map(|value| (value, self.get_count_for_value(value).unwrap_or(0)))
+                .map(move |value| {
+                    (
+                        value,
+                        self.get_count_for_value(value, &HardwareCounterCell::disposable()) // Only used in HNSW building so no measurement needed here.
+                            .unwrap_or(0),
+                    )
+                })
                 .filter(move |(_value, count)| *count >= threshold)
                 .map(move |(value, count)| PayloadBlockCondition {
                     condition: FieldCondition::new_match(key.clone(), (*value).into()),
@@ -985,8 +1012,12 @@ where
         self.iter_values().map(Into::into)
     }
 
-    fn iter_values_map(&self) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
-        self.iter_values_map().map(|(k, iter)| (k.into(), iter))
+    fn iter_values_map(
+        &self,
+        hw_acc: HwMeasurementAcc,
+    ) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
+        self.iter_values_map(hw_acc)
+            .map(|(k, iter)| (k.into(), iter))
     }
 
     fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_ {
@@ -1211,10 +1242,12 @@ mod tests {
         save_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type, |v| (*v).into());
         let index = load_map_index::<IntPayloadType>(&data, temp_dir.path(), index_type);
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Ensure cardinality is non zero
         assert!(
             !index
-                .except_cardinality(vec![].into_iter())
+                .except_cardinality(vec![].into_iter(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
     }
@@ -1252,10 +1285,12 @@ mod tests {
         save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
         let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Ensure cardinality is non zero
         assert!(
             !index
-                .except_cardinality(vec![].into_iter())
+                .except_cardinality(vec![].into_iter(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
     }
@@ -1271,10 +1306,12 @@ mod tests {
         save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());
         let index = load_map_index::<str>(&data, temp_dir.path(), index_type);
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Ensure cardinality is zero
         assert!(
             index
-                .except_cardinality(vec![].into_iter())
+                .except_cardinality(vec![].into_iter(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
     }

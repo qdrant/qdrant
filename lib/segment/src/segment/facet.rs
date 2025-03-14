@@ -36,7 +36,7 @@ impl Segment {
 
         let hits_iter = if let Some(filter) = &request.filter {
             let id_tracker = self.id_tracker.borrow();
-            let filter_cardinality = payload_index.estimate_cardinality(filter);
+            let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
             let percentage_filtered = filter_cardinality.exp as f64 / available_points as f64;
 
@@ -76,7 +76,7 @@ impl Segment {
                 context = payload_index.struct_filtered_context(filter, hw_counter);
 
                 let iter = facet_index
-                    .iter_values_map()
+                    .iter_values_map(hw_counter.new_accumulator())
                     .check_stop(|| is_stopped.load(Ordering::Relaxed))
                     .filter_map(|(value, iter)| {
                         let count = iter
@@ -124,7 +124,7 @@ impl Segment {
 
         let values = if let Some(filter) = filter {
             let id_tracker = self.id_tracker.borrow();
-            let filter_cardinality = payload_index.estimate_cardinality(filter);
+            let filter_cardinality = payload_index.estimate_cardinality(filter, hw_counter);
 
             payload_index
                 .iter_filtered_points(filter, &*id_tracker, &filter_cardinality, hw_counter)

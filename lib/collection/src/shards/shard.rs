@@ -2,6 +2,7 @@ use core::marker::{Send, Sync};
 use std::future::{self, Future};
 use std::path::Path;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::index::field_index::CardinalityEstimation;
@@ -267,14 +268,17 @@ impl Shard {
     pub fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<CardinalityEstimation> {
         match self {
-            Shard::Local(local_shard) => local_shard.estimate_cardinality(filter),
-            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter),
+            Shard::Local(local_shard) => local_shard.estimate_cardinality(filter, hw_counter),
+            Shard::Proxy(proxy_shard) => proxy_shard.estimate_cardinality(filter, hw_counter),
             Shard::ForwardProxy(forward_proxy_shard) => {
-                forward_proxy_shard.estimate_cardinality(filter)
+                forward_proxy_shard.estimate_cardinality(filter, hw_counter)
             }
-            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.estimate_cardinality(filter),
+            Shard::QueueProxy(queue_proxy_shard) => {
+                queue_proxy_shard.estimate_cardinality(filter, hw_counter)
+            }
             Shard::Dummy(dummy_shard) => dummy_shard.estimate_cardinality(filter),
         }
     }
@@ -282,11 +286,14 @@ impl Shard {
     pub fn estimate_request_cardinality(
         &self,
         operation: &impl EstimateOperationEffectArea,
+        hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<CardinalityEstimation> {
         match operation.estimate_effect_area() {
             OperationEffectArea::Empty => Ok(CardinalityEstimation::exact(0)),
             OperationEffectArea::Points(vec) => Ok(CardinalityEstimation::exact(vec.len())),
-            OperationEffectArea::Filter(filter) => self.estimate_cardinality(Some(filter)),
+            OperationEffectArea::Filter(filter) => {
+                self.estimate_cardinality(Some(filter), hw_counter)
+            }
         }
     }
 }

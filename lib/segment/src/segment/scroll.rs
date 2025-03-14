@@ -15,10 +15,15 @@ impl Segment {
     ///
     /// If the filter is restrictive enough to yield fewer points than the amount of points a streaming
     /// approach would need to advance, it returns true.
-    pub(super) fn should_pre_filter(&self, filter: &Filter, limit: Option<usize>) -> bool {
+    pub(super) fn should_pre_filter(
+        &self,
+        filter: &Filter,
+        limit: Option<usize>,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
         let query_cardinality = {
             let payload_index = self.payload_index.borrow();
-            payload_index.estimate_cardinality(filter)
+            payload_index.estimate_cardinality(filter, hw_counter)
         };
 
         // ToDo: Add telemetry for this heuristics
@@ -96,7 +101,7 @@ impl Segment {
     ) -> Vec<PointIdType> {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
-        let cardinality_estimation = payload_index.estimate_cardinality(condition);
+        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
 
         let ids_iterator = payload_index
             .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter)

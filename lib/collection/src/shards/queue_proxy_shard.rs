@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
@@ -222,10 +223,11 @@ impl QueueProxyShard {
     pub fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<CardinalityEstimation> {
         self.inner_unchecked()
             .wrapped_shard
-            .estimate_cardinality(filter)
+            .estimate_cardinality(filter, hw_counter)
     }
 }
 

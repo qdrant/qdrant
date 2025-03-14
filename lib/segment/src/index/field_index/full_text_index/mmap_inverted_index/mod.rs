@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::MmapHashMap;
+use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
@@ -171,11 +171,11 @@ impl InvertedIndex for MmapInvertedIndex {
         true
     }
 
-    fn filter(
-        &self,
-        query: &ParsedQuery,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
@@ -201,13 +201,16 @@ impl InvertedIndex for MmapInvertedIndex {
         intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
-    fn get_posting_len(&self, token_id: TokenId) -> Option<usize> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
-        self.postings.get(token_id, &hw_counter).map(|p| p.len())
+    fn get_posting_len(
+        &self,
+        token_id: TokenId,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        self.postings.get(token_id, hw_counter).map(|p| p.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
+        let hw_counter = HardwareCounterCell::disposable(); // No propagation needed here because this function is only used for building HNSW index.
 
         self.iter_vocab().filter_map(move |(token, &token_id)| {
             self.postings
@@ -269,8 +272,12 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
+        hw_counter.payload_index_io_read_counter().incr_delta(
+            READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+        );
+
         self.vocab
-            .get(token, hw_counter)
+            .get(token)
             .ok()
             .flatten()
             .and_then(<[TokenId]>::first)

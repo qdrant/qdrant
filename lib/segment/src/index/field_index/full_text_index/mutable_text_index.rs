@@ -148,25 +148,26 @@ mod tests {
 
             assert_eq!(index.count_indexed_points(), payloads.len());
 
-            let hw_counter = HwMeasurementAcc::new();
+            let hw_acc = HwMeasurementAcc::new();
+            let hw_counter = hw_acc.get_counter_cell();
 
             let filter_condition = filter_request("multivac");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0, 4]);
 
             let filter_condition = filter_request("giant computer");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![2]);
 
             let filter_condition = filter_request("the great time");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![4]);
@@ -177,7 +178,7 @@ mod tests {
             let filter_condition = filter_request("giant computer");
             assert!(
                 index
-                    .filter(&filter_condition, hw_counter.clone())
+                    .filter(&filter_condition, &hw_counter)
                     .unwrap()
                     .next()
                     .is_none()
@@ -209,18 +210,19 @@ mod tests {
 
             assert_eq!(index.count_indexed_points(), 4);
 
-            let hw_counter = HwMeasurementAcc::new();
+            let hw_acc = HwMeasurementAcc::new();
+            let hw_counter = hw_acc.get_counter_cell();
 
             let filter_condition = filter_request("multivac");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0]);
 
             let filter_condition = filter_request("the");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![0, 1, 3, 4]);
@@ -229,7 +231,7 @@ mod tests {
             index.remove_point(0).unwrap();
             let filter_condition = filter_request("multivac");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert!(search_res.is_empty());
@@ -238,7 +240,7 @@ mod tests {
             index.remove_point(3).unwrap();
             let filter_condition = filter_request("the");
             let search_res: Vec<_> = index
-                .filter(&filter_condition, hw_counter.clone())
+                .filter(&filter_condition, &hw_counter)
                 .unwrap()
                 .collect();
             assert_eq!(search_res, vec![1, 4]);

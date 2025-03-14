@@ -1,7 +1,6 @@
 use std::fmt::Formatter;
 use std::path::PathBuf;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -50,12 +49,16 @@ pub trait PayloadFieldIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_counter: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>>;
 
     /// Return estimation of amount of points which satisfy given condition.
     /// Returns `None` if the condition does not match the index type
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation>;
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation>;
 
     /// Iterate conditions for payload blocks with minimum size of `threshold`
     /// Required for building HNSW index
@@ -249,17 +252,18 @@ impl FieldIndex {
     pub fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        self.get_payload_field_index().filter(condition, hw_acc)
+        self.get_payload_field_index().filter(condition, hw_counter)
     }
 
     pub fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         self.get_payload_field_index()
-            .estimate_cardinality(condition)
+            .estimate_cardinality(condition, hw_counter)
     }
 
     pub fn payload_blocks(

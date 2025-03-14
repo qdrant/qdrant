@@ -971,19 +971,27 @@ impl SegmentEntry for ProxySegment {
         }
     }
 
-    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let deleted_point_count = self.deleted_points.read().len();
 
         let (wrapped_segment_est, total_wrapped_size) = {
             let wrapped_segment = self.wrapped_segment.get();
             let wrapped_segment_guard = wrapped_segment.read();
             (
-                wrapped_segment_guard.estimate_point_count(filter),
+                wrapped_segment_guard.estimate_point_count(filter, hw_counter),
                 wrapped_segment_guard.available_point_count(),
             )
         };
 
-        let write_segment_est = self.write_segment.get().read().estimate_point_count(filter);
+        let write_segment_est = self
+            .write_segment
+            .get()
+            .read()
+            .estimate_point_count(filter, hw_counter);
 
         let expected_deleted_count = if total_wrapped_size > 0 {
             (wrapped_segment_est.exp as f64

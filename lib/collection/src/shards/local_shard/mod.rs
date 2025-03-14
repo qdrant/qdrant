@@ -987,11 +987,17 @@ impl LocalShard {
     pub fn estimate_cardinality<'a>(
         &'a self,
         filter: Option<&'a Filter>,
+        hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<CardinalityEstimation> {
         let segments = self.segments().read();
         let cardinality = segments
             .iter()
-            .map(|(_id, segment)| segment.get().read().estimate_point_count(filter))
+            .map(|(_id, segment)| {
+                segment
+                    .get()
+                    .read()
+                    .estimate_point_count(filter, hw_counter)
+            })
             .fold(CardinalityEstimation::exact(0), |acc, x| {
                 CardinalityEstimation {
                     primary_clauses: vec![],

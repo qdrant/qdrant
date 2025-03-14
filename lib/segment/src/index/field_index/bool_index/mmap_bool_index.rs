@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -377,9 +376,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
-        let hw_counter = hw_acc.get_counter_cell();
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
@@ -387,19 +385,30 @@ impl PayloadFieldIndex for MmapBoolIndex {
                 let slice = self.get_slice_for(*value);
                 hw_counter
                     .payload_index_io_read_counter()
-                    .incr_delta(slice.len()); // We have to iterate over the whole slice
+                    .incr_delta(slice.len() / u8::BITS as usize); // We have to iterate over the whole slice
                 Some(Box::new(slice.iter_ones().map(|x| x as PointOffsetType)))
             }
             _ => None,
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
-                let count = self.get_slice_for(*value).count_ones();
+                let slice = self.get_slice_for(*value);
+
+                let count = slice.count_ones();
+
+                hw_counter
+                    .payload_index_io_read_counter()
+                    // We iterate over the whole slice.
+                    .incr_delta(slice.len());
 
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));

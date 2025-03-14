@@ -772,6 +772,7 @@ mod tests {
     use std::collections::HashSet;
 
     use api::rest::SearchRequestInternal;
+    use common::counter::hardware_counter::HardwareCounterCell;
     use parking_lot::RwLock;
     use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
     use segment::fixtures::index_fixtures::random_vector;
@@ -800,19 +801,26 @@ mod tests {
 
         let vector_index_borrow = vector_index.borrow();
 
+        let hw_counter = HardwareCounterCell::new();
+
         match &*vector_index_borrow {
             VectorIndexEnum::Plain(plain_index) => {
-                let res_1 = plain_index.is_small_enough_for_unindexed_search(25, None);
+                let res_1 = plain_index.is_small_enough_for_unindexed_search(25, None, &hw_counter);
                 assert!(!res_1);
 
-                let res_2 = plain_index.is_small_enough_for_unindexed_search(225, None);
+                let res_2 =
+                    plain_index.is_small_enough_for_unindexed_search(225, None, &hw_counter);
                 assert!(res_2);
 
                 let ids: HashSet<_> = vec![1, 2].into_iter().map(PointIdType::from).collect();
 
                 let ids_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
-                let res_3 = plain_index.is_small_enough_for_unindexed_search(25, Some(&ids_filter));
+                let res_3 = plain_index.is_small_enough_for_unindexed_search(
+                    25,
+                    Some(&ids_filter),
+                    &hw_counter,
+                );
                 assert!(res_3);
             }
             _ => panic!("Expected plain index"),
