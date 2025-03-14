@@ -320,7 +320,7 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 
 /// Store new mapping changes, appending them to the given file
 fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> OperationResult<()> {
-    // Open file in append mode to write new changes to the end
+    // Create or open file in append mode to write new changes to the end
     let file = File::options()
         .create(true)
         .append(true)
@@ -367,9 +367,9 @@ fn write_mapping_changes<W: Write>(
 
 /// Load point mappings from the given file
 fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
-    let mappings_file = File::open(mappings_path)?;
-    let mappings_reader = BufReader::new(mappings_file);
-    read_mappings(mappings_reader)
+    let file = File::open(mappings_path)?;
+    let reader = BufReader::new(file);
+    read_mappings(reader)
 }
 
 /// Iterate over mapping changes from the given reader
