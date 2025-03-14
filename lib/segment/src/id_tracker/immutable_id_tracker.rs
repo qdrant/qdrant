@@ -721,8 +721,8 @@ pub(super) mod test {
                 .expect("Point to delete exists.");
             assert!(!id_tracker.is_deleted_point(intetrnal_id));
             id_tracker.drop(point_to_delete).unwrap();
-            id_tracker.versions_flusher()().unwrap();
             id_tracker.mapping_flusher()().unwrap();
+            id_tracker.versions_flusher()().unwrap();
             id_tracker.mappings
         };
 

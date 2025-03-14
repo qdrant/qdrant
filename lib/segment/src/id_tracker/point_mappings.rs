@@ -103,6 +103,11 @@ impl PointMappings {
             PointIdType::Uuid(uuid) => self.external_to_internal_uuid.remove(&uuid),
         };
 
+        // Also reset inverse mapping
+        if let Some(internal_id) = internal_id {
+            self.internal_to_external[internal_id as usize] = PointIdType::NumId(u64::MAX);
+        }
+
         if let Some(internal_id) = &internal_id {
             self.deleted.set(*internal_id as usize, true);
         }
@@ -205,6 +210,16 @@ impl PointMappings {
             (0..self.internal_to_external.len() as PointOffsetType)
                 .filter(move |i| !self.deleted[*i as usize]),
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn iter_internal_raw(
+        &self,
+    ) -> impl Iterator<Item = (PointOffsetType, PointIdType)> + '_ {
+        self.internal_to_external
+            .iter()
+            .enumerate()
+            .map(|(offset, point_id)| (offset as _, *point_id))
     }
 
     pub(crate) fn is_deleted_point(&self, key: PointOffsetType) -> bool {
