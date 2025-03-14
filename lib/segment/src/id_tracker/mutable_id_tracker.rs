@@ -22,7 +22,7 @@ use crate::types::{PointIdType, SeqNumberType};
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
-const VERSION_ELEMENT_SIZE: usize = mem::size_of::<SeqNumberType>();
+const VERSION_ELEMENT_SIZE: u64 = mem::size_of::<SeqNumberType>() as u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MappingChange {
@@ -577,7 +577,12 @@ fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let file = File::open(versions_path)?;
 
     let file_len = file.metadata()?.len();
-    let version_count = file_len / VERSION_ELEMENT_SIZE as u64;
+    if file_len % VERSION_ELEMENT_SIZE != 0 {
+        log::warn!(
+            "Corrupted ID tracker versions storage, file size not a multiple of a version, assuming recovery by WAL"
+        );
+    }
+    let version_count = file_len / VERSION_ELEMENT_SIZE;
 
     let mut reader = BufReader::new(file);
 
@@ -601,7 +606,7 @@ fn store_version_changes(
     // Grow file if needed
     let highest_index = *changes.keys().max().unwrap();
     let current_size = file.metadata()?.len();
-    let required_size = (u64::from(highest_index) + 1) * VERSION_ELEMENT_SIZE as u64;
+    let required_size = (u64::from(highest_index) + 1) * VERSION_ELEMENT_SIZE;
     if required_size > current_size {
         file.set_len(required_size)?;
     }
@@ -630,7 +635,7 @@ where
     W: Write + Seek,
 {
     for (internal_id, version) in changes {
-        let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE as u64;
+        let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE;
         writer.seek(io::SeekFrom::Start(offset))?;
         writer.write_u64::<FileEndianess>(version)?;
     }
