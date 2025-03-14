@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use serde_json::Value;
@@ -209,7 +208,7 @@ impl PayloadFieldIndex for MmapNullIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        _hw_counter: HwMeasurementAcc, // TODO(io_measurement): Collect values?
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         let FieldCondition {
             key: _,
@@ -229,6 +228,9 @@ impl PayloadFieldIndex for MmapNullIndex {
                 // as we don't know how many total values are out there
                 None
             } else {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
                 // But we can iterate over all non-empty values, as all of them should
                 // register in the index
                 let iter = (0..self.has_values_slice.len() as PointOffsetType)
@@ -237,6 +239,9 @@ impl PayloadFieldIndex for MmapNullIndex {
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
                 // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
                 let iter = (0..self.is_null_slice.len() as PointOffsetType)
@@ -255,7 +260,7 @@ impl PayloadFieldIndex for MmapNullIndex {
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect measurements?
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         let FieldCondition {
             key: _,
@@ -275,6 +280,9 @@ impl PayloadFieldIndex for MmapNullIndex {
                 // as we don't know how many total values are out there
                 None
             } else {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
                 // But we can iterate over all non-empty values, as all of them should
                 // register in the index
                 Some(CardinalityEstimation::exact(
@@ -283,6 +291,9 @@ impl PayloadFieldIndex for MmapNullIndex {
             }
         } else if let Some(is_null) = is_null {
             if *is_null {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
                 // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
                 Some(CardinalityEstimation::exact(
@@ -333,6 +344,7 @@ impl FieldIndexBuilderTrait for MmapNullIndexBuilder {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use tempfile::TempDir;
 
     use super::*;
@@ -377,12 +389,15 @@ mod tests {
             is_null: None,
         };
 
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
+
         let is_null_values: Vec<_> = null_index
-            .filter(&filter_is_null, HwMeasurementAcc::new())
+            .filter(&filter_is_null, &hw_counter)
             .unwrap()
             .collect();
         let not_empty_values: Vec<_> = null_index
-            .filter(&filter_is_not_empty, HwMeasurementAcc::new())
+            .filter(&filter_is_not_empty, &hw_counter)
             .unwrap()
             .collect();
 

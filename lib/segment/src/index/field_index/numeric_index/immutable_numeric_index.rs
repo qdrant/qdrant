@@ -206,13 +206,19 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         iterator.end_index - iterator.start_index
     }
 
-    pub(super) fn values_range(
-        &self,
+    pub(super) fn values_range<'a>(
+        &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         self.map
             .values_range(start_bound, end_bound)
+            .inspect(move |_| {
+                hw_counter
+                    .payload_io_read_counter()
+                    .incr_delta(size_of::<Point<T>>())
+            })
             .map(|Point { idx, .. }| idx)
     }
 

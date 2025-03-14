@@ -171,11 +171,11 @@ impl InvertedIndex for MmapInvertedIndex {
         true
     }
 
-    fn filter(
-        &self,
-        query: &ParsedQuery,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()

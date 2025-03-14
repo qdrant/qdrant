@@ -129,7 +129,7 @@ impl InvertedIndex for MutableInvertedIndex {
 
     fn filter(
         &self,
-        query: &ParsedQuery,
+        query: ParsedQuery,
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
         let hw_counter = hw_counter.payload_index_io_read_counter();

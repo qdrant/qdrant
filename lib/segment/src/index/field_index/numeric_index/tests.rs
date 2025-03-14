@@ -1,3 +1,4 @@
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -97,6 +98,8 @@ fn cardinality_request(
     query: Range<FloatPayloadType>,
     hw_acc: HwMeasurementAcc,
 ) -> CardinalityEstimation {
+    let hw_counter = hw_acc.get_counter_cell();
+
     let estimation = index
         .inner()
         .range_cardinality(&RangeInterface::Float(query.clone()));
@@ -105,7 +108,7 @@ fn cardinality_request(
         .inner()
         .filter(
             &FieldCondition::new_range(JsonPath::new("unused"), query),
-            hw_acc,
+            &hw_counter,
         )
         .unwrap()
         .unique()
@@ -433,11 +436,9 @@ fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Defau
     result: Vec<u32>,
 ) {
     let condition = FieldCondition::new_range(JsonPath::new("unused"), rng);
-    let hw_counter = HwMeasurementAcc::new();
-    let offsets = index
-        .filter(&condition, hw_counter.clone())
-        .unwrap()
-        .collect_vec();
+    let hw_acc = HwMeasurementAcc::new();
+    let hw_counter = hw_acc.get_counter_cell();
+    let offsets = index.filter(&condition, &hw_counter).unwrap().collect_vec();
     assert_eq!(offsets, result);
 }
 

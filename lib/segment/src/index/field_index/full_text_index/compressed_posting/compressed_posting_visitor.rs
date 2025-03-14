@@ -93,14 +93,10 @@ impl<'a> CompressedPostingVisitor<'a> {
         else {
             // value is in the noncompressed postings range
             self.decompressed_chunk_idx = None;
-            return self
-                .chunk_reader
-                .remainder_postings
-                .binary_search(&val)
-                .is_ok();
+            return self.chunk_reader.search_in_remainder(val);
         };
         // if the value is the initial value of the chunk, we don't need to decompress the chunk
-        if self.chunk_reader.chunks[chunk_index].initial == val {
+        if self.chunk_reader.get_chunk_index(chunk_index).initial == val {
             return true;
         }
 
@@ -126,14 +122,10 @@ impl<'a> CompressedPostingVisitor<'a> {
     pub fn get_by_offset(&mut self, offset: usize) -> Option<PointOffsetType> {
         let chunk_idx = offset / BitPackerImpl::BLOCK_LEN;
 
-        if chunk_idx >= self.chunk_reader.chunks.len() {
+        if chunk_idx >= self.chunk_reader.chunks_len() {
             // Reminder postings
-            let reminder_idx = offset - self.chunk_reader.chunks.len() * BitPackerImpl::BLOCK_LEN;
-            return self
-                .chunk_reader
-                .remainder_postings
-                .get(reminder_idx)
-                .copied();
+            let reminder_idx = offset - self.chunk_reader.chunks_len() * BitPackerImpl::BLOCK_LEN;
+            return self.chunk_reader.get_remainder_posting(reminder_idx);
         }
 
         if self.decompressed_chunk_idx != Some(chunk_idx) {
@@ -148,17 +140,22 @@ impl<'a> CompressedPostingVisitor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use common::counter::hardware_counter::HardwareCounterCell;
+
     use super::*;
     use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
     #[test]
     fn test_compressed_posting_visitor() {
+        let hw_counter = HardwareCounterCell::new();
+
         for build_step in 0..3 {
             let (compressed_posting_list, set) =
                 CompressedPostingList::generate_compressed_posting_list_fixture(build_step);
 
             for search_step in 1..512 {
-                let mut visitor = CompressedPostingVisitor::new(compressed_posting_list.reader());
+                let mut visitor =
+                    CompressedPostingVisitor::new(compressed_posting_list.reader(&hw_counter));
                 for i in 0..build_step * 1000 {
                     if i % search_step == 0 {
                         assert_eq!(visitor.contains_next_and_advance(i), set.contains(&i));
@@ -173,7 +170,9 @@ mod tests {
         let (posting, _all_offsets) =
             CompressedPostingList::generate_compressed_posting_list_fixture(10);
 
-        let reader = posting.reader();
+        let hw_counter = HardwareCounterCell::new();
+
+        let reader = posting.reader(&hw_counter);
 
         assert!(reader.contains(0));
         assert!(reader.contains(10));

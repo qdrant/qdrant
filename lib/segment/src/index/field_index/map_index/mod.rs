@@ -418,17 +418,16 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     fn except_set<'a, K, A>(
         &'a self,
         excluded: &'a IndexSet<K, A>,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
     where
         A: BuildHasher,
         K: Borrow<N> + Hash + Eq,
     {
-        let hw_counter = hw_acc.get_counter_cell();
         Box::new(
             self.iter_values()
                 .filter(|key| !excluded.contains((*key).borrow()))
-                .flat_map(move |key| self.get_iterator(key.borrow(), &hw_counter).copied())
+                .flat_map(move |key| self.get_iterator(key.borrow(), hw_counter).copied())
                 .unique(),
         )
     }
@@ -528,31 +527,25 @@ impl PayloadFieldIndex for MapIndex<str> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
-                ValueVariants::String(keyword) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(
-                        self.get_iterator(keyword.as_str(), &hw_counter).copied(),
-                    ))
-                }
+                ValueVariants::String(keyword) => Some(Box::new(
+                    self.get_iterator(keyword.as_str(), hw_counter).copied(),
+                )),
                 ValueVariants::Integer(_) => None,
                 ValueVariants::Bool(_) => None,
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
-                AnyVariants::Strings(keywords) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(
-                        keywords
-                            .iter()
-                            .flat_map(move |keyword| {
-                                self.get_iterator(keyword.as_str(), &hw_counter).copied()
-                            })
-                            .unique(),
-                    ))
-                }
+                AnyVariants::Strings(keywords) => Some(Box::new(
+                    keywords
+                        .iter()
+                        .flat_map(move |keyword| {
+                            self.get_iterator(keyword.as_str(), hw_counter).copied()
+                        })
+                        .unique(),
+                )),
                 AnyVariants::Integers(integers) => {
                     if integers.is_empty() {
                         Some(Box::new(iter::empty()))
@@ -562,7 +555,7 @@ impl PayloadFieldIndex for MapIndex<str> {
                 }
             },
             Some(Match::Except(MatchExcept { except })) => match except {
-                AnyVariants::Strings(keywords) => Some(self.except_set(keywords, hw_acc)),
+                AnyVariants::Strings(keywords) => Some(self.except_set(keywords, hw_counter)),
                 AnyVariants::Integers(other) => {
                     if other.is_empty() {
                         Some(Box::new(iter::empty()))
@@ -684,15 +677,14 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(uuid_string) => {
                     let uuid = Uuid::from_str(uuid_string).ok()?;
-                    let hw_counter = hw_acc.get_counter_cell();
                     Some(Box::new(
-                        self.get_iterator(&uuid.as_u128(), &hw_counter).copied(),
+                        self.get_iterator(&uuid.as_u128(), hw_counter).copied(),
                     ))
                 }
                 ValueVariants::Integer(_) => None,
@@ -700,7 +692,6 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
             },
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Strings(uuids_string) => {
-                    let hw_counter = hw_acc.get_counter_cell();
                     let uuids: Result<IndexSet<u128>, _> = uuids_string
                         .iter()
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
@@ -711,7 +702,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                     Some(Box::new(
                         uuids
                             .into_iter()
-                            .flat_map(move |uuid| self.get_iterator(&uuid, &hw_counter).copied())
+                            .flat_map(move |uuid| self.get_iterator(&uuid, hw_counter).copied())
                             .unique(),
                     ))
                 }
@@ -730,13 +721,11 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
                         .map(|uuid_string| Uuid::from_str(uuid_string).map(|x| x.as_u128()))
                         .collect();
 
-                    let hw_counter = hw_acc.get_counter_cell();
-
                     let excluded_uuids = uuids.ok()?;
                     let exclude_iter = self
                         .iter_values()
                         .filter(move |key| !excluded_uuids.contains(*key))
-                        .flat_map(move |key| self.get_iterator(key, &hw_counter).copied())
+                        .flat_map(move |key| self.get_iterator(key, hw_counter).copied())
                         .unique();
                     Some(Box::new(exclude_iter))
                 }
@@ -879,14 +868,13 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     fn filter<'a>(
         &'a self,
         condition: &'a FieldCondition,
-        hw_acc: HwMeasurementAcc,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue { value })) => match value {
                 ValueVariants::String(_) => None,
                 ValueVariants::Integer(integer) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(self.get_iterator(integer, &hw_counter).copied()))
+                    Some(Box::new(self.get_iterator(integer, hw_counter).copied()))
                 }
                 ValueVariants::Bool(_) => None,
             },
@@ -898,17 +886,12 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         None
                     }
                 }
-                AnyVariants::Integers(integers) => {
-                    let hw_counter = hw_acc.get_counter_cell();
-                    Some(Box::new(
-                        integers
-                            .iter()
-                            .flat_map(move |integer| {
-                                self.get_iterator(integer, &hw_counter).copied()
-                            })
-                            .unique(),
-                    ))
-                }
+                AnyVariants::Integers(integers) => Some(Box::new(
+                    integers
+                        .iter()
+                        .flat_map(move |integer| self.get_iterator(integer, hw_counter).copied())
+                        .unique(),
+                )),
             },
             Some(Match::Except(MatchExcept { except })) => match except {
                 AnyVariants::Strings(other) => {
@@ -918,7 +901,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
                         None
                     }
                 }
-                AnyVariants::Integers(integers) => Some(self.except_set(integers, hw_acc)),
+                AnyVariants::Integers(integers) => Some(self.except_set(integers, hw_counter)),
             },
             _ => None,
         }

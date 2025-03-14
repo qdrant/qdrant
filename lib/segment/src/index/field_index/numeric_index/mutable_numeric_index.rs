@@ -3,10 +3,8 @@ use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use delegate::delegate;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -107,17 +105,16 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         self.map.len()
     }
 
-    pub fn values_range(
-        &self,
+    pub fn values_range<'a>(
+        &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_acc: HwMeasurementAcc,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let counter = hw_acc.get_counter_cell();
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         self.map
             .range((start_bound, end_bound))
             .inspect(move |i| {
-                counter
+                hw_counter
                     .payload_index_io_read_counter()
                     .incr_delta(size_of_val(&i.val));
             })
@@ -291,26 +288,57 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         &self.in_memory_index.map
     }
 
-    delegate! {
-        to self.in_memory_index {
-            pub fn total_unique_values_count(&self) -> usize;
-            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool, hw_counter: &HardwareCounterCell) -> bool;
-            pub fn get_points_count(&self) -> usize;
-            pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
-            pub fn values_count(&self, idx: PointOffsetType) -> Option<usize>;
-            pub fn values_range(
-                &self,
-                start_bound: Bound<Point<T>>,
-                end_bound: Bound<Point<T>>,
-                hw_counter: HwMeasurementAcc,
-            ) -> impl Iterator<Item = PointOffsetType> + '_;
-            pub fn orderable_values_range(
-                &self,
-                start_bound: Bound<Point<T>>,
-                end_bound: Bound<Point<T>>,
-            ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ ;
-            pub fn get_histogram(&self) -> &Histogram<T>;
-            pub fn get_max_values_per_point(&self) -> usize;
-        }
+    #[inline]
+    pub fn total_unique_values_count(&self) -> usize {
+        self.in_memory_index.total_unique_values_count()
+    }
+    #[inline]
+    pub fn check_values_any(
+        &self,
+        idx: PointOffsetType,
+        check_fn: impl Fn(&T) -> bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> bool {
+        self.in_memory_index
+            .check_values_any(idx, check_fn, hw_counter)
+    }
+    #[inline]
+    pub fn get_points_count(&self) -> usize {
+        self.in_memory_index.get_points_count()
+    }
+    #[inline]
+    pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
+        self.in_memory_index.get_values(idx)
+    }
+    #[inline]
+    pub fn values_count(&self, idx: PointOffsetType) -> Option<usize> {
+        self.in_memory_index.values_count(idx)
+    }
+    #[inline]
+    pub fn values_range<'a>(
+        &'a self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        self.in_memory_index
+            .values_range(start_bound, end_bound, hw_counter)
+    }
+    #[inline]
+    pub fn orderable_values_range(
+        &self,
+        start_bound: Bound<Point<T>>,
+        end_bound: Bound<Point<T>>,
+    ) -> impl DoubleEndedIterator<Item = (T, PointOffsetType)> + '_ {
+        self.in_memory_index
+            .orderable_values_range(start_bound, end_bound)
+    }
+    #[inline]
+    pub fn get_histogram(&self) -> &Histogram<T> {
+        self.in_memory_index.get_histogram()
+    }
+    #[inline]
+    pub fn get_max_values_per_point(&self) -> usize {
+        self.in_memory_index.get_max_values_per_point()
     }
 }

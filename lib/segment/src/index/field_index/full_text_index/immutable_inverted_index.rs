@@ -44,12 +44,11 @@ impl InvertedIndex for ImmutableInvertedIndex {
         true
     }
 
-    fn filter(
-        &self,
-        query: &ParsedQuery,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let hw_counter = hw_counter.payload_index_io_read_counter();
+    fn filter<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
@@ -58,10 +57,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
                 Some(idx) => {
                     let postings = self.postings.get(idx as usize);
-                    hw_counter.incr_delta(
-                        size_of::<Option<CompressedPostingList>>()
-                            + postings.map(|i| i.len()).unwrap_or(0) * size_of::<PointOffsetType>(),
-                    );
                     postings
                 }
             })
@@ -73,7 +68,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
             _ => return Box::new(vec![].into_iter()),
         };
 
-        let posting_readers: Vec<_> = postings.iter().map(|posting| posting.reader()).collect();
+        let posting_readers: Vec<_> = postings
+            .iter()
+            .map(|posting| posting.reader(hw_counter))
+            .collect();
 
         // in case of immutable index, deleted documents are still in the postings
         let filter =
@@ -88,10 +86,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
         let len = self.postings.get(token_id as usize).map(|p| p.len());
-        hw_counter.payload_index_io_read_counter().incr_delta(
-            size_of::<Option<CompressedPostingList>>()
-                + len.unwrap_or(0) * size_of::<PointOffsetType>(),
-        );
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<Option<CompressedPostingList>>());
         len
     }
 
@@ -117,15 +114,13 @@ impl InvertedIndex for ImmutableInvertedIndex {
             return false;
         }
         // Check that all tokens are in document
-        let hw_counter = hw_counter.payload_index_io_read_counter();
         parsed_query
             .tokens
             .iter()
             // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
             .all(|query_token| {
                 let postings = &self.postings[query_token.unwrap() as usize];
-                hw_counter.incr_delta(postings.len() + size_of::<CompressedPostingList>());
-                postings.contains(point_id)
+                postings.reader(hw_counter).contains(point_id)
             })
     }
 
