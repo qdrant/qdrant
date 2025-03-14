@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
-use common::types::ScoreType;
 use serde_json::Value;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::{JsonPath, JsonPathItem};
 use crate::types::{Condition, GeoPoint};
+
+use super::formula_scorer::PreciseScore;
 
 const SCORE_KEYWORD: &str = "score";
 const DEFAULT_DECAY_MIDPOINT: f32 = 0.5;
@@ -31,17 +32,21 @@ pub struct ParsedFormula {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedExpression {
-    // Scalars
-    Constant(ScoreType),
+    // Terminal
+    Constant(PreciseScore),
     Variable(VariableId),
+    GeoDistance {
+        origin: GeoPoint,
+        key: JsonPath,
+    },
 
-    // Operations
+    // Nested
     Mult(Vec<ParsedExpression>),
     Sum(Vec<ParsedExpression>),
     Div {
         left: Box<ParsedExpression>,
         right: Box<ParsedExpression>,
-        by_zero_default: Option<ScoreType>,
+        by_zero_default: Option<PreciseScore>,
     },
     Neg(Box<ParsedExpression>),
     Sqrt(Box<ParsedExpression>),
@@ -53,10 +58,6 @@ pub enum ParsedExpression {
     Log10(Box<ParsedExpression>),
     Ln(Box<ParsedExpression>),
     Abs(Box<ParsedExpression>),
-    GeoDistance {
-        origin: GeoPoint,
-        key: JsonPath,
-    },
     Decay {
         kind: DecayKind,
         /// Value to decay
@@ -102,7 +103,7 @@ impl ParsedExpression {
     pub fn new_div(
         left: ParsedExpression,
         right: ParsedExpression,
-        by_zero_default: Option<ScoreType>,
+        by_zero_default: Option<PreciseScore>,
     ) -> Self {
         ParsedExpression::Div {
             left: Box::new(left),
