@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
@@ -107,19 +106,19 @@ impl GeoMapIndex {
         }
     }
 
-    fn points_of_hash(&self, hash: &GeoHash) -> usize {
+    fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.points_of_hash(hash),
+            GeoMapIndex::Mutable(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Immutable(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter),
         }
     }
 
-    fn values_of_hash(&self, hash: &GeoHash) -> usize {
+    fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
-            GeoMapIndex::Mmap(index) => index.values_of_hash(hash),
+            GeoMapIndex::Mutable(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Immutable(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter),
         }
     }
 
@@ -214,7 +213,11 @@ impl GeoMapIndex {
         }
     }
 
-    pub fn match_cardinality(&self, values: &[GeoHash]) -> CardinalityEstimation {
+    pub fn match_cardinality(
+        &self,
+        values: &[GeoHash],
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         let max_values_per_point = self.max_values_per_point();
         if max_values_per_point == 0 {
             return CardinalityEstimation::exact(0);
@@ -224,12 +227,12 @@ impl GeoMapIndex {
             return CardinalityEstimation::exact(0);
         };
 
-        let total_points = self.points_of_hash(&common_hash);
-        let total_values = self.values_of_hash(&common_hash);
+        let total_points = self.points_of_hash(&common_hash, hw_counter);
+        let total_values = self.values_of_hash(&common_hash, hw_counter);
 
         let (sum, maximum_per_hash) = values
             .iter()
-            .map(|region| self.points_of_hash(region))
+            .map(|region| self.points_of_hash(region, hw_counter))
             .fold((0, 0), |(sum, maximum), count| {
                 (sum + count, max(maximum, count))
             });
@@ -503,17 +506,16 @@ impl PayloadFieldIndex for GeoMapIndex {
         }
     }
 
-    fn filter(
-        &self,
+    fn filter<'a>(
+        &'a self,
         condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_bounding_box.clone();
-            let hw_counter = hw_acc.get_counter_cell();
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
-                self.check_values_any(*point, &hw_counter, |geo_point| {
+                self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
             })));
@@ -522,9 +524,8 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_radius.clone();
-            let hw_counter = hw_acc.get_counter_cell();
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
-                self.check_values_any(*point, &hw_counter, |geo_point| {
+                self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
             })));
@@ -533,9 +534,8 @@ impl PayloadFieldIndex for GeoMapIndex {
         if let Some(geo_polygon) = &condition.geo_polygon {
             let geo_hashes = polygon_hashes(geo_polygon, GEO_QUERY_MAX_REGION).ok()?;
             let geo_condition_copy = geo_polygon.convert();
-            let hw_counter = hw_acc.get_counter_cell();
             return Some(Box::new(self.iterator(geo_hashes).filter(move |point| {
-                self.check_values_any(*point, &hw_counter, |geo_point| {
+                self.check_values_any(*point, hw_counter, |geo_point| {
                     geo_condition_copy.check_point(geo_point)
                 })
             })));
@@ -544,10 +544,14 @@ impl PayloadFieldIndex for GeoMapIndex {
         None
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         if let Some(geo_bounding_box) = &condition.geo_bounding_box {
             let geo_hashes = rectangle_hashes(geo_bounding_box, GEO_QUERY_MAX_REGION).ok()?;
-            let mut estimation = self.match_cardinality(&geo_hashes);
+            let mut estimation = self.match_cardinality(&geo_hashes, hw_counter);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -556,7 +560,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 
         if let Some(geo_radius) = &condition.geo_radius {
             let geo_hashes = circle_hashes(geo_radius, GEO_QUERY_MAX_REGION).ok()?;
-            let mut estimation = self.match_cardinality(&geo_hashes);
+            let mut estimation = self.match_cardinality(&geo_hashes, hw_counter);
             estimation
                 .primary_clauses
                 .push(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -568,10 +572,10 @@ impl PayloadFieldIndex for GeoMapIndex {
                 polygon_hashes_estimation(geo_polygon, GEO_QUERY_MAX_REGION);
             // The polygon cardinality estimation should consider its exterior and interiors.
             // Therefore, we compute exterior estimation first and then subtract all interior estimation.
-            let mut exterior_estimation = self.match_cardinality(&exterior_hashes);
+            let mut exterior_estimation = self.match_cardinality(&exterior_hashes, hw_counter);
 
             for interior in &interior_hashes {
-                let interior_estimation = self.match_cardinality(interior);
+                let interior_estimation = self.match_cardinality(interior, hw_counter);
                 exterior_estimation.min = max(0, exterior_estimation.min - interior_estimation.max);
                 exterior_estimation.max = max(
                     exterior_estimation.min,
@@ -614,6 +618,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 mod tests {
     use std::ops::Range;
 
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use itertools::Itertools;
     use rand::SeedableRng;
     use rand::prelude::StdRng;
@@ -795,7 +800,8 @@ mod tests {
             let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
-            let card = field_index.estimate_cardinality(&field_condition);
+            let hw_counter = HardwareCounterCell::new();
+            let card = field_index.estimate_cardinality(&field_condition, &hw_counter);
             let card = card.unwrap();
 
             eprintln!("real_cardinality = {real_cardinality:#?}");
@@ -935,7 +941,9 @@ mod tests {
             let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
-            let card = field_index.estimate_cardinality(&field_condition);
+            let hw_counter = HardwareCounterCell::new();
+
+            let card = field_index.estimate_cardinality(&field_condition, &hw_counter);
             let card = card.unwrap();
 
             eprintln!("real_cardinality = {real_cardinality:#?}");
@@ -998,9 +1006,10 @@ mod tests {
 
             assert!(!matched_points.is_empty());
 
-            let hw_counter = HwMeasurementAcc::new();
+            let hw_acc = HwMeasurementAcc::new();
+            let hw_counter = hw_acc.get_counter_cell();
             let mut indexed_matched_points = field_index
-                .filter(&field_condition, hw_counter)
+                .filter(&field_condition, &hw_counter)
                 .unwrap()
                 .collect_vec();
 
@@ -1041,7 +1050,8 @@ mod tests {
     #[case(IndexType::Mmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
-        let top_level_points = field_index.points_of_hash(&Default::default());
+        let hw_counter = HardwareCounterCell::new();
+        let top_level_points = field_index.points_of_hash(&Default::default(), &hw_counter);
         assert_eq!(top_level_points, 1_000);
         let block_hashes = field_index.large_hashes(100).collect_vec();
         assert!(!block_hashes.is_empty());
@@ -1055,9 +1065,10 @@ mod tests {
             .payload_blocks(100, JsonPath::new("test"))
             .collect_vec();
         blocks.iter().for_each(|block| {
-            let hw_counter = HwMeasurementAcc::new();
+            let hw_acc = HwMeasurementAcc::new();
+            let hw_counter = hw_acc.get_counter_cell();
             let block_points = field_index
-                .filter(&block.condition, hw_counter)
+                .filter(&block.condition, &hw_counter)
                 .unwrap()
                 .collect_vec();
             assert_eq!(block_points.len(), block.cardinality);
@@ -1085,20 +1096,22 @@ mod tests {
         builder.add_point(1, &[&geo_values]).unwrap();
         let index = builder.finalize().unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         // around NYC
         let nyc_geo_radius = GeoRadius {
             center: NYC,
             radius: r_meters,
         };
         let field_condition = condition_for_geo_radius("test", nyc_geo_radius.clone());
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
         assert_eq!(card.exp, 1);
 
         let field_condition = condition_for_geo_polygon("test", radius_to_polygon(&nyc_geo_radius));
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
@@ -1110,7 +1123,7 @@ mod tests {
             radius: r_meters,
         };
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
@@ -1118,7 +1131,7 @@ mod tests {
 
         let field_condition =
             condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
@@ -1130,7 +1143,7 @@ mod tests {
             radius: r_meters,
         };
         let field_condition = condition_for_geo_radius("test", tokyo_geo_radius.clone());
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         // no points found
         assert_eq!(card.min, 0);
@@ -1139,7 +1152,7 @@ mod tests {
 
         let field_condition =
             condition_for_geo_polygon("test", radius_to_polygon(&tokyo_geo_radius));
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         // no points found
         assert_eq!(card.min, 0);
@@ -1166,13 +1179,15 @@ mod tests {
         builder.add_point(1, &[&geo_values]).unwrap();
         let index = builder.finalize().unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let berlin_geo_radius = GeoRadius {
             center: BERLIN,
             radius: 50_000.0, // Berlin <-> Potsdam is 27 km
         };
         // check with geo_radius
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         // handle properly that a single point matches via two different geo payloads
         assert_eq!(card.min, 1);
@@ -1182,7 +1197,7 @@ mod tests {
         // check with geo_polygon
         let field_condition =
             condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-        let card = index.estimate_cardinality(&field_condition);
+        let card = index.estimate_cardinality(&field_condition, &hw_counter);
         let card = card.unwrap();
         assert_eq!(card.min, 1);
         assert_eq!(card.max, 1);
@@ -1227,9 +1242,10 @@ mod tests {
 
         // check with geo_radius
         let field_condition = condition_for_geo_radius("test", berlin_geo_radius.clone());
-        let hw_counter = HwMeasurementAcc::new();
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
         let point_offsets = new_index
-            .filter(&field_condition, hw_counter)
+            .filter(&field_condition, &hw_counter)
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1]);
@@ -1237,9 +1253,10 @@ mod tests {
         // check with geo_polygon
         let field_condition =
             condition_for_geo_polygon("test", radius_to_polygon(&berlin_geo_radius));
-        let hw_counter = HwMeasurementAcc::new();
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
         let point_offsets = new_index
-            .filter(&field_condition, hw_counter)
+            .filter(&field_condition, &hw_counter)
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![1]);
@@ -1347,39 +1364,41 @@ mod tests {
         let hashes_with_interior =
             polygon_hashes(&polygon_with_interior, GEO_QUERY_MAX_REGION).unwrap();
 
+        let hw_counter = HardwareCounterCell::new();
+
         let (field_index, _, _) = build_random_index(0, 0, index_type);
         assert!(
             field_index
-                .match_cardinality(&hashes)
+                .match_cardinality(&hashes, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
         assert!(
             field_index
-                .match_cardinality(&hashes_with_interior)
+                .match_cardinality(&hashes_with_interior, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
         let (field_index, _, _) = build_random_index(0, 100, index_type);
         assert!(
             field_index
-                .match_cardinality(&hashes)
+                .match_cardinality(&hashes, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
         assert!(
             field_index
-                .match_cardinality(&hashes_with_interior)
+                .match_cardinality(&hashes_with_interior, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
         let (field_index, _, _) = build_random_index(100, 100, index_type);
         assert!(
             !field_index
-                .match_cardinality(&hashes)
+                .match_cardinality(&hashes, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
         assert!(
             !field_index
-                .match_cardinality(&hashes_with_interior)
+                .match_cardinality(&hashes_with_interior, &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
     }
@@ -1435,9 +1454,10 @@ mod tests {
 
         // check with geo_radius
         let field_condition = condition_for_geo_box("test", bounding_box);
-        let hw_counter = HwMeasurementAcc::new();
+        let hw_acc = HwMeasurementAcc::new();
+        let hw_counter = hw_acc.get_counter_cell();
         let point_offsets = new_index
-            .filter(&field_condition, hw_counter)
+            .filter(&field_condition, &hw_counter)
             .unwrap()
             .collect_vec();
         // Only LOS_ANGELES is in the bounding box

@@ -1,11 +1,14 @@
 use bitpacking::BitPacker;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
     BitPackerImpl, CompressedPostingChunksIndex, compress_posting,
 };
+#[cfg(feature = "testing")]
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
+#[cfg(feature = "testing")]
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
 
 #[derive(Clone, Debug, Default)]
@@ -32,17 +35,14 @@ impl CompressedPostingList {
         }
     }
 
-    pub fn reader(&self) -> ChunkReader {
+    pub fn reader<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> ChunkReader<'a> {
         ChunkReader::new(
             self.last_doc_id,
             &self.chunks,
             &self.data,
             &self.remainder_postings,
+            hw_counter,
         )
-    }
-
-    pub fn contains(&self, val: PointOffsetType) -> bool {
-        self.reader().contains(val)
     }
 
     pub fn len(&self) -> usize {
@@ -50,8 +50,12 @@ impl CompressedPostingList {
     }
 
     #[allow(dead_code)]
-    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
-        let reader = self.reader();
+    #[cfg(feature = "testing")]
+    pub fn iter<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        let reader = self.reader(hw_counter);
         let visitor = CompressedPostingVisitor::new(reader);
         CompressedPostingIterator::new(visitor)
     }
@@ -90,11 +94,15 @@ mod tests {
 
     #[test]
     fn test_compressed_posting_contains() {
+        let hw_counter = HardwareCounterCell::new();
         for step in 0..3 {
             let (compressed_posting_list, set) =
                 CompressedPostingList::generate_compressed_posting_list_fixture(step);
             for i in 0..step * 1000 {
-                assert_eq!(compressed_posting_list.contains(i), set.contains(&i));
+                assert_eq!(
+                    compressed_posting_list.reader(&hw_counter).contains(i),
+                    set.contains(&i)
+                );
             }
         }
     }

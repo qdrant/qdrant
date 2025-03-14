@@ -1,4 +1,5 @@
 use bitpacking::BitPacker;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
@@ -7,9 +8,10 @@ use crate::index::field_index::full_text_index::compressed_posting::compressed_c
 
 pub struct ChunkReader<'a> {
     pub last_doc_id: PointOffsetType,
-    pub chunks: &'a [CompressedPostingChunksIndex],
-    pub data: &'a [u8],
-    pub remainder_postings: &'a [PointOffsetType],
+    chunks: &'a [CompressedPostingChunksIndex],
+    data: &'a [u8],
+    remainder_postings: &'a [PointOffsetType],
+    hw_counter: &'a HardwareCounterCell,
 }
 
 impl<'a> ChunkReader<'a> {
@@ -18,12 +20,14 @@ impl<'a> ChunkReader<'a> {
         chunks: &'a [CompressedPostingChunksIndex],
         data: &'a [u8],
         reminder_postings: &'a [PointOffsetType],
+        hw_counter: &'a HardwareCounterCell,
     ) -> Self {
         Self {
             data,
             chunks,
             remainder_postings: reminder_postings,
             last_doc_id,
+            hw_counter,
         }
     }
 
@@ -53,7 +57,7 @@ impl<'a> ChunkReader<'a> {
             self.decompress_chunk(&BitPackerImpl::new(), chunk_index, &mut decompressed);
             decompressed.binary_search(&val).is_ok()
         } else {
-            self.remainder_postings.binary_search(&val).is_ok()
+            self.search_in_remainder(val)
         }
     }
 
@@ -93,7 +97,12 @@ impl<'a> ChunkReader<'a> {
         assert_eq!(decompressed.len(), BitPackerImpl::BLOCK_LEN);
         let chunk = &chunks[chunk_index];
         let chunk_size = get_chunk_size(chunks, data.len(), chunk_index);
-        let chunk_bits = (chunk_size * 8) / BitPackerImpl::BLOCK_LEN;
+
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(chunk_size);
+
+        let chunk_bits = (chunk_size * u8::BITS as usize) / BitPackerImpl::BLOCK_LEN;
         bitpacker.decompress_sorted(
             chunk.initial,
             &data[chunk.offset as usize..chunk.offset as usize + chunk_size],
@@ -104,5 +113,30 @@ impl<'a> ChunkReader<'a> {
 
     pub fn len(&self) -> usize {
         self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
+    }
+
+    pub fn chunks_len(&self) -> usize {
+        self.chunks.len()
+    }
+
+    pub fn get_chunk_index(&self, offset: usize) -> &CompressedPostingChunksIndex {
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<CompressedPostingChunksIndex>());
+        &self.chunks[offset]
+    }
+
+    pub fn get_remainder_posting(&self, offset: usize) -> Option<PointOffsetType> {
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<PointOffsetType>());
+        self.remainder_postings.get(offset).copied()
+    }
+
+    pub fn search_in_remainder(&self, val: PointOffsetType) -> bool {
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of_val(self.remainder_postings));
+        self.remainder_postings.binary_search(&val).is_ok()
     }
 }

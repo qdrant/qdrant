@@ -358,7 +358,7 @@ impl SegmentEntry for Segment {
         match filter {
             None => self.read_by_id_stream(offset, limit),
             Some(condition) => {
-                if self.should_pre_filter(condition, limit) {
+                if self.should_pre_filter(condition, limit, hw_counter) {
                     self.filtered_read_by_index(offset, limit, condition, is_stopped, hw_counter)
                 } else {
                     self.filtered_read_by_id_stream(
@@ -382,7 +382,7 @@ impl SegmentEntry for Segment {
                 self.filtered_read_by_value_stream(order_by, limit, None, is_stopped, hw_counter)
             }
             Some(filter) => {
-                if self.should_pre_filter(filter, limit) {
+                if self.should_pre_filter(filter, limit, hw_counter) {
                     self.filtered_read_by_index_ordered(
                         order_by, limit, filter, is_stopped, hw_counter,
                     )
@@ -409,7 +409,7 @@ impl SegmentEntry for Segment {
         match filter {
             None => self.read_by_random_id(limit),
             Some(condition) => {
-                if self.should_pre_filter(condition, Some(limit)) {
+                if self.should_pre_filter(condition, Some(limit), hw_counter) {
                     self.filtered_read_by_index_shuffled(limit, condition, is_stopped, hw_counter)
                 } else {
                     self.filtered_read_by_random_stream(limit, condition, is_stopped, hw_counter)
@@ -453,7 +453,11 @@ impl SegmentEntry for Segment {
         Ok(size)
     }
 
-    fn estimate_point_count<'a>(&'a self, filter: Option<&'a Filter>) -> CardinalityEstimation {
+    fn estimate_point_count<'a>(
+        &'a self,
+        filter: Option<&'a Filter>,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation {
         match filter {
             None => {
                 let available = self.available_point_count();
@@ -466,7 +470,7 @@ impl SegmentEntry for Segment {
             }
             Some(filter) => {
                 let payload_index = self.payload_index.borrow();
-                payload_index.estimate_cardinality(filter)
+                payload_index.estimate_cardinality(filter, hw_counter)
             }
         }
     }

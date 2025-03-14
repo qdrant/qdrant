@@ -142,7 +142,7 @@ fn conditional_struct_search_benchmark(c: &mut Criterion) {
     let mut query_count = 0;
 
     let filter = random_must_filter(&mut rng, 2);
-    let cardinality = struct_index.estimate_cardinality(&filter);
+    let cardinality = struct_index.estimate_cardinality(&filter, &hw_counter);
 
     let indexed_fields = struct_index.indexed_fields();
 

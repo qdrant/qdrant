@@ -48,6 +48,7 @@ impl PlainVectorIndex {
         &self,
         search_optimized_threshold_kb: usize,
         filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
     ) -> bool {
         let vector_storage = self.vector_storage.borrow();
         let available_vector_count = vector_storage.available_vector_count();
@@ -58,7 +59,7 @@ impl PlainVectorIndex {
 
             if let Some(payload_filter) = filter {
                 let payload_index = self.payload_index.borrow();
-                let cardinality = payload_index.estimate_cardinality(payload_filter);
+                let cardinality = payload_index.estimate_cardinality(payload_filter, hw_counter);
                 let scan_size = vector_size_bytes.saturating_mul(cardinality.max);
                 scan_size <= indexing_threshold_bytes
             } else {
@@ -85,6 +86,7 @@ impl VectorIndex for PlainVectorIndex {
             && !self.is_small_enough_for_unindexed_search(
                 query_context.search_optimized_threshold_kb(),
                 filter,
+                &query_context.hardware_counter(),
             )
         {
             return Ok(vec![vec![]; vectors.len()]);

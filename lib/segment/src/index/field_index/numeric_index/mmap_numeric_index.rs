@@ -241,12 +241,18 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         self.pairs.len()
     }
 
-    pub(super) fn values_range(
-        &self,
+    pub(super) fn values_range<'a>(
+        &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-    ) -> impl Iterator<Item = PointOffsetType> + '_ {
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = PointOffsetType> + 'a {
         self.values_range_iterator(start_bound, end_bound)
+            .inspect(move |_| {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(size_of::<Point<T>>())
+            })
             .map(|Point { idx, .. }| idx)
     }
 

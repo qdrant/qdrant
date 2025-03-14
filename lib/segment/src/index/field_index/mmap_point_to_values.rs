@@ -296,14 +296,13 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                 let mut value_offset = range.start as usize;
                 for _ in 0..range.count {
                     let bytes = self.mmap.get(value_offset..).unwrap();
-                    hw_acc
-                        .payload_index_io_read_counter()
-                        .incr_delta(bytes.len());
                     let value = T::read_from_mmap(bytes).unwrap();
-                    if check_fn(value.clone()) {
+                    let mmap_size = T::mmapped_size(value.clone());
+                    hw_acc.payload_index_io_read_counter().incr_delta(mmap_size);
+                    if check_fn(value) {
                         return true;
                     }
-                    value_offset += T::mmapped_size(value);
+                    value_offset += mmap_size;
                 }
                 false
             })

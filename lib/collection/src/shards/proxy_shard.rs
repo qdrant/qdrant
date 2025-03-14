@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
@@ -148,8 +149,9 @@ impl ProxyShard {
     pub fn estimate_cardinality(
         &self,
         filter: Option<&Filter>,
+        hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<CardinalityEstimation> {
-        self.wrapped_shard.estimate_cardinality(filter)
+        self.wrapped_shard.estimate_cardinality(filter, hw_counter)
     }
 }
 
@@ -175,7 +177,8 @@ impl ShardOperation for ProxyShard {
             OperationEffectArea::Empty => PointsOperationEffect::Empty,
             OperationEffectArea::Points(points) => PointsOperationEffect::Some(Vec::from(points)),
             OperationEffectArea::Filter(filter) => {
-                let cardinality = local_shard.estimate_cardinality(Some(filter))?;
+                let cardinality = local_shard
+                    .estimate_cardinality(Some(filter), &hw_measurement_acc.get_counter_cell())?;
                 // validate the size of the change set before retrieving it
                 if cardinality.max > MAX_CHANGES_TRACKED_COUNT {
                     PointsOperationEffect::Many

@@ -3,6 +3,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::iter;
 use std::sync::Arc;
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
@@ -172,7 +173,11 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         self.map.len()
     }
 
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
+    pub fn get_count_for_value(
+        &self,
+        value: &N,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect values
+    ) -> Option<usize> {
         self.map.get(value).map(|p| p.len())
     }
 
@@ -180,7 +185,10 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         self.map.iter().map(|(k, v)| (k.borrow(), v.len()))
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
+    pub fn iter_values_map(
+        &self,
+        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Collect values.
+    ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
         self.map
             .iter()
             .map(|(k, v)| (k.borrow(), Box::new(v.iter().copied()) as IdIter))

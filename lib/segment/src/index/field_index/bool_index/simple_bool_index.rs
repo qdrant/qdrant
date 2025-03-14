@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -339,7 +338,7 @@ impl PayloadFieldIndex for SimpleBoolIndex {
     fn filter<'a>(
         &'a self,
         condition: &'a crate::types::FieldCondition,
-        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Measure this index
+        _hw_counter: &'a HardwareCounterCell, // TODO(io_measurement): Measure this index
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
@@ -355,7 +354,11 @@ impl PayloadFieldIndex for SimpleBoolIndex {
         }
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): collect values.
+    ) -> Option<CardinalityEstimation> {
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),

@@ -92,11 +92,11 @@ impl MmapPostings {
     /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
     /// remainder_postings: &'a [PointOffsetType],
     /// ```
-    fn get_reader(
-        &self,
+    fn get_reader<'a>(
+        &'a self,
         header: &PostingListHeader,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<ChunkReader<'_>> {
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<ChunkReader<'a>> {
         let counter = hw_counter.payload_index_io_read_counter();
 
         let bytes = self.mmap.get(header.offset as usize..)?;
@@ -113,7 +113,6 @@ impl MmapPostings {
         let (data, bytes) = bytes.split_at(header.data_bytes_count as usize);
         let bytes = bytes.get(header.alignment_bytes_count as usize..)?;
 
-        counter.incr_delta(size_of::<u32>() * header.remainder_count as usize);
         let (remainder_postings, _) =
             <[u32]>::ref_from_prefix_with_elems(bytes, header.remainder_count as usize).ok()?;
 
@@ -122,14 +121,15 @@ impl MmapPostings {
             chunks,
             data,
             remainder_postings,
+            hw_counter,
         ))
     }
 
-    pub fn get(
-        &self,
+    pub fn get<'a>(
+        &'a self,
         token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<ChunkReader<'_>> {
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<ChunkReader<'a>> {
         hw_counter
             .payload_index_io_read_counter()
             .incr_delta(size_of::<PostingListHeader>());

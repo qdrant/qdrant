@@ -38,7 +38,7 @@ impl Document {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParsedQuery {
     pub tokens: Vec<Option<TokenId>>,
 }
@@ -51,7 +51,7 @@ impl ParsedQuery {
 
         hw_counter
             .payload_index_io_read_counter()
-            .incr_delta(self.tokens.len() + document.tokens().len());
+            .incr_delta((self.tokens.len() + document.tokens().len()) * size_of::<TokenId>());
 
         // Check that all tokens are in document
         self.tokens
@@ -87,18 +87,20 @@ pub trait InvertedIndex {
 
     fn remove_document(&mut self, idx: PointOffsetType) -> bool;
 
-    fn filter(
-        &self,
-        query: &ParsedQuery,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_>;
+    fn filter<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>;
 
-    fn get_posting_len(&self, token_id: TokenId) -> Option<usize>;
+    fn get_posting_len(&self, token_id: TokenId, hw_counter: &HardwareCounterCell)
+    -> Option<usize>;
 
     fn estimate_cardinality(
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         let points_count = self.points_count();
 
@@ -107,7 +109,7 @@ pub trait InvertedIndex {
             .iter()
             .map(|&vocab_idx| match vocab_idx {
                 None => None,
-                Some(idx) => self.get_posting_len(idx),
+                Some(idx) => self.get_posting_len(idx, hw_counter),
             })
             .collect();
         if posting_lengths.is_none() || points_count == 0 {
@@ -182,7 +184,7 @@ pub trait InvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        hw_coutner: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> bool;
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool;
@@ -264,6 +266,8 @@ mod tests {
         assert!(immutable.postings.len() < mutable.postings.len());
         assert!(!immutable.vocab.is_empty());
 
+        let hw_counter = HardwareCounterCell::new();
+
         // Check that new vocabulary token ids leads to the same posting lists
         assert!({
             immutable.vocab.iter().all(|(key, new_token)| {
@@ -284,10 +288,10 @@ mod tests {
 
                 let new_contains_orig = orig_posting
                     .iter()
-                    .all(|point_id| new_posting.contains(point_id));
+                    .all(|point_id| new_posting.reader(&hw_counter).contains(point_id));
 
                 let orig_contains_new = new_posting
-                    .iter()
+                    .iter(&hw_counter)
                     .all(|point_id| orig_posting.contains(point_id));
 
                 new_contains_orig && orig_contains_new
@@ -324,7 +328,7 @@ mod tests {
         for (token_id, posting) in immutable.postings.iter().enumerate() {
             let chunk_reader = mmap.postings.get(token_id as u32, &hw_counter).unwrap();
 
-            for point_id in posting.iter() {
+            for point_id in posting.iter(&hw_counter) {
                 assert!(chunk_reader.contains(point_id));
             }
         }
@@ -379,7 +383,11 @@ mod tests {
             })
             .collect();
 
-        for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {
+        for (mut_query, imm_query) in mut_parsed_queries
+            .iter()
+            .cloned()
+            .zip(imm_parsed_queries.iter().cloned())
+        {
             let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
             let imm_filtered = mmap_index
                 .filter(imm_query, &hw_counter)
@@ -401,7 +409,11 @@ mod tests {
 
         // Check congruence after deletion
 
-        for (mut_query, imm_query) in mut_parsed_queries.iter().zip(imm_parsed_queries.iter()) {
+        for (mut_query, imm_query) in mut_parsed_queries
+            .iter()
+            .cloned()
+            .zip(imm_parsed_queries.iter().cloned())
+        {
             let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
             let imm_filtered = mmap_index
                 .filter(imm_query, &hw_counter)

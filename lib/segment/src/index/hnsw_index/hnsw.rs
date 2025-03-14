@@ -535,9 +535,10 @@ impl HNSWIndex {
 
         let deleted_bitslice = vector_storage.deleted_vector_bitslice();
 
-        let cardinality_estimation = payload_index.estimate_cardinality(&filter);
-
         let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
+
+        let cardinality_estimation =
+            payload_index.estimate_cardinality(&filter, &disposed_hw_counter);
 
         let points_to_index: Vec<_> = payload_index
             .iter_filtered_points(
@@ -1218,7 +1219,11 @@ impl VectorIndex for HNSWIndex {
                 let vector_storage = self.vector_storage.borrow();
                 let id_tracker = self.id_tracker.borrow();
                 let available_vector_count = vector_storage.available_vector_count();
-                let query_point_cardinality = payload_index.estimate_cardinality(query_filter);
+
+                let hw_counter = &HardwareCounterCell::disposable(); // TODO(io_measurement): propagate!
+
+                let query_point_cardinality =
+                    payload_index.estimate_cardinality(query_filter, hw_counter);
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,

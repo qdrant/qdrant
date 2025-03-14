@@ -2,7 +2,6 @@ use std::collections::{BTreeSet, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -104,11 +103,11 @@ impl FullTextIndex {
         }
     }
 
-    fn filter(
-        &self,
-        query: &ParsedQuery,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    fn filter<'a>(
+        &'a self,
+        query: ParsedQuery,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         match self {
             Self::Mutable(index) => index.inverted_index.filter(query, hw_counter),
             Self::Immutable(index) => index.inverted_index.filter(query, hw_counter),
@@ -132,11 +131,18 @@ impl FullTextIndex {
         &self,
         query: &ParsedQuery,
         condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation {
         match self {
-            Self::Mutable(index) => index.inverted_index.estimate_cardinality(query, condition),
-            Self::Immutable(index) => index.inverted_index.estimate_cardinality(query, condition),
-            Self::Mmap(index) => index.inverted_index.estimate_cardinality(query, condition),
+            Self::Mutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Immutable(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
+            Self::Mmap(index) => index
+                .inverted_index
+                .estimate_cardinality(query, condition, hw_counter),
         }
     }
 
@@ -236,13 +242,13 @@ impl FullTextIndex {
     }
 
     #[cfg(test)]
-    pub fn query(
-        &self,
-        query: &str,
-        hw_counter: &HardwareCounterCell,
-    ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
+    pub fn query<'a>(
+        &'a self,
+        query: &'a str,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let parsed_query = self.parse_query(query, hw_counter);
-        self.filter(&parsed_query, hw_counter)
+        self.filter(parsed_query, hw_counter)
     }
 }
 
@@ -332,24 +338,26 @@ impl PayloadFieldIndex for FullTextIndex {
         }
     }
 
-    fn filter(
-        &self,
-        condition: &FieldCondition,
-        hw_acc: HwMeasurementAcc,
-    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + '_>> {
-        let hw_counter = hw_acc.get_counter_cell();
+    fn filter<'a>(
+        &'a self,
+        condition: &'a FieldCondition,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text, &hw_counter);
-            return Some(self.filter(&parsed_query, &hw_counter));
+            let parsed_query = self.parse_query(&text_match.text, hw_counter);
+            return Some(self.filter(parsed_query, hw_counter));
         }
         None
     }
 
-    fn estimate_cardinality(&self, condition: &FieldCondition) -> Option<CardinalityEstimation> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurements): maybe needs propagation?
+    fn estimate_cardinality(
+        &self,
+        condition: &FieldCondition,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text, &hw_counter);
-            return Some(self.estimate_cardinality(&parsed_query, condition));
+            let parsed_query = self.parse_query(&text_match.text, hw_counter);
+            return Some(self.estimate_cardinality(&parsed_query, condition, hw_counter));
         }
         None
     }

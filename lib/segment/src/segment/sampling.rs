@@ -19,7 +19,7 @@ impl Segment {
         let payload_index = self.payload_index.borrow();
         let id_tracker = self.id_tracker.borrow();
 
-        let cardinality_estimation = payload_index.estimate_cardinality(condition);
+        let cardinality_estimation = payload_index.estimate_cardinality(condition, hw_counter);
         let ids_iterator = payload_index
             .iter_filtered_points(condition, &*id_tracker, &cardinality_estimation, hw_counter)
             .check_stop(|| is_stopped.load(Ordering::Relaxed))

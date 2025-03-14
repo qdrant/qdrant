@@ -5,8 +5,9 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::{Key, MmapHashMap};
+use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Itertools;
@@ -206,9 +207,18 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.value_to_points.keys_count()
     }
 
-    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate.
-        match self.value_to_points.get(value, &hw_counter) {
+    pub fn get_count_for_value(
+        &self,
+        value: &N,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<usize> {
+        // Since `value_to_points.get` doesn't actually force read from disk for all values
+        // we need to only account for the overhead of hashmap lookup
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(READ_ENTRY_OVERHEAD);
+
+        match self.value_to_points.get(value) {
             Ok(Some(points)) => Some(points.len()),
             Ok(None) => None,
             Err(err) => {
@@ -227,12 +237,12 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         value: &N,
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
-        match self.value_to_points.get(value, hw_counter) {
+        match self.value_to_points.get(value) {
             Ok(Some(slice)) => {
                 // We're iterating over the whole (mmapped) slice
                 hw_counter
                     .payload_index_io_read_counter()
-                    .incr_delta(size_of_val(slice));
+                    .incr_delta(size_of_val(slice) + READ_ENTRY_OVERHEAD);
 
                 Box::new(
                     slice
@@ -240,7 +250,13 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                         .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
                 )
             }
-            Ok(None) => Box::new(iter::empty()),
+            Ok(None) => {
+                hw_counter
+                    .payload_index_io_read_counter()
+                    .incr_delta(READ_ENTRY_OVERHEAD);
+
+                Box::new(iter::empty())
+            }
             Err(err) => {
                 debug_assert!(
                     false,
@@ -267,7 +283,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         })
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
+    pub fn iter_values_map(
+        &self,
+        _hw_acc: HwMeasurementAcc, // TODO(io_measurement): Collect values.
+    ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
         self.value_to_points.iter().map(|(k, v)| {
             (
                 k,

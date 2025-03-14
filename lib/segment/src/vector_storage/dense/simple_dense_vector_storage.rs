@@ -277,8 +277,8 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
-            self.update_stored(key, true, None, &HardwareCounterCell::disposable())?;
             // Not measuring deletions
+            self.update_stored(key, true, None, &HardwareCounterCell::disposable())?;
         }
         Ok(is_deleted)
     }

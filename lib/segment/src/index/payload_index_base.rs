@@ -58,13 +58,18 @@ pub trait PayloadIndex {
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
     /// A best estimation of the number of available points should be given.
-    fn estimate_cardinality(&self, query: &Filter) -> CardinalityEstimation;
+    fn estimate_cardinality(
+        &self,
+        query: &Filter,
+        hw_counter: &HardwareCounterCell,
+    ) -> CardinalityEstimation;
 
     /// Estimate amount of points (min, max) which satisfies filtering of a nested condition.
     fn estimate_nested_cardinality(
         &self,
         query: &Filter,
         nested_path: &JsonPath,
+        hw_counter: &HardwareCounterCell,
     ) -> CardinalityEstimation;
 
     /// Return list of all point ids, which satisfy filtering criteria

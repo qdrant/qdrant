@@ -126,7 +126,7 @@ impl StructPayloadIndex {
                     (OptimizedCondition::Filter(optimized_filter), estimation)
                 }
                 _ => {
-                    let estimation = self.condition_cardinality(condition, None);
+                    let estimation = self.condition_cardinality(condition, None, hw_counter);
                     let condition_checker =
                         self.condition_converter(condition, payload_provider.clone(), hw_counter);
                     (OptimizedCondition::Checker(condition_checker), estimation)
