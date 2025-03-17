@@ -1,9 +1,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ahash::{AHashMap, AHashSet};
-use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::ext::BitSliceExt as _;
 use common::iterator_ext::IteratorExt;
 use common::types::ScoredPointOffset;
 use itertools::Itertools;
@@ -19,7 +17,6 @@ impl Segment {
         &self,
         formula: &ParsedFormula,
         prefetches_scores: &[Vec<ScoredPoint>],
-        wrapped_deleted: Option<&BitSlice>,
         limit: usize,
         is_stopped: &AtomicBool,
         hw_counter: &HardwareCounterCell,
@@ -37,13 +34,6 @@ impl Segment {
                     .filter_map(|point| {
                         // Discard points without internal ids
                         let internal_id = self.get_internal_id(point.id)?;
-
-                        // Discard points that are marked as deleted in a wrapped segment
-                        if let Some(true) =
-                            wrapped_deleted.and_then(|slice| slice.get_bit(internal_id as usize))
-                        {
-                            return None;
-                        }
 
                         // filter_map side effect: keep all uniquely seen point offsets.
                         points_to_rescore.insert(internal_id);
