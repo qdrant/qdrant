@@ -168,22 +168,15 @@ impl SimpleIdTracker {
             }
         }
 
-        #[cfg(debug_assertions)]
-        for (idx, id) in external_to_internal_num.iter() {
-            debug_assert!(
-                internal_to_external[*id as usize] == PointIdType::NumId(*idx),
-                "Internal id {id} is mapped to external id {}, but should be {}",
-                internal_to_external[*id as usize],
-                PointIdType::NumId(*idx),
-            );
-        }
-
         let mappings = PointMappings::new(
             deleted,
             internal_to_external,
             external_to_internal_num,
             external_to_internal_uuid,
         );
+
+        #[cfg(debug_assertions)]
+        mappings.assert_mappings();
 
         Ok(SimpleIdTracker {
             internal_to_version,
