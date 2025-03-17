@@ -334,4 +334,17 @@ impl PointMappings {
             external_to_internal_uuid,
         }
     }
+
+    #[cfg(debug_assertions)]
+    pub fn assert_mappings(&self) {
+        for (external_id, internal_id) in self.external_to_internal_num.iter() {
+            debug_assert!(
+                self.internal_to_external[*internal_id as usize]
+                    == PointIdType::NumId(*external_id),
+                "Internal id {internal_id} is mapped to external id {}, but should be {}",
+                self.internal_to_external[*internal_id as usize],
+                PointIdType::NumId(*external_id),
+            );
+        }
+    }
 }
