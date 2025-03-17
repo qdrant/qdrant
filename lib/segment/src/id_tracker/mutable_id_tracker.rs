@@ -323,10 +323,13 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![
+        [
             mappings_path(&self.segment_path),
             versions_path(&self.segment_path),
         ]
+        .into_iter()
+        .filter(|path| path.is_file())
+        .collect()
     }
 }
 
