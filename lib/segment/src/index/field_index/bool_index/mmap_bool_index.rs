@@ -40,6 +40,7 @@ impl MmapBoolIndex {
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
+    /// - `is_on_disk` - If the index should be kept on disk. Memory will be populated if false.
     pub fn open_or_create(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let falses_dir = path.join(FALSES_DIRNAME);
         if falses_dir.is_dir() {
