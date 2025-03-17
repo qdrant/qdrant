@@ -366,13 +366,37 @@ fn write_mapping_changes<W: Write>(
 }
 
 /// Load point mappings from the given file
+///
+/// If the file ends with an incomplete entry, it is truncated from the file.
 fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     let file = File::open(mappings_path)?;
+    let file_len = file.metadata()?.len();
     let reader = BufReader::new(file);
-    read_mappings(reader)
+
+    let (mappings, bytes_read) = read_mappings(reader)?;
+
+    // Truncate file if it ends with an incomplete entry
+    // It can happen on crash while flushing. We must truncate the file here to not corrupt new
+    // entries we append to the file
+    if bytes_read < file_len {
+        log::warn!(
+            "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming WAL recovery",
+            file_len - bytes_read
+        );
+        let file = File::options()
+            .write(true)
+            .truncate(false)
+            .open(mappings_path)?;
+        file.set_len(bytes_read)?;
+        file.sync_all()?;
+    }
+
+    Ok(mappings)
 }
 
 /// Iterate over mapping changes from the given reader
+///
+/// Each non-errorous item is a tuple of the mapping change and the number of bytes read so far.
 ///
 /// The iterator ends when the end of the file is reached, or when an error occurred.
 ///
@@ -382,10 +406,15 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
 /// iterator will not produce any more items.
 fn read_mappings_iter<R: Read>(
     mut reader: R,
-) -> impl Iterator<Item = OperationResult<MappingChange>> {
+) -> impl Iterator<Item = OperationResult<(MappingChange, u64)>> {
+    let mut position = 0;
+
     // Keep reading until end of file or error
     std::iter::from_fn(move || match read_entry(&mut reader) {
-        Ok(entry) => Some(Ok(entry)),
+        Ok((entry, read_bytes)) => {
+            position += read_bytes;
+            Some(Ok((entry, position)))
+        }
         // Done reading if end of file is reached
         Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => None,
         // Propagate deserialization error
@@ -396,14 +425,19 @@ fn read_mappings_iter<R: Read>(
 }
 
 /// Read point mappings from the given reader
-fn read_mappings<R: Read>(reader: R) -> OperationResult<PointMappings> {
+///
+/// Returns loaded point mappings and number of bytes read.
+fn read_mappings<R: Read>(reader: R) -> OperationResult<(PointMappings, u64)> {
     let mut deleted = BitVec::new();
     let mut internal_to_external: Vec<PointIdType> = Default::default();
     let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
     let mut external_to_internal_uuid: BTreeMap<Uuid, PointOffsetType> = Default::default();
+    let mut bytes_read = 0;
 
     for change in read_mappings_iter(reader) {
-        match change? {
+        let (change, next_position) = change?;
+        bytes_read = next_position;
+        match change {
             MappingChange::Insert(external_id, internal_id) => {
                 // Update internal to external mapping
                 if internal_id as usize >= internal_to_external.len() {
@@ -482,14 +516,16 @@ fn read_mappings<R: Read>(reader: R) -> OperationResult<PointMappings> {
         external_to_internal_uuid,
     );
 
-    Ok(mappings)
+    Ok((mappings, bytes_read))
 }
 
 /// Deserialize a single mapping change entry from the given reader
 ///
 /// This function reads exact one entry which means after calling this function, the reader
 /// will be at the start of the next entry.
-fn read_entry<R: Read>(reader: &mut R) -> io::Result<MappingChange> {
+///
+/// The number of bytes read is returned on succesful read.
+fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, u64)> {
     let change_type = reader.read_u8()?;
     let change_type = MappingChangeType::from_byte(change_type).ok_or_else(|| {
         io::Error::new(
@@ -502,22 +538,28 @@ fn read_entry<R: Read>(reader: &mut R) -> io::Result<MappingChange> {
         MappingChangeType::InsertNum => {
             let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
             let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
-            Ok(MappingChange::Insert(external_id, internal_id))
+            Ok((
+                MappingChange::Insert(external_id, internal_id),
+                (8 + 64 + 32) / 8,
+            ))
         }
         MappingChangeType::InsertUuid => {
             let external_id =
                 PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
             let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
-            Ok(MappingChange::Insert(external_id, internal_id))
+            Ok((
+                MappingChange::Insert(external_id, internal_id),
+                (8 + 128 + 32) / 8,
+            ))
         }
         MappingChangeType::DeleteNum => {
             let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
-            Ok(MappingChange::Delete(external_id))
+            Ok((MappingChange::Delete(external_id), (8 + 64) / 8))
         }
         MappingChangeType::DeleteUuid => {
             let external_id =
                 PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
-            Ok(MappingChange::Delete(external_id))
+            Ok((MappingChange::Delete(external_id), (8 + 128) / 8))
         }
     }
 }
@@ -921,9 +963,10 @@ pub(super) mod tests {
 
             write_entry(&mut buf, change).unwrap();
 
-            let got_change = read_entry(&mut buf.as_slice()).unwrap();
+            let (got_change, bytes_read) = read_entry(&mut buf.as_slice()).unwrap();
 
             assert_eq!(change, got_change);
+            assert!(bytes_read == 13 || bytes_read == 21);
         }
     }
 
@@ -932,7 +975,7 @@ pub(super) mod tests {
     fn test_point_mappings_deserializing_special() {
         // Empty reader creates empty mappings
         let buf = b"";
-        assert_eq!(read_mappings(&buf[..]).unwrap().total_point_count(), 0);
+        assert_eq!(read_mappings(&buf[..]).unwrap().0.total_point_count(), 0);
 
         // Corrupt if reading invalid type byte
         let buf = b"\x00";
@@ -948,13 +991,14 @@ pub(super) mod tests {
 
         // Empty if change is not fully written
         let buf = b"\x01\x01\x00\x00\x00\x00";
-        assert_eq!(read_mappings(&buf[..]).unwrap().total_point_count(), 0);
+        assert_eq!(read_mappings(&buf[..]).unwrap().0.total_point_count(), 0);
 
         // Exactly one entry
         let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00";
         assert_eq!(
             read_mappings(&buf[..])
                 .unwrap()
+                .0
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
@@ -970,9 +1014,60 @@ pub(super) mod tests {
 
         // Exactly one entry and an incomplete second one
         let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00";
-        let mappings = read_mappings(&buf[..]).unwrap();
+        let (mappings, _bytes_read) = read_mappings(&buf[..]).unwrap();
         assert_eq!(mappings.total_point_count(), 1);
         assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
+    }
+
+    /// Test that we truncate a partially written entry at the end.
+    #[test]
+    fn test_point_mappings_truncation() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mappings_path = mappings_path(segment_dir.path());
+
+        // Exactly one entry
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00",
+        )
+        .unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+
+        // One entry and an incomplete second one, file must be truncated
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x02\x00",
+        )
+        .unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 16);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+
+        // Two entries and an incomplete third one, file must be truncated
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x02\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00",
+        ).unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 28);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 26);
     }
 
     const DEFAULT_VERSION: SeqNumberType = 42;
