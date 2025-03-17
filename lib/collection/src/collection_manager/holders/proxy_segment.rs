@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use ahash::AHashMap;
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
@@ -470,30 +469,21 @@ impl SegmentEntry for ProxySegment {
             .read()
             .rescore_with_formula(formula_ctx, hw_counter)?;
 
-        // Merge results
-        if self.deleted_points.read().is_empty() {
-            // Just join both results, they will be deduplicated and top-k'd later
-            wrapped_results.append(&mut write_results);
-        } else {
-            // Create a hashmap of write results by point ID for faster lookup
-            // We expect write results to be shorter than wrapped results
-            let mut write_results_map: AHashMap<_, _> = write_results
-                .into_iter()
-                .map(|result| (result.id, result))
-                .collect();
-
-            // Prefer points from write segment
-            for wrapped_result in wrapped_results.iter_mut() {
-                if let Some(write_result) = write_results_map.remove(&wrapped_result.id) {
-                    *wrapped_result = write_result;
+        {
+            let deleted_points = self.deleted_points.read();
+            if deleted_points.is_empty() {
+                // Just join both results, they will be deduplicated and top-k'd later
+                write_results.append(&mut wrapped_results);
+            } else {
+                for wrapped_result in wrapped_results {
+                    if !deleted_points.contains_key(&wrapped_result.id) {
+                        write_results.push(wrapped_result);
+                    }
                 }
             }
-
-            // Append remaining write results
-            wrapped_results.extend(write_results_map.into_values());
         }
 
-        Ok(wrapped_results)
+        Ok(write_results)
     }
 
     fn upsert_point(
