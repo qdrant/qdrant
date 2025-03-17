@@ -604,7 +604,12 @@ fn store_version_changes(
     })?;
 
     // Explicitly fsync file contents to ensure durability
-    let file = writer.into_inner().unwrap();
+    let file = writer.into_inner().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to close ID tracker point versions write buffer: {}",
+            err.into_error()
+        ))
+    })?;
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point versions: {err}"))
     })?;
@@ -648,7 +653,7 @@ where
 
         // Write version and update position
         writer.write_u64::<FileEndianess>(version)?;
-        position += size_of::<u64>() as u64;
+        position += VERSION_ELEMENT_SIZE;
     }
 
     // Explicitly flush writer to catch IO errors
