@@ -5182,7 +5182,7 @@ pub struct Formula {
 pub struct Expression {
     #[prost(
         oneof = "expression::Variant",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18"
     )]
     pub variant: ::core::option::Option<expression::Variant>,
 }
@@ -5203,44 +5203,47 @@ pub mod expression {
         /// Geographic distance in meters
         #[prost(message, tag = "4")]
         GeoDistance(super::GeoDistance),
+        /// Date-time constant or payload key
+        #[prost(string, tag = "5")]
+        DateTime(::prost::alloc::string::String),
         /// Multiply
-        #[prost(message, tag = "5")]
+        #[prost(message, tag = "6")]
         Mult(super::MultExpression),
         /// Sum
-        #[prost(message, tag = "6")]
+        #[prost(message, tag = "7")]
         Sum(super::SumExpression),
         /// Divide
-        #[prost(message, tag = "7")]
+        #[prost(message, tag = "8")]
         Div(::prost::alloc::boxed::Box<super::DivExpression>),
         /// Negate
-        #[prost(message, tag = "8")]
+        #[prost(message, tag = "9")]
         Neg(::prost::alloc::boxed::Box<super::Expression>),
         /// Absolute value
-        #[prost(message, tag = "9")]
+        #[prost(message, tag = "10")]
         Abs(::prost::alloc::boxed::Box<super::Expression>),
         /// Square root
-        #[prost(message, tag = "10")]
+        #[prost(message, tag = "11")]
         Sqrt(::prost::alloc::boxed::Box<super::Expression>),
         /// Power
-        #[prost(message, tag = "11")]
+        #[prost(message, tag = "12")]
         Pow(::prost::alloc::boxed::Box<super::PowExpression>),
         /// Exponential
-        #[prost(message, tag = "12")]
+        #[prost(message, tag = "13")]
         Exp(::prost::alloc::boxed::Box<super::Expression>),
         /// Logarithm
-        #[prost(message, tag = "13")]
+        #[prost(message, tag = "14")]
         Log10(::prost::alloc::boxed::Box<super::Expression>),
         /// Natural logarithm
-        #[prost(message, tag = "14")]
+        #[prost(message, tag = "15")]
         Ln(::prost::alloc::boxed::Box<super::Expression>),
         /// Exponential decay
-        #[prost(message, tag = "15")]
+        #[prost(message, tag = "16")]
         ExpDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
         /// Gaussian decay
-        #[prost(message, tag = "16")]
+        #[prost(message, tag = "17")]
         GaussDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
         /// Linear decay
-        #[prost(message, tag = "17")]
+        #[prost(message, tag = "18")]
         LinDecay(::prost::alloc::boxed::Box<super::DecayParamsExpression>),
     }
 }

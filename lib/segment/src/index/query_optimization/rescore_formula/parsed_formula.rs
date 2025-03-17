@@ -5,15 +5,14 @@ use serde_json::Value;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::json_path::{JsonPath, JsonPathItem};
-use crate::types::{Condition, GeoPoint};
-
-use super::formula_scorer::PreciseScore;
+use crate::types::{Condition, DateTimePayloadType, GeoPoint};
 
 const SCORE_KEYWORD: &str = "score";
 const DEFAULT_DECAY_MIDPOINT: f32 = 0.5;
 const DEFAULT_DECAY_SCALE: f32 = 1.0;
 
 pub type ConditionId = usize;
+pub type PreciseScore = f64;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParsedFormula {
@@ -39,6 +38,7 @@ pub enum ParsedExpression {
         origin: GeoPoint,
         key: JsonPath,
     },
+    DateTime(DateTimeExpression),
 
     // Nested
     Mult(Vec<ParsedExpression>),
@@ -96,6 +96,25 @@ impl VariableId {
             VariableId::Payload(path) => path.to_string(),
             VariableId::Condition(_) => unreachable!("there are no defaults for conditions"),
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DateTimeExpression {
+    Constant(DateTimePayloadType),
+    PayloadVariable(JsonPath),
+}
+
+impl FromStr for DateTimeExpression {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // try as date
+        DateTimePayloadType::from_str(s)
+            .map(DateTimeExpression::Constant)
+            // else as payload key
+            .or_else(|_| JsonPath::from_str(s).map(DateTimeExpression::PayloadVariable))
+            .map_err(|_| format!("Invalid date time expression: {s}"))
     }
 }
 

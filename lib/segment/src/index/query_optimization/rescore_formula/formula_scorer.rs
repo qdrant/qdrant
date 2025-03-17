@@ -7,19 +7,17 @@ use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 
-use super::parsed_formula::{DecayKind, ParsedExpression, ParsedFormula, VariableId};
+use super::parsed_formula::{DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
-use crate::types::GeoPoint;
+use crate::types::{DateTimePayloadType, GeoPoint};
 
 const DEFAULT_SCORE: PreciseScore = 0.0;
 const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
-
-pub type PreciseScore = f64;
 
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
@@ -39,7 +37,7 @@ pub trait FriendlyName {
     fn friendly_name() -> &'static str;
 }
 
-impl FriendlyName for ScoreType {
+impl FriendlyName for PreciseScore {
     fn friendly_name() -> &'static str {
         "number"
     }
@@ -48,6 +46,12 @@ impl FriendlyName for ScoreType {
 impl FriendlyName for GeoPoint {
     fn friendly_name() -> &'static str {
         "geo point"
+    }
+}
+
+impl FriendlyName for DateTimePayloadType {
+    fn friendly_name() -> &'static str {
+        "datetime"
     }
 }
 
@@ -108,7 +112,7 @@ impl FormulaScorer<'_> {
                     .prefetches_scores
                     .get(*prefetch_idx)
                     .and_then(|scores| scores.get(&point_id))
-                    .map(|score| *score as PreciseScore)
+                    .map(|score| PreciseScore::from(*score))
                     .or_else(|| {
                         self.defaults
                             // if there is no score, or it isn't a number, we use the default score
@@ -118,10 +122,7 @@ impl FormulaScorer<'_> {
                     .unwrap_or(DEFAULT_SCORE)),
                 VariableId::Payload(path) => {
                     self.get_parsed_payload_value(path, point_id, |value| {
-                        value
-                            .as_f64()
-                            .map(|value| value as ScoreType)
-                            .ok_or("Value is not a number")
+                        value.as_f64().ok_or("Value is not a number")
                     })
                 }
                 VariableId::Condition(id) => {
@@ -138,6 +139,26 @@ impl FormulaScorer<'_> {
                 )?;
 
                 Ok(Haversine::distance((*origin).into(), value.into()))
+            }
+            ParsedExpression::DateTime(dt_expr) => {
+                match dt_expr {
+                    // Convert from i64 to f64.
+                    // f64's 53 bits of sign + mantissa for microseconds means a span of exact equivalence of
+                    // about 285 years, after which precision starts dropping
+                    DateTimeExpression::Constant(dt) => Ok(dt.timestamp() as PreciseScore),
+                    DateTimeExpression::PayloadVariable(json_path) => {
+                        let datetime =
+                            self.get_parsed_payload_value(json_path, point_id, |value| {
+                                value
+                                    // datetime index also returns the display impl of datetime which is a string
+                                    .as_str()
+                                    .ok_or("value is not a string")?
+                                    .parse::<DateTimePayloadType>()
+                                    .map_err(|e| e.to_string())
+                            })?;
+                        Ok(datetime.timestamp() as PreciseScore)
+                    }
+                }
             }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
@@ -465,7 +486,7 @@ mod tests {
         ParsedExpression::new_payload_id(JsonPath::new("missing_field")),
         Err(OperationError::VariableTypeError {
             field_name: JsonPath::new("missing_field"),
-            expected_type: ScoreType::friendly_name().to_string(),
+            expected_type: PreciseScore::friendly_name().to_string(),
             description: "No value found in a payload nor defaults".to_string(),
         })
     )]
@@ -474,7 +495,7 @@ mod tests {
     #[test]
     fn test_default_values(
         #[case] expr: ParsedExpression,
-        #[case] expected: OperationResult<ScoreType>,
+        #[case] expected: OperationResult<PreciseScore>,
     ) {
         let defaults = [
             (VariableId::Score(3), json!(1.5)),
