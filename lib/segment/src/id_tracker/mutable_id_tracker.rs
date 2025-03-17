@@ -18,7 +18,7 @@ use crate::id_tracker::IdTracker;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
-const FILE_MAPPINGS: &str = "id_tracker.mappings";
+const FILE_MAPPINGS: &str = "id_tracker.mapping_changes";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
 const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
