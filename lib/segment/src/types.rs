@@ -1704,21 +1704,6 @@ impl PayloadSchemaParams {
             PayloadSchemaParams::Bool(i) => i.on_disk.unwrap_or_default(),
         }
     }
-
-    pub fn is_mutable(&self) -> bool {
-        let is_immutable = match self {
-            PayloadSchemaParams::Keyword(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Integer(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Float(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Datetime(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Uuid(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Text(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Geo(i) => i.on_disk.unwrap_or_default(),
-            PayloadSchemaParams::Bool(_i) => false,
-        };
-
-        !is_immutable
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
@@ -1764,13 +1749,6 @@ impl PayloadFieldSchema {
         match self {
             PayloadFieldSchema::FieldType(_) => false,
             PayloadFieldSchema::FieldParams(params) => params.is_on_disk(),
-        }
-    }
-
-    pub fn is_mutable(&self) -> bool {
-        match self {
-            PayloadFieldSchema::FieldType(_) => true,
-            PayloadFieldSchema::FieldParams(params) => params.is_mutable(),
         }
     }
 

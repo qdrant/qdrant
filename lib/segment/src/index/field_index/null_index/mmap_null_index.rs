@@ -28,6 +28,10 @@ pub struct MmapNullIndex {
     is_null_slice: DynamicMmapFlags,
 }
 
+/// Don't populate null index as it is not essential
+/// and will be populated on the fly fast enough
+const POPULATE_NULL_INDEX: bool = false;
+
 impl MmapNullIndex {
     pub fn builder(path: &Path) -> OperationResult<MmapNullIndexBuilder> {
         Ok(MmapNullIndexBuilder(Self::open_or_create(path)?))
@@ -60,10 +64,10 @@ impl MmapNullIndex {
         }
 
         let has_values_path = path.join(HAS_VALUES_DIRNAME);
-        let has_values_slice = DynamicMmapFlags::open(&has_values_path)?;
+        let has_values_slice = DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?;
 
         let is_null_path = path.join(IS_NULL_DIRNAME);
-        let is_null_slice = DynamicMmapFlags::open(&is_null_path)?;
+        let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
 
         Ok(Self {
             base_dir: path.to_path_buf(),
@@ -81,8 +85,8 @@ impl MmapNullIndex {
         let is_null_path = path.join(IS_NULL_DIRNAME);
 
         if has_values_path.exists() && is_null_path.exists() {
-            let has_values_slice = DynamicMmapFlags::open(&has_values_path)?;
-            let is_null_slice = DynamicMmapFlags::open(&is_null_path)?;
+            let has_values_slice = DynamicMmapFlags::open(&has_values_path, POPULATE_NULL_INDEX)?;
+            let is_null_slice = DynamicMmapFlags::open(&is_null_path, POPULATE_NULL_INDEX)?;
             Ok(Some(Self {
                 base_dir: path.to_path_buf(),
                 has_values_slice,

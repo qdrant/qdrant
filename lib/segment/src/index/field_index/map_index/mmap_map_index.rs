@@ -42,7 +42,7 @@ struct MmapMapIndexConfig {
 }
 
 impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
-    pub fn load(path: &Path) -> OperationResult<Self> {
+    pub fn load(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let hashmap_path = path.join(HASHMAP_PATH);
         let deleted_path = path.join(DELETED_PATH);
         let config_path = path.join(CONFIG_PATH);
@@ -52,7 +52,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         let hashmap = MmapHashMap::open(&hashmap_path)?;
         let point_to_values = MmapPointToValues::open(path)?;
 
-        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
+        let do_populate = !is_on_disk;
+        let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, do_populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 
@@ -70,6 +71,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         path: &Path,
         point_to_values: Vec<Vec<N::Owned>>,
         values_to_points: HashMap<N::Owned, Vec<PointOffsetType>>,
+        is_on_disk: bool,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
 
@@ -119,7 +121,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             }
         }
 
-        Self::load(path)
+        Self::load(path, is_on_disk)
     }
 
     pub fn flusher(&self) -> Flusher {

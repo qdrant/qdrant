@@ -19,7 +19,7 @@ fn dynamic_mmap_flag_count(c: &mut Criterion) {
     let stopped = AtomicBool::new(false);
 
     // Build dynamic mmap flags with random deletions
-    let mut dynamic_flags = DynamicMmapFlags::open(dir.path()).unwrap();
+    let mut dynamic_flags = DynamicMmapFlags::open(dir.path(), false).unwrap();
     dynamic_flags.set_len(FLAG_COUNT).unwrap();
     random_flags
         .iter()

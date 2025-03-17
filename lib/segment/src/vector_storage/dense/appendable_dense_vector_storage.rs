@@ -222,15 +222,17 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
     let vectors_path = path.join(VECTORS_DIR_PATH);
     let deleted_path = path.join(DELETED_DIR_PATH);
 
+    let populate = false;
+
     let vectors = ChunkedMmapVectors::<T>::open(
         &vectors_path,
         dim,
         Some(false),
         AdviceSetting::Global,
-        Some(false),
+        Some(populate),
     )?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
+    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, populate)?;
     let deleted_count = deleted.count_flags();
 
     Ok(AppendableMmapDenseVectorStorage {
@@ -289,7 +291,8 @@ pub fn open_appendable_in_ram_vector_storage_impl<T: PrimitiveVectorElement>(
 
     let vectors = InRamPersistedVectors::<T>::open(&vectors_path, dim)?;
 
-    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path)?;
+    let populate = true;
+    let deleted: DynamicMmapFlags = DynamicMmapFlags::open(&deleted_path, populate)?;
     let deleted_count = deleted.count_flags();
 
     Ok(AppendableMmapDenseVectorStorage {

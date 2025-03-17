@@ -22,8 +22,9 @@ pub struct MmapFullTextIndex {
 }
 
 impl MmapFullTextIndex {
-    pub fn open(path: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
-        let inverted_index = MmapInvertedIndex::open(path, false)?;
+    pub fn open(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> OperationResult<Self> {
+        let populate = !is_on_disk;
+        let inverted_index = MmapInvertedIndex::open(path, populate)?;
 
         Ok(Self {
             inverted_index,
@@ -64,14 +65,16 @@ pub struct FullTextMmapIndexBuilder {
     path: PathBuf,
     mutable_index: MutableInvertedIndex,
     config: TextIndexParams,
+    is_on_disk: bool,
 }
 
 impl FullTextMmapIndexBuilder {
-    pub fn new(path: PathBuf, config: TextIndexParams) -> Self {
+    pub fn new(path: PathBuf, config: TextIndexParams, is_on_disk: bool) -> Self {
         Self {
             path,
             mutable_index: MutableInvertedIndex::default(),
             config,
+            is_on_disk,
         }
     }
 }
@@ -132,6 +135,7 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
             path,
             mutable_index,
             config,
+            is_on_disk,
         } = self;
 
         let immutable = ImmutableInvertedIndex::from(mutable_index);
@@ -140,7 +144,8 @@ impl FieldIndexBuilderTrait for FullTextMmapIndexBuilder {
 
         MmapInvertedIndex::create(path.clone(), immutable)?;
 
-        let inverted_index = MmapInvertedIndex::open(path, false)?;
+        let populate = !is_on_disk;
+        let inverted_index = MmapInvertedIndex::open(path, populate)?;
 
         let mmap_index = MmapFullTextIndex {
             inverted_index,

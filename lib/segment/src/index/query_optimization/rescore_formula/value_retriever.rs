@@ -300,7 +300,7 @@ mod tests {
 
         // Create a field index for a number.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = NumericIndex::builder_mmap(dir.path());
+        let mut builder = NumericIndex::builder_mmap(dir.path(), false);
         builder.add_point(0, &[&42.into()]).unwrap();
         builder.add_point(1, &[]).unwrap();
         builder.add_point(2, &[&99.into(), &55.into()]).unwrap();
@@ -309,7 +309,7 @@ mod tests {
 
         // Create a field index for a geo point.
         let dir = tempfile::tempdir().unwrap();
-        let mut builder = GeoMapIndex::mmap_builder(dir.path());
+        let mut builder = GeoMapIndex::mmap_builder(dir.path(), false);
 
         builder.add_point(0, &[]).unwrap();
         builder

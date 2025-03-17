@@ -81,7 +81,11 @@ struct MmapGeoMapIndexStat {
 }
 
 impl MmapGeoMapIndex {
-    pub fn new(dynamic_index: InMemoryGeoMapIndex, path: &Path) -> OperationResult<Self> {
+    pub fn new(
+        dynamic_index: InMemoryGeoMapIndex,
+        path: &Path,
+        is_on_disk: bool,
+    ) -> OperationResult<Self> {
         create_dir_all(path)?;
 
         let deleted_path = path.join(DELETED_PATH);
@@ -185,41 +189,42 @@ impl MmapGeoMapIndex {
             },
         )?;
 
-        Self::load(path)
+        Self::load(path, is_on_disk)
     }
 
-    pub fn load(path: &Path) -> OperationResult<Self> {
+    pub fn load(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let deleted_path = path.join(DELETED_PATH);
         let stats_path = path.join(STATS_PATH);
         let counts_per_hash_path = path.join(COUNTS_PER_HASH);
         let points_map_path = path.join(POINTS_MAP);
         let points_map_ids_path = path.join(POINTS_MAP_IDS);
 
+        let populate = !is_on_disk;
         let stats: MmapGeoMapIndexStat = read_json(&stats_path)?;
         let counts_per_hash = unsafe {
             MmapSlice::try_from(open_write_mmap(
                 &counts_per_hash_path,
                 AdviceSetting::Global,
-                false,
+                populate,
             )?)?
         };
         let points_map = unsafe {
             MmapSlice::try_from(open_write_mmap(
                 &points_map_path,
                 AdviceSetting::Global,
-                false,
+                populate,
             )?)?
         };
         let points_map_ids = unsafe {
             MmapSlice::try_from(open_write_mmap(
                 &points_map_ids_path,
                 AdviceSetting::Global,
-                false,
+                populate,
             )?)?
         };
         let point_to_values = MmapPointToValues::open(path)?;
 
-        let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, false)?;
+        let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
 
