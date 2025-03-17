@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitVec;
-use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::{PointOffsetType, TelemetryDetail};
@@ -454,38 +453,37 @@ impl SegmentEntry for ProxySegment {
     fn rescore_with_formula(
         &self,
         formula_ctx: Arc<FormulaContext>,
-        _wrapped_deleted: Option<&BitSlice>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
-        let deleted_points = self.deleted_points.read();
-
-        // Run rescore in wrapped segment with or without deleted points slice
-        let mut wrapped_results = if deleted_points.is_empty() {
-            self.wrapped_segment.get().read().rescore_with_formula(
-                formula_ctx.clone(),
-                None,
-                hw_counter,
-            )?
-        } else {
-            let deleted_slice = self.deleted_mask.as_deref();
-            self.wrapped_segment.get().read().rescore_with_formula(
-                formula_ctx.clone(),
-                deleted_slice,
-                hw_counter,
-            )?
-        };
+        // Run rescore in wrapped segment
+        let mut wrapped_results = self
+            .wrapped_segment
+            .get()
+            .read()
+            .rescore_with_formula(formula_ctx.clone(), hw_counter)?;
 
         // Run rescore in write segment
-        let mut write_results = self.write_segment.get().read().rescore_with_formula(
-            formula_ctx.clone(),
-            None,
-            hw_counter,
-        )?;
+        let mut write_results = self
+            .write_segment
+            .get()
+            .read()
+            .rescore_with_formula(formula_ctx, hw_counter)?;
 
-        // Just join both results, they will be deduplicated and top-k'd later
-        write_results.append(&mut wrapped_results);
+        {
+            let deleted_points = self.deleted_points.read();
+            if deleted_points.is_empty() {
+                // Just join both results, they will be deduplicated and top-k'd later
+                write_results.append(&mut wrapped_results);
+            } else {
+                for wrapped_result in wrapped_results {
+                    if !deleted_points.contains_key(&wrapped_result.id) {
+                        write_results.push(wrapped_result);
+                    }
+                }
+            }
+        }
 
-        Ok(wrapped_results)
+        Ok(write_results)
     }
 
     fn upsert_point(

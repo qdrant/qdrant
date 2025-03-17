@@ -533,7 +533,7 @@ impl SegmentsSearcher {
                             segment
                                 .get()
                                 .read()
-                                .rescore_with_formula(arc_ctx, None, &hw_counter)
+                                .rescore_with_formula(arc_ctx, &hw_counter)
                         }
                     })
                 })

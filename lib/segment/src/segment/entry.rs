@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::{fs, thread};
 
-use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
@@ -84,7 +83,6 @@ impl SegmentEntry for Segment {
     fn rescore_with_formula(
         &self,
         ctx: Arc<FormulaContext>,
-        wrapped_deleted: Option<&BitSlice>,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPoint>> {
         let FormulaContext {
@@ -99,7 +97,6 @@ impl SegmentEntry for Segment {
         let internal_results = self.do_rescore_with_formula(
             formula,
             prefetches_results,
-            wrapped_deleted,
             *limit,
             is_stopped,
             hw_counter,
