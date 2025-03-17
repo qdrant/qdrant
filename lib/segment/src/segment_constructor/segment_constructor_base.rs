@@ -11,13 +11,15 @@ use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
+use rocksdb::properties::ESTIMATE_NUM_KEYS;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
+use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::VectorIndexEnum;
@@ -348,7 +350,11 @@ pub(crate) fn create_payload_storage(
     Ok(payload_storage)
 }
 
-pub(crate) fn create_mutable_id_tracker(
+pub(crate) fn create_mutable_id_tracker(segment_path: &Path) -> OperationResult<MutableIdTracker> {
+    MutableIdTracker::open(segment_path)
+}
+
+pub(crate) fn create_rocksdb_id_tracker(
     database: Arc<RwLock<DB>>,
 ) -> OperationResult<SimpleIdTracker> {
     SimpleIdTracker::open(database)
@@ -536,9 +542,33 @@ fn create_segment(
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
     let id_tracker = if mutable_id_tracker {
-        sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
-            database.clone(),
-        )?))
+        // Check if any point mappings are stored in RocksDB
+        let has_rocksdb_mappings = {
+            let db = database.read();
+            match db.cf_handle(DB_MAPPING_CF) {
+                Some(cf_handle) => {
+                    let count = db
+                        .property_int_value_cf(cf_handle, ESTIMATE_NUM_KEYS)
+                        .map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to get estimated number of keys from RocksDb: {err}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    count > 0
+                }
+                None => false,
+            }
+        };
+        if !has_rocksdb_mappings {
+            sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
+                segment_path,
+            )?))
+        } else {
+            sp(IdTrackerEnum::RocksDbIdTracker(create_rocksdb_id_tracker(
+                database.clone(),
+            )?))
+        }
     } else {
         sp(IdTrackerEnum::ImmutableIdTracker(
             create_immutable_id_tracker(segment_path)?,

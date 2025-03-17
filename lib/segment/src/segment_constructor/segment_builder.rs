@@ -85,7 +85,7 @@ impl SegmentBuilder {
         let database = open_segment_db(temp_dir.path(), segment_config)?;
 
         let id_tracker = if segment_config.is_appendable() {
-            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(database.clone())?)
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path())?)
         } else {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
@@ -476,6 +476,7 @@ impl SegmentBuilder {
                 IdTrackerEnum::ImmutableIdTracker(_) => {
                     unreachable!("ImmutableIdTracker should not be used for building segment")
                 }
+                IdTrackerEnum::RocksDbIdTracker(_) => id_tracker,
             };
 
             id_tracker.mapping_flusher()()?;
