@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use serde_json::Value;
 

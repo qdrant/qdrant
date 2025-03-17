@@ -209,12 +209,12 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     pub fn iter_values_map<'a>(
         &'a self,
-        hw_acc: &'a HardwareCounterCell,
+        hw_cell: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = (&'a N, IdIter<'a>)> + 'a> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_values_map(hw_acc)),
-            MapIndex::Immutable(index) => Box::new(index.iter_values_map(hw_acc)),
-            MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
+            MapIndex::Mutable(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::Immutable(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_cell)),
         }
     }
 

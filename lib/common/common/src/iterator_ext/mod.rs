@@ -4,12 +4,9 @@ use std::fmt::Debug;
 use check_stopped::CheckStopped;
 use on_final_count::OnFinalCount;
 
-use crate::counter::counter_cell::CounterCell;
-use crate::counter::hardware_accumulator::HwMeasurementAcc;
-use crate::counter::hardware_counter::HardwareCounterCell;
+pub(super) mod on_final_count;
 
 mod check_stopped;
-mod on_final_count;
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.
@@ -45,68 +42,6 @@ pub trait IteratorExt: Iterator {
         Self: Sized,
     {
         OnFinalCount::new(self, f)
-    }
-
-    /// Measures the hardware usage of an iterator.
-    ///
-    /// # Arguments
-    /// - `hw_acc`: accumulator holding a counter cell
-    /// - `multiplier`: multiplies the number of iterations by this factor.
-    /// - `f`: Closure to get the specific counter to increase from the cell inside the accumulator.
-    fn measure_hw_with_acc<R>(
-        self,
-        hw_acc: HwMeasurementAcc,
-        multiplier: usize,
-        mut f: R,
-    ) -> OnFinalCount<Self, impl FnMut(usize)>
-    where
-        Self: Sized,
-        R: FnMut(&HardwareCounterCell) -> &CounterCell,
-    {
-        OnFinalCount::new(self, move |i| {
-            let hw_counter = hw_acc.get_counter_cell();
-            // Subtract 1 to not account for the latest `None` call.
-            f(&hw_counter).incr_delta(i.saturating_sub(1) * multiplier);
-        })
-    }
-
-    /// Measures the hardware usage of an iterator.
-    ///
-    /// # Arguments
-    /// - `hw_cell`: counter cell
-    /// - `multiplier`: multiplies the number of iterations by this factor.
-    /// - `f`: Closure to get the specific counter to increase from `hw_cell`.
-    fn measure_hw_with_cell<R>(
-        self,
-        hw_cell: &HardwareCounterCell,
-        multiplier: usize,
-        mut f: R,
-    ) -> OnFinalCount<Self, impl FnMut(usize)>
-    where
-        Self: Sized,
-        R: FnMut(&HardwareCounterCell) -> &CounterCell,
-    {
-        OnFinalCount::new(self, move |i| {
-            // Subtract 1 to not account for the latest `None` call.
-            f(hw_cell).incr_delta(i.saturating_sub(1) * multiplier);
-        })
-    }
-
-    /// Measures the hardware usage of an iterator with the size of a single value being represented as a fraction.
-    fn measure_hw_with_cell_and_fraction<R>(
-        self,
-        hw_cell: &HardwareCounterCell,
-        fraction: usize,
-        mut f: R,
-    ) -> OnFinalCount<Self, impl FnMut(usize)>
-    where
-        Self: Sized,
-        R: FnMut(&HardwareCounterCell) -> &CounterCell,
-    {
-        OnFinalCount::new(self, move |i| {
-            // Subtract one to not account for the latest `None` call.
-            f(hw_cell).incr_delta(i.saturating_sub(1) / fraction);
-        })
     }
 }
 

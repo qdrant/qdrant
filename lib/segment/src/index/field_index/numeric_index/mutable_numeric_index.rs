@@ -4,7 +4,7 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;

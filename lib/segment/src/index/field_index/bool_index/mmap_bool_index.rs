@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
@@ -220,7 +220,7 @@ impl MmapBoolIndex {
             (true, Box::new(self.trues_slice.iter_trues()) as IdIter),
         ]
         .into_iter()
-        .measure_hw_with_cell(hw_counter, size_of::<usize>(), |i| {
+        .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
             i.payload_index_io_read_counter()
         })
     }

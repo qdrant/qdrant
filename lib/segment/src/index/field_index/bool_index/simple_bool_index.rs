@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -24,8 +24,8 @@ use crate::types::{FieldCondition, Match, MatchValue, PayloadKeyType, ValueVaria
 mod memory {
     use bitvec::vec::BitVec;
     use common::counter::hardware_counter::HardwareCounterCell;
+    use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
     use common::ext::BitSliceExt as _;
-    use common::iterator_ext::IteratorExt;
     use common::types::PointOffsetType;
 
     pub struct BooleanItem {

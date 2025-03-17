@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -295,8 +294,6 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
         let counter = hw_counter.payload_index_io_read_counter();
-        counter.incr_delta(BUCKET_OFFSET_OVERHEAD);
-
         self.value_to_points.get(value).map(|entry| {
             counter.incr_delta(size_of_val(entry));
             entry.count as usize
@@ -322,10 +319,6 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     }
 
     pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(BUCKET_OFFSET_OVERHEAD);
-
         if let Some(entry) = self.value_to_points.get(value) {
             let range = entry.range.start as usize..entry.range.end as usize;
 

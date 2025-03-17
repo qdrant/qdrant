@@ -17,7 +17,6 @@ pub struct HardwareCounterCell {
     pub(super) vector_io_read_counter: CounterCell,
     pub(super) vector_io_write_counter: CounterCell,
     pub(super) accumulator: HwMeasurementAcc,
-    disposable: bool,
 }
 
 impl HardwareCounterCell {
@@ -32,7 +31,6 @@ impl HardwareCounterCell {
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator: HwMeasurementAcc::new(),
-            disposable: false,
         }
     }
 
@@ -49,7 +47,6 @@ impl HardwareCounterCell {
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator: HwMeasurementAcc::disposable(),
-            disposable: true,
         }
     }
 
@@ -62,7 +59,6 @@ impl HardwareCounterCell {
             payload_index_io_read_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
-            disposable: accumulator.is_disposable(),
             accumulator,
         }
     }
@@ -84,7 +80,6 @@ impl HardwareCounterCell {
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
             accumulator: self.accumulator.clone(),
-            disposable: self.disposable,
         }
     }
 
@@ -167,7 +162,6 @@ impl HardwareCounterCell {
             vector_io_read_counter,
             vector_io_write_counter,
             accumulator: _,
-            disposable: _,
         } = self;
 
         HardwareData {

@@ -4,8 +4,7 @@ use std::iter;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
-use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -179,8 +178,6 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
         let counter = hw_counter.payload_index_io_read_counter();
-        counter.incr_delta(BUCKET_OFFSET_OVERHEAD);
-
         self.map.get(value).map(|p| {
             counter.incr_delta(size_of_val(p));
             p.len()
@@ -212,10 +209,6 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
     }
 
     pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(BUCKET_OFFSET_OVERHEAD);
-
         self.map
             .get(value)
             .map(|ids| {
