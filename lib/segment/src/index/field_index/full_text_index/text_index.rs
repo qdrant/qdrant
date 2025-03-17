@@ -51,8 +51,14 @@ impl FullTextIndex {
         }
     }
 
-    pub fn new_mmap(path: PathBuf, config: TextIndexParams) -> OperationResult<Self> {
-        Ok(Self::Mmap(Box::new(MmapFullTextIndex::open(path, config)?)))
+    pub fn new_mmap(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+    ) -> OperationResult<Self> {
+        Ok(Self::Mmap(Box::new(MmapFullTextIndex::open(
+            path, config, is_on_disk,
+        )?)))
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
@@ -71,8 +77,12 @@ impl FullTextIndex {
         FullTextIndexBuilder(Self::new_memory(db, config, field, true))
     }
 
-    pub fn builder_mmap(path: PathBuf, config: TextIndexParams) -> FullTextMmapIndexBuilder {
-        FullTextMmapIndexBuilder::new(path, config)
+    pub fn builder_mmap(
+        path: PathBuf,
+        config: TextIndexParams,
+        is_on_disk: bool,
+    ) -> FullTextMmapIndexBuilder {
+        FullTextMmapIndexBuilder::new(path, config, is_on_disk)
     }
 
     fn storage_cf_name(field: &str) -> String {

@@ -14,9 +14,7 @@ use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndexBuilderTrait as _;
 use super::field_index::facet_index::FacetIndexEnum;
-use super::field_index::index_selector::{
-    IndexSelector, IndexSelectorOnDisk, IndexSelectorRocksDb,
-};
+use super::field_index::index_selector::{IndexSelector, IndexSelectorMmap, IndexSelectorRocksDb};
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
@@ -42,6 +40,13 @@ use crate::types::{
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
+#[derive(Debug)]
+enum StorageType {
+    Appendable(Arc<RwLock<DB>>),
+    NonAppendableRocksDb(Arc<RwLock<DB>>),
+    NonAppendable,
+}
+
 /// `PayloadIndex` implementation, which actually uses index structures for providing faster search
 #[derive(Debug)]
 pub struct StructPayloadIndex {
@@ -58,8 +63,7 @@ pub struct StructPayloadIndex {
     path: PathBuf,
     /// Used to select unique point ids
     visited_pool: VisitedPool,
-    db: Arc<RwLock<DB>>,
-    is_appendable: bool,
+    storage_type: StorageType,
 }
 
 impl StructPayloadIndex {
@@ -158,11 +162,30 @@ impl StructPayloadIndex {
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
         } else {
+            // ToDo(mmap-paylaod-index): uncomment before minor release
+            // let mut new_config = PayloadConfig::default();
+            // if !is_appendable {
+            //     new_config.skip_rocksdb = Some(true);
+            // }
+            // new_config
             PayloadConfig::default()
         };
 
-        let db = open_db_with_existing_cf(path)
-            .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))?;
+        let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
+
+        let storage_type = if is_appendable {
+            let db = open_db_with_existing_cf(path).map_err(|err| {
+                OperationError::service_error(format!("RocksDB open error: {err}"))
+            })?;
+            StorageType::Appendable(db)
+        } else if skip_rocksdb {
+            StorageType::NonAppendable
+        } else {
+            let db = open_db_with_existing_cf(path).map_err(|err| {
+                OperationError::service_error(format!("RocksDB open error: {err}"))
+            })?;
+            StorageType::NonAppendableRocksDb(db)
+        };
 
         let mut index = StructPayloadIndex {
             payload,
@@ -172,8 +195,7 @@ impl StructPayloadIndex {
             config,
             path: path.to_owned(),
             visited_pool: Default::default(),
-            db,
-            is_appendable,
+            storage_type,
         };
 
         if !index.config_path().exists() {
@@ -367,15 +389,23 @@ impl StructPayloadIndex {
         }
     }
 
+    /// Select which type of PayloadIndex to use for the field
     fn selector(&self, payload_schema: &PayloadFieldSchema) -> IndexSelector {
-        let is_immutable_segment = !self.is_appendable;
-        if payload_schema.is_on_disk() && (is_immutable_segment || payload_schema.is_mutable()) {
-            IndexSelector::OnDisk(IndexSelectorOnDisk { dir: &self.path })
-        } else {
-            IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db: &self.db,
-                is_appendable: self.is_appendable,
-            })
+        let is_on_disk = payload_schema.is_on_disk();
+
+        match &self.storage_type {
+            StorageType::Appendable(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: true,
+            }),
+            StorageType::NonAppendableRocksDb(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
+                db,
+                is_appendable: false,
+            }),
+            StorageType::NonAppendable => IndexSelector::Mmap(IndexSelectorMmap {
+                dir: &self.path,
+                is_on_disk,
+            }),
         }
     }
 
@@ -641,7 +671,17 @@ impl PayloadIndex for StructPayloadIndex {
     }
 
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {
-        crate::rocksdb_backup::create(&self.db.read(), path)
+        match &self.storage_type {
+            StorageType::Appendable(db) => {
+                let db_guard = db.read();
+                crate::rocksdb_backup::create(&db_guard, path)
+            }
+            StorageType::NonAppendableRocksDb(db) => {
+                let db_guard = db.read();
+                crate::rocksdb_backup::create(&db_guard, path)
+            }
+            StorageType::NonAppendable => Ok(()),
+        }
     }
 
     fn files(&self) -> Vec<PathBuf> {

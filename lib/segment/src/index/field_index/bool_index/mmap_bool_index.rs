@@ -31,40 +31,44 @@ pub struct MmapBoolIndex {
 }
 
 impl MmapBoolIndex {
-    pub fn builder(path: &Path) -> OperationResult<MmapBoolIndexBuilder> {
-        Ok(MmapBoolIndexBuilder(Self::open_or_create(path)?))
+    pub fn builder(path: &Path, is_on_disk: bool) -> OperationResult<MmapBoolIndexBuilder> {
+        Ok(MmapBoolIndexBuilder(Self::open_or_create(
+            path, is_on_disk,
+        )?))
     }
 
     /// Creates a new boolean index at the given path. If it already exists, loads the index.
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    /// - `is_on_disk` - If the index should be kept on disk. Memory will be populated if false.
+    pub fn open_or_create(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let falses_dir = path.join(FALSES_DIRNAME);
         if falses_dir.is_dir() {
-            Self::open(path)
+            Self::open(path, is_on_disk)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create mmap bool index directory: {err}"
                 ))
             })?;
-            Self::open(path)
+            Self::open(path, is_on_disk)
         }
     }
 
-    fn open(path: &Path) -> OperationResult<Self> {
+    fn open(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error("Path is not a directory"));
         }
 
+        let populate = !is_on_disk;
         // Trues bitslice
         let trues_path = path.join(TRUES_DIRNAME);
-        let trues_slice = DynamicMmapFlags::open(&trues_path)?;
+        let trues_slice = DynamicMmapFlags::open(&trues_path, populate)?;
 
         // Falses bitslice
         let falses_path = path.join(FALSES_DIRNAME);
-        let falses_slice = DynamicMmapFlags::open(&falses_path)?;
+        let falses_slice = DynamicMmapFlags::open(&falses_path, populate)?;
 
         Ok(Self {
             base_dir: path.to_path_buf(),
@@ -465,7 +469,7 @@ mod tests {
     #[test]
     fn test_files() {
         let dir = TempDir::with_prefix("test_mmap_bool_index").unwrap();
-        let index = MmapBoolIndex::open_or_create(dir.path()).unwrap();
+        let index = MmapBoolIndex::open_or_create(dir.path(), false).unwrap();
 
         let reported = index.files().into_iter().collect::<HashSet<_>>();
 

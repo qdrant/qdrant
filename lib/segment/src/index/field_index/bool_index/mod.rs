@@ -257,7 +257,10 @@ mod tests {
 
     impl OpenIndex for MmapBoolIndex {
         fn open_at(path: &Path) -> BoolIndex {
-            MmapBoolIndex::builder(path).unwrap().make_empty().unwrap()
+            MmapBoolIndex::builder(path, false)
+                .unwrap()
+                .make_empty()
+                .unwrap()
         }
     }
 
