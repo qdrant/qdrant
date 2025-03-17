@@ -11,15 +11,14 @@ use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
-use rocksdb::properties::ESTIMATE_NUM_KEYS;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF, open_db};
+use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
-use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
+use crate::id_tracker::mutable_id_tracker::{self, MutableIdTracker};
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::VectorIndexEnum;
@@ -542,25 +541,28 @@ fn create_segment(
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
     let id_tracker = if mutable_id_tracker {
-        // Check if any point mappings are stored in RocksDB
-        let has_rocksdb_mappings = {
-            let db = database.read();
-            match db.cf_handle(DB_MAPPING_CF) {
-                Some(cf_handle) => {
-                    let count = db
-                        .property_int_value_cf(cf_handle, ESTIMATE_NUM_KEYS)
-                        .map_err(|err| {
-                            OperationError::service_error(format!(
-                                "Failed to get estimated number of keys from RocksDb: {err}"
-                            ))
-                        })?
-                        .unwrap_or_default();
-                    count > 0
-                }
-                None => false,
-            }
-        };
-        if !has_rocksdb_mappings {
+        // TODO(1.14): uncomment this below to use new mutable ID tracker by default
+        // // Check if any point mappings are stored in RocksDB
+        // let has_rocksdb_mappings = {
+        //     let db = database.read();
+        //     match db.cf_handle(DB_MAPPING_CF) {
+        //         Some(cf_handle) => {
+        //             let count = db
+        //                 .property_int_value_cf(cf_handle, rocksdb::properties::ESTIMATE_NUM_KEYS)
+        //                 .map_err(|err| {
+        //                     OperationError::service_error(format!(
+        //                         "Failed to get estimated number of keys from RocksDb: {err}"
+        //                     ))
+        //                 })?
+        //                 .unwrap_or_default();
+        //             count > 0
+        //         }
+        //         None => false,
+        //     }
+        // };
+        // if !has_rocksdb_mappings {
+
+        if mutable_id_tracker::mappings_path(segment_path).is_file() {
             sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
                 segment_path,
             )?))

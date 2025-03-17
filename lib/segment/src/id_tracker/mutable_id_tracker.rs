@@ -333,7 +333,7 @@ impl IdTracker for MutableIdTracker {
     }
 }
 
-fn mappings_path(segment_path: &Path) -> PathBuf {
+pub(crate) fn mappings_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_MAPPINGS)
 }
 
