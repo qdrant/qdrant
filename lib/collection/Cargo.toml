@@ -52,7 +52,7 @@ atomicwrites = { workspace = true}
 log = { workspace = true }
 env_logger = "0.11"
 merge = { workspace = true }
-async-trait = "0.1.86"
+async-trait = "0.1.88"
 arc-swap = "1.7.1"
 tonic = { workspace = true }
 uuid = { workspace = true }
