@@ -2449,9 +2449,9 @@ checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "half"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dd08c532ae367adf81c312a4580bc67f1d0fe8bc9c460520283f4c0ff277888"
+checksum = "7db2ff139bba50379da6aa0766b52fdcb62cb5b263009b09ed58ba604e14bbd1"
 dependencies = [
  "bytemuck",
  "cfg-if",
@@ -5836,7 +5836,7 @@ dependencies = [
  "geohash",
  "gpu",
  "gridstore",
- "half 2.4.1",
+ "half 2.5.0",
  "http 1.2.0",
  "indexmap 2.8.0",
  "indicatif",
@@ -6238,7 +6238,7 @@ dependencies = [
  "dataset",
  "generic-tests",
  "gridstore",
- "half 2.4.1",
+ "half 2.5.0",
  "indicatif",
  "io",
  "itertools 0.14.0",
