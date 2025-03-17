@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::iter::FusedIterator;
 use std::mem;
 use std::path::{Path, PathBuf};
 
@@ -392,7 +391,7 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
 /// iterator will not produce any more items.
 fn read_mappings_iter<R: Read>(
     mut reader: R,
-) -> impl FusedIterator<Item = OperationResult<MappingChange>> {
+) -> impl Iterator<Item = OperationResult<MappingChange>> {
     // Keep reading until end of file or error
     std::iter::from_fn(move || match read_entry(&mut reader) {
         Ok(entry) => Some(Ok(entry)),
@@ -401,8 +400,6 @@ fn read_mappings_iter<R: Read>(
         // Propagate deserialization error
         Err(err) => Some(Err(err.into())),
     })
-    // End after first none
-    .fuse()
     // Can't read any more data reliably after first error
     .take_while_inclusive(|item| item.is_ok())
 }
