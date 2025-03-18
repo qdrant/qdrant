@@ -381,7 +381,8 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     // If reader is not fully exhausted, there's an incomplete entry at the end, truncate the file
     // It can happen on crash while flushing. We must truncate the file here to not corrupt new
     // entries we append to the file
-    if read_to <= file_len {
+    debug_assert!(read_to <= file_len, "cannot read past the end of the file");
+    if read_to < file_len {
         log::warn!(
             "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming WAL recovery",
             (file_len - read_to).saturating_sub(1),
@@ -1042,6 +1043,21 @@ pub(super) mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+
+        // One entry and and one extra byte, file must be truncated
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01",
+        )
+        .unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 14);
         assert_eq!(
             load_mappings(&mappings_path)
                 .unwrap()
