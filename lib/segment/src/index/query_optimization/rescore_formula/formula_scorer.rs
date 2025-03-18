@@ -440,7 +440,7 @@ mod tests {
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
         GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)
-    ), 21926.494)]
+    ), 21926.494151786308)]
     #[should_panic(
         expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point", "#
     )]
