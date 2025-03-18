@@ -41,7 +41,6 @@ use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
-use tokio::time::sleep;
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
