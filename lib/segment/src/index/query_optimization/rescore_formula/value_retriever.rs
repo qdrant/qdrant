@@ -3,15 +3,17 @@ use std::collections::{HashMap, HashSet};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Itertools;
 use serde_json::{Number, Value};
 
+use crate::common::utils::MultiValue;
 use crate::index::field_index::FieldIndex;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
 use crate::types::{DateTimePayloadType, PayloadContainer, UuidPayloadType};
 
-pub type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> Option<Value> + 'a>;
+pub type VariableRetrieverFn<'a> = Box<dyn Fn(PointOffsetType) -> MultiValue<Value> + 'a>;
 
 impl StructPayloadIndex {
     /// Prepares optimized functions to extract each of the variables, given a point id.
@@ -72,115 +74,116 @@ fn payload_variable_retriever(
     let retriever_fn = move |point_id: PointOffsetType| {
         payload_provider.with_payload(
             point_id,
-            |payload| {
-                let values = payload.get_value(&json_path);
-                let value = *values.first()?;
-
-                // not using array wildcard `[]` on a key which has an array value will return the whole
-                // array as one value, let's extract the first element if that is the case.
-                match value {
-                    serde_json::Value::Array(array) if !json_path.has_wildcard_suffix() => {
-                        return array.first().cloned();
-                    }
-                    _ => {}
-                }
-
-                Some(value.clone())
-            },
+            |payload| payload.get_value_cloned(&json_path),
             hw_counter,
         )
     };
     Box::new(retriever_fn)
 }
 
-/// Returns function to extract the first number a point may have from the index
+/// Returns function to extract all the values a point has in the index
 ///
 /// If there is no appropriate index, returns None
 fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn> {
     match index {
         FieldIndex::IntIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 numeric_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .map(|value| Value::Number(Number::from(value)))
+                    .into_iter()
+                    .flatten()
+                    .map(|v| Value::Number(Number::from(v)))
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::IntMapIndex(map_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 map_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .map(|&value| Value::Number(Number::from(value)))
+                    .into_iter()
+                    .flatten()
+                    .map(|v| Value::Number(Number::from(*v)))
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::FloatIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 numeric_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .and_then(Number::from_f64)
-                    .map(Value::Number)
+                    .into_iter()
+                    .flatten()
+                    .map(|v| Value::Number(Number::from_f64(v).unwrap()))
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::DatetimeIndex(numeric_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 numeric_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .and_then(DateTimePayloadType::from_timestamp)
-                    .and_then(|dt| serde_json::to_value(dt).ok())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|v| {
+                        serde_json::to_value(DateTimePayloadType::from_timestamp(v)?).ok()
+                    })
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::KeywordIndex(keyword_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 keyword_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .map(|s| Value::String(s.to_owned()))
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|v| serde_json::to_value(v).ok())
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::GeoIndex(geo_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 geo_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .and_then(|value| serde_json::to_value(value).ok())
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|v| serde_json::to_value(v).ok())
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
 
         FieldIndex::BoolIndex(bool_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 bool_index
                     .get_point_values(point_id)
-                    .first()
-                    .map(|&value| Value::Bool(value))
+                    .into_iter()
+                    .map(|value| Value::Bool(value))
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::UuidMapIndex(uuid_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 uuid_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .map(|value| UuidPayloadType::from_u128(*value))
-                    .map(|value| Value::String(value.to_string()))
+                    .into_iter()
+                    .flatten()
+                    .map(|value| Value::String(UuidPayloadType::from_u128(*value).to_string()))
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
         FieldIndex::UuidIndex(uuid_index) => {
-            let extract_fn = move |point_id: PointOffsetType| -> Option<Value> {
+            let extract_fn = move |point_id: PointOffsetType| -> MultiValue<Value> {
                 uuid_index
                     .get_values(point_id)
-                    .and_then(|mut values| values.next())
-                    .map(UuidPayloadType::from_u128)
-                    .map(|value| Value::String(value.to_string()))
+                    .into_iter()
+                    .flatten()
+                    .map(|value| Value::String(UuidPayloadType::from_u128(value).to_string()))
+                    .collect()
             };
             Some(Box::new(extract_fn))
         }
