@@ -138,6 +138,7 @@
     - [CountResult](#qdrant-CountResult)
     - [CreateFieldIndexCollection](#qdrant-CreateFieldIndexCollection)
     - [DatetimeRange](#qdrant-DatetimeRange)
+    - [DecayParamsExpression](#qdrant-DecayParamsExpression)
     - [DeleteFieldIndexCollection](#qdrant-DeleteFieldIndexCollection)
     - [DeletePayloadPoints](#qdrant-DeletePayloadPoints)
     - [DeletePointVectors](#qdrant-DeletePointVectors)
@@ -2446,6 +2447,24 @@ The JSON representation for `Value` is a JSON value.
 
 
 
+<a name="qdrant-DecayParamsExpression"></a>
+
+### DecayParamsExpression
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| x | [Expression](#qdrant-Expression) |  | The variable to decay |
+| target | [Expression](#qdrant-Expression) | optional | The target value to start decaying from. Defaults to 0. |
+| scale | [float](#float) | optional | The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number. |
+| midpoint | [float](#float) | optional | The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`. |
+
+
+
+
+
+
 <a name="qdrant-DeleteFieldIndexCollection"></a>
 
 ### DeleteFieldIndexCollection
@@ -2706,6 +2725,9 @@ The JSON representation for `Value` is a JSON value.
 | exp | [Expression](#qdrant-Expression) |  | Exponential |
 | log10 | [Expression](#qdrant-Expression) |  | Logarithm |
 | ln | [Expression](#qdrant-Expression) |  | Natural logarithm |
+| exp_decay | [DecayParamsExpression](#qdrant-DecayParamsExpression) |  | Exponential decay |
+| gauss_decay | [DecayParamsExpression](#qdrant-DecayParamsExpression) |  | Gaussian decay |
+| lin_decay | [DecayParamsExpression](#qdrant-DecayParamsExpression) |  | Linear decay |
 
 
 

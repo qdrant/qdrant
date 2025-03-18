@@ -14496,6 +14496,15 @@
           },
           {
             "$ref": "#/components/schemas/GeoDistance"
+          },
+          {
+            "$ref": "#/components/schemas/LinDecayExpression"
+          },
+          {
+            "$ref": "#/components/schemas/ExpDecayExpression"
+          },
+          {
+            "$ref": "#/components/schemas/GaussDecayExpression"
           }
         ]
       },
@@ -14674,6 +14683,73 @@
           "to": {
             "description": "Payload field with the destination geo point",
             "type": "string"
+          }
+        }
+      },
+      "LinDecayExpression": {
+        "type": "object",
+        "required": [
+          "lin_decay"
+        ],
+        "properties": {
+          "lin_decay": {
+            "$ref": "#/components/schemas/DecayParamsExpression"
+          }
+        }
+      },
+      "DecayParamsExpression": {
+        "type": "object",
+        "required": [
+          "x"
+        ],
+        "properties": {
+          "x": {
+            "$ref": "#/components/schemas/Expression"
+          },
+          "target": {
+            "description": "The target value to start decaying from. Defaults to 0.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Expression"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "scale": {
+            "description": "The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          },
+          "midpoint": {
+            "description": "The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.",
+            "type": "number",
+            "format": "float",
+            "nullable": true
+          }
+        }
+      },
+      "ExpDecayExpression": {
+        "type": "object",
+        "required": [
+          "exp_decay"
+        ],
+        "properties": {
+          "exp_decay": {
+            "$ref": "#/components/schemas/DecayParamsExpression"
+          }
+        }
+      },
+      "GaussDecayExpression": {
+        "type": "object",
+        "required": [
+          "gauss_decay"
+        ],
+        "properties": {
+          "gauss_decay": {
+            "$ref": "#/components/schemas/DecayParamsExpression"
           }
         }
       },

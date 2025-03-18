@@ -7,7 +7,7 @@ use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 
-use super::parsed_formula::{ParsedExpression, ParsedFormula, VariableId};
+use super::parsed_formula::{DecayKind, ParsedExpression, ParsedFormula, VariableId};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
@@ -17,6 +17,7 @@ use crate::json_path::JsonPath;
 use crate::types::GeoPoint;
 
 const DEFAULT_SCORE: ScoreType = 0.0;
+const DEFAULT_DECAY_TARGET: ScoreType = 0.0;
 
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
@@ -237,6 +238,30 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.abs())
             }
+            // Interactive formulas in https://www.desmos.com/calculator/htg0vrfmks
+            ParsedExpression::Decay {
+                kind,
+                target,
+                lambda,
+                x,
+            } => {
+                let x = self.eval_expression(x, point_id)?;
+                let target = if let Some(target) = target {
+                    self.eval_expression(target, point_id)?
+                } else {
+                    DEFAULT_DECAY_TARGET
+                };
+                let decay = match kind {
+                    DecayKind::Exp => exp_decay(x, target, *lambda),
+                    DecayKind::Gauss => gauss_decay(x, target, *lambda),
+                    DecayKind::Lin => linear_decay(x, target, *lambda),
+                };
+
+                // All decay functions have a range of [0, 1], no need to check for bounds
+                debug_assert!((0.0..=1.0).contains(&decay));
+
+                Ok(decay)
+            }
         }
     }
 
@@ -278,6 +303,21 @@ impl FormulaScorer<'_> {
                 description: "No value found in a payload nor defaults".to_string(),
             })
     }
+}
+
+fn exp_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+    let diff = (x - target).abs();
+    (lambda * diff).exp()
+}
+
+fn gauss_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+    let diff = x - target;
+    (lambda * diff * diff).exp()
+}
+
+fn linear_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+    let diff = (x - target).abs();
+    (-lambda * diff + 1.0).max(0.0)
 }
 
 #[cfg(test)]
