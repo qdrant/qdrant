@@ -326,13 +326,15 @@ impl InMemoryGeoMapIndex {
 
         let mut geo_hashes = vec![];
 
-        let counter = hw_counter.payload_index_io_write_counter();
+        let mut hw_cell_wb = hw_counter
+            .payload_index_io_write_counter()
+            .write_back_counter();
 
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
                 .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
 
-            counter.incr_delta(size_of_val(&added_geo_hash));
+            hw_cell_wb.incr_delta(size_of_val(&added_geo_hash));
 
             geo_hashes.push(added_geo_hash);
         }
@@ -346,7 +348,7 @@ impl InMemoryGeoMapIndex {
             self.increment_hash_value_counts(geo_hash);
         }
 
-        counter.incr_delta(geo_hashes.len() * size_of::<PointOffsetType>());
+        hw_cell_wb.incr_delta(geo_hashes.len() * size_of::<PointOffsetType>());
 
         self.increment_hash_point_counts(&geo_hashes);
 
