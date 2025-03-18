@@ -61,7 +61,7 @@ def test_formula(collection_name, formula, expecting):
 
     query = {
         "prefetch": {"query": point_id},
-        "query": {"formula": formula},
+        "query": {"formula": formula, "defaults": {"price": 0.0}},
         "with_payload": True,
     }
 
@@ -77,9 +77,9 @@ def test_formula(collection_name, formula, expecting):
     # Assert that the response is in descending order
     points = response.json()["result"]["points"]
     scores = [point.get("score") for point in points]
-    assert all(
-        scores[i] >= scores[i + 1] for i in range(len(scores) - 1)
-    ), "Results should be ordered by score descending"
+    assert all(scores[i] >= scores[i + 1] for i in range(len(scores) - 1)), (
+        "Results should be ordered by score descending"
+    )
 
     # Sanity check that the evaluation was correct
     for point in points:
@@ -100,9 +100,9 @@ def test_formula(collection_name, formula, expecting):
         point_score = point.get("score")
 
         # Compare with actual score within floating point precision
-        assert isclose(
-            point_score, expected_score, rel_tol=1e-5
-        ), f"Expected score {expected_score}, got {point_score}. Point: {point}"
+        assert isclose(point_score, expected_score, rel_tol=1e-5), (
+            f"Expected score {expected_score}, got {point_score}. Point: {point}"
+        )
 
     # Assert that the response contains all points
     assert len(points) == len(orig_scores), "Response should contain all points"

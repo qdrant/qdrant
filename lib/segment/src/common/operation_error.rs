@@ -14,7 +14,7 @@ use crate::utils::mem::Mem;
 
 pub const PROCESS_CANCELLED_BY_SERVICE_MESSAGE: &str = "process cancelled by service";
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, PartialEq)]
 #[error("{0}")]
 pub enum OperationError {
     #[error("Vector dimension error: expected dim: {expected_dim}, got {received_dim}")]
@@ -62,10 +62,13 @@ pub enum OperationError {
         "No appropriate index for faceting: `{key}`. Please create one to facet on this field. Check https://qdrant.tech/documentation/concepts/indexing/#payload-index to see which payload schemas support Match conditions"
     )]
     MissingMapIndexForFacet { key: String },
-    #[error("The variable nor the default value for {field_name} is a {expected_type}")]
+    #[error(
+        "Expected {expected_type} value for {field_name} in the payload and/or in the formula defaults. Error: {description}"
+    )]
     VariableTypeError {
         field_name: PayloadKeyType,
         expected_type: String,
+        description: String,
     },
     #[error("The expression {expression} produced a non-finite number")]
     NonFiniteNumber { expression: String },
