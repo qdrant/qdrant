@@ -9,6 +9,7 @@ pub mod delta_pack;
 pub mod disk;
 pub mod ext;
 pub mod fixed_length_priority_queue;
+pub mod flags;
 pub mod iterator_ext;
 pub mod math;
 pub mod mmap_hashmap;
