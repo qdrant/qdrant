@@ -1,6 +1,6 @@
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
-use super::hardware_data::{HardwareData, RealCpuMeasurement};
+use super::hardware_data::{HardwareData, RealCpuMeasurement, RealVectorIoReadMeasurement};
 
 /// Collection of different types of hardware measurements.
 ///
@@ -9,6 +9,7 @@ use super::hardware_data::{HardwareData, RealCpuMeasurement};
 /// In release mode it'll only log a warning in this case.
 #[derive(Debug)]
 pub struct HardwareCounterCell {
+    vector_io_read_multiplier: usize,
     cpu_multiplier: usize,
     cpu_counter: CounterCell,
     pub(super) payload_io_read_counter: CounterCell,
@@ -23,6 +24,7 @@ impl HardwareCounterCell {
     #[cfg(feature = "testing")]
     pub fn new() -> Self {
         Self {
+            vector_io_read_multiplier: 1,
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
@@ -39,6 +41,7 @@ impl HardwareCounterCell {
     /// Do not use it tests or if you don't know what you're doing.
     pub fn disposable() -> Self {
         Self {
+            vector_io_read_multiplier: 1,
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
@@ -50,8 +53,31 @@ impl HardwareCounterCell {
         }
     }
 
+    #[cfg(feature = "testing")]
+    pub fn new_with(
+        cpu: usize,
+        payload_io_read: usize,
+        payload_io_write: usize,
+        payload_index_io_read: usize,
+        vector_io_read: usize,
+        vector_io_write: usize,
+    ) -> Self {
+        Self {
+            vector_io_read_multiplier: 1,
+            cpu_multiplier: 1,
+            cpu_counter: CounterCell::new_with(cpu),
+            payload_io_read_counter: CounterCell::new_with(payload_io_read),
+            payload_io_write_counter: CounterCell::new_with(payload_io_write),
+            payload_index_io_read_counter: CounterCell::new_with(payload_index_io_read),
+            vector_io_read_counter: CounterCell::new_with(vector_io_read),
+            vector_io_write_counter: CounterCell::new_with(vector_io_write),
+            accumulator: HwMeasurementAcc::new(),
+        }
+    }
+
     pub fn new_with_accumulator(accumulator: HwMeasurementAcc) -> Self {
         Self {
+            vector_io_read_multiplier: 1,
             cpu_multiplier: 1,
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
@@ -72,6 +98,7 @@ impl HardwareCounterCell {
     /// Allows independent counting within different segments.
     pub fn fork(&self) -> Self {
         Self {
+            vector_io_read_multiplier: self.vector_io_read_multiplier,
             cpu_multiplier: self.cpu_multiplier,
             cpu_counter: CounterCell::new(),
             payload_io_read_counter: CounterCell::new(),
@@ -87,9 +114,20 @@ impl HardwareCounterCell {
         self.cpu_multiplier = multiplier;
     }
 
+    pub fn set_vector_io_read_multiplier(&mut self, multiplier: usize) {
+        self.vector_io_read_multiplier = multiplier;
+    }
+
     /// Returns the real cpu value with multiplier applied.
     pub fn get_cpu(&self) -> RealCpuMeasurement {
         RealCpuMeasurement::new(self.cpu_counter.get(), self.cpu_multiplier)
+    }
+
+    pub fn get_vector_io_read(&self) -> RealVectorIoReadMeasurement {
+        RealVectorIoReadMeasurement::new(
+            self.vector_io_read_counter.get(),
+            self.vector_io_read_multiplier,
+        )
     }
 
     /// Returns the CPU counter that can be used for counting.
@@ -127,12 +165,13 @@ impl HardwareCounterCell {
     /// Returns a copy of the current measurements made by this counter. Ignores all values from the parent accumulator.
     pub fn get_hw_data(&self) -> HardwareData {
         let HardwareCounterCell {
+            vector_io_read_multiplier: _,
             cpu_multiplier: _,
             cpu_counter: _, // We use .get_cpu() to calculate the real CPU value.
             payload_io_read_counter,
             payload_io_write_counter,
             payload_index_io_read_counter,
-            vector_io_read_counter,
+            vector_io_read_counter: _,
             vector_io_write_counter,
             accumulator: _,
         } = self;
@@ -142,7 +181,7 @@ impl HardwareCounterCell {
             payload_io_read: payload_io_read_counter.get(),
             payload_io_write: payload_io_write_counter.get(),
             payload_index_io_read: payload_index_io_read_counter.get(),
-            vector_io_read: vector_io_read_counter.get(),
+            vector_io_read: self.get_vector_io_read(),
             vector_io_write: vector_io_write_counter.get(),
         }
     }

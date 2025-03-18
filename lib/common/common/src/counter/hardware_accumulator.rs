@@ -75,7 +75,7 @@ impl HwSharedDrain {
         payload_io_read_counter.fetch_add(src.payload_io_read, Ordering::Relaxed);
         payload_io_write_counter.fetch_add(src.payload_io_write, Ordering::Relaxed);
         payload_index_io_read_counter.fetch_add(src.payload_index_io_read, Ordering::Relaxed);
-        vector_io_read_counter.fetch_add(src.vector_io_read, Ordering::Relaxed);
+        vector_io_read_counter.fetch_add(src.vector_io_read.get(), Ordering::Relaxed);
         vector_io_write_counter.fetch_add(src.vector_io_write, Ordering::Relaxed);
     }
 }

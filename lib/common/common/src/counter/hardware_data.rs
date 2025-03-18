@@ -4,7 +4,7 @@ pub struct HardwareData {
     pub cpu: RealCpuMeasurement,
     pub payload_io_read: usize,
     pub payload_io_write: usize,
-    pub vector_io_read: usize,
+    pub vector_io_read: RealVectorIoReadMeasurement,
     pub vector_io_write: usize,
     pub payload_index_io_read: usize,
 }
@@ -19,6 +19,21 @@ impl RealCpuMeasurement {
     }
 
     /// Returns the real CPU value.
+    #[inline]
+    pub fn get(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct RealVectorIoReadMeasurement(usize);
+
+impl RealVectorIoReadMeasurement {
+    pub fn new(vector_io_read: usize, multiplier: usize) -> Self {
+        Self(vector_io_read * multiplier)
+    }
+
+    /// Returns the real vector io read value.
     #[inline]
     pub fn get(self) -> usize {
         self.0
