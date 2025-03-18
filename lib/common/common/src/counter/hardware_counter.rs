@@ -1,6 +1,6 @@
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
-use super::hardware_data::{HardwareData, RealCpuMeasurement, RealVectorIoReadMeasurement};
+use super::hardware_data::HardwareData;
 
 /// Collection of different types of hardware measurements.
 ///
@@ -118,18 +118,6 @@ impl HardwareCounterCell {
         self.vector_io_read_multiplier = multiplier;
     }
 
-    /// Returns the real cpu value with multiplier applied.
-    pub fn get_cpu(&self) -> RealCpuMeasurement {
-        RealCpuMeasurement::new(self.cpu_counter.get(), self.cpu_multiplier)
-    }
-
-    pub fn get_vector_io_read(&self) -> RealVectorIoReadMeasurement {
-        RealVectorIoReadMeasurement::new(
-            self.vector_io_read_counter.get(),
-            self.vector_io_read_multiplier,
-        )
-    }
-
     /// Returns the CPU counter that can be used for counting.
     /// Should *never* be used for reading CPU measurements! Use `.get_cpu()` for this.
     #[inline]
@@ -165,23 +153,23 @@ impl HardwareCounterCell {
     /// Returns a copy of the current measurements made by this counter. Ignores all values from the parent accumulator.
     pub fn get_hw_data(&self) -> HardwareData {
         let HardwareCounterCell {
-            vector_io_read_multiplier: _,
-            cpu_multiplier: _,
-            cpu_counter: _, // We use .get_cpu() to calculate the real CPU value.
+            vector_io_read_multiplier,
+            cpu_multiplier,
+            cpu_counter, // We use .get_cpu() to calculate the real CPU value.
             payload_io_read_counter,
             payload_io_write_counter,
             payload_index_io_read_counter,
-            vector_io_read_counter: _,
+            vector_io_read_counter,
             vector_io_write_counter,
             accumulator: _,
         } = self;
 
         HardwareData {
-            cpu: self.get_cpu(),
+            cpu: cpu_counter.get() * cpu_multiplier,
             payload_io_read: payload_io_read_counter.get(),
             payload_io_write: payload_io_write_counter.get(),
             payload_index_io_read: payload_index_io_read_counter.get(),
-            vector_io_read: self.get_vector_io_read(),
+            vector_io_read: vector_io_read_counter.get() * vector_io_read_multiplier,
             vector_io_write: vector_io_write_counter.get(),
         }
     }
