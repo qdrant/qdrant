@@ -14,7 +14,7 @@ use segment::data_types::index::{
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula
+    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
