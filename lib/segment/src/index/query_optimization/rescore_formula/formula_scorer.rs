@@ -7,7 +7,9 @@ use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 
-use super::parsed_formula::{DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId};
+use super::parsed_formula::{
+    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
+};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};

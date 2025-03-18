@@ -236,7 +236,10 @@ impl ParsedExpression {
                 // -1.0 / scale^2 = lambda
                 // scale^2 = -1.0 / lambda
                 // scale = sqrt(-1.0 / lambda)
-                (1.0 / std::f32::consts::E, (-1.0 / lambda).sqrt() as ScoreType)
+                (
+                    1.0 / std::f32::consts::E,
+                    (-1.0 / lambda).sqrt() as ScoreType,
+                )
             }
 
             DecayKind::Exp => {

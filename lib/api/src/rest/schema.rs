@@ -765,7 +765,6 @@ pub struct DecayParamsExpression {
     pub midpoint: Option<f32>,
 }
 
-
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Sample {
