@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
 
@@ -21,7 +21,7 @@ use crate::types::{PointIdType, SeqNumberType};
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
-type VersionChange = (PointIdType, SeqNumberType);
+const VERSION_ELEMENT_SIZE: u64 = mem::size_of::<SeqNumberType>() as u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MappingChange {
@@ -80,7 +80,7 @@ pub struct MutableIdTracker {
     mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
-    pending_versions: Mutex<Vec<VersionChange>>,
+    pending_versions: Mutex<BTreeMap<PointOffsetType, SeqNumberType>>,
 
     /// List of point mappings pending to be persisted, will be persisted on flush
     pending_mappings: Mutex<Vec<MappingChange>>,
@@ -119,7 +119,7 @@ impl MutableIdTracker {
         };
 
         let internal_to_version = if has_versions {
-            load_versions(&versions_path, &mappings).map_err(|err| {
+            load_versions(&versions_path).map_err(|err| {
                 OperationError::service_error(format!("Failed to load ID tracker versions: {err}"))
             })?
         } else {
@@ -149,23 +149,21 @@ impl IdTracker for MutableIdTracker {
         internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        if let Some(external_id) = self.external_id(internal_id) {
-            if internal_id as usize >= self.internal_to_version.len() {
-                #[cfg(debug_assertions)]
-                {
-                    if internal_id as usize > self.internal_to_version.len() + 1 {
-                        log::info!(
-                            "Resizing versions is initializing larger range {} -> {}",
-                            self.internal_to_version.len(),
-                            internal_id + 1,
-                        );
-                    }
+        if internal_id as usize >= self.internal_to_version.len() {
+            #[cfg(debug_assertions)]
+            {
+                if internal_id as usize > self.internal_to_version.len() + 1 {
+                    log::info!(
+                        "Resizing versions is initializing larger range {} -> {}",
+                        self.internal_to_version.len(),
+                        internal_id + 1,
+                    );
                 }
-                self.internal_to_version.resize(internal_id as usize + 1, 0);
             }
-            self.internal_to_version[internal_id as usize] = version;
-            self.pending_versions.lock().push((external_id, version));
+            self.internal_to_version.resize(internal_id as usize + 1, 0);
         }
+        self.internal_to_version[internal_id as usize] = version;
+        self.pending_versions.lock().insert(internal_id, version);
         Ok(())
     }
 
@@ -260,21 +258,14 @@ impl IdTracker for MutableIdTracker {
     /// This function should be called _after_ flushing the mapping database.
     fn versions_flusher(&self) -> Flusher {
         let versions_path = versions_path(&self.segment_path);
-
-        // Take out pending versions to flush and replace it with a preallocated vector to avoid
-        // frequent reallocation on a busy segment
-        let pending_versions = {
-            let mut pending_versions = self.pending_versions.lock();
-            let count = pending_versions.len();
-            mem::replace(&mut *pending_versions, Vec::with_capacity(count))
-        };
+        let pending_versions = mem::take(&mut *self.pending_versions.lock());
 
         Box::new(move || {
             if pending_versions.is_empty() {
                 return Ok(());
             }
 
-            store_version_changes(&versions_path, &pending_versions)
+            store_version_changes(&versions_path, pending_versions)
         })
     }
 
@@ -329,7 +320,7 @@ fn versions_path(segment_path: &Path) -> PathBuf {
 
 /// Store new mapping changes, appending them to the given file
 fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> OperationResult<()> {
-    // Open file in append mode to write new changes to the end
+    // Create or open file in append mode to write new changes to the end
     let file = File::options()
         .create(true)
         .append(true)
@@ -376,9 +367,9 @@ fn write_mapping_changes<W: Write>(
 
 /// Load point mappings from the given file
 fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
-    let mappings_file = File::open(mappings_path)?;
-    let mappings_reader = BufReader::new(mappings_file);
-    read_mappings(mappings_reader)
+    let file = File::open(mappings_path)?;
+    let reader = BufReader::new(file);
+    read_mappings(reader)
 }
 
 /// Iterate over mapping changes from the given reader
@@ -574,39 +565,34 @@ fn write_entry<W: Write>(mut writer: W, change: MappingChange) -> OperationResul
     Ok(())
 }
 
-fn load_versions(
-    versions_path: &Path,
-    mappings: &PointMappings,
-) -> OperationResult<Vec<SeqNumberType>> {
-    let mut internal_to_version: Vec<SeqNumberType> =
-        Vec::with_capacity(mappings.total_point_count());
+fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
+    let file = File::open(versions_path)?;
 
-    let versions_file = File::open(versions_path)?;
-    let versions_reader = BufReader::new(versions_file);
-
-    for entry in io::BufRead::lines(versions_reader) {
-        let (external_id, version) = parse_version(entry)?;
-
-        let Some(internal_id) = mappings.internal_id(&external_id) else {
-            log::debug!("Found version: {version} without internal id, external id: {external_id}");
-            continue;
-        };
-
-        if internal_id as usize >= internal_to_version.len() {
-            internal_to_version.resize(internal_id as usize + 1, 0);
-        }
-        internal_to_version[internal_id as usize] = version;
+    let file_len = file.metadata()?.len();
+    if file_len % VERSION_ELEMENT_SIZE != 0 {
+        log::warn!(
+            "Corrupted ID tracker versions storage, file size not a multiple of a version, assuming recovery by WAL"
+        );
     }
+    let version_count = file_len / VERSION_ELEMENT_SIZE;
 
-    Ok(internal_to_version)
+    let mut reader = BufReader::new(file);
+
+    Ok((0..version_count)
+        .map(|_| reader.read_u64::<FileEndianess>())
+        .collect::<Result<_, _>>()?)
 }
 
 /// Store new version changes, appending them to the given file
-fn store_version_changes(versions_path: &Path, changes: &[VersionChange]) -> OperationResult<()> {
-    // Open file in append mode to write new changes to the end
+fn store_version_changes(
+    versions_path: &Path,
+    changes: BTreeMap<PointOffsetType, SeqNumberType>,
+) -> OperationResult<()> {
+    // Create or open file
     let file = File::options()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(false)
         .open(versions_path)?;
     let mut writer = BufWriter::new(file);
 
@@ -618,7 +604,12 @@ fn store_version_changes(versions_path: &Path, changes: &[VersionChange]) -> Ope
     })?;
 
     // Explicitly fsync file contents to ensure durability
-    let file = writer.into_inner().unwrap();
+    let file = writer.into_inner().map_err(|err| {
+        OperationError::service_error(format!(
+            "Failed to close ID tracker point versions write buffer: {}",
+            err.into_error()
+        ))
+    })?;
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point versions: {err}"))
     })?;
@@ -627,40 +618,48 @@ fn store_version_changes(versions_path: &Path, changes: &[VersionChange]) -> Ope
 }
 
 /// Serializes pending point version changes into the given writer
-fn write_version_changes<W: Write>(
+fn write_version_changes<W>(
     mut writer: W,
-    changes: &[VersionChange],
-) -> OperationResult<()> {
-    for change in changes {
-        let entry = serde_json::to_vec(change)?;
-        debug_assert!(
-            !entry.contains(&b'\n'),
-            "serialized version change entry cannot contain new line",
-        );
-        writer.write_all(&entry)?;
-        writer.write_all(b"\n")?;
+    changes: BTreeMap<PointOffsetType, SeqNumberType>,
+) -> OperationResult<()>
+where
+    W: Write + Seek,
+{
+    let mut position = writer.stream_position()?;
+
+    // Write all changes, must be ordered by internal ID, see optimization note below
+    for (internal_id, version) in changes {
+        let offset = u64::from(internal_id) * VERSION_ELEMENT_SIZE;
+
+        // Seek to correct position if not already at it
+        //
+        // This assumes we're using a BufWriter. We only explicitly seek if not at the correct
+        // position already, because seeking is expensive. When we seek it automatically flushes
+        // our buffered writes to durable storage even if our position didn't change. This
+        // optimization significantly improves performance when writing a large batch of versions
+        // by reducing the number of flushes and syscalls.
+        // See: <https://doc.rust-lang.org/std/io/trait.Seek.html#tymethod.seek>
+        //
+        // We track the position ourselves because using `stream_position()` as getter also invokes
+        // a seek, causing an explicit flush.
+        //
+        // Now we only flush if:
+        // - we seek to a new position because there's a gap in versions to update
+        // - our write buffer is full
+        // - after writing all versions
+        if offset != position {
+            position = writer.seek(io::SeekFrom::Start(offset))?;
+        }
+
+        // Write version and update position
+        writer.write_u64::<FileEndianess>(version)?;
+        position += VERSION_ELEMENT_SIZE;
     }
 
     // Explicitly flush writer to catch IO errors
     writer.flush()?;
 
     Ok(())
-}
-
-fn parse_version(change: io::Result<String>) -> OperationResult<VersionChange> {
-    change
-        .map_err(|err| {
-            OperationError::service_error_light(format!(
-                "Failed to parse ID tracker version entry as string, data may be corrupted: {err}"
-            ))
-        })
-        .and_then(|change| {
-            serde_json::from_str(&change).map_err(|err| {
-                OperationError::service_error_light(format!(
-                    "Failed to parse ID tracker version entry as JSON, data may be corrupted: {err}"
-                ))
-            })
-        })
 }
 
 #[cfg(test)]
