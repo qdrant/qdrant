@@ -180,8 +180,8 @@ impl ParsedExpression {
         scale: Option<f32>,
         kind: DecayKind,
     ) -> OperationResult<PreciseScore> {
-        let midpoint = midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT) as PreciseScore;
-        let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE) as PreciseScore;
+        let midpoint = PreciseScore::from(midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT));
+        let scale = PreciseScore::from(scale.unwrap_or(DEFAULT_DECAY_SCALE));
 
         if midpoint <= 0.0 || midpoint >= 1.0 {
             return Err(OperationError::validation_error(format!(
