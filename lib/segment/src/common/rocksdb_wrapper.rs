@@ -204,6 +204,10 @@ impl DatabaseColumnWrapper {
                     "Flush: RocksDB cf_handle error: Cannot find column family {}. Ignoring",
                     &column_name
                 );
+                debug_assert!(
+                    false,
+                    "Missing column family should not happen during testing"
+                );
                 return Ok(()); // ignore error
             };
 
