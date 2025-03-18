@@ -534,7 +534,7 @@ where
 /// This function reads exact one entry which means after calling this function, the reader
 /// will be at the start of the next entry.
 ///
-/// The number of bytes read is returned on succesful read.
+/// The number of bytes read is returned on successful read.
 fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, u64)> {
     let change_type = reader.read_u8()?;
     let change_type = MappingChangeType::from_byte(change_type).ok_or_else(|| {
