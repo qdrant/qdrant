@@ -503,23 +503,21 @@ where
 
         self.point_to_values[id as usize].extend(flatten_values.clone());
 
-        let mut hw_counter_val = 0;
+        let mut hw_cell_wb = hw_counter
+            .payload_index_io_write_counter()
+            .write_back_counter();
 
         for value in flatten_values {
             let entry = self.values_to_points.entry(value);
 
             if let Entry::Vacant(e) = &entry {
                 let size = N::mmapped_size(N::as_referenced(e.key().borrow()));
-                hw_counter_val += size;
+                hw_cell_wb.incr_delta(size);
             }
 
-            hw_counter_val += size_of_val(&id);
+            hw_cell_wb.incr_delta(size_of_val(&id));
             entry.or_default().push(id);
         }
-
-        hw_counter
-            .payload_index_io_write_counter()
-            .incr_delta(hw_counter_val);
 
         Ok(())
     }
