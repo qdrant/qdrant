@@ -398,10 +398,20 @@ impl StructPayloadIndex {
                 db,
                 is_appendable: true,
             }),
-            StorageType::NonAppendableRocksDb(db) => IndexSelector::RocksDb(IndexSelectorRocksDb {
-                db,
-                is_appendable: false,
-            }),
+            StorageType::NonAppendableRocksDb(db) => {
+                // legacy logic: we keep rocksdb, but load mmap indexes
+                if is_on_disk {
+                    IndexSelector::Mmap(IndexSelectorMmap {
+                        dir: &self.path,
+                        is_on_disk,
+                    })
+                } else {
+                    IndexSelector::RocksDb(IndexSelectorRocksDb {
+                        db,
+                        is_appendable: false,
+                    })
+                }
+            }
             StorageType::NonAppendable => IndexSelector::Mmap(IndexSelectorMmap {
                 dir: &self.path,
                 is_on_disk,
