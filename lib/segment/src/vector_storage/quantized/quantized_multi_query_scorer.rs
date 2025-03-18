@@ -63,13 +63,15 @@ where
     }
 }
 
-impl<TElement, TMetric, TEncodedVectors> QueryScorer<[TElement]>
+impl<TElement, TMetric, TEncodedVectors> QueryScorer
     for QuantizedMultiQueryScorer<'_, TElement, TMetric, TEncodedVectors>
 where
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TEncodedVectors: quantization::EncodedVectors,
 {
+    type TVector = [TElement];
+
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         // quantized multivector storage handles hardware counter to batch vector IO
         self.quantized_multivector_storage

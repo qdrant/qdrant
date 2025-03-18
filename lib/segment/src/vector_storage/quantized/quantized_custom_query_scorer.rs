@@ -80,7 +80,7 @@ where
     }
 }
 
-impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorer<[TElement]>
+impl<TElement, TMetric, TEncodedVectors, TQuery> QueryScorer
     for QuantizedCustomQueryScorer<'_, TElement, TMetric, TEncodedVectors, TQuery>
 where
     TElement: PrimitiveVectorElement,
@@ -88,6 +88,8 @@ where
     TEncodedVectors: quantization::EncodedVectors,
     TQuery: Query<TEncodedVectors::EncodedQuery>,
 {
+    type TVector = [TElement];
+
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         // account for read outside of `score_by` because the closure is called once per example
         self.hardware_counter

@@ -61,8 +61,10 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-> QueryScorer<[TElement]> for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
+> QueryScorer for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {
+    type TVector = [TElement];
+
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();

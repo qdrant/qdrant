@@ -24,14 +24,14 @@ pub fn new<'a>(
     AsyncRawScorerBuilder::new(query, storage, hardware_counter).build()
 }
 
-pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<[VectorElementType]>> {
+pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<TVector = [VectorElementType]>> {
     query_scorer: TQueryScorer,
     storage: &'a MmapDenseVectors<VectorElementType>,
 }
 
 impl<'a, TQueryScorer> AsyncRawScorerImpl<'a, TQueryScorer>
 where
-    TQueryScorer: QueryScorer<[VectorElementType]>,
+    TQueryScorer: QueryScorer<TVector = [VectorElementType]>,
 {
     fn new(query_scorer: TQueryScorer, storage: &'a MmapDenseVectors<VectorElementType>) -> Self {
         Self {
@@ -43,7 +43,7 @@ where
 
 impl<TQueryScorer> RawScorer for AsyncRawScorerImpl<'_, TQueryScorer>
 where
-    TQueryScorer: QueryScorer<[VectorElementType]>,
+    TQueryScorer: QueryScorer<TVector = [VectorElementType]>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
         assert_eq!(points.len(), scores.len());
@@ -176,7 +176,7 @@ fn async_raw_scorer_from_query_scorer<'a, TQueryScorer>(
     storage: &'a MemmapDenseVectorStorage<VectorElementType>,
 ) -> Box<dyn RawScorer + 'a>
 where
-    TQueryScorer: QueryScorer<[VectorElementType]> + 'a,
+    TQueryScorer: QueryScorer<TVector = [VectorElementType]> + 'a,
 {
     Box::new(AsyncRawScorerImpl::new(
         query_scorer,
