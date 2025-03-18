@@ -41,6 +41,7 @@ use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{Mutex, RwLock as TokioRwLock, mpsc, oneshot};
+use tokio::time::sleep;
 use wal::{Wal, WalOptions};
 
 use self::clock_map::{ClockMap, RecoveryPoint};
@@ -632,7 +633,7 @@ impl LocalShard {
         let mut last_progress_report = Instant::now();
         if !show_progress_bar {
             log::info!(
-                "Recovering collection {collection_id}: 0/{} (0%)",
+                "Recovering shard of collection {collection_id} from WAL: 0/{} (0%)",
                 wal.len(false),
             );
         }
@@ -838,6 +839,7 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
+        log::debug!("Restoring shard snapshot from {:?}", snapshot_path);
         // Read dir first as the directory contents would change during restore
         let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
             .collect::<Result<Vec<_>, _>>()?;

@@ -692,7 +692,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
     };
 
     if !is_tar {
-        log::info!("Snapshot format: {:?}", SnapshotFormat::Streamable);
+        log::info!("Unpacking segment {} from snapshot format: {:?}", file_name, SnapshotFormat::Streamable);
         unpack_snapshot(snapshot_path)?;
     } else {
         let segment_path = segments_dir.join(segment_id);
@@ -700,12 +700,12 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
 
         let inner_path = segment_path.join(SNAPSHOT_PATH);
         if inner_path.is_dir() {
-            log::info!("Snapshot format: {:?}", SnapshotFormat::Regular);
+            log::info!("Unpacking segment {} from snapshot format: {:?}", file_name, SnapshotFormat::Regular);
             unpack_snapshot(&inner_path)?;
             utils::fs::move_all(&inner_path, &segment_path)?;
             std::fs::remove_dir(&inner_path)?;
         } else {
-            log::info!("Snapshot format: {:?}", SnapshotFormat::Ancient);
+            log::info!("Unpacking segment {} from snapshot format: {:?}", file_name, SnapshotFormat::Ancient);
             // Do nothing, this format is just a plain archive.
         }
 
