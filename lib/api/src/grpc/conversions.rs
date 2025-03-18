@@ -13,7 +13,7 @@ use segment::data_types::index::{
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    ParsedExpression, ParsedFormula,
+    DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
@@ -50,7 +50,9 @@ use crate::grpc::qdrant::{
     TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
     VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
 };
-use crate::grpc::{DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression};
+use crate::grpc::{
+    DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
+};
 use crate::rest::models::{CollectionsResponse, VersionInfo};
 use crate::rest::schema as rest;
 
@@ -2783,14 +2785,14 @@ impl Formula {
 }
 
 fn unparse_expression(
-    formula: ParsedExpression,
+    expression: ParsedExpression,
     conditions: &Vec<segment::types::Condition>,
 ) -> Expression {
     use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 
     use super::expression::Variant;
 
-    let variant = match formula {
+    let variant = match expression {
         ParsedExpression::Constant(c) => Variant::Constant(c),
         ParsedExpression::Variable(variable_id) => match variable_id {
             var_id @ VariableId::Score(_) => Variant::Variable(var_id.unparse()),
@@ -2844,6 +2846,25 @@ fn unparse_expression(
             origin: Some(GeoPoint::from(origin)),
             to: key.to_string(),
         }),
+        ParsedExpression::Decay {
+            kind,
+            target,
+            lambda,
+            x,
+        } => {
+            let (midpoint, scale) = ParsedExpression::decay_lambda_to_params(lambda, kind);
+            let params = DecayParamsExpression {
+                x: Some(Box::new(unparse_expression(*x, conditions))),
+                target: target.map(|t| Box::new(unparse_expression(*t, conditions))),
+                midpoint: Some(midpoint),
+                scale: Some(scale),
+            };
+            match kind {
+                DecayKind::Lin => Variant::LinDecay(Box::new(params)),
+                DecayKind::Exp => Variant::ExpDecay(Box::new(params)),
+                DecayKind::Gauss => Variant::GaussDecay(Box::new(params)),
+            }
+        }
     };
 
     Expression {

@@ -91,6 +91,12 @@ impl OperationError {
             backtrace: None,
         }
     }
+
+    pub fn validation_error(description: impl Into<String>) -> OperationError {
+        OperationError::ValidationError {
+            description: description.into(),
+        }
+    }
 }
 
 pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {

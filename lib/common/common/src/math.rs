@@ -16,3 +16,14 @@ pub fn fast_sigmoid(x: ScoreType) -> ScoreType {
 pub fn scaled_fast_sigmoid(x: ScoreType) -> ScoreType {
     0.5 * (fast_sigmoid(x) + 1.0)
 }
+
+pub fn is_close(a: f32, b: f32) -> bool {
+    const ABS_TOL: f32 = 1e-6;
+    const REL_TOL: f32 = 1e-6;
+    is_close_tol(a, b, ABS_TOL, REL_TOL)
+}
+
+pub fn is_close_tol(a: f32, b: f32, abs_tol: f32, rel_tol: f32) -> bool {
+    let tol = a.abs().max(b.abs()) * rel_tol + abs_tol;
+    (a - b).abs() <= tol
+}

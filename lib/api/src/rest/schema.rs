@@ -651,6 +651,9 @@ pub enum Expression {
     Log10(Log10Expression),
     Ln(LnExpression),
     GeoDistance(GeoDistance),
+    LinDecay(LinDecayExpression),
+    ExpDecay(ExpDecayExpression),
+    GaussDecay(GaussDecayExpression),
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -714,6 +717,33 @@ pub struct Log10Expression {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct LnExpression {
     pub ln: Box<Expression>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct LinDecayExpression {
+    pub lin_decay: DecayParamsExpression,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ExpDecayExpression {
+    pub exp_decay: DecayParamsExpression,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GaussDecayExpression {
+    pub gauss_decay: DecayParamsExpression,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct DecayParamsExpression {
+    /// The variable to decay.
+    pub x: Box<Expression>,
+    /// The target value to start decaying from. Defaults to 0.
+    pub target: Option<Box<Expression>>,
+    /// The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
+    pub scale: Option<f32>,
+    /// The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
+    pub midpoint: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
