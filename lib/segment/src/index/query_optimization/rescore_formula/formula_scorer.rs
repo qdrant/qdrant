@@ -118,7 +118,7 @@ impl FormulaScorer<'_> {
                         value
                             .as_f64()
                             .map(|value| value as ScoreType)
-                            .ok_or_else(|| "Value is not a number")
+                            .ok_or("Value is not a number")
                     })
                 }
                 VariableId::Condition(id) => {
