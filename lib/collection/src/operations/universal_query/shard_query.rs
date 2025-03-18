@@ -397,7 +397,7 @@ impl TryFrom<grpc::Expression> for ExpressionInternal {
                     .map_err(|_| tonic::Status::invalid_argument("invalid payload key"))?;
                 ExpressionInternal::GeoDistance { origin, to }
             }
-            Variant::DateTime(dt_str) => ExpressionInternal::DateTime(dt_str),
+            Variant::Datetime(dt_str) => ExpressionInternal::DateTime(dt_str),
             Variant::Mult(grpc::MultExpression { mult }) => {
                 let mult = mult
                     .into_iter()

@@ -5205,7 +5205,7 @@ pub mod expression {
         GeoDistance(super::GeoDistance),
         /// Date-time constant or payload key
         #[prost(string, tag = "5")]
-        DateTime(::prost::alloc::string::String),
+        Datetime(::prost::alloc::string::String),
         /// Multiply
         #[prost(message, tag = "6")]
         Mult(super::MultExpression),

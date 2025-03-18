@@ -200,7 +200,9 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::GeoDistance(GeoDistance {
                 geo_distance: rest::GeoDistanceParams { origin, to },
             }) => ExpressionInternal::GeoDistance { origin, to },
-            rest::Expression::DateTime(dt_str) => ExpressionInternal::DateTime(dt_str),
+            rest::Expression::Datetime(rest::Datetime { datetime }) => {
+                ExpressionInternal::DateTime(datetime)
+            }
             rest::Expression::Mult(rest::MultExpression { mult: exprs }) => {
                 ExpressionInternal::Mult(exprs.into_iter().map(ExpressionInternal::from).collect())
             }

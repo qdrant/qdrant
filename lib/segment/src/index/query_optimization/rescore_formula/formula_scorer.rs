@@ -7,7 +7,7 @@ use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 
-use super::parsed_formula::{DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId};
+use super::parsed_formula::{DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
@@ -334,17 +334,17 @@ impl FormulaScorer<'_> {
     }
 }
 
-fn exp_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+fn exp_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> PreciseScore {
     let diff = (x - target).abs();
     (lambda * diff).exp()
 }
 
-fn gauss_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+fn gauss_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> PreciseScore {
     let diff = x - target;
     (lambda * diff * diff).exp()
 }
 
-fn linear_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+fn linear_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> PreciseScore {
     let diff = (x - target).abs();
     (-lambda * diff + 1.0).max(0.0)
 }
