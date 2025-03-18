@@ -3,7 +3,6 @@ use std::collections::{HashMap, HashSet};
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use itertools::Itertools;
 use serde_json::{Number, Value};
 
 use crate::common::utils::MultiValue;
@@ -74,7 +73,27 @@ fn payload_variable_retriever(
     let retriever_fn = move |point_id: PointOffsetType| {
         payload_provider.with_payload(
             point_id,
-            |payload| payload.get_value_cloned(&json_path),
+            |payload| {
+                let values = payload.get_value_cloned(&json_path);
+
+                if json_path.has_wildcard_suffix() {
+                    return values;
+                }
+
+                // Not using array wildcard `[]` on a key which has an array value will return the whole
+                // array as one value, let's flatten the array if that is the case.
+                //
+                // This is the same thing we do for indexing payload values
+                let mut multi_value = MultiValue::new();
+                for value in values {
+                    if let Value::Array(array) = value {
+                        multi_value.extend(array);
+                    } else {
+                        multi_value.push(value);
+                    }
+                }
+                multi_value
+            },
             hw_counter,
         )
     };
@@ -160,7 +179,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                 bool_index
                     .get_point_values(point_id)
                     .into_iter()
-                    .map(|value| Value::Bool(value))
+                    .map(Value::Bool)
                     .collect()
             };
             Some(Box::new(extract_fn))
@@ -199,7 +218,7 @@ mod tests {
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
-    use serde_json::{from_value, json, Value};
+    use serde_json::{Value, from_value, json};
 
     use crate::common::utils::MultiValue;
     use crate::index::field_index::geo_index::GeoMapIndex;
