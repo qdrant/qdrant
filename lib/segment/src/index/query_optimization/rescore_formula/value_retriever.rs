@@ -348,9 +348,24 @@ mod tests {
         let geo_index = builder.finalize().unwrap();
         let geo_index = FieldIndex::GeoIndex(geo_index);
 
+        // Create a field index for datetime
+        let dir = tempfile::tempdir().unwrap();
+        let mut builder = NumericIndex::builder_mmap(dir.path(), false);
+
+        builder
+            .add_point(0, &[&json!("2023-01-01T00:00:00Z")])
+            .unwrap();
+        builder
+            .add_point(1, &[&json!("2023-01-02"), &json!("2023-01-03T00:00:00Z")])
+            .unwrap();
+        builder.add_point(2, &[]).unwrap();
+        let datetime_index = builder.finalize().unwrap();
+        let datetime_index = FieldIndex::DatetimeIndex(datetime_index);
+
         let mut indices = HashMap::new();
         indices.insert("value".try_into().unwrap(), vec![numeric_index]);
         indices.insert("location".try_into().unwrap(), vec![geo_index]);
+        indices.insert("creation".try_into().unwrap(), vec![datetime_index]);
 
         let hw_counter = Default::default();
 
@@ -384,6 +399,26 @@ mod tests {
                 0 => assert_eq!(value, MultiValue::<Value>::new()),
                 1 => assert_eq!(value, [json!({ "lat": 10.0, "lon": 20.0 })].into()),
                 2 => assert_eq!(value, [json!({ "lat": 15.5, "lon": 25.5 })].into()),
+                _ => unreachable!(),
+            }
+        }
+
+        // Test retrieving a datetime from the index.
+        let retriever = variable_retriever(
+            &indices,
+            &"creation".try_into().unwrap(),
+            payload_provider.clone(),
+            &hw_counter,
+        );
+        for id in 0..=2 {
+            let value = retriever(id);
+            match id {
+                0 => assert_eq!(value, [json!("2023-01-01T00:00:00Z")].into()),
+                1 => assert_eq!(
+                    value,
+                    [json!("2023-01-02T00:00:00Z"), json!("2023-01-03T00:00:00Z")].into()
+                ),
+                2 => assert_eq!(value, MultiValue::<Value>::new()),
                 _ => unreachable!(),
             }
         }

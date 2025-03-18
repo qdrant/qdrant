@@ -141,24 +141,23 @@ impl FormulaScorer<'_> {
                 Ok(Haversine::distance((*origin).into(), value.into()))
             }
             ParsedExpression::DateTime(dt_expr) => {
-                match dt_expr {
-                    // Convert from i64 to f64.
-                    // f64's 53 bits of sign + mantissa for microseconds means a span of exact equivalence of
-                    // about 285 years, after which precision starts dropping
-                    DateTimeExpression::Constant(dt) => Ok(dt.timestamp() as PreciseScore),
+                let datetime = match dt_expr {
+                    DateTimeExpression::Constant(dt) => *dt,
                     DateTimeExpression::PayloadVariable(json_path) => {
-                        let datetime =
-                            self.get_parsed_payload_value(json_path, point_id, |value| {
-                                value
-                                    // datetime index also returns the display impl of datetime which is a string
-                                    .as_str()
-                                    .ok_or("value is not a string")?
-                                    .parse::<DateTimePayloadType>()
-                                    .map_err(|e| e.to_string())
-                            })?;
-                        Ok(datetime.timestamp() as PreciseScore)
+                        self.get_parsed_payload_value(json_path, point_id, |value| {
+                            value
+                                // datetime index also returns the Serialize impl of datetime which is a string
+                                .as_str()
+                                .ok_or("value is not a string")?
+                                .parse::<DateTimePayloadType>()
+                                .map_err(|e| e.to_string())
+                        })?
                     }
-                }
+                };
+                // Convert from i64 to f64.
+                // f64's 53 bits of sign + mantissa for microseconds means a span of exact equivalence of
+                // about 285 years, after which precision starts dropping
+                Ok(datetime.timestamp() as PreciseScore)
             }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
@@ -366,6 +365,7 @@ mod tests {
     const NO_VALUE_FIELD_NAME: &str = "no_number";
     const GEO_FIELD_NAME: &str = "geo_point";
     const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
+    const NO_VALUE_DATETIME: &str = "no_value_datetime";
 
     // self_cell just to be able to create FormulaScorer with a "reference" to fixture scores
     self_cell::self_cell!(
@@ -491,7 +491,26 @@ mod tests {
         })
     )]
     // geo distance with default value
-    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.3))]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.29600298218))]
+    // datetime expression constant
+    #[case(
+        ParsedExpression::DateTime(DateTimeExpression::Constant("2025-03-18".parse().unwrap())),
+        Ok("2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore)
+    )]
+    // datetime expression with payload variable that doesn't exist in payload and no default
+    #[case(
+        ParsedExpression::DateTime(DateTimeExpression::PayloadVariable(JsonPath::new("missing_datetime"))),
+        Err(OperationError::VariableTypeError {
+            field_name: JsonPath::new("missing_datetime"),
+            expected_type: DateTimePayloadType::friendly_name().to_string(),
+            description: "No value found in a payload nor defaults".to_string(),
+        })
+    )]
+    // datetime expression with payload variable that doesn't exist in payload but has default
+    #[case(
+        ParsedExpression::DateTime(DateTimeExpression::PayloadVariable(JsonPath::new(NO_VALUE_DATETIME))),
+        Ok("2025-03-19T12:00:00".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore)
+    )]
     #[test]
     fn test_default_values(
         #[case] expr: ParsedExpression,
@@ -506,6 +525,10 @@ mod tests {
             (
                 VariableId::Payload(JsonPath::new(NO_VALUE_GEO_POINT)),
                 json!({"lat": 25.0, "lon": -100.0}),
+            ),
+            (
+                VariableId::Payload(JsonPath::new(NO_VALUE_DATETIME)),
+                json!("2025-03-19T12:00:00"),
             ),
         ]
         .into_iter()
