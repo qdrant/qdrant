@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
+use common::types::ScoreType;
 use serde_json::Value;
 
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -65,7 +66,7 @@ pub enum ParsedExpression {
         /// Value at which the decay function is the highest
         target: Option<Box<ParsedExpression>>,
         /// Constant to shape the decay function
-        lambda: ScoreType,
+        lambda: PreciseScore,
     },
 }
 
@@ -178,9 +179,9 @@ impl ParsedExpression {
         midpoint: Option<f32>,
         scale: Option<f32>,
         kind: DecayKind,
-    ) -> OperationResult<f32> {
-        let midpoint = midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT);
-        let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE);
+    ) -> OperationResult<PreciseScore> {
+        let midpoint = midpoint.unwrap_or(DEFAULT_DECAY_MIDPOINT) as PreciseScore;
+        let scale = scale.unwrap_or(DEFAULT_DECAY_SCALE) as PreciseScore;
 
         if midpoint <= 0.0 || midpoint >= 1.0 {
             return Err(OperationError::validation_error(format!(
@@ -207,7 +208,7 @@ impl ParsedExpression {
     /// the same lambda when used in a decay function on the peer node.
     ///
     /// Returns a tuple of (midpoint, scale) parameters.
-    pub fn decay_lambda_to_params(lambda: f32, kind: DecayKind) -> (f32, f32) {
+    pub fn decay_lambda_to_params(lambda: PreciseScore, kind: DecayKind) -> (ScoreType, ScoreType) {
         match kind {
             DecayKind::Lin => {
                 // We assume lambda is in the range (0, 1)
@@ -220,7 +221,7 @@ impl ParsedExpression {
                 // (1.0 - midpoint) / 1.0 = lambda
                 // 1.0 - midpoint = lambda
                 // midpoint = 1.0 - lambda
-                (1.0 - lambda, 1.0)
+                (1.0 - lambda as ScoreType, 1.0)
             }
 
             DecayKind::Gauss => {
@@ -235,7 +236,7 @@ impl ParsedExpression {
                 // -1.0 / scale^2 = lambda
                 // scale^2 = -1.0 / lambda
                 // scale = sqrt(-1.0 / lambda)
-                (1.0 / std::f32::consts::E, (-1.0 / lambda).sqrt())
+                (1.0 / std::f32::consts::E, (-1.0 / lambda).sqrt() as ScoreType)
             }
 
             DecayKind::Exp => {
@@ -249,7 +250,7 @@ impl ParsedExpression {
                 // ln(1/e) / scale = lambda
                 // -1.0 / scale = lambda
                 // scale = -1.0 / lambda
-                (1.0 / std::f32::consts::E, -1.0 / lambda)
+                (1.0 / std::f32::consts::E, -1.0 / lambda as ScoreType)
             }
         }
     }
@@ -339,7 +340,7 @@ mod tests {
     }
 
     /// Tests that lambda can be communicated to peers in the form of its components, and be recalculated appropriately
-    fn check_lambda_round_trip(lambda: f32, kind: DecayKind) {
+    fn check_lambda_round_trip(lambda: PreciseScore, kind: DecayKind) {
         let (midpoint, scale) = ParsedExpression::decay_lambda_to_params(lambda, kind);
 
         // Convert back to lambda
@@ -356,21 +357,21 @@ mod tests {
     proptest::proptest! {
         #[test]
         fn test_lin_decay_lambda_params_roundtrip(
-            lambda in 0.000001f32..1.0f32
+            lambda in 0.000001..1.0f64
         ) {
             check_lambda_round_trip(lambda, DecayKind::Lin);
         }
 
         #[test]
         fn test_exp_decay_lambda_params_roundtrip(
-            lambda in -1_000_000.0..-0.000_000_1f32
+            lambda in -1_000_000.0..-0.000_000_1f64
         ) {
             check_lambda_round_trip(lambda, DecayKind::Exp);
         }
 
         #[test]
         fn test_gauss_decay_lambda_params_roundtrip(
-            lambda in -100_000_000.0..-0.0f32
+            lambda in -100_000_000.0..-0.0f64
         ) {
             check_lambda_round_trip(lambda, DecayKind::Gauss);
         }

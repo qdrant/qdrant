@@ -583,7 +583,7 @@ message Expression {
         string variable = 2; // Payload key or reference to score.
         Condition condition = 3; // Payload condition. If true, becomes 1.0; otherwise 0.0
         GeoDistance geo_distance = 4; // Geographic distance in meters
-        string date_time = 5; // Date-time constant or payload key
+        string datetime = 5; // Date-time constant or payload key
         MultExpression mult = 6; // Multiply
         SumExpression sum = 7; // Sum
         DivExpression div = 8; // Divide

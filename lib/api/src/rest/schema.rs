@@ -641,7 +641,7 @@ pub enum Expression {
     Variable(String),
     Condition(Box<Condition>),
     GeoDistance(GeoDistance),
-    DateTime(String),
+    Datetime(Datetime),
     Mult(MultExpression),
     Sum(SumExpression),
     Neg(NegExpression),
@@ -655,6 +655,24 @@ pub enum Expression {
     LinDecay(LinDecayExpression),
     ExpDecay(ExpDecayExpression),
     GaussDecay(GaussDecayExpression),
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GeoDistance {
+    pub geo_distance: GeoDistanceParams,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct GeoDistanceParams {
+    /// The origin geo point to measure from
+    pub origin: GeoPoint,
+    /// Payload field with the destination geo point
+    pub to: JsonPath,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Datetime {
+    pub datetime: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -747,18 +765,6 @@ pub struct DecayParamsExpression {
     pub midpoint: Option<f32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct GeoDistance {
-    pub geo_distance: GeoDistanceParams,
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct GeoDistanceParams {
-    /// The origin geo point to measure from
-    pub origin: GeoPoint,
-    /// Payload field with the destination geo point
-    pub to: JsonPath,
-}
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
