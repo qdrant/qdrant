@@ -133,7 +133,7 @@ fn indexed_variable_retriever(index: &FieldIndex) -> Option<VariableRetrieverFn>
                     .get_values(point_id)
                     .into_iter()
                     .flatten()
-                    .map(|v| Value::Number(Number::from_f64(v).unwrap()))
+                    .filter_map(|v| Some(Value::Number(Number::from_f64(v)?)))
                     .collect()
             };
             Some(Box::new(extract_fn))
