@@ -220,6 +220,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         buffer.sync_all()?;
         Ok(())
     }
+
+    fn is_on_disk(&self) -> bool {
+        true
+    }
 }
 
 impl<T: Clone> TrySetCapacityExact for ChunkedVectors<T> {

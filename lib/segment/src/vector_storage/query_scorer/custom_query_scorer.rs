@@ -54,6 +54,11 @@ impl<
             .unwrap();
 
         hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+        if vector_storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
 
         Self {
             query,

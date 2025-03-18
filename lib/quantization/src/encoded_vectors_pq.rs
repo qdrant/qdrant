@@ -471,6 +471,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         Ok(result)
     }
 
+    fn is_on_disk(&self) -> bool {
+        self.encoded_vectors.is_on_disk()
+    }
+
     fn encode_query(&self, query: &[f32]) -> EncodedQueryPQ {
         let lut_capacity = self.metadata.vector_division.len() * self.metadata.centroids.len();
         let mut lut = Vec::with_capacity(lut_capacity);

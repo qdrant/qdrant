@@ -46,6 +46,13 @@ impl<
 
         hardware_counter.set_cpu_multiplier(query.dim * size_of::<TElement>());
 
+
+        if vector_storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(query.dim * size_of::<TElement>());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
+
         Self {
             query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
             vector_storage,

@@ -39,6 +39,12 @@ impl<
         let preprocessed_vector = TMetric::preprocess(query);
 
         hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+        if vector_storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
+
         Self {
             query: TypedDenseVector::from(TElement::slice_from_float_cow(Cow::from(
                 preprocessed_vector,
