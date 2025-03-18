@@ -199,8 +199,9 @@ mod tests {
     use std::sync::Arc;
 
     use atomic_refcell::AtomicRefCell;
-    use serde_json::{from_value, json};
+    use serde_json::{from_value, json, Value};
 
+    use crate::common::utils::MultiValue;
     use crate::index::field_index::geo_index::GeoMapIndex;
     use crate::index::field_index::numeric_index::NumericIndex;
     use crate::index::field_index::{FieldIndex, FieldIndexBuilderTrait};
@@ -269,9 +270,9 @@ mod tests {
         for id in 0..=2 {
             let value = retriever(id);
             match id {
-                0 => assert_eq!(value, Some(json!(42))),
-                1 => assert_eq!(value, None),
-                2 => assert_eq!(value, Some(json!(99))),
+                0 => assert_eq!(value, [json!(42)].into()),
+                1 => assert_eq!(value, MultiValue::<Value>::new()),
+                2 => assert_eq!(value, [json!(99), json!(55)].into()),
                 _ => unreachable!(),
             }
         }
@@ -286,9 +287,9 @@ mod tests {
         for id in 0..=2 {
             let value = retriever(id);
             match id {
-                0 => assert_eq!(value, None),
-                1 => assert_eq!(value, Some(json!({ "lat": 10.0, "lon": 20.0 }))),
-                2 => assert_eq!(value, Some(json!({ "lat": 15.5, "lon": 25.5 }))),
+                0 => assert_eq!(value, MultiValue::<Value>::new()),
+                1 => assert_eq!(value, [json!({ "lat": 10.0, "lon": 20.0 })].into()),
+                2 => assert_eq!(value, [json!({ "lat": 15.5, "lon": 25.5 })].into()),
                 _ => unreachable!(),
             }
         }
@@ -340,9 +341,9 @@ mod tests {
         for id in 0..=2 {
             let value = retriever(id);
             match id {
-                0 => assert_eq!(value, Some(json!(42))),
-                1 => assert_eq!(value, None),
-                2 => assert_eq!(value, Some(json!(99))),
+                0 => assert_eq!(value, [json!(42)].into()),
+                1 => assert_eq!(value, MultiValue::<Value>::new()),
+                2 => assert_eq!(value, [json!(99), json!(55)].into()),
                 _ => unreachable!(),
             }
         }
@@ -357,9 +358,9 @@ mod tests {
         for id in 0..=2 {
             let value = retriever(id);
             match id {
-                0 => assert_eq!(value, None),
-                1 => assert_eq!(value, Some(json!({ "lat": 10.0, "lon": 20.0 }))),
-                2 => assert_eq!(value, Some(json!({ "lat": 15.5, "lon": 25.5 }))),
+                0 => assert_eq!(value, MultiValue::<Value>::new()),
+                1 => assert_eq!(value, [json!({ "lat": 10.0, "lon": 20.0 })].into()),
+                2 => assert_eq!(value, [json!({ "lat": 15.5, "lon": 25.5 })].into()),
                 _ => unreachable!(),
             }
         }
