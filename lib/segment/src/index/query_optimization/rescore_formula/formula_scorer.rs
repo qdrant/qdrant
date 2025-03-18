@@ -32,6 +32,22 @@ pub struct FormulaScorer<'a> {
     defaults: HashMap<VariableId, Value>,
 }
 
+pub trait FriendlyName {
+    fn friendly_name() -> &'static str;
+}
+
+impl FriendlyName for ScoreType {
+    fn friendly_name() -> &'static str {
+        "number"
+    }
+}
+
+impl FriendlyName for GeoPoint {
+    fn friendly_name() -> &'static str {
+        "geo point"
+    }
+}
+
 impl StructPayloadIndex {
     pub fn formula_scorer<'s, 'q>(
         &'s self,
@@ -97,24 +113,29 @@ impl FormulaScorer<'_> {
                             .map(|score| score as ScoreType)
                     })
                     .unwrap_or(DEFAULT_SCORE)),
-                VariableId::Payload(path) => Ok(self
-                    .payload_retrievers
-                    .get(path)
-                    .and_then(|retriever| retriever(point_id))
-                    .and_then(|value| value.as_f64())
-                    .or_else(|| {
-                        self.defaults
-                            .get(&VariableId::Payload(path.clone()))
-                            .and_then(|value| value.as_f64())
+                VariableId::Payload(path) => {
+                    self.get_parsed_payload_value(path, point_id, |value| {
+                        value
+                            .as_f64()
+                            .map(|value| value as ScoreType)
+                            .ok_or("Value is not a number")
                     })
-                    .map(|v| v as ScoreType)
-                    .unwrap_or(DEFAULT_SCORE)),
+                }
                 VariableId::Condition(id) => {
                     let value = check_condition(&self.condition_checkers[*id], point_id);
                     let score = if value { 1.0 } else { 0.0 };
                     Ok(score)
                 }
             },
+            ParsedExpression::GeoDistance { origin, key } => {
+                let value = self.get_parsed_payload_value(
+                    key,
+                    point_id,
+                    serde_json::from_value::<GeoPoint>,
+                )?;
+
+                Ok(Haversine::distance((*origin).into(), value.into()) as ScoreType)
+            }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
                 for expr in expressions {
@@ -216,25 +237,46 @@ impl FormulaScorer<'_> {
                 let value = self.eval_expression(expr, point_id)?;
                 Ok(value.abs())
             }
-            ParsedExpression::GeoDistance { origin, key } => {
-                let value: GeoPoint = self
-                    .payload_retrievers
-                    .get(key)
-                    .and_then(|retriever| retriever(point_id))
-                    .and_then(|value| serde_json::from_value(value).ok())
-                    .or_else(|| {
-                        self.defaults
-                            .get(&VariableId::Payload(key.clone()))
-                            .and_then(|value| serde_json::from_value(value.clone()).ok())
-                    })
-                    .ok_or_else(|| OperationError::VariableTypeError {
-                        field_name: key.clone(),
-                        expected_type: "geo point".into(),
-                    })?;
-
-                Ok(Haversine::distance((*origin).into(), value.into()) as ScoreType)
-            }
         }
+    }
+
+    fn get_payload_value(&self, json_path: &JsonPath, point_id: PointOffsetType) -> Option<Value> {
+        self.payload_retrievers
+            .get(json_path)
+            .and_then(|retriever| retriever(point_id))
+    }
+
+    /// Tries to get a value from payload or from the defaults. Then tries to convert it to the desired type.
+    fn get_parsed_payload_value<T, F, E>(
+        &self,
+        json_path: &JsonPath,
+        point_id: PointOffsetType,
+        from_value: F,
+    ) -> OperationResult<T>
+    where
+        F: Fn(Value) -> Result<T, E>,
+        E: ToString,
+        T: FriendlyName,
+    {
+        self.get_payload_value(json_path, point_id)
+            .or_else(|| {
+                self.defaults
+                    .get(&VariableId::Payload(json_path.clone()))
+                    .cloned()
+            })
+            .map(|value| {
+                from_value(value).map_err(|e| OperationError::VariableTypeError {
+                    field_name: json_path.clone(),
+                    expected_type: T::friendly_name().to_owned(),
+                    description: e.to_string(),
+                })
+            })
+            .transpose()?
+            .ok_or_else(|| OperationError::VariableTypeError {
+                field_name: json_path.clone(),
+                expected_type: T::friendly_name().to_owned(),
+                description: "No value found in a payload nor defaults".to_string(),
+            })
     }
 }
 
@@ -322,7 +364,7 @@ mod tests {
         GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)
     ), 21926.494)]
     #[should_panic(
-        expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point" }"#
+        expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point", "#
     )]
     #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(FIELD_NAME)), 0.0)]
     #[should_panic(expected = r#"NonFiniteNumber { expression: "-1^0.4 = NaN" }"#)]
@@ -355,23 +397,30 @@ mod tests {
     // Default values
     #[rstest]
     // Defined default score
-    #[case(ParsedExpression::new_score_id(3), 1.5)]
+    #[case(ParsedExpression::new_score_id(3), Ok(1.5))]
     // score idx not defined
-    #[case(ParsedExpression::new_score_id(10), DEFAULT_SCORE)]
+    #[case(ParsedExpression::new_score_id(10), Ok(DEFAULT_SCORE))]
     // missing value in payload
     #[case(
         ParsedExpression::new_payload_id(JsonPath::new(NO_VALUE_FIELD_NAME)),
-        85.0
+        Ok(85.0)
     )]
     // missing value and no default value provided
     #[case(
         ParsedExpression::new_payload_id(JsonPath::new("missing_field")),
-        DEFAULT_SCORE
+        Err(OperationError::VariableTypeError {
+            field_name: JsonPath::new("missing_field"),
+            expected_type: ScoreType::friendly_name().to_string(),
+            description: "No value found in a payload nor defaults".to_string(),
+        })
     )]
     // geo distance with default value
-    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), 90951.3)]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.3))]
     #[test]
-    fn test_default_values(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
+    fn test_default_values(
+        #[case] expr: ParsedExpression,
+        #[case] expected: OperationResult<ScoreType>,
+    ) {
         let defaults = [
             (VariableId::Score(3), json!(1.5)),
             (
@@ -390,6 +439,6 @@ mod tests {
 
         let scorer = scorer_fixture.borrow_dependent();
 
-        assert_eq!(scorer.eval_expression(&expr, 0).unwrap(), expected);
+        assert_eq!(scorer.eval_expression(&expr, 0), expected);
     }
 }
