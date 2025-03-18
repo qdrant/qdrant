@@ -95,12 +95,13 @@ impl InvertedIndex for MutableInvertedIndex {
             self.point_to_docs.resize_with(new_len, Default::default);
         }
 
+        let mut hw_counter_val = 0usize;
         for token_idx in document.tokens() {
             let token_idx_usize = *token_idx as usize;
 
             if self.postings.len() <= token_idx_usize {
                 let new_len = token_idx_usize + 1;
-                counter.incr_delta(new_len - self.postings.len());
+                hw_counter_val += new_len - self.postings.len();
                 self.postings.resize_with(new_len, Default::default);
             }
 
@@ -113,9 +114,11 @@ impl InvertedIndex for MutableInvertedIndex {
                 Some(vec) => vec.insert(point_id),
             }
 
-            counter.incr_delta(size_of_val(&point_id));
+            hw_counter_val += size_of_val(&point_id);
         }
         self.point_to_docs[point_id as usize] = Some(document);
+
+        counter.incr_delta(hw_counter_val);
 
         Ok(())
     }

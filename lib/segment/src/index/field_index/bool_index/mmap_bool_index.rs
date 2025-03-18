@@ -284,7 +284,7 @@ fn set_or_insert_flag(
         // Make sure the key fits
         if key >= flags.len() {
             let new_len = (key + 1).next_multiple_of(PAGE_SIZE_BYTES);
-            counter.incr_delta(new_len - key);
+            counter.incr_delta(new_len - flags.len());
             flags.set_len(new_len)?;
         }
         return Ok(flags.set(key, value));
