@@ -258,6 +258,8 @@ impl FormulaScorer<'_> {
                 };
 
                 // All decay functions have a range of [0, 1], no need to check for bounds
+                debug_assert!((0.0..=1.0).contains(&decay));
+
                 Ok(decay)
             }
         }
