@@ -59,6 +59,26 @@ impl MappingChangeType {
             _ => None,
         }
     }
+
+    /// Get size of the persisted operation in bytes
+    ///
+    /// +-----------------------+-----------------------+------------------+
+    /// | MappingChangeType: u8 | Number/UUID: u64/u128 | Internal ID: u32 |
+    /// +-----------------------+-----------------------+------------------+
+    ///
+    /// Deletion changes are serialized as follows:
+    ///
+    /// +-----------------------+-----------------------+
+    /// | MappingChangeType: u8 | Number/UUID: u64/u128 |
+    /// +-----------------------+-----------------------+
+    fn operation_size(&self) -> usize {
+        match self {
+            Self::InsertNum => size_of::<u8>() + size_of::<u64>() + size_of::<u32>(),
+            Self::InsertUuid => size_of::<u8>() + size_of::<u128>() + size_of::<u32>(),
+            Self::DeleteNum => size_of::<u8>() + size_of::<u64>(),
+            Self::DeleteUuid => size_of::<u8>() + size_of::<u128>(),
+        }
+    }
 }
 
 /// Mutable in-memory ID tracker with simple file based backing storage
@@ -545,13 +565,16 @@ fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, u64)> {
         )
     })?;
 
+    // Size of persisted operation in bytes
+    let operation_size = change_type.operation_size() as u64;
+
     match change_type {
         MappingChangeType::InsertNum => {
             let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
             let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
             Ok((
                 MappingChange::Insert(external_id, internal_id),
-                (8 + 64 + 32) / 8,
+                operation_size,
             ))
         }
         MappingChangeType::InsertUuid => {
@@ -560,17 +583,17 @@ fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, u64)> {
             let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
             Ok((
                 MappingChange::Insert(external_id, internal_id),
-                (8 + 128 + 32) / 8,
+                operation_size,
             ))
         }
         MappingChangeType::DeleteNum => {
             let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
-            Ok((MappingChange::Delete(external_id), (8 + 64) / 8))
+            Ok((MappingChange::Delete(external_id), operation_size))
         }
         MappingChangeType::DeleteUuid => {
             let external_id =
                 PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
-            Ok((MappingChange::Delete(external_id), (8 + 128) / 8))
+            Ok((MappingChange::Delete(external_id), operation_size))
         }
     }
 }
