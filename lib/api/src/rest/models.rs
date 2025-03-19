@@ -57,6 +57,7 @@ pub struct HardwareUsage {
     pub payload_io_read: usize,
     pub payload_io_write: usize,
     pub payload_index_io_read: usize,
+    pub payload_index_io_write: usize,
     pub vector_io_read: usize,
     pub vector_io_write: usize,
 }

@@ -6518,8 +6518,10 @@ pub struct HardwareUsage {
     #[prost(uint64, tag = "4")]
     pub payload_index_io_read: u64,
     #[prost(uint64, tag = "5")]
-    pub vector_io_read: u64,
+    pub payload_index_io_write: u64,
     #[prost(uint64, tag = "6")]
+    pub vector_io_read: u64,
+    #[prost(uint64, tag = "7")]
     pub vector_io_write: u64,
 }
 #[derive(serde::Serialize)]

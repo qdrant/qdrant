@@ -414,9 +414,9 @@ async fn create_field_index(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
-        HwMeasurementAcc::disposable(), // TODO(io_measurement): measure payload index creation?
     )
     .await;
+
     process_response(response, timing, None)
 }
 

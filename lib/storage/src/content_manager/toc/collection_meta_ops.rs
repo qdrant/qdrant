@@ -8,6 +8,7 @@ use collection::shards::collection_shard_distribution::CollectionShardDistributi
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::transfer::ShardTransfer;
 use collection::shards::{CollectionId, transfer};
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use tempfile::Builder;
 
 use super::TableOfContent;
@@ -626,9 +627,19 @@ impl TableOfContent {
         &self,
         operation: CreatePayloadIndex,
     ) -> Result<(), StorageError> {
+        // We measure hardware on collection level here to not touch consensus for measurements but still
+        // measure hw for payload index creation on all nodes.
+        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+            self.get_collection_hw_metrics(operation.collection_name.clone()),
+        );
+
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_payload_index(operation.field_name.clone(), operation.field_schema)
+            .create_payload_index(
+                operation.field_name.clone(),
+                operation.field_schema,
+                collection_hw_acc,
+            )
             .await?;
 
         // We can solve issues related to this missing index

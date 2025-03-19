@@ -110,7 +110,6 @@ pub(crate) fn delete_vectors(
     op_num: SeqNumberType,
     points: &[PointIdType],
     vector_names: &[VectorNameBuf],
-    hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     let mut total_deleted_points = 0;
 
@@ -121,7 +120,7 @@ pub(crate) fn delete_vectors(
             |id, _idx, write_segment, ()| {
                 let mut res = true;
                 for name in vector_names {
-                    res &= write_segment.delete_vector(op_num, id, name, hw_counter)?;
+                    res &= write_segment.delete_vector(op_num, id, name)?;
                 }
                 Ok(res)
             },
@@ -142,7 +141,7 @@ pub(crate) fn delete_vectors_by_filter(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     let affected_points = points_by_filter(segments, filter, hw_counter)?;
-    delete_vectors(segments, op_num, &affected_points, vector_names, hw_counter)
+    delete_vectors(segments, op_num, &affected_points, vector_names)
 }
 
 /// Batch size when modifying payload.
@@ -342,11 +341,12 @@ pub(crate) fn create_field_index(
     op_num: SeqNumberType,
     field_name: PayloadKeyTypeRef,
     field_schema: Option<&PayloadFieldSchema>,
+    hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     segments
         .apply_segments(|write_segment| {
             let Some((schema, index)) =
-                write_segment.build_field_index(op_num, field_name, field_schema)?
+                write_segment.build_field_index(op_num, field_name, field_schema, hw_counter)?
             else {
                 return Ok(false);
             };
@@ -609,13 +609,9 @@ pub(crate) fn process_vector_operation(
         VectorOperations::UpdateVectors(operation) => {
             update_vectors(&segments.read(), op_num, operation.points, hw_counter)
         }
-        VectorOperations::DeleteVectors(ids, vector_names) => delete_vectors(
-            &segments.read(),
-            op_num,
-            &ids.points,
-            &vector_names,
-            hw_counter,
-        ),
+        VectorOperations::DeleteVectors(ids, vector_names) => {
+            delete_vectors(&segments.read(), op_num, &ids.points, &vector_names)
+        }
         VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
             delete_vectors_by_filter(&segments.read(), op_num, &filter, &vector_names, hw_counter)
         }
@@ -691,6 +687,7 @@ pub(crate) fn process_field_index_operation(
     segments: &RwLock<SegmentHolder>,
     op_num: SeqNumberType,
     field_index_operation: &FieldIndexOperations,
+    hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     match field_index_operation {
         FieldIndexOperations::CreateIndex(index_data) => create_field_index(
@@ -698,6 +695,7 @@ pub(crate) fn process_field_index_operation(
             op_num,
             &index_data.field_name,
             index_data.field_schema.as_ref(),
+            hw_counter,
         ),
         FieldIndexOperations::DeleteIndex(field_name) => {
             delete_field_index(&segments.read(), op_num, field_name)

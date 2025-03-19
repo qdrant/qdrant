@@ -260,12 +260,19 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .payload_index_io_read_counter()
             .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
 
-        self.point_to_values.check_values_any(idx, |v| {
+        let mut hw_count_val = 0;
+
+        let res = self.point_to_values.check_values_any(idx, |v| {
             let v = v.borrow();
-            let size = <N as MmapValue>::mmapped_size(v.as_referenced());
-            hw_counter.payload_index_io_read_counter().incr_delta(size);
+            hw_count_val += <N as MmapValue>::mmapped_size(v.as_referenced());
             check_fn(v)
-        })
+        });
+
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(hw_count_val);
+
+        res
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {

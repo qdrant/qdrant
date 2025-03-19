@@ -26,6 +26,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                 100,
                 &JsonPath::new(&key),
                 Some(&PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
     }

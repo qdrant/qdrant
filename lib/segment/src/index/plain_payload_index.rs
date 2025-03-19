@@ -79,6 +79,7 @@ impl PayloadIndex for PlainPayloadIndex {
         &self,
         _field: PayloadKeyTypeRef,
         _payload_schema: &PayloadFieldSchema,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         Ok(Some(Vec::new()))
     }

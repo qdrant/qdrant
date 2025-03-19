@@ -36,4 +36,9 @@ impl HardwareCounterCell {
     pub fn ref_vector_io_write_counter(&self) -> HwMetricRefCounter {
         HwMetricRefCounter::new(&self.vector_io_write_counter)
     }
+
+    #[inline]
+    pub fn ref_payload_index_io_write_counter(&self) -> HwMetricRefCounter {
+        HwMetricRefCounter::new(&self.payload_index_io_write_counter)
+    }
 }

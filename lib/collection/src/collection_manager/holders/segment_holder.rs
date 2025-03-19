@@ -1112,8 +1112,11 @@ impl<'s> SegmentHolder {
 
         let mut segment = build_segment(segments_path, &config, save_version)?;
 
+        // Internal operation.
+        let hw_counter = HardwareCounterCell::disposable();
+
         for (key, schema) in &payload_index_schema.schema {
-            segment.create_field_index(0, key, Some(schema))?;
+            segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
 
         Ok(LockedSegment::new(segment))

@@ -190,10 +190,11 @@ impl ValueIndexer for BoolIndex {
         &mut self,
         id: common::types::PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> crate::common::operation_error::OperationResult<()> {
         match self {
-            BoolIndex::Simple(index) => index.add_many(id, values),
-            BoolIndex::Mmap(index) => index.add_many(id, values),
+            BoolIndex::Simple(index) => index.add_many(id, values, hw_counter),
+            BoolIndex::Mmap(index) => index.add_many(id, values, hw_counter),
         }
     }
 
@@ -296,7 +297,9 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
-        index.add_point(0, &[&given]).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        index.add_point(0, &[&given], &hw_counter).unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
@@ -346,11 +349,13 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
+                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
         index.flusher()().unwrap();
@@ -390,18 +395,21 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
+        let hw_cell = HardwareCounterCell::new();
+
         let idx = 1000;
-        index.add_point(idx, &[&before]).unwrap();
+        index.add_point(idx, &[&before], &hw_cell).unwrap();
 
         let hw_acc = HwMeasurementAcc::new();
         let hw_counter = hw_acc.get_counter_cell();
+
         let point_offsets = index
             .filter(&match_bool(false), &hw_counter)
             .unwrap()
             .collect_vec();
         assert_eq!(point_offsets, vec![idx]);
 
-        index.add_point(idx, &[&after]).unwrap();
+        index.add_point(idx, &[&after], &hw_cell).unwrap();
 
         let point_offsets = index
             .filter(&match_bool(true), &hw_counter)
@@ -425,11 +433,13 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
+                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
         assert_eq!(index.count_indexed_points(), 9);
@@ -445,11 +455,13 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
+                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
         let blocks = index
@@ -470,11 +482,13 @@ mod tests {
         let tmp_dir = Builder::new().prefix(DB_NAME).tempdir().unwrap();
         let mut index = I::open_at(tmp_dir.path());
 
+        let hw_counter = HardwareCounterCell::new();
+
         bools_fixture()
             .into_iter()
             .enumerate()
             .for_each(|(i, value)| {
-                index.add_point(i as u32, &[&value]).unwrap();
+                index.add_point(i as u32, &[&value], &hw_counter).unwrap();
             });
 
         let hw_counter = HardwareCounterCell::new();

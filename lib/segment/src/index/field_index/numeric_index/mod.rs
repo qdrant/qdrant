@@ -526,8 +526,13 @@ where
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.0.add_point(id, payload)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -562,8 +567,13 @@ where
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.index.add_point(id, payload)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.index.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -601,7 +611,12 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         self.in_memory_index.remove_point(id);
         let mut flatten_values: Vec<_> = vec![];
         for value in payload.iter() {
@@ -612,6 +627,11 @@ where
             .into_iter()
             .map(NumericIndex::into_inner_value)
             .collect();
+
+        hw_counter
+            .payload_index_io_write_counter()
+            .incr_delta(size_of_val(&flatten_values));
+
         self.in_memory_index.add_many_to_list(id, flatten_values);
         Ok(())
     }
@@ -806,9 +826,10 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
-            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values, hw_counter),
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
@@ -842,11 +863,14 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<DateTimePayloadType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
-            NumericIndexInner::Mutable(index) => {
-                index.add_many_to_list(id, values.into_iter().map(Self::into_inner_value).collect())
-            }
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(
+                id,
+                values.into_iter().map(Self::into_inner_value).collect(),
+                hw_counter,
+            ),
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
@@ -880,9 +904,10 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<FloatPayloadType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
-            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values),
+            NumericIndexInner::Mutable(index) => index.add_many_to_list(id, values, hw_counter),
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",
             )),
@@ -916,11 +941,12 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match &mut self.inner {
             NumericIndexInner::Mutable(index) => {
                 let values: Vec<u128> = values.iter().map(|i| i.as_u128()).collect();
-                index.add_many_to_list(id, values)
+                index.add_many_to_list(id, values, hw_counter)
             }
             NumericIndexInner::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable numeric index",

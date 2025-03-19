@@ -302,6 +302,7 @@ mod test {
     use std::sync::Arc;
 
     use common::budget::ResourceBudget;
+    use common::counter::hardware_accumulator::HwMeasurementAcc;
     use segment::types::{
         Condition, FieldCondition, Filter, Match, PayloadFieldSchema, PayloadSchemaType,
         SearchParams, StrictModeConfig, ValueVariants,
@@ -516,6 +517,7 @@ mod test {
             .create_payload_index(
                 INDEXED_KEY.parse().unwrap(),
                 PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+                HwMeasurementAcc::new(),
             )
             .await
             .expect("failed to create payload index");

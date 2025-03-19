@@ -73,12 +73,20 @@ fn range_filtering(c: &mut Criterion) {
 
     // add numeric float index
     index
-        .set_indexed(&FLT_KEY.parse().unwrap(), PayloadSchemaType::Float)
+        .set_indexed(
+            &FLT_KEY.parse().unwrap(),
+            PayloadSchemaType::Float,
+            &hw_counter,
+        )
         .unwrap();
 
     // add numeric integer index
     index
-        .set_indexed(&INT_KEY.parse().unwrap(), PayloadSchemaType::Integer)
+        .set_indexed(
+            &INT_KEY.parse().unwrap(),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
 
     // make sure all points are indexed

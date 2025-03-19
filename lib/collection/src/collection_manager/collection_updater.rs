@@ -55,7 +55,7 @@ impl CollectionUpdater {
                 process_payload_operation(segments, op_num, payload_operation, hw_counter)
             }
             CollectionUpdateOperations::FieldIndexOperation(index_operation) => {
-                process_field_index_operation(segments, op_num, &index_operation)
+                process_field_index_operation(segments, op_num, &index_operation, hw_counter)
             }
         };
 
@@ -359,12 +359,15 @@ mod tests {
         let meta_key_path = JsonPath::new("meta");
         let nested_key_path: JsonPath = JsonPath::new("meta.color");
 
+        let hw_counter = HardwareCounterCell::new();
+
         let mut segment1 = build_segment_1(path);
         segment1
             .create_field_index(
                 100,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
+                &hw_counter,
             )
             .unwrap();
 
@@ -374,6 +377,7 @@ mod tests {
                 101,
                 &nested_key_path,
                 Some(&PayloadFieldSchema::FieldType(Keyword)),
+                &hw_counter,
             )
             .unwrap();
 
@@ -389,8 +393,6 @@ mod tests {
 
         // update points from segment 2
         let points = vec![11.into(), 12.into(), 13.into()];
-
-        let hw_counter = HardwareCounterCell::new();
 
         process_payload_operation(
             &segments,

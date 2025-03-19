@@ -512,6 +512,8 @@ mod tests {
         index_optimizer.thresholds_config.indexing_threshold_kb = 50;
 
         // ----- CREATE AN INDEXED FIELD ------
+        let hw_counter = HardwareCounterCell::new();
+
         process_field_index_operation(
             locked_holder.deref(),
             opnum.next().unwrap(),
@@ -519,6 +521,7 @@ mod tests {
                 field_name: payload_field.clone(),
                 field_schema: Some(PayloadSchemaType::Integer.into()),
             }),
+            &hw_counter,
         )
         .unwrap();
 

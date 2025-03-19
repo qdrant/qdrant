@@ -61,15 +61,15 @@ fn test_rebuild_with_removed_vectors() {
     for i in 0..NUM_VECTORS_2 {
         if i % 3 == 0 {
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME, &hw_counter)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR1_NAME)
                 .unwrap();
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME, &hw_counter)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
                 .unwrap();
         }
         if i % 3 == 1 {
             segment2
-                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME, &hw_counter)
+                .delete_vector(2, (NUM_VECTORS_1 + i).into(), VECTOR2_NAME)
                 .unwrap();
         }
         if i % 2 == 0 {
