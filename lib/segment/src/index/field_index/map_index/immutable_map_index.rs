@@ -5,9 +5,7 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -263,8 +261,8 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
 
         self.point_to_values.check_values_any(idx, |v| {
-            let v: &N = v.borrow();
-            let size = <N as MmapValue>::mmapped_size((*v).as_referenced());
+            let v = v.borrow();
+            let size = <N as MmapValue>::mmapped_size(v.as_referenced());
             hw_counter.payload_index_io_read_counter().incr_delta(size);
             check_fn(v)
         })
@@ -293,11 +291,13 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     pub fn get_count_for_value(
         &self,
         value: &N,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect values.
+        hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
-        self.value_to_points
-            .get(value)
-            .map(|entry| entry.count as usize)
+        let counter = hw_counter.payload_index_io_read_counter();
+        self.value_to_points.get(value).map(|entry| {
+            counter.incr_delta(size_of_val(entry));
+            entry.count as usize
+        })
     }
 
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
@@ -306,24 +306,19 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .map(|(k, entry)| (k.borrow(), entry.count as usize))
     }
 
-    pub fn iter_values_map(
-        &self,
-        hw_acc: HwMeasurementAcc,
-    ) -> impl Iterator<Item = (&N, IdIter<'_>)> + '_ {
-        let hw_counter = hw_acc.get_counter_cell();
+    pub fn iter_values_map<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
         self.value_to_points.keys().map(move |k| {
             (
                 k.borrow(),
-                Box::new(self.get_iterator(k.borrow(), &hw_counter).copied()) as IdIter,
+                Box::new(self.get_iterator(k.borrow(), hw_counter).copied()) as IdIter,
             )
         })
     }
 
     pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(BUCKET_OFFSET_OVERHEAD);
-
         if let Some(entry) = self.value_to_points.get(value) {
             let range = entry.range.start as usize..entry.range.end as usize;
 

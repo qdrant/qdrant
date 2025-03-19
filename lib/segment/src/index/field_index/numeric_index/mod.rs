@@ -386,9 +386,14 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     }
 
     /// Tries to estimate the amount of points for a given key.
-    pub fn estimate_points(&self, value: &T) -> usize {
+    pub fn estimate_points(&self, value: &T, hw_counter: &HardwareCounterCell) -> usize {
         let start = Bound::Included(Point::new(*value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(*value, PointOffsetType::MAX));
+
+        hw_counter
+            .payload_index_io_read_counter()
+            // We have to do 2 times binary search in mmap and immutable storage.
+            .incr_delta(2 * ((self.total_unique_values_count() as f32).log2().ceil() as usize));
 
         match &self {
             NumericIndexInner::Mutable(mutable) => {
@@ -694,7 +699,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
     fn estimate_cardinality(
         &self,
         condition: &FieldCondition,
-        _hw_counter: &HardwareCounterCell, // TODO(io_measurement): Collect.
+        hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         if let Some(Match::Value(MatchValue {
             value: ValueVariants::String(keyword),
@@ -704,7 +709,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
             if let Ok(uuid) = Uuid::from_str(keyword) {
                 let key = T::from_u128(uuid.as_u128());
 
-                let estimated_count = self.estimate_points(&key);
+                let estimated_count = self.estimate_points(&key, hw_counter);
                 return Some(
                     CardinalityEstimation::exact(estimated_count).with_primary_clause(
                         PrimaryCondition::Condition(Box::new(condition.clone())),

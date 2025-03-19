@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use serde_json::Value;
 
@@ -238,7 +239,8 @@ impl PayloadFieldIndex for MmapNullIndex {
                 // But we can iterate over all non-empty values, as all of them should
                 // register in the index
                 let iter = (0..self.has_values_slice.len() as PointOffsetType)
-                    .filter(move |&id| self.has_values_slice.get(id));
+                    .filter(move |&id| self.has_values_slice.get(id))
+                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
@@ -249,7 +251,8 @@ impl PayloadFieldIndex for MmapNullIndex {
                 // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
                 let iter = (0..self.is_null_slice.len() as PointOffsetType)
-                    .filter(move |&id| self.is_null_slice.get(id));
+                    .filter(move |&id| self.is_null_slice.get(id))
+                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             } else {
                 // If we want to iterate over all non-null values, we need to do it externally

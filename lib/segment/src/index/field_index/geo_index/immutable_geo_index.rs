@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -77,12 +78,18 @@ impl ImmutableGeoMapIndex {
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
-        self.point_to_values.check_values_any(idx, |v| {
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(size_of_val(v));
+        let mut counter = 0usize;
+
+        let res = self.point_to_values.check_values_any(idx, |v| {
+            counter += 1;
             check_fn(v)
-        })
+        });
+
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(counter * size_of::<GeoPoint>() + BUCKET_OFFSET_OVERHEAD);
+
+        res
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = &GeoPoint> + '_> {

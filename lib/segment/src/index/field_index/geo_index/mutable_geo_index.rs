@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
+use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 use delegate::delegate;
 use parking_lot::RwLock;
@@ -177,7 +179,7 @@ impl MutableGeoMapIndex {
 
     delegate! {
         to self.in_memory_index {
-            pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
+            pub fn check_values_any(&self, idx: PointOffsetType, hw_counter: &HardwareCounterCell, check_fn: impl Fn(&GeoPoint) -> bool) -> bool;
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn points_per_hash(&self) -> impl Iterator<Item = (&GeoHash, usize)>;
             pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize;
@@ -212,11 +214,23 @@ impl InMemoryGeoMapIndex {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(BUCKET_OFFSET_OVERHEAD);
+
         self.point_to_values
             .get(idx as usize)
-            .map(|values| values.iter().any(check_fn))
+            .map(|values| {
+                values
+                    .iter()
+                    .measure_hw_with_cell(hw_counter, size_of::<GeoPoint>(), |i| {
+                        i.payload_index_io_read_counter()
+                    })
+                    .any(check_fn)
+            })
             .unwrap_or(false)
     }
 

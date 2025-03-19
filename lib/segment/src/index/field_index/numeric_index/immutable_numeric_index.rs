@@ -173,12 +173,18 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
-        self.point_to_values.check_values_any(idx, |v| {
-            hw_counter
-                .payload_io_read_counter()
-                .incr_delta(size_of_val(v));
+        let mut call_counter = 0;
+
+        let res = self.point_to_values.check_values_any(idx, |v| {
+            call_counter += 1;
             check_fn(v)
-        })
+        });
+
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(call_counter);
+
+        res
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {

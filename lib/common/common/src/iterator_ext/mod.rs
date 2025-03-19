@@ -4,8 +4,9 @@ use std::fmt::Debug;
 use check_stopped::CheckStopped;
 use on_final_count::OnFinalCount;
 
+pub(super) mod on_final_count;
+
 mod check_stopped;
-mod on_final_count;
 
 pub trait IteratorExt: Iterator {
     /// Periodically check if the iteration should be stopped.
