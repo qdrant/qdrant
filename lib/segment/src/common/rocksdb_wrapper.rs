@@ -76,19 +76,34 @@ pub fn open_db<T: AsRef<str>>(
     path: &Path,
     vector_paths: &[T],
 ) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
+    let options = make_db_options();
     let mut column_families = vec![DB_PAYLOAD_CF, DB_DEFAULT_CF];
 
-    // Only add RocksDB ID tracker mapping and version CFs if not using new mutable ID tracker
+    // If using new ID tracker, only add RocksDB ID tracker column families if they already exist
     // Not creating them prevents older Qdrant versions from trying to load the unused RocksDB ID tracker
-    if !feature_flags().use_mutable_id_tracker_without_rocksdb {
-        column_families.push(DB_MAPPING_CF);
-        column_families.push(DB_VERSIONS_CF);
+    if feature_flags().use_mutable_id_tracker_without_rocksdb {
+        let exists = check_db_exists(path);
+        let existing_column_families = if exists {
+            DB::list_cf(&options, path)?
+        } else {
+            vec![]
+        };
+
+        // Add column families to create or open
+        // - on database creation: always add CFs
+        // - on database open: only add CFs if they already exist
+        column_families.extend(
+            [DB_MAPPING_CF, DB_VERSIONS_CF]
+                .into_iter()
+                .filter(|cf| !exists || existing_column_families.iter().any(|other| other == cf)),
+        );
+    } else {
+        column_families.extend([DB_MAPPING_CF, DB_VERSIONS_CF]);
     }
 
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
-    let options = make_db_options();
     // Make sure that all column families have the same options
     let column_with_options = column_families
         .into_iter()
