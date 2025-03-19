@@ -23,7 +23,7 @@ pub trait HwMeasurementIteratorExt: Iterator {
         OnFinalCount::new(self, move |total_count| {
             let hw_counter = hw_acc.get_counter_cell();
             // Subtract 1 to not account for the latest `None` call.
-            f(&hw_counter).incr_delta(total_count.saturating_sub(1) * multiplier);
+            f(&hw_counter).incr_delta(total_count * multiplier);
         })
     }
 
@@ -45,7 +45,7 @@ pub trait HwMeasurementIteratorExt: Iterator {
     {
         OnFinalCount::new(self, move |total_count| {
             // Subtract 1 to not account for the latest `None` call.
-            f(hw_cell).incr_delta(total_count.saturating_sub(1) * multiplier);
+            f(hw_cell).incr_delta(total_count * multiplier);
         })
     }
 
@@ -60,9 +60,9 @@ pub trait HwMeasurementIteratorExt: Iterator {
         Self: Sized,
         R: FnMut(&HardwareCounterCell) -> &CounterCell,
     {
-        OnFinalCount::new(self, move |i| {
+        OnFinalCount::new(self, move |total_count| {
             // Subtract one to not account for the latest `None` call.
-            f(hw_cell).incr_delta(i.saturating_sub(1) / fraction);
+            f(hw_cell).incr_delta(total_count / fraction);
         })
     }
 }
