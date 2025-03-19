@@ -18,8 +18,8 @@ use crate::id_tracker::IdTracker;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
 
-const FILE_MAPPINGS: &str = "id_tracker.mappings";
-const FILE_VERSIONS: &str = "id_tracker.versions";
+const FILE_MAPPINGS: &str = "mutable_id_tracker.mappings";
+const FILE_VERSIONS: &str = "mutable_id_tracker.versions";
 
 const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
@@ -323,14 +323,17 @@ impl IdTracker for MutableIdTracker {
     }
 
     fn files(&self) -> Vec<PathBuf> {
-        vec![
+        [
             mappings_path(&self.segment_path),
             versions_path(&self.segment_path),
         ]
+        .into_iter()
+        .filter(|path| path.is_file())
+        .collect()
     }
 }
 
-fn mappings_path(segment_path: &Path) -> PathBuf {
+pub(crate) fn mappings_path(segment_path: &Path) -> PathBuf {
     segment_path.join(FILE_MAPPINGS)
 }
 

@@ -11,9 +11,18 @@ pub struct FeatureFlags {
     ///
     /// The old format fails to persist shard key numbers correctly, converting them into strings on
     /// load. While this is false, the new format is only used if any shard key is a number.
+    ///
+    /// First implemented in Qdrant 1.13.1
     // TODO(1.14): set to true, remove other branches in code, and remove this flag
     #[serde(default)]
     pub use_new_shard_key_mapping_format: bool,
+
+    /// Whether to use the new mutable ID tracker without RocksDB.
+    ///
+    /// First implemented in Qdrant 1.13.5
+    // TODO(1.14): set to true, remove other branches in code, and remove this flag
+    #[serde(default)]
+    pub use_mutable_id_tracker_without_rocksdb: bool,
 }
 
 /// Initializes the global feature flags with `flags`. Must only be called once at
