@@ -4,6 +4,7 @@ use api::grpc::transport_channel_pool::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_GRPC_TIMEOUT, DEFAULT_POOL_SIZE,
 };
 use collection::operations::validation;
+use common::flags::FeatureFlags;
 use config::{Config, ConfigError, Environment, File, FileFormat, Source};
 use serde::Deserialize;
 use storage::types::StorageConfig;
@@ -215,6 +216,8 @@ pub struct Settings {
     #[serde(default)]
     #[validate(nested)]
     pub gpu: Option<GpuConfig>,
+    #[serde(default)]
+    pub feature_flags: FeatureFlags,
 }
 
 impl Settings {
