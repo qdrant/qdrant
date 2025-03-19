@@ -104,6 +104,7 @@ pub(crate) enum ShardKeyMappingWrapper {
     // TODO(1.15): if removing the old format, change back to regular SaveOnDisk<T> type
     Old(ShardKeyMapping),
     /// The `New` format is a more robust format, properly persisting shard key numbers
+    #[allow(private_interfaces)]
     New(Vec<NewShardKeyMapping>),
 }
 
