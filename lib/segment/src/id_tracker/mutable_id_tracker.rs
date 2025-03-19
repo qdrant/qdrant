@@ -21,7 +21,7 @@ use crate::types::{PointIdType, SeqNumberType};
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
-const VERSION_ELEMENT_SIZE: u64 = mem::size_of::<SeqNumberType>() as u64;
+const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MappingChange {
@@ -40,7 +40,7 @@ impl MappingChange {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 enum MappingChangeType {
     InsertNum = 1,
@@ -50,13 +50,33 @@ enum MappingChangeType {
 }
 
 impl MappingChangeType {
-    fn from_byte(byte: u8) -> Option<Self> {
+    const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             x if x == Self::InsertNum as u8 => Some(Self::InsertNum),
             x if x == Self::InsertUuid as u8 => Some(Self::InsertUuid),
             x if x == Self::DeleteNum as u8 => Some(Self::DeleteNum),
             x if x == Self::DeleteUuid as u8 => Some(Self::DeleteUuid),
             _ => None,
+        }
+    }
+
+    /// Get size of the persisted operation in bytes
+    ///
+    /// +-----------------------+-----------------------+------------------+
+    /// | MappingChangeType: u8 | Number/UUID: u64/u128 | Internal ID: u32 |
+    /// +-----------------------+-----------------------+------------------+
+    ///
+    /// Deletion changes are serialized as follows:
+    ///
+    /// +-----------------------+-----------------------+
+    /// | MappingChangeType: u8 | Number/UUID: u64/u128 |
+    /// +-----------------------+-----------------------+
+    const fn operation_size(self) -> usize {
+        match self {
+            Self::InsertNum => size_of::<u8>() + size_of::<u64>() + size_of::<u32>(),
+            Self::InsertUuid => size_of::<u8>() + size_of::<u128>() + size_of::<u32>(),
+            Self::DeleteNum => size_of::<u8>() + size_of::<u64>(),
+            Self::DeleteUuid => size_of::<u8>() + size_of::<u128>(),
         }
     }
 }
@@ -366,13 +386,41 @@ fn write_mapping_changes<W: Write>(
 }
 
 /// Load point mappings from the given file
+///
+/// If the file ends with an incomplete entry, it is truncated from the file.
 fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     let file = File::open(mappings_path)?;
-    let reader = BufReader::new(file);
-    read_mappings(reader)
+    let file_len = file.metadata()?.len();
+    let mut reader = BufReader::new(file);
+
+    let mappings = read_mappings(&mut reader)?;
+
+    let read_to = reader.stream_position()?;
+    drop(reader);
+
+    // If reader is not fully exhausted, there's an incomplete entry at the end, truncate the file
+    // It can happen on crash while flushing. We must truncate the file here to not corrupt new
+    // entries we append to the file
+    debug_assert!(read_to <= file_len, "cannot read past the end of the file");
+    if read_to < file_len {
+        log::warn!(
+            "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming WAL recovery",
+            (file_len - read_to),
+        );
+        let file = File::options()
+            .write(true)
+            .truncate(false)
+            .open(mappings_path)?;
+        file.set_len(read_to)?;
+        file.sync_all()?;
+    }
+
+    Ok(mappings)
 }
 
 /// Iterate over mapping changes from the given reader
+///
+/// Each non-errorous item is a tuple of the mapping change and the number of bytes read so far.
 ///
 /// The iterator ends when the end of the file is reached, or when an error occurred.
 ///
@@ -380,14 +428,26 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
 ///
 /// An error item is returned if reading a mapping change fails due to malformed data. Then the
 /// iterator will not produce any more items.
-fn read_mappings_iter<R: Read>(
-    mut reader: R,
-) -> impl Iterator<Item = OperationResult<MappingChange>> {
+fn read_mappings_iter<R>(mut reader: R) -> impl Iterator<Item = OperationResult<MappingChange>>
+where
+    R: Read + Seek,
+{
+    let mut position = reader.stream_position().unwrap_or(0);
+
     // Keep reading until end of file or error
     std::iter::from_fn(move || match read_entry(&mut reader) {
-        Ok(entry) => Some(Ok(entry)),
+        Ok((entry, read_bytes)) => {
+            position += read_bytes;
+            Some(Ok(entry))
+        }
         // Done reading if end of file is reached
-        Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => None,
+        // Explicitly seek to after last read entry, allows to detect if full file was read
+        Err(err) if err.kind() == io::ErrorKind::UnexpectedEof => {
+            match reader.seek(io::SeekFrom::Start(position)) {
+                Ok(_) => None,
+                Err(err) => Some(Err(err.into())),
+            }
+        }
         // Propagate deserialization error
         Err(err) => Some(Err(err.into())),
     })
@@ -396,7 +456,12 @@ fn read_mappings_iter<R: Read>(
 }
 
 /// Read point mappings from the given reader
-fn read_mappings<R: Read>(reader: R) -> OperationResult<PointMappings> {
+///
+/// Returns loaded point mappings.
+fn read_mappings<R>(reader: R) -> OperationResult<PointMappings>
+where
+    R: Read + Seek,
+{
     let mut deleted = BitVec::new();
     let mut internal_to_external: Vec<PointIdType> = Default::default();
     let mut external_to_internal_num: BTreeMap<u64, PointOffsetType> = Default::default();
@@ -489,7 +554,9 @@ fn read_mappings<R: Read>(reader: R) -> OperationResult<PointMappings> {
 ///
 /// This function reads exact one entry which means after calling this function, the reader
 /// will be at the start of the next entry.
-fn read_entry<R: Read>(reader: &mut R) -> io::Result<MappingChange> {
+///
+/// The number of bytes read is returned on successful read.
+fn read_entry<R: Read>(reader: &mut R) -> io::Result<(MappingChange, u64)> {
     let change_type = reader.read_u8()?;
     let change_type = MappingChangeType::from_byte(change_type).ok_or_else(|| {
         io::Error::new(
@@ -498,26 +565,35 @@ fn read_entry<R: Read>(reader: &mut R) -> io::Result<MappingChange> {
         )
     })?;
 
+    // Size of persisted operation in bytes
+    let operation_size = change_type.operation_size() as u64;
+
     match change_type {
         MappingChangeType::InsertNum => {
             let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
             let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
-            Ok(MappingChange::Insert(external_id, internal_id))
+            Ok((
+                MappingChange::Insert(external_id, internal_id),
+                operation_size,
+            ))
         }
         MappingChangeType::InsertUuid => {
             let external_id =
                 PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
             let internal_id = reader.read_u32::<FileEndianess>()? as PointOffsetType;
-            Ok(MappingChange::Insert(external_id, internal_id))
+            Ok((
+                MappingChange::Insert(external_id, internal_id),
+                operation_size,
+            ))
         }
         MappingChangeType::DeleteNum => {
             let external_id = PointIdType::NumId(reader.read_u64::<FileEndianess>()?);
-            Ok(MappingChange::Delete(external_id))
+            Ok((MappingChange::Delete(external_id), operation_size))
         }
         MappingChangeType::DeleteUuid => {
             let external_id =
                 PointIdType::Uuid(Uuid::from_u128_le(reader.read_u128::<FileEndianess>()?));
-            Ok(MappingChange::Delete(external_id))
+            Ok((MappingChange::Delete(external_id), operation_size))
         }
     }
 }
@@ -665,6 +741,7 @@ where
 #[cfg(test)]
 pub(super) mod tests {
     use std::collections::{HashMap, HashSet};
+    use std::io::Cursor;
 
     use itertools::Itertools;
     use rand::Rng;
@@ -921,9 +998,10 @@ pub(super) mod tests {
 
             write_entry(&mut buf, change).unwrap();
 
-            let got_change = read_entry(&mut buf.as_slice()).unwrap();
+            let (got_change, bytes_read) = read_entry(&mut buf.as_slice()).unwrap();
 
             assert_eq!(change, got_change);
+            assert!(bytes_read == 13 || bytes_read == 21);
         }
     }
 
@@ -931,48 +1009,156 @@ pub(super) mod tests {
     #[test]
     fn test_point_mappings_deserializing_special() {
         // Empty reader creates empty mappings
-        let buf = b"";
-        assert_eq!(read_mappings(&buf[..]).unwrap().total_point_count(), 0);
+        let buf = Cursor::new(b"");
+        assert_eq!(read_mappings(buf).unwrap().total_point_count(), 0);
 
         // Corrupt if reading invalid type byte
-        let buf = b"\x00";
+        let buf = Cursor::new(b"\x00");
         assert!(
-            read_mappings(&buf[..])
+            read_mappings(buf)
                 .unwrap_err()
                 .to_string()
                 .contains("Corrupted ID tracker mapping storage")
         );
 
-        let buf = b"malformed!";
-        assert!(read_mappings(&buf[..]).is_err());
+        let buf = Cursor::new(b"malformed!");
+        assert!(read_mappings(buf).is_err());
 
         // Empty if change is not fully written
-        let buf = b"\x01\x01\x00\x00\x00\x00";
-        assert_eq!(read_mappings(&buf[..]).unwrap().total_point_count(), 0);
+        let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00");
+        assert_eq!(read_mappings(buf).unwrap().total_point_count(), 0);
 
         // Exactly one entry
-        let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00";
+        let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00");
         assert_eq!(
-            read_mappings(&buf[..])
+            read_mappings(buf)
                 .unwrap()
                 .internal_id(&PointIdType::NumId(1)),
             Some(2)
         );
 
         // Exactly one entry and a malformed second one
-        let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01\x00";
+        let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01\x00");
         assert!(
-            read_mappings(&buf[..])
+            read_mappings(buf)
                 .unwrap_err()
                 .to_string()
                 .contains("Corrupted ID tracker mapping storage")
         );
 
         // Exactly one entry and an incomplete second one
-        let buf = b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00";
-        let mappings = read_mappings(&buf[..]).unwrap();
+        let buf = Cursor::new(b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x01\x00");
+        let mappings = read_mappings(buf).unwrap();
         assert_eq!(mappings.total_point_count(), 1);
         assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
+    }
+
+    /// Test that `operation_size` returns the correct size
+    ///
+    /// Must have read exactly the same number of bytes from the stream as we return.
+    #[test]
+    fn test_operation_size() {
+        let items = [
+            (
+                b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00".as_slice(),
+                MappingChange::Insert(PointIdType::NumId(1), 2),
+            ),
+            (
+                b"\x02\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00".as_slice(),
+                MappingChange::Insert(
+                    PointIdType::Uuid(Uuid::parse_str("10000000-0000-0000-0000-000000000000").unwrap()),
+                    2,
+                ),
+            ),
+            (
+                b"\x03\x01\x00\x00\x00\x00\x00\x00\x00".as_slice(),
+                MappingChange::Delete(PointIdType::NumId(1))
+            ),
+            (
+                b"\x04\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00".as_slice(),
+                MappingChange::Delete(PointIdType::Uuid(
+                    Uuid::parse_str("10000000-0000-0000-0000-000000000000").unwrap(),
+                )),
+            ),
+        ];
+
+        // Test each change type
+        for (buf, expected_change) in items {
+            let mut buf = Cursor::new(buf);
+            let (entry, bytes_read) = read_entry(&mut buf).unwrap();
+            assert_eq!(entry, expected_change);
+            assert_eq!(
+                bytes_read,
+                buf.stream_position().unwrap(),
+                "read different number of bytes from stream than returned",
+            );
+        }
+    }
+
+    /// Test that we truncate a partially written entry at the end.
+    #[test]
+    fn test_point_mappings_truncation() {
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let mappings_path = mappings_path(segment_dir.path());
+
+        // Exactly one entry
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00",
+        )
+        .unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+
+        // One entry and and one extra byte, file must be truncated
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01",
+        )
+        .unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 14);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+
+        // One entry and an incomplete second one, file must be truncated
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x02\x00",
+        )
+        .unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 16);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 13);
+
+        // Two entries and an incomplete third one, file must be truncated
+        std::fs::write(
+            &mappings_path,
+            b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x01\x02\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x02\x00",
+        ).unwrap();
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 28);
+        assert_eq!(
+            load_mappings(&mappings_path)
+                .unwrap()
+                .internal_id(&PointIdType::NumId(1)),
+            Some(2)
+        );
+        assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 26);
     }
 
     const DEFAULT_VERSION: SeqNumberType = 42;
