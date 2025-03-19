@@ -147,6 +147,8 @@ fn main() -> anyhow::Result<()> {
 
     let settings = Settings::new(args.config_path)?;
 
+    remove_started_file_indicator(&settings);
+
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
     let reporting_id = TelemetryCollector::generate_id();
@@ -586,7 +588,7 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
     }
 
-    touch_started_file_indicator();
+    touch_started_file_indicator(&settings);
 
     for handle in handles {
         log::debug!(
