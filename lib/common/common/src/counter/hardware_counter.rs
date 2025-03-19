@@ -50,27 +50,6 @@ impl HardwareCounterCell {
         }
     }
 
-    #[cfg(feature = "testing")]
-    pub fn new_with(
-        cpu: usize,
-        payload_io_read: usize,
-        payload_io_write: usize,
-        payload_index_io_read: usize,
-        vector_io_read: usize,
-        vector_io_write: usize,
-    ) -> Self {
-        Self {
-            cpu_multiplier: 1,
-            cpu_counter: CounterCell::new_with(cpu),
-            payload_io_read_counter: CounterCell::new_with(payload_io_read),
-            payload_io_write_counter: CounterCell::new_with(payload_io_write),
-            payload_index_io_read_counter: CounterCell::new_with(payload_index_io_read),
-            vector_io_read_counter: CounterCell::new_with(vector_io_read),
-            vector_io_write_counter: CounterCell::new_with(vector_io_write),
-            accumulator: HwMeasurementAcc::new(),
-        }
-    }
-
     pub fn new_with_accumulator(accumulator: HwMeasurementAcc) -> Self {
         Self {
             cpu_multiplier: 1,

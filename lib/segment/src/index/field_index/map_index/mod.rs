@@ -7,7 +7,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use ahash::HashMap;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
@@ -211,14 +210,14 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    pub fn iter_values_map(
-        &self,
-        hw_acc: HwMeasurementAcc,
-    ) -> Box<dyn Iterator<Item = (&N, IdIter<'_>)> + '_> {
+    pub fn iter_values_map<'a>(
+        &'a self,
+        hw_cell: &'a HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = (&'a N, IdIter<'a>)> + 'a> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_values_map(hw_acc)),
-            MapIndex::Immutable(index) => Box::new(index.iter_values_map(hw_acc)),
-            MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
+            MapIndex::Mutable(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::Immutable(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_cell)),
         }
     }
 
@@ -1017,11 +1016,11 @@ where
         self.iter_values().map(Into::into)
     }
 
-    fn iter_values_map(
-        &self,
-        hw_acc: HwMeasurementAcc,
-    ) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_ {
-        self.iter_values_map(hw_acc)
+    fn iter_values_map<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a {
+        self.iter_values_map(hw_counter)
             .map(|(k, iter)| (k.into(), iter))
     }
 

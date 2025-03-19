@@ -1,4 +1,4 @@
-use common::counter::hardware_accumulator::HwMeasurementAcc;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::bool_index::BoolIndex;
@@ -17,10 +17,10 @@ pub trait FacetIndex {
     fn iter_values(&self) -> impl Iterator<Item = FacetValueRef<'_>> + '_;
 
     /// Get all value->point_ids mappings
-    fn iter_values_map(
-        &self,
-        hw_acc: HwMeasurementAcc,
-    ) -> impl Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_;
+    fn iter_values_map<'a>(
+        &'a self,
+        hw_acc: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (FacetValueRef<'a>, IdIter<'a>)> + 'a;
 
     /// Get all value->count mappings
     fn iter_counts_per_value(&self) -> impl Iterator<Item = FacetHit<FacetValueRef<'_>>> + '_;
@@ -57,15 +57,21 @@ impl<'a> FacetIndexEnum<'a> {
         }
     }
 
-    pub fn iter_values_map(
-        &self,
-        hw_acc: HwMeasurementAcc,
-    ) -> Box<dyn Iterator<Item = (FacetValueRef, IdIter<'_>)> + '_> {
+    pub fn iter_values_map<'b>(
+        &'b self,
+        hw_counter: &'b HardwareCounterCell,
+    ) -> Box<dyn Iterator<Item = (FacetValueRef<'b>, IdIter<'b>)> + 'b> {
         match self {
-            FacetIndexEnum::Keyword(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
-            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
-            FacetIndexEnum::Uuid(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
-            FacetIndexEnum::Bool(index) => Box::new(FacetIndex::iter_values_map(*index, hw_acc)),
+            FacetIndexEnum::Keyword(index) => {
+                Box::new(FacetIndex::iter_values_map(*index, hw_counter))
+            }
+            FacetIndexEnum::Int(index) => Box::new(FacetIndex::iter_values_map(*index, hw_counter)),
+            FacetIndexEnum::Uuid(index) => {
+                Box::new(FacetIndex::iter_values_map(*index, hw_counter))
+            }
+            FacetIndexEnum::Bool(index) => {
+                Box::new(FacetIndex::iter_values_map(*index, hw_counter))
+            }
         }
     }
 

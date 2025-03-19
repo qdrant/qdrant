@@ -1220,10 +1220,10 @@ impl VectorIndex for HNSWIndex {
                 let id_tracker = self.id_tracker.borrow();
                 let available_vector_count = vector_storage.available_vector_count();
 
-                let hw_counter = &HardwareCounterCell::disposable(); // TODO(io_measurement): propagate!
+                let hw_counter = query_context.hardware_counter();
 
                 let query_point_cardinality =
-                    payload_index.estimate_cardinality(query_filter, hw_counter);
+                    payload_index.estimate_cardinality(query_filter, &hw_counter);
                 let query_cardinality = adjust_to_available_vectors(
                     query_point_cardinality,
                     available_vector_count,
@@ -1256,7 +1256,6 @@ impl VectorIndex for HNSWIndex {
                     );
                 }
 
-                let hw_counter = query_context.hardware_counter();
                 let filter_context = payload_index.filter_context(query_filter, &hw_counter);
 
                 // Fast cardinality estimation is not enough, do sample estimation of cardinality

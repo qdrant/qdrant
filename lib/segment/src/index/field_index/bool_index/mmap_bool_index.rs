@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 
@@ -133,6 +134,14 @@ impl MmapBoolIndex {
         }
     }
 
+    fn get_count_for(&self, value: bool) -> usize {
+        if value {
+            self.trues_count
+        } else {
+            self.falses_count
+        }
+    }
+
     fn bitslice_usize_view(bitslice: &BitSlice) -> &[usize] {
         let (head, body, tail) = bitslice
             .domain()
@@ -206,12 +215,18 @@ impl MmapBoolIndex {
         !self.trues_slice.get(point_id as usize) && !self.falses_slice.get(point_id as usize)
     }
 
-    pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter<'_>)> + '_ {
+    pub fn iter_values_map<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = (bool, IdIter<'a>)> + 'a {
         [
             (false, Box::new(self.falses_slice.iter_trues()) as IdIter),
             (true, Box::new(self.trues_slice.iter_trues()) as IdIter),
         ]
         .into_iter()
+        .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
+            i.payload_index_io_read_counter()
+        })
     }
 
     pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {
@@ -386,11 +401,14 @@ impl PayloadFieldIndex for MmapBoolIndex {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
-                let slice = self.get_slice_for(*value);
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(slice.len() / u8::BITS as usize); // We have to iterate over the whole slice
-                Some(Box::new(slice.iter_ones().map(|x| x as PointOffsetType)))
+                let iter = self
+                    .get_slice_for(*value)
+                    .iter_ones()
+                    .map(|x| x as PointOffsetType)
+                    .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
+                        i.payload_index_io_read_counter()
+                    });
+                Some(Box::new(iter))
             }
             _ => None,
         }
@@ -405,14 +423,11 @@ impl PayloadFieldIndex for MmapBoolIndex {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
             })) => {
-                let slice = self.get_slice_for(*value);
-
-                let count = slice.count_ones();
+                let count = self.get_count_for(*value);
 
                 hw_counter
                     .payload_index_io_read_counter()
-                    // We iterate over the whole slice.
-                    .incr_delta(slice.len());
+                    .incr_delta(size_of::<usize>());
 
                 let estimation = CardinalityEstimation::exact(count)
                     .with_primary_clause(PrimaryCondition::Condition(Box::new(condition.clone())));
@@ -446,8 +461,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
 
         // just two possible blocks: true and false
         let iter = [
-            make_block(self.trues_slice.count_flags(), true, key.clone()),
-            make_block(self.falses_slice.count_flags(), false, key),
+            make_block(self.trues_count, true, key.clone()),
+            make_block(self.falses_count, false, key),
         ]
         .into_iter()
         .flatten();
