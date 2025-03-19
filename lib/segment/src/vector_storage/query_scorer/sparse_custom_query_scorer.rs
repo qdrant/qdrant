@@ -1,11 +1,12 @@
-use crate::vector_storage::SparseVectorStorage;
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
-use crate::vector_storage::query::{Query, TransformInto};
-use crate::vector_storage::query_scorer::QueryScorer;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::DimId;
+
+use crate::vector_storage::SparseVectorStorage;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
+use crate::vector_storage::query::{Query, TransformInto};
+use crate::vector_storage::query_scorer::QueryScorer;
 
 pub struct SparseCustomQueryScorer<
     'a,
