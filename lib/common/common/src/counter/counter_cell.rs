@@ -127,8 +127,9 @@ mod test {
         {
             let mut wb_counter = cell.write_back_counter();
             wb_counter.incr_delta(4);
+            assert_eq!(cell.get(), 0);
         }
 
-        assert_eq!(cell.get(), 4)
+        assert_eq!(cell.get(), 4);
     }
 }
