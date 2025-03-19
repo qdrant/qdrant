@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
+use common::flags::feature_flags;
 use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, DB, DBRecoveryMode, LogLevel, Options, WriteOptions};
@@ -75,7 +76,15 @@ pub fn open_db<T: AsRef<str>>(
     path: &Path,
     vector_paths: &[T],
 ) -> Result<Arc<RwLock<DB>>, rocksdb::Error> {
-    let mut column_families = vec![DB_PAYLOAD_CF, DB_MAPPING_CF, DB_VERSIONS_CF, DB_DEFAULT_CF];
+    let mut column_families = vec![DB_PAYLOAD_CF, DB_DEFAULT_CF];
+
+    // Only add RocksDB ID tracker mapping and version CFs if not using new mutable ID tracker
+    // Not creating them prevents older Qdrant versions from trying to load the unused RocksDB ID tracker
+    if !feature_flags().use_mutable_id_tracker_without_rocksdb {
+        column_families.push(DB_MAPPING_CF);
+        column_families.push(DB_VERSIONS_CF);
+    }
+
     for vector_path in vector_paths {
         column_families.push(vector_path.as_ref());
     }
