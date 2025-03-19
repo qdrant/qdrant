@@ -268,7 +268,14 @@ impl FormulaScorer<'_> {
     fn get_payload_value(&self, json_path: &JsonPath, point_id: PointOffsetType) -> Option<Value> {
         self.payload_retrievers
             .get(json_path)
-            .and_then(|retriever| retriever(point_id))
+            .and_then(|retriever| {
+                let mut multi_value = retriever(point_id);
+                match multi_value.len() {
+                    0 => None,
+                    1 => Some(multi_value.pop().unwrap()),
+                    _ => Some(Value::Array(multi_value.into_iter().collect())),
+                }
+            })
     }
 
     /// Tries to get a value from payload or from the defaults. Then tries to convert it to the desired type.
@@ -327,6 +334,7 @@ mod tests {
 
     use rstest::rstest;
     use serde_json::json;
+    use smallvec::smallvec;
 
     use super::*;
     use crate::json_path::JsonPath;
@@ -353,10 +361,15 @@ mod tests {
 
         ScorerFixture::new(scores, |prefetches_scores| {
             let mut payload_retrievers: HashMap<JsonPath, VariableRetrieverFn> = HashMap::new();
-            payload_retrievers.insert(JsonPath::new(FIELD_NAME), Box::new(|_| Some(json!(85.0))));
+            payload_retrievers.insert(
+                JsonPath::new(FIELD_NAME),
+                Box::new(|_| smallvec![json!(85.0)]),
+            );
             payload_retrievers.insert(
                 JsonPath::new(GEO_FIELD_NAME),
-                Box::new(|_| Some(json!({"lat": 25.628482424190565, "lon": -100.23881855976}))),
+                Box::new(|_| {
+                    smallvec![json!({"lat": 25.628482424190565, "lon": -100.23881855976})]
+                }),
             );
 
             let condition_checkers = vec![

@@ -1450,6 +1450,10 @@ pub trait PayloadContainer {
     /// Return value from payload by path.
     /// If value is not present in the payload, returns empty vector.
     fn get_value(&self, path: &JsonPath) -> MultiValue<&Value>;
+
+    fn get_value_cloned(&self, path: &JsonPath) -> MultiValue<Value> {
+        self.get_value(path).into_iter().cloned().collect()
+    }
 }
 
 /// Construct a [`Payload`] value from a JSON literal.
