@@ -838,7 +838,7 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
-        log::debug!("Restoring shard snapshot from {:?}", snapshot_path);
+        log::info!("Restoring shard snapshot from {:?}", snapshot_path);
         // Read dir first as the directory contents would change during restore
         let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
             .collect::<Result<Vec<_>, _>>()?;
