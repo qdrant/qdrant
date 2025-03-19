@@ -46,7 +46,6 @@ impl<
 
         hardware_counter.set_cpu_multiplier(query.dim * size_of::<TElement>());
 
-
         if vector_storage.is_on_disk() {
             hardware_counter.set_vector_io_read_multiplier(query.dim * size_of::<TElement>());
         } else {
@@ -92,10 +91,12 @@ impl<
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.score_multi(
-            TypedMultiDenseVectorRef::from(&self.query),
-            self.vector_storage.get_multi(idx),
-        )
+        let stored = self.vector_storage.get_multi(idx);
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(stored.vectors_count());
+
+        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), stored)
     }
 
     #[inline]
@@ -116,6 +117,13 @@ impl<
         }; VECTOR_READ_BATCH_SIZE];
         self.vector_storage
             .get_batch_multi(ids, &mut vectors[..ids.len()]);
+
+        let total_read = vectors.iter().map(|v| v.vectors_count()).sum();
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(total_read);
+
         for idx in 0..ids.len() {
             scores[idx] = self.score_ref(vectors[idx]);
         }
@@ -124,6 +132,10 @@ impl<
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self.vector_storage.get_multi(point_a);
         let v2 = self.vector_storage.get_multi(point_b);
+        self.hardware_counter
+            .cpu_counter()
+            .incr_delta(v1.vectors_count() + v2.vectors_count());
+
         self.score_multi(v1, v2)
     }
 }

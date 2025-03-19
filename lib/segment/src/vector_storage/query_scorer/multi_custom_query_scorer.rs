@@ -118,6 +118,10 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self.vector_storage.get_multi(idx);
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(stored.vectors_count());
+
         self.score_ref(stored)
     }
 
@@ -132,6 +136,14 @@ impl<
 
         self.vector_storage
             .get_batch_multi(ids, &mut vectors[..ids.len()]);
+
+        let total_loaded_vectors: usize =
+            vectors[..ids.len()].iter().map(|v| v.vectors_count()).sum();
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(total_loaded_vectors);
+
         for idx in 0..ids.len() {
             scores[idx] = self.score_ref(vectors[idx]);
         }

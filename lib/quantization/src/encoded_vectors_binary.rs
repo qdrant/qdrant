@@ -320,6 +320,9 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let vector_data_1 = self
             .encoded_vectors
             .get_vector_data(i as _, self.get_quantized_vector_size());
+
+        hw_counter.vector_io_read().incr_delta(vector_data_1.len());
+
         let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
 
         hw_counter
@@ -336,6 +339,10 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         let vector_data_2 = self
             .encoded_vectors
             .get_vector_data(j as _, self.get_quantized_vector_size());
+
+        hw_counter
+            .vector_io_read()
+            .incr_delta(vector_data_1.len() + vector_data_2.len());
 
         let vector_data_usize_1 = transmute_from_u8_to_slice(vector_data_1);
         let vector_data_usize_2 = transmute_from_u8_to_slice(vector_data_2);

@@ -65,6 +65,7 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
+        self.hardware_counter.vector_io_read().incr();
         TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
     }
 
@@ -77,6 +78,7 @@ impl<
         self.vector_storage
             .get_dense_batch(ids, &mut vectors[..ids.len()]);
         self.hardware_counter.cpu_counter().incr_delta(ids.len());
+        self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         for idx in 0..ids.len() {
             scores[idx] = TMetric::similarity(&self.query, vectors[idx]);
