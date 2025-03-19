@@ -304,16 +304,11 @@ impl Points for PointsService {
 
         let access = extract_access(&mut request);
 
-        let collection_name = request.get_ref().collection_name.clone();
-        let wait = Some(request.get_ref().wait.unwrap_or(false));
-        let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
-
         create_field_index(
             self.dispatcher.clone(),
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            hw_metrics,
         )
         .await
         .map(|resp| resp.map(Into::into))
