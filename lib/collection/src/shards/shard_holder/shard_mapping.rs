@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use common::flags::feature_flags;
 use common::tar_ext;
+use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::types::ShardKey;
 use serde::{Deserialize, Serialize};
@@ -97,13 +98,37 @@ impl Deref for SaveOnDiskShardKeyMappingWrapper {
 /// Bug: <https://github.com/qdrant/qdrant/pull/5838>
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(untagged)]
-enum ShardKeyMappingWrapper {
+pub(crate) enum ShardKeyMappingWrapper {
     /// The `Old` format is the original format from when shard key mappings were implemented
     // TODO(1.15): either fully remove support for the old format, or keep it a bit longer
     // TODO(1.15): if removing the old format, change back to regular SaveOnDisk<T> type
     Old(ShardKeyMapping),
     /// The `New` format is a more robust format, properly persisting shard key numbers
+    #[allow(private_interfaces)]
     New(Vec<NewShardKeyMapping>),
+}
+
+impl ShardKeyMappingWrapper {
+    /// Return all shard IDs from the mappings
+    pub fn shard_ids(&self) -> Vec<ShardId> {
+        let ids: Vec<ShardId> = match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping
+                .values()
+                .flat_map(|shard_ids| shard_ids.iter().copied())
+                .collect(),
+            ShardKeyMappingWrapper::New(mappings) => mappings
+                .iter()
+                .flat_map(|mapping| mapping.shard_ids.iter().copied())
+                .collect(),
+        };
+
+        debug_assert!(
+            ids.iter().all_unique(),
+            "shard mapping contains duplicate shard IDs"
+        );
+
+        ids
+    }
 }
 
 impl Default for ShardKeyMappingWrapper {

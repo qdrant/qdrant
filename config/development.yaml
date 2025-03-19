@@ -1,7 +1,7 @@
 log_level: DEBUG
 
 feature_flags:
-  use_new_shard_key_mapping_format: false
+  use_new_shard_key_mapping_format: true
   use_mutable_id_tracker_without_rocksdb: true
 
 inference:
