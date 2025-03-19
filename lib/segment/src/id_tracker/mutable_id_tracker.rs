@@ -40,7 +40,7 @@ impl MappingChange {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 enum MappingChangeType {
     InsertNum = 1,
@@ -1051,6 +1051,48 @@ pub(super) mod tests {
         let mappings = read_mappings(buf).unwrap();
         assert_eq!(mappings.total_point_count(), 1);
         assert_eq!(mappings.internal_id(&PointIdType::NumId(1)), Some(0));
+    }
+
+    /// Test that `operation_size` returns the correct size
+    ///
+    /// Must have read exactly the same number of bytes from the stream as we return.
+    #[test]
+    fn test_operation_size() {
+        let items = [
+            (
+                b"\x01\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00".as_slice(),
+                MappingChange::Insert(PointIdType::NumId(1), 2),
+            ),
+            (
+                b"\x02\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00".as_slice(),
+                MappingChange::Insert(
+                    PointIdType::Uuid(Uuid::parse_str("10000000-0000-0000-0000-000000000000").unwrap()),
+                    2,
+                ),
+            ),
+            (
+                b"\x03\x01\x00\x00\x00\x00\x00\x00\x00".as_slice(),
+                MappingChange::Delete(PointIdType::NumId(1))
+            ),
+            (
+                b"\x04\x10\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00".as_slice(),
+                MappingChange::Delete(PointIdType::Uuid(
+                    Uuid::parse_str("10000000-0000-0000-0000-000000000000").unwrap(),
+                )),
+            ),
+        ];
+
+        // Test each change type
+        for (buf, expected_change) in items {
+            let mut buf = Cursor::new(buf);
+            let (entry, bytes_read) = read_entry(&mut buf).unwrap();
+            assert_eq!(entry, expected_change);
+            assert_eq!(
+                bytes_read,
+                buf.stream_position().unwrap(),
+                "read different number of bytes from stream than returned",
+            );
+        }
     }
 
     /// Test that we truncate a partially written entry at the end.
