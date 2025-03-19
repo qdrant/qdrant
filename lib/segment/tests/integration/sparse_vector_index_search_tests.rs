@@ -151,6 +151,7 @@ fn sparse_vector_index_fallback_plain_search() {
 fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &SparseVectorIndex<T>) {
     let borrowed_vector_storage = sparse_vector_index.vector_storage().borrow();
     let point_count = borrowed_vector_storage.available_vector_count();
+    let hw_counter = HardwareCounterCell::disposable();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
         let vector = borrowed_vector_storage.get_vector(id);
@@ -164,7 +165,10 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
             .iter()
             .zip(remapped_vector.values.iter())
         {
-            let posting_list = sparse_vector_index.inverted_index().get(dim_id).unwrap();
+            let posting_list = sparse_vector_index
+                .inverted_index()
+                .get(*dim_id, &hw_counter)
+                .unwrap();
             // assert posting list sorted by record id
             assert!(
                 posting_list

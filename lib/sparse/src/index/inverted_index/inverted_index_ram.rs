@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 
 use crate::common::sparse_vector::RemappedSparseVector;
-use crate::common::types::DimId;
+use crate::common::types::{DimId, DimOffset};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::{PostingList, PostingListIterator};
 use crate::index::posting_list_common::PostingElementEx;
@@ -44,15 +44,19 @@ impl InvertedIndex for InvertedIndexRam {
         panic!("InvertedIndexRam is not supposed to be saved");
     }
 
-    fn get(&self, id: &DimId) -> Option<PostingListIterator> {
-        self.get(id).map(|posting_list| posting_list.iter())
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        _hw_counter: &'a HardwareCounterCell,
+    ) -> Option<PostingListIterator<'a>> {
+        self.get(&id).map(|posting_list| posting_list.iter())
     }
 
     fn len(&self) -> usize {
         self.postings.len()
     }
 
-    fn posting_list_len(&self, id: &DimId) -> Option<usize> {
+    fn posting_list_len(&self, id: &DimId, _hw_counter: &HardwareCounterCell) -> Option<usize> {
         self.get(id).map(|posting_list| posting_list.elements.len())
     }
 

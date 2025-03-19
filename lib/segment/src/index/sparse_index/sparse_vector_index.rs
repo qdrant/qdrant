@@ -250,10 +250,13 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     pub fn max_result_count(&self, query_vector: &SparseVector) -> usize {
         use sparse::index::posting_list_common::PostingListIter as _;
 
+        // For tests only
+        let hw_counter = HardwareCounterCell::disposable();
+
         let mut unique_record_ids = std::collections::HashSet::new();
         for dim_id in query_vector.indices.iter() {
             if let Some(dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                if let Some(posting_list_iter) = self.inverted_index.get(&dim_id) {
+                if let Some(posting_list_iter) = self.inverted_index.get(dim_id, &hw_counter) {
                     for element in posting_list_iter.into_std_iter() {
                         unique_record_ids.insert(element.record_id);
                     }
@@ -361,13 +364,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
+        let hw_counter = vector_query_context.hardware_counter();
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
             &self.inverted_index,
             memory_handle,
             &is_stopped,
-            vector_query_context.hardware_counter(),
+            &hw_counter,
         );
         let search_result = search_context.plain_search(&ids);
         Ok(search_result)
@@ -396,13 +400,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
+        let hw_counter = vector_query_context.hardware_counter();
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
             &self.inverted_index,
             memory_handle,
             &is_stopped,
-            vector_query_context.hardware_counter(),
+            &hw_counter,
         );
 
         let hw_counter = vector_query_context.hardware_counter();
@@ -502,11 +507,16 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
     }
 
     // Update statistics for idf-dot similarity
-    pub fn fill_idf_statistics(&self, idf: &mut HashMap<DimId, usize>) {
+    pub fn fill_idf_statistics(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        hw_counter: &HardwareCounterCell,
+    ) {
         for (dim_id, count) in idf.iter_mut() {
             if let Some(remapped_dim_id) = self.indices_tracker.remap_index(*dim_id) {
-                if let Some(posting_list_len) =
-                    self.inverted_index.posting_list_len(&remapped_dim_id)
+                if let Some(posting_list_len) = self
+                    .inverted_index
+                    .posting_list_len(&remapped_dim_id, hw_counter)
                 {
                     *count += posting_list_len
                 }

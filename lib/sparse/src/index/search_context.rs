@@ -33,7 +33,7 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
-    hardware_counter: HardwareCounterCell,
+    hardware_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
@@ -43,7 +43,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
-        hardware_counter: HardwareCounterCell,
+        hardware_counter: &'a HardwareCounterCell,
     ) -> SearchContext<'a, 'b, T> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
@@ -51,7 +51,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(mut it) = inverted_index.get(id) {
+            if let Some(mut it) = inverted_index.get(*id, hardware_counter) {
                 if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                     // check if new min
                     let min_record_id_posting = first.record_id;
@@ -513,6 +513,8 @@ mod tests {
     fn test_empty_query<I: InvertedIndex>() {
         let index = TestIndex::<I>::from_ram(InvertedIndexRam::empty());
 
+        let hw_counter = HardwareCounterCell::disposable();
+
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             RemappedSparseVector::default(), // empty query vector
@@ -520,7 +522,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            HardwareCounterCell::new(),
+            &hw_counter,
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
     }
@@ -547,7 +549,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -601,7 +603,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -642,7 +644,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -696,7 +698,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -735,7 +737,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -786,7 +788,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -825,7 +827,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -869,7 +871,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
@@ -926,7 +928,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -968,7 +970,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         let scores = search_context.plain_search(&[1, 3, 2]);
@@ -1022,7 +1024,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         let scores = search_context.plain_search(&[1, 2, 3]);

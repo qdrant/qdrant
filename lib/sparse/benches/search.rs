@@ -211,7 +211,7 @@ fn run_bench2(
                     index,
                     pool.get(),
                     &stopped,
-                    hardware_counter.fork(),
+                    &hardware_counter,
                 )
                 .search(&|_| true)
             },
@@ -232,7 +232,7 @@ fn run_bench2(
                     index,
                     pool.get(),
                     &stopped,
-                    hardware_counter.fork(),
+                    &hardware_counter,
                 )
                 .search(&|_| true)
             },

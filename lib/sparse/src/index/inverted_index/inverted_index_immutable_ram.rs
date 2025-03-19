@@ -1,7 +1,7 @@
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 use std::borrow::Cow;
 use std::path::Path;
-
-use common::types::PointOffsetType;
 
 use super::InvertedIndex;
 use super::inverted_index_mmap::InvertedIndexMmap;
@@ -56,16 +56,20 @@ impl InvertedIndex for InvertedIndexImmutableRam {
         Ok(())
     }
 
-    fn get(&self, id: &DimOffset) -> Option<PostingListIterator> {
-        InvertedIndex::get(&self.inner, id)
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<PostingListIterator<'a>> {
+        InvertedIndex::get(&self.inner, id, hw_counter)
     }
 
     fn len(&self) -> usize {
         self.inner.len()
     }
 
-    fn posting_list_len(&self, id: &DimOffset) -> Option<usize> {
-        self.inner.posting_list_len(id)
+    fn posting_list_len(&self, id: &DimOffset, hw_counter: &HardwareCounterCell) -> Option<usize> {
+        self.inner.posting_list_len(id, hw_counter)
     }
 
     fn files(path: &Path) -> Vec<std::path::PathBuf> {

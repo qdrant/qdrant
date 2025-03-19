@@ -6,7 +6,7 @@ use bitpacking::BitPacker as _;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
-
+use common::counter::hardware_counter::HardwareCounterCell;
 use super::posting_list_common::{
     GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
 };
@@ -32,13 +32,15 @@ pub struct CompressedPostingList<W: Weight> {
 }
 
 /// A non-owning view of [`CompressedPostingList`].
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CompressedPostingListView<'a, W: Weight> {
     id_data: &'a [u8],
     chunks: &'a [CompressedPostingChunk<W>],
     remainders: &'a [GenericPostingElement<W>],
     last_id: Option<PointOffsetType>,
     multiplier: W::QuantizationParams,
+    #[allow(dead_code)] // ToDo: Implement
+    hw_counter: &'a HardwareCounterCell,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -55,18 +57,19 @@ pub struct CompressedPostingChunk<W> {
 }
 
 impl<W: Weight> CompressedPostingList<W> {
-    pub(super) fn view(&self) -> CompressedPostingListView<W> {
+    pub(super) fn view<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> CompressedPostingListView<'a, W> {
         CompressedPostingListView {
             id_data: &self.id_data,
             chunks: &self.chunks,
             remainders: &self.remainders,
             last_id: self.last_id,
             multiplier: self.quantization_params,
+            hw_counter,
         }
     }
 
-    pub fn iter(&self) -> CompressedPostingListIterator<W> {
-        self.view().iter()
+    pub fn iter<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> CompressedPostingListIterator<'a, W> {
+        self.view(hw_counter).iter()
     }
 
     #[cfg(test)]
@@ -104,6 +107,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         remainders: &'a [GenericPostingElement<W>],
         last_id: Option<PointOffsetType>,
         multiplier: W::QuantizationParams,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Self {
         CompressedPostingListView {
             id_data,
@@ -111,6 +115,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
             remainders,
             last_id,
             multiplier,
+            hw_counter,
         }
     }
 
@@ -498,8 +503,9 @@ mod tests {
     fn test_iter() {
         for case in cases() {
             let list = CompressedPostingList::<f32>::from(case.clone());
+            let hw_counter = HardwareCounterCell::disposable();
 
-            let mut iter = list.iter();
+            let mut iter = list.iter(&hw_counter);
 
             let mut count = 0;
 
@@ -517,6 +523,8 @@ mod tests {
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
     fn test_try_till_id() {
+        let hw_counter = HardwareCounterCell::disposable();
+
         for i in 0..CASES.len() {
             for j in i..CASES.len() {
                 for k in j..CASES.len() {
@@ -524,7 +532,7 @@ mod tests {
                     let case = mk_case(CASES[k]);
                     let pl = CompressedPostingList::<f32>::from(case.clone());
 
-                    let mut iter = pl.iter();
+                    let mut iter = pl.iter(&hw_counter);
 
                     let mut data = Vec::new();
                     let mut counter = 0;

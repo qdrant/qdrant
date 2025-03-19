@@ -3,7 +3,7 @@ use std::cell::Cell;
 /// A simple and efficient counter which doesn't need to be mutable for counting.
 ///
 /// It however cannot be shared across threads safely and thus doesn't implement `Sync` or `Send`.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CounterCell {
     counter: Cell<usize>,
 }
