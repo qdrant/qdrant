@@ -3,7 +3,6 @@ use std::sync::Arc;
 use collection::config::ShardingMethod;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::shard::PeerId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::content_manager::collection_meta_ops::{
     CollectionMetaOperations, CreateCollection, CreateCollectionOperation, CreateShardKey,
     SetShardReplicaState,
@@ -119,12 +118,7 @@ pub async fn handle_existing_collections(
 
         for operation in consensus_operations {
             let _res = dispatcher_arc
-                .submit_collection_meta_op(
-                    operation,
-                    full_access.clone(),
-                    None,
-                    HwMeasurementAcc::disposable(),
-                )
+                .submit_collection_meta_op(operation, full_access.clone(), None)
                 .await;
         }
 
@@ -141,7 +135,6 @@ pub async fn handle_existing_collections(
                         }),
                         full_access.clone(),
                         None,
-                        HwMeasurementAcc::disposable(), // Operation unmeasured
                     )
                     .await;
             }

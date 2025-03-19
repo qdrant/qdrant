@@ -676,7 +676,6 @@ pub async fn do_create_index(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     access: Access,
-    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -702,12 +701,7 @@ pub async fn do_create_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(
-            consensus_op,
-            access,
-            wait_timeout,
-            hw_measurement_acc.clone(),
-        )
+        .submit_collection_meta_op(consensus_op, access, wait_timeout)
         .await?;
 
     // This function is required as long as we want to maintain interface compatibility
@@ -721,7 +715,9 @@ pub async fn do_create_index(
         Some(field_schema),
         internal_params,
         params,
-        hw_measurement_acc,
+        // We manually measure payload index creation inside `TableOfContent::create_payload_index()` to not touch
+        // consensus for hw measurements.
+        HwMeasurementAcc::disposable(),
     )
     .await
 }
@@ -781,12 +777,7 @@ pub async fn do_delete_index(
 
     // TODO: Is `submit_collection_meta_op` cancel-safe!? Should be, I think?.. 🤔
     dispatcher
-        .submit_collection_meta_op(
-            consensus_op,
-            access,
-            wait_timeout,
-            hw_measurement_acc.clone(),
-        )
+        .submit_collection_meta_op(consensus_op, access, wait_timeout)
         .await?;
 
     do_delete_index_internal(

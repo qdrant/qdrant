@@ -1,5 +1,4 @@
 use collection::shards::shard::PeerId;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 
 use self::collection_meta_ops::CollectionMetaOperations;
 use self::consensus_manager::CollectionsSnapshot;
@@ -212,7 +211,6 @@ pub trait CollectionContainer {
     fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
-        hw_acc: HwMeasurementAcc,
     ) -> Result<bool, StorageError>;
 
     fn collections_snapshot(&self) -> CollectionsSnapshot;

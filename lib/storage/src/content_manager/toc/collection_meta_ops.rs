@@ -22,16 +22,14 @@ impl TableOfContent {
     pub(super) fn perform_collection_meta_op_sync(
         &self,
         operation: CollectionMetaOperations,
-        hw_acc: HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         self.general_runtime
-            .block_on(self.perform_collection_meta_op(operation, hw_acc))
+            .block_on(self.perform_collection_meta_op(operation))
     }
 
     pub async fn perform_collection_meta_op(
         &self,
         operation: CollectionMetaOperations,
-        hw_acc: HwMeasurementAcc,
     ) -> Result<bool, StorageError> {
         match operation {
             CollectionMetaOperations::CreateCollection(mut operation) => {
@@ -104,7 +102,7 @@ impl TableOfContent {
             }
             CollectionMetaOperations::CreatePayloadIndex(create_payload_index) => {
                 log::debug!("Create payload index {:?}", create_payload_index);
-                self.create_payload_index(create_payload_index, hw_acc)
+                self.create_payload_index(create_payload_index)
                     .await
                     .map(|()| true)
             }
@@ -629,11 +627,20 @@ impl TableOfContent {
     async fn create_payload_index(
         &self,
         operation: CreatePayloadIndex,
-        hw_acc: HwMeasurementAcc,
     ) -> Result<(), StorageError> {
+        // We measure hardware on collection level here to not touch consensus for measurements but still
+        // measure hw for payload index creation on all nodes.
+        let collection_hw_acc = HwMeasurementAcc::new_with_metrics_drain(
+            self.get_collection_hw_metrics(operation.collection_name.clone()),
+        );
+
         self.get_collection_unchecked(&operation.collection_name)
             .await?
-            .create_payload_index(operation.field_name.clone(), operation.field_schema, hw_acc)
+            .create_payload_index(
+                operation.field_name.clone(),
+                operation.field_schema,
+                collection_hw_acc,
+            )
             .await?;
 
         // We can solve issues related to this missing index

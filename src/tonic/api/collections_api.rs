@@ -16,7 +16,6 @@ use collection::operations::cluster_ops::{
 };
 use collection::operations::types::CollectionsAliasesResponse;
 use collection::operations::verification::new_unchecked_verification_pass;
-use common::counter::hardware_accumulator::HwMeasurementAcc;
 use storage::dispatcher::Dispatcher;
 use tonic::{Request, Response, Status};
 
@@ -51,12 +50,7 @@ impl CollectionsService {
         let wait_timeout = operation.wait_timeout();
         let result = self
             .dispatcher
-            .submit_collection_meta_op(
-                operation.try_into()?,
-                access,
-                wait_timeout,
-                HwMeasurementAcc::disposable(), // Collection ops not measured.
-            )
+            .submit_collection_meta_op(operation.try_into()?, access, wait_timeout)
             .await?;
 
         let response = CollectionOperationResponse::from((timing, result));
