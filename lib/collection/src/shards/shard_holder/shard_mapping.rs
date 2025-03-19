@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
-use common::flags::FEATURE_FLAGS;
+use common::flags::feature_flags;
 use common::tar_ext;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::types::ShardKey;
@@ -108,9 +108,7 @@ enum ShardKeyMappingWrapper {
 
 impl Default for ShardKeyMappingWrapper {
     fn default() -> Self {
-        let use_new_format = FEATURE_FLAGS
-            .get()
-            .is_some_and(|flags| flags.use_new_shard_key_mapping_format);
+        let use_new_format = feature_flags().use_new_shard_key_mapping_format;
         if use_new_format {
             Self::New(Default::default())
         } else {
@@ -125,9 +123,7 @@ impl From<ShardKeyMapping> for ShardKeyMappingWrapper {
         // The old format is broken and fails to deserialize shard key numbers
         let any_number = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
 
-        let use_new_format = FEATURE_FLAGS
-            .get()
-            .is_some_and(|flags| flags.use_new_shard_key_mapping_format);
+        let use_new_format = feature_flags().use_new_shard_key_mapping_format;
         if use_new_format || any_number {
             Self::New(
                 mapping
