@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::flags::feature_flags;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
@@ -15,7 +16,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::{self, MutableIdTracker};
@@ -541,28 +542,41 @@ fn create_segment(
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
 
     let id_tracker = if mutable_id_tracker {
-        // TODO(1.14): uncomment this below to use new mutable ID tracker by default
-        // // Check if any point mappings are stored in RocksDB
-        // let has_rocksdb_mappings = {
-        //     let db = database.read();
-        //     match db.cf_handle(DB_MAPPING_CF) {
-        //         Some(cf_handle) => {
-        //             let count = db
-        //                 .property_int_value_cf(cf_handle, rocksdb::properties::ESTIMATE_NUM_KEYS)
-        //                 .map_err(|err| {
-        //                     OperationError::service_error(format!(
-        //                         "Failed to get estimated number of keys from RocksDb: {err}"
-        //                     ))
-        //                 })?
-        //                 .unwrap_or_default();
-        //             count > 0
-        //         }
-        //         None => false,
-        //     }
-        // };
-        // if !has_rocksdb_mappings {
+        let default_new_tracker = feature_flags().use_mutable_id_tracker_without_rocksdb;
 
-        if mutable_id_tracker::mappings_path(segment_path).is_file() {
+        // Determine whether we use the new (file based) or old (RocksDB) mutable ID tracker
+        // Decide based on the feature flag and state on disk
+        let use_new_mutable_tracker = if default_new_tracker {
+            // New ID tracker is enabled by default, but we still use the old tracker if we have
+            // any mappings stored in RocksDB
+            // TODO(1.15 or later): remove this check and use new mutable ID tracker unconditionally
+            let has_rocksdb_mappings = {
+                let db = database.read();
+                match db.cf_handle(DB_MAPPING_CF) {
+                    Some(cf_handle) => {
+                        let count = db
+                            .property_int_value_cf(
+                                cf_handle,
+                                rocksdb::properties::ESTIMATE_NUM_KEYS,
+                            )
+                            .map_err(|err| {
+                                OperationError::service_error(format!(
+                                    "Failed to get estimated number of keys from RocksDB: {err}"
+                                ))
+                            })?
+                            .unwrap_or_default();
+                        count > 0
+                    }
+                    None => false,
+                }
+            };
+            !has_rocksdb_mappings
+        } else {
+            // New ID tracker is not enabled by default, only use it if its mappings are already on disk
+            mutable_id_tracker::mappings_path(segment_path).is_file()
+        };
+
+        if use_new_mutable_tracker {
             sp(IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(
                 segment_path,
             )?))
