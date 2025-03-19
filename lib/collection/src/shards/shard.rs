@@ -49,7 +49,7 @@ pub enum Shard {
 }
 
 impl Shard {
-    pub fn variant_name(&self) -> &str {
+    pub fn variant_name(&self) -> &'static str {
         match self {
             Shard::Local(_) => "local shard",
             Shard::Proxy(_) => "proxy shard",
