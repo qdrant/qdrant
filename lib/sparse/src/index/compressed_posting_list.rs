@@ -3,10 +3,11 @@ use std::fmt::Debug;
 use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
-use common::counter::hardware_counter::HardwareCounterCell;
+
 use super::posting_list_common::{
     GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
 };
@@ -57,7 +58,10 @@ pub struct CompressedPostingChunk<W> {
 }
 
 impl<W: Weight> CompressedPostingList<W> {
-    pub(super) fn view<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> CompressedPostingListView<'a, W> {
+    pub(super) fn view<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> CompressedPostingListView<'a, W> {
         CompressedPostingListView {
             id_data: &self.id_data,
             chunks: &self.chunks,
@@ -68,7 +72,10 @@ impl<W: Weight> CompressedPostingList<W> {
         }
     }
 
-    pub fn iter<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> CompressedPostingListIterator<'a, W> {
+    pub fn iter<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> CompressedPostingListIterator<'a, W> {
         self.view(hw_counter).iter()
     }
 

@@ -3,13 +3,6 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::INDEX_FILE_NAME;
-use crate::common::sparse_vector::RemappedSparseVector;
-use crate::common::types::{DimId, DimOffset};
-use crate::index::inverted_index::InvertedIndex;
-use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-use crate::index::posting_list::PostingListIterator;
-use crate::index::posting_list_common::PostingElementEx;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -21,6 +14,14 @@ use memory::mmap_ops::{
     transmute_from_u8_to_slice, transmute_to_u8, transmute_to_u8_slice,
 };
 use serde::{Deserialize, Serialize};
+
+use super::INDEX_FILE_NAME;
+use crate::common::sparse_vector::RemappedSparseVector;
+use crate::common::types::{DimId, DimOffset};
+use crate::index::inverted_index::InvertedIndex;
+use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+use crate::index::posting_list::PostingListIterator;
+use crate::index::posting_list_common::PostingElementEx;
 
 const POSTING_HEADER_SIZE: usize = size_of::<PostingListFileHeader>();
 const INDEX_CONFIG_FILE_NAME: &str = "inverted_index_config.json";

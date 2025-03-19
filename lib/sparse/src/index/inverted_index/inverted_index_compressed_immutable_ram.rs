@@ -1,7 +1,8 @@
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
 use std::borrow::Cow;
 use std::path::Path;
+
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
 
 use super::InvertedIndex;
 use super::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
