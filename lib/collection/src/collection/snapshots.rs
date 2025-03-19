@@ -23,7 +23,7 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
 use crate::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardHolder, shard_not_found_error};
 use crate::shards::{shard_initializing_flag_path, shard_path};
 
@@ -184,12 +184,9 @@ impl Collection {
                 if !mapping_path.exists() {
                     Vec::new()
                 } else {
-                    let shard_key_mapping: ShardKeyMapping = read_json(&mapping_path)?;
-                    shard_key_mapping
-                        .values()
-                        .flat_map(|v| v.iter())
-                        .copied()
-                        .collect()
+                    // Use wrapper type to support both formats
+                    let shard_key_mapping: ShardKeyMappingWrapper = read_json(&mapping_path)?;
+                    shard_key_mapping.shard_ids()
                 }
             }
         };
