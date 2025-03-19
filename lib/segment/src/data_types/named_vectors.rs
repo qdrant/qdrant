@@ -331,7 +331,7 @@ impl<'a> NamedVectors<'a> {
                     // invalid temp value to swap with multi_vector and reduce reallocations
                     let mut tmp_multi_vector = CowMultiVector::Borrowed(TypedMultiDenseVectorRef {
                         flattened_vectors: &[],
-                        dim: 0,
+                        dim: 1,
                     });
                     // `multi_vector` is empty invalid and `tmp_multi_vector` owns the real data
                     std::mem::swap(&mut tmp_multi_vector, multi_vector);
