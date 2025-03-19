@@ -550,27 +550,21 @@ fn create_segment(
             // New ID tracker is enabled by default, but we still use the old tracker if we have
             // any mappings stored in RocksDB
             // TODO(1.15 or later): remove this check and use new mutable ID tracker unconditionally
-            let has_rocksdb_mappings = {
-                let db = database.read();
-                match db.cf_handle(DB_MAPPING_CF) {
-                    Some(cf_handle) => {
-                        let count = db
-                            .property_int_value_cf(
-                                cf_handle,
-                                rocksdb::properties::ESTIMATE_NUM_KEYS,
-                            )
-                            .map_err(|err| {
-                                OperationError::service_error(format!(
-                                    "Failed to get estimated number of keys from RocksDB: {err}"
-                                ))
-                            })?
-                            .unwrap_or_default();
-                        count > 0
-                    }
-                    None => false,
+            let db = database.read();
+            match db.cf_handle(DB_MAPPING_CF) {
+                Some(cf_handle) => {
+                    let count = db
+                        .property_int_value_cf(cf_handle, rocksdb::properties::ESTIMATE_NUM_KEYS)
+                        .map_err(|err| {
+                            OperationError::service_error(format!(
+                                "Failed to get estimated number of keys from RocksDB: {err}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    count == 0
                 }
-            };
-            !has_rocksdb_mappings
+                None => true,
+            }
         } else {
             // New ID tracker is not enabled by default, only use it if its mappings are already on disk
             mutable_id_tracker::mappings_path(segment_path).is_file()
