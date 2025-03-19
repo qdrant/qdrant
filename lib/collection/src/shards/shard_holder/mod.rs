@@ -20,6 +20,7 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
+use super::replica_set::snapshots::RecoveryType;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
@@ -1057,7 +1058,12 @@ impl ShardHolder {
 
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         let res = replica_set
-            .restore_local_replica_from(snapshot_shard_path, collection_path, cancel)
+            .restore_local_replica_from(
+                snapshot_shard_path,
+                RecoveryType::Full,
+                collection_path,
+                cancel,
+            )
             .await?;
 
         Ok(res)

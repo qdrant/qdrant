@@ -3,7 +3,7 @@ mod execute_read_operation;
 mod locally_disabled_peers;
 mod read_ops;
 mod shard_transfer;
-mod snapshots;
+pub mod snapshots;
 mod update;
 
 use std::collections::{HashMap, HashSet};

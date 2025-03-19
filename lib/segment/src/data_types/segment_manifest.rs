@@ -15,10 +15,6 @@ impl SegmentManifests {
             .map(|manifest| manifest.segment_version)
     }
 
-    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
-        self.manifests.get(segment_id)
-    }
-
     pub fn add(&mut self, new_manifest: SegmentManifest) -> bool {
         let Some(current_manifest) = self.manifests.get_mut(&new_manifest.segment_id) else {
             self.manifests
@@ -35,6 +31,22 @@ impl SegmentManifests {
         }
 
         false
+    }
+
+    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
+        self.manifests.get(segment_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &SegmentManifest)> {
+        self.manifests.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.manifests.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.manifests.is_empty()
     }
 }
 
