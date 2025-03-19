@@ -120,6 +120,8 @@ impl LocalShard {
 
         LocalShardClocks::move_data(from, to).await?;
 
+        std::fs::File::open(to)?.sync_all()?;
+
         Ok(())
     }
 

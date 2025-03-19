@@ -730,5 +730,7 @@ fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
     utils::fs::move_all(&files_path, segment_path)?;
     std::fs::remove_dir(&files_path)?;
 
+    std::fs::File::open(segment_path)?.sync_all()?;
+
     Ok(())
 }
