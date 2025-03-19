@@ -21,7 +21,7 @@ use crate::types::{PointIdType, SeqNumberType};
 const FILE_MAPPINGS: &str = "id_tracker.mappings";
 const FILE_VERSIONS: &str = "id_tracker.versions";
 
-const VERSION_ELEMENT_SIZE: u64 = mem::size_of::<SeqNumberType>() as u64;
+const VERSION_ELEMENT_SIZE: u64 = size_of::<SeqNumberType>() as u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MappingChange {
@@ -405,7 +405,7 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     if read_to < file_len {
         log::warn!(
             "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming WAL recovery",
-            (file_len - read_to).saturating_sub(1),
+            (file_len - read_to),
         );
         let file = File::options()
             .write(true)
@@ -457,7 +457,7 @@ where
 
 /// Read point mappings from the given reader
 ///
-/// Returns loaded point mappings and number of bytes read.
+/// Returns loaded point mappings.
 fn read_mappings<R>(reader: R) -> OperationResult<PointMappings>
 where
     R: Read + Seek,
