@@ -160,6 +160,7 @@ fn product_x4() -> WithQuantization {
 fn binary() -> WithQuantization {
     let config = BinaryQuantizationConfig {
         always_ram: Some(true),
+        query_quantization: None,
     }
     .into();
 

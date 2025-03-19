@@ -430,6 +430,10 @@ pub struct BinaryQuantization {
     /// If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
     #[prost(bool, optional, tag = "1")]
     pub always_ram: ::core::option::Option<bool>,
+    /// Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+    /// It can increase the accuracy of search at the cost of performance.
+    #[prost(message, optional, tag = "2")]
+    pub query_quantization: ::core::option::Option<QueryQuantizationConfig>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -452,6 +456,63 @@ pub mod quantization_config {
         Product(super::ProductQuantization),
         #[prost(message, tag = "3")]
         Binary(super::BinaryQuantization),
+    }
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct QueryQuantizationConfig {
+    #[prost(oneof = "query_quantization_config::Variant", tags = "3")]
+    pub variant: ::core::option::Option<query_quantization_config::Variant>,
+}
+/// Nested message and enum types in `QueryQuantizationConfig`.
+pub mod query_quantization_config {
+    #[derive(serde::Serialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Setting {
+        Default = 0,
+        Binary = 1,
+        Scalar = 2,
+    }
+    impl Setting {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Setting::Default => "Default",
+                Setting::Binary => "Binary",
+                Setting::Scalar => "Scalar",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "Default" => Some(Self::Default),
+                "Binary" => Some(Self::Binary),
+                "Scalar" => Some(Self::Scalar),
+                _ => None,
+            }
+        }
+    }
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Variant {
+        #[prost(enumeration = "Setting", tag = "3")]
+        Setting(i32),
     }
 }
 #[derive(validator::Validate)]
