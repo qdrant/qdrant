@@ -1,5 +1,8 @@
 log_level: DEBUG
 
+feature_flags:
+  use_new_shard_key_mapping_format: false
+
 inference:
   address: "http://localhost:2114/api/v1/infer"
   timeout: 10

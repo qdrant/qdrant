@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
+use common::flags::feature_flags;
 use common::tar_ext;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::types::ShardKey;
@@ -11,13 +12,6 @@ use crate::save_on_disk::{Error, SaveOnDisk};
 use crate::shards::shard::ShardId;
 
 pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
-
-/// Whether to use the new format to persist shard keys
-///
-/// The old format fails to persist shard key numbers correctly, converting them into strings on
-/// load. While this is false, the new format is only used if any shard key is a number.
-// TODO(1.14): set to true, remove other branches in code, and remove this constant
-const USE_NEW_SHARD_KEY_MAPPING_FORMAT: bool = false;
 
 /// A `SaveOnDisk`-like structure for the shard key mapping
 ///
@@ -114,7 +108,8 @@ enum ShardKeyMappingWrapper {
 
 impl Default for ShardKeyMappingWrapper {
     fn default() -> Self {
-        if USE_NEW_SHARD_KEY_MAPPING_FORMAT {
+        let use_new_format = feature_flags().use_new_shard_key_mapping_format;
+        if use_new_format {
             Self::New(Default::default())
         } else {
             Self::Old(Default::default())
@@ -128,7 +123,8 @@ impl From<ShardKeyMapping> for ShardKeyMappingWrapper {
         // The old format is broken and fails to deserialize shard key numbers
         let any_number = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
 
-        if USE_NEW_SHARD_KEY_MAPPING_FORMAT || any_number {
+        let use_new_format = feature_flags().use_new_shard_key_mapping_format;
+        if use_new_format || any_number {
             Self::New(
                 mapping
                     .into_iter()
