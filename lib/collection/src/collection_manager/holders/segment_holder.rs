@@ -18,6 +18,7 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWrit
 use rand::seq::IndexedRandom;
 use segment::common::operation_error::{OperationError, OperationResult};
 use segment::data_types::named_vectors::NamedVectors;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::entry::entry_point::SegmentEntry;
 use segment::segment::{Segment, SegmentVersion};
 use segment::segment_constructor::build_segment;
@@ -161,6 +162,19 @@ pub struct SegmentHolder {
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
 impl<'s> SegmentHolder {
+    pub fn segment_manifests(&self) -> OperationResult<SegmentManifests> {
+        let mut manifests = SegmentManifests::default();
+
+        for (_, segment) in self.iter() {
+            segment
+                .get()
+                .read()
+                .collect_segment_manifests(&mut manifests)?;
+        }
+
+        Ok(manifests)
+    }
+
     /// Iterate over all segments with their IDs
     ///
     /// Appendable first, then non-appendable.
