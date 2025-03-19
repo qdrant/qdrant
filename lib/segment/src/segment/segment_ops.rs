@@ -535,7 +535,7 @@ impl Segment {
             match schema_applied.get(key) {
                 Some(existing_schema) if existing_schema == schema => continue,
                 Some(existing_schema) => log::warn!(
-                    "Segment has incorrect payload index for{key}, recreating it now (current: {:?}, configured: {:?})",
+                    "Segment has incorrect payload index for {key}, recreating it now (current: {:?}, configured: {:?})",
                     existing_schema.name(),
                     schema.name(),
                 ),
