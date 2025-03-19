@@ -50,7 +50,7 @@ enum MappingChangeType {
 }
 
 impl MappingChangeType {
-    fn from_byte(byte: u8) -> Option<Self> {
+    const fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             x if x == Self::InsertNum as u8 => Some(Self::InsertNum),
             x if x == Self::InsertUuid as u8 => Some(Self::InsertUuid),
@@ -71,7 +71,7 @@ impl MappingChangeType {
     /// +-----------------------+-----------------------+
     /// | MappingChangeType: u8 | Number/UUID: u64/u128 |
     /// +-----------------------+-----------------------+
-    fn operation_size(&self) -> usize {
+    const fn operation_size(self) -> usize {
         match self {
             Self::InsertNum => size_of::<u8>() + size_of::<u64>() + size_of::<u32>(),
             Self::InsertUuid => size_of::<u8>() + size_of::<u128>() + size_of::<u32>(),
