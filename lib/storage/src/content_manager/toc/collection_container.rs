@@ -186,6 +186,7 @@ impl TableOfContent {
                             .to_shared_storage_config(self.is_distributed())
                             .into(),
                         shard_distribution,
+                        Some(state.shards_key_mapping.clone()),
                         self.channel_service.clone(),
                         Self::change_peer_from_state_callback(
                             self.consensus_proposal_sender.clone(),

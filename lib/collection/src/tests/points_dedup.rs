@@ -81,6 +81,7 @@ async fn fixture() -> Collection {
         &config,
         storage_config.clone(),
         CollectionShardDistribution { shards },
+        None,
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),

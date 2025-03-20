@@ -210,6 +210,10 @@ impl TableOfContent {
             strict_mode_config,
             uuid,
         };
+
+        // No shard key mapping on creation, shard keys are set up after creating the collection
+        let shard_key_mapping = None;
+
         let collection = Collection::new(
             collection_name.to_string(),
             self.this_peer_id,
@@ -218,6 +222,7 @@ impl TableOfContent {
             &collection_config,
             storage_config,
             collection_shard_distribution,
+            shard_key_mapping,
             self.channel_service.clone(),
             Self::change_peer_from_state_callback(
                 self.consensus_proposal_sender.clone(),
