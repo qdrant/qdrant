@@ -345,43 +345,53 @@ pub struct CollectionClusterInfo {
     pub resharding_operations: Option<Vec<ReshardingInfo>>,
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
 pub struct ShardTransferInfo {
+    #[anonymize(false)]
     pub shard_id: ShardId,
 
     /// Target shard ID if different than source shard ID
     ///
     /// Used exclusively with `ReshardStreamRecords` transfer method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub to_shard_id: Option<ShardId>,
 
     /// Source peer id
+    #[anonymize(false)]
     pub from: PeerId,
 
     /// Destination peer id
+    #[anonymize(false)]
     pub to: PeerId,
 
     /// If `true` transfer is a synchronization of a replicas
     /// If `false` transfer is a moving of a shard from one peer to another
+    #[anonymize(false)]
     pub sync: bool,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub method: Option<ShardTransferMethod>,
 
     /// A human-readable report of the transfer progress. Available only on the source peer.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[anonymize(false)]
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Serialize, JsonSchema, Clone)]
+#[derive(Debug, Serialize, JsonSchema, Clone, Anonymize)]
 pub struct ReshardingInfo {
     #[schemars(skip)]
     pub uuid: Uuid,
 
+    #[anonymize(false)]
     pub direction: ReshardingDirection,
 
+    #[anonymize(false)]
     pub shard_id: ShardId,
 
+    #[anonymize(false)]
     pub peer_id: PeerId,
 
     pub shard_key: Option<ShardKey>,

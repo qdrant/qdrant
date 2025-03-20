@@ -19,9 +19,7 @@ pub struct CollectionTelemetry {
     pub init_time_ms: u64,
     pub config: CollectionConfigTelemetry,
     pub shards: Vec<ReplicaSetTelemetry>,
-    #[anonymize(value = vec![])]
     pub transfers: Vec<ShardTransferInfo>,
-    #[anonymize(value = vec![])]
     pub resharding: Vec<ReshardingInfo>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     #[anonymize(value = HashMap::new())]
