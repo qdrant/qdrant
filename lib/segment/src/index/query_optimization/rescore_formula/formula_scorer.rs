@@ -167,7 +167,12 @@ impl FormulaScorer<'_> {
                 // Convert from i64 to f64.
                 // f64's 53 bits of sign + mantissa for microseconds means a span of exact equivalence of
                 // about 285 years, after which precision starts dropping
-                Ok(datetime.timestamp() as PreciseScore)
+                let float_micros = datetime.timestamp() as PreciseScore;
+
+                // Convert to seconds
+                let float_seconds = float_micros / 1_000_000.0;
+
+                Ok(float_seconds)
             }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
@@ -522,7 +527,7 @@ mod tests {
     // datetime expression constant
     #[case(
         ParsedExpression::DateTime(DateTimeExpression::Constant("2025-03-18".parse().unwrap())),
-        Ok("2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore)
+        Ok("2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
     )]
     // datetime expression with payload variable that doesn't exist in payload and no default
     #[case(
@@ -536,7 +541,7 @@ mod tests {
     // datetime expression with payload variable that doesn't exist in payload but has default
     #[case(
         ParsedExpression::DateTime(DateTimeExpression::PayloadVariable(JsonPath::new(NO_VALUE_DATETIME))),
-        Ok("2025-03-19T12:00:00".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore)
+        Ok("2025-03-19T12:00:00".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
     )]
     #[test]
     fn test_default_values(
