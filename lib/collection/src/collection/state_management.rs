@@ -29,12 +29,21 @@ impl Collection {
         this_peer_id: PeerId,
         abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
-        self.apply_config(state.config).await?;
-        self.apply_shard_transfers(state.transfers, this_peer_id, abort_transfer)
+        let State {
+            config,
+            shards,
+            resharding,
+            transfers,
+            shards_key_mapping,
+            payload_index_schema,
+        } = state;
+
+        self.apply_config(config).await?;
+        self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
-        self.apply_shard_info(state.shards, state.shards_key_mapping.to_map())
+        self.apply_shard_info(shards, shards_key_mapping.to_map())
             .await?;
-        self.apply_payload_index_schema(state.payload_index_schema)
+        self.apply_payload_index_schema(payload_index_schema)
             .await?;
         Ok(())
     }
