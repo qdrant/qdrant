@@ -6,6 +6,7 @@ use crate::collection_state::{ShardInfo, State};
 use crate::config::CollectionConfigInternal;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardTransferChange;
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
@@ -29,12 +30,22 @@ impl Collection {
         this_peer_id: PeerId,
         abort_transfer: impl FnMut(ShardTransfer),
     ) -> CollectionResult<()> {
-        self.apply_config(state.config).await?;
-        self.apply_shard_transfers(state.transfers, this_peer_id, abort_transfer)
+        let State {
+            config,
+            shards,
+            resharding,
+            transfers,
+            shards_key_mapping,
+            payload_index_schema,
+        } = state;
+
+        self.apply_config(config).await?;
+        self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
-        self.apply_shard_info(state.shards, state.shards_key_mapping.to_map())
+        self.apply_reshard_state(resharding).await?;
+        self.apply_shard_info(shards, shards_key_mapping.to_map())
             .await?;
-        self.apply_payload_index_schema(state.payload_index_schema)
+        self.apply_payload_index_schema(payload_index_schema)
             .await?;
         Ok(())
     }
@@ -72,6 +83,19 @@ impl Collection {
             .await
             .shard_transfers
             .write(|transfers| *transfers = shard_transfers)?;
+        Ok(())
+    }
+
+    async fn apply_reshard_state(&self, resharding: Option<ReshardState>) -> CollectionResult<()> {
+        // We don't have to explicitly abort resharding or bump shard replica states, because:
+        // - peers are not driving resharding themselves
+        // - ongoing (resharding) shard transfers are explicitly updated
+        // - shard replica set states are explicitly updated
+        self.shards_holder
+            .write()
+            .await
+            .resharding_state
+            .write(|state| *state = resharding)?;
         Ok(())
     }
 
