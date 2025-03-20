@@ -110,6 +110,8 @@ pub struct LocalShard {
 impl LocalShard {
     /// Moves `wal`, `segments` and `clocks` data from one path to another.
     pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
+        log::debug!("Moving local shard from {:?} to {:?}", from, to);
+
         let wal_from = Self::wal_path(from);
         let wal_to = Self::wal_path(to);
         let segments_from = Self::segments_path(from);
