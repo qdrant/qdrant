@@ -194,7 +194,7 @@ impl PartialEq for ShardKeyMappingWrapper {
         match (self, other) {
             // Old mappings we can compare directly
             (ShardKeyMappingWrapper::Old(a), ShardKeyMappingWrapper::Old(b)) => a == b,
-            // New mappings and asymetric mappings must be compared in a stable format
+            // New mappings and asymmetric mappings must be compared in a stable format
             (a, b) => {
                 let a = ShardKeyMapping::from(a.clone());
                 let b = ShardKeyMapping::from(b.clone());
