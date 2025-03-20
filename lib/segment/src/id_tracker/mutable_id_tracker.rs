@@ -126,7 +126,7 @@ impl MutableIdTracker {
         }
         if has_mappings && !has_versions {
             log::warn!(
-                "Missing versions file for ID tracker, WAL should recover point mappings and versions",
+                "Missing versions file for ID tracker, assuming automatic point mappings and version recovery by WAL",
             );
         }
 
@@ -145,6 +145,19 @@ impl MutableIdTracker {
         } else {
             vec![]
         };
+
+        // Compare internal point mappings and versions count, report warning if we don't
+        debug_assert!(
+            mappings.total_point_count() >= internal_to_version.len(),
+            "can never have more versions than internal point mappings",
+        );
+        if mappings.total_point_count() != internal_to_version.len() {
+            log::warn!(
+                "Mutable ID tracker mappings and versions count mismatch, could have been partially flushed, assuming automatic recovery by WAL ({} mappings, {} versions)",
+                mappings.total_point_count(),
+                internal_to_version.len(),
+            );
+        }
 
         #[cfg(debug_assertions)]
         mappings.assert_mappings();
@@ -407,7 +420,7 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     debug_assert!(read_to <= file_len, "cannot read past the end of the file");
     if read_to < file_len {
         log::warn!(
-            "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming WAL recovery",
+            "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming automatic recovery by WAL",
             (file_len - read_to),
         );
         let file = File::options()
@@ -650,7 +663,7 @@ fn load_versions(versions_path: &Path) -> OperationResult<Vec<SeqNumberType>> {
     let file_len = file.metadata()?.len();
     if file_len % VERSION_ELEMENT_SIZE != 0 {
         log::warn!(
-            "Corrupted ID tracker versions storage, file size not a multiple of a version, assuming recovery by WAL"
+            "Corrupted ID tracker versions storage, file size not a multiple of a version, assuming automatic recovery by WAL"
         );
     }
     let version_count = file_len / VERSION_ELEMENT_SIZE;
