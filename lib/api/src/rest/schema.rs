@@ -641,7 +641,7 @@ pub enum Expression {
     Variable(String),
     Condition(Box<Condition>),
     GeoDistance(GeoDistance),
-    Datetime(Datetime),
+    Datetime(DatetimeExpression),
     Mult(MultExpression),
     Sum(SumExpression),
     Neg(NegExpression),
@@ -671,7 +671,7 @@ pub struct GeoDistanceParams {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct Datetime {
+pub struct DatetimeExpression {
     pub datetime: String,
 }
 
