@@ -12,6 +12,12 @@ use serde::{Deserialize, Serialize};
 use crate::save_on_disk::{Error, SaveOnDisk};
 use crate::shards::shard::ShardId;
 
+/// Shard key mapping type
+///
+/// # Warning
+///
+/// This type is unstable when serializing! It is recommended to use [`ShardKeyMappingWrapper`]
+/// instead, which will fully replace this type in a future version.
 pub type ShardKeyMapping = HashMap<ShardKey, HashSet<ShardId>>;
 
 /// A `SaveOnDisk`-like structure for the shard key mapping
@@ -96,6 +102,7 @@ impl Deref for SaveOnDiskShardKeyMappingWrapper {
 /// This type functions as a compatibility layer between the two different persisted formats.
 ///
 /// Bug: <https://github.com/qdrant/qdrant/pull/5838>
+/// Bug: <https://github.com/qdrant/qdrant/pull/6209>
 #[derive(Serialize, Deserialize, Clone, Debug, Eq)]
 #[serde(untagged)]
 pub enum ShardKeyMappingWrapper {

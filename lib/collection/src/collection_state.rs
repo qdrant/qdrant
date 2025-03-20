@@ -23,6 +23,7 @@ pub struct State {
     #[serde(default)]
     pub transfers: HashSet<ShardTransfer>,
     #[serde(default)]
+    // TODO(1.15): replace with new shard key mapping type
     pub shards_key_mapping: ShardKeyMappingWrapper,
     #[serde(default)]
     pub payload_index_schema: PayloadIndexSchema,
