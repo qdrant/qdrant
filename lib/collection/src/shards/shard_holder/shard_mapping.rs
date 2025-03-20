@@ -204,7 +204,7 @@ impl ShardKeyMappingWrapper {
     /// Get the shard key for a given shard ID
     ///
     /// `None` is returned if the shard ID has no key, or if the shard ID is unknown
-    pub fn get_key(&self, shard_id: ShardId) -> Option<ShardKey> {
+    pub fn key(&self, shard_id: ShardId) -> Option<ShardKey> {
         match self {
             ShardKeyMappingWrapper::Old(mapping) => mapping
                 .iter()
