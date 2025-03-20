@@ -260,8 +260,10 @@ impl ShardHolder {
 
         let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
 
+        // Update both shard key mappings
         self.key_mapping
             .write_optional(|_key_mapping| Some(shard_key_mapping.to_map()))?;
+        self.shard_id_to_key_mapping = shard_key_mapping.shards();
 
         for shard_id in all_shard_ids {
             if !shard_ids.contains(&shard_id) {

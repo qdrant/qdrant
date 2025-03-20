@@ -121,6 +121,29 @@ impl ShardKeyMappingWrapper {
         ShardKeyMapping::from(self.clone())
     }
 
+    /// Get a mapping of all shards and their key
+    pub fn shards(&self) -> HashMap<ShardId, ShardKey> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping
+                .iter()
+                .flat_map(|(shard_key, shard_ids)| {
+                    shard_ids
+                        .iter()
+                        .map(|shard_id| (*shard_id, shard_key.clone()))
+                })
+                .collect(),
+            ShardKeyMappingWrapper::New(mappings) => mappings
+                .iter()
+                .flat_map(|mapping| {
+                    mapping
+                        .shard_ids
+                        .iter()
+                        .map(|shard_id| (*shard_id, mapping.key.clone()))
+                })
+                .collect(),
+        }
+    }
+
     /// Get list of shard keys
     pub fn keys(&self) -> Vec<ShardKey> {
         match self {
