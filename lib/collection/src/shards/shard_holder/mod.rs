@@ -122,6 +122,23 @@ impl ShardHolder {
         ShardKeyMappingWrapper::from(self.key_mapping.read().clone())
     }
 
+    /// Set the shard key mappings
+    ///
+    /// # Warning
+    ///
+    /// This does not update the shard key inside replica sets. If the shard key mapping changes
+    /// and we have existing replica sets, they must be updated as well to reflect the changed
+    /// mappings.
+    pub fn set_shard_key_mappings(
+        &mut self,
+        shard_key_mapping: ShardKeyMappingWrapper,
+    ) -> CollectionResult<()> {
+        self.key_mapping
+            .write_optional(|_| Some(shard_key_mapping.to_map()))?;
+        self.shard_id_to_key_mapping = shard_key_mapping.shards();
+        Ok(())
+    }
+
     pub async fn drop_and_remove_shard(
         &mut self,
         shard_id: ShardId,
@@ -260,10 +277,7 @@ impl ShardHolder {
 
         let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
 
-        // Update both shard key mappings
-        self.key_mapping
-            .write_optional(|_key_mapping| Some(shard_key_mapping.to_map()))?;
-        self.shard_id_to_key_mapping = shard_key_mapping.shards();
+        self.set_shard_key_mappings(shard_key_mapping)?;
 
         for shard_id in all_shard_ids {
             if !shard_ids.contains(&shard_id) {
