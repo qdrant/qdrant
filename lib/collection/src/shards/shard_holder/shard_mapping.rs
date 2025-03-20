@@ -114,6 +114,21 @@ impl ShardKeyMappingWrapper {
         ShardKeyMapping::from(self.clone())
     }
 
+    /// Get list of shard keys
+    pub fn keys(&self) -> Vec<ShardKey> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping.keys().cloned().collect(),
+            ShardKeyMappingWrapper::New(mappings) => {
+                // Collect into hash set first to deduplicate
+                let keys = mappings
+                    .iter()
+                    .map(|mapping| &mapping.key)
+                    .collect::<HashSet<_>>();
+                keys.into_iter().cloned().collect()
+            }
+        }
+    }
+
     /// Iterate over all shard IDs from the mappings
     pub fn iter_shard_ids<'a>(&'a self) -> Box<dyn Iterator<Item = ShardId> + 'a> {
         match self {
