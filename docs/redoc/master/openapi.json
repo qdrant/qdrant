@@ -7016,8 +7016,27 @@
           "always_ram": {
             "type": "boolean",
             "nullable": true
+          },
+          "query_quantization": {
+            "description": "Asymmetric quantization configuration allows a query to have different quantization than stored vectors. It can increase the accuracy of search at the cost of performance.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QueryQuantizationConfig"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
+      },
+      "QueryQuantizationConfig": {
+        "type": "string",
+        "enum": [
+          "default",
+          "binary",
+          "scalar"
+        ]
       },
       "Datatype": {
         "type": "string",

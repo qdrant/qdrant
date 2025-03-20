@@ -57,6 +57,7 @@
     - [ProductQuantization](#qdrant-ProductQuantization)
     - [QuantizationConfig](#qdrant-QuantizationConfig)
     - [QuantizationConfigDiff](#qdrant-QuantizationConfigDiff)
+    - [QueryQuantizationConfig](#qdrant-QueryQuantizationConfig)
     - [RemoteShardInfo](#qdrant-RemoteShardInfo)
     - [RenameAlias](#qdrant-RenameAlias)
     - [Replica](#qdrant-Replica)
@@ -101,6 +102,7 @@
     - [MultiVectorComparator](#qdrant-MultiVectorComparator)
     - [PayloadSchemaType](#qdrant-PayloadSchemaType)
     - [QuantizationType](#qdrant-QuantizationType)
+    - [QueryQuantizationConfig.Setting](#qdrant-QueryQuantizationConfig-Setting)
     - [ReplicaState](#qdrant-ReplicaState)
     - [ReshardingDirection](#qdrant-ReshardingDirection)
     - [ShardTransferMethod](#qdrant-ShardTransferMethod)
@@ -390,6 +392,7 @@
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | always_ram | [bool](#bool) | optional | If true - quantized vectors always will be stored in RAM, ignoring the config of main storage |
+| query_quantization | [QueryQuantizationConfig](#qdrant-QueryQuantizationConfig) | optional | Asymmetric quantization configuration allows a query to have different quantization than stored vectors. It can increase the accuracy of search at the cost of performance. |
 
 
 
@@ -1234,6 +1237,21 @@ Note: 1kB = 1 vector of size 256. |
 
 
 
+<a name="qdrant-QueryQuantizationConfig"></a>
+
+### QueryQuantizationConfig
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| setting | [QueryQuantizationConfig.Setting](#qdrant-QueryQuantizationConfig-Setting) |  |  |
+
+
+
+
+
+
 <a name="qdrant-RemoteShardInfo"></a>
 
 ### RemoteShardInfo
@@ -1947,6 +1965,19 @@ Note: 1kB = 1 vector of size 256. |
 | ---- | ------ | ----------- |
 | UnknownQuantization | 0 |  |
 | Int8 | 1 |  |
+
+
+
+<a name="qdrant-QueryQuantizationConfig-Setting"></a>
+
+### QueryQuantizationConfig.Setting
+
+
+| Name | Number | Description |
+| ---- | ------ | ----------- |
+| Default | 0 |  |
+| Binary | 1 |  |
+| Scalar | 2 |  |
 
 
 

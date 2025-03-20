@@ -703,7 +703,7 @@ impl Validate for QuantizationConfig {
 #[derive(
     Default, Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, PartialEq, Eq, Hash,
 )]
-#[serde(untagged, rename_all = "snake_case")]
+#[serde(rename_all = "lowercase")]
 #[anonymize(false)]
 pub enum QueryQuantizationConfig {
     #[default]
