@@ -114,24 +114,29 @@ impl ShardKeyMappingWrapper {
         ShardKeyMapping::from(self.clone())
     }
 
+    /// Iterate over all shard IDs from the mappings
+    pub fn iter_shard_ids<'a>(&'a self) -> Box<dyn Iterator<Item = ShardId> + 'a> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => Box::new(
+                mapping
+                    .values()
+                    .flat_map(|shard_ids| shard_ids.iter().copied()),
+            ),
+            ShardKeyMappingWrapper::New(mappings) => Box::new(
+                mappings
+                    .iter()
+                    .flat_map(|mapping| mapping.shard_ids.iter().copied()),
+            ),
+        }
+    }
+
     /// Return all shard IDs from the mappings
     pub fn shard_ids(&self) -> Vec<ShardId> {
-        let ids: Vec<ShardId> = match self {
-            ShardKeyMappingWrapper::Old(mapping) => mapping
-                .values()
-                .flat_map(|shard_ids| shard_ids.iter().copied())
-                .collect(),
-            ShardKeyMappingWrapper::New(mappings) => mappings
-                .iter()
-                .flat_map(|mapping| mapping.shard_ids.iter().copied())
-                .collect(),
-        };
-
+        let ids = self.iter_shard_ids().collect::<Vec<_>>();
         debug_assert!(
             ids.iter().all_unique(),
-            "shard mapping contains duplicate shard IDs"
+            "shard mapping contains duplicate shard IDs",
         );
-
         ids
     }
 

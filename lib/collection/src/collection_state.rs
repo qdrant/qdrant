@@ -30,10 +30,6 @@ pub struct State {
 
 impl State {
     pub fn max_shard_id(&self) -> ShardId {
-        self.shards_key_mapping
-            .shard_ids()
-            .into_iter()
-            .max()
-            .unwrap_or(0)
+        self.shards_key_mapping.iter_shard_ids().max().unwrap_or(0)
     }
 }
