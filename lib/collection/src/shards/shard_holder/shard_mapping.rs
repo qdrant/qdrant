@@ -178,6 +178,22 @@ impl ShardKeyMappingWrapper {
         }
     }
 
+    /// Get the shard key for a given shard ID
+    ///
+    /// `None` is returned if the shard ID has no key, or if the shard ID is unknown
+    pub fn get_key(&self, shard_id: ShardId) -> Option<ShardKey> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping
+                .iter()
+                .find(|(_, shard_ids)| shard_ids.contains(&shard_id))
+                .map(|(key, _)| key.clone()),
+            ShardKeyMappingWrapper::New(mappings) => mappings
+                .iter()
+                .find(|mapping| mapping.shard_ids.contains(&shard_id))
+                .map(|mapping| mapping.key.clone()),
+        }
+    }
+
     /// Whether this shard key mapping contains a specific key.
     pub fn contains_key(&self, shard_key: &ShardKey) -> bool {
         match self {

@@ -9,7 +9,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardTransferChange;
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
@@ -43,8 +43,7 @@ impl Collection {
         self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
         self.apply_reshard_state(resharding).await?;
-        self.apply_shard_info(shards, shards_key_mapping.to_map())
-            .await?;
+        self.apply_shard_info(shards, shards_key_mapping).await?;
         self.apply_payload_index_schema(payload_index_schema)
             .await?;
         Ok(())
@@ -177,7 +176,7 @@ impl Collection {
     async fn apply_shard_info(
         &self,
         shards: HashMap<ShardId, ShardInfo>,
-        shards_key_mapping: ShardKeyMapping,
+        shards_key_mapping: ShardKeyMappingWrapper,
     ) -> CollectionResult<()> {
         let mut extra_shards: HashMap<ShardId, ShardReplicaSet> = HashMap::new();
 
@@ -193,10 +192,7 @@ impl Collection {
             match self.shards_holder.read().await.get_shard(shard_id) {
                 Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
                 None => {
-                    let shard_key = shards_key_mapping
-                        .iter()
-                        .find(|(_, ids)| ids.contains(&shard_id))
-                        .map(|(key, _)| key.clone());
+                    let shard_key = shards_key_mapping.get_key(shard_id);
                     let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
                     let replica_set = self
                         .create_replica_set(shard_id, shard_key, &shard_replicas, None)

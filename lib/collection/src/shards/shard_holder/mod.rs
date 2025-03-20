@@ -14,7 +14,7 @@ use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
-use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMapping, ShardKeyMappingWrapper};
+use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMappingWrapper};
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -253,7 +253,7 @@ impl ShardHolder {
     pub async fn apply_shards_state(
         &mut self,
         shard_ids: HashSet<ShardId>,
-        shard_key_mapping: ShardKeyMapping,
+        shard_key_mapping: ShardKeyMappingWrapper,
         extra_shards: HashMap<ShardId, ShardReplicaSet>,
     ) -> Result<(), CollectionError> {
         self.shards.extend(extra_shards.into_iter());
@@ -261,7 +261,7 @@ impl ShardHolder {
         let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
 
         self.key_mapping
-            .write_optional(|_key_mapping| Some(shard_key_mapping))?;
+            .write_optional(|_key_mapping| Some(shard_key_mapping.to_map()))?;
 
         for shard_id in all_shard_ids {
             if !shard_ids.contains(&shard_id) {
