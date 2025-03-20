@@ -14468,7 +14468,7 @@
             "$ref": "#/components/schemas/GeoDistance"
           },
           {
-            "$ref": "#/components/schemas/Datetime"
+            "$ref": "#/components/schemas/DatetimeExpression"
           },
           {
             "$ref": "#/components/schemas/MultExpression"
@@ -14538,7 +14538,7 @@
           }
         }
       },
-      "Datetime": {
+      "DatetimeExpression": {
         "type": "object",
         "required": [
           "datetime"
