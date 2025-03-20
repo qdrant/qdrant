@@ -7,7 +7,7 @@ use crate::config::CollectionConfigInternal;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
 use crate::shards::transfer::ShardTransfer;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -23,18 +23,14 @@ pub struct State {
     #[serde(default)]
     pub transfers: HashSet<ShardTransfer>,
     #[serde(default)]
-    pub shards_key_mapping: ShardKeyMapping,
+    // TODO(1.15): replace with new shard key mapping type
+    pub shards_key_mapping: ShardKeyMappingWrapper,
     #[serde(default)]
     pub payload_index_schema: PayloadIndexSchema,
 }
 
 impl State {
     pub fn max_shard_id(&self) -> ShardId {
-        self.shards_key_mapping
-            .values()
-            .flat_map(|shard_ids| shard_ids.iter())
-            .max()
-            .copied()
-            .unwrap_or(0)
+        self.shards_key_mapping.iter_shard_ids().max().unwrap_or(0)
     }
 }

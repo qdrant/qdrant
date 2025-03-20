@@ -14,7 +14,7 @@ use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
-use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMapping};
+use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMapping, ShardKeyMappingWrapper};
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -118,8 +118,8 @@ impl ShardHolder {
         &self.shard_id_to_key_mapping
     }
 
-    pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMapping {
-        self.key_mapping.read().clone()
+    pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMappingWrapper {
+        ShardKeyMappingWrapper::from(self.key_mapping.read().clone())
     }
 
     pub async fn drop_and_remove_shard(
