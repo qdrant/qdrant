@@ -284,6 +284,10 @@ impl ShardHolder {
         self.shards.get(&shard_id)
     }
 
+    pub fn get_shard_mut(&mut self, shard_id: ShardId) -> Option<&mut ShardReplicaSet> {
+        self.shards.get_mut(&shard_id)
+    }
+
     pub fn get_shards(&self) -> impl Iterator<Item = (ShardId, &ShardReplicaSet)> {
         self.shards.iter().map(|(id, shard)| (*id, shard))
     }

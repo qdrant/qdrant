@@ -188,9 +188,14 @@ impl Collection {
         // On the first state of the update, we update state of shards themselves
         // and create new shards if needed
 
+        let mut shards_holder = self.shards_holder.write().await;
+
         for (shard_id, shard_info) in shards {
-            match self.shards_holder.read().await.get_shard(shard_id) {
-                Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
+            match shards_holder.get_shard_mut(shard_id) {
+                Some(replica_set) => {
+                    replica_set.apply_state(shard_info.replicas).await?;
+                    replica_set.shard_key = shards_key_mapping.get_key(shard_id);
+                }
                 None => {
                     let shard_key = shards_key_mapping.get_key(shard_id);
                     let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
@@ -204,10 +209,7 @@ impl Collection {
         }
 
         // On the second step, we register missing shards and remove extra shards
-
-        self.shards_holder
-            .write()
-            .await
+        shards_holder
             .apply_shards_state(shard_ids, shards_key_mapping, extra_shards)
             .await
     }
