@@ -47,6 +47,7 @@ use crate::shards::replica_set::{
     ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
 };
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder, shard_not_found_error};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
@@ -557,7 +558,9 @@ impl Collection {
                 .collect(),
             resharding,
             transfers,
-            shards_key_mapping: shards_holder.get_shard_key_to_ids_mapping(),
+            shards_key_mapping: ShardKeyMappingWrapper::from(
+                shards_holder.get_shard_key_to_ids_mapping(),
+            ),
             payload_index_schema: self.payload_index_schema.read().clone(),
         }
     }

@@ -96,9 +96,9 @@ impl Deref for SaveOnDiskShardKeyMappingWrapper {
 /// This type functions as a compatibility layer between the two different persisted formats.
 ///
 /// Bug: <https://github.com/qdrant/qdrant/pull/5838>
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq)]
 #[serde(untagged)]
-pub(crate) enum ShardKeyMappingWrapper {
+pub enum ShardKeyMappingWrapper {
     /// The `Old` format is the original format from when shard key mappings were implemented
     // TODO(1.15): either fully remove support for the old format, or keep it a bit longer
     // TODO(1.15): if removing the old format, change back to regular SaveOnDisk<T> type
@@ -109,6 +109,11 @@ pub(crate) enum ShardKeyMappingWrapper {
 }
 
 impl ShardKeyMappingWrapper {
+    /// Convert shard key mappings into key to shard IDs map
+    pub fn to_map(&self) -> ShardKeyMapping {
+        ShardKeyMapping::from(self.clone())
+    }
+
     /// Return all shard IDs from the mappings
     pub fn shard_ids(&self) -> Vec<ShardId> {
         let ids: Vec<ShardId> = match self {
@@ -128,6 +133,47 @@ impl ShardKeyMappingWrapper {
         );
 
         ids
+    }
+
+    /// Get the shard IDs for a specific shard key
+    pub fn get(&self, shard_key: &ShardKey) -> Option<HashSet<ShardId>> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping.get(shard_key).cloned(),
+            ShardKeyMappingWrapper::New(mappings) => {
+                let shards: HashSet<ShardId> = mappings
+                    .iter()
+                    .filter(|mapping| &mapping.key == shard_key)
+                    .flat_map(|mapping| &mapping.shard_ids)
+                    .copied()
+                    .collect();
+                (!shards.is_empty()).then_some(shards)
+            }
+        }
+    }
+
+    /// Whether this shard key mapping contains a specific key.
+    pub fn contains_key(&self, shard_key: &ShardKey) -> bool {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping.contains_key(shard_key),
+            ShardKeyMappingWrapper::New(mappings) => {
+                mappings.iter().any(|mapping| &mapping.key == shard_key)
+            }
+        }
+    }
+}
+
+impl PartialEq for ShardKeyMappingWrapper {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // Old mappings we can compare directly
+            (ShardKeyMappingWrapper::Old(a), ShardKeyMappingWrapper::Old(b)) => a == b,
+            // New mappings and asymetric mappings must be compared in a stable format
+            (a, b) => {
+                let a = ShardKeyMapping::from(a.clone());
+                let b = ShardKeyMapping::from(b.clone());
+                a == b
+            }
+        }
     }
 }
 
@@ -174,7 +220,7 @@ impl From<ShardKeyMappingWrapper> for ShardKeyMapping {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 struct NewShardKeyMapping {
     /// Shard key
     ///
