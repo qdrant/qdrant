@@ -98,7 +98,15 @@ impl FormulaScorer<'_> {
     /// Evaluate the formula for the given point
     pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.eval_expression(&self.formula, point_id)
-            .map(|score| score as ScoreType)
+            .and_then(|score| {
+                let score_f32 = score as f32;
+                if !score_f32.is_finite() {
+                    return Err(OperationError::NonFiniteNumber {
+                        expression: format!("{score} as f32 = {score_f32}"),
+                    });
+                }
+                Ok(score_f32)
+            })
     }
 
     /// Evaluate the expression recursively
@@ -150,7 +158,7 @@ impl FormulaScorer<'_> {
                             value
                                 // datetime index also returns the Serialize impl of datetime which is a string
                                 .as_str()
-                                .ok_or("value is not a string")?
+                                .ok_or("Value is not a string")?
                                 .parse::<DateTimePayloadType>()
                                 .map_err(|e| e.to_string())
                         })?
@@ -314,25 +322,24 @@ impl FormulaScorer<'_> {
         E: ToString,
         T: FriendlyName,
     {
-        self.get_payload_value(json_path, point_id)
+        let value = self
+            .get_payload_value(json_path, point_id)
             .or_else(|| {
                 self.defaults
                     .get(&VariableId::Payload(json_path.clone()))
                     .cloned()
             })
-            .map(|value| {
-                from_value(value).map_err(|e| OperationError::VariableTypeError {
-                    field_name: json_path.clone(),
-                    expected_type: T::friendly_name().to_owned(),
-                    description: e.to_string(),
-                })
-            })
-            .transpose()?
             .ok_or_else(|| OperationError::VariableTypeError {
                 field_name: json_path.clone(),
                 expected_type: T::friendly_name().to_owned(),
                 description: "No value found in a payload nor defaults".to_string(),
-            })
+            })?;
+
+        from_value(value).map_err(|e| OperationError::VariableTypeError {
+            field_name: json_path.clone(),
+            expected_type: T::friendly_name().to_owned(),
+            description: e.to_string(),
+        })
     }
 }
 
@@ -365,6 +372,8 @@ mod tests {
 
     const FIELD_NAME: &str = "number";
     const NO_VALUE_FIELD_NAME: &str = "no_number";
+    const ARRAY_OF_ONE_FIELD_NAME: &str = "array_of_one";
+    const ARRAY_FIELD_NAME: &str = "array";
     const GEO_FIELD_NAME: &str = "geo_point";
     const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
     const NO_VALUE_DATETIME: &str = "no_value_datetime";
@@ -389,6 +398,14 @@ mod tests {
             payload_retrievers.insert(
                 JsonPath::new(FIELD_NAME),
                 Box::new(|_| smallvec![json!(85.0)]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(ARRAY_OF_ONE_FIELD_NAME),
+                Box::new(|_| smallvec![json!(1.2)]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(ARRAY_FIELD_NAME),
+                Box::new(|_| smallvec![json!(1.2), json!(2.3)]),
             );
             payload_retrievers.insert(
                 JsonPath::new(GEO_FIELD_NAME),
@@ -479,6 +496,14 @@ mod tests {
     // score idx not defined
     #[case(ParsedExpression::new_score_id(10), Ok(DEFAULT_SCORE))]
     // missing value in payload
+    #[case(
+        ParsedExpression::new_payload_id(JsonPath::new(ARRAY_OF_ONE_FIELD_NAME)),
+        Ok(1.2)
+    )]
+    #[case(
+        ParsedExpression::new_payload_id(JsonPath::new(ARRAY_FIELD_NAME)),
+        Err(OperationError::VariableTypeError { field_name: JsonPath::new("array"), expected_type: "number".into(), description: "Value is not a number".into() })
+    )]
     #[case(
         ParsedExpression::new_payload_id(JsonPath::new(NO_VALUE_FIELD_NAME)),
         Ok(85.0)

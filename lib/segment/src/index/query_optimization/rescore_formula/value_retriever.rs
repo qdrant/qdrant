@@ -236,13 +236,13 @@ mod tests {
         let mut in_memory_storage = InMemoryPayloadStorage::default();
 
         // For point id 0: a payload with a numeric value.
-        let payload1: Payload = from_value(json!({
+        let payload0: Payload = from_value(json!({
             "value": 42
         }))
         .unwrap();
 
         // For point id 1: a payload with a geo point.
-        let payload2: Payload = from_value(json!({
+        let payload1: Payload = from_value(json!({
             "location": {
                 "lat": 10.0,
                 "lon": 20.0
@@ -251,7 +251,7 @@ mod tests {
         .unwrap();
 
         // For point id 2: a payload containing both a number and a geo point.
-        let payload3: Payload = from_value(json!({
+        let payload2: Payload = from_value(json!({
             "value": [99, 55],
             "location": {
                 "lat": 15.5,
@@ -260,10 +260,21 @@ mod tests {
         }))
         .unwrap();
 
+        // For point id 3: a payload with an array of 1 number, and an array of 1 geo point.
+        let payload3: Payload = from_value(json!({
+            "value": [42.5],
+            "location": [{
+                "lat": 16.5,
+                "lon": 26.5
+            }]
+        }))
+        .unwrap();
+
         // Insert the payloads into the in-memory storage.
-        in_memory_storage.payload.insert(0, payload1);
-        in_memory_storage.payload.insert(1, payload2);
-        in_memory_storage.payload.insert(2, payload3);
+        in_memory_storage.payload.insert(0, payload0);
+        in_memory_storage.payload.insert(1, payload1);
+        in_memory_storage.payload.insert(2, payload2);
+        in_memory_storage.payload.insert(3, payload3);
 
         // Wrap the in-memory storage in a PayloadStorageEnum.
         let storage_enum = PayloadStorageEnum::InMemoryPayloadStorage(in_memory_storage);
@@ -287,12 +298,13 @@ mod tests {
             payload_provider.clone(),
             &hw_counter,
         );
-        for id in 0..=2 {
+        for id in 0..=3 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, [json!(42)].into()),
                 1 => assert_eq!(value, MultiValue::<Value>::new()),
                 2 => assert_eq!(value, [json!(99), json!(55)].into()),
+                3 => assert_eq!(value, [json!(42.5)].into()),
                 _ => unreachable!(),
             }
         }
@@ -304,12 +316,13 @@ mod tests {
             payload_provider.clone(),
             &hw_counter,
         );
-        for id in 0..=2 {
+        for id in 0..=3 {
             let value = retriever(id);
             match id {
                 0 => assert_eq!(value, MultiValue::<Value>::new()),
                 1 => assert_eq!(value, [json!({ "lat": 10.0, "lon": 20.0 })].into()),
                 2 => assert_eq!(value, [json!({ "lat": 15.5, "lon": 25.5 })].into()),
+                3 => assert_eq!(value, [json!({ "lat": 16.5, "lon": 26.5 })].into()),
                 _ => unreachable!(),
             }
         }
