@@ -57,8 +57,7 @@ pub struct ShardHolder {
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
     key_mapping: SaveOnDiskShardKeyMappingWrapper,
-    // Duplicates the information from `key_mapping` for faster access
-    // Do not require locking
+    // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
 }
 
