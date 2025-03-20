@@ -2,7 +2,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
-use bitvec::macros::internal::funty::Fundamental;
 use chrono::{DateTime, Utc};
 pub use macros::Anonymize;
 use uuid::Uuid;
@@ -105,7 +104,7 @@ impl Anonymize for Uuid {
     fn anonymize(&self) -> Self {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
-        Uuid::from_u128(hasher.finish().as_u128())
+        Uuid::from_u128(u128::from(hasher.finish()))
     }
 }
 
