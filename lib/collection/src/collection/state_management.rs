@@ -32,7 +32,7 @@ impl Collection {
         self.apply_config(state.config).await?;
         self.apply_shard_transfers(state.transfers, this_peer_id, abort_transfer)
             .await?;
-        self.apply_shard_info(state.shards, state.shards_key_mapping)
+        self.apply_shard_info(state.shards, state.shards_key_mapping.to_map())
             .await?;
         self.apply_payload_index_schema(state.payload_index_schema)
             .await?;

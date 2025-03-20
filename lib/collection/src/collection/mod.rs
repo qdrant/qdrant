@@ -344,8 +344,6 @@ impl Collection {
             .await
             .get_shard_key_to_ids_mapping()
             .keys()
-            .cloned()
-            .collect()
     }
 
     /// Return a list of local shards, present on this peer
