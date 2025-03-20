@@ -146,6 +146,19 @@ impl MutableIdTracker {
             vec![]
         };
 
+        // Compare internal point mappings and versions count, report warning if we don't
+        debug_assert!(
+            mappings.total_point_count() >= internal_to_version.len(),
+            "can never have more versions than internal point mappings",
+        );
+        if mappings.total_point_count() != internal_to_version.len() {
+            log::warn!(
+                "Mutable ID tracker mappings and versions count mismatch, could have been partially flushed, WAL should recover ({} mappings, {} versions)",
+                mappings.total_point_count(),
+                internal_to_version.len(),
+            );
+        }
+
         #[cfg(debug_assertions)]
         mappings.assert_mappings();
 
