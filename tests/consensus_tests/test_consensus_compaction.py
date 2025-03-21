@@ -4,8 +4,8 @@ import shutil
 from time import sleep
 from typing import Any
 
-from consensus_tests.fixtures import create_collection, create_shard_key, drop_collection
 import requests
+from consensus_tests.fixtures import create_collection, drop_collection
 from .utils import *
 
 N_PEERS = 3
@@ -96,7 +96,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
 
     # Create shard keys
     for _, shard_key in SHARD_KEYS.items():
-        create_shard_key(peer_url=peer_api_uris[0], collection="test_collection", shard_key=shard_key)
+        create_shard_key(shard_key, peer_api_uris[0], collection="test_collection")
 
     # Validate shard keys on all peers
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
