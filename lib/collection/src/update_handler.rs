@@ -766,7 +766,7 @@ impl UpdateHandler {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(flush_interval_sec)) => {},
                 _ = &mut stop_receiver => {
-                    debug!("Stopping flush worker.");
+                    debug!("Stopping flush worker for shard {}", shard_path.display());
                     return;
                 }
             }
