@@ -46,7 +46,7 @@ PROCESSED_TEXTS = list(map(
 def get_vector(words):
     unique_words = list(set(words))
     return {
-        "indices": [abs(hash(word)) % 1000000 for word in unique_words],
+        "indices": [abs(hash(word)) % 1_000_000_000 for word in unique_words],
         "values": [1.] * len(unique_words)
     }
 
