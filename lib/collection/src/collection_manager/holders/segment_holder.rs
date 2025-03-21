@@ -1346,6 +1346,7 @@ impl SegmentHolder {
     /// temporary segment, which will source the configuration from it.
     ///
     /// Shortcuts at the first failing segment snapshot.
+    #[expect(clippy::too_many_arguments)]
     pub fn snapshot_all_segments(
         segments: LockedSegmentHolder,
         segments_path: &Path,
@@ -1368,7 +1369,13 @@ impl SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, tar, format, &mut snapshotted_segments)?;
+                read_segment.take_snapshot(
+                    temp_dir,
+                    tar,
+                    format,
+                    manifest,
+                    &mut snapshotted_segments,
+                )?;
                 Ok(())
             },
         )
@@ -2063,7 +2070,7 @@ mod tests {
             temp_dir.path(),
             &tar,
             SnapshotFormat::Regular,
-           & SegmentManifests::default(),
+            &SegmentManifests::default(),
         )
         .unwrap();
 

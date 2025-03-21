@@ -7,7 +7,6 @@ mod scroll;
 mod search;
 mod segment_ops;
 
-mod partial_snapshot;
 pub mod snapshot;
 
 #[cfg(test)]
