@@ -14,7 +14,7 @@ use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
-use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMapping, ShardKeyMappingWrapper};
+use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMappingWrapper};
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -57,8 +57,7 @@ pub struct ShardHolder {
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
     key_mapping: SaveOnDiskShardKeyMappingWrapper,
-    // Duplicates the information from `key_mapping` for faster access
-    // Do not require locking
+    // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
 }
 
@@ -120,6 +119,23 @@ impl ShardHolder {
 
     pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMappingWrapper {
         ShardKeyMappingWrapper::from(self.key_mapping.read().clone())
+    }
+
+    /// Set the shard key mappings
+    ///
+    /// # Warning
+    ///
+    /// This does not update the shard key inside replica sets. If the shard key mapping changes
+    /// and we have existing replica sets, they must be updated as well to reflect the changed
+    /// mappings.
+    pub fn set_shard_key_mappings(
+        &mut self,
+        shard_key_mapping: ShardKeyMappingWrapper,
+    ) -> CollectionResult<()> {
+        self.key_mapping
+            .write_optional(|_| Some(shard_key_mapping.to_map()))?;
+        self.shard_id_to_key_mapping = shard_key_mapping.shards();
+        Ok(())
     }
 
     pub async fn drop_and_remove_shard(
@@ -253,15 +269,14 @@ impl ShardHolder {
     pub async fn apply_shards_state(
         &mut self,
         shard_ids: HashSet<ShardId>,
-        shard_key_mapping: ShardKeyMapping,
+        shard_key_mapping: ShardKeyMappingWrapper,
         extra_shards: HashMap<ShardId, ShardReplicaSet>,
     ) -> Result<(), CollectionError> {
         self.shards.extend(extra_shards.into_iter());
 
         let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();
 
-        self.key_mapping
-            .write_optional(|_key_mapping| Some(shard_key_mapping))?;
+        self.set_shard_key_mappings(shard_key_mapping)?;
 
         for shard_id in all_shard_ids {
             if !shard_ids.contains(&shard_id) {
@@ -280,6 +295,10 @@ impl ShardHolder {
 
     pub fn get_shard(&self, shard_id: ShardId) -> Option<&ShardReplicaSet> {
         self.shards.get(&shard_id)
+    }
+
+    pub fn get_shard_mut(&mut self, shard_id: ShardId) -> Option<&mut ShardReplicaSet> {
+        self.shards.get_mut(&shard_id)
     }
 
     pub fn get_shards(&self) -> impl Iterator<Item = (ShardId, &ShardReplicaSet)> {

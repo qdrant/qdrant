@@ -74,6 +74,7 @@ async fn _test_snapshot_and_recover_collection(node_type: NodeType) {
         &config,
         Arc::new(storage_config),
         shard_distribution,
+        None,
         ChannelService::new(REST_PORT, None),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),

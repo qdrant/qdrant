@@ -500,6 +500,7 @@ mod test {
             &config,
             storage_config.clone(),
             CollectionShardDistribution::all_local(None, 0),
+            None,
             ChannelService::default(),
             dummy_on_replica_failure(),
             dummy_request_shard_transfer(),

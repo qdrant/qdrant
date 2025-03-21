@@ -121,6 +121,29 @@ impl ShardKeyMappingWrapper {
         ShardKeyMapping::from(self.clone())
     }
 
+    /// Get a mapping of all shards and their key
+    pub fn shards(&self) -> HashMap<ShardId, ShardKey> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping
+                .iter()
+                .flat_map(|(shard_key, shard_ids)| {
+                    shard_ids
+                        .iter()
+                        .map(|shard_id| (*shard_id, shard_key.clone()))
+                })
+                .collect(),
+            ShardKeyMappingWrapper::New(mappings) => mappings
+                .iter()
+                .flat_map(|mapping| {
+                    mapping
+                        .shard_ids
+                        .iter()
+                        .map(|shard_id| (*shard_id, mapping.key.clone()))
+                })
+                .collect(),
+        }
+    }
+
     /// Get list of shard keys
     pub fn keys(&self) -> Vec<ShardKey> {
         match self {
@@ -175,6 +198,22 @@ impl ShardKeyMappingWrapper {
                     .collect();
                 (!shards.is_empty()).then_some(shards)
             }
+        }
+    }
+
+    /// Get the shard key for a given shard ID
+    ///
+    /// `None` is returned if the shard ID has no key, or if the shard ID is unknown
+    pub fn key(&self, shard_id: ShardId) -> Option<ShardKey> {
+        match self {
+            ShardKeyMappingWrapper::Old(mapping) => mapping
+                .iter()
+                .find(|(_, shard_ids)| shard_ids.contains(&shard_id))
+                .map(|(key, _)| key.clone()),
+            ShardKeyMappingWrapper::New(mappings) => mappings
+                .iter()
+                .find(|mapping| mapping.shard_ids.contains(&shard_id))
+                .map(|mapping| mapping.key.clone()),
         }
     }
 

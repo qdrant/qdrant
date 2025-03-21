@@ -80,6 +80,7 @@ async fn _test_snapshot_collection(node_type: NodeType) {
         &config,
         Arc::new(storage_config),
         CollectionShardDistribution { shards },
+        None,
         ChannelService::default(),
         dummy_on_replica_failure(),
         dummy_request_shard_transfer(),
