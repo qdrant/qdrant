@@ -21,6 +21,8 @@ pub struct VectorParameters {
 }
 
 pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
+    type QueryEncodingParams;
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()>;
 
     fn load(
@@ -29,7 +31,7 @@ pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
         vector_parameters: &VectorParameters,
     ) -> std::io::Result<Self>;
 
-    fn encode_query(&self, query: &[f32]) -> TEncodedQuery;
+    fn encode_query(&self, query: &[f32], params: &Self::QueryEncodingParams) -> TEncodedQuery;
 
     fn score_point(&self, query: &TEncodedQuery, i: u32, hw_counter: &HardwareCounterCell) -> f32;
 

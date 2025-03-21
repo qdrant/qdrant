@@ -37,7 +37,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -70,7 +70,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -103,7 +103,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -136,7 +136,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -169,7 +169,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -202,7 +202,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {

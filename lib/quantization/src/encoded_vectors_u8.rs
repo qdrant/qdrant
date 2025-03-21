@@ -288,6 +288,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsU8<TStorage> {
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectorsU8<TStorage> {
+    type QueryEncodingParams = ();
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
         meta_path.parent().map(std::fs::create_dir_all);
         atomic_save_json(meta_path, &self.metadata)?;
@@ -314,7 +316,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         Ok(result)
     }
 
-    fn encode_query(&self, query: &[f32]) -> EncodedQueryU8 {
+    fn encode_query(&self, query: &[f32], _params: &Self::QueryEncodingParams) -> EncodedQueryU8 {
         let dim = query.len();
         let mut query: Vec<_> = query
             .iter()

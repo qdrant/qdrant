@@ -44,7 +44,7 @@ fn binary_bench(c: &mut Criterion) {
     .unwrap();
 
     let query = generate_vector(vector_dim, &mut rng);
-    let encoded_query = encoded_u128.encode_query(&query);
+    let encoded_query = encoded_u128.encode_query(&query, &Default::default());
 
     let hardware_counter = HardwareCounterCell::new();
 
@@ -83,7 +83,7 @@ fn binary_bench(c: &mut Criterion) {
     .unwrap();
 
     let query = generate_vector(vector_dim, &mut rng);
-    let encoded_query = encoded_u8.encode_query(&query);
+    let encoded_query = encoded_u8.encode_query(&query, &Default::default());
 
     group.bench_function("score binary linear access u8", |b| {
         b.iter(|| {

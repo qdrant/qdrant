@@ -35,6 +35,7 @@ where
         raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
+        query_encoding_params: &TEncodedVectors::QueryEncodingParams,
         hardware_counter: HardwareCounterCell,
     ) -> Self {
         let raw_preprocessed_query = TMetric::preprocess(raw_query);
@@ -44,7 +45,8 @@ where
             TMetric::distance(),
             original_query.as_ref(),
         );
-        let query = quantized_data.encode_query(&original_query_prequantized);
+        let query =
+            quantized_data.encode_query(&original_query_prequantized, query_encoding_params);
 
         Self {
             query,
@@ -59,6 +61,7 @@ where
         raw_query: &MultiDenseVectorInternal,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
+        query_encoding_params: &TEncodedVectors::QueryEncodingParams,
         hardware_counter: HardwareCounterCell,
     ) -> Self {
         let mut query = Vec::new();
@@ -73,7 +76,7 @@ where
             query.extend_from_slice(&inner_prequantized);
         }
 
-        let query = quantized_data.encode_query(&query);
+        let query = quantized_data.encode_query(&query, query_encoding_params);
 
         Self {
             query,

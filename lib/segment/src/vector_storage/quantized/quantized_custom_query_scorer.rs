@@ -42,6 +42,7 @@ where
         raw_query: TInputQuery,
         quantized_storage: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
+        query_encoding_params: &TEncodedVectors::QueryEncodingParams,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
@@ -67,7 +68,8 @@ where
                     TMetric::distance(),
                     &original_vector,
                 );
-                Ok(quantized_storage.encode_query(&original_vector_prequantized))
+                Ok(quantized_storage
+                    .encode_query(&original_vector_prequantized, query_encoding_params))
             })
             .unwrap();
 
@@ -87,6 +89,7 @@ where
         raw_query: TInputQuery,
         quantized_storage: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
+        query_encoding_params: &TEncodedVectors::QueryEncodingParams,
         mut hardware_counter: HardwareCounterCell,
     ) -> Self
     where
@@ -117,7 +120,8 @@ where
                     TMetric::distance(),
                     &original_vector.flattened_vectors,
                 );
-                Ok(quantized_storage.encode_query(&original_vector_prequantized))
+                Ok(quantized_storage
+                    .encode_query(&original_vector_prequantized, query_encoding_params))
             })
             .unwrap();
 

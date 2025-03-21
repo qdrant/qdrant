@@ -33,7 +33,7 @@ fn encode_dot_bench(c: &mut Criterion) {
     .unwrap();
 
     let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
-    let encoded_query = i8_encoded.encode_query(&query);
+    let encoded_query = i8_encoded.encode_query(&query, &Default::default());
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score all u8 avx", |b| {
@@ -126,7 +126,7 @@ fn encode_l1_bench(c: &mut Criterion) {
     .unwrap();
 
     let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
-    let encoded_query = i8_encoded.encode_query(&query);
+    let encoded_query = i8_encoded.encode_query(&query, &Default::default());
 
     #[cfg(target_arch = "x86_64")]
     group.bench_function("score all u8 avx", |b| {

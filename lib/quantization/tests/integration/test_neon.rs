@@ -36,7 +36,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point_neon(&query_u8, index as u32);
@@ -72,7 +72,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point_neon(&query_u8, index as u32);
@@ -108,7 +108,7 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
-        let query_u8 = encoded.encode_query(&query);
+        let query_u8 = encoded.encode_query(&query, &Default::default());
 
         for (index, vector) in vector_data.iter().enumerate() {
             let score = encoded.score_point_neon(&query_u8, index as u32);
