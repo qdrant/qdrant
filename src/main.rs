@@ -149,7 +149,7 @@ fn main() -> anyhow::Result<()> {
     let settings = Settings::new(args.config_path)?;
 
     // Set global feature flags, sourced from configuration
-    init_feature_flags(&settings.feature_flags);
+    init_feature_flags(settings.feature_flags);
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
