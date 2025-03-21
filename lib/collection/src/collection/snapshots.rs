@@ -184,7 +184,6 @@ impl Collection {
                 if !mapping_path.exists() {
                     Vec::new()
                 } else {
-                    // Use wrapper type to support both formats
                     let shard_key_mapping: ShardKeyMapping = read_json(&mapping_path)?;
                     shard_key_mapping.shard_ids()
                 }
