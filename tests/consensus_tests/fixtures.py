@@ -201,8 +201,10 @@ def create_shard_key(
     shard_number=None,
     replication_factor=None,
     timeout=10,
-    headers={},
+    headers=None,
 ):
+    if headers is None:
+        headers = {}
     r_create = requests.put(
         f"{peer_url}/collections/{collection}/shards?timeout={timeout}",
         json={

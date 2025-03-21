@@ -95,7 +95,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
 
     # Create shard keys
-    for shard_id, shard_key in SHARD_KEYS.items():
+    for _, shard_key in SHARD_KEYS.items():
         create_shard_key(peer_url=peer_api_uris[0], collection="test_collection", shard_key=shard_key)
 
     # Validate shard keys on all peers
