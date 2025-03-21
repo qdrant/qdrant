@@ -1,8 +1,6 @@
-use std::{
-    fs::{self, OpenOptions},
-    io,
-    path::Path,
-};
+use std::fs::{self, OpenOptions};
+use std::io;
+use std::path::Path;
 
 pub fn fsync_dir_recursive(path: &Path) -> io::Result<()> {
     if path.is_dir() {
