@@ -5,6 +5,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SnapshotFormat};
 
@@ -92,32 +93,33 @@ impl Shard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: SegmentManifests,
         save_wal: bool,
     ) -> CollectionResult<()> {
         match self {
             Shard::Local(local_shard) => {
                 local_shard
-                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
                     .await
             }
             Shard::Proxy(proxy_shard) => {
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
                     .await
             }
             Shard::ForwardProxy(proxy_shard) => {
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
                     .await
             }
             Shard::QueueProxy(proxy_shard) => {
                 proxy_shard
-                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
                     .await
             }
             Shard::Dummy(dummy_shard) => {
                 dummy_shard
-                    .create_snapshot(temp_path, tar, format, save_wal)
+                    .create_snapshot(temp_path, tar, format, manifest, save_wal)
                     .await
             }
         }

@@ -9,6 +9,7 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SnapshotFormat, WithPayload,
@@ -206,10 +207,11 @@ impl ForwardProxyShard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: SegmentManifests,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.wrapped_shard
-            .create_snapshot(temp_path, tar, format, save_wal)
+            .create_snapshot(temp_path, tar, format, manifest, save_wal)
             .await
     }
 

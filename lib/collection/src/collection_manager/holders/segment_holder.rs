@@ -1354,11 +1354,13 @@ impl SegmentHolder {
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: &SegmentManifests,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
 
         let mut snapshotted_segments = HashSet::<String>::new();
+
         Self::proxy_all_segments_and_apply(
             segments,
             segments_path,
@@ -2061,6 +2063,7 @@ mod tests {
             temp_dir.path(),
             &tar,
             SnapshotFormat::Regular,
+           & SegmentManifests::default(),
         )
         .unwrap();
 
