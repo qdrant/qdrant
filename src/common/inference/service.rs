@@ -177,7 +177,14 @@ impl InferenceService {
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
 
-        let token = inference_token.0.or_else(|| self.config.token.clone());
+        let token = inference_token.0.or_else(|| {
+            if let Some(config_token) = &self.config.token {
+                Some(config_token.clone())
+            } else {
+                log::warn!("No inference token provided in request or config - using empty token");
+                Some(String::new())
+            }
+        });
 
         let request = InferenceRequest {
             inputs: inference_inputs,
