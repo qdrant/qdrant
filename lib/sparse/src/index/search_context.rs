@@ -571,6 +571,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
         assert_eq!(accumulator.get_cpu(), 9);
@@ -624,6 +625,7 @@ mod tests {
             ]
         );
         drop(search_context);
+        drop(hardware_counter);
 
         // update index with new point
         index.index.upsert(
@@ -720,6 +722,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
         // [ID=1] (Retrieve all 9 Vectors) => 9
         // [ID=2] (Retrieve 1-3)           => 3
         // [ID=3] (Retrieve 1-3)           => 3
@@ -760,6 +763,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // No difference to previous calculation because it's the same amount of score
         // calculations when increasing the "top" parameter.
@@ -993,6 +997,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // [ID=1] (Retrieve three sparse vectors (1,2,3)) + QueryLength=3 => 6
         // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
@@ -1047,6 +1052,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // [ID=1] (Retrieve two sparse vectors (1,2)) + QueryLength=2 => 4
         // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4
