@@ -5,7 +5,7 @@ use api::rest::GeoDistance;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
+    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
 };
 use segment::json_path::JsonPath;
 use segment::types::{Condition, GeoPoint};
@@ -79,7 +79,13 @@ impl ExpressionInternal {
                 payload_vars.insert(to.clone());
                 ParsedExpression::new_geo_distance(origin, to)
             }
-            ExpressionInternal::DateTime(dt_str) => ParsedExpression::DateTime(dt_str.parse()?),
+            ExpressionInternal::DateTime(dt_str) => {
+                let dt_expr = dt_str.parse()?;
+                if let DateTimeExpression::PayloadVariable(json_path) = &dt_expr {
+                    payload_vars.insert(json_path.clone());
+                }
+                ParsedExpression::DateTime(dt_expr)
+            }
             ExpressionInternal::Mult(internal_expressions) => ParsedExpression::Mult(
                 internal_expressions
                     .into_iter()
