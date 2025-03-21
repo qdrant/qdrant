@@ -134,7 +134,7 @@ impl Collection {
 
             let shard_key = shard_key_mapping
                 .as_ref()
-                .and_then(|mapping| mapping.key(shard_id));
+                .and_then(|mapping| mapping.shard_key(shard_id));
             let replica_set = ShardReplicaSet::build(
                 shard_id,
                 shard_key.clone(),

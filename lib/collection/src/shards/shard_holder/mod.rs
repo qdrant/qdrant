@@ -131,7 +131,7 @@ impl ShardHolder {
         &mut self,
         shard_key_mapping: ShardKeyMapping,
     ) -> CollectionResult<()> {
-        let shard_id_to_key_mapping = shard_key_mapping.shards();
+        let shard_id_to_key_mapping = shard_key_mapping.shard_id_to_shard_key();
 
         self.key_mapping
             .write_optional(move |_| Some(shard_key_mapping))?;

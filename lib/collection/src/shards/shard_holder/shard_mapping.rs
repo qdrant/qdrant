@@ -30,9 +30,8 @@ impl ops::DerefMut for ShardKeyMapping {
 }
 
 impl ShardKeyMapping {
-    /// Get a mapping of all shards and their key
-    // TODO: Rename to `shard_id_to_shard_key`
-    pub fn shards(&self) -> HashMap<ShardId, ShardKey> {
+    /// Get an inverse mapping, all shard IDs and their key
+    pub fn shard_id_to_shard_key(&self) -> HashMap<ShardId, ShardKey> {
         self.shard_key_to_shard_ids
             .iter()
             .flat_map(|(shard_key, shard_ids)| {
@@ -65,8 +64,7 @@ impl ShardKeyMapping {
     /// Get the shard key for a given shard ID
     ///
     /// `None` is returned if the shard ID has no key, or if the shard ID is unknown
-    // TODO: Rename to `shard_key`
-    pub fn key(&self, shard_id: ShardId) -> Option<ShardKey> {
+    pub fn shard_key(&self, shard_id: ShardId) -> Option<ShardKey> {
         self.shard_key_to_shard_ids
             .iter()
             .find(|(_, shard_ids)| shard_ids.contains(&shard_id))

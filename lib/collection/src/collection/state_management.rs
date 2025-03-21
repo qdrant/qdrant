@@ -191,15 +191,14 @@ impl Collection {
         let mut shards_holder = self.shards_holder.write().await;
 
         for (shard_id, shard_info) in shards {
+            let shard_key = shards_key_mapping.shard_key(shard_id);
             match shards_holder.get_shard_mut(shard_id) {
                 Some(replica_set) => {
-                    let shard_key = shards_key_mapping.key(shard_id);
                     replica_set
                         .apply_state(shard_info.replicas, shard_key)
                         .await?;
                 }
                 None => {
-                    let shard_key = shards_key_mapping.key(shard_id);
                     let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
                     let mut replica_set = self
                         .create_replica_set(shard_id, shard_key.clone(), &shard_replicas, None)
