@@ -89,10 +89,18 @@ impl From<SerdeHelper> for ShardKeyMapping {
     }
 }
 
+/// Helper structure for persisting shard key mapping
+///
+/// The original format of persisting shard key mappings as hash map is broken. It forgets type
+/// information for the shard key, which resulted in shard key numbers to be converted into
+/// strings.
+///
+/// Bug: <https://github.com/qdrant/qdrant/pull/5838>
 #[derive(Deserialize, Serialize)]
 #[serde(untagged)]
 enum SerdeHelper {
     New(Vec<KeyIdsPair>),
+    // TODO(1.15): remove this old format, deployment should exclusively be using new format
     Old(HashMap<ShardKey, HashSet<ShardId>>),
 }
 
@@ -100,6 +108,7 @@ impl From<ShardKeyMapping> for SerdeHelper {
     fn from(mapping: ShardKeyMapping) -> Self {
         let number_key_used = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
 
+        // TODO(1.14): use new format by default, even if not using shard key numbers
         if feature_flags().use_new_shard_key_mapping_format || number_key_used {
             let key_ids_pairs = mapping
                 .shard_key_to_shard_ids
