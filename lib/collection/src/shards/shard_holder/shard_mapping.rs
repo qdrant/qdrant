@@ -100,7 +100,9 @@ enum SerdeHelper {
 
 impl From<ShardKeyMapping> for SerdeHelper {
     fn from(mapping: ShardKeyMapping) -> Self {
-        if feature_flags().use_new_shard_key_mapping_format {
+        let number_key_used = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
+
+        if feature_flags().use_new_shard_key_mapping_format || number_key_used {
             let key_ids_pairs = mapping
                 .shard_key_to_shard_ids
                 .into_iter()
