@@ -110,6 +110,12 @@ pub struct LocalShard {
 impl LocalShard {
     /// Moves `wal`, `segments` and `clocks` data from one path to another.
     pub async fn move_data(from: &Path, to: &Path) -> CollectionResult<()> {
+        log::debug!(
+            "Moving local shard from {} to {}",
+            from.display(),
+            to.display()
+        );
+
         let wal_from = Self::wal_path(from);
         let wal_to = Self::wal_path(to);
         let segments_from = Self::segments_path(from);
@@ -632,7 +638,8 @@ impl LocalShard {
         let mut last_progress_report = Instant::now();
         if !show_progress_bar {
             log::info!(
-                "Recovering collection {collection_id}: 0/{} (0%)",
+                "Recovering shard {}: 0/{} (0%)",
+                self.path.display(),
                 wal.len(false),
             );
         }
@@ -838,6 +845,7 @@ impl LocalShard {
     }
 
     pub fn restore_snapshot(snapshot_path: &Path) -> CollectionResult<()> {
+        log::info!("Restoring shard snapshot {}", snapshot_path.display());
         // Read dir first as the directory contents would change during restore
         let entries = std::fs::read_dir(LocalShard::segments_path(snapshot_path))?
             .collect::<Result<Vec<_>, _>>()?;
