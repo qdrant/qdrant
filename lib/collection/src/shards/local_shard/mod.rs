@@ -24,6 +24,7 @@ use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
+use io::fsync::fsync_dir_recursive;
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::data_types::vectors::VectorElementType;
@@ -120,7 +121,7 @@ impl LocalShard {
 
         LocalShardClocks::move_data(from, to).await?;
 
-        std::fs::File::open(to)?.sync_all()?;
+        fsync_dir_recursive(to)?;
 
         Ok(())
     }
