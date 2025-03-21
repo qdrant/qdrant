@@ -9,7 +9,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardTransferChange;
-use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
@@ -176,7 +176,7 @@ impl Collection {
     async fn apply_shard_info(
         &self,
         shards: HashMap<ShardId, ShardInfo>,
-        shards_key_mapping: ShardKeyMappingWrapper,
+        shards_key_mapping: ShardKeyMapping,
     ) -> CollectionResult<()> {
         let mut extra_shards: HashMap<ShardId, ShardReplicaSet> = HashMap::new();
 
