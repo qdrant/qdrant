@@ -684,9 +684,29 @@ impl SegmentEntry for Segment {
                     OperationError::service_error(format!("Failed to flush vector_storage: {err}"))
                 })?;
             }
-            payload_index_flusher().map_err(|err| {
-                OperationError::service_error(format!("Failed to flush payload_index: {err}"))
-            })?;
+
+            match payload_index_flusher() {
+                Ok(_) => {}
+                Err(err) => match err {
+                    // ToDo: Remove after RocksDB is deprecated
+                    OperationError::RocksDbColumnFamilyNotFound { name } => {
+                        // It is possible, that the index was removed during the flush by user or another thread.
+                        // In this case, non-existing column family is not an error, but an expected behavior.
+
+                        // Still we want to log this event, for potential debugging.
+                        log::warn!(
+                            "Flush: RocksDB cf_handle error: Cannot find column family {}. Ignoring",
+                            name
+                        );
+                    }
+                    _ => {
+                        return Err(OperationError::service_error(format!(
+                            "Failed to flush payload_index: {err}"
+                        )));
+                    }
+                },
+            }
+
             // Id Tracker contains versions of points. We need to flush it after vector_storage and payload_index flush.
             // This is because vector_storage and payload_index flush are not atomic.
             // If payload or vector flush fails, we will be able to recover data from WAL.

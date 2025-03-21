@@ -1254,6 +1254,10 @@ impl From<OperationError> for CollectionError {
             OperationError::MissingMapIndexForFacet { .. } => Self::bad_input(format!("{err}")),
             OperationError::VariableTypeError { .. } => Self::bad_input(format!("{err}")),
             OperationError::NonFiniteNumber { .. } => Self::bad_input(format!("{err}")),
+            OperationError::RocksDbColumnFamilyNotFound { .. } => Self::ServiceError {
+                error: format!("{err}"),
+                backtrace: None,
+            },
         }
     }
 }
