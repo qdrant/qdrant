@@ -8,6 +8,7 @@ use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use io::fsync::fsync_dir_recursive;
 use memory::mmap_ops;
 
 use super::{
@@ -729,6 +730,8 @@ fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
     let files_path = segment_path.join(SNAPSHOT_FILES_PATH);
     utils::fs::move_all(&files_path, segment_path)?;
     std::fs::remove_dir(&files_path)?;
+
+    fsync_dir_recursive(segment_path)?;
 
     Ok(())
 }
