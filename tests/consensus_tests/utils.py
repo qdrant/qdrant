@@ -711,15 +711,28 @@ def wait_collection_exists_and_active_on_all_peers(collection_name: str, peer_ap
         wait_for_all_replicas_active(collection_name=collection_name, peer_api_uri=peer_uri, headers=headers)
 
 
-def create_shard_key(shard_key, peer_url, collection="test_collection", placement=None):
-    r_batch = requests.put(
-        f"{peer_url}/collections/{collection}/shards",
+def create_shard_key(
+    shard_key,
+    peer_url,
+    collection="test_collection",
+    shard_number=None,
+    replication_factor=None,
+    placement=None,
+    timeout=10,
+    headers={},
+):
+    r_create = requests.put(
+        f"{peer_url}/collections/{collection}/shards?timeout={timeout}",
         json={
             "shard_key": shard_key,
+            "shards_number": shard_number,
+            "replication_factor": replication_factor,
             "placement": placement,
         },
+        headers=headers,
     )
-    assert_http_ok(r_batch)
+    assert_http_ok(r_create)
+
 
 def move_shard(source_uri, collection_name, shard_id, source_peer_id, target_peer_id):
     r = requests.post(
