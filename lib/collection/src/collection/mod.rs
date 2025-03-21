@@ -47,6 +47,7 @@ use crate::shards::replica_set::{
     ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
 };
 use crate::shards::shard::{PeerId, ShardId};
+use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder, shard_not_found_error};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
@@ -104,6 +105,7 @@ impl Collection {
         collection_config: &CollectionConfigInternal,
         shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
+        shard_key_mapping: Option<ShardKeyMappingWrapper>,
         channel_service: ChannelService,
         on_replica_failure: ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
@@ -116,6 +118,7 @@ impl Collection {
         let start_time = std::time::Instant::now();
 
         let mut shard_holder = ShardHolder::new(path)?;
+        shard_holder.set_shard_key_mappings(shard_key_mapping.clone().unwrap_or_default())?;
 
         let payload_index_schema = Arc::new(Self::load_payload_index_schema(path)?);
 
@@ -129,7 +132,9 @@ impl Collection {
                     optimizers_overwrite.update(&effective_optimizers_config)?;
             }
 
-            let shard_key = None;
+            let shard_key = shard_key_mapping
+                .as_ref()
+                .and_then(|mapping| mapping.key(shard_id));
             let replica_set = ShardReplicaSet::build(
                 shard_id,
                 shard_key.clone(),

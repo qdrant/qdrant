@@ -675,8 +675,9 @@ impl ShardReplicaSet {
     }
 
     pub async fn apply_state(
-        &self,
+        &mut self,
         replicas: HashMap<PeerId, ReplicaState>,
+        shard_key: Option<ShardKey>,
     ) -> CollectionResult<()> {
         let old_peers = self.replica_state.read().peers();
 
@@ -753,6 +754,10 @@ impl ShardReplicaSet {
             );
             self.remotes.write().await.push(new_remote);
         }
+
+        // Apply shard key
+        self.shard_key = shard_key;
+
         Ok(())
     }
 

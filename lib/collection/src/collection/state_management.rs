@@ -9,7 +9,7 @@ use crate::shards::replica_set::ShardReplicaSet;
 use crate::shards::resharding::ReshardState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardTransferChange;
-use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
 use crate::shards::transfer::ShardTransfer;
 
 impl Collection {
@@ -43,8 +43,7 @@ impl Collection {
         self.apply_shard_transfers(transfers, this_peer_id, abort_transfer)
             .await?;
         self.apply_reshard_state(resharding).await?;
-        self.apply_shard_info(shards, shards_key_mapping.to_map())
-            .await?;
+        self.apply_shard_info(shards, shards_key_mapping).await?;
         self.apply_payload_index_schema(payload_index_schema)
             .await?;
         Ok(())
@@ -177,7 +176,7 @@ impl Collection {
     async fn apply_shard_info(
         &self,
         shards: HashMap<ShardId, ShardInfo>,
-        shards_key_mapping: ShardKeyMapping,
+        shards_key_mapping: ShardKeyMappingWrapper,
     ) -> CollectionResult<()> {
         let mut extra_shards: HashMap<ShardId, ShardReplicaSet> = HashMap::new();
 
@@ -189,29 +188,32 @@ impl Collection {
         // On the first state of the update, we update state of shards themselves
         // and create new shards if needed
 
+        let mut shards_holder = self.shards_holder.write().await;
+
         for (shard_id, shard_info) in shards {
-            match self.shards_holder.read().await.get_shard(shard_id) {
-                Some(replica_set) => replica_set.apply_state(shard_info.replicas).await?,
-                None => {
-                    let shard_key = shards_key_mapping
-                        .iter()
-                        .find(|(_, ids)| ids.contains(&shard_id))
-                        .map(|(key, _)| key.clone());
-                    let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
-                    let replica_set = self
-                        .create_replica_set(shard_id, shard_key, &shard_replicas, None)
+            match shards_holder.get_shard_mut(shard_id) {
+                Some(replica_set) => {
+                    let shard_key = shards_key_mapping.key(shard_id);
+                    replica_set
+                        .apply_state(shard_info.replicas, shard_key)
                         .await?;
-                    replica_set.apply_state(shard_info.replicas).await?;
+                }
+                None => {
+                    let shard_key = shards_key_mapping.key(shard_id);
+                    let shard_replicas: Vec<_> = shard_info.replicas.keys().copied().collect();
+                    let mut replica_set = self
+                        .create_replica_set(shard_id, shard_key.clone(), &shard_replicas, None)
+                        .await?;
+                    replica_set
+                        .apply_state(shard_info.replicas, shard_key)
+                        .await?;
                     extra_shards.insert(shard_id, replica_set);
                 }
             }
         }
 
         // On the second step, we register missing shards and remove extra shards
-
-        self.shards_holder
-            .write()
-            .await
+        shards_holder
             .apply_shards_state(shard_ids, shards_key_mapping, extra_shards)
             .await
     }
