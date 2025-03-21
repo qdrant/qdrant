@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 
 use std::convert::Infallible;
-use std::fmt;
 use std::future::{Ready, ready};
 
 use actix_web::{FromRequest, HttpMessage};
@@ -37,12 +36,6 @@ impl FromRequest for InferenceToken {
     ) -> Self::Future {
         let api_key = req.extensions().get::<InferenceToken>().cloned();
         ready(Ok(api_key.unwrap_or(InferenceToken(None))))
-    }
-}
-
-impl fmt::Display for InferenceToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
     }
 }
 
