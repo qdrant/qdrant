@@ -695,7 +695,10 @@ async fn transfer_operations_batch(
 ) -> CollectionResult<()> {
     // TODO: naive transfer approach, transfer batch of points instead
     for (_idx, operation) in batch {
-        let mut operation = operation.clone();
+        // TODO: Assign current peer to operation debug metadata!
+        let mut operation = operation
+            .clone()
+            .reason(crate::operations::Reason::WalDeltaTransfer);
 
         // Set force flag because operations from WAL may be unordered if another node is sending
         // new operations at the same time

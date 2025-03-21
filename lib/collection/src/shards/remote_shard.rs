@@ -256,6 +256,8 @@ impl RemoteShard {
         let mut timer = ScopeDurationMeasurer::new(&self.telemetry_update_durations);
         timer.set_success(false);
 
+        let debug_metadata = operation.debug_metadata();
+
         let point_operation_response = match operation.operation {
             CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
                 PointOperations::UpsertPoints(point_insert_operations) => {
@@ -266,6 +268,7 @@ impl RemoteShard {
                         point_insert_operations,
                         wait,
                         ordering,
+                        debug_metadata,
                     )?;
                     self.with_points_client(|mut client| async move {
                         client.upsert(tonic::Request::new(request.clone())).await
@@ -281,6 +284,7 @@ impl RemoteShard {
                         ids,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
@@ -296,6 +300,7 @@ impl RemoteShard {
                         filter,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client.delete(tonic::Request::new(request.clone())).await
@@ -303,14 +308,15 @@ impl RemoteShard {
                     .await?
                     .into_inner()
                 }
-                PointOperations::SyncPoints(operation) => {
+                PointOperations::SyncPoints(sync) => {
                     let request = &internal_sync_points(
                         shard_id,
                         None, // TODO!?
                         collection_name,
-                        operation,
+                        sync,
                         wait,
                         ordering,
+                        debug_metadata,
                     )?;
                     self.with_points_client(|mut client| async move {
                         client.sync(tonic::Request::new(request.clone())).await
@@ -328,6 +334,7 @@ impl RemoteShard {
                         update_operation,
                         wait,
                         ordering,
+                        debug_metadata,
                     )?;
                     self.with_points_client(|mut client| async move {
                         client
@@ -346,6 +353,7 @@ impl RemoteShard {
                         vector_names.clone(),
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -364,6 +372,7 @@ impl RemoteShard {
                         vector_names.clone(),
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -383,6 +392,7 @@ impl RemoteShard {
                         set_payload,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -400,6 +410,7 @@ impl RemoteShard {
                         delete_payload,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -417,6 +428,7 @@ impl RemoteShard {
                         points,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -434,6 +446,7 @@ impl RemoteShard {
                         filter,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -451,6 +464,7 @@ impl RemoteShard {
                         set_payload,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -471,6 +485,7 @@ impl RemoteShard {
                         create_index,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
@@ -488,6 +503,7 @@ impl RemoteShard {
                         delete_index,
                         wait,
                         ordering,
+                        debug_metadata,
                     );
                     self.with_points_client(|mut client| async move {
                         client
