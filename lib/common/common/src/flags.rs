@@ -23,6 +23,14 @@ pub struct FeatureFlags {
     // TODO(1.14): set to true, remove other branches in code, and remove this flag
     #[serde(default)]
     pub use_mutable_id_tracker_without_rocksdb: bool,
+
+    /// Whether to skip usage of RocksDB in immutable payload indices.
+    ///
+    /// First implemented in Qdrant 1.13.5
+    // TODO(1.14): remove for release
+    // ToDo(mmap-payload-index): remove for release
+    #[serde(default)]
+    pub payload_index_skip_rocksdb: bool,
 }
 
 /// Initializes the global feature flags with `flags`. Must only be called once at
