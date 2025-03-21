@@ -502,6 +502,13 @@ pub trait SegmentOptimizer {
 
         let mut optimized_segment: Segment = segment_builder.build(indexing_permit, stopped)?;
 
+        // Delete points
+        let deleted_points_snapshot = proxy_deleted_points
+            .read()
+            .iter()
+            .map(|(point_id, versions)| (*point_id, *versions))
+            .collect::<Vec<_>>();
+
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
         let old_optimized_segment_version = optimized_segment.version();
@@ -521,12 +528,6 @@ pub trait SegmentOptimizer {
             self.check_cancellation(stopped)?;
         }
 
-        // Delete points
-        let deleted_points_snapshot = proxy_deleted_points
-            .read()
-            .iter()
-            .map(|(point_id, versions)| (*point_id, *versions))
-            .collect::<Vec<_>>();
         for (point_id, versions) in deleted_points_snapshot {
             optimized_segment
                 .delete_point(
@@ -688,15 +689,13 @@ pub trait SegmentOptimizer {
         {
             // This block locks all operations with collection. It should be fast
             let mut write_segments_guard = segments.write();
-            let old_optimized_segment_version = optimized_segment.version();
 
             // Apply index changes before point deletions
             // Point deletions bump the segment version, can cause index changes to be ignored
             for (field_name, change) in proxy_index_changes.read().iter_ordered() {
-                debug_assert!(
-                    change.version() >= old_optimized_segment_version,
-                    "proxied index change should have newer version than segment",
-                );
+                // Warn: change version might be lower than the segment version,
+                // because we might already applied the change earlier in optimization.
+                // Applied optimizations are not removed from `proxy_index_changes`.
                 match change {
                     ProxyIndexChange::Create(schema, version) => {
                         optimized_segment.create_field_index(*version, field_name, Some(schema))?;

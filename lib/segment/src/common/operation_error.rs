@@ -72,6 +72,10 @@ pub enum OperationError {
     },
     #[error("The expression {expression} produced a non-finite number")]
     NonFiniteNumber { expression: String },
+
+    // ToDo: Remove after RocksDB is deprecated
+    #[error("RocksDB column family {name} not found")]
+    RocksDbColumnFamilyNotFound { name: String },
 }
 
 impl OperationError {

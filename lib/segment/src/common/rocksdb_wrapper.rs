@@ -220,15 +220,9 @@ impl DatabaseColumnWrapper {
         Box::new(move || {
             let db = database.read();
             let Some(column_family) = db.cf_handle(&column_name) else {
-                // It is possible, that the index was removed during the flush by user or another thread.
-                // In this case, non-existing column family is not an error, but an expected behavior.
-
-                // Still we want to log this event, for potential debugging.
-                log::warn!(
-                    "Flush: RocksDB cf_handle error: Cannot find column family {}. Ignoring",
-                    &column_name
-                );
-                return Ok(()); // ignore error
+                return Err(OperationError::RocksDbColumnFamilyNotFound {
+                    name: column_name.clone(),
+                });
             };
 
             db.flush_cf(column_family).map_err(|err| {
@@ -281,12 +275,10 @@ impl DatabaseColumnWrapper {
         &self,
         db: &'a parking_lot::RwLockReadGuard<'_, DB>,
     ) -> OperationResult<&'a ColumnFamily> {
-        db.cf_handle(&self.column_name).ok_or_else(|| {
-            OperationError::service_error(format!(
-                "RocksDB cf_handle error: Cannot find column family {}",
-                &self.column_name
-            ))
-        })
+        db.cf_handle(&self.column_name)
+            .ok_or_else(|| OperationError::RocksDbColumnFamilyNotFound {
+                name: self.column_name.clone(),
+            })
     }
 
     pub fn get_database(&self) -> Arc<RwLock<DB>> {
