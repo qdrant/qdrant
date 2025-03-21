@@ -34,7 +34,7 @@ fn encode_bench(c: &mut Criterion) {
     .unwrap();
 
     let query: Vec<f32> = (0..vector_dim).map(|_| rng.random()).collect();
-    let encoded_query = pq_encoded.encode_query(&query);
+    let encoded_query = pq_encoded.encode_query(&query, &Default::default());
 
     let mut total = 0.0;
 

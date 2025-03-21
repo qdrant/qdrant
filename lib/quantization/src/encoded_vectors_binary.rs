@@ -23,6 +23,13 @@ pub struct EncodedBinVector<TBitsStoreType: BitsStoreType> {
     encoded_vector: Vec<TBitsStoreType>,
 }
 
+#[derive(Default)]
+pub enum BinaryQueryEncodingParams {
+    #[default]
+    Binary,
+    Scalar,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     vector_parameters: VectorParameters,
@@ -275,6 +282,8 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     EncodedVectors<EncodedBinVector<TBitsStoreType>>
     for EncodedVectorsBin<TBitsStoreType, TStorage>
 {
+    type QueryEncodingParams = BinaryQueryEncodingParams;
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
         meta_path.parent().map(std::fs::create_dir_all);
         atomic_save_json(meta_path, &self.metadata)?;
@@ -302,7 +311,11 @@ impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
         Ok(result)
     }
 
-    fn encode_query(&self, query: &[f32]) -> EncodedBinVector<TBitsStoreType> {
+    fn encode_query(
+        &self,
+        query: &[f32],
+        _params: &Self::QueryEncodingParams,
+    ) -> EncodedBinVector<TBitsStoreType> {
         debug_assert!(query.len() == self.metadata.vector_parameters.dim);
         Self::encode_vector(query)
     }

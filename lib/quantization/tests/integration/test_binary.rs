@@ -54,7 +54,7 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_encoded = encoded.encode_query(&query);
+        let query_encoded = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -100,7 +100,7 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_encoded = encoded.encode_query(&query);
+        let query_encoded = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         for (index, vector) in vector_data.iter().enumerate() {
@@ -231,7 +231,7 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_b = encoded.encode_query(&query);
+        let query_b = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
@@ -292,7 +292,7 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_b = encoded.encode_query(&query);
+        let query_b = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
@@ -469,7 +469,7 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_b = encoded.encode_query(&query);
+        let query_b = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data
@@ -530,7 +530,7 @@ mod tests {
         .unwrap();
 
         let query: Vec<f32> = generate_vector(vector_dim, &mut rng);
-        let query_b = encoded.encode_query(&query);
+        let query_b = encoded.encode_query(&query, &Default::default());
 
         let counter = HardwareCounterCell::new();
         let mut scores: Vec<_> = vector_data

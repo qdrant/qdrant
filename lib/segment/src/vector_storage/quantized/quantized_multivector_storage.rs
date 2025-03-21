@@ -234,6 +234,8 @@ where
     QuantizedStorage: EncodedVectors<TEncodedQuery>,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
+    type QueryEncodingParams = QuantizedStorage::QueryEncodingParams;
+
     // TODO(colbert): refactor `EncodedVectors` to support multi vector storage after quantization migration
     fn save(&self, _data_path: &Path, _meta_path: &Path) -> std::io::Result<()> {
         unreachable!("multivector quantized storage should be saved using `self.save_multi` method")
@@ -250,14 +252,18 @@ where
         )
     }
 
-    fn encode_query(&self, query: &[VectorElementType]) -> Vec<TEncodedQuery> {
+    fn encode_query(
+        &self,
+        query: &[VectorElementType],
+        params: &Self::QueryEncodingParams,
+    ) -> Vec<TEncodedQuery> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,
             flattened_vectors: query,
         };
         multi_vector
             .multi_vectors()
-            .map(|inner_vector| self.quantized_storage.encode_query(inner_vector))
+            .map(|inner_vector| self.quantized_storage.encode_query(inner_vector, params))
             .collect()
     }
 

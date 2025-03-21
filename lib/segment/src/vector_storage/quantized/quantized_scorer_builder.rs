@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::EncodedVectors;
+use quantization::encoded_vectors_binary::BinaryQueryEncodingParams;
 
 use super::quantized_custom_query_scorer::QuantizedCustomQueryScorer;
 use super::quantized_query_scorer::QuantizedQueryScorer;
@@ -15,7 +16,7 @@ use crate::data_types::vectors::{
 };
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
-use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
+use crate::types::{Distance, QuantizationConfig, QueryQuantizationConfig, VectorStorageDatatype};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
 
@@ -97,49 +98,75 @@ impl<'a> QuantizedScorerBuilder<'a> {
     {
         match self.quantized_storage {
             QuantizedVectorStorage::ScalarRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _, _>(storage, &Default::default())
             }
             QuantizedVectorStorage::ScalarMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _, _>(storage, &Default::default())
             }
             QuantizedVectorStorage::PQRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _, _>(storage, &Default::default())
             }
             QuantizedVectorStorage::PQMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+                self.new_quantized_scorer::<TElement, TMetric, _, _>(storage, &Default::default())
             }
             QuantizedVectorStorage::BinaryRam(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+                let query_encoding_params = self.get_bq_query_encoding_params();
+                self.new_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &query_encoding_params,
+                )
             }
             QuantizedVectorStorage::BinaryMmap(storage) => {
-                self.new_quantized_scorer::<TElement, TMetric, _>(storage)
+                let query_encoding_params = self.get_bq_query_encoding_params();
+                self.new_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &query_encoding_params,
+                )
             }
-            QuantizedVectorStorage::ScalarRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
-            }
-            QuantizedVectorStorage::ScalarMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
-            }
-            QuantizedVectorStorage::PQRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
-            }
-            QuantizedVectorStorage::PQMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
-            }
+            QuantizedVectorStorage::ScalarRamMulti(storage) => self
+                .new_multi_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &Default::default(),
+                ),
+            QuantizedVectorStorage::ScalarMmapMulti(storage) => self
+                .new_multi_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &Default::default(),
+                ),
+            QuantizedVectorStorage::PQRamMulti(storage) => self
+                .new_multi_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &Default::default(),
+                ),
+            QuantizedVectorStorage::PQMmapMulti(storage) => self
+                .new_multi_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &Default::default(),
+                ),
             QuantizedVectorStorage::BinaryRamMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
+                let query_encoding_params = self.get_bq_query_encoding_params();
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &query_encoding_params,
+                )
             }
             QuantizedVectorStorage::BinaryMmapMulti(storage) => {
-                self.new_multi_quantized_scorer::<TElement, TMetric, _>(storage)
+                let query_encoding_params = self.get_bq_query_encoding_params();
+                self.new_multi_quantized_scorer::<TElement, TMetric, _, _>(
+                    storage,
+                    &query_encoding_params,
+                )
             }
         }
     }
 
-    fn new_quantized_scorer<TElement, TMetric, TEncodedQuery>(
+    fn new_quantized_scorer<TElement, TMetric, TEncodedVectors, TEncodedQuery>(
         self,
-        quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
+        quantized_storage: &'a TEncodedVectors,
+        encoded_query_params: &TEncodedVectors::QueryEncodingParams,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
+        TEncodedVectors: EncodedVectors<TEncodedQuery>,
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
         TEncodedQuery: 'a,
@@ -162,6 +189,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     DenseVector::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
+                    encoded_query_params,
                     hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -172,6 +200,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     reco_query,
                     quantized_storage,
                     quantization_config,
+                    encoded_query_params,
                     hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -183,6 +212,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     discovery_query,
                     quantized_storage,
                     quantization_config,
+                    encoded_query_params,
                     hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -193,6 +223,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     context_query,
                     quantized_storage,
                     quantization_config,
+                    encoded_query_params,
                     hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -200,11 +231,13 @@ impl<'a> QuantizedScorerBuilder<'a> {
         }
     }
 
-    fn new_multi_quantized_scorer<TElement, TMetric, TEncodedQuery>(
+    fn new_multi_quantized_scorer<TElement, TMetric, TEncodedVectors, TEncodedQuery>(
         self,
-        quantized_storage: &'a impl EncodedVectors<TEncodedQuery>,
+        quantized_storage: &'a TEncodedVectors,
+        encoded_query_params: &TEncodedVectors::QueryEncodingParams,
     ) -> OperationResult<Box<dyn RawScorer + 'a>>
     where
+        TEncodedVectors: EncodedVectors<TEncodedQuery>,
         TElement: PrimitiveVectorElement,
         TMetric: Metric<TElement> + 'a,
         TEncodedQuery: 'a,
@@ -227,6 +260,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     &MultiDenseVectorInternal::try_from(vector)?,
                     quantized_storage,
                     quantization_config,
+                    encoded_query_params,
                     hardware_counter,
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -239,6 +273,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         reco_query,
                         quantized_storage,
                         quantization_config,
+                        encoded_query_params,
                         hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -251,6 +286,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         discovery_query,
                         quantized_storage,
                         quantization_config,
+                        encoded_query_params,
                         hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
@@ -263,10 +299,24 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         context_query,
                         quantized_storage,
                         quantization_config,
+                        encoded_query_params,
                         hardware_counter,
                     );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
         }
+    }
+
+    fn get_bq_query_encoding_params(&self) -> BinaryQueryEncodingParams {
+        if let QuantizationConfig::Binary(binary_config) = self.quantization_config {
+            if let Some(query_quantization_config) = &binary_config.binary.query_quantization {
+                return match query_quantization_config {
+                    QueryQuantizationConfig::Default => Default::default(),
+                    QueryQuantizationConfig::Binary => BinaryQueryEncodingParams::Binary,
+                    QueryQuantizationConfig::Scalar => BinaryQueryEncodingParams::Scalar,
+                };
+            }
+        }
+        Default::default()
     }
 }

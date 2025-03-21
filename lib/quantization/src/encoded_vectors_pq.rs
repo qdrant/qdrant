@@ -445,6 +445,8 @@ impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
 }
 
 impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectorsPQ<TStorage> {
+    type QueryEncodingParams = ();
+
     fn save(&self, data_path: &Path, meta_path: &Path) -> std::io::Result<()> {
         meta_path.parent().map(std::fs::create_dir_all);
         atomic_save_json(meta_path, &self.metadata)?;
@@ -471,7 +473,7 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         Ok(result)
     }
 
-    fn encode_query(&self, query: &[f32]) -> EncodedQueryPQ {
+    fn encode_query(&self, query: &[f32], _params: &Self::QueryEncodingParams) -> EncodedQueryPQ {
         let lut_capacity = self.metadata.vector_division.len() * self.metadata.centroids.len();
         let mut lut = Vec::with_capacity(lut_capacity);
         for range in &self.metadata.vector_division {
