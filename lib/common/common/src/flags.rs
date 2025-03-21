@@ -7,6 +7,9 @@ static FEATURE_FLAGS: OnceLock<FeatureFlags> = OnceLock::new();
 
 #[derive(Default, Debug, Deserialize, Clone, Copy)]
 pub struct FeatureFlags {
+    /// Magic feature flag that enables all features.
+    pub all: bool,
+
     /// Whether to use the new format to persist shard keys
     ///
     /// The old format fails to persist shard key numbers correctly, converting them into strings on
@@ -35,8 +38,22 @@ pub struct FeatureFlags {
 
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
-pub fn init_feature_flags(flags: &FeatureFlags) {
-    let res = FEATURE_FLAGS.set(*flags);
+pub fn init_feature_flags(mut flags: FeatureFlags) {
+    let FeatureFlags {
+        all,
+        use_new_shard_key_mapping_format,
+        use_mutable_id_tracker_without_rocksdb,
+        payload_index_skip_rocksdb,
+    } = &mut flags;
+
+    // If all is set, explicitly set all feature flags
+    if *all {
+        *use_new_shard_key_mapping_format = true;
+        *use_mutable_id_tracker_without_rocksdb = true;
+        *payload_index_skip_rocksdb = true;
+    }
+
+    let res = FEATURE_FLAGS.set(flags);
     if res.is_err() {
         log::warn!("Feature flags already initialized!");
     }
