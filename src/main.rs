@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
-use ::common::flags::init_feature_flags;
+use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
@@ -149,7 +149,7 @@ fn main() -> anyhow::Result<()> {
     let settings = Settings::new(args.config_path)?;
 
     // Set global feature flags, sourced from configuration
-    init_feature_flags(&settings.feature_flags);
+    init_feature_flags(settings.feature_flags);
 
     let reporting_enabled = !settings.telemetry_disabled && !args.disable_telemetry;
 
@@ -213,6 +213,12 @@ fn main() -> anyhow::Result<()> {
 
     // Validate as soon as possible, but we must initialize logging first
     settings.validate_and_warn();
+
+    // Report feature flags that are enabled for easier debugging
+    let flags = feature_flags();
+    if !flags.is_empty() {
+        log::debug!("Feature flags: {flags:?}");
+    }
 
     let bootstrap = if args.bootstrap == args.uri {
         if args.bootstrap.is_some() {
