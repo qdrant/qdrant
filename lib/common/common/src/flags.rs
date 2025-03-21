@@ -28,6 +28,18 @@ pub struct FeatureFlags {
     pub use_mutable_id_tracker_without_rocksdb: bool,
 }
 
+impl FeatureFlags {
+    /// Check if no flag is set at all
+    pub fn is_empty(self) -> bool {
+        let FeatureFlags {
+            all,
+            use_new_shard_key_mapping_format,
+            use_mutable_id_tracker_without_rocksdb,
+        } = self;
+        !all && !use_new_shard_key_mapping_format && !use_mutable_id_tracker_without_rocksdb
+    }
+}
+
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
 pub fn init_feature_flags(mut flags: FeatureFlags) {
