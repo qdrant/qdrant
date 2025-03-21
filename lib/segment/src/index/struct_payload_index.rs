@@ -657,7 +657,26 @@ impl PayloadIndex for StructPayloadIndex {
         flushers.push(self.payload.borrow().flusher());
         Box::new(move || {
             for flusher in flushers {
-                flusher()?
+                match flusher() {
+                    Ok(_) => {}
+                    Err(err) => match err {
+                        OperationError::RocksDbColumnFamilyNotFound { name } => {
+                            // It is possible, that the index was removed during the flush by user or another thread.
+                            // In this case, non-existing column family is not an error, but an expected behavior.
+
+                            // Still we want to log this event, for potential debugging.
+                            log::warn!(
+                                "Flush: RocksDB cf_handle error: Cannot find column family {}. Assume index is removed.",
+                                name
+                            );
+                        }
+                        _ => {
+                            return Err(OperationError::service_error(format!(
+                                "Failed to flush payload_index: {err}"
+                            )));
+                        }
+                    },
+                }
             }
             Ok(())
         })
