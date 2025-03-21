@@ -194,6 +194,29 @@ def create_field_index(
     assert_http_ok(r_batch)
 
 
+def create_shard_key(
+    peer_url,
+    collection="test_collection",
+    shard_key="shard_key",
+    shard_number=None,
+    replication_factor=None,
+    timeout=10,
+    headers=None,
+):
+    if headers is None:
+        headers = {}
+    r_create = requests.put(
+        f"{peer_url}/collections/{collection}/shards?timeout={timeout}",
+        json={
+            "shard_key": shard_key,
+            "shards_number": shard_number,
+            "replication_factor": replication_factor,
+        },
+        headers=headers,
+    )
+    assert_http_ok(r_create)
+
+
 def search(peer_url, vector, city, collection="test_collection"):
     q = {
         "vector": vector,
