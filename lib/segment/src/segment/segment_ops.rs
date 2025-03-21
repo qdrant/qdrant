@@ -693,7 +693,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
 
     if !is_tar {
         log::debug!(
-            "Extracting segment {} from snapshot format: {:?}",
+            "Extracting segment {} from {:?} snapshot",
             segment_id,
             SnapshotFormat::Streamable
         );
@@ -705,7 +705,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
         let inner_path = segment_path.join(SNAPSHOT_PATH);
         if inner_path.is_dir() {
             log::debug!(
-                "Extracting segment {} from snapshot format: {:?}",
+                "Extracting segment {} from {:?} snapshot",
                 segment_id,
                 SnapshotFormat::Regular
             );
@@ -714,7 +714,7 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
             std::fs::remove_dir(&inner_path)?;
         } else {
             log::debug!(
-                "Extracting segment {} from snapshot format: {:?}",
+                "Extracting segment {} from {:?} snapshot",
                 segment_id,
                 SnapshotFormat::Ancient
             );
