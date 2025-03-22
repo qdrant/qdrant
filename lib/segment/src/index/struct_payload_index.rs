@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use itertools::Either;
 use log::debug;
@@ -162,13 +163,11 @@ impl StructPayloadIndex {
         let config = if config_path.exists() {
             PayloadConfig::load(&config_path)?
         } else {
-            // ToDo(mmap-paylaod-index): uncomment before minor release
-            // let mut new_config = PayloadConfig::default();
-            // if !is_appendable {
-            //     new_config.skip_rocksdb = Some(true);
-            // }
-            // new_config
-            PayloadConfig::default()
+            let mut new_config = PayloadConfig::default();
+            if feature_flags().payload_index_skip_rocksdb && !is_appendable {
+                new_config.skip_rocksdb = Some(true);
+            }
+            new_config
         };
 
         let skip_rocksdb = config.skip_rocksdb.unwrap_or(false);
