@@ -316,7 +316,11 @@ fn test_byte_storage_binary_quantization_hnsw(
             always_ram: None,
         }
         .into(),
-        QuantizationVariant::Binary => BinaryQuantizationConfig { always_ram: None }.into(),
+        QuantizationVariant::Binary => BinaryQuantizationConfig {
+            always_ram: None,
+            query_quantization: None,
+        }
+        .into(),
     };
 
     segment_byte

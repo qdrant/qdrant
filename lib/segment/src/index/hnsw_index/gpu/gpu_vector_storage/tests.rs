@@ -132,6 +132,7 @@ fn test_gpu_vector_storage_bq(
     let quantization_config = QuantizationConfig::Binary(BinaryQuantization {
         binary: BinaryQuantizationConfig {
             always_ram: Some(true),
+            query_quantization: None,
         },
     });
 
