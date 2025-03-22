@@ -5,6 +5,7 @@ use std::time::Instant;
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_data::{HardwareData, RealCpuMeasurement};
+use common::types::ScoreType;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -13,7 +14,7 @@ use segment::data_types::index::{
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DecayKind, ParsedExpression, ParsedFormula,
+    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
@@ -2793,7 +2794,7 @@ fn unparse_expression(
     use super::expression::Variant;
 
     let variant = match expression {
-        ParsedExpression::Constant(c) => Variant::Constant(c),
+        ParsedExpression::Constant(c) => Variant::Constant(c as ScoreType),
         ParsedExpression::Variable(variable_id) => match variable_id {
             var_id @ VariableId::Score(_) => Variant::Variable(var_id.unparse()),
             var_id @ VariableId::Payload(_) => Variant::Variable(var_id.unparse()),
@@ -2801,6 +2802,14 @@ fn unparse_expression(
                 Variant::Condition(Condition::from(conditions[cond_idx].clone()))
             }
         },
+        ParsedExpression::GeoDistance { origin, key } => Variant::GeoDistance(GeoDistance {
+            origin: Some(GeoPoint::from(origin)),
+            to: key.to_string(),
+        }),
+        ParsedExpression::DateTime(dt_expr) => Variant::Datetime(match dt_expr {
+            DateTimeExpression::Constant(date_time_wrapper) => date_time_wrapper.to_string(),
+            DateTimeExpression::PayloadVariable(json_path) => json_path.to_string(),
+        }),
         ParsedExpression::Mult(exprs) => Variant::Mult(MultExpression {
             mult: exprs
                 .into_iter()
@@ -2823,7 +2832,7 @@ fn unparse_expression(
         } => Variant::Div(Box::new(DivExpression {
             left: Some(Box::new(unparse_expression(*left, conditions))),
             right: Some(Box::new(unparse_expression(*right, conditions))),
-            by_zero_default,
+            by_zero_default: by_zero_default.map(|v| v as f32),
         })),
         ParsedExpression::Sqrt(expr) => {
             Variant::Sqrt(Box::new(unparse_expression(*expr, conditions)))
@@ -2842,10 +2851,6 @@ fn unparse_expression(
         ParsedExpression::Abs(expr) => {
             Variant::Abs(Box::new(unparse_expression(*expr, conditions)))
         }
-        ParsedExpression::GeoDistance { origin, key } => Variant::GeoDistance(GeoDistance {
-            origin: Some(GeoPoint::from(origin)),
-            to: key.to_string(),
-        }),
         ParsedExpression::Decay {
             kind,
             target,
