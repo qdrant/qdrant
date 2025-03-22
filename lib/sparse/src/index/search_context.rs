@@ -126,18 +126,19 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                 }
             }
 
-            let sparse_score = if values.is_empty() {
-                Self::DEFAULT_SCORE
-            } else {
-                // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
-                // as measurement for CPU usage of plain search.
-                cpu_counter
-                    .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
+            if values.is_empty() {
+                continue;
+            }
 
-                // reconstruct sparse vector and score against query
+            // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
+            // as measurement for CPU usage of plain search.
+            cpu_counter
+                .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
+
+            // reconstruct sparse vector and score against query
+            let sparse_score =
                 score_vectors(&indices, &values, &self.query.indices, &self.query.values)
-                    .unwrap_or(Self::DEFAULT_SCORE)
-            };
+                    .unwrap_or(Self::DEFAULT_SCORE);
 
             self.top_results.push(ScoredPointOffset {
                 score: sparse_score,
