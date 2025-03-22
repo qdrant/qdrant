@@ -336,14 +336,14 @@ impl CompressedPostingBuilder {
             panic!("Duplicate id {} in posting list", e.record_id);
         }
 
-        let mut this_chunk = Vec::with_capacity(BitPackerImpl::BLOCK_LEN);
+        let mut this_chunk = Vec::with_capacity(CHUNK_SIZE);
 
         let bitpacker = BitPackerImpl::new();
-        let mut chunks = Vec::with_capacity(self.elements.len() / BitPackerImpl::BLOCK_LEN);
+        let mut chunks = Vec::with_capacity(self.elements.len() / CHUNK_SIZE);
         let mut data_size = 0;
-        let mut remainders = Vec::with_capacity(self.elements.len() % BitPackerImpl::BLOCK_LEN);
-        for chunk in self.elements.chunks(BitPackerImpl::BLOCK_LEN) {
-            if chunk.len() == BitPackerImpl::BLOCK_LEN {
+        let mut remainders = Vec::with_capacity(self.elements.len() % CHUNK_SIZE);
+        for chunk in self.elements.chunks(CHUNK_SIZE) {
+            if chunk.len() == CHUNK_SIZE {
                 this_chunk.clear();
                 this_chunk.extend(chunk.iter().map(|e| e.record_id));
 
@@ -373,18 +373,14 @@ impl CompressedPostingBuilder {
         }
 
         let mut id_data = vec![0u8; data_size];
-        for (chunk_index, chunk_data) in self
-            .elements
-            .chunks_exact(BitPackerImpl::BLOCK_LEN)
-            .enumerate()
-        {
+        for (chunk_index, chunk_data) in self.elements.chunks_exact(CHUNK_SIZE).enumerate() {
             this_chunk.clear();
             this_chunk.extend(chunk_data.iter().map(|e| e.record_id));
 
             let chunk = &chunks[chunk_index];
             let chunk_size =
                 CompressedPostingListView::get_chunk_size(&chunks, &id_data, chunk_index);
-            let chunk_bits = chunk_size * u8::BITS as usize / BitPackerImpl::BLOCK_LEN;
+            let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
             bitpacker.compress_strictly_sorted(
                 chunk.initial.checked_sub(1),
                 &this_chunk,
@@ -410,7 +406,7 @@ pub struct CompressedPostingListIterator<'a, W: Weight> {
     /// If true, then `decompressed_chunk` contains the unpacked chunk for the current position.
     unpacked: bool,
 
-    decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
+    decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
 
     /// Offset inside the posting list
     pos: usize,
@@ -422,16 +418,16 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
         Self {
             list: list.clone(),
             unpacked: false,
-            decompressed_chunk: [0; BitPackerImpl::BLOCK_LEN],
+            decompressed_chunk: [0; CHUNK_SIZE],
             pos: 0,
         }
     }
 
     #[inline]
     fn next_from(&mut self, peek: PostingElementEx) -> PostingElement {
-        if self.pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+        if self.pos / CHUNK_SIZE < self.list.chunks.len() {
             self.pos += 1;
-            if self.pos % BitPackerImpl::BLOCK_LEN == 0 {
+            if self.pos % CHUNK_SIZE == 0 {
                 self.unpacked = false;
             }
         } else {
@@ -482,7 +478,6 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         self.list.last_id
     }
 
-    #[inline]
     fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx> {
         // 1. Define which chunk we need to unpack (maybe it is current)
         // 2. If current, change the position to the element and do peek
@@ -494,16 +489,20 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
 
         match (required_chunk_id, current_chunk_id_opt) {
             (IdChunkPosition::Chunk(chunk_id), Some(current_chunk_id)) => {
-                if chunk_id == current_chunk_id {
-                    self.pos = std::cmp::max(self.pos, self.list.chunks.len() * CHUNK_SIZE);
-                } else if chunk_id < current_chunk_id {
-                    // Chunk is already skipped
-                    // Return None, don't change the position
-                    return None;
-                } else {
-                    // Chunk is ahead, move to it
-                    self.pos = chunk_id * CHUNK_SIZE;
-                    self.unpacked = false;
+                match chunk_id.cmp(&current_chunk_id) {
+                    Ordering::Less => {
+                        // Chunk is already skipped
+                        // Return None, don't change the position
+                        return None;
+                    }
+                    Ordering::Equal => {
+                        self.pos = std::cmp::max(self.pos, self.list.chunks.len() * CHUNK_SIZE);
+                    }
+                    Ordering::Greater => {
+                        // Chunk is ahead, move to it
+                        self.pos = chunk_id * CHUNK_SIZE;
+                        self.unpacked = false;
+                    }
                 }
             }
             (IdChunkPosition::Chunk(_), None) => {
@@ -535,7 +534,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
 
     #[inline]
     fn skip_to_end(&mut self) {
-        self.pos = self.list.chunks.len() * BitPackerImpl::BLOCK_LEN + self.list.remainder_len();
+        self.pos = self.list.chunks.len() * CHUNK_SIZE + self.list.remainder_len();
     }
 
     #[inline]
@@ -594,7 +593,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         // Iterate over remainders
         for e in self
             .list
-            .iter_remainder_from(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
+            .iter_remainder_from(pos - self.list.chunks.len() * CHUNK_SIZE)
         {
             if e.record_id > id {
                 self.pos = pos;
