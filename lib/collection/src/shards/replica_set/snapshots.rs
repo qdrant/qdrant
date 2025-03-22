@@ -1,7 +1,12 @@
+use std::collections::HashSet;
 use std::ops::Deref as _;
 use std::path::Path;
+use std::{fs, io};
 
 use common::tar_ext;
+use segment::data_types::segment_manifest::{SegmentManifest, SegmentManifests};
+use segment::segment::destroy_rocksdb;
+use segment::segment::snapshot::{PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE, ROCKS_DB_VIRT_FILE};
 use segment::types::SnapshotFormat;
 
 use super::{REPLICA_STATE_FILE, ReplicaSetState, ReplicaState, ShardReplicaSet};
@@ -18,13 +23,14 @@ impl ShardReplicaSet {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: SegmentManifests,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
         if let Some(local) = &*local_read {
             local
-                .create_snapshot(temp_path, tar, format, save_wal)
+                .create_snapshot(temp_path, tar, format, manifest, save_wal)
                 .await?
         }
 
@@ -89,6 +95,53 @@ impl ShardReplicaSet {
             return Ok(false);
         }
 
+        let segments_path = LocalShard::segments_path(replica_path);
+
+        let mut snapshot_segments = HashSet::new();
+        let mut snapshot_manifests = SegmentManifests::default();
+
+        for segment_entry in segments_path.read_dir()? {
+            let segment_path = segment_entry?.path();
+
+            if !segment_path.is_dir() {
+                log::warn!(
+                    "segment path {} in extracted snapshot {} is not a directory",
+                    segment_path.display(),
+                    replica_path.display(),
+                );
+
+                continue;
+            }
+
+            let segment_id = segment_path
+                .file_name()
+                .and_then(|segment_id| segment_id.to_str())
+                .expect("segment path ends with a valid segment id segment id");
+
+            let segment_added = snapshot_segments.insert(segment_id.to_string());
+            debug_assert!(segment_added);
+
+            let manifest_path = segment_path.join("segment_manifest.json");
+
+            if !manifest_path.exists() {
+                continue;
+            }
+
+            let manifest: SegmentManifest =
+                serde_json::from_reader(io::BufReader::new(fs::File::open(manifest_path)?))?;
+
+            let manifest_added = snapshot_manifests.add(manifest);
+            debug_assert!(manifest_added);
+        }
+
+        debug_assert!(
+            snapshot_manifests.is_empty() || snapshot_segments.len() == snapshot_manifests.len()
+        );
+
+        for (segment_id, segment_manifest) in snapshot_manifests.iter() {
+            debug_assert_eq!(segment_id, &segment_manifest.segment_id);
+        }
+
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
@@ -100,12 +153,95 @@ impl ShardReplicaSet {
             return Err(cancel::Error::Cancelled.into());
         }
 
-        // Drop `LocalShard` instance to free resources and clear shard data
-        let clear = local.take().is_some();
+        let local_manifests = match local.take() {
+            _ if snapshot_manifests.is_empty() => None,
+
+            // TODO: Generalize to handle both local and proxy shards 🤔
+            Some(Shard::Local(shard)) => {
+                let local_manifests = shard.segments().read().segment_manifests();
+
+                match local_manifests {
+                    Ok(local_manifests) => {
+                        // TODO: Validate that all segments in `local_manifests` are *older* than segments in `snapshot_manifests` 😵‍💫
+
+                        Some(local_manifests)
+                    }
+
+                    Err(err) => {
+                        let _ = local.insert(Shard::Local(shard));
+
+                        return Err(CollectionError::service_error(format!(
+                            "failed to restore partial shard snapshot for shard {}:{}: \
+                             failed to collect segment manifests for shard {}:{}: \
+                             {err}",
+                            self.collection_id, self.shard_id, self.collection_id, self.shard_id,
+                        )));
+                    }
+                }
+            }
+
+            Some(shard) => {
+                let proxy_type = shard.variant_name();
+
+                let _ = local.insert(shard);
+
+                return Err(CollectionError::bad_request(format!(
+                    "failed to restore partial shard snapshot for shard {}:{}: \
+                     shard {}:{} is a {proxy_type}",
+                    self.collection_id, self.shard_id, self.collection_id, self.shard_id,
+                )));
+            }
+
+            None => {
+                return Err(CollectionError::bad_request(format!(
+                    "failed to restore partial shard snapshot for shard {}:{}: \
+                     shard {}:{} does not exist on peer {}",
+                    self.collection_id,
+                    self.shard_id,
+                    self.collection_id,
+                    self.shard_id,
+                    self.this_peer_id(),
+                )));
+            }
+        };
 
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
-            if clear {
+            if let Some(local_manifests) = local_manifests {
+                for (segment_id, local_manifest) in local_manifests.iter() {
+                    let segment_path = segments_path.join(segment_id);
+
+                    let Some(snapshot_manifest) = snapshot_manifests.get(segment_id) else {
+                        tokio::fs::remove_dir_all(&segment_path).await?;
+                        continue;
+                    };
+
+                    for (file, &local_version) in &local_manifest.file_versions {
+                        let is_rocksdb = file == Path::new(ROCKS_DB_VIRT_FILE)
+                            || file == Path::new(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE);
+
+                        let snapshot_version = snapshot_manifest.file_versions.get(file).copied();
+
+                        let is_outdated = snapshot_version.is_none_or(|snapshot_version| {
+                            let local_version =
+                                local_version.or_segment_version(local_manifest.segment_version);
+
+                            let snapshot_version = snapshot_version
+                                .or_segment_version(snapshot_manifest.segment_version);
+
+                            local_version < snapshot_version
+                        });
+
+                        let is_removed = snapshot_version.is_none();
+
+                        if is_rocksdb && is_outdated {
+                            destroy_rocksdb(&segment_path)?;
+                        } else if !is_rocksdb && is_removed {
+                            tokio::fs::remove_file(segment_path.join(file)).await?;
+                        }
+                    }
+                }
+            } else {
                 // Remove shard data but not configuration files
                 LocalShard::clear(&self.shard_path).await?;
             }

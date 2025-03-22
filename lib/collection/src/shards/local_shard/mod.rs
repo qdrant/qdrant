@@ -26,6 +26,7 @@ use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
@@ -878,6 +879,7 @@ impl LocalShard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: SegmentManifests,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
@@ -909,6 +911,7 @@ impl LocalShard {
                 &temp_path,
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,
                 format,
+                &manifest,
             )?;
 
             if save_wal {

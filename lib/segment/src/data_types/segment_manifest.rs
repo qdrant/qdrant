@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use crate::types::SeqNumberType;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(transparent)]
 pub struct SegmentManifests {
     manifests: HashMap<String, SegmentManifest>,
 }
@@ -13,10 +14,6 @@ impl SegmentManifests {
         self.manifests
             .get(segment_id)
             .map(|manifest| manifest.segment_version)
-    }
-
-    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
-        self.manifests.get(segment_id)
     }
 
     pub fn add(&mut self, new_manifest: SegmentManifest) -> bool {
@@ -36,6 +33,22 @@ impl SegmentManifests {
 
         false
     }
+
+    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
+        self.manifests.get(segment_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &SegmentManifest)> {
+        self.manifests.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.manifests.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.manifests.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -43,6 +56,16 @@ pub struct SegmentManifest {
     pub segment_id: String,
     pub segment_version: SeqNumberType,
     pub file_versions: HashMap<PathBuf, FileVersion>,
+}
+
+impl SegmentManifest {
+    pub fn empty(segment_id: impl Into<String>) -> Self {
+        Self {
+            segment_id: segment_id.into(),
+            segment_version: 0,
+            file_versions: HashMap::new(),
+        }
+    }
 }
 
 #[derive(
