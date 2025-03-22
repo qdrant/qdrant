@@ -14,6 +14,8 @@ pub trait EncodedStorage {
         Self: Sized;
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()>;
+
+    fn is_on_disk(&self) -> bool;
 }
 
 pub trait EncodedStorageBuilder<TStorage: EncodedStorage> {
@@ -54,6 +56,10 @@ impl EncodedStorage for Vec<u8> {
         buffer.write_all(self.as_slice())?;
         buffer.sync_all()?;
         Ok(())
+    }
+
+    fn is_on_disk(&self) -> bool {
+        false
     }
 }
 

@@ -471,6 +471,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         Ok(result)
     }
 
+    fn is_on_disk(&self) -> bool {
+        self.encoded_vectors.is_on_disk()
+    }
+
     fn encode_query(&self, query: &[f32]) -> EncodedQueryPQ {
         let lut_capacity = self.metadata.vector_division.len() * self.metadata.centroids.len();
         let mut lut = Vec::with_capacity(lut_capacity);
@@ -500,6 +504,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
             .cpu_counter()
             .incr_delta(self.metadata.vector_division.len());
 
+        hw_counter
+            .vector_io_read()
+            .incr_delta(self.metadata.vector_division.len());
+
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         if is_x86_feature_detected!("sse4.1") {
             return unsafe { self.score_point_sse(query, i) };
@@ -523,6 +531,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryPQ> for EncodedVectors
         let centroids_j = self
             .encoded_vectors
             .get_vector_data(j as usize, self.metadata.vector_division.len());
+
+        hw_counter
+            .vector_io_read()
+            .incr_delta(self.metadata.vector_division.len() * 2);
 
         hw_counter.cpu_counter().incr_delta(
             centroids_i.len()

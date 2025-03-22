@@ -52,7 +52,7 @@ pub fn double_sort<T: Ord + Copy, V: Copy>(indices: &mut [T], values: &mut [V]) 
     }
 }
 
-fn score_vectors<T: Ord + Eq>(
+pub fn score_vectors<T: Ord + Eq>(
     self_indices: &[T],
     self_values: &[DimWeight],
     other_indices: &[T],

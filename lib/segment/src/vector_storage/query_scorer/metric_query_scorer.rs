@@ -39,6 +39,12 @@ impl<
         let preprocessed_vector = TMetric::preprocess(query);
 
         hardware_counter.set_cpu_multiplier(dim * size_of::<TElement>());
+        if vector_storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(dim * size_of::<TElement>());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
+
         Self {
             query: TypedDenseVector::from(TElement::slice_from_float_cow(Cow::from(
                 preprocessed_vector,
@@ -59,6 +65,7 @@ impl<
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         self.hardware_counter.cpu_counter().incr();
+        self.hardware_counter.vector_io_read().incr();
         TMetric::similarity(&self.query, self.vector_storage.get_dense(idx))
     }
 
@@ -71,6 +78,7 @@ impl<
         self.vector_storage
             .get_dense_batch(ids, &mut vectors[..ids.len()]);
         self.hardware_counter.cpu_counter().incr_delta(ids.len());
+        self.hardware_counter.vector_io_read().incr_delta(ids.len());
 
         for idx in 0..ids.len() {
             scores[idx] = TMetric::similarity(&self.query, vectors[idx]);

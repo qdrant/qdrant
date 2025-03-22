@@ -894,10 +894,14 @@ impl SegmentEntry for Segment {
 
     fn fill_query_context(&self, query_context: &mut QueryContext) {
         query_context.add_available_point_count(self.available_point_count());
-
+        let hw_acc = query_context.hardware_usage_accumulator();
+        let hw_counter = hw_acc.get_counter_cell();
         for (vector_name, idf) in query_context.mut_idf().iter_mut() {
             if let Some(vector_data) = self.vector_data.get(vector_name) {
-                vector_data.vector_index.borrow().fill_idf_statistics(idf);
+                vector_data
+                    .vector_index
+                    .borrow()
+                    .fill_idf_statistics(idf, &hw_counter);
             }
         }
     }

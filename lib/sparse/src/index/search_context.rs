@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 
 use super::posting_list_common::PostingListIter;
 use crate::common::scores_memory_pool::PooledScoresHandle;
-use crate::common::sparse_vector::RemappedSparseVector;
+use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
@@ -33,7 +33,7 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
-    hardware_counter: HardwareCounterCell,
+    hardware_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
@@ -43,7 +43,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
-        hardware_counter: HardwareCounterCell,
+        hardware_counter: &'a HardwareCounterCell,
     ) -> SearchContext<'a, 'b, T> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
@@ -51,7 +51,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(mut it) = inverted_index.get(id) {
+            if let Some(mut it) = inverted_index.get(*id, hardware_counter) {
                 if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                     // check if new min
                     let min_record_id_posting = first.record_id;
@@ -93,22 +93,26 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         }
     }
 
+    const DEFAULT_SCORE: f32 = 0.0;
+
     /// Plain search against the given ids without any pruning
     pub fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
         // sort ids to fully leverage posting list iterator traversal
         let mut sorted_ids = ids.to_vec();
         sorted_ids.sort_unstable();
 
-        let cpu_counter = self.hardware_counter.cpu_counter_mut();
+        let cpu_counter = self.hardware_counter.cpu_counter();
 
+        let mut indices = Vec::with_capacity(self.query.indices.len());
+        let mut values = Vec::with_capacity(self.query.values.len());
         for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
             }
 
-            let mut indices = Vec::with_capacity(self.query.indices.len());
-            let mut values = Vec::with_capacity(self.query.values.len());
+            indices.clear();
+            values.clear();
             // collect indices and values for the current record id from the query's posting lists *only*
             for posting_iterator in self.postings_iterators.iter_mut() {
                 // rely on underlying binary search as the posting lists are sorted by record id
@@ -122,14 +126,21 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                 }
             }
 
-            // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
-            // as measurement for CPU usage of plain search.
-            cpu_counter.incr_delta_mut(indices.len() + self.query.indices.len());
+            let sparse_score = if values.is_empty() {
+                Self::DEFAULT_SCORE
+            } else {
+                // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
+                // as measurement for CPU usage of plain search.
+                cpu_counter
+                    .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
 
-            // reconstruct sparse vector and score against query
-            let sparse_vector = RemappedSparseVector { indices, values };
+                // reconstruct sparse vector and score against query
+                score_vectors(&indices, &values, &self.query.indices, &self.query.values)
+                    .unwrap_or(Self::DEFAULT_SCORE)
+            };
+
             self.top_results.push(ScoredPointOffset {
-                score: sparse_vector.score(&self.query).unwrap_or(0.0),
+                score: sparse_score,
                 idx: id,
             });
         }
@@ -259,10 +270,12 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             // Measure CPU usage of indexed sparse search.
             // Assume the complexity of the search as total volume of the posting lists
             // that are traversed in the batched search.
-            let cpu_counter = self.hardware_counter.cpu_counter_mut();
+            let mut num_ids = 0;
+
             for posting in self.postings_iterators.iter() {
-                cpu_counter.incr_delta_mut(posting.posting_list_iterator.len_to_end());
+                num_ids += posting.posting_list_iterator.len_to_end();
             }
+            self.hardware_counter.cpu_counter().incr_delta(num_ids);
         }
 
         let mut best_min_score = f32::MIN;
@@ -511,6 +524,8 @@ mod tests {
     fn test_empty_query<I: InvertedIndex>() {
         let index = TestIndex::<I>::from_ram(InvertedIndexRam::empty());
 
+        let hw_counter = HardwareCounterCell::disposable();
+
         let is_stopped = AtomicBool::new(false);
         let mut search_context = SearchContext::new(
             RemappedSparseVector::default(), // empty query vector
@@ -518,7 +533,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            HardwareCounterCell::new(),
+            &hw_counter,
         );
         assert_eq!(search_context.search(&match_all), Vec::new());
     }
@@ -545,7 +560,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -567,6 +582,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
         assert_eq!(accumulator.get_cpu(), 9);
@@ -599,7 +615,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -620,6 +636,7 @@ mod tests {
             ]
         );
         drop(search_context);
+        drop(hardware_counter);
 
         // update index with new point
         index.index.upsert(
@@ -640,7 +657,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -694,7 +711,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -716,6 +733,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
         // [ID=1] (Retrieve all 9 Vectors) => 9
         // [ID=2] (Retrieve 1-3)           => 3
         // [ID=3] (Retrieve 1-3)           => 3
@@ -733,7 +751,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -756,6 +774,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // No difference to previous calculation because it's the same amount of score
         // calculations when increasing the "top" parameter.
@@ -784,7 +803,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -823,7 +842,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         // assuming we have gathered enough results and want to prune the longest posting list
@@ -867,7 +886,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
@@ -924,7 +943,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         assert_eq!(
@@ -966,7 +985,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         let scores = search_context.plain_search(&[1, 3, 2]);
@@ -989,6 +1008,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // [ID=1] (Retrieve three sparse vectors (1,2,3)) + QueryLength=3 => 6
         // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
@@ -1020,7 +1040,7 @@ mod tests {
             &index.index,
             get_pooled_scores(),
             &is_stopped,
-            hardware_counter,
+            &hardware_counter,
         );
 
         let scores = search_context.plain_search(&[1, 2, 3]);
@@ -1043,6 +1063,7 @@ mod tests {
         );
 
         drop(search_context);
+        drop(hardware_counter);
 
         // [ID=1] (Retrieve two sparse vectors (1,2)) + QueryLength=2 => 4
         // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4

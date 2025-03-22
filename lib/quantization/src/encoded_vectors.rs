@@ -29,6 +29,8 @@ pub trait EncodedVectors<TEncodedQuery: Sized>: Sized {
         vector_parameters: &VectorParameters,
     ) -> std::io::Result<Self>;
 
+    fn is_on_disk(&self) -> bool;
+
     fn encode_query(&self, query: &[f32]) -> TEncodedQuery;
 
     fn score_point(&self, query: &TEncodedQuery, i: u32, hw_counter: &HardwareCounterCell) -> f32;
