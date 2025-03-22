@@ -162,6 +162,8 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
 }
 
 impl<W: Weight> InvertedIndexCompressedMmap<W> {
+    const HEADER_SIZE: usize = size_of::<PostingListFileHeader<W>>();
+
     pub fn index_file_path(path: &Path) -> PathBuf {
         path.join(INDEX_FILE_NAME)
     }
@@ -180,11 +182,12 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             return None;
         }
 
-        let header: PostingListFileHeader<W> = self.slice_part::<PostingListFileHeader<W>>(
-            u64::from(id) * size_of::<PostingListFileHeader<W>>() as u64,
-            1u32,
-        )[0]
+        let header: PostingListFileHeader<W> = self
+            .slice_part::<PostingListFileHeader<W>>(u64::from(id) * Self::HEADER_SIZE as u64, 1u32)
+            [0]
         .clone();
+
+        hw_counter.vector_io_read().incr_delta(Self::HEADER_SIZE);
 
         let remainders_start = header.ids_start
             + u64::from(header.ids_len)
@@ -192,7 +195,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
         let remainders_end = if id + 1 < self.file_header.posting_count as DimId {
             self.slice_part::<PostingListFileHeader<W>>(
-                u64::from(id + 1) * size_of::<PostingListFileHeader<W>>() as u64,
+                u64::from(id + 1) * Self::HEADER_SIZE as u64,
                 1u32,
             )[0]
             .ids_start

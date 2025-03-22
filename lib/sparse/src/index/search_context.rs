@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 
 use super::posting_list_common::PostingListIter;
 use crate::common::scores_memory_pool::PooledScoresHandle;
-use crate::common::sparse_vector::RemappedSparseVector;
+use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
@@ -93,6 +93,8 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         }
     }
 
+    const DEFAULT_SCORE: f32 = 0.0;
+
     /// Plain search against the given ids without any pruning
     pub fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
         // sort ids to fully leverage posting list iterator traversal
@@ -101,14 +103,16 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
 
         let cpu_counter = self.hardware_counter.cpu_counter();
 
+        let mut indices = Vec::with_capacity(self.query.indices.len());
+        let mut values = Vec::with_capacity(self.query.values.len());
         for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
             }
 
-            let mut indices = Vec::with_capacity(self.query.indices.len());
-            let mut values = Vec::with_capacity(self.query.values.len());
+            indices.clear();
+            values.clear();
             // collect indices and values for the current record id from the query's posting lists *only*
             for posting_iterator in self.postings_iterators.iter_mut() {
                 // rely on underlying binary search as the posting lists are sorted by record id
@@ -122,14 +126,21 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                 }
             }
 
-            // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
-            // as measurement for CPU usage of plain search.
-            cpu_counter.incr_delta(indices.len() + self.query.indices.len());
+            let sparse_score = if values.is_empty() {
+                Self::DEFAULT_SCORE
+            } else {
+                // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
+                // as measurement for CPU usage of plain search.
+                cpu_counter
+                    .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
 
-            // reconstruct sparse vector and score against query
-            let sparse_vector = RemappedSparseVector { indices, values };
+                // reconstruct sparse vector and score against query
+                score_vectors(&indices, &values, &self.query.indices, &self.query.values)
+                    .unwrap_or(Self::DEFAULT_SCORE)
+            };
+
             self.top_results.push(ScoredPointOffset {
-                score: sparse_vector.score(&self.query).unwrap_or(0.0),
+                score: sparse_score,
                 idx: id,
             });
         }

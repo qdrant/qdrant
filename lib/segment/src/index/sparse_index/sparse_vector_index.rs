@@ -364,7 +364,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
-        let hw_counter = vector_query_context.hardware_counter();
+        let mut hw_counter = vector_query_context.hardware_counter();
+        let is_index_on_disk = self.config.index_type.is_on_disk();
+        if is_index_on_disk {
+            hw_counter.set_vector_io_read_multiplier(1);
+        } else {
+            hw_counter.set_vector_io_read_multiplier(0);
+        }
+
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
@@ -400,7 +407,14 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let sparse_vector = self.indices_tracker.remap_vector(sparse_vector.clone());
         let memory_handle = self.scores_memory_pool.get();
-        let hw_counter = vector_query_context.hardware_counter();
+        let mut hw_counter = vector_query_context.hardware_counter();
+        let is_index_on_disk = self.config.index_type.is_on_disk();
+        if is_index_on_disk {
+            hw_counter.set_vector_io_read_multiplier(1);
+        } else {
+            hw_counter.set_vector_io_read_multiplier(0);
+        }
+
         let mut search_context = SearchContext::new(
             sparse_vector,
             top,
@@ -409,8 +423,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             &is_stopped,
             &hw_counter,
         );
-
-        let hw_counter = vector_query_context.hardware_counter();
 
         match filter {
             Some(filter) => {

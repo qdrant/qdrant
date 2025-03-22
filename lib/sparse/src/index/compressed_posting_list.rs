@@ -2,16 +2,16 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::mem::size_of;
 
-use bitpacking::BitPacker as _;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-#[cfg(debug_assertions)]
-use itertools::Itertools as _;
-
 use super::posting_list_common::{
     GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
 };
 use crate::common::types::{DimWeight, Weight};
+use bitpacking::BitPacker as _;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::iterator_ext::IteratorExt;
+use common::types::PointOffsetType;
+#[cfg(debug_assertions)]
+use itertools::Itertools as _;
 type BitPackerImpl = bitpacking::BitPacker4x;
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -177,6 +177,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     ) {
         let chunk = &self.chunks[chunk_index];
         let chunk_size = Self::get_chunk_size(self.chunks, self.id_data, chunk_index);
+        self.hw_counter.vector_io_read().incr_delta(chunk_size);
         let chunk_bits = chunk_size * u8::BITS as usize / BitPackerImpl::BLOCK_LEN;
         BitPackerImpl::new().decompress_strictly_sorted(
             chunk.initial.checked_sub(1),
@@ -196,6 +197,31 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         } else {
             data.len() - chunks[chunk_index].offset as usize
         }
+    }
+
+    #[inline]
+    fn get_remainder_id(&self, index: usize) -> Option<&GenericPostingElement<W>> {
+        self.hw_counter
+            .vector_io_read()
+            .incr_delta(size_of::<GenericPostingElement<W>>());
+        self.remainders.get(index)
+    }
+
+    #[inline]
+    fn iter_remainder_from(
+        &self,
+        index: usize,
+    ) -> impl Iterator<Item = &'_ GenericPostingElement<W>> + '_ {
+        self.remainders[index..].iter().on_final_count(|c| {
+            self.hw_counter
+                .vector_io_read()
+                .incr_delta(c * size_of::<GenericPostingElement<W>>());
+        })
+    }
+
+    #[inline]
+    fn remainder_len(&self) -> usize {
+        self.remainders.len()
     }
 
     pub fn iter(&self) -> CompressedPostingListIterator<'a, W> {
@@ -323,9 +349,7 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
     }
 
     #[inline]
-    fn next(&mut self) -> Option<PostingElement> {
-        let result = self.peek()?;
-
+    fn next_from(&mut self, peek: PostingElementEx) -> PostingElement {
         if self.pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
             self.pos += 1;
             if self.pos % BitPackerImpl::BLOCK_LEN == 0 {
@@ -335,7 +359,14 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
             self.pos += 1;
         }
 
-        Some(result.into())
+        peek.into()
+    }
+
+    #[inline]
+    fn next(&mut self) -> Option<PostingElement> {
+        let result = self.peek()?;
+
+        Some(self.next_from(result))
     }
 }
 
@@ -359,8 +390,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         }
 
         self.list
-            .remainders
-            .get(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
+            .get_remainder_id(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
             .map(|e| PostingElementEx {
                 record_id: e.record_id,
                 weight: e.weight.to_f32(self.list.multiplier),
@@ -381,7 +411,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
                 Ordering::Equal => return Some(e),
                 Ordering::Greater => return None,
                 Ordering::Less => {
-                    self.next();
+                    self.next_from(e);
                 }
             }
         }
@@ -390,7 +420,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
 
     #[inline]
     fn skip_to_end(&mut self) {
-        self.pos = self.list.chunks.len() * BitPackerImpl::BLOCK_LEN + self.list.remainders.len();
+        self.pos = self.list.chunks.len() * BitPackerImpl::BLOCK_LEN + self.list.remainder_len();
     }
 
     #[inline]
@@ -447,7 +477,10 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         }
 
         // Iterate over remainders
-        for e in &self.list.remainders[pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN..] {
+        for e in self
+            .list
+            .iter_remainder_from(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
+        {
             if e.record_id > id {
                 self.pos = pos;
                 return;
