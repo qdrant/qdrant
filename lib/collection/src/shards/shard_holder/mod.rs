@@ -14,7 +14,7 @@ use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
 use segment::types::{ShardKey, SnapshotFormat};
-use shard_mapping::{SaveOnDiskShardKeyMappingWrapper, ShardKeyMappingWrapper};
+use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
@@ -56,7 +56,7 @@ pub struct ShardHolder {
     pub(crate) shard_transfer_changes: broadcast::Sender<ShardTransferChange>,
     pub(crate) resharding_state: SaveOnDisk<Option<ReshardState>>,
     pub(crate) rings: HashMap<Option<ShardKey>, HashRingRouter>,
-    key_mapping: SaveOnDiskShardKeyMappingWrapper,
+    key_mapping: SaveOnDisk<ShardKeyMapping>,
     // Duplicates the information from `key_mapping` for faster access, does not use locking
     shard_id_to_key_mapping: HashMap<ShardId, ShardKey>,
 }
@@ -76,9 +76,8 @@ impl ShardHolder {
         let resharding_state: SaveOnDisk<Option<ReshardState>> =
             SaveOnDisk::load_or_init_default(collection_path.join(RESHARDING_STATE_FILE))?;
 
-        let key_mapping = SaveOnDiskShardKeyMappingWrapper::load_or_init_default(
-            collection_path.join(SHARD_KEY_MAPPING_FILE),
-        )?;
+        let key_mapping: SaveOnDisk<ShardKeyMapping> =
+            SaveOnDisk::load_or_init_default(collection_path.join(SHARD_KEY_MAPPING_FILE))?;
 
         let mut shard_id_to_key_mapping = HashMap::new();
 
@@ -117,8 +116,8 @@ impl ShardHolder {
         &self.shard_id_to_key_mapping
     }
 
-    pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMappingWrapper {
-        ShardKeyMappingWrapper::from(self.key_mapping.read().clone())
+    pub fn get_shard_key_to_ids_mapping(&self) -> ShardKeyMapping {
+        self.key_mapping.read().clone()
     }
 
     /// Set the shard key mappings
@@ -130,11 +129,15 @@ impl ShardHolder {
     /// mappings.
     pub fn set_shard_key_mappings(
         &mut self,
-        shard_key_mapping: ShardKeyMappingWrapper,
+        shard_key_mapping: ShardKeyMapping,
     ) -> CollectionResult<()> {
+        let shard_id_to_key_mapping = shard_key_mapping.shard_id_to_shard_key();
+
         self.key_mapping
-            .write_optional(|_| Some(shard_key_mapping.to_map()))?;
-        self.shard_id_to_key_mapping = shard_key_mapping.shards();
+            .write_optional(move |_| Some(shard_key_mapping))?;
+
+        self.shard_id_to_key_mapping = shard_id_to_key_mapping;
+
         Ok(())
     }
 
@@ -269,7 +272,7 @@ impl ShardHolder {
     pub async fn apply_shards_state(
         &mut self,
         shard_ids: HashSet<ShardId>,
-        shard_key_mapping: ShardKeyMappingWrapper,
+        shard_key_mapping: ShardKeyMapping,
         extra_shards: HashMap<ShardId, ShardReplicaSet>,
     ) -> Result<(), CollectionError> {
         self.shards.extend(extra_shards.into_iter());

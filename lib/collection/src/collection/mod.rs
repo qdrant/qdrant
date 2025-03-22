@@ -47,7 +47,7 @@ use crate::shards::replica_set::{
     ChangePeerFromState, ChangePeerState, ReplicaState, ShardReplicaSet,
 };
 use crate::shards::shard::{PeerId, ShardId};
-use crate::shards::shard_holder::shard_mapping::ShardKeyMappingWrapper;
+use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{LockedShardHolder, ShardHolder, shard_not_found_error};
 use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
@@ -105,7 +105,7 @@ impl Collection {
         collection_config: &CollectionConfigInternal,
         shared_storage_config: Arc<SharedStorageConfig>,
         shard_distribution: CollectionShardDistribution,
-        shard_key_mapping: Option<ShardKeyMappingWrapper>,
+        shard_key_mapping: Option<ShardKeyMapping>,
         channel_service: ChannelService,
         on_replica_failure: ChangePeerFromState,
         request_shard_transfer: RequestShardTransfer,
@@ -134,7 +134,7 @@ impl Collection {
 
             let shard_key = shard_key_mapping
                 .as_ref()
-                .and_then(|mapping| mapping.key(shard_id));
+                .and_then(|mapping| mapping.shard_key(shard_id));
             let replica_set = ShardReplicaSet::build(
                 shard_id,
                 shard_key.clone(),
@@ -349,6 +349,8 @@ impl Collection {
             .await
             .get_shard_key_to_ids_mapping()
             .keys()
+            .cloned()
+            .collect()
     }
 
     /// Return a list of local shards, present on this peer
