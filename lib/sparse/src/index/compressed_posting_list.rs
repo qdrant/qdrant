@@ -2,16 +2,17 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::mem::size_of;
 
-use super::posting_list_common::{
-    GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
-};
-use crate::common::types::{DimWeight, Weight};
 use bitpacking::BitPacker as _;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
+
+use super::posting_list_common::{
+    GenericPostingElement, PostingElement, PostingElementEx, PostingListIter,
+};
+use crate::common::types::{DimWeight, Weight};
 type BitPackerImpl = bitpacking::BitPacker4x;
 
 #[derive(Default, Debug, Clone, PartialEq)]
