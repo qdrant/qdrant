@@ -302,6 +302,31 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         self.remainders.len()
     }
 
+    #[inline]
+    fn chunks_len(&self) -> usize {
+        self.chunks.len()
+    }
+
+    /// Warning: This function panics if the index is out of bounds.
+    #[inline]
+    fn get_weight(&self, pos: usize) -> W {
+        self.hw_counter.vector_io_read().incr_delta(size_of::<W>());
+        let chunk = &self.chunks[pos / CHUNK_SIZE];
+        chunk.weights[pos % CHUNK_SIZE]
+    }
+
+    #[inline]
+    fn weights_range(&self, pos: usize, count: usize) -> &[W] {
+        debug_assert!(count <= CHUNK_SIZE);
+        self.hw_counter
+            .vector_io_read()
+            .incr_delta(size_of::<W>() * count);
+
+        let chunk = &self.chunks[pos / CHUNK_SIZE];
+        let start = pos % CHUNK_SIZE;
+        chunk.weights[start..start + count].as_ref()
+    }
+
     pub fn iter(&self) -> CompressedPostingListIterator<'a, W> {
         CompressedPostingListIterator::new(self)
     }
@@ -450,23 +475,22 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
         let pos = self.pos.0;
-        if pos / CHUNK_SIZE < self.list.chunks.len() {
+        if pos / CHUNK_SIZE < self.list.chunks_len() {
             if !self.unpacked {
                 self.list
                     .decompress_chunk(pos / CHUNK_SIZE, &mut self.decompressed_chunk);
                 self.unpacked = true;
             }
 
-            let chunk = &self.list.chunks[pos / CHUNK_SIZE];
             return Some(PostingElementEx {
                 record_id: self.decompressed_chunk[pos % CHUNK_SIZE],
-                weight: chunk.weights[pos % CHUNK_SIZE].to_f32(self.list.multiplier),
+                weight: self.list.get_weight(pos).to_f32(self.list.multiplier),
                 max_next_weight: Default::default(),
             });
         }
 
         self.list
-            .get_remainder_id(pos - self.list.chunks.len() * CHUNK_SIZE)
+            .get_remainder_id(pos - self.list.chunks_len() * CHUNK_SIZE)
             .map(|e| PostingElementEx {
                 record_id: e.record_id,
                 weight: e.weight.to_f32(self.list.multiplier),
@@ -529,7 +553,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
             }
             (IdChunkPosition::After, _) => {
                 // Go to after the chunks
-                let min_pos = self.list.chunks.len() * CHUNK_SIZE;
+                let min_pos = self.list.chunks_len() * CHUNK_SIZE;
                 self.pos = (std::cmp::max(self.pos.0, min_pos), None);
                 self.unpacked = false;
             }
@@ -553,7 +577,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
     #[inline]
     fn skip_to_end(&mut self) {
         self.pos = (
-            self.list.chunks.len() * CHUNK_SIZE + self.list.remainder_len(),
+            self.list.chunks_len() * CHUNK_SIZE + self.list.remainder_len(),
             None,
         );
     }
@@ -581,22 +605,19 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         let mut weights_buf = [0.0; CHUNK_SIZE];
 
         let mut need_unpack = !self.unpacked;
-        while pos / CHUNK_SIZE < self.list.chunks.len() {
+        while pos / CHUNK_SIZE < self.list.chunks_len() {
             if need_unpack {
                 self.list
                     .decompress_chunk(pos / CHUNK_SIZE, &mut self.decompressed_chunk);
             }
             need_unpack = true;
 
-            let chunk = &self.list.chunks[pos / CHUNK_SIZE];
-
             let start = pos % CHUNK_SIZE;
             let count = count_le_sorted(id, &self.decompressed_chunk[start..]);
-            let weights = W::into_f32_slice(
-                self.list.multiplier,
-                &chunk.weights[start..start + count],
-                &mut weights_buf[..count],
-            );
+
+            let weights = self.list.weights_range(pos, count);
+            let weights =
+                W::into_f32_slice(self.list.multiplier, weights, &mut weights_buf[..count]);
 
             for (idx, weight) in
                 std::iter::zip(&self.decompressed_chunk[start..start + count], weights)
@@ -614,7 +635,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         // Iterate over remainders
         for e in self
             .list
-            .iter_remainder_from(pos - self.list.chunks.len() * CHUNK_SIZE)
+            .iter_remainder_from(pos - self.list.chunks_len() * CHUNK_SIZE)
         {
             if e.record_id > id {
                 self.pos = (pos, None);
