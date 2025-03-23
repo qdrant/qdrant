@@ -112,7 +112,7 @@ fn test_hw_counter_for_sparse_search() {
     assert!(acc_f32_freq_1.get_vector_io_read() > acc_f16_freq_1.get_vector_io_read());
     assert!(acc_f16_freq_1.get_vector_io_read() > acc_u8_freq_1.get_vector_io_read());
 
-    // More indicies are more expensive than less indicies
+    // More indices are more expensive than less indices
     assert!(acc_f32_freq_3.get_cpu() > acc_f32_freq_1.get_cpu());
     assert!(acc_f16_freq_3.get_cpu() > acc_f16_freq_1.get_cpu());
     assert!(acc_u8_freq_3.get_cpu() > acc_u8_freq_1.get_cpu());
@@ -131,7 +131,7 @@ fn test_hw_counter_for_sparse_search() {
     assert!(acc_f16_freq_1.get_vector_io_read() > acc_f16_infreq_1.get_vector_io_read());
     assert!(acc_u8_freq_1.get_vector_io_read() > acc_u8_infreq_1.get_vector_io_read());
 
-    // More indicies are more expensive than less indicies
+    // More indices are more expensive than less indices
 
     assert!(acc_f32_infreq_3.get_cpu() > acc_f32_infreq_1.get_cpu());
     assert!(acc_f16_infreq_3.get_cpu() > acc_f16_infreq_1.get_cpu());
@@ -208,7 +208,7 @@ fn test_hw_counter_for_plain_sparse_search() {
     assert!(acc_f32_freq_1.get_vector_io_read() > acc_f16_freq_1.get_vector_io_read());
     assert!(acc_f16_freq_1.get_vector_io_read() > acc_u8_freq_1.get_vector_io_read());
 
-    // More indicies are more expensive than less indicies
+    // More indices are more expensive than less indices
     assert!(acc_f32_freq_3.get_cpu() > acc_f32_freq_1.get_cpu());
     assert!(acc_f16_freq_3.get_cpu() > acc_f16_freq_1.get_cpu());
     assert!(acc_u8_freq_3.get_cpu() > acc_u8_freq_1.get_cpu());
@@ -227,7 +227,7 @@ fn test_hw_counter_for_plain_sparse_search() {
     assert!(acc_f16_freq_1.get_vector_io_read() > acc_f16_infreq_1.get_vector_io_read());
     assert!(acc_u8_freq_1.get_vector_io_read() > acc_u8_infreq_1.get_vector_io_read());
 
-    // More indicies are more expensive than less indicies
+    // More indices are more expensive than less indices
 
     assert!(acc_f32_infreq_3.get_cpu() > acc_f32_infreq_1.get_cpu());
     assert!(acc_f16_infreq_3.get_cpu() > acc_f16_infreq_1.get_cpu());
