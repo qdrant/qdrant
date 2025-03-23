@@ -28,6 +28,8 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     type Version: StorageVersion;
 
+    fn is_on_disk(&self) -> bool;
+
     /// Open existing index based on path
     fn open(path: &Path) -> std::io::Result<Self>;
 

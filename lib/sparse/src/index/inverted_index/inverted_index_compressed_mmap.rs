@@ -78,6 +78,10 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
 
     type Version = Version;
 
+    fn is_on_disk(&self) -> bool {
+        true
+    }
+
     fn open(path: &Path) -> std::io::Result<Self> {
         Self::load(path)
     }

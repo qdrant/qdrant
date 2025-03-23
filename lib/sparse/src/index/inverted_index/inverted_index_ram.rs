@@ -37,6 +37,10 @@ impl InvertedIndex for InvertedIndexRam {
 
     type Version = Version;
 
+    fn is_on_disk(&self) -> bool {
+        false
+    }
+
     fn open(_path: &Path) -> std::io::Result<Self> {
         panic!("InvertedIndexRam is not supposed to be loaded");
     }
