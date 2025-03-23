@@ -408,8 +408,9 @@ pub struct CompressedPostingListIterator<'a, W: Weight> {
 
     decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
 
-    /// Offset inside the posting list
-    pos: usize,
+    /// Offset inside the posting list along with optional current element.
+    /// Defined as a tuple to ensure that we won't forget to update the element
+    pos: (usize, Option<PointOffsetType>),
 }
 
 impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
@@ -419,19 +420,19 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
             list: list.clone(),
             unpacked: false,
             decompressed_chunk: [0; CHUNK_SIZE],
-            pos: 0,
+            pos: (0, None),
         }
     }
 
     #[inline]
     fn next_from(&mut self, peek: PostingElementEx) -> PostingElement {
-        if self.pos / CHUNK_SIZE < self.list.chunks.len() {
-            self.pos += 1;
-            if self.pos % CHUNK_SIZE == 0 {
+        if self.pos.0 / CHUNK_SIZE < self.list.chunks.len() {
+            self.pos = (self.pos.0 + 1, None);
+            if self.pos.0 % CHUNK_SIZE == 0 {
                 self.unpacked = false;
             }
         } else {
-            self.pos += 1;
+            self.pos = (self.pos.0 + 1, None);
         }
 
         peek.into()
@@ -448,7 +449,7 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
 impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
-        let pos = self.pos;
+        let pos = self.pos.0;
         if pos / CHUNK_SIZE < self.list.chunks.len() {
             if !self.unpacked {
                 self.list
@@ -482,8 +483,16 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         // 1. Define which chunk we need to unpack (maybe it is current)
         // 2. If current, change the position to the element and do peek
 
+        // Shortcut peeking into memory
+        if let Some(current_record_id) = self.pos.1.as_ref() {
+            if record_id < *current_record_id {
+                // We are already ahead
+                return None;
+            }
+        }
+
         // If None, we are already reading remainder
-        let current_chunk_id_opt = self.list.chunk_id_by_position(self.pos);
+        let current_chunk_id_opt = self.list.chunk_id_by_position(self.pos.0);
         // Required chunk id
         let required_chunk_id = self.list.chunk_id_by_id(record_id);
 
@@ -496,11 +505,12 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
                         return None;
                     }
                     Ordering::Equal => {
-                        self.pos = std::cmp::max(self.pos, self.list.chunks.len() * CHUNK_SIZE);
+                        let min_pos = chunk_id * CHUNK_SIZE;
+                        self.pos = (std::cmp::max(self.pos.0, min_pos), None);
                     }
                     Ordering::Greater => {
                         // Chunk is ahead, move to it
-                        self.pos = chunk_id * CHUNK_SIZE;
+                        self.pos = (chunk_id * CHUNK_SIZE, None);
                         self.unpacked = false;
                     }
                 }
@@ -515,17 +525,21 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
             }
             (IdChunkPosition::After, _) => {
                 // Go to after the chunks
-                self.pos = std::cmp::max(self.pos, self.list.chunks.len() * CHUNK_SIZE);
+                let min_pos = self.list.chunks.len() * CHUNK_SIZE;
+                self.pos = (std::cmp::max(self.pos.0, min_pos), None);
                 self.unpacked = false;
             }
         };
 
-        while let Some(e) = self.peek() {
-            match e.record_id.cmp(&record_id) {
-                Ordering::Equal => return Some(e),
+        while let Some(current_element) = self.peek() {
+            // Save the current element to avoid further peeking
+            self.pos = (self.pos.0, Some(current_element.record_id));
+            match current_element.record_id.cmp(&record_id) {
+                Ordering::Equal => return Some(current_element),
                 Ordering::Greater => return None,
                 Ordering::Less => {
-                    self.next_from(e);
+                    // Go to the next element
+                    self.next_from(current_element);
                 }
             }
         }
@@ -534,17 +548,20 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
 
     #[inline]
     fn skip_to_end(&mut self) {
-        self.pos = self.list.chunks.len() * CHUNK_SIZE + self.list.remainder_len();
+        self.pos = (
+            self.list.chunks.len() * CHUNK_SIZE + self.list.remainder_len(),
+            None,
+        );
     }
 
     #[inline]
     fn len_to_end(&self) -> usize {
-        self.list.len() - self.pos
+        self.list.len() - self.pos.0
     }
 
     #[inline]
     fn current_index(&self) -> usize {
-        self.pos
+        self.pos.0
     }
 
     #[inline]
@@ -554,7 +571,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         ctx: &mut Ctx,
         mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
     ) {
-        let mut pos = self.pos;
+        let mut pos = self.pos.0;
 
         // Iterate over compressed chunks
         let mut weights_buf = [0.0; CHUNK_SIZE];
@@ -585,7 +602,7 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
             pos += count;
             if start + count != CHUNK_SIZE {
                 self.unpacked = true;
-                self.pos = pos;
+                self.pos = (pos, None);
                 return;
             }
         }
@@ -596,13 +613,13 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
             .iter_remainder_from(pos - self.list.chunks.len() * CHUNK_SIZE)
         {
             if e.record_id > id {
-                self.pos = pos;
+                self.pos = (pos, None);
                 return;
             }
             f(ctx, e.record_id, e.weight.to_f32(self.list.multiplier));
             pos += 1;
         }
-        self.pos = pos;
+        self.pos = (pos, None);
     }
 
     fn reliable_max_next_weight() -> bool {
