@@ -479,6 +479,10 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         self.list.last_id
     }
 
+    fn element_size(&self) -> usize {
+        size_of::<W>()
+    }
+
     fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx> {
         // 1. Define which chunk we need to unpack (maybe it is current)
         // 2. If current, change the position to the element and do peek

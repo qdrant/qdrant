@@ -271,12 +271,13 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             // Measure CPU usage of indexed sparse search.
             // Assume the complexity of the search as total volume of the posting lists
             // that are traversed in the batched search.
-            let mut num_ids = 0;
+            let mut cpu_cost = 0;
 
             for posting in self.postings_iterators.iter() {
-                num_ids += posting.posting_list_iterator.len_to_end();
+                cpu_cost += posting.posting_list_iterator.len_to_end()
+                    * posting.posting_list_iterator.element_size();
             }
-            self.hardware_counter.cpu_counter().incr_delta(num_ids);
+            self.hardware_counter.cpu_counter().incr_delta(cpu_cost);
         }
 
         let mut best_min_score = f32::MIN;

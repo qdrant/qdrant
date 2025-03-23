@@ -184,6 +184,10 @@ impl PostingListIter for PostingListIterator<'_> {
         self.elements.last().map(|e| e.record_id)
     }
 
+    fn element_size(&self) -> usize {
+        size_of::<DimWeight>()
+    }
+
     #[inline]
     fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx> {
         self.skip_to(record_id)
