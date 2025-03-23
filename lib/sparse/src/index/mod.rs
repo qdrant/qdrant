@@ -4,3 +4,4 @@ pub mod loaders;
 pub mod posting_list;
 pub mod posting_list_common;
 pub mod search_context;
+mod search_context_tests;
