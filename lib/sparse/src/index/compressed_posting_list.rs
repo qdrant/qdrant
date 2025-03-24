@@ -718,7 +718,7 @@ mod tests {
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
     fn test_try_till_id() {
-        let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter = HardwareCounterCell::new();
 
         for i in 0..CASES.len() {
             for j in i..CASES.len() {
