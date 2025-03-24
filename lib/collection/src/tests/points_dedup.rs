@@ -99,6 +99,7 @@ async fn fixture() -> Collection {
         .create_payload_index(
             "num".parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+            HwMeasurementAcc::new(),
         )
         .await
         .expect("failed to create payload index");

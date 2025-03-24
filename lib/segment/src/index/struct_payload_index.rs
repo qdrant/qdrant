@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use itertools::Either;
@@ -145,7 +146,11 @@ impl StructPayloadIndex {
         if !is_loaded {
             debug!("Index for `{field}` was not loaded. Building...");
             // todo(ivan): decide what to do with indexes, which were not loaded
-            indexes = self.build_field_indexes(field, payload_schema)?;
+            indexes = self.build_field_indexes(
+                field,
+                payload_schema,
+                &HardwareCounterCell::disposable(), // Internal operation.
+            )?;
         }
 
         Ok(indexes)
@@ -211,6 +216,7 @@ impl StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Vec<FieldIndex>> {
         let payload_storage = self.payload.borrow();
         let mut builders = self
@@ -224,7 +230,7 @@ impl StructPayloadIndex {
         payload_storage.iter(|point_id, point_payload| {
             let field_value = &point_payload.get_value(field);
             for builder in builders.iter_mut() {
-                builder.add_point(point_id, field_value)?;
+                builder.add_point(point_id, field_value, hw_counter)?;
             }
             Ok(true)
         })?;
@@ -378,8 +384,14 @@ impl StructPayloadIndex {
                 .primary_clauses
                 .iter()
                 .flat_map(move |clause| {
-                    self.query_field(clause, hw_counter)
-                        .unwrap_or_else(|| id_tracker.iter_ids() /* index is not built */)
+                    self.query_field(clause, hw_counter).unwrap_or_else(|| {
+                        // index is not built
+                        Box::new(id_tracker.iter_ids().measure_hw_with_cell(
+                            hw_counter,
+                            size_of::<PointOffsetType>(),
+                            |i| i.cpu_counter(),
+                        ))
+                    })
                 })
                 .filter(move |&id| !visited_list.check_and_update_visited(id))
                 .filter(move |&i| struct_filtered_context.check(i));
@@ -437,6 +449,7 @@ impl PayloadIndex for StructPayloadIndex {
         &self,
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<Vec<FieldIndex>>> {
         if let Some(prev_schema) = self.config.indexed_fields.get(field) {
             // the field is already indexed with the same schema
@@ -446,7 +459,7 @@ impl PayloadIndex for StructPayloadIndex {
             }
         }
 
-        let indexes = self.build_field_indexes(field, payload_schema)?;
+        let indexes = self.build_field_indexes(field, payload_schema, hw_counter)?;
 
         Ok(Some(indexes))
     }
@@ -563,12 +576,11 @@ impl PayloadIndex for StructPayloadIndex {
             .borrow_mut()
             .overwrite(point_id, payload, hw_counter)?;
 
-        // TODO(io_measurement): Maybe add measurements to index here too.
         for (field, field_index) in &mut self.field_indexes {
             let field_value = payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
-                    index.add_point(point_id, &field_value)?;
+                    index.add_point(point_id, &field_value, hw_counter)?;
                 }
             } else {
                 for index in field_index {
@@ -604,7 +616,7 @@ impl PayloadIndex for StructPayloadIndex {
             let field_value = updated_payload.get_value(field);
             if !field_value.is_empty() {
                 for index in field_index {
-                    index.add_point(point_id, &field_value)?;
+                    index.add_point(point_id, &field_value, hw_counter)?;
                 }
             } else {
                 for index in field_index {

@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::collections::hash_map::Entry;
 use std::fmt::{Debug, Display};
 use std::hash::{BuildHasher, Hash};
 use std::iter;
@@ -451,8 +452,13 @@ where
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, values: &[&Value]) -> OperationResult<()> {
-        self.0.add_point(id, values)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        values: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.0.add_point(id, values, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -478,7 +484,12 @@ where
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let mut flatten_values: Vec<_> = vec![];
         for value in payload.iter() {
             let payload_values = <MapIndex<N> as ValueIndexer>::get_values(value);
@@ -491,9 +502,25 @@ where
         }
 
         self.point_to_values[id as usize].extend(flatten_values.clone());
+
+        let mut hw_counter_val = 0;
+
         for value in flatten_values {
-            self.values_to_points.entry(value).or_default().push(id);
+            let entry = self.values_to_points.entry(value);
+
+            if let Entry::Vacant(e) = &entry {
+                let size = N::mmapped_size(N::as_referenced(e.key().borrow()));
+                hw_counter_val += size;
+            }
+
+            hw_counter_val += size_of_val(&id);
+            entry.or_default().push(id);
         }
+
+        hw_counter
+            .payload_index_io_write_counter()
+            .incr_delta(hw_counter_val);
+
         Ok(())
     }
 
@@ -1035,9 +1062,14 @@ where
 impl ValueIndexer for MapIndex<str> {
     type ValueType = String;
 
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -1066,9 +1098,10 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<IntPayloadType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -1097,9 +1130,10 @@ impl ValueIndexer for MapIndex<UuidIntType> {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.add_many_to_map(id, values),
+            MapIndex::Mutable(index) => index.add_many_to_map(id, values, hw_counter),
             MapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable map index",
             )),
@@ -1148,6 +1182,8 @@ mod tests {
         MapIndex<N>: PayloadFieldIndex + ValueIndexer,
         <MapIndex<N> as ValueIndexer>::ValueType: Into<N::Owned>,
     {
+        let hw_counter = HardwareCounterCell::new();
+
         match index_type {
             IndexType::Mutable | IndexType::Immutable => {
                 let mut builder =
@@ -1156,7 +1192,9 @@ mod tests {
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
                     let values: Vec<_> = values.iter().collect();
-                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                    builder
+                        .add_point(idx as PointOffsetType, &values, &hw_counter)
+                        .unwrap();
                 }
                 builder.finalize().unwrap();
             }
@@ -1166,7 +1204,9 @@ mod tests {
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
                     let values: Vec<_> = values.iter().collect();
-                    builder.add_point(idx as PointOffsetType, &values).unwrap();
+                    builder
+                        .add_point(idx as PointOffsetType, &values, &hw_counter)
+                        .unwrap();
                 }
                 builder.finalize().unwrap();
             }
@@ -1212,10 +1252,14 @@ mod tests {
 
         let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
 
+        let hw_counter = HardwareCounterCell::new();
+
         for (idx, values) in data.iter().enumerate().rev() {
             let values: Vec<Value> = values.iter().map(|i| (*i).into()).collect();
             let values: Vec<_> = values.iter().collect();
-            builder.add_point(idx as PointOffsetType, &values).unwrap();
+            builder
+                .add_point(idx as PointOffsetType, &values, &hw_counter)
+                .unwrap();
         }
 
         let index = builder.finalize().unwrap();

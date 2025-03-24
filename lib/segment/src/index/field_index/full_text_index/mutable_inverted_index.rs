@@ -79,19 +79,32 @@ impl InvertedIndex for MutableInvertedIndex {
         &mut self,
         point_id: PointOffsetType,
         document: Document,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         self.points_count += 1;
+
+        let counter = hw_counter.payload_index_io_write_counter();
+
         if self.point_to_docs.len() <= point_id as usize {
-            self.point_to_docs
-                .resize_with(point_id as usize + 1, Default::default);
+            let new_len = point_id as usize + 1;
+
+            // Only measure the overhead of `Document` here since we account for the tokens a few lines below.
+            counter
+                .incr_delta((new_len - self.point_to_docs.len()) * size_of::<Option<Document>>());
+
+            self.point_to_docs.resize_with(new_len, Default::default);
         }
 
+        let mut hw_counter_val = 0usize;
         for token_idx in document.tokens() {
             let token_idx_usize = *token_idx as usize;
+
             if self.postings.len() <= token_idx_usize {
-                self.postings
-                    .resize_with(token_idx_usize + 1, Default::default);
+                let new_len = token_idx_usize + 1;
+                hw_counter_val += new_len - self.postings.len();
+                self.postings.resize_with(new_len, Default::default);
             }
+
             let posting = self
                 .postings
                 .get_mut(token_idx_usize)
@@ -100,8 +113,12 @@ impl InvertedIndex for MutableInvertedIndex {
                 None => *posting = Some(PostingList::new(point_id)),
                 Some(vec) => vec.insert(point_id),
             }
+
+            hw_counter_val += size_of_val(&point_id);
         }
         self.point_to_docs[point_id as usize] = Some(document);
+
+        counter.incr_delta(hw_counter_val);
 
         Ok(())
     }

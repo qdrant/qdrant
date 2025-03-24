@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::{fmt, fs};
 
 use bitvec::prelude::BitSlice;
+use common::counter::referenced_counter::HwMetricRefCounter;
 use common::types::PointOffsetType;
 use memmap2::MmapMut;
 use memory::madvise::{self, AdviceSetting, Madviseable as _};
@@ -226,14 +227,23 @@ impl DynamicMmapFlags {
     /// All new flags will be set to false.
     ///
     /// Returns previous value of the flag.
-    pub fn set_with_resize<TKey>(&mut self, key: TKey, value: bool) -> OperationResult<bool>
+    pub fn set_with_resize<TKey>(
+        &mut self,
+        key: TKey,
+        value: bool,
+        hw_counter_ref: HwMetricRefCounter,
+    ) -> OperationResult<bool>
     where
         TKey: num_traits::cast::AsPrimitive<usize>,
     {
+        // Measure write of single bool.
+        hw_counter_ref.incr_delta(size_of::<bool>());
+
         let key: usize = key.as_();
         if key >= self.status.len {
             if value {
                 let new_len = key + 1;
+                hw_counter_ref.incr_delta(new_len - self.status.len);
                 self.set_len(new_len)?;
             } else {
                 // Default value is false, so we don't need to resize

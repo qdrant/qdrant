@@ -492,17 +492,13 @@ fn test_point_vector_count_multivec() {
     assert_eq!(segment_info.num_vectors, 6); // We don't propagate deletes to vectors at this time
 
     // Delete vector 'a' of point 6, vector count should decrease by 1
-    segment
-        .delete_vector(106, 6.into(), VECTOR1_NAME, &hw_counter)
-        .unwrap();
+    segment.delete_vector(106, 6.into(), VECTOR1_NAME).unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
 
     // Deleting it again shouldn't chain anything
-    segment
-        .delete_vector(107, 6.into(), VECTOR1_NAME, &hw_counter)
-        .unwrap();
+    segment.delete_vector(107, 6.into(), VECTOR1_NAME).unwrap();
     let segment_info = segment.info();
     assert_eq!(segment_info.num_points, 3);
     assert_eq!(segment_info.num_vectors, 5);
@@ -671,7 +667,7 @@ fn test_vector_compatibility_checks() {
             .unwrap();
         segment.vector(wrong_name, point_id).err().unwrap();
         segment
-            .delete_vector(101, point_id, wrong_name, &hw_counter)
+            .delete_vector(101, point_id, wrong_name)
             .err()
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();

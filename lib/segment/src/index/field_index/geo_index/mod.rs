@@ -361,8 +361,13 @@ impl FieldIndexBuilderTrait for GeoMapIndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.0.add_point(id, payload)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -393,8 +398,13 @@ impl FieldIndexBuilderTrait for GeoMapImmutableIndexBuilder {
         }
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.index.add_point(id, payload)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.index.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -418,12 +428,18 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
         Ok(())
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let values = payload
             .iter()
             .flat_map(|value| <GeoMapIndex as ValueIndexer>::get_values(value))
             .collect::<Vec<_>>();
-        self.in_memory_index.add_many_geo_points(id, &values)
+        self.in_memory_index
+            .add_many_geo_points(id, &values, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -438,9 +454,14 @@ impl FieldIndexBuilderTrait for GeoMapIndexMmapBuilder {
 impl ValueIndexer for GeoMapIndex {
     type ValueType = GeoPoint;
 
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<GeoPoint>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<GeoPoint>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values),
+            GeoMapIndex::Mutable(index) => index.add_many_geo_points(id, &values, hw_counter),
             GeoMapIndex::Immutable(_) => Err(OperationError::service_error(
                 "Can't add values to immutable geo index",
             )),
@@ -652,11 +673,16 @@ mod tests {
     }
 
     impl IndexBuilder {
-        fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
+        fn add_point(
+            &mut self,
+            id: PointOffsetType,
+            payload: &[&Value],
+            hw_counter: &HardwareCounterCell,
+        ) -> OperationResult<()> {
             match self {
-                IndexBuilder::Mutable(builder) => builder.add_point(id, payload),
-                IndexBuilder::Immutable(builder) => builder.add_point(id, payload),
-                IndexBuilder::Mmap(builder) => builder.add_point(id, payload),
+                IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
             }
         }
 
@@ -743,7 +769,11 @@ mod tests {
             let geo_points = random_geo_payload(&mut rnd, num_geo_values..=num_geo_values);
             let array_payload = Value::Array(geo_points);
             builder
-                .add_point(idx as PointOffsetType, &[&array_payload])
+                .add_point(
+                    idx as PointOffsetType,
+                    &[&array_payload],
+                    &HardwareCounterCell::new(),
+                )
                 .unwrap();
         }
 
@@ -1101,7 +1131,8 @@ mod tests {
                 "lat": NYC.lat
             }
         ]);
-        builder.add_point(1, &[&geo_values]).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
         let index = builder.finalize().unwrap();
 
         let hw_counter = HardwareCounterCell::new();
@@ -1184,7 +1215,8 @@ mod tests {
                 "lat": POTSDAM.lat
             }
         ]);
-        builder.add_point(1, &[&geo_values]).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+        builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
         let index = builder.finalize().unwrap();
 
         let hw_counter = HardwareCounterCell::new();
@@ -1230,7 +1262,8 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
-            builder.add_point(1, &[&geo_values]).unwrap();
+            let hw_counter = HardwareCounterCell::new();
+            builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
             builder.finalize().unwrap();
             temp_dir
         };
@@ -1288,9 +1321,10 @@ mod tests {
                     "lat": POTSDAM.lat
                 }
             ]);
+            let hw_counter = HardwareCounterCell::new();
             let payload = [&geo_values];
-            builder.add_point(1, &payload).unwrap();
-            builder.add_point(2, &payload).unwrap();
+            builder.add_point(1, &payload, &hw_counter).unwrap();
+            builder.add_point(2, &payload, &hw_counter).unwrap();
             let mut index = builder.finalize().unwrap();
 
             index.remove_point(1).unwrap();
@@ -1424,7 +1458,9 @@ mod tests {
                 "lat": BERLIN.lat
             }
         ]);
-        builder.add_point(1, &[&geo_values]).unwrap();
+        let hw_counter = HardwareCounterCell::new();
+
+        builder.add_point(1, &[&geo_values], &hw_counter).unwrap();
 
         // Index LOS_ANGELES
         let geo_values = json!([
@@ -1433,7 +1469,7 @@ mod tests {
                 "lat": LOS_ANGELES.lat
             }
         ]);
-        builder.add_point(2, &[&geo_values]).unwrap();
+        builder.add_point(2, &[&geo_values], &hw_counter).unwrap();
 
         // Index TOKYO
         let geo_values = json!([
@@ -1442,7 +1478,7 @@ mod tests {
                 "lat": TOKYO.lat
             }
         ]);
-        builder.add_point(3, &[&geo_values]).unwrap();
+        builder.add_point(3, &[&geo_values], &hw_counter).unwrap();
 
         let new_index = builder.finalize().unwrap();
         assert_eq!(new_index.points_count(), 3);

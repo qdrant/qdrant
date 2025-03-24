@@ -697,8 +697,10 @@ pub async fn create_field_index(
     )
     .await?;
 
-    let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+    let response = points_operation_response_internal(
+        timing, result,
+        None, // Do not measure API usage for this operation, as it might be inaccurate due to consensus involvement
+    );
     Ok(Response::new(response))
 }
 

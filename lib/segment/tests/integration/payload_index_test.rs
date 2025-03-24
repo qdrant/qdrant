@@ -95,7 +95,12 @@ impl TestSegments {
 
         let mut opnum = 0;
         struct_segment
-            .create_field_index(opnum, &JsonPath::new(INT_KEY_2), Some(&Integer.into()))
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY_2),
+                Some(&Integer.into()),
+                &hw_counter,
+            )
             .unwrap();
 
         opnum += 1;
@@ -121,10 +126,15 @@ impl TestSegments {
         }
 
         struct_segment
-            .create_field_index(opnum, &JsonPath::new(STR_KEY), Some(&Keyword.into()))
+            .create_field_index(
+                opnum,
+                &JsonPath::new(STR_KEY),
+                Some(&Keyword.into()),
+                &hw_counter,
+            )
             .unwrap();
         struct_segment
-            .create_field_index(opnum, &JsonPath::new(INT_KEY), None)
+            .create_field_index(opnum, &JsonPath::new(INT_KEY), None, &hw_counter)
             .unwrap();
         struct_segment
             .create_field_index(
@@ -139,6 +149,7 @@ impl TestSegments {
                         on_disk: None,
                     },
                 ))),
+                &hw_counter,
             )
             .unwrap();
         struct_segment
@@ -154,6 +165,7 @@ impl TestSegments {
                         on_disk: None,
                     },
                 ))),
+                &hw_counter,
             )
             .unwrap();
         struct_segment
@@ -161,6 +173,7 @@ impl TestSegments {
                 opnum,
                 &JsonPath::new(GEO_KEY),
                 Some(&PayloadSchemaType::Geo.into()),
+                &hw_counter,
             )
             .unwrap();
         struct_segment
@@ -168,10 +181,16 @@ impl TestSegments {
                 opnum,
                 &JsonPath::new(TEXT_KEY),
                 Some(&PayloadSchemaType::Text.into()),
+                &hw_counter,
             )
             .unwrap();
         struct_segment
-            .create_field_index(opnum, &JsonPath::new(FLICKING_KEY), Some(&Integer.into()))
+            .create_field_index(
+                opnum,
+                &JsonPath::new(FLICKING_KEY),
+                Some(&Integer.into()),
+                &hw_counter,
+            )
             .unwrap();
 
         // Make mmap segment after inserting the points, but before deleting some of them
@@ -264,8 +283,9 @@ impl TestSegments {
 
         builder.update(&[plain_segment], &stopped).unwrap();
         let permit = ResourcePermit::dummy(1);
+        let hw_counter = HardwareCounterCell::new();
 
-        let mut segment = builder.build(permit, &stopped).unwrap();
+        let mut segment = builder.build(permit, &stopped, &hw_counter).unwrap();
         let opnum = segment.version() + 1;
 
         segment
@@ -279,6 +299,7 @@ impl TestSegments {
                         on_disk: Some(true),
                     },
                 ))),
+                &hw_counter,
             )
             .unwrap();
         segment
@@ -294,6 +315,7 @@ impl TestSegments {
                         on_disk: Some(true),
                     },
                 ))),
+                &hw_counter,
             )
             .unwrap();
         segment
@@ -309,6 +331,7 @@ impl TestSegments {
                         on_disk: Some(true),
                     },
                 ))),
+                &hw_counter,
             )
             .unwrap();
         segment
@@ -324,6 +347,7 @@ impl TestSegments {
                         on_disk: Some(true),
                     },
                 ))),
+                &hw_counter,
             )
             .unwrap();
         segment
@@ -335,6 +359,7 @@ impl TestSegments {
                     is_principal: None,
                     on_disk: Some(true),
                 }))),
+                &hw_counter,
             )
             .unwrap();
         segment
@@ -346,6 +371,7 @@ impl TestSegments {
                     on_disk: Some(true),
                     ..Default::default()
                 }))),
+                &hw_counter,
             )
             .unwrap();
 
@@ -372,22 +398,32 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
         STR_ROOT_PROJ_KEY, "nested_1", "nested_2"
     ));
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut opnum = 0;
     struct_segment
-        .create_field_index(opnum, &nested_str_key, Some(&Keyword.into()))
+        .create_field_index(opnum, &nested_str_key, Some(&Keyword.into()), &hw_counter)
         .unwrap();
 
     struct_segment
-        .create_field_index(opnum, &nested_str_proj_key, Some(&Keyword.into()))
+        .create_field_index(
+            opnum,
+            &nested_str_proj_key,
+            Some(&Keyword.into()),
+            &hw_counter,
+        )
         .unwrap();
 
     struct_segment
-        .create_field_index(opnum, &deep_nested_str_proj_key, Some(&Keyword.into()))
+        .create_field_index(
+            opnum,
+            &deep_nested_str_proj_key,
+            Some(&Keyword.into()),
+            &hw_counter,
+        )
         .unwrap();
 
     eprintln!("{deep_nested_str_proj_key}");
-
-    let hw_counter = HardwareCounterCell::new();
 
     opnum += 1;
     for n in 0..num_points {
@@ -1153,7 +1189,7 @@ fn test_update_payload_index_type() {
     let field = JsonPath::new("field");
 
     // set field to Integer type
-    index.set_indexed(&field, Integer).unwrap();
+    index.set_indexed(&field, Integer, &hw_counter).unwrap();
     assert_eq!(
         *index.indexed_fields().get(&field).unwrap(),
         FieldType(Integer)
@@ -1163,7 +1199,7 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[1].count_indexed_points(), point_num);
 
     // update field to Keyword type
-    index.set_indexed(&field, Keyword).unwrap();
+    index.set_indexed(&field, Keyword, &hw_counter).unwrap();
     assert_eq!(
         *index.indexed_fields().get(&field).unwrap(),
         FieldType(Keyword)
@@ -1172,7 +1208,7 @@ fn test_update_payload_index_type() {
     assert_eq!(field_index[0].count_indexed_points(), 0); // only one field index for Keyword
 
     // set field to Integer type (again)
-    index.set_indexed(&field, Integer).unwrap();
+    index.set_indexed(&field, Integer, &hw_counter).unwrap();
     assert_eq!(
         *index.indexed_fields().get(&field).unwrap(),
         FieldType(Integer)

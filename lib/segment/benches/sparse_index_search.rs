@@ -182,7 +182,7 @@ fn sparse_vector_index_search_benchmark_impl(
 
     // create payload field index
     payload_index
-        .set_indexed(&field_name.parse().unwrap(), Keyword)
+        .set_indexed(&field_name.parse().unwrap(), Keyword, &hw_counter)
         .unwrap();
 
     drop(payload_index);

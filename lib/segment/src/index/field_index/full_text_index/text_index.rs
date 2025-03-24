@@ -271,8 +271,13 @@ impl FieldIndexBuilderTrait for FullTextIndexBuilder {
         self.0.init()
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.0.add_point(id, payload)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -283,9 +288,14 @@ impl FieldIndexBuilderTrait for FullTextIndexBuilder {
 impl ValueIndexer for FullTextIndex {
     type ValueType = String;
 
-    fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        idx: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         match self {
-            Self::Mutable(index) => index.add_many(idx, values),
+            Self::Mutable(index) => index.add_many(idx, values, hw_counter),
             Self::Immutable(_) => Err(OperationError::service_error(
                 "Cannot add values to immutable text index",
             )),

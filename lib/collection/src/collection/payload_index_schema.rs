@@ -37,10 +37,11 @@ impl Collection {
         &self,
         field_name: JsonPath,
         field_schema: PayloadFieldSchema,
+        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         // This function is called from consensus, so we use `wait = false`, because we can't afford
         // to wait for the result as indexation may take a long time
-        self.create_payload_index_with_wait(field_name, field_schema, false)
+        self.create_payload_index_with_wait(field_name, field_schema, false, hw_acc)
             .await
     }
 
@@ -49,6 +50,7 @@ impl Collection {
         field_name: JsonPath,
         field_schema: PayloadFieldSchema,
         wait: bool,
+        hw_acc: HwMeasurementAcc,
     ) -> CollectionResult<Option<UpdateResult>> {
         self.payload_index_schema.write(|schema| {
             schema
@@ -67,7 +69,7 @@ impl Collection {
             }),
         );
 
-        self.update_all_local(create_index_operation, wait, HwMeasurementAcc::disposable()) // Unmeasured API
+        self.update_all_local(create_index_operation, wait, hw_acc)
             .await
     }
 

@@ -83,7 +83,12 @@ pub trait InvertedIndex {
         Document::new(document_tokens)
     }
 
-    fn index_document(&mut self, idx: PointOffsetType, document: Document) -> OperationResult<()>;
+    fn index_document(
+        &mut self,
+        idx: PointOffsetType,
+        document: Document,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     fn remove_document(&mut self, idx: PointOffsetType) -> bool;
 
@@ -238,12 +243,14 @@ mod tests {
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
         let mut index = MutableInvertedIndex::default();
 
+        let hw_counter = HardwareCounterCell::new();
+
         for idx in 0..indexed_count {
             // Generate 10 tot 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
             let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
             let document = index.document_from_tokens(&tokens);
-            index.index_document(idx, document).unwrap();
+            index.index_document(idx, document, &hw_counter).unwrap();
         }
 
         // Remove some points
