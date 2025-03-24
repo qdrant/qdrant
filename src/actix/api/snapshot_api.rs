@@ -16,6 +16,7 @@ use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
+use segment::data_types::segment_manifest::SegmentManifests;
 use serde::{Deserialize, Serialize};
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
@@ -404,6 +405,7 @@ async fn stream_shard_snapshot(
         access,
         collection,
         shard,
+        None,
     )
     .await?)
 }
@@ -562,6 +564,94 @@ async fn delete_shard_snapshot(
     helpers::time_or_accept(future, query.wait.unwrap_or(true)).await
 }
 
+#[post("/collections/{collection}/shards/{shard}/snapshot/partial/create")]
+async fn create_partial_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, ShardId)>,
+    manifest: web::Json<SegmentManifests>,
+    ActixAccess(access): ActixAccess,
+) -> Result<SnapshotStream, HttpError> {
+    let (collection, shard) = path.into_inner();
+    let manifest = manifest.into_inner();
+
+    // nothing to verify.
+    let pass = new_unchecked_verification_pass();
+
+    let snapshot_stream = common::snapshots::stream_shard_snapshot(
+        dispatcher.toc(&access, &pass).clone(),
+        access,
+        collection,
+        shard,
+        Some(manifest),
+    )
+    .await?;
+
+    Ok(snapshot_stream)
+}
+
+#[post("/collections/{collection}/shards/{shard}/snapshot/partial/recover")]
+async fn recover_partial_snapshot(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshotUploadingParam>,
+    MultipartForm(form): MultipartForm<SnapshottingForm>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+
+    let SnapshotUploadingParam {
+        wait,
+        priority,
+        checksum,
+    } = query.into_inner();
+
+    // nothing to verify.
+    let pass = new_unchecked_verification_pass();
+
+    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+        // TODO: Run this check before the multipart blob is uploaded
+        let collection_pass = access
+            .check_global_access(AccessRequirements::new().manage())?
+            .issue_pass(&collection);
+
+        if let Some(checksum) = checksum {
+            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
+            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+            }
+        }
+
+        let future = async {
+            let collection = dispatcher
+                .toc(&access, &pass)
+                .get_collection(&collection_pass)
+                .await?;
+            collection.assert_shard_exists(shard).await?;
+
+            Result::<_, StorageError>::Ok(collection)
+        };
+
+        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+
+        // `recover_shard_snapshot_impl` is *not* cancel safe
+        common::snapshots::recover_shard_snapshot_impl(
+            dispatcher.toc(&access, &pass),
+            &collection,
+            shard,
+            form.snapshot.file.path(),
+            priority.unwrap_or_default(),
+            RecoveryType::Partial,
+            cancel,
+        )
+        .await?;
+
+        Ok(())
+    })
+    .map(|x| x.map_err(Into::into).and_then(|x| x));
+
+    helpers::time_or_accept(future, wait.unwrap_or(true)).await
+}
+
 // Configure services
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
@@ -580,5 +670,7 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(recover_shard_snapshot)
         .service(upload_shard_snapshot)
         .service(download_shard_snapshot)
-        .service(delete_shard_snapshot);
+        .service(delete_shard_snapshot)
+        .service(create_partial_snapshot)
+        .service(recover_partial_snapshot);
 }

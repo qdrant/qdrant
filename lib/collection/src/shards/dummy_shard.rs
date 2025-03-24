@@ -42,6 +42,7 @@ impl DummyShard {
         _temp_path: &Path,
         _tar: &tar_ext::BuilderExt,
         _format: SnapshotFormat,
+        _manifest: Option<SegmentManifests>,
         _save_wal: bool,
     ) -> CollectionResult<()> {
         self.dummy()
