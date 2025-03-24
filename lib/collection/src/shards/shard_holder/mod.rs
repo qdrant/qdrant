@@ -963,6 +963,7 @@ impl ShardHolder {
     pub async fn restore_shard_snapshot(
         &self,
         snapshot_path: &Path,
+        collection_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
         this_peer_id: PeerId,
@@ -1022,7 +1023,7 @@ impl ShardHolder {
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
-            .recover_local_shard_from(snapshot_temp_dir.path(), shard_id, cancel)
+            .recover_local_shard_from(snapshot_temp_dir.path(), collection_path, shard_id, cancel)
             .await?;
 
         if !recovered {
@@ -1040,6 +1041,7 @@ impl ShardHolder {
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
+        collection_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
@@ -1047,14 +1049,25 @@ impl ShardHolder {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
+        // set shard_id initialization flag
+        // the file is removed after full recovery to indicate a well-formed shard
+        // for example: some of the files may go missing if node gets killed during shard directory move/replace
+        let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+        let flag_file = tokio::fs::File::create(&shard_flag).await?;
+        flag_file.sync_all().await?;
+
         let replica_set = self
             .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
-        replica_set
+        let res = replica_set
             .restore_local_replica_from(snapshot_shard_path, cancel)
-            .await
+            .await?;
+
+        tokio::fs::remove_file(&shard_flag).await?; // remove shard_id initialization flag because shard is fully recovered
+
+        Ok(res)
     }
 
     /// # Cancel safety
