@@ -137,6 +137,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
         .build(
             ResourcePermit::dummy(num_rayon_threads(0) as u32),
             &false.into(),
+            &HardwareCounterCell::new(),
         )
         .unwrap();
 

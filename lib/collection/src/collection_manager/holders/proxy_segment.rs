@@ -80,7 +80,11 @@ impl ProxySegment {
     }
 
     /// Ensure that write segment have same indexes as wrapped segment
-    pub fn replicate_field_indexes(&mut self, op_num: SeqNumberType) -> OperationResult<()> {
+    pub fn replicate_field_indexes(
+        &mut self,
+        op_num: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let existing_indexes = self.write_segment.get().read().get_indexed_fields();
         let expected_indexes = self.wrapped_segment.get().read().get_indexed_fields();
 
@@ -99,7 +103,7 @@ impl ProxySegment {
                     op_num,
                     expected_field,
                     Some(expected_schema),
-                    &HardwareCounterCell::disposable(), // Internal operation
+                    hw_counter,
                 )?;
             }
         }
@@ -1804,7 +1808,9 @@ mod tests {
             LockedIndexChanges::default(),
         );
 
-        proxy_segment.replicate_field_indexes(0).unwrap();
+        let hw_cell = HardwareCounterCell::new();
+
+        proxy_segment.replicate_field_indexes(0, &hw_cell).unwrap();
 
         assert!(
             write_segment
@@ -1821,7 +1827,7 @@ mod tests {
                 11,
                 &"location".parse().unwrap(),
                 Some(&PayloadSchemaType::Geo.into()),
-                &HardwareCounterCell::new(),
+                &hw_cell,
             )
             .unwrap();
 
@@ -1831,7 +1837,7 @@ mod tests {
             .delete_field_index(12, &"color".parse().unwrap())
             .unwrap();
 
-        proxy_segment.replicate_field_indexes(0).unwrap();
+        proxy_segment.replicate_field_indexes(0, &hw_cell).unwrap();
 
         assert!(
             write_segment

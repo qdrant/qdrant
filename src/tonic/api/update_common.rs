@@ -666,6 +666,7 @@ pub async fn create_field_index(
     create_field_index_collection: CreateFieldIndexCollection,
     internal_params: InternalUpdateParams,
     access: Access,
+    request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let CreateFieldIndexCollection {
         collection_name,
@@ -692,10 +693,14 @@ pub async fn create_field_index(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
+        request_hw_counter.get_counter(),
     )
     .await?;
 
-    let response = points_operation_response_internal(timing, result, None);
+    let response = points_operation_response_internal(
+        timing, result,
+        None, // Do not measure API usage for this operation, as it might be inaccurate due to consensus involvement
+    );
     Ok(Response::new(response))
 }
 

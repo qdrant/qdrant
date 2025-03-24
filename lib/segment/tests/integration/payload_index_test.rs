@@ -283,11 +283,10 @@ impl TestSegments {
 
         builder.update(&[plain_segment], &stopped).unwrap();
         let permit = ResourcePermit::dummy(1);
-
-        let mut segment = builder.build(permit, &stopped).unwrap();
-        let opnum = segment.version() + 1;
-
         let hw_counter = HardwareCounterCell::new();
+
+        let mut segment = builder.build(permit, &stopped, &hw_counter).unwrap();
+        let opnum = segment.version() + 1;
 
         segment
             .create_field_index(

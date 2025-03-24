@@ -72,8 +72,9 @@ fn test_building_new_segment() {
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let hw_counter = HardwareCounterCell::new();
 
-    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+    let merged_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
 
     let new_segment_count = dir.path().read_dir().unwrap().count();
 
@@ -147,8 +148,9 @@ fn test_building_new_defragmented_segment() {
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let hw_counter = HardwareCounterCell::new();
 
-    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+    let merged_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
 
     let new_segment_count = dir.path().read_dir().unwrap().count();
 
@@ -271,8 +273,9 @@ fn test_building_new_sparse_segment() {
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let hw_counter = HardwareCounterCell::new();
 
-    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+    let merged_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
 
     let new_segment_count = dir.path().read_dir().unwrap().count();
 
@@ -337,8 +340,9 @@ fn estimate_build_time(segment: &Segment, stop_delay_millis: Option<u64>) -> (u6
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let hw_counter = HardwareCounterCell::new();
 
-    let res = builder.build(permit, &stopped);
+    let res = builder.build(permit, &stopped, &hw_counter);
 
     let is_cancelled = match res {
         Ok(_) => false,
@@ -397,8 +401,9 @@ fn test_building_new_segment_bug_5614() {
 
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let hw_counter = HardwareCounterCell::new();
 
-    let merged_segment: Segment = builder.build(permit, &stopped).unwrap();
+    let merged_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
 
     // Assert correct point versions - must have latest
     assert_eq!(merged_segment.point_version(100.into()), Some(124));
@@ -535,8 +540,9 @@ fn test_building_new_segment_with_mmap_payload() {
     // Now we finalize building
     let permit_cpu_count = num_rayon_threads(0);
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
+    let hw_counter = HardwareCounterCell::new();
 
-    let new_segment: Segment = builder.build(permit, &stopped).unwrap();
+    let new_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
     assert_eq!(
         new_segment.segment_config.payload_storage_type,
         PayloadStorageType::Mmap

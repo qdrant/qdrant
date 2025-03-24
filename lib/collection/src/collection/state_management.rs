@@ -233,7 +233,8 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable()) // This function is only used in consensus and thus an unmeasured internal operation.
+            // This function is only used in collection state recovery and thus an unmeasured internal operation.
+            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
                 .await?;
         }
         Ok(())

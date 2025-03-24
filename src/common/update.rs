@@ -676,6 +676,7 @@ pub async fn do_create_index(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     access: Access,
+    hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     // TODO: Is this cancel safe!?
 
@@ -715,9 +716,7 @@ pub async fn do_create_index(
         Some(field_schema),
         internal_params,
         params,
-        // We manually measure payload index creation inside `TableOfContent::create_payload_index()` to not touch
-        // consensus for hw measurements.
-        HwMeasurementAcc::disposable(),
+        hw_measurement_acc,
     )
     .await
 }
