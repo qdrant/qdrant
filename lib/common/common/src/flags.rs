@@ -8,7 +8,9 @@ static FEATURE_FLAGS: OnceLock<FeatureFlags> = OnceLock::new();
 #[derive(Default, Debug, Deserialize, Clone, Copy)]
 pub struct FeatureFlags {
     /// Magic feature flag that enables all features.
-    pub all: bool,
+    ///
+    /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
+    all: bool,
 
     /// Whether to use the new format to persist shard keys
     ///
