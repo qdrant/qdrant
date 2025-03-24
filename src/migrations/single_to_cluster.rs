@@ -97,11 +97,11 @@ pub async fn handle_existing_collections(
                     collection_create_operation,
                 ));
 
-                for (shard_key, shards) in collection_state.shards_key_mapping.to_map() {
+                for (shard_key, shards) in collection_state.shards_key_mapping.iter() {
                     let mut placement = Vec::new();
 
                     for shard_id in shards {
-                        let shard_info = collection_state.shards.get(&shard_id).unwrap();
+                        let shard_info = collection_state.shards.get(shard_id).unwrap();
                         placement.push(shard_info.replicas.keys().copied().collect());
                     }
 

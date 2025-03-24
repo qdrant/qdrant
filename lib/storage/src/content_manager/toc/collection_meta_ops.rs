@@ -383,7 +383,6 @@ impl TableOfContent {
                     shards_key_mapping,
                     ..
                 } = collection.state().await;
-                let shards_key_mapping = shards_key_mapping.to_map();
                 let all_peers: HashSet<_> = self
                     .channel_service
                     .id_to_address
