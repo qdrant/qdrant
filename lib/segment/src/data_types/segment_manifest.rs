@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::SeqNumberType;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(transparent)]
 pub struct SegmentManifests {
     manifests: HashMap<String, SegmentManifest>,
 }

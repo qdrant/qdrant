@@ -1361,6 +1361,7 @@ impl SegmentHolder {
     /// temporary segment, which will source the configuration from it.
     ///
     /// Shortcuts at the first failing segment snapshot.
+    #[expect(clippy::too_many_arguments)]
     pub fn snapshot_all_segments(
         segments: LockedSegmentHolder,
         segments_path: &Path,
@@ -1369,11 +1370,13 @@ impl SegmentHolder {
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: Option<&SegmentManifests>,
     ) -> OperationResult<()> {
         // Snapshotting may take long-running read locks on segments blocking incoming writes, do
         // this through proxied segments to allow writes to continue.
 
         let mut snapshotted_segments = HashSet::<String>::new();
+
         Self::proxy_all_segments_and_apply(
             segments,
             segments_path,
@@ -1385,7 +1388,7 @@ impl SegmentHolder {
                     temp_dir,
                     tar,
                     format,
-                    None,
+                    manifest,
                     &mut snapshotted_segments,
                 )?;
                 Ok(())
@@ -2083,6 +2086,7 @@ mod tests {
             temp_dir.path(),
             &tar,
             SnapshotFormat::Regular,
+            None,
         )
         .unwrap();
 

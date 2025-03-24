@@ -137,11 +137,12 @@ impl QueueProxyShard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: Option<SegmentManifests>,
         save_wal: bool,
     ) -> CollectionResult<()> {
         self.inner_unchecked()
             .wrapped_shard
-            .create_snapshot(temp_path, tar, format, save_wal)
+            .create_snapshot(temp_path, tar, format, manifest, save_wal)
             .await
     }
 

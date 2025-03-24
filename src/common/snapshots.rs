@@ -9,6 +9,7 @@ use collection::operations::snapshot_ops::{
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
+use segment::data_types::segment_manifest::SegmentManifests;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -46,16 +47,24 @@ pub async fn stream_shard_snapshot(
     access: Access,
     collection_name: String,
     shard_id: ShardId,
+    manifest: Option<SegmentManifests>,
 ) -> Result<SnapshotStream, StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,
         AccessRequirements::new().write().whole().extras(),
     )?;
-    let collection = toc.get_collection(&collection_pass).await?;
 
-    Ok(collection
-        .stream_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
-        .await?)
+    let snapshot_stream = toc
+        .get_collection(&collection_pass)
+        .await?
+        .stream_shard_snapshot(
+            shard_id,
+            manifest,
+            &toc.optional_temp_or_snapshot_temp_path()?,
+        )
+        .await?;
+
+    Ok(snapshot_stream)
 }
 
 /// # Cancel safety
