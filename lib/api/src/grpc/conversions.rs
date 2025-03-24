@@ -14,7 +14,7 @@ use segment::data_types::index::{
 };
 use segment::data_types::{facets as segment_facets, vectors as segment_vectors};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula,
+    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula,
 };
 use segment::types::{DateTimePayloadType, FloatPayloadType, default_quantization_ignore_value};
 use segment::vector_storage::query as segment_query;
@@ -2809,9 +2809,9 @@ fn unparse_expression(
             origin: Some(GeoPoint::from(origin)),
             to: key.to_string(),
         }),
-        ParsedExpression::DateTime(dt_expr) => Variant::Datetime(match dt_expr {
-            DateTimeExpression::Constant(date_time_wrapper) => date_time_wrapper.to_string(),
-            DateTimeExpression::PayloadVariable(json_path) => json_path.to_string(),
+        ParsedExpression::Datetime(dt_expr) => Variant::Datetime(match dt_expr {
+            DatetimeExpression::Constant(date_time_wrapper) => date_time_wrapper.to_string(),
+            DatetimeExpression::PayloadVariable(json_path) => json_path.to_string(),
         }),
         ParsedExpression::Mult(exprs) => Variant::Mult(MultExpression {
             mult: exprs

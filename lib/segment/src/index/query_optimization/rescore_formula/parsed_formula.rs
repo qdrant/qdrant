@@ -39,7 +39,7 @@ pub enum ParsedExpression {
         origin: GeoPoint,
         key: JsonPath,
     },
-    DateTime(DateTimeExpression),
+    Datetime(DatetimeExpression),
 
     // Nested
     Mult(Vec<ParsedExpression>),
@@ -101,20 +101,20 @@ impl VariableId {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum DateTimeExpression {
+pub enum DatetimeExpression {
     Constant(DateTimePayloadType),
     PayloadVariable(JsonPath),
 }
 
-impl FromStr for DateTimeExpression {
+impl FromStr for DatetimeExpression {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // try as date
         DateTimePayloadType::from_str(s)
-            .map(DateTimeExpression::Constant)
+            .map(DatetimeExpression::Constant)
             // else as payload key
-            .or_else(|_| JsonPath::from_str(s).map(DateTimeExpression::PayloadVariable))
+            .or_else(|_| JsonPath::from_str(s).map(DatetimeExpression::PayloadVariable))
             .map_err(|_| format!("Invalid date time expression: {s}"))
     }
 }

@@ -8,7 +8,7 @@ use geo::{Distance, Haversine};
 use serde_json::Value;
 
 use super::parsed_formula::{
-    DateTimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
+    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
 };
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -150,10 +150,10 @@ impl FormulaScorer<'_> {
 
                 Ok(Haversine::distance((*origin).into(), value.into()))
             }
-            ParsedExpression::DateTime(dt_expr) => {
+            ParsedExpression::Datetime(dt_expr) => {
                 let datetime = match dt_expr {
-                    DateTimeExpression::Constant(dt) => *dt,
-                    DateTimeExpression::PayloadVariable(json_path) => {
+                    DatetimeExpression::Constant(dt) => *dt,
+                    DatetimeExpression::PayloadVariable(json_path) => {
                         self.get_parsed_payload_value(json_path, point_id, |value| {
                             value
                                 // datetime index also returns the Serialize impl of datetime which is a string
@@ -526,12 +526,12 @@ mod tests {
     #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.29600298218))]
     // datetime expression constant
     #[case(
-        ParsedExpression::DateTime(DateTimeExpression::Constant("2025-03-18".parse().unwrap())),
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),
         Ok("2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
     )]
     // datetime expression with payload variable that doesn't exist in payload and no default
     #[case(
-        ParsedExpression::DateTime(DateTimeExpression::PayloadVariable(JsonPath::new("missing_datetime"))),
+        ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(JsonPath::new("missing_datetime"))),
         Err(OperationError::VariableTypeError {
             field_name: JsonPath::new("missing_datetime"),
             expected_type: DateTimePayloadType::friendly_name().to_string(),
@@ -540,7 +540,7 @@ mod tests {
     )]
     // datetime expression with payload variable that doesn't exist in payload but has default
     #[case(
-        ParsedExpression::DateTime(DateTimeExpression::PayloadVariable(JsonPath::new(NO_VALUE_DATETIME))),
+        ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(JsonPath::new(NO_VALUE_DATETIME))),
         Ok("2025-03-19T12:00:00".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
     )]
     #[test]
