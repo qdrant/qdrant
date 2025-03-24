@@ -3759,7 +3759,7 @@ checksum = "b8dd856d451cc0da70e2ef2ce95a18e39a93b7558bedf10201ad28503f918568"
 name = "macros"
 version = "0.1.0"
 dependencies = [
- "prettyplease 0.2.17",
+ "prettyplease 0.2.25",
  "proc-macro2",
  "quote",
  "syn 2.0.87",
@@ -4479,9 +4479,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.17"
+version = "0.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d3928fb5db768cb86f891ff014f0144589297e3c6a1aba6ed7cecfdace270c7"
+checksum = "64d1ec885c64d0457d564db4ec299b2dae3f9c02808b8ad9c3a089c591b18033"
 dependencies = [
  "proc-macro2",
  "syn 2.0.87",
@@ -4637,7 +4637,7 @@ dependencies = [
  "multimap",
  "once_cell",
  "petgraph",
- "prettyplease 0.2.17",
+ "prettyplease 0.2.25",
  "prost 0.12.6",
  "prost-types 0.12.6",
  "pulldown-cmark",
@@ -6866,7 +6866,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be4ef6dd70a610078cb4e338a0f79d06bc759ff1b22d2120c2ff02ae264ba9c2"
 dependencies = [
- "prettyplease 0.2.17",
+ "prettyplease 0.2.25",
  "proc-macro2",
  "prost-build 0.12.6",
  "quote",
