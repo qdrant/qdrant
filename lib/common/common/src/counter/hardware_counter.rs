@@ -1,3 +1,4 @@
+#![cfg(feature = "testing")]
 use std::fmt::{Display, Formatter};
 
 use super::counter_cell::CounterCell;
