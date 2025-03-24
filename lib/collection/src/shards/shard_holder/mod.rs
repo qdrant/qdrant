@@ -1052,7 +1052,7 @@ impl ShardHolder {
         // set shard_id initialization flag
         // the file is removed after full recovery to indicate a well-formed shard
         // for example: some of the files may go missing if node gets killed during shard directory move/replace
-        let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+        let shard_flag = shard_initializing_flag_path(collection_path, shard_id);
         let flag_file = tokio::fs::File::create(&shard_flag).await?;
         flag_file.sync_all().await?;
 
