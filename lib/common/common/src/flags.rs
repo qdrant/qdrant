@@ -7,6 +7,11 @@ static FEATURE_FLAGS: OnceLock<FeatureFlags> = OnceLock::new();
 
 #[derive(Default, Debug, Deserialize, Clone, Copy)]
 pub struct FeatureFlags {
+    /// Magic feature flag that enables all features.
+    ///
+    /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
+    all: bool,
+
     /// Whether to use the new format to persist shard keys
     ///
     /// The old format fails to persist shard key numbers correctly, converting them into strings on
@@ -33,10 +38,39 @@ pub struct FeatureFlags {
     pub payload_index_skip_rocksdb: bool,
 }
 
+impl FeatureFlags {
+    /// Check if no flag is set at all
+    pub fn is_empty(self) -> bool {
+        let FeatureFlags {
+            all: _,
+            use_new_shard_key_mapping_format,
+            use_mutable_id_tracker_without_rocksdb,
+            payload_index_skip_rocksdb,
+        } = self;
+        !use_new_shard_key_mapping_format
+            && !use_mutable_id_tracker_without_rocksdb
+            && !payload_index_skip_rocksdb
+    }
+}
+
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
-pub fn init_feature_flags(flags: &FeatureFlags) {
-    let res = FEATURE_FLAGS.set(*flags);
+pub fn init_feature_flags(mut flags: FeatureFlags) {
+    let FeatureFlags {
+        all,
+        use_new_shard_key_mapping_format,
+        use_mutable_id_tracker_without_rocksdb,
+        payload_index_skip_rocksdb,
+    } = &mut flags;
+
+    // If all is set, explicitly set all feature flags
+    if *all {
+        *use_new_shard_key_mapping_format = true;
+        *use_mutable_id_tracker_without_rocksdb = true;
+        *payload_index_skip_rocksdb = true;
+    }
+
+    let res = FEATURE_FLAGS.set(flags);
     if res.is_err() {
         log::warn!("Feature flags already initialized!");
     }
