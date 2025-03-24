@@ -10,6 +10,7 @@ pub struct FeatureFlags {
     /// Magic feature flag that enables all features.
     ///
     /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
+    #[serde(default)]
     all: bool,
 
     /// Whether to use the new format to persist shard keys
