@@ -1,6 +1,3 @@
-#![cfg(feature = "testing")]
-use std::fmt::{Display, Formatter};
-
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
 use super::hardware_data::HardwareData;
@@ -24,8 +21,8 @@ pub struct HardwareCounterCell {
 }
 
 #[cfg(feature = "testing")]
-impl Display for HardwareCounterCell {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for HardwareCounterCell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "HardwareCounterCell {{ cpu: {}, payload_io_read: {}, payload_io_write: {}, payload_index_io_read: {}, vector_io_read: {}, vector_io_write: {} }}",
