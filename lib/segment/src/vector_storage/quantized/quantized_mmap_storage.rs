@@ -47,7 +47,7 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
     }
 
     fn is_on_disk(&self) -> bool {
-        false
+        true
     }
 }
 

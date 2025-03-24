@@ -138,7 +138,7 @@ impl<
         let v1 = self.vector_storage.get_multi(point_a);
         let v2 = self.vector_storage.get_multi(point_b);
         self.hardware_counter
-            .cpu_counter()
+            .vector_io_read()
             .incr_delta(v1.vectors_count() + v2.vectors_count());
 
         self.score_multi(v1, v2)

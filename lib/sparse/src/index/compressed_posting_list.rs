@@ -4,7 +4,7 @@ use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::iterator_ext::IteratorExt;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
@@ -44,7 +44,6 @@ pub struct CompressedPostingListView<'a, W: Weight> {
     remainders: &'a [GenericPostingElement<W>],
     last_id: Option<PointOffsetType>,
     multiplier: W::QuantizationParams,
-    #[allow(dead_code)] // ToDo: Implement
     hw_counter: &'a HardwareCounterCell,
 }
 
@@ -290,11 +289,11 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         &self,
         index: usize,
     ) -> impl Iterator<Item = &'_ GenericPostingElement<W>> + '_ {
-        self.remainders[index..].iter().on_final_count(|c| {
-            self.hw_counter
-                .vector_io_read()
-                .incr_delta(c * size_of::<GenericPostingElement<W>>());
-        })
+        self.remainders[index..].iter().measure_hw_with_cell(
+            self.hw_counter,
+            size_of::<GenericPostingElement<W>>(),
+            |hw_counter| hw_counter.vector_io_read(),
+        )
     }
 
     #[inline]
@@ -699,7 +698,7 @@ mod tests {
     fn test_iter() {
         for case in cases() {
             let list = CompressedPostingList::<f32>::from(case.clone());
-            let hw_counter = HardwareCounterCell::disposable();
+            let hw_counter = HardwareCounterCell::new();
 
             let mut iter = list.iter(&hw_counter);
 

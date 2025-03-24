@@ -360,7 +360,7 @@ mod tests {
         inverted_index_ram: &InvertedIndexCompressedImmutableRam<W>,
         inverted_index_mmap: &InvertedIndexCompressedMmap<W>,
     ) {
-        let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter = HardwareCounterCell::new();
         for id in 0..inverted_index_ram.postings.len() as DimId {
             let posting_list_ram = inverted_index_ram
                 .postings
@@ -385,7 +385,7 @@ mod tests {
     }
 
     fn check_inverted_index_mmap<W: Weight>() {
-        let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter = HardwareCounterCell::new();
 
         // skip 4th dimension
         let mut builder = InvertedIndexBuilder::new();
