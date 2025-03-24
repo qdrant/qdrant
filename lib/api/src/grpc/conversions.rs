@@ -2809,10 +2809,14 @@ fn unparse_expression(
             origin: Some(GeoPoint::from(origin)),
             to: key.to_string(),
         }),
-        ParsedExpression::Datetime(dt_expr) => Variant::Datetime(match dt_expr {
-            DatetimeExpression::Constant(date_time_wrapper) => date_time_wrapper.to_string(),
-            DatetimeExpression::PayloadVariable(json_path) => json_path.to_string(),
-        }),
+        ParsedExpression::Datetime(dt_expr) => match dt_expr {
+            DatetimeExpression::Constant(date_time_wrapper) => {
+                Variant::Datetime(date_time_wrapper.to_string())
+            }
+            DatetimeExpression::PayloadVariable(json_path) => {
+                Variant::DatetimeKey(json_path.to_string())
+            }
+        },
         ParsedExpression::Mult(exprs) => Variant::Mult(MultExpression {
             mult: exprs
                 .into_iter()

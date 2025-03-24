@@ -106,19 +106,6 @@ pub enum DatetimeExpression {
     PayloadVariable(JsonPath),
 }
 
-impl FromStr for DatetimeExpression {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // try as date
-        DateTimePayloadType::from_str(s)
-            .map(DatetimeExpression::Constant)
-            // else as payload key
-            .or_else(|_| JsonPath::from_str(s).map(DatetimeExpression::PayloadVariable))
-            .map_err(|_| format!("Invalid date time expression: {s}"))
-    }
-}
-
 impl ParsedExpression {
     pub fn new_div(
         left: ParsedExpression,

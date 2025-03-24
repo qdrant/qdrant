@@ -14477,6 +14477,9 @@
             "$ref": "#/components/schemas/DatetimeExpression"
           },
           {
+            "$ref": "#/components/schemas/DatetimeKeyExpression"
+          },
+          {
             "$ref": "#/components/schemas/MultExpression"
           },
           {
@@ -14551,6 +14554,17 @@
         ],
         "properties": {
           "datetime": {
+            "type": "string"
+          }
+        }
+      },
+      "DatetimeKeyExpression": {
+        "type": "object",
+        "required": [
+          "datetime_key"
+        ],
+        "properties": {
+          "datetime_key": {
             "type": "string"
           }
         }

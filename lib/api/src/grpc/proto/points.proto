@@ -583,20 +583,21 @@ message Expression {
         string variable = 2; // Payload key or reference to score.
         Condition condition = 3; // Payload condition. If true, becomes 1.0; otherwise 0.0
         GeoDistance geo_distance = 4; // Geographic distance in meters
-        string datetime = 5; // Date-time constant or payload key
-        MultExpression mult = 6; // Multiply
-        SumExpression sum = 7; // Sum
-        DivExpression div = 8; // Divide
-        Expression neg = 9; // Negate
-        Expression abs = 10; // Absolute value
-        Expression sqrt = 11; // Square root
-        PowExpression pow = 12; // Power
-        Expression exp = 13; // Exponential
-        Expression log10 = 14; // Logarithm
-        Expression ln = 15; // Natural logarithm
-        DecayParamsExpression exp_decay = 16; // Exponential decay
-        DecayParamsExpression gauss_decay = 17; // Gaussian decay
-        DecayParamsExpression lin_decay = 18; // Linear decay
+        string datetime = 5; // Date-time constant
+        string datetime_key = 6; // Payload key with date-time values
+        MultExpression mult = 7; // Multiply
+        SumExpression sum = 8; // Sum
+        DivExpression div = 9; // Divide
+        Expression neg = 10; // Negate
+        Expression abs = 11; // Absolute value
+        Expression sqrt = 12; // Square root
+        PowExpression pow = 13; // Power
+        Expression exp = 14; // Exponential
+        Expression log10 = 15; // Logarithm
+        Expression ln = 16; // Natural logarithm
+        DecayParamsExpression exp_decay = 17; // Exponential decay
+        DecayParamsExpression gauss_decay = 18; // Gaussian decay
+        DecayParamsExpression lin_decay = 19; // Linear decay
     }
 }
 

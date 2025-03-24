@@ -8,7 +8,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
 };
 use segment::json_path::JsonPath;
-use segment::types::{Condition, GeoPoint};
+use segment::types::{Condition, GeoPoint, PayloadKeyType};
 use serde_json::Value;
 
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -29,6 +29,7 @@ pub enum ExpressionInternal {
         to: JsonPath,
     },
     Datetime(String),
+    DatetimeKey(String),
     Mult(Vec<ExpressionInternal>),
     Sum(Vec<ExpressionInternal>),
     Neg(Box<ExpressionInternal>),
@@ -80,11 +81,18 @@ impl ExpressionInternal {
                 ParsedExpression::new_geo_distance(origin, to)
             }
             ExpressionInternal::Datetime(dt_str) => {
-                let dt_expr = dt_str.parse()?;
-                if let DatetimeExpression::PayloadVariable(json_path) = &dt_expr {
-                    payload_vars.insert(json_path.clone());
-                }
-                ParsedExpression::Datetime(dt_expr)
+                ParsedExpression::Datetime(DatetimeExpression::Constant(
+                    dt_str
+                        .parse()
+                        .map_err(|err: chrono::ParseError| err.to_string())?,
+                ))
+            }
+            ExpressionInternal::DatetimeKey(dt_key) => {
+                let json_path: PayloadKeyType = dt_key
+                    .parse()
+                    .map_err(|_| format!("Invalid datetime payload variable: {dt_key}"))?;
+                payload_vars.insert(json_path.clone());
+                ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(json_path))
             }
             ExpressionInternal::Mult(internal_expressions) => ParsedExpression::Mult(
                 internal_expressions
@@ -208,6 +216,9 @@ impl From<rest::Expression> for ExpressionInternal {
             }) => ExpressionInternal::GeoDistance { origin, to },
             rest::Expression::Datetime(rest::DatetimeExpression { datetime }) => {
                 ExpressionInternal::Datetime(datetime)
+            }
+            rest::Expression::DatetimeKey(rest::DatetimeKeyExpression { datetime_key }) => {
+                ExpressionInternal::DatetimeKey(datetime_key)
             }
             rest::Expression::Mult(rest::MultExpression { mult: exprs }) => {
                 ExpressionInternal::Mult(exprs.into_iter().map(ExpressionInternal::from).collect())
