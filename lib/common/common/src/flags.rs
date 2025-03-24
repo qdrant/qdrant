@@ -42,12 +42,12 @@ impl FeatureFlags {
     /// Check if no flag is set at all
     pub fn is_empty(self) -> bool {
         let FeatureFlags {
-            all,
+            all: _,
             use_new_shard_key_mapping_format,
             use_mutable_id_tracker_without_rocksdb,
             payload_index_skip_rocksdb,
         } = self;
-        !all && !use_new_shard_key_mapping_format
+        !use_new_shard_key_mapping_format
             && !use_mutable_id_tracker_without_rocksdb
             && !payload_index_skip_rocksdb
     }
