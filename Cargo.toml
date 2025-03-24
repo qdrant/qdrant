@@ -70,7 +70,7 @@ uuid = { workspace = true }
 sys-info = "0.9.1"
 wal = { workspace = true }
 
-config = { version = "0.15.8", default-features = false, features = ["yaml"] }
+config = { version = "0.15.11", default-features = false, features = ["yaml"] }
 
 tokio = { workspace = true }
 
