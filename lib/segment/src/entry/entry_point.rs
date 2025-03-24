@@ -84,7 +84,6 @@ pub trait SegmentEntry: PartialSnapshotEntry {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &VectorName,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool>;
 
     fn set_payload(
@@ -279,6 +278,7 @@ pub trait SegmentEntry: PartialSnapshotEntry {
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>>;
 
     /// Apply a built index. Returns whether it was actually applied or not.
@@ -296,8 +296,11 @@ pub trait SegmentEntry: PartialSnapshotEntry {
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_schema: Option<&PayloadFieldSchema>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        let Some((schema, index)) = self.build_field_index(op_num, key, field_schema)? else {
+        let Some((schema, index)) =
+            self.build_field_index(op_num, key, field_schema, hw_counter)?
+        else {
             return Ok(false);
         };
 

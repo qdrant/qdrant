@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use common::counter::hardware_accumulator::HwMeasurementAcc;
+
 use crate::collection::Collection;
 use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_state::{ShardInfo, State};
@@ -230,7 +232,9 @@ impl Collection {
         }
 
         for (field_name, field_schema) in payload_index_schema.schema {
-            self.create_payload_index(field_name, field_schema).await?;
+            // This function is only used in collection state recovery and thus an unmeasured internal operation.
+            self.create_payload_index(field_name, field_schema, HwMeasurementAcc::disposable())
+                .await?;
         }
         Ok(())
     }

@@ -38,11 +38,14 @@ fn test_batch_and_single_request_equivalency() {
 
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
 
+    let hw_counter = HardwareCounterCell::new();
+
     segment
         .create_field_index(
             0,
             &JsonPath::new(int_key),
             Some(&PayloadSchemaType::Integer.into()),
+            &hw_counter,
         )
         .unwrap();
 
@@ -52,8 +55,6 @@ fn test_batch_and_single_request_equivalency() {
 
         let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
-
-        let hw_counter = HardwareCounterCell::new();
 
         segment
             .upsert_point(

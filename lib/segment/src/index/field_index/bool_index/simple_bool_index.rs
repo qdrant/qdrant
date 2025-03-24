@@ -331,8 +331,13 @@ impl FieldIndexBuilderTrait for BoolIndexBuilder {
         self.0.db_wrapper.recreate_column_family()
     }
 
-    fn add_point(&mut self, id: PointOffsetType, payload: &[&Value]) -> OperationResult<()> {
-        self.0.add_point(id, payload)
+    fn add_point(
+        &mut self,
+        id: PointOffsetType,
+        payload: &[&Value],
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -455,7 +460,12 @@ impl PayloadFieldIndex for SimpleBoolIndex {
 impl ValueIndexer for SimpleBoolIndex {
     type ValueType = bool;
 
-    fn add_many(&mut self, id: PointOffsetType, values: Vec<bool>) -> OperationResult<()> {
+    fn add_many(
+        &mut self,
+        id: PointOffsetType,
+        values: Vec<bool>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -467,7 +477,13 @@ impl ValueIndexer for SimpleBoolIndex {
 
         self.memory.set_or_insert(id, &item);
 
-        self.db_wrapper.put(id.to_be_bytes(), item.as_bytes())?;
+        let item_bytes = item.as_bytes();
+
+        hw_counter
+            .payload_index_io_write_counter()
+            .incr_delta(size_of_val(&id) + size_of_val(&item_bytes));
+
+        self.db_wrapper.put(id.to_be_bytes(), item_bytes)?;
 
         Ok(())
     }

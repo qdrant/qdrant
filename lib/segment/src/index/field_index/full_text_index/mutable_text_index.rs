@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::inverted_index::InvertedIndex;
@@ -46,7 +47,12 @@ impl MutableFullTextIndex {
         Ok(true)
     }
 
-    pub fn add_many(&mut self, idx: PointOffsetType, values: Vec<String>) -> OperationResult<()> {
+    pub fn add_many(
+        &mut self,
+        idx: PointOffsetType,
+        values: Vec<String>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
         }
@@ -60,7 +66,8 @@ impl MutableFullTextIndex {
         }
 
         let document = self.inverted_index.document_from_tokens(&tokens);
-        self.inverted_index.index_document(idx, document)?;
+        self.inverted_index
+            .index_document(idx, document, hw_counter)?;
 
         let db_idx = FullTextIndex::store_key(idx);
         let db_document = FullTextIndex::serialize_document_tokens(tokens)?;
@@ -104,6 +111,7 @@ mod tests {
     #[case(false)]
     fn test_full_text_indexing(#[case] immutable: bool) {
         use common::counter::hardware_accumulator::HwMeasurementAcc;
+        use common::counter::hardware_counter::HardwareCounterCell;
         use common::types::PointOffsetType;
 
         use crate::index::field_index::{FieldIndexBuilderTrait, PayloadFieldIndex, ValueIndexer};
@@ -142,8 +150,12 @@ mod tests {
                 .make_empty()
                 .unwrap();
 
+            let hw_cell = HardwareCounterCell::new();
+
             for (idx, payload) in payloads.iter().enumerate() {
-                index.add_point(idx as PointOffsetType, &[payload]).unwrap();
+                index
+                    .add_point(idx as PointOffsetType, &[payload], &hw_cell)
+                    .unwrap();
             }
 
             assert_eq!(index.count_indexed_points(), payloads.len());
@@ -190,12 +202,12 @@ mod tests {
                 "The last question was asked for the first time, half in jest, on May 21, 2061,",
                 "at a time when humanity first stepped into the light."
             ]);
-            index.add_point(3, &[&payload]).unwrap();
+            index.add_point(3, &[&payload], &hw_cell).unwrap();
 
             let payload = serde_json::json!([
                 "The question came about as a result of a five dollar bet over highballs, and it happened this way: "
             ]);
-            index.add_point(4, &[&payload]).unwrap();
+            index.add_point(4, &[&payload], &hw_cell).unwrap();
 
             assert_eq!(index.count_indexed_points(), payloads.len() - 1);
 

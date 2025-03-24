@@ -82,10 +82,18 @@ impl MmapBoolIndex {
         })
     }
 
-    fn set_or_insert(&mut self, id: u32, has_true: bool, has_false: bool) -> OperationResult<()> {
+    fn set_or_insert(
+        &mut self,
+        id: u32,
+        has_true: bool,
+        has_false: bool,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         // Set or insert the flags
-        let prev_true = set_or_insert_flag(&mut self.trues_slice, id as usize, has_true)?;
-        let prev_false = set_or_insert_flag(&mut self.falses_slice, id as usize, has_false)?;
+        let prev_true =
+            set_or_insert_flag(&mut self.trues_slice, id as usize, has_true, hw_counter)?;
+        let prev_false =
+            set_or_insert_flag(&mut self.falses_slice, id as usize, has_false, hw_counter)?;
 
         let was_indexed = prev_true || prev_false;
         let is_indexed = has_true || has_false;
@@ -264,12 +272,19 @@ fn set_or_insert_flag(
     flags: &mut DynamicMmapFlags,
     key: usize,
     value: bool,
+    hw_counter: &HardwareCounterCell,
 ) -> OperationResult<bool> {
+    let counter = hw_counter.payload_index_io_write_counter();
+
+    // Measure writing bool.
+    counter.incr_delta(size_of::<bool>());
+
     // Set to true
     if value {
         // Make sure the key fits
         if key >= flags.len() {
             let new_len = (key + 1).next_multiple_of(PAGE_SIZE_BYTES);
+            counter.incr_delta(new_len - flags.len());
             flags.set_len(new_len)?;
         }
         return Ok(flags.set(key, value));
@@ -297,8 +312,9 @@ impl FieldIndexBuilderTrait for MmapBoolIndexBuilder {
         &mut self,
         id: PointOffsetType,
         payload: &[&serde_json::Value],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.0.add_point(id, payload)
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -313,6 +329,7 @@ impl ValueIndexer for MmapBoolIndex {
         &mut self,
         id: PointOffsetType,
         values: Vec<Self::ValueType>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
@@ -321,7 +338,7 @@ impl ValueIndexer for MmapBoolIndex {
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        self.set_or_insert(id, has_true, has_false)?;
+        self.set_or_insert(id, has_true, has_false, hw_counter)?;
 
         Ok(())
     }
@@ -331,7 +348,8 @@ impl ValueIndexer for MmapBoolIndex {
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.set_or_insert(id, false, false)?;
+        let disposable_hw = HardwareCounterCell::disposable();
+        self.set_or_insert(id, false, false, &disposable_hw)?;
         Ok(())
     }
 }

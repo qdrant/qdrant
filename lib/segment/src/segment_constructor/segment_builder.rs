@@ -451,6 +451,7 @@ impl SegmentBuilder {
         self,
         permit: ResourcePermit,
         stopped: &AtomicBool,
+        hw_counter: &HardwareCounterCell,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
             let SegmentBuilder {
@@ -539,9 +540,8 @@ impl SegmentBuilder {
                 &payload_index_path,
                 appendable_flag,
             )?;
-
             for (field, payload_schema) in indexed_fields {
-                payload_index.set_indexed(&field, payload_schema)?;
+                payload_index.set_indexed(&field, payload_schema, hw_counter)?;
                 check_process_stopped(stopped)?;
             }
 

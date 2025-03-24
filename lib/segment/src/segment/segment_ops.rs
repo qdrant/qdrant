@@ -545,7 +545,12 @@ impl Segment {
                 ),
             }
 
-            let created = self.create_field_index(self.version(), key, Some(schema))?;
+            let created = self.create_field_index(
+                self.version(),
+                key,
+                Some(schema),
+                &HardwareCounterCell::disposable(), // This function is only used in Segment::load which is unmeasured.
+            )?;
             if !created {
                 log::warn!("Failed to create payload index for {key} in segment");
             }

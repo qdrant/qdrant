@@ -439,11 +439,14 @@ mod tests {
             vector2_dim as usize,
         );
 
+        let hw_counter = HardwareCounterCell::new();
+
         segment
             .create_field_index(
                 101,
                 &"keyword".parse().unwrap(),
                 Some(&PayloadSchemaType::Keyword.into()),
+                &hw_counter,
             )
             .unwrap();
 
@@ -519,8 +522,6 @@ mod tests {
         let suggested_to_optimize =
             vacuum_optimizer.check_condition(locked_holder.clone(), &Default::default());
         assert_eq!(suggested_to_optimize.len(), 0);
-
-        let hw_counter = HardwareCounterCell::new();
 
         // Delete some points and vectors
         {

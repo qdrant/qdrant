@@ -81,22 +81,42 @@ fn test_filtering_context_consistency() {
     .unwrap();
 
     index
-        .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer)
+        .set_indexed(&JsonPath::new("f"), PayloadSchemaType::Integer, &hw_counter)
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].a"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].a"),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].b"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].b"),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].c"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].c"),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].d"), PayloadSchemaType::Integer)
+        .set_indexed(
+            &JsonPath::new("arr1[].d"),
+            PayloadSchemaType::Integer,
+            &hw_counter,
+        )
         .unwrap();
     index
-        .set_indexed(&JsonPath::new("arr1[].text"), PayloadSchemaType::Text)
+        .set_indexed(
+            &JsonPath::new("arr1[].text"),
+            PayloadSchemaType::Text,
+            &hw_counter,
+        )
         .unwrap();
 
     {

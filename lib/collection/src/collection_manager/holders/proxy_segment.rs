@@ -80,7 +80,11 @@ impl ProxySegment {
     }
 
     /// Ensure that write segment have same indexes as wrapped segment
-    pub fn replicate_field_indexes(&mut self, op_num: SeqNumberType) -> OperationResult<()> {
+    pub fn replicate_field_indexes(
+        &mut self,
+        op_num: SeqNumberType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
         let existing_indexes = self.write_segment.get().read().get_indexed_fields();
         let expected_indexes = self.wrapped_segment.get().read().get_indexed_fields();
 
@@ -99,6 +103,7 @@ impl ProxySegment {
                     op_num,
                     expected_field,
                     Some(expected_schema),
+                    hw_counter,
                 )?;
             }
         }
@@ -275,6 +280,7 @@ impl ProxySegment {
                                     *version,
                                     field_name,
                                     Some(schema),
+                                    &HardwareCounterCell::disposable(), // Internal operation
                                 )?;
                             }
                             ProxyIndexChange::Delete(version) => {
@@ -574,13 +580,12 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         point_id: PointIdType,
         vector_name: &VectorName,
-        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<bool> {
-        self.move_if_exists(op_num, point_id, hw_counter)?;
+        self.move_if_exists(op_num, point_id, &HardwareCounterCell::disposable())?;
         self.write_segment
             .get()
             .write()
-            .delete_vector(op_num, point_id, vector_name, hw_counter)
+            .delete_vector(op_num, point_id, vector_name)
     }
 
     fn set_full_payload(
@@ -1168,6 +1173,7 @@ impl SegmentEntry for ProxySegment {
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
         field_type: Option<&PayloadFieldSchema>,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>> {
         if self.version() > op_num {
             return Ok(None);
@@ -1176,7 +1182,7 @@ impl SegmentEntry for ProxySegment {
         self.write_segment
             .get()
             .read()
-            .build_field_index(op_num, key, field_type)
+            .build_field_index(op_num, key, field_type, hw_counter)
     }
 
     fn apply_field_index(
@@ -1791,6 +1797,7 @@ mod tests {
                 10,
                 &"color".parse().unwrap(),
                 Some(&PayloadSchemaType::Keyword.into()),
+                &HardwareCounterCell::new(),
             )
             .unwrap();
 
@@ -1801,7 +1808,9 @@ mod tests {
             LockedIndexChanges::default(),
         );
 
-        proxy_segment.replicate_field_indexes(0).unwrap();
+        let hw_cell = HardwareCounterCell::new();
+
+        proxy_segment.replicate_field_indexes(0, &hw_cell).unwrap();
 
         assert!(
             write_segment
@@ -1818,6 +1827,7 @@ mod tests {
                 11,
                 &"location".parse().unwrap(),
                 Some(&PayloadSchemaType::Geo.into()),
+                &hw_cell,
             )
             .unwrap();
 
@@ -1827,7 +1837,7 @@ mod tests {
             .delete_field_index(12, &"color".parse().unwrap())
             .unwrap();
 
-        proxy_segment.replicate_field_indexes(0).unwrap();
+        proxy_segment.replicate_field_indexes(0, &hw_cell).unwrap();
 
         assert!(
             write_segment
@@ -1961,7 +1971,7 @@ mod tests {
 
         // Delete vector of point 2, vector count should now be zero
         proxy_segment
-            .delete_vector(103, 2.into(), DEFAULT_VECTOR_NAME, &hw_cell)
+            .delete_vector(103, 2.into(), DEFAULT_VECTOR_NAME)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 4);
@@ -2060,7 +2070,7 @@ mod tests {
 
         // Delete vector 'a' of point 6, vector count should decrease by 1
         proxy_segment
-            .delete_vector(106, 6.into(), VECTOR1_NAME, &hw_cell)
+            .delete_vector(106, 6.into(), VECTOR1_NAME)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);
@@ -2068,7 +2078,7 @@ mod tests {
 
         // Deleting it again shouldn't chain anything
         proxy_segment
-            .delete_vector(107, 6.into(), VECTOR1_NAME, &hw_cell)
+            .delete_vector(107, 6.into(), VECTOR1_NAME)
             .unwrap();
         let segment_info = proxy_segment.info();
         assert_eq!(segment_info.num_points, 3);

@@ -141,6 +141,7 @@ impl MutableGeoMapIndex {
         &mut self,
         idx: PointOffsetType,
         values: &[GeoPoint],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
@@ -151,7 +152,8 @@ impl MutableGeoMapIndex {
 
             self.db_wrapper.put(key, value)?;
         }
-        self.in_memory_index.add_many_geo_points(idx, values)
+        self.in_memory_index
+            .add_many_geo_points(idx, values, hw_counter)
     }
 
     pub fn points_count(&self) -> usize {
@@ -309,6 +311,7 @@ impl InMemoryGeoMapIndex {
         &mut self,
         idx: PointOffsetType,
         values: &[GeoPoint],
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         if values.is_empty() {
             return Ok(());
@@ -323,9 +326,14 @@ impl InMemoryGeoMapIndex {
 
         let mut geo_hashes = vec![];
 
+        let counter = hw_counter.payload_index_io_write_counter();
+
         for added_point in values {
             let added_geo_hash: GeoHash = encode_max_precision(added_point.lon, added_point.lat)
                 .map_err(|e| OperationError::service_error(format!("Malformed geo points: {e}")))?;
+
+            counter.incr_delta(size_of_val(&added_geo_hash));
+
             geo_hashes.push(added_geo_hash);
         }
 
@@ -337,6 +345,8 @@ impl InMemoryGeoMapIndex {
 
             self.increment_hash_value_counts(geo_hash);
         }
+
+        counter.incr_delta(geo_hashes.len() * size_of::<PointOffsetType>());
 
         self.increment_hash_point_counts(&geo_hashes);
 

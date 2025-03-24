@@ -177,7 +177,7 @@ fn test_prefix_search(#[case] immutable: bool) {
 
     for (i, text) in texts.iter().enumerate() {
         index
-            .add_many(i as PointOffsetType, vec![text.to_string()])
+            .add_many(i as PointOffsetType, vec![text.to_string()], &hw_counter)
             .unwrap();
     }
 

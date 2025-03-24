@@ -1112,8 +1112,11 @@ impl<'s> SegmentHolder {
 
         let mut segment = build_segment(segments_path, &config, save_version)?;
 
+        // Internal operation.
+        let hw_counter = HardwareCounterCell::disposable();
+
         for (key, schema) in &payload_index_schema.schema {
-            segment.create_field_index(0, key, Some(schema))?;
+            segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
 
         Ok(LockedSegment::new(segment))
@@ -1131,6 +1134,10 @@ impl<'s> SegmentHolder {
         LockedSegment,
         RwLockUpgradableReadGuard<'a, SegmentHolder>,
     )> {
+        // This counter will be used to measure operations on temp segment,
+        // which is part of internal process and can be ignored
+        let hw_counter = HardwareCounterCell::disposable();
+
         // Create temporary appendable segment to direct all proxy writes into
         let tmp_segment = segments_lock.build_tmp_segment(
             segments_path,
@@ -1155,7 +1162,7 @@ impl<'s> SegmentHolder {
 
             // Write segment is fresh, so it has no operations
             // Operation with number 0 will be applied
-            proxy.replicate_field_indexes(0)?;
+            proxy.replicate_field_indexes(0, &hw_counter)?;
             new_proxies.push((segment_id, proxy));
         }
 
@@ -1178,7 +1185,7 @@ impl<'s> SegmentHolder {
             // been changed. The probability is small, though, so we can afford this operation
             // under the full collection write lock
             let op_num = proxy.version();
-            if let Err(err) = proxy.replicate_field_indexes(op_num) {
+            if let Err(err) = proxy.replicate_field_indexes(op_num, &hw_counter) {
                 log::error!("Failed to replicate proxy segment field indexes, ignoring: {err}");
             }
 
