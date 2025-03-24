@@ -3,6 +3,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::StorageVersion;
@@ -60,6 +61,10 @@ impl InvertedIndex for InvertedIndexMmap {
 
     type Version = Version;
 
+    fn is_on_disk(&self) -> bool {
+        true
+    }
+
     fn open(path: &Path) -> std::io::Result<Self> {
         Self::load(path)
     }
@@ -77,15 +82,25 @@ impl InvertedIndex for InvertedIndexMmap {
         Ok(())
     }
 
-    fn get(&self, id: &DimId) -> Option<PostingListIterator> {
-        self.get(id).map(PostingListIterator::new)
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<PostingListIterator<'a>> {
+        let posting_list = self.get(&id);
+
+        hw_counter
+            .vector_io_read()
+            .incr_delta(posting_list.map(|x| x.len()).unwrap_or(0) * size_of::<PostingElementEx>());
+
+        posting_list.map(PostingListIterator::new)
     }
 
     fn len(&self) -> usize {
         self.file_header.posting_count
     }
 
-    fn posting_list_len(&self, id: &DimOffset) -> Option<usize> {
+    fn posting_list_len(&self, id: &DimOffset, _hw_counter: &HardwareCounterCell) -> Option<usize> {
         self.get(id).map(|posting_list| posting_list.len())
     }
 

@@ -250,6 +250,10 @@ where
         )
     }
 
+    fn is_on_disk(&self) -> bool {
+        self.quantized_storage.is_on_disk()
+    }
+
     fn encode_query(&self, query: &[VectorElementType]) -> Vec<TEncodedQuery> {
         let multi_vector = TypedMultiDenseVectorRef {
             dim: self.dim,

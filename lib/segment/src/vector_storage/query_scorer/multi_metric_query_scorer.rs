@@ -46,6 +46,12 @@ impl<
 
         hardware_counter.set_cpu_multiplier(query.dim * size_of::<TElement>());
 
+        if vector_storage.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(query.dim * size_of::<TElement>());
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
+
         Self {
             query: TElement::from_float_multivector(CowMultiVector::Owned(preprocessed)).to_owned(),
             vector_storage,
@@ -85,10 +91,12 @@ impl<
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
-        self.score_multi(
-            TypedMultiDenseVectorRef::from(&self.query),
-            self.vector_storage.get_multi(idx),
-        )
+        let stored = self.vector_storage.get_multi(idx);
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(stored.vectors_count());
+
+        self.score_multi(TypedMultiDenseVectorRef::from(&self.query), stored)
     }
 
     #[inline]
@@ -100,16 +108,28 @@ impl<
     }
 
     fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
-        debug_assert_eq!(ids.len(), scores.len());
+        let batch_size = ids.len();
+
+        debug_assert!(batch_size <= VECTOR_READ_BATCH_SIZE);
+        debug_assert_eq!(batch_size, scores.len());
 
         let mut vectors = [TypedMultiDenseVectorRef {
             flattened_vectors: &[],
-            dim: 0,
+            dim: 1,
         }; VECTOR_READ_BATCH_SIZE];
         self.vector_storage
-            .get_batch_multi(ids, &mut vectors[..ids.len()]);
-        for idx in 0..ids.len() {
+            .get_batch_multi(ids, &mut vectors[..batch_size]);
+
+        let total_read = vectors[..batch_size]
+            .iter()
+            .map(|v| v.vectors_count())
+            .sum();
+
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(total_read);
+
+        for idx in 0..batch_size {
             scores[idx] = self.score_ref(vectors[idx]);
         }
     }
@@ -117,6 +137,10 @@ impl<
     fn score_internal(&self, point_a: PointOffsetType, point_b: PointOffsetType) -> ScoreType {
         let v1 = self.vector_storage.get_multi(point_a);
         let v2 = self.vector_storage.get_multi(point_b);
+        self.hardware_counter
+            .vector_io_read()
+            .incr_delta(v1.vectors_count() + v2.vectors_count());
+
         self.score_multi(v1, v2)
     }
 }

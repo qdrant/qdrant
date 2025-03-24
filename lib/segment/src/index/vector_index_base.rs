@@ -97,18 +97,28 @@ impl VectorIndexEnum {
         }
     }
 
-    pub fn fill_idf_statistics(&self, idf: &mut HashMap<DimId, usize>) {
+    pub fn fill_idf_statistics(
+        &self,
+        idf: &mut HashMap<DimId, usize>,
+        hw_counter: &HardwareCounterCell,
+    ) {
         match self {
             Self::Plain(_) | Self::Hnsw(_) => (),
-            Self::SparseRam(index) => index.fill_idf_statistics(idf),
-            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf),
-            Self::SparseMmap(index) => index.fill_idf_statistics(idf),
-            Self::SparseCompressedImmutableRamF32(index) => index.fill_idf_statistics(idf),
-            Self::SparseCompressedImmutableRamF16(index) => index.fill_idf_statistics(idf),
-            Self::SparseCompressedImmutableRamU8(index) => index.fill_idf_statistics(idf),
-            Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf),
-            Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf),
-            Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf),
+            Self::SparseRam(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseImmutableRam(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseMmap(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedImmutableRamF32(index) => {
+                index.fill_idf_statistics(idf, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamF16(index) => {
+                index.fill_idf_statistics(idf, hw_counter)
+            }
+            Self::SparseCompressedImmutableRamU8(index) => {
+                index.fill_idf_statistics(idf, hw_counter)
+            }
+            Self::SparseCompressedMmapF32(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedMmapF16(index) => index.fill_idf_statistics(idf, hw_counter),
+            Self::SparseCompressedMmapU8(index) => index.fill_idf_statistics(idf, hw_counter),
         }
     }
 }

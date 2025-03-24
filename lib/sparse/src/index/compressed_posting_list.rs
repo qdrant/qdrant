@@ -3,6 +3,8 @@ use std::fmt::Debug;
 use std::mem::size_of;
 
 use bitpacking::BitPacker as _;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 #[cfg(debug_assertions)]
 use itertools::Itertools as _;
@@ -12,6 +14,9 @@ use super::posting_list_common::{
 };
 use crate::common::types::{DimWeight, Weight};
 type BitPackerImpl = bitpacking::BitPacker4x;
+
+/// How many elements are packed in a single chunk.
+const CHUNK_SIZE: usize = BitPackerImpl::BLOCK_LEN;
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CompressedPostingList<W: Weight> {
@@ -32,13 +37,14 @@ pub struct CompressedPostingList<W: Weight> {
 }
 
 /// A non-owning view of [`CompressedPostingList`].
-#[derive(Default, Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct CompressedPostingListView<'a, W: Weight> {
     id_data: &'a [u8],
     chunks: &'a [CompressedPostingChunk<W>],
     remainders: &'a [GenericPostingElement<W>],
     last_id: Option<PointOffsetType>,
     multiplier: W::QuantizationParams,
+    hw_counter: &'a HardwareCounterCell,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -51,22 +57,29 @@ pub struct CompressedPostingChunk<W> {
     offset: u32,
 
     /// Weight values for the chunk.
-    weights: [W; BitPackerImpl::BLOCK_LEN],
+    weights: [W; CHUNK_SIZE],
 }
 
 impl<W: Weight> CompressedPostingList<W> {
-    pub(super) fn view(&self) -> CompressedPostingListView<W> {
+    pub(super) fn view<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> CompressedPostingListView<'a, W> {
         CompressedPostingListView {
             id_data: &self.id_data,
             chunks: &self.chunks,
             remainders: &self.remainders,
             last_id: self.last_id,
             multiplier: self.quantization_params,
+            hw_counter,
         }
     }
 
-    pub fn iter(&self) -> CompressedPostingListIterator<W> {
-        self.view().iter()
+    pub fn iter<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> CompressedPostingListIterator<'a, W> {
+        self.view(hw_counter).iter()
     }
 
     #[cfg(test)]
@@ -97,6 +110,17 @@ impl CompressedPostingListStoreSize {
     }
 }
 
+/// Defines possible results of the search for the chunk by the ID.
+enum IdChunkPosition {
+    /// The Id is smaller than any data in chunks and therefore
+    /// not in the posting list.
+    Before,
+    /// Id if possibly in the chunk, but it is not guaranteed.
+    Chunk(usize),
+    /// The Id is greater than any data in chunks, but may be in the remainder
+    After,
+}
+
 impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     pub(super) fn new(
         id_data: &'a [u8],
@@ -104,6 +128,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         remainders: &'a [GenericPostingElement<W>],
         last_id: Option<PointOffsetType>,
         multiplier: W::QuantizationParams,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Self {
         CompressedPostingListView {
             id_data,
@@ -111,6 +136,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
             remainders,
             last_id,
             multiplier,
+            hw_counter,
         }
     }
 
@@ -151,7 +177,7 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     }
 
     pub fn len(&self) -> usize {
-        self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainders.len()
+        self.chunks.len() * CHUNK_SIZE + self.remainders.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -161,11 +187,12 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
     fn decompress_chunk(
         &self,
         chunk_index: usize,
-        decompressed_chunk: &mut [PointOffsetType; BitPackerImpl::BLOCK_LEN],
+        decompressed_chunk: &mut [PointOffsetType; CHUNK_SIZE],
     ) {
         let chunk = &self.chunks[chunk_index];
         let chunk_size = Self::get_chunk_size(self.chunks, self.id_data, chunk_index);
-        let chunk_bits = chunk_size * u8::BITS as usize / BitPackerImpl::BLOCK_LEN;
+        self.hw_counter.vector_io_read().incr_delta(chunk_size);
+        let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
         BitPackerImpl::new().decompress_strictly_sorted(
             chunk.initial.checked_sub(1),
             &self.id_data[chunk.offset as usize..chunk.offset as usize + chunk_size],
@@ -174,6 +201,68 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         );
     }
 
+    fn chunk_id_by_position(&self, position: usize) -> Option<usize> {
+        let chunk_index = position / CHUNK_SIZE;
+        if chunk_index < self.chunks.len() {
+            Some(chunk_index)
+        } else {
+            None
+        }
+    }
+
+    /// Finds the chunk index by the point id.
+    /// It doesn't guarantee that the ID is inside the chunk,
+    /// but if the ID exists, it would be in the chunk.
+    fn chunk_id_by_id(&self, id: PointOffsetType) -> IdChunkPosition {
+        let chunk_index_result = self.chunks.binary_search_by(|c| c.initial.cmp(&id));
+        match chunk_index_result {
+            Ok(chunk_id) => {
+                // Found chunk with the first element exactly equal to the id.
+                IdChunkPosition::Chunk(chunk_id)
+            }
+            Err(position) => {
+                // ┌────── position 0, before any chunk
+                // │       Means first chunk is already greater than required
+                // ▼
+                //     ┌─────────┬────────┬─────────────────┐
+                //     │Chunk-1  │Chunk-2 │....             │
+                //     └─────────┴────────┴─────────────────┘   ▲
+                //                   ▲                          │
+                //                   │                          │
+                //   It might────────┘
+                //   be inside position-1, if             Position == length
+                //   position < length                    it might be either in the chunk (position-1)
+                //                                        Or be inside the remainder
+                if position == self.chunks.len() {
+                    if let Some(first_remainder) = self.remainders.first() {
+                        // If first element of remainder is greater than id,
+                        // then Id might still be in the last chunk, if it exists
+                        if id < first_remainder.record_id {
+                            if position > 0 {
+                                IdChunkPosition::Chunk(position - 1)
+                            } else {
+                                IdChunkPosition::Before
+                            }
+                        } else {
+                            IdChunkPosition::After
+                        }
+                    } else {
+                        // There are no remainder, so we don't know the last id of the last chunk
+                        // Therefore, it is still possible that the id is in the last chunk
+                        IdChunkPosition::Chunk(position - 1)
+                    }
+                } else if position == 0 {
+                    // The id is smaller than the first element of the first chunk
+                    IdChunkPosition::Before
+                } else {
+                    // The id is between two chunks
+                    IdChunkPosition::Chunk(position - 1)
+                }
+            }
+        }
+    }
+
+    /// Get byte size of the compressed chunk.
     fn get_chunk_size(
         chunks: &[CompressedPostingChunk<W>],
         data: &[u8],
@@ -182,8 +271,59 @@ impl<'a, W: Weight> CompressedPostingListView<'a, W> {
         if chunk_index + 1 < chunks.len() {
             chunks[chunk_index + 1].offset as usize - chunks[chunk_index].offset as usize
         } else {
+            // Last chunk
             data.len() - chunks[chunk_index].offset as usize
         }
+    }
+
+    #[inline]
+    fn get_remainder_id(&self, index: usize) -> Option<&GenericPostingElement<W>> {
+        self.hw_counter
+            .vector_io_read()
+            .incr_delta(size_of::<GenericPostingElement<W>>());
+        self.remainders.get(index)
+    }
+
+    #[inline]
+    fn iter_remainder_from(
+        &self,
+        index: usize,
+    ) -> impl Iterator<Item = &'_ GenericPostingElement<W>> + '_ {
+        self.remainders[index..].iter().measure_hw_with_cell(
+            self.hw_counter,
+            size_of::<GenericPostingElement<W>>(),
+            |hw_counter| hw_counter.vector_io_read(),
+        )
+    }
+
+    #[inline]
+    fn remainder_len(&self) -> usize {
+        self.remainders.len()
+    }
+
+    #[inline]
+    fn chunks_len(&self) -> usize {
+        self.chunks.len()
+    }
+
+    /// Warning: This function panics if the index is out of bounds.
+    #[inline]
+    fn get_weight(&self, pos: usize) -> W {
+        self.hw_counter.vector_io_read().incr_delta(size_of::<W>());
+        let chunk = &self.chunks[pos / CHUNK_SIZE];
+        chunk.weights[pos % CHUNK_SIZE]
+    }
+
+    #[inline]
+    fn weights_range(&self, pos: usize, count: usize) -> &[W] {
+        debug_assert!(count <= CHUNK_SIZE);
+        self.hw_counter
+            .vector_io_read()
+            .incr_delta(size_of::<W>() * count);
+
+        let chunk = &self.chunks[pos / CHUNK_SIZE];
+        let start = pos % CHUNK_SIZE;
+        chunk.weights[start..start + count].as_ref()
     }
 
     pub fn iter(&self) -> CompressedPostingListIterator<'a, W> {
@@ -220,14 +360,14 @@ impl CompressedPostingBuilder {
             panic!("Duplicate id {} in posting list", e.record_id);
         }
 
-        let mut this_chunk = Vec::with_capacity(BitPackerImpl::BLOCK_LEN);
+        let mut this_chunk = Vec::with_capacity(CHUNK_SIZE);
 
         let bitpacker = BitPackerImpl::new();
-        let mut chunks = Vec::with_capacity(self.elements.len() / BitPackerImpl::BLOCK_LEN);
+        let mut chunks = Vec::with_capacity(self.elements.len() / CHUNK_SIZE);
         let mut data_size = 0;
-        let mut remainders = Vec::with_capacity(self.elements.len() % BitPackerImpl::BLOCK_LEN);
-        for chunk in self.elements.chunks(BitPackerImpl::BLOCK_LEN) {
-            if chunk.len() == BitPackerImpl::BLOCK_LEN {
+        let mut remainders = Vec::with_capacity(self.elements.len() % CHUNK_SIZE);
+        for chunk in self.elements.chunks(CHUNK_SIZE) {
+            if chunk.len() == CHUNK_SIZE {
                 this_chunk.clear();
                 this_chunk.extend(chunk.iter().map(|e| e.record_id));
 
@@ -257,18 +397,14 @@ impl CompressedPostingBuilder {
         }
 
         let mut id_data = vec![0u8; data_size];
-        for (chunk_index, chunk_data) in self
-            .elements
-            .chunks_exact(BitPackerImpl::BLOCK_LEN)
-            .enumerate()
-        {
+        for (chunk_index, chunk_data) in self.elements.chunks_exact(CHUNK_SIZE).enumerate() {
             this_chunk.clear();
             this_chunk.extend(chunk_data.iter().map(|e| e.record_id));
 
             let chunk = &chunks[chunk_index];
             let chunk_size =
                 CompressedPostingListView::get_chunk_size(&chunks, &id_data, chunk_index);
-            let chunk_bits = chunk_size * u8::BITS as usize / BitPackerImpl::BLOCK_LEN;
+            let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
             bitpacker.compress_strictly_sorted(
                 chunk.initial.checked_sub(1),
                 &this_chunk,
@@ -294,9 +430,11 @@ pub struct CompressedPostingListIterator<'a, W: Weight> {
     /// If true, then `decompressed_chunk` contains the unpacked chunk for the current position.
     unpacked: bool,
 
-    decompressed_chunk: [PointOffsetType; BitPackerImpl::BLOCK_LEN],
+    decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
 
-    pos: usize,
+    /// Offset inside the posting list along with optional current element.
+    /// Defined as a tuple to ensure that we won't forget to update the element
+    pos: (usize, Option<PointOffsetType>),
 }
 
 impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
@@ -305,50 +443,53 @@ impl<'a, W: Weight> CompressedPostingListIterator<'a, W> {
         Self {
             list: list.clone(),
             unpacked: false,
-            decompressed_chunk: [0; BitPackerImpl::BLOCK_LEN],
-            pos: 0,
+            decompressed_chunk: [0; CHUNK_SIZE],
+            pos: (0, None),
         }
+    }
+
+    #[inline]
+    fn next_from(&mut self, peek: PostingElementEx) -> PostingElement {
+        if self.pos.0 / CHUNK_SIZE < self.list.chunks.len() {
+            self.pos = (self.pos.0 + 1, None);
+            if self.pos.0 % CHUNK_SIZE == 0 {
+                self.unpacked = false;
+            }
+        } else {
+            self.pos = (self.pos.0 + 1, None);
+        }
+
+        peek.into()
     }
 
     #[inline]
     fn next(&mut self) -> Option<PostingElement> {
         let result = self.peek()?;
 
-        if self.pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
-            self.pos += 1;
-            if self.pos % BitPackerImpl::BLOCK_LEN == 0 {
-                self.unpacked = false;
-            }
-        } else {
-            self.pos += 1;
-        }
-
-        Some(result.into())
+        Some(self.next_from(result))
     }
 }
 
 impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
     #[inline]
     fn peek(&mut self) -> Option<PostingElementEx> {
-        let pos = self.pos;
-        if pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+        let pos = self.pos.0;
+        if pos / CHUNK_SIZE < self.list.chunks_len() {
             if !self.unpacked {
                 self.list
-                    .decompress_chunk(pos / BitPackerImpl::BLOCK_LEN, &mut self.decompressed_chunk);
+                    .decompress_chunk(pos / CHUNK_SIZE, &mut self.decompressed_chunk);
                 self.unpacked = true;
             }
 
-            let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
             return Some(PostingElementEx {
-                record_id: self.decompressed_chunk[pos % BitPackerImpl::BLOCK_LEN],
-                weight: chunk.weights[pos % BitPackerImpl::BLOCK_LEN].to_f32(self.list.multiplier),
+                record_id: self.decompressed_chunk[pos % CHUNK_SIZE],
+                weight: self.list.get_weight(pos).to_f32(self.list.multiplier),
                 max_next_weight: Default::default(),
             });
         }
 
         self.list
-            .remainders
-            .get(pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN)
+            .get_remainder_id(pos - self.list.chunks_len() * CHUNK_SIZE)
             .map(|e| PostingElementEx {
                 record_id: e.record_id,
                 weight: e.weight.to_f32(self.list.multiplier),
@@ -361,15 +502,71 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         self.list.last_id
     }
 
-    #[inline]
+    fn element_size(&self) -> usize {
+        size_of::<W>()
+    }
+
     fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx> {
-        // TODO: optimize
-        while let Some(e) = self.peek() {
-            match e.record_id.cmp(&record_id) {
-                Ordering::Equal => return Some(e),
+        // 1. Define which chunk we need to unpack (maybe it is current)
+        // 2. If current, change the position to the element and do peek
+
+        // Shortcut peeking into memory
+        if let Some(current_record_id) = self.pos.1.as_ref() {
+            if record_id < *current_record_id {
+                // We are already ahead
+                return None;
+            }
+        }
+
+        // If None, we are already reading remainder
+        let current_chunk_id_opt = self.list.chunk_id_by_position(self.pos.0);
+        // Required chunk id
+        let required_chunk_id = self.list.chunk_id_by_id(record_id);
+
+        match (required_chunk_id, current_chunk_id_opt) {
+            (IdChunkPosition::Chunk(chunk_id), Some(current_chunk_id)) => {
+                match chunk_id.cmp(&current_chunk_id) {
+                    Ordering::Less => {
+                        // Chunk is already skipped
+                        // Return None, don't change the position
+                        return None;
+                    }
+                    Ordering::Equal => {
+                        let min_pos = chunk_id * CHUNK_SIZE;
+                        self.pos = (std::cmp::max(self.pos.0, min_pos), None);
+                    }
+                    Ordering::Greater => {
+                        // Chunk is ahead, move to it
+                        self.pos = (chunk_id * CHUNK_SIZE, None);
+                        self.unpacked = false;
+                    }
+                }
+            }
+            (IdChunkPosition::Chunk(_), None) => {
+                // We are already in the remainder, and we can't go back
+                return None;
+            }
+            (IdChunkPosition::Before, _) => {
+                // Don't change anything, as current `pos` is by definition higher
+                return None;
+            }
+            (IdChunkPosition::After, _) => {
+                // Go to after the chunks
+                let min_pos = self.list.chunks_len() * CHUNK_SIZE;
+                self.pos = (std::cmp::max(self.pos.0, min_pos), None);
+                self.unpacked = false;
+            }
+        };
+
+        while let Some(current_element) = self.peek() {
+            // Save the current element to avoid further peeking
+            self.pos = (self.pos.0, Some(current_element.record_id));
+            match current_element.record_id.cmp(&record_id) {
+                Ordering::Equal => return Some(current_element),
                 Ordering::Greater => return None,
                 Ordering::Less => {
-                    self.next();
+                    // Go to the next element
+                    self.next_from(current_element);
                 }
             }
         }
@@ -378,17 +575,20 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
 
     #[inline]
     fn skip_to_end(&mut self) {
-        self.pos = self.list.chunks.len() * BitPackerImpl::BLOCK_LEN + self.list.remainders.len();
+        self.pos = (
+            self.list.chunks_len() * CHUNK_SIZE + self.list.remainder_len(),
+            None,
+        );
     }
 
     #[inline]
     fn len_to_end(&self) -> usize {
-        self.list.len() - self.pos
+        self.list.len() - self.pos.0
     }
 
     #[inline]
     fn current_index(&self) -> usize {
-        self.pos
+        self.pos.0
     }
 
     #[inline]
@@ -398,28 +598,25 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
         ctx: &mut Ctx,
         mut f: impl FnMut(&mut Ctx, PointOffsetType, DimWeight),
     ) {
-        let mut pos = self.pos;
+        let mut pos = self.pos.0;
 
         // Iterate over compressed chunks
-        let mut weights_buf = [0.0; BitPackerImpl::BLOCK_LEN];
+        let mut weights_buf = [0.0; CHUNK_SIZE];
 
         let mut need_unpack = !self.unpacked;
-        while pos / BitPackerImpl::BLOCK_LEN < self.list.chunks.len() {
+        while pos / CHUNK_SIZE < self.list.chunks_len() {
             if need_unpack {
                 self.list
-                    .decompress_chunk(pos / BitPackerImpl::BLOCK_LEN, &mut self.decompressed_chunk);
+                    .decompress_chunk(pos / CHUNK_SIZE, &mut self.decompressed_chunk);
             }
             need_unpack = true;
 
-            let chunk = &self.list.chunks[pos / BitPackerImpl::BLOCK_LEN];
-
-            let start = pos % BitPackerImpl::BLOCK_LEN;
+            let start = pos % CHUNK_SIZE;
             let count = count_le_sorted(id, &self.decompressed_chunk[start..]);
-            let weights = W::into_f32_slice(
-                self.list.multiplier,
-                &chunk.weights[start..start + count],
-                &mut weights_buf[..count],
-            );
+
+            let weights = self.list.weights_range(pos, count);
+            let weights =
+                W::into_f32_slice(self.list.multiplier, weights, &mut weights_buf[..count]);
 
             for (idx, weight) in
                 std::iter::zip(&self.decompressed_chunk[start..start + count], weights)
@@ -427,23 +624,26 @@ impl<W: Weight> PostingListIter for CompressedPostingListIterator<'_, W> {
                 f(ctx, *idx, *weight);
             }
             pos += count;
-            if start + count != BitPackerImpl::BLOCK_LEN {
+            if start + count != CHUNK_SIZE {
                 self.unpacked = true;
-                self.pos = pos;
+                self.pos = (pos, None);
                 return;
             }
         }
 
         // Iterate over remainders
-        for e in &self.list.remainders[pos - self.list.chunks.len() * BitPackerImpl::BLOCK_LEN..] {
+        for e in self
+            .list
+            .iter_remainder_from(pos - self.list.chunks_len() * CHUNK_SIZE)
+        {
             if e.record_id > id {
-                self.pos = pos;
+                self.pos = (pos, None);
                 return;
             }
             f(ctx, e.record_id, e.weight.to_f32(self.list.multiplier));
             pos += 1;
         }
-        self.pos = pos;
+        self.pos = (pos, None);
     }
 
     fn reliable_max_next_weight() -> bool {
@@ -498,8 +698,9 @@ mod tests {
     fn test_iter() {
         for case in cases() {
             let list = CompressedPostingList::<f32>::from(case.clone());
+            let hw_counter = HardwareCounterCell::new();
 
-            let mut iter = list.iter();
+            let mut iter = list.iter(&hw_counter);
 
             let mut count = 0;
 
@@ -517,6 +718,8 @@ mod tests {
     #[test]
     #[allow(clippy::needless_range_loop)] // for consistency
     fn test_try_till_id() {
+        let hw_counter = HardwareCounterCell::new();
+
         for i in 0..CASES.len() {
             for j in i..CASES.len() {
                 for k in j..CASES.len() {
@@ -524,7 +727,7 @@ mod tests {
                     let case = mk_case(CASES[k]);
                     let pl = CompressedPostingList::<f32>::from(case.clone());
 
-                    let mut iter = pl.iter();
+                    let mut iter = pl.iter(&hw_counter);
 
                     let mut data = Vec::new();
                     let mut counter = 0;
