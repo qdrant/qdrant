@@ -343,7 +343,7 @@ impl Collection {
                     // Get top results
                     .kmerge_by(|a, b| match order_by.direction() {
                         Direction::Asc => (a.order_value, a.id) < (b.order_value, b.id),
-                        Direction::Desc => (b.order_value, b.id) > (a.order_value, a.id),
+                        Direction::Desc => (a.order_value, a.id) > (b.order_value, b.id),
                     })
                     // Only keep the point with the most "valuable" order value
                     // This means that the same point will be repeated only if there is an alternating order value with another point

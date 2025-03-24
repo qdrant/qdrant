@@ -731,9 +731,6 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        // We need the `____ordered_with____` value even if the user didn't request payload
-        let parse_payload = with_payload_interface.is_required() || order_by.is_some();
-
         if let Some(hw_usage) = scroll_response.usage {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
@@ -741,7 +738,7 @@ impl ShardOperation for RemoteShard {
         let result: Result<Vec<RecordInternal>, Status> = scroll_response
             .result
             .into_iter()
-            .map(|point| try_record_from_grpc(point, parse_payload))
+            .map(|point| try_record_from_grpc(point, with_payload_interface.is_required()))
             .collect();
 
         result.map_err(|e| e.into())
