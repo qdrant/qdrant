@@ -775,7 +775,7 @@ impl UpdateHandler {
             let wal_flash_job = wal.lock().flush_async();
 
             if let Err(err) = wal_flash_job.join() {
-                error!("Failed to flush wal: {:?}", err);
+                error!("Failed to flush wal: {err:?}");
                 segments
                     .write()
                     .report_optimizer_error(WalError::WriteWalError(format!(

@@ -217,7 +217,7 @@ async fn _do_recover_from_snapshot(
             .await?;
 
         if !recovered {
-            log::debug!("Shard {} is not in snapshot", shard_id);
+            log::debug!("Shard {shard_id} is not in snapshot");
             continue;
         }
 
@@ -286,10 +286,7 @@ async fn _do_recover_from_snapshot(
                     let (replica_peer_id, _state) =
                         other_active_replicas.into_iter().next().unwrap();
                     log::debug!(
-                        "Running synchronization for shard {} of collection {} from {}",
-                        shard_id,
-                        collection_pass,
-                        replica_peer_id
+                        "Running synchronization for shard {shard_id} of collection {collection_pass} from {replica_peer_id}"
                     );
 
                     // assume that if there is another peers, the server is distributed

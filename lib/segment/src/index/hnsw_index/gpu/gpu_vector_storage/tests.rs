@@ -90,11 +90,7 @@ fn test_gpu_vector_storage_sq(
 
     let precision = get_precision(storage_type, dim, distance);
     log::info!(
-        "Testing SQ distance {:?}, element type {:?}, dim {} with precision {}",
-        distance,
-        storage_type,
-        dim,
-        precision
+        "Testing SQ distance {distance:?}, element type {storage_type:?}, dim {dim} with precision {precision}"
     );
     test_gpu_vector_storage_impl(
         storage_type,
@@ -137,11 +133,7 @@ fn test_gpu_vector_storage_bq(
 
     let precision = get_precision(storage_type, dim, distance);
     log::info!(
-        "Testing BQ distance {:?}, element type {:?}, dim {} with precision {}",
-        distance,
-        storage_type,
-        dim,
-        precision
+        "Testing BQ distance {distance:?}, element type {storage_type:?}, dim {dim} with precision {precision}"
     );
     test_gpu_vector_storage_impl(
         storage_type,
@@ -183,11 +175,7 @@ fn test_gpu_vector_storage_pq(
 
     let precision = get_precision(storage_type, dim, distance);
     log::info!(
-        "Testing PQ distance {:?}, element type {:?}, dim {} with precision {}",
-        distance,
-        storage_type,
-        dim,
-        precision
+        "Testing PQ distance {distance:?}, element type {storage_type:?}, dim {dim} with precision {precision}"
     );
     test_gpu_vector_storage_impl(
         storage_type,
@@ -229,11 +217,7 @@ fn test_gpu_vector_storage(
 
     let precision = get_precision(storage_type, dim, distance);
     log::info!(
-        "Testing distance {:?}, element type {:?}, dim {} with precision {}",
-        distance,
-        storage_type,
-        dim,
-        precision
+        "Testing distance {distance:?}, element type {storage_type:?}, dim {dim} with precision {precision}"
     );
     test_gpu_vector_storage_impl(
         storage_type,
@@ -266,11 +250,7 @@ fn test_gpu_vector_storage_force_half(
 
     let precision = 5.0 * get_precision(storage_type, dim, distance);
     log::info!(
-        "Testing distance {:?}, element type {:?}, dim {} with precision {}",
-        distance,
-        storage_type,
-        dim,
-        precision
+        "Testing distance {distance:?}, element type {storage_type:?}, dim {dim} with precision {precision}"
     );
     test_gpu_vector_storage_impl(
         storage_type,
@@ -304,11 +284,7 @@ fn test_gpu_vector_storage_without_half(
 
     let precision = 5.0 * get_precision(storage_type, dim, distance);
     log::info!(
-        "Testing distance {:?}, element type {:?}, dim {} with precision {}",
-        distance,
-        storage_type,
-        dim,
-        precision
+        "Testing distance {distance:?}, element type {storage_type:?}, dim {dim} with precision {precision}"
     );
     test_gpu_vector_storage_impl(
         storage_type,

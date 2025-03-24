@@ -565,10 +565,7 @@ impl TableOfContent {
                     ConsensusOperations::start_transfer(collection_name.clone(), shard_transfer);
                 if let Err(send_error) = proposal_sender.send(operation) {
                     log::error!(
-                        "Can't send proposal to request shard transfer to peer {} of collection {}. Error: {}",
-                        to_peer,
-                        collection_name,
-                        send_error
+                        "Can't send proposal to request shard transfer to peer {to_peer} of collection {collection_name}. Error: {send_error}"
                     );
                 }
             } else {

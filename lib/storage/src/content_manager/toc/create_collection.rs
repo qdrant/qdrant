@@ -337,7 +337,7 @@ impl TableOfContent {
             {
                 Ok(_) => {}
                 Err(err) => {
-                    log::error!("Initialization failed: {}", err)
+                    log::error!("Initialization failed: {err}")
                 }
             }
 
@@ -351,11 +351,9 @@ impl TableOfContent {
             .await
             {
                 Ok(_) => log::info!(
-                    "Collection {} initialized with data from {}",
-                    to_collection,
-                    from_collection
+                    "Collection {to_collection} initialized with data from {from_collection}"
                 ),
-                Err(err) => log::error!("Initialization failed: {}", err),
+                Err(err) => log::error!("Initialization failed: {err}"),
             }
         });
     }

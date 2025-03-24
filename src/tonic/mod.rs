@@ -174,7 +174,7 @@ pub fn init(
             .build()
             .unwrap();
 
-        log::info!("Qdrant gRPC listening on {}", grpc_port);
+        log::info!("Qdrant gRPC listening on {grpc_port}");
 
         let mut server = Server::builder();
 
@@ -285,7 +285,7 @@ pub fn init_internal(
             let raft_service =
                 RaftService::new(to_consensus, consensus_state, tls_config.is_some());
 
-            log::debug!("Qdrant internal gRPC listening on {}", internal_grpc_port);
+            log::debug!("Qdrant internal gRPC listening on {internal_grpc_port}");
 
             let mut server = Server::builder()
                 // Internally use a high limit for pending accept streams.

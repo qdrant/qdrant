@@ -139,12 +139,10 @@ impl OptimizersConfig {
 pub fn clear_temp_segments(shard_path: &Path) {
     let temp_segments_path = shard_path.join(TEMP_SEGMENTS_PATH);
     if temp_segments_path.exists() {
-        log::debug!("Removing temp_segments directory: {:?}", temp_segments_path);
+        log::debug!("Removing temp_segments directory: {temp_segments_path:?}");
         if let Err(err) = std::fs::remove_dir_all(&temp_segments_path) {
             log::warn!(
-                "Failed to remove temp_segments directory: {:?}, error: {:?}",
-                temp_segments_path,
-                err
+                "Failed to remove temp_segments directory: {temp_segments_path:?}, error: {err:?}"
             );
         }
     }

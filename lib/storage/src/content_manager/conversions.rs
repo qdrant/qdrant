@@ -52,7 +52,7 @@ impl From<StorageError> for Status {
             if let Ok(metadata) = MetadataValue::from_str(&header_value) {
                 status.metadata_mut().insert(header_key, metadata);
             } else {
-                log::info!("Failed to parse metadata header value: {}", header_value);
+                log::info!("Failed to parse metadata header value: {header_value}");
             }
         }
         status

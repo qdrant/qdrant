@@ -91,10 +91,7 @@ pub async fn do_save_uploaded_snapshot(
         .unwrap_or_else(|| Uuid::new_v4().to_string());
     let collection_snapshot_path = toc.snapshots_path_for_collection(collection_name);
     if !collection_snapshot_path.exists() {
-        log::debug!(
-            "Creating missing collection snapshots directory for {}",
-            collection_name
-        );
+        log::debug!("Creating missing collection snapshots directory for {collection_name}");
         toc.create_snapshots_path(collection_name).await?;
     }
 

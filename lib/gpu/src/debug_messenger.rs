@@ -52,18 +52,18 @@ unsafe extern "system" fn vulkan_debug_callback_log(
     };
     match message_severity {
         vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => {
-            log::info!("{} {:?}", message_type_str, message)
+            log::info!("{message_type_str} {message:?}")
         }
         vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => {
-            log::warn!("{} {:?}", message_type_str, message)
+            log::warn!("{message_type_str} {message:?}")
         }
         vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => {
-            log::error!("{} {:?}", message_type_str, message)
+            log::error!("{message_type_str} {message:?}")
         }
         vk::DebugUtilsMessageSeverityFlagsEXT::INFO => {
-            log::info!("{} {:?}", message_type_str, message)
+            log::info!("{message_type_str} {message:?}")
         }
-        _ => log::info!("{} {:?}", message_type_str, message),
+        _ => log::info!("{message_type_str} {message:?}"),
     };
     vk::FALSE
 }

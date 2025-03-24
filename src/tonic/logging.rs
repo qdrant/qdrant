@@ -50,7 +50,7 @@ where
             let elapsed_sec = instant.elapsed().as_secs_f32();
             match response {
                 Err(error) => {
-                    log::error!("gRPC request error {}", method_name);
+                    log::error!("gRPC request error {method_name}");
                     Err(error)
                 }
                 Ok(response_tonic) => {
@@ -58,11 +58,11 @@ where
                     if let Some(grpc_status) = grpc_status {
                         match grpc_status.code() {
                             Code::Ok => {
-                                log::trace!("gRPC {} Ok {:.6}", method_name, elapsed_sec);
+                                log::trace!("gRPC {method_name} Ok {elapsed_sec:.6}");
                             }
                             Code::Cancelled => {
                                 // cluster mode generates a large amount of `stream error received: stream no longer needed`
-                                log::trace!("gRPC cancelled {} {:.6}", method_name, elapsed_sec);
+                                log::trace!("gRPC cancelled {method_name} {elapsed_sec:.6}");
                             }
                             Code::DeadlineExceeded
                             | Code::Aborted

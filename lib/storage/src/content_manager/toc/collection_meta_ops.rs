@@ -81,33 +81,33 @@ impl TableOfContent {
                     .map(|_| true)
             }
             CollectionMetaOperations::TransferShard(collection, operation) => {
-                log::debug!("Transfer shard {:?} of {}", operation, collection);
+                log::debug!("Transfer shard {operation:?} of {collection}");
 
                 self.handle_transfer(collection, operation)
                     .await
                     .map(|()| true)
             }
             CollectionMetaOperations::SetShardReplicaState(operation) => {
-                log::debug!("Set shard replica state {:?}", operation);
+                log::debug!("Set shard replica state {operation:?}");
                 self.set_shard_replica_state(operation).await.map(|()| true)
             }
             CollectionMetaOperations::Nop { .. } => Ok(true),
             CollectionMetaOperations::CreateShardKey(create_shard_key) => {
-                log::debug!("Create shard key {:?}", create_shard_key);
+                log::debug!("Create shard key {create_shard_key:?}");
                 self.create_shard_key(create_shard_key).await.map(|()| true)
             }
             CollectionMetaOperations::DropShardKey(drop_shard_key) => {
-                log::debug!("Drop shard key {:?}", drop_shard_key);
+                log::debug!("Drop shard key {drop_shard_key:?}");
                 self.drop_shard_key(drop_shard_key).await.map(|()| true)
             }
             CollectionMetaOperations::CreatePayloadIndex(create_payload_index) => {
-                log::debug!("Create payload index {:?}", create_payload_index);
+                log::debug!("Create payload index {create_payload_index:?}");
                 self.create_payload_index(create_payload_index)
                     .await
                     .map(|()| true)
             }
             CollectionMetaOperations::DropPayloadIndex(drop_payload_index) => {
-                log::debug!("Drop payload index {:?}", drop_payload_index);
+                log::debug!("Drop payload index {drop_payload_index:?}");
                 self.drop_payload_index(drop_payload_index)
                     .await
                     .map(|()| true)
@@ -241,8 +241,7 @@ impl TableOfContent {
             let path = self.get_collection_path(collection_name);
             if path.exists() {
                 log::warn!(
-                    "Collection {} is not loaded, but its directory still exists. Deleting it.",
-                    collection_name
+                    "Collection {collection_name} is not loaded, but its directory still exists. Deleting it."
                 );
                 tokio::fs::remove_dir_all(path).await?;
             }

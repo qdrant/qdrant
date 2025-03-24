@@ -380,7 +380,7 @@ impl LocalShard {
 
         let res = segment_holder.deduplicate_points().await?;
         if res > 0 {
-            log::debug!("Deduplicated {} points", res);
+            log::debug!("Deduplicated {res} points");
         }
 
         clear_temp_segments(shard_path);
@@ -680,7 +680,7 @@ impl LocalShard {
                     );
 
                     if let Some(backtrace) = &backtrace {
-                        log::error!("Backtrace: {}", backtrace);
+                        log::error!("Backtrace: {backtrace}");
                     }
 
                     return Err(err.clone());
@@ -834,13 +834,13 @@ impl LocalShard {
     /// Finishes ongoing update tasks
     pub async fn stop_gracefully(&self) {
         if let Err(err) = self.update_sender.load().send(UpdateSignal::Stop).await {
-            log::warn!("Error sending stop signal to update handler: {}", err);
+            log::warn!("Error sending stop signal to update handler: {err}");
         }
 
         self.stop_flush_worker().await;
 
         if let Err(err) = self.wait_update_workers_stop().await {
-            log::warn!("Update workers failed with: {}", err);
+            log::warn!("Update workers failed with: {err}");
         }
     }
 

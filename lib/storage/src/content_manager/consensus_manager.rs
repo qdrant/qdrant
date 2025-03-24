@@ -399,7 +399,7 @@ impl<C: CollectionContainer> ConsensusManager<C> {
         let change: ConfChangeV2 = prost_for_raft::Message::decode(entry.get_data())?;
 
         let conf_state = raw_node.apply_conf_change(&change)?;
-        log::debug!("Applied conf state {:?}", conf_state);
+        log::debug!("Applied conf state {conf_state:?}");
         self.persistent
             .write()
             .apply_state_update(|state| state.conf_state = conf_state)?;
@@ -949,15 +949,12 @@ impl<C: CollectionContainer> Storage for ConsensusManager<C> {
         let first_index = self.first_index()?;
         if low < first_index {
             log::debug!(
-                "Requested entries from {} to {} are already compacted (first index: {})",
-                low,
-                high,
-                first_index
+                "Requested entries from {low} to {high} are already compacted (first index: {first_index})"
             );
             return Err(raft::Error::Store(raft::StorageError::Compacted));
         }
 
-        log::debug!("Requesting entries from {} to {}", low, high);
+        log::debug!("Requesting entries from {low} to {high}");
 
         if high > self.last_index()? + 1 {
             panic!(
