@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 
@@ -27,6 +28,8 @@ pub trait InvertedIndex: Sized + Debug + 'static {
 
     type Version: StorageVersion;
 
+    fn is_on_disk(&self) -> bool;
+
     /// Open existing index based on path
     fn open(path: &Path) -> std::io::Result<Self>;
 
@@ -34,7 +37,11 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     fn save(&self, path: &Path) -> std::io::Result<()>;
 
     /// Get posting list for dimension id
-    fn get(&self, id: &DimOffset) -> Option<Self::Iter<'_>>;
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<Self::Iter<'a>>;
 
     /// Get number of posting lists
     fn len(&self) -> usize;
@@ -45,7 +52,7 @@ pub trait InvertedIndex: Sized + Debug + 'static {
     }
 
     /// Get number of posting lists for dimension id
-    fn posting_list_len(&self, id: &DimOffset) -> Option<usize>;
+    fn posting_list_len(&self, id: &DimOffset, hw_counter: &HardwareCounterCell) -> Option<usize>;
 
     /// Files used by this index
     fn files(path: &Path) -> Vec<PathBuf>;

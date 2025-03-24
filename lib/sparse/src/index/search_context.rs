@@ -8,7 +8,7 @@ use common::types::{PointOffsetType, ScoredPointOffset};
 
 use super::posting_list_common::PostingListIter;
 use crate::common::scores_memory_pool::PooledScoresHandle;
-use crate::common::sparse_vector::RemappedSparseVector;
+use crate::common::sparse_vector::{RemappedSparseVector, score_vectors};
 use crate::common::types::{DimId, DimWeight};
 use crate::index::inverted_index::InvertedIndex;
 use crate::index::posting_list::PostingListIterator;
@@ -33,7 +33,7 @@ pub struct SearchContext<'a, 'b, T: PostingListIter = PostingListIterator<'a>> {
     max_record_id: PointOffsetType,         // max_record_id ids across all posting lists
     pooled: PooledScoresHandle<'b>,         // handle to pooled scores
     use_pruning: bool,
-    hardware_counter: HardwareCounterCell,
+    hardware_counter: &'a HardwareCounterCell,
 }
 
 impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
@@ -43,7 +43,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         inverted_index: &'a impl InvertedIndex<Iter<'a> = T>,
         pooled: PooledScoresHandle<'b>,
         is_stopped: &'a AtomicBool,
-        hardware_counter: HardwareCounterCell,
+        hardware_counter: &'a HardwareCounterCell,
     ) -> SearchContext<'a, 'b, T> {
         let mut postings_iterators = Vec::new();
         // track min and max record ids across all posting lists
@@ -51,7 +51,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         let mut min_record_id = u32::MAX;
         // iterate over query indices
         for (query_weight_offset, id) in query.indices.iter().enumerate() {
-            if let Some(mut it) = inverted_index.get(id) {
+            if let Some(mut it) = inverted_index.get(*id, hardware_counter) {
                 if let (Some(first), Some(last_id)) = (it.peek(), it.last_id()) {
                     // check if new min
                     let min_record_id_posting = first.record_id;
@@ -93,22 +93,26 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         }
     }
 
+    const DEFAULT_SCORE: f32 = 0.0;
+
     /// Plain search against the given ids without any pruning
     pub fn plain_search(&mut self, ids: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
         // sort ids to fully leverage posting list iterator traversal
         let mut sorted_ids = ids.to_vec();
         sorted_ids.sort_unstable();
 
-        let cpu_counter = self.hardware_counter.cpu_counter_mut();
+        let cpu_counter = self.hardware_counter.cpu_counter();
 
+        let mut indices = Vec::with_capacity(self.query.indices.len());
+        let mut values = Vec::with_capacity(self.query.values.len());
         for id in sorted_ids {
             // check for cancellation
             if self.is_stopped.load(Relaxed) {
                 break;
             }
 
-            let mut indices = Vec::with_capacity(self.query.indices.len());
-            let mut values = Vec::with_capacity(self.query.values.len());
+            indices.clear();
+            values.clear();
             // collect indices and values for the current record id from the query's posting lists *only*
             for posting_iterator in self.postings_iterators.iter_mut() {
                 // rely on underlying binary search as the posting lists are sorted by record id
@@ -122,14 +126,22 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                 }
             }
 
+            if values.is_empty() {
+                continue;
+            }
+
             // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
             // as measurement for CPU usage of plain search.
-            cpu_counter.incr_delta_mut(indices.len() + self.query.indices.len());
+            cpu_counter
+                .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
 
             // reconstruct sparse vector and score against query
-            let sparse_vector = RemappedSparseVector { indices, values };
+            let sparse_score =
+                score_vectors(&indices, &values, &self.query.indices, &self.query.values)
+                    .unwrap_or(Self::DEFAULT_SCORE);
+
             self.top_results.push(ScoredPointOffset {
-                score: sparse_vector.score(&self.query).unwrap_or(0.0),
+                score: sparse_score,
                 idx: id,
             });
         }
@@ -224,7 +236,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
     }
 
     /// Make sure the longest posting list is at the head of the posting list iterators
-    fn promote_longest_posting_lists_to_the_front(&mut self) {
+    pub(crate) fn promote_longest_posting_lists_to_the_front(&mut self) {
         // find index of longest posting list
         let posting_index = self
             .postings_iterators
@@ -246,6 +258,14 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         }
     }
 
+    /// How many elements are left in the posting list iterator
+    #[cfg(test)]
+    pub(crate) fn posting_list_len(&self, idx: usize) -> usize {
+        self.postings_iterators[idx]
+            .posting_list_iterator
+            .len_to_end()
+    }
+
     /// Search for the top k results that satisfy the filter condition
     pub fn search<F: Fn(PointOffsetType) -> bool>(
         &mut self,
@@ -259,10 +279,13 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
             // Measure CPU usage of indexed sparse search.
             // Assume the complexity of the search as total volume of the posting lists
             // that are traversed in the batched search.
-            let cpu_counter = self.hardware_counter.cpu_counter_mut();
+            let mut cpu_cost = 0;
+
             for posting in self.postings_iterators.iter() {
-                cpu_counter.incr_delta_mut(posting.posting_list_iterator.len_to_end());
+                cpu_cost += posting.posting_list_iterator.len_to_end()
+                    * posting.posting_list_iterator.element_size();
             }
+            self.hardware_counter.cpu_counter().incr_delta(cpu_cost);
         }
 
         let mut best_min_score = f32::MIN;
@@ -395,659 +418,5 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
         }
         // no pruning took place
         false
-    }
-}
-
-#[cfg(test)]
-#[generic_tests::define]
-mod tests {
-    use std::any::TypeId;
-    use std::borrow::Cow;
-    use std::sync::OnceLock;
-
-    use common::counter::hardware_accumulator::HwMeasurementAcc;
-    use rand::Rng;
-    use tempfile::TempDir;
-
-    use super::*;
-    use crate::common::scores_memory_pool::ScoresMemoryPool;
-    use crate::common::sparse_vector::SparseVector;
-    use crate::common::sparse_vector_fixture::random_sparse_vector;
-    use crate::common::types::QuantizedU8;
-    use crate::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
-    use crate::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
-    use crate::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
-    use crate::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
-    use crate::index::inverted_index::inverted_index_ram::InvertedIndexRam;
-    use crate::index::inverted_index::inverted_index_ram_builder::InvertedIndexBuilder;
-
-    // ---- Test instantiations ----
-
-    #[instantiate_tests(<InvertedIndexRam>)]
-    mod ram {}
-
-    #[instantiate_tests(<InvertedIndexMmap>)]
-    mod mmap {}
-
-    #[instantiate_tests(<InvertedIndexImmutableRam>)]
-    mod iram {}
-
-    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<f32>>)]
-    mod iram_f32 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<half::f16>>)]
-    mod iram_f16 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<u8>>)]
-    mod iram_u8 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedImmutableRam<QuantizedU8>>)]
-    mod iram_q8 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedMmap<f32>>)]
-    mod mmap_f32 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedMmap<half::f16>>)]
-    mod mmap_f16 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedMmap<u8>>)]
-    mod mmap_u8 {}
-
-    #[instantiate_tests(<InvertedIndexCompressedMmap<QuantizedU8>>)]
-    mod mmap_q8 {}
-
-    // --- End of test instantiations ---
-
-    static TEST_SCORES_POOL: OnceLock<ScoresMemoryPool> = OnceLock::new();
-
-    fn get_pooled_scores() -> PooledScoresHandle<'static> {
-        TEST_SCORES_POOL
-            .get_or_init(ScoresMemoryPool::default)
-            .get()
-    }
-
-    /// Match all filter condition for testing
-    fn match_all(_p: PointOffsetType) -> bool {
-        true
-    }
-
-    /// Helper struct to store both an index and a temporary directory
-    struct TestIndex<I: InvertedIndex> {
-        index: I,
-        _temp_dir: TempDir,
-    }
-
-    impl<I: InvertedIndex> TestIndex<I> {
-        fn from_ram(ram_index: InvertedIndexRam) -> Self {
-            let temp_dir = tempfile::Builder::new()
-                .prefix("test_index_dir")
-                .tempdir()
-                .unwrap();
-            TestIndex {
-                index: I::from_ram_index(Cow::Owned(ram_index), &temp_dir).unwrap(),
-                _temp_dir: temp_dir,
-            }
-        }
-    }
-
-    /// Round scores to allow some quantization errors
-    fn round_scores<I: 'static>(mut scores: Vec<ScoredPointOffset>) -> Vec<ScoredPointOffset> {
-        let errors_allowed_for = [
-            TypeId::of::<InvertedIndexCompressedImmutableRam<QuantizedU8>>(),
-            TypeId::of::<InvertedIndexCompressedMmap<QuantizedU8>>(),
-        ];
-        if errors_allowed_for.contains(&TypeId::of::<I>()) {
-            let precision = 0.25;
-            scores.iter_mut().for_each(|score| {
-                score.score = (score.score / precision).round() * precision;
-            });
-            scores
-        } else {
-            scores
-        }
-    }
-
-    #[test]
-    fn test_empty_query<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram(InvertedIndexRam::empty());
-
-        let is_stopped = AtomicBool::new(false);
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector::default(), // empty query vector
-            10,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            HardwareCounterCell::new(),
-        );
-        assert_eq!(search_context.search(&match_all), Vec::new());
-    }
-
-    #[test]
-    fn search_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
-            builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
-            builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            10,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        assert_eq!(
-            round_scores::<I>(search_context.search(&match_all)),
-            vec![
-                ScoredPointOffset {
-                    score: 90.0,
-                    idx: 3
-                },
-                ScoredPointOffset {
-                    score: 60.0,
-                    idx: 2
-                },
-                ScoredPointOffset {
-                    score: 30.0,
-                    idx: 1
-                },
-            ]
-        );
-
-        drop(search_context);
-
-        // len(QueryVector)=3 * len(vector)=3 => 3*3 => 9
-        assert_eq!(accumulator.get_cpu(), 9);
-    }
-
-    #[test]
-    fn search_with_update_test<I: InvertedIndex + 'static>() {
-        if TypeId::of::<I>() != TypeId::of::<InvertedIndexRam>() {
-            // Only InvertedIndexRam supports upserts
-            return;
-        }
-
-        let mut index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
-            builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
-            builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            10,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        assert_eq!(
-            round_scores::<I>(search_context.search(&match_all)),
-            vec![
-                ScoredPointOffset {
-                    score: 90.0,
-                    idx: 3
-                },
-                ScoredPointOffset {
-                    score: 60.0,
-                    idx: 2
-                },
-                ScoredPointOffset {
-                    score: 30.0,
-                    idx: 1
-                },
-            ]
-        );
-        drop(search_context);
-
-        // update index with new point
-        index.index.upsert(
-            4,
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![40.0, 40.0, 40.0],
-            },
-            None,
-        );
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            10,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        assert_eq!(
-            search_context.search(&match_all),
-            vec![
-                ScoredPointOffset {
-                    score: 120.0,
-                    idx: 4
-                },
-                ScoredPointOffset {
-                    score: 90.0,
-                    idx: 3
-                },
-                ScoredPointOffset {
-                    score: 60.0,
-                    idx: 2
-                },
-                ScoredPointOffset {
-                    score: 30.0,
-                    idx: 1
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn search_with_hot_key_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
-            builder.add(2, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
-            builder.add(3, [(1, 30.0), (2, 30.0), (3, 30.0)].into());
-            builder.add(4, [(1, 1.0)].into());
-            builder.add(5, [(1, 2.0)].into());
-            builder.add(6, [(1, 3.0)].into());
-            builder.add(7, [(1, 4.0)].into());
-            builder.add(8, [(1, 5.0)].into());
-            builder.add(9, [(1, 6.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            3,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        assert_eq!(
-            round_scores::<I>(search_context.search(&match_all)),
-            vec![
-                ScoredPointOffset {
-                    score: 90.0,
-                    idx: 3
-                },
-                ScoredPointOffset {
-                    score: 60.0,
-                    idx: 2
-                },
-                ScoredPointOffset {
-                    score: 30.0,
-                    idx: 1
-                },
-            ]
-        );
-
-        drop(search_context);
-        // [ID=1] (Retrieve all 9 Vectors) => 9
-        // [ID=2] (Retrieve 1-3)           => 3
-        // [ID=3] (Retrieve 1-3)           => 3
-        //                       3 + 3 + 9 => 15
-        assert_eq!(accumulator.get_cpu(), 15);
-
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            4,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        assert_eq!(
-            round_scores::<I>(search_context.search(&match_all)),
-            vec![
-                ScoredPointOffset {
-                    score: 90.0,
-                    idx: 3
-                },
-                ScoredPointOffset {
-                    score: 60.0,
-                    idx: 2
-                },
-                ScoredPointOffset {
-                    score: 30.0,
-                    idx: 1
-                },
-                ScoredPointOffset { score: 6.0, idx: 9 },
-            ]
-        );
-
-        drop(search_context);
-
-        // No difference to previous calculation because it's the same amount of score
-        // calculations when increasing the "top" parameter.
-        assert_eq!(accumulator.get_cpu(), 15);
-    }
-
-    #[test]
-    fn pruning_single_to_end_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0)].into());
-            builder.add(2, [(1, 20.0)].into());
-            builder.add(3, [(1, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            1,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        // assuming we have gathered enough results and want to prune the longest posting list
-        assert!(search_context.prune_longest_posting_list(30.0));
-        // the longest posting list was pruned to the end
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            0
-        );
-    }
-
-    #[test]
-    fn pruning_multi_to_end_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0)].into());
-            builder.add(2, [(1, 20.0)].into());
-            builder.add(3, [(1, 30.0)].into());
-            builder.add(5, [(3, 10.0)].into());
-            builder.add(6, [(2, 20.0), (3, 20.0)].into());
-            builder.add(7, [(2, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            1,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        // assuming we have gathered enough results and want to prune the longest posting list
-        assert!(search_context.prune_longest_posting_list(30.0));
-        // the longest posting list was pruned to the end
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            0
-        );
-    }
-
-    #[test]
-    fn pruning_multi_under_prune_test<I: InvertedIndex>() {
-        if !I::Iter::reliable_max_next_weight() {
-            return;
-        }
-
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0)].into());
-            builder.add(2, [(1, 20.0)].into());
-            builder.add(3, [(1, 20.0)].into());
-            builder.add(4, [(1, 10.0)].into());
-            builder.add(5, [(3, 10.0)].into());
-            builder.add(6, [(1, 20.0), (2, 20.0), (3, 20.0)].into());
-            builder.add(7, [(1, 40.0), (2, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            1,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        // one would expect this to prune up to `6` but it does not happen it practice because we are under pruning by design
-        // we should actually check the best score up to `6` - 1 only instead of the max possible score (40.0)
-        assert!(!search_context.prune_longest_posting_list(30.0));
-
-        assert!(search_context.prune_longest_posting_list(40.0));
-        // the longest posting list was pruned to the end
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            2 // 6, 7
-        );
-    }
-
-    /// Generates a random inverted index with `num_vectors` vectors
-    #[allow(dead_code)]
-    fn random_inverted_index<R: Rng + ?Sized>(
-        rnd_gen: &mut R,
-        num_vectors: u32,
-        max_sparse_dimension: usize,
-    ) -> InvertedIndexRam {
-        let mut inverted_index_ram = InvertedIndexRam::empty();
-
-        for i in 1..=num_vectors {
-            let SparseVector { indices, values } =
-                random_sparse_vector(rnd_gen, max_sparse_dimension);
-            let vector = RemappedSparseVector::new(indices, values).unwrap();
-            inverted_index_ram.upsert(i, vector, None);
-        }
-        inverted_index_ram
-    }
-
-    #[test]
-    fn promote_longest_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
-            builder.add(2, [(1, 20.0), (3, 20.0)].into());
-            builder.add(3, [(2, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            3,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            2
-        );
-
-        search_context.promote_longest_posting_lists_to_the_front();
-
-        assert_eq!(
-            search_context.postings_iterators[0]
-                .posting_list_iterator
-                .len_to_end(),
-            3
-        );
-    }
-
-    #[test]
-    fn plain_search_all_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
-            builder.add(2, [(1, 20.0), (3, 20.0)].into());
-            builder.add(3, [(1, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 2, 3],
-                values: vec![1.0, 1.0, 1.0],
-            },
-            3,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        let scores = search_context.plain_search(&[1, 3, 2]);
-        assert_eq!(
-            round_scores::<I>(scores),
-            vec![
-                ScoredPointOffset {
-                    idx: 3,
-                    score: 60.0
-                },
-                ScoredPointOffset {
-                    idx: 2,
-                    score: 40.0
-                },
-                ScoredPointOffset {
-                    idx: 1,
-                    score: 30.0
-                },
-            ]
-        );
-
-        drop(search_context);
-
-        // [ID=1] (Retrieve three sparse vectors (1,2,3)) + QueryLength=3 => 6
-        // [ID=2] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
-        // [ID=3] (Retrieve two sparse vectors (1,3))     + QueryLength=3 => 5
-        //                                                      6 + 5 + 5 => 16
-        assert_eq!(accumulator.get_cpu(), 16);
-    }
-
-    #[test]
-    fn plain_search_gap_test<I: InvertedIndex>() {
-        let index = TestIndex::<I>::from_ram({
-            let mut builder = InvertedIndexBuilder::new();
-            builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0)].into());
-            builder.add(2, [(1, 20.0), (3, 20.0)].into());
-            builder.add(3, [(2, 30.0), (3, 30.0)].into());
-            builder.build()
-        });
-
-        // query vector has a gap for dimension 2
-        let is_stopped = AtomicBool::new(false);
-        let accumulator = HwMeasurementAcc::new();
-        let hardware_counter = accumulator.get_counter_cell();
-        let mut search_context = SearchContext::new(
-            RemappedSparseVector {
-                indices: vec![1, 3],
-                values: vec![1.0, 1.0],
-            },
-            3,
-            &index.index,
-            get_pooled_scores(),
-            &is_stopped,
-            hardware_counter,
-        );
-
-        let scores = search_context.plain_search(&[1, 2, 3]);
-        assert_eq!(
-            round_scores::<I>(scores),
-            vec![
-                ScoredPointOffset {
-                    idx: 2,
-                    score: 40.0
-                },
-                ScoredPointOffset {
-                    idx: 3,
-                    score: 30.0 // the dimension 2 did not contribute to the score
-                },
-                ScoredPointOffset {
-                    idx: 1,
-                    score: 20.0 // the dimension 2 did not contribute to the score
-                },
-            ]
-        );
-
-        drop(search_context);
-
-        // [ID=1] (Retrieve two sparse vectors (1,2)) + QueryLength=2 => 4
-        // [ID=2] (Retrieve two sparse vectors (1,3)) + QueryLength=2 => 4
-        // [ID=3] (Retrieve one sparse vector (3))    + QueryLength=2 => 3
-        //                                                  4 + 4 + 3 => 11
-        assert_eq!(accumulator.get_cpu(), 11);
     }
 }

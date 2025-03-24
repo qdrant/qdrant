@@ -314,6 +314,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         Ok(result)
     }
 
+    fn is_on_disk(&self) -> bool {
+        self.encoded_vectors.is_on_disk()
+    }
+
     fn encode_query(&self, query: &[f32]) -> EncodedQueryU8 {
         let dim = query.len();
         let mut query: Vec<_> = query
@@ -365,6 +369,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
 
         let q_ptr = query.encoded_query.as_ptr();
         let (vector_offset, v_ptr) = self.get_vec_ptr(i);
+
+        hw_counter
+            .vector_io_read()
+            .incr_delta(self.metadata.vector_parameters.dim);
 
         #[cfg(target_arch = "x86_64")]
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
@@ -421,6 +429,10 @@ impl<TStorage: EncodedStorage> EncodedVectors<EncodedQueryU8> for EncodedVectors
         hw_counter
             .cpu_counter()
             .incr_delta(self.metadata.vector_parameters.dim);
+
+        hw_counter
+            .vector_io_read()
+            .incr_delta(self.metadata.vector_parameters.dim * 2);
 
         let (query_offset, q_ptr) = self.get_vec_ptr(i);
         let (vector_offset, v_ptr) = self.get_vec_ptr(j);

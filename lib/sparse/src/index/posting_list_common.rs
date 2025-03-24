@@ -56,6 +56,13 @@ pub trait PostingListIter {
 
     fn last_id(&self) -> Option<PointOffsetType>;
 
+    /// Size of the weight element
+    fn element_size(&self) -> usize;
+
+    /// Tries to find the element with ID == id and returns it.
+    /// If the element is not found, the iterator is advanced to the next element with ID > id
+    /// and None is returned.
+    /// If the iterator is already at the end, None is returned.
     fn skip_to(&mut self, record_id: PointOffsetType) -> Option<PostingElementEx>;
 
     fn skip_to_end(&mut self);

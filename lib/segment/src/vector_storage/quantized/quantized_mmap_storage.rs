@@ -45,6 +45,10 @@ impl quantization::EncodedStorage for QuantizedMmapStorage {
         // do nothing because mmap is already saved
         Ok(())
     }
+
+    fn is_on_disk(&self) -> bool {
+        true
+    }
 }
 
 impl quantization::EncodedStorageBuilder<QuantizedMmapStorage> for QuantizedMmapStorageBuilder {

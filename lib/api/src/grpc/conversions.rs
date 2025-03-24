@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_data::{HardwareData, RealCpuMeasurement};
+use common::counter::hardware_data::HardwareData;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
 use segment::data_types::index::{
@@ -2746,7 +2746,7 @@ impl From<HardwareUsage> for HardwareData {
         } = value;
 
         HardwareData {
-            cpu: RealCpuMeasurement::new(cpu as usize, 1), // Multiplier in API already applied.
+            cpu: cpu as usize,
             payload_io_read: payload_io_read as usize,
             payload_io_write: payload_io_write as usize,
             payload_index_io_read: payload_index_io_read as usize,

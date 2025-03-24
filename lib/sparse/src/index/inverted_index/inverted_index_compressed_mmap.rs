@@ -5,6 +5,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::StorageVersion;
@@ -77,6 +78,10 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
 
     type Version = Version;
 
+    fn is_on_disk(&self) -> bool {
+        true
+    }
+
     fn open(path: &Path) -> std::io::Result<Self> {
         Self::load(path)
     }
@@ -94,16 +99,22 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
         Ok(())
     }
 
-    fn get<'a>(&'a self, id: &DimId) -> Option<CompressedPostingListIterator<'a, W>> {
-        self.get(id).map(|posting_list| posting_list.iter())
+    fn get<'a>(
+        &'a self,
+        id: DimOffset,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<CompressedPostingListIterator<'a, W>> {
+        self.get(id, hw_counter)
+            .map(|posting_list| posting_list.iter())
     }
 
     fn len(&self) -> usize {
         self.file_header.posting_count
     }
 
-    fn posting_list_len(&self, id: &DimOffset) -> Option<usize> {
-        self.get(id).map(|posting_list| posting_list.len())
+    fn posting_list_len(&self, id: &DimOffset, hw_counter: &HardwareCounterCell) -> Option<usize> {
+        self.get(*id, hw_counter)
+            .map(|posting_list| posting_list.len())
     }
 
     fn files(path: &Path) -> Vec<PathBuf> {
@@ -155,6 +166,8 @@ impl<W: Weight> InvertedIndex for InvertedIndexCompressedMmap<W> {
 }
 
 impl<W: Weight> InvertedIndexCompressedMmap<W> {
+    const HEADER_SIZE: usize = size_of::<PostingListFileHeader<W>>();
+
     pub fn index_file_path(path: &Path) -> PathBuf {
         path.join(INDEX_FILE_NAME)
     }
@@ -163,25 +176,30 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         path.join(INDEX_CONFIG_FILE_NAME)
     }
 
-    pub fn get<'a>(&'a self, id: &DimId) -> Option<CompressedPostingListView<'a, W>> {
+    pub fn get<'a>(
+        &'a self,
+        id: DimId,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> Option<CompressedPostingListView<'a, W>> {
         // check that the id is not out of bounds (posting_count includes the empty zeroth entry)
-        if *id >= self.file_header.posting_count as DimId {
+        if id >= self.file_header.posting_count as DimId {
             return None;
         }
 
-        let header: PostingListFileHeader<W> = self.slice_part::<PostingListFileHeader<W>>(
-            u64::from(*id) * size_of::<PostingListFileHeader<W>>() as u64,
-            1u32,
-        )[0]
+        let header: PostingListFileHeader<W> = self
+            .slice_part::<PostingListFileHeader<W>>(u64::from(id) * Self::HEADER_SIZE as u64, 1u32)
+            [0]
         .clone();
+
+        hw_counter.vector_io_read().incr_delta(Self::HEADER_SIZE);
 
         let remainders_start = header.ids_start
             + u64::from(header.ids_len)
             + u64::from(header.chunks_count) * size_of::<CompressedPostingChunk<W>>() as u64;
 
-        let remainders_end = if *id + 1 < self.file_header.posting_count as DimId {
+        let remainders_end = if id + 1 < self.file_header.posting_count as DimId {
             self.slice_part::<PostingListFileHeader<W>>(
-                u64::from(*id + 1) * size_of::<PostingListFileHeader<W>>() as u64,
+                u64::from(id + 1) * Self::HEADER_SIZE as u64,
                 1u32,
             )[0]
             .ids_start
@@ -207,6 +225,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             ),
             header.last_id.checked_sub(1),
             header.quantization_params,
+            hw_counter,
         ))
     }
 
@@ -223,12 +242,15 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         let total_posting_headers_size =
             index.postings.as_slice().len() * size_of::<PostingListFileHeader<W>>();
 
+        // Ignore HW on load
+        let hw_counter = HardwareCounterCell::disposable();
+
         let file_length = total_posting_headers_size
             + index
                 .postings
                 .as_slice()
                 .iter()
-                .map(|p| p.view().store_size().total)
+                .map(|p| p.view(&hw_counter).store_size().total)
                 .sum::<usize>();
         let file_path = Self::index_file_path(path.as_ref());
         let file = create_and_ensure_length(file_path.as_ref(), file_length)?;
@@ -238,13 +260,13 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
         // Save posting headers
         let mut offset: usize = total_posting_headers_size;
         for posting in index.postings.as_slice() {
-            let store_size = posting.view().store_size();
+            let store_size = posting.view(&hw_counter).store_size();
             let posting_header = PostingListFileHeader::<W> {
                 ids_start: offset as u64,
                 ids_len: store_size.id_data_bytes as u32,
                 chunks_count: store_size.chunks_count as u32,
-                last_id: posting.view().last_id().map_or(0, |id| id + 1),
-                quantization_params: posting.view().multiplier(),
+                last_id: posting.view(&hw_counter).last_id().map_or(0, |id| id + 1),
+                quantization_params: posting.view(&hw_counter).multiplier(),
             };
             buf.write_all(transmute_to_u8(&posting_header))?;
             offset += store_size.total;
@@ -252,7 +274,7 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
 
         // Save posting elements
         for posting in index.postings.as_slice() {
-            let posting_view = posting.view();
+            let posting_view = posting.view(&hw_counter);
             let (id_data, chunks, remainders) = posting_view.parts();
             buf.write_all(id_data)?;
             buf.write_all(transmute_to_u8_slice(chunks))?;
@@ -305,17 +327,23 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
             _phantom: PhantomData,
         };
 
+        let hw_counter = HardwareCounterCell::disposable();
+
         if index.file_header.total_sparse_size.is_none() {
-            index.file_header.total_sparse_size = Some(index.calculate_total_sparse_size());
+            index.file_header.total_sparse_size =
+                Some(index.calculate_total_sparse_size(&hw_counter));
             atomic_save_json(&config_file_path, &index.file_header)?;
         }
 
         Ok(index)
     }
 
-    fn calculate_total_sparse_size(&self) -> usize {
+    fn calculate_total_sparse_size(&self, hw_counter: &HardwareCounterCell) -> usize {
         (0..self.file_header.posting_count as DimId)
-            .filter_map(|id| self.get(&id).map(|posting| posting.store_size().total))
+            .filter_map(|id| {
+                self.get(id, hw_counter)
+                    .map(|posting| posting.store_size().total)
+            })
             .sum()
     }
 }
@@ -332,10 +360,19 @@ mod tests {
         inverted_index_ram: &InvertedIndexCompressedImmutableRam<W>,
         inverted_index_mmap: &InvertedIndexCompressedMmap<W>,
     ) {
+        let hw_counter = HardwareCounterCell::new();
         for id in 0..inverted_index_ram.postings.len() as DimId {
-            let posting_list_ram = inverted_index_ram.postings.get(id as usize).unwrap().view();
-            let posting_list_mmap = inverted_index_mmap.get(&id).unwrap();
-            assert_eq!(posting_list_ram, posting_list_mmap);
+            let posting_list_ram = inverted_index_ram
+                .postings
+                .get(id as usize)
+                .unwrap()
+                .view(&hw_counter);
+            let posting_list_mmap = inverted_index_mmap.get(id, &hw_counter).unwrap();
+
+            let mmap_parts = posting_list_mmap.parts();
+            let ram_parts = posting_list_ram.parts();
+
+            assert_eq!(mmap_parts, ram_parts);
         }
     }
 
@@ -348,6 +385,8 @@ mod tests {
     }
 
     fn check_inverted_index_mmap<W: Weight>() {
+        let hw_counter = HardwareCounterCell::new();
+
         // skip 4th dimension
         let mut builder = InvertedIndexBuilder::new();
         builder.add(1, [(1, 10.0), (2, 10.0), (3, 10.0), (5, 10.0)].into());
@@ -385,15 +424,15 @@ mod tests {
 
         compare_indexes(&inverted_index_ram, &inverted_index_mmap);
 
-        assert!(inverted_index_mmap.get(&0).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
-        assert_eq!(inverted_index_mmap.get(&1).unwrap().len(), 9);
-        assert_eq!(inverted_index_mmap.get(&2).unwrap().len(), 4);
-        assert_eq!(inverted_index_mmap.get(&3).unwrap().len(), 3);
-        assert!(inverted_index_mmap.get(&4).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
-        assert_eq!(inverted_index_mmap.get(&5).unwrap().len(), 2);
+        assert!(inverted_index_mmap.get(0, &hw_counter).unwrap().is_empty()); // the first entry is always empty as dimension ids start at 1
+        assert_eq!(inverted_index_mmap.get(1, &hw_counter).unwrap().len(), 9);
+        assert_eq!(inverted_index_mmap.get(2, &hw_counter).unwrap().len(), 4);
+        assert_eq!(inverted_index_mmap.get(3, &hw_counter).unwrap().len(), 3);
+        assert!(inverted_index_mmap.get(4, &hw_counter).unwrap().is_empty()); // return empty posting list info for intermediary empty ids
+        assert_eq!(inverted_index_mmap.get(5, &hw_counter).unwrap().len(), 2);
         // index after the last values are None
-        assert!(inverted_index_mmap.get(&6).is_none());
-        assert!(inverted_index_mmap.get(&7).is_none());
-        assert!(inverted_index_mmap.get(&100).is_none());
+        assert!(inverted_index_mmap.get(6, &hw_counter).is_none());
+        assert!(inverted_index_mmap.get(7, &hw_counter).is_none());
+        assert!(inverted_index_mmap.get(100, &hw_counter).is_none());
     }
 }
