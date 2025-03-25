@@ -63,11 +63,7 @@ impl Collection {
 
         // Final location of snapshot
         let snapshot_path = self.snapshots_path.join(&snapshot_name);
-        log::info!(
-            "Creating collection snapshot {} into {:?}",
-            snapshot_name,
-            snapshot_path
-        );
+        log::info!("Creating collection snapshot {snapshot_name} into {snapshot_path:?}");
 
         // Dedicated temporary file for archiving this snapshot (deleted on drop)
         let snapshot_temp_arc_file = tempfile::Builder::new()

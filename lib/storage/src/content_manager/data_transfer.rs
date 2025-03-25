@@ -173,10 +173,7 @@ pub async fn populate_collection(
     let local_responsible_shards = get_local_source_shards(collection, this_peer_id).await?;
 
     log::debug!(
-        "Transferring shards {:?} from collection {} to collection {}",
-        local_responsible_shards,
-        source_collection,
-        target_collection
+        "Transferring shards {local_responsible_shards:?} from collection {source_collection} to collection {target_collection}"
     );
 
     // Wait for all shards to be active

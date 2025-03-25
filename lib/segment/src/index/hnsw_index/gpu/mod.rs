@@ -210,7 +210,7 @@ mod tests {
                     .read()
                     .clone();
                 if links_a != links_b {
-                    log::error!("Wrong links point_id={} at level {}", point_id, level);
+                    log::error!("Wrong links point_id={point_id} at level {level}");
                 }
                 assert_eq!(links_a, links_b);
             }

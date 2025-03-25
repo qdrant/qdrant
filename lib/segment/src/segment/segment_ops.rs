@@ -578,7 +578,7 @@ impl Segment {
         let mut has_dangling_internal_ids = false;
         for internal_id in id_tracker.iter_ids() {
             if id_tracker.external_id(internal_id).is_none() {
-                log::error!("Internal id {} without external id", internal_id);
+                log::error!("Internal id {internal_id} without external id");
                 has_dangling_internal_ids = true
             }
         }
@@ -587,7 +587,7 @@ impl Segment {
         let mut has_dangling_external_ids = false;
         for external_id in id_tracker.iter_external() {
             if id_tracker.internal_id(external_id).is_none() {
-                log::error!("External id {} without internal id", external_id);
+                log::error!("External id {external_id} without internal id");
                 has_dangling_external_ids = true;
             }
         }
@@ -596,7 +596,7 @@ impl Segment {
         let mut has_internal_ids_without_version = false;
         for internal_id in id_tracker.iter_ids() {
             if id_tracker.internal_version(internal_id).is_none() {
-                log::error!("Internal id {} without version", internal_id);
+                log::error!("Internal id {internal_id} without version");
                 has_internal_ids_without_version = true;
             }
         }

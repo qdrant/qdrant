@@ -795,7 +795,7 @@ mod tests {
             if suggested_to_optimize.is_empty() {
                 break;
             }
-            log::debug!("suggested_to_optimize = {:#?}", suggested_to_optimize);
+            log::debug!("suggested_to_optimize = {suggested_to_optimize:#?}");
 
             let permit = budget.try_acquire(0, permit_cpu_count).unwrap();
             index_optimizer
@@ -811,9 +811,7 @@ mod tests {
             assert!(numer_of_optimizations <= number_of_segments);
             let number_of_segments = locked_holder.read().len();
             log::debug!(
-                "numer_of_optimizations = {}, number_of_segments = {}",
-                numer_of_optimizations,
-                number_of_segments
+                "numer_of_optimizations = {numer_of_optimizations}, number_of_segments = {number_of_segments}"
             );
         }
 

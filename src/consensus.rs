@@ -396,16 +396,11 @@ impl Consensus {
                     .await;
                     if res.is_err() {
                         log::warn!(
-                            "Failed to recover from peer with id {} at {} with error {:?}, trying others",
-                            peer_id,
-                            peer_uri,
-                            res
+                            "Failed to recover from peer with id {peer_id} at {peer_uri} with error {res:?}, trying others"
                         );
                     } else {
                         log::debug!(
-                            "Successfully recovered from peer with id {} at {}",
-                            peer_id,
-                            peer_uri
+                            "Successfully recovered from peer with id {peer_id} at {peer_uri}"
                         );
                         return Ok(());
                     }
@@ -641,7 +636,7 @@ impl Consensus {
                     ConfChangeType::AddLearnerNode,
                 )]);
 
-                log::debug!("Proposing network configuration change: {:?}", change);
+                log::debug!("Proposing network configuration change: {change:?}");
                 self.node
                     .propose_conf_change(uri.into_bytes(), change)
                     .context("failed to propose conf change")?;
@@ -655,7 +650,7 @@ impl Consensus {
                     ConfChangeType::RemoveNode,
                 )]);
 
-                log::debug!("Proposing network configuration change: {:?}", change);
+                log::debug!("Proposing network configuration change: {change:?}");
                 self.node
                     .propose_conf_change(vec![], change)
                     .context("failed to propose conf change")?;
@@ -1347,7 +1342,7 @@ impl RaftMessageSender {
             //   and it will only produce more noise.
 
             if let Err(err) = res {
-                log::error!("{}", err);
+                log::error!("{err}");
             }
         }
 

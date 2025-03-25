@@ -458,7 +458,7 @@ impl Drop for Context {
                 wait_result.unwrap_or_else(|e|
                     // Cannot return error from Drop trait.
                     // Log it instead.
-                    log::error!("Error while clear GPU context: {:?}", e));
+                    log::error!("Error while clear GPU context: {e:?}"));
 
                 // If command buffer was not destroyed, destroy it.
                 // This situation may appear if `wait_finish` is an error.

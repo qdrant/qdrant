@@ -205,7 +205,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     if let Some(recovery_warning) = &settings.storage.recovery_mode {
-        log::warn!("Qdrant is loaded in recovery mode: {}", recovery_warning);
+        log::warn!("Qdrant is loaded in recovery mode: {recovery_warning}");
         log::warn!(
             "Read more: https://qdrant.tech/documentation/guides/administration/#recovery-mode"
         );
@@ -468,7 +468,7 @@ fn main() -> anyhow::Result<()> {
     let telemetry_collector = Arc::new(tokio::sync::Mutex::new(telemetry_collector));
 
     if reporting_enabled {
-        log::info!("Telemetry reporting enabled, id: {}", reporting_id);
+        log::info!("Telemetry reporting enabled, id: {reporting_id}");
 
         runtime_handle.spawn(TelemetryReporter::run(telemetry_collector.clone()));
     } else {
@@ -485,7 +485,7 @@ fn main() -> anyhow::Result<()> {
     // Helper to better log start errors
     let log_err_if_any = |server_name, result| match result {
         Err(err) => {
-            log::error!("Error while starting {} server: {}", server_name, err);
+            log::error!("Error while starting {server_name} server: {err}");
             Err(err)
         }
         ok => ok,
@@ -590,7 +590,7 @@ fn main() -> anyhow::Result<()> {
                             .expect("fail to writeln!");
                         }
                     }
-                    log::error!("{}", error);
+                    log::error!("{error}");
                 }
             })
             .unwrap();

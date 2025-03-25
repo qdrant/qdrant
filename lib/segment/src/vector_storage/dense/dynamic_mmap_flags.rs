@@ -140,7 +140,7 @@ impl DynamicMmapFlags {
         } else {
             #[cfg(unix)]
             if let Err(err) = flags_mmap.advise(memmap2::Advice::WillNeed) {
-                log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
+                log::error!("Failed to advise MADV_WILLNEED for deleted flags: {err}");
             }
         }
 

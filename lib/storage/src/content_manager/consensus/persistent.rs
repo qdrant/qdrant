@@ -149,7 +149,7 @@ impl Persistent {
 
         state.remove_unknown_peer_metadata()?;
 
-        log::debug!("State: {:?}", state);
+        log::debug!("State: {state:?}");
         Ok(state)
     }
 
@@ -371,7 +371,7 @@ impl Persistent {
             let writer = BufWriter::new(file);
             serde_json::to_writer(writer, self)
         });
-        log::trace!("Saved state: {:?}", self);
+        log::trace!("Saved state: {self:?}");
         self.dirty.store(result.is_err(), Ordering::Relaxed);
         Ok(result?)
     }
