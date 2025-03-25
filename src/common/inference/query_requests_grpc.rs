@@ -258,6 +258,9 @@ fn convert_query_with_inferred(
                 RecommendStrategy::BestScore => {
                     Query::Vector(VectorQuery::RecommendBestScore(reco_query))
                 }
+                RecommendStrategy::SumScores => {
+                    Query::Vector(VectorQuery::RecommendSumScores(reco_query))
+                }
             }
         }
         Variant::Discover(discover) => {
