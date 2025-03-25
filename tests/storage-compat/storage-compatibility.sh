@@ -7,8 +7,8 @@ echo $PWD
 cd "$(dirname "$0")/../../"
 
 QDRANT_HOST='localhost:6333'
-PREV_PATCH_QDRANT_VERSION='v1.12.6'
-PREV_MINOR_QDRANT_VERSION='v1.11.5'
+PREV_PATCH_QDRANT_VERSION='v1.13.5'
+PREV_MINOR_QDRANT_VERSION='v1.12.6'
 
 RETRY_LIMIT=30
 
@@ -55,6 +55,9 @@ function wait_for_server() {
 function test_version() {
   version=$1
   wget "https://storage.googleapis.com/qdrant-backward-compatibility/compatibility-${version}.tar" -O ./tests/storage-compat/compatibility.tar
+
+  # Delete existing storage to make sure we start fresh
+  rm -rf ./storage
 
   # Uncompress compatibility
   tar -xvf ./tests/storage-compat/compatibility.tar -C ./tests/storage-compat/
