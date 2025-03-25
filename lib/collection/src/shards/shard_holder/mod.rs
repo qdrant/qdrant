@@ -972,6 +972,7 @@ impl ShardHolder {
     pub async fn restore_shard_snapshot(
         &self,
         snapshot_path: &Path,
+        recovery_type: RecoveryType,
         collection_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
@@ -1032,7 +1033,13 @@ impl ShardHolder {
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
-            .recover_local_shard_from(snapshot_temp_dir.path(), collection_path, shard_id, cancel)
+            .recover_local_shard_from(
+                snapshot_temp_dir.path(),
+                recovery_type,
+                collection_path,
+                shard_id,
+                cancel,
+            )
             .await?;
 
         if !recovered {
@@ -1050,6 +1057,7 @@ impl ShardHolder {
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
+        recovery_type: RecoveryType,
         collection_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
@@ -1064,12 +1072,7 @@ impl ShardHolder {
 
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         let res = replica_set
-            .restore_local_replica_from(
-                snapshot_shard_path,
-                RecoveryType::Full,
-                collection_path,
-                cancel,
-            )
+            .restore_local_replica_from(snapshot_shard_path, recovery_type, collection_path, cancel)
             .await?;
 
         Ok(res)
