@@ -146,6 +146,7 @@ pub trait PayloadIndex {
     fn infer_payload_type(
         &self,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PayloadSchemaType>>;
 
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()>;

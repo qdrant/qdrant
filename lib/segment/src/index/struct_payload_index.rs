@@ -227,13 +227,16 @@ impl StructPayloadIndex {
             index.init()?;
         }
 
-        payload_storage.iter(|point_id, point_payload| {
-            let field_value = &point_payload.get_value(field);
-            for builder in builders.iter_mut() {
-                builder.add_point(point_id, field_value, hw_counter)?;
-            }
-            Ok(true)
-        })?;
+        payload_storage.iter(
+            |point_id, point_payload| {
+                let field_value = &point_payload.get_value(field);
+                for builder in builders.iter_mut() {
+                    builder.add_point(point_id, field_value, hw_counter)?;
+                }
+                Ok(true)
+            },
+            hw_counter,
+        )?;
 
         builders
             .into_iter()
@@ -693,17 +696,21 @@ impl PayloadIndex for StructPayloadIndex {
     fn infer_payload_type(
         &self,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PayloadSchemaType>> {
         let mut schema = None;
-        self.payload.borrow().iter(|_id, payload: &Payload| {
-            let field_value = payload.get_value(key);
-            schema = match field_value.as_slice() {
-                [] => None,
-                [single] => infer_value_type(single),
-                multiple => infer_collection_value_type(multiple.iter().copied()),
-            };
-            Ok(false)
-        })?;
+        self.payload.borrow().iter(
+            |_id, payload: &Payload| {
+                let field_value = payload.get_value(key);
+                schema = match field_value.as_slice() {
+                    [] => None,
+                    [single] => infer_value_type(single),
+                    multiple => infer_collection_value_type(multiple.iter().copied()),
+                };
+                Ok(false)
+            },
+            hw_counter,
+        )?;
         Ok(schema)
     }
 

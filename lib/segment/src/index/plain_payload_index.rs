@@ -222,6 +222,7 @@ impl PayloadIndex for PlainPayloadIndex {
     fn infer_payload_type(
         &self,
         _key: PayloadKeyTypeRef,
+        _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PayloadSchemaType>> {
         unreachable!()
     }

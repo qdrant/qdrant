@@ -765,7 +765,7 @@ impl SegmentEntry for Segment {
 
                 Ok(res)
             }
-            None => match self.infer_from_payload_data(key)? {
+            None => match self.infer_from_payload_data(key, hw_counter)? {
                 None => Err(TypeInferenceError {
                     field_name: key.clone(),
                 }),

@@ -426,9 +426,10 @@ impl Segment {
     pub(super) fn infer_from_payload_data(
         &self,
         key: PayloadKeyTypeRef,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<PayloadSchemaType>> {
         let payload_index = self.payload_index.borrow();
-        payload_index.infer_payload_type(key)
+        payload_index.infer_payload_type(key, hw_counter)
     }
 
     /// Unpacks and restores the segment snapshot in-place. The original

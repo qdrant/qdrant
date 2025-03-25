@@ -171,11 +171,16 @@ impl PayloadStorage for OnDiskPayloadStorage {
         self.db_wrapper.flusher()
     }
 
-    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
+    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
+        // TODO(io_measurements): Replace with write-back counter.
+        let counter = hw_counter.payload_io_read_counter();
+
         for (key, val) in self.db_wrapper.lock_db().iter()? {
+            counter.incr_delta(key.len() + val.len());
+
             let do_continue = callback(
                 serde_cbor::from_slice(&key)?,
                 &serde_cbor::from_slice(&val)?,
