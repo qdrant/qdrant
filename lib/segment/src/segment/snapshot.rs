@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{Seek, Write};
 use std::path::Path;
 use std::{fs, thread};
@@ -6,17 +7,69 @@ use common::tar_ext;
 use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 
-use crate::common::operation_error::OperationResult;
+use crate::common::operation_error::{OperationError, OperationResult};
+use crate::entry::SegmentEntry as _;
+use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{
-    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, Segment,
+    DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
+    Segment,
 };
+use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
 use crate::vector_storage::VectorStorage;
 
 pub const ROCKS_DB_VIRT_FILE: &str = "::ROCKS_DB";
 pub const PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE: &str = "::PAYLOAD_INDEX_ROCKS_DB";
+
+impl SnapshotEntry for Segment {
+    fn take_snapshot(
+        &self,
+        temp_path: &Path,
+        tar: &tar_ext::BuilderExt,
+        format: SnapshotFormat,
+        snapshotted_segments: &mut HashSet<String>,
+    ) -> OperationResult<()> {
+        let segment_id = self
+            .current_path
+            .file_stem()
+            .and_then(|f| f.to_str())
+            .unwrap();
+
+        if !snapshotted_segments.insert(segment_id.to_string()) {
+            // Already snapshotted.
+            return Ok(());
+        }
+
+        log::debug!("Taking snapshot of segment {:?}", self.current_path);
+
+        // flush segment to capture latest state
+        self.flush(true, false)?;
+
+        match format {
+            SnapshotFormat::Ancient => {
+                debug_assert!(false, "Unsupported snapshot format: {format:?}");
+                return Err(OperationError::service_error(format!(
+                    "Unsupported snapshot format: {format:?}"
+                )));
+            }
+            SnapshotFormat::Regular => {
+                tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
+                    let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
+                    let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
+                    snapshot_files(self, temp_path, &tar, |_| true)
+                })??;
+            }
+            SnapshotFormat::Streamable => {
+                let tar = tar.descend(Path::new(&segment_id))?;
+                snapshot_files(self, temp_path, &tar, |_| true)?;
+            }
+        }
+
+        Ok(())
+    }
+}
 
 pub fn snapshot_files(
     segment: &Segment,

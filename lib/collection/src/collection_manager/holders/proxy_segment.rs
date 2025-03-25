@@ -19,6 +19,7 @@ use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
 use segment::entry::partial_snapshot_entry::PartialSnapshotEntry;
+use segment::entry::snapshot_entry::SnapshotEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -1292,6 +1293,20 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().vector_names()
     }
 
+    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
+        self.wrapped_segment.get().read().get_telemetry_data(detail)
+    }
+
+    fn fill_query_context(&self, query_context: &mut QueryContext) {
+        // Information from temporary segment is not too important for query context
+        self.wrapped_segment
+            .get()
+            .read()
+            .fill_query_context(query_context)
+    }
+}
+
+impl SnapshotEntry for ProxySegment {
     fn take_snapshot(
         &self,
         temp_path: &Path,
@@ -1318,18 +1333,6 @@ impl SegmentEntry for ProxySegment {
         )?;
 
         Ok(())
-    }
-
-    fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
-        self.wrapped_segment.get().read().get_telemetry_data(detail)
-    }
-
-    fn fill_query_context(&self, query_context: &mut QueryContext) {
-        // Information from temporary segment is not too important for query context
-        self.wrapped_segment
-            .get()
-            .read()
-            .fill_query_context(query_context)
     }
 }
 

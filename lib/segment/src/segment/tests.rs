@@ -14,6 +14,7 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use crate::entry::entry_point::SegmentEntry;
+use crate::entry::SnapshotEntry as _;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,

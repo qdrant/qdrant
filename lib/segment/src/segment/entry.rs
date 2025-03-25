@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::{fs, thread};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::tar_ext;
 use common::types::TelemetryDetail;
 
 use super::Segment;
@@ -22,13 +21,11 @@ use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
-use crate::segment::SNAPSHOT_PATH;
-use crate::segment::snapshot::snapshot_files;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadIndexInfo, PayloadKeyType, PayloadKeyTypeRef,
     PointIdType, ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    SnapshotFormat, VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
+    VectorDataInfo, VectorName, VectorNameBuf, WithPayload, WithVector,
 };
 use crate::vector_storage::VectorStorage;
 
@@ -825,52 +822,6 @@ impl SegmentEntry for Segment {
 
     fn vector_names(&self) -> HashSet<VectorNameBuf> {
         self.vector_data.keys().cloned().collect()
-    }
-
-    fn take_snapshot(
-        &self,
-        temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
-        format: SnapshotFormat,
-        snapshotted_segments: &mut HashSet<String>,
-    ) -> OperationResult<()> {
-        let segment_id = self
-            .current_path
-            .file_stem()
-            .and_then(|f| f.to_str())
-            .unwrap();
-
-        if !snapshotted_segments.insert(segment_id.to_string()) {
-            // Already snapshotted.
-            return Ok(());
-        }
-
-        log::debug!("Taking snapshot of segment {:?}", self.current_path);
-
-        // flush segment to capture latest state
-        self.flush(true, false)?;
-
-        match format {
-            SnapshotFormat::Ancient => {
-                debug_assert!(false, "Unsupported snapshot format: {format:?}");
-                return Err(OperationError::service_error(format!(
-                    "Unsupported snapshot format: {format:?}"
-                )));
-            }
-            SnapshotFormat::Regular => {
-                tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
-                    let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
-                    let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar, |_| true)
-                })??;
-            }
-            SnapshotFormat::Streamable => {
-                let tar = tar.descend(Path::new(&segment_id))?;
-                snapshot_files(self, temp_path, &tar, |_| true)?;
-            }
-        }
-
-        Ok(())
     }
 
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
