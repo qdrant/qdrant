@@ -81,6 +81,7 @@ impl ShardReplicaSet {
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
+        shard_initializing_flag_path: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
         // `local.take()` call and `restore` task have to be executed as a single transaction
@@ -94,6 +95,12 @@ impl ShardReplicaSet {
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
         let mut local = cancel::future::cancel_on_token(cancel.clone(), self.local.write()).await?;
+
+        // set shard_id initialization flag
+        // the file is removed after full recovery to indicate a well-formed shard
+        // for example: some of the files may go missing if node gets killed during shard directory move/replace
+        let flag_file = tokio::fs::File::create(shard_initializing_flag_path).await?;
+        flag_file.sync_all().await?;
 
         // Check `cancel` token one last time before starting non-cancellable section
         if cancel.is_cancelled() {
@@ -111,6 +118,9 @@ impl ShardReplicaSet {
             }
 
             LocalShard::move_data(replica_path, &self.shard_path).await?;
+
+            // remove shard_id initialization flag because shard is fully recovered
+            tokio::fs::remove_file(&shard_initializing_flag_path).await?;
 
             LocalShard::load(
                 self.shard_id,
