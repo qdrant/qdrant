@@ -345,20 +345,9 @@ impl Collection {
                         Direction::Asc => (a.order_value, a.id) < (b.order_value, b.id),
                         Direction::Desc => (a.order_value, a.id) > (b.order_value, b.id),
                     })
-                    // Only keep the point with the most "valuable" order value
-                    // This means that the same point will be repeated only if there is an alternating order value with another point
-                    // E.g.
-                    // For these points
-                    // { id: 1, values: [11, 21]}
-                    // { id: 2, values: [12, 22, 32]}
-                    //
-                    // The output will be
-                    // { id: 1, order_value: 11 }
-                    // { id: 2, order_value: 12 }
-                    // { id: 1, order_value: 21 }
-                    // { id: 2, order_value: 22 }
-                    // (no order_value 32)
-                    .dedup_by(|record_a, record_b| record_a.id == record_b.id)
+                    .dedup_by(|record_a, record_b| {
+                        (record_a.order_value, record_a.id) == (record_b.order_value, record_b.id)
+                    })
                     .map(api::rest::Record::from)
                     .take(limit)
                     .collect_vec()
