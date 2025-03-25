@@ -52,7 +52,7 @@ fn random_multi_vec_discovery_query<R: Rng + ?Sized>(
     DiscoveryQuery::new(target, pairs).into()
 }
 
-fn random_multi_vec_reco_query<R: Rng + ?Sized>(
+fn random_multi_vec_reco_best_score_query<R: Rng + ?Sized>(
     rnd: &mut R,
     dim: usize,
     num_vector_per_points: usize,
@@ -66,7 +66,7 @@ fn random_multi_vec_reco_query<R: Rng + ?Sized>(
         .map(|_| random_multi_vector(rnd, dim, num_vector_per_points).into())
         .collect_vec();
 
-    RecoQuery::new(positive, negative).into()
+    QueryVector::RecommendBestScore(RecoQuery::new(positive, negative))
 }
 
 fn random_multi_vec_query<R: Rng + ?Sized>(
@@ -81,7 +81,7 @@ fn random_multi_vec_query<R: Rng + ?Sized>(
             random_multi_vec_discovery_query(rnd, dim, num_vector_per_points)
         }
         QueryVariant::RecommendBestScore => {
-            random_multi_vec_reco_query(rnd, dim, num_vector_per_points)
+            random_multi_vec_reco_best_score_query(rnd, dim, num_vector_per_points)
         }
     }
 }
