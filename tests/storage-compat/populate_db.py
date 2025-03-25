@@ -53,138 +53,115 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quanti
 
 
 def create_payload_indexes(name: str, on_disk_payload_index: bool):
-    # Create some payload indexes
-
     # keyword
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "keyword_field", "field_schema": {"type": "keyword", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "keyword_field", "field_type": "keyword"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "keyword_field",
+            "field_schema": {
+                "type": "keyword",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
 
     # float
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "float_field", "field_schema": {"type": "float", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "float_field", "field_type": "float"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "float_field",
+            "field_schema": {
+                "type": "float",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
 
     # integer
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "integer_field", "field_schema": {"type": "integer", "on_disk": True, "lookup": True, "range": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "integer_field", "field_type": "integer"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "integer_field",
+            "field_schema": {
+                "type": "integer",
+                "on_disk": on_disk_payload_index,
+                "lookup": True,
+                "range": True
+            }
+        },
+    )
+    assert response.ok
 
     # boolean
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "boolean_field", "field_schema": {"type": "bool", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "boolean_field", "field_type": "bool"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "boolean_field",
+            "field_schema": {
+                "type": "bool",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
 
     # geo
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "geo_field", "field_schema": {"type": "geo", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "geo_field", "field_type": "geo"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "geo_field",
+            "field_schema": {
+                "type": "geo",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
 
     # text
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={
-                "field_name": "text_field",
-                "field_schema": {
-                    "type": "text",
-                    "tokenizer": "word",
-                    "min_token_len": 2,
-                    "max_token_len": 20,
-                    "lowercase": True,
-                    "on_disk": True,
-                },
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "text_field",
+            "field_schema": {
+                "type": "text",
+                "tokenizer": "word",
+                "min_token_len": 2,
+                "max_token_len": 20,
+                "lowercase": True,
+                "on_disk": on_disk_payload_index,
             },
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={
-                "field_name": "text_field",
-                "field_schema": {
-                    "type": "text",
-                    "tokenizer": "word",
-                    "min_token_len": 2,
-                    "max_token_len": 20,
-                    "lowercase": True,
-                },
-            },
-        )
-        assert response.ok
+        },
+    )
+    assert response.ok
 
     # uuid
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "uuid_field", "field_schema": {"type": "uuid", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "uuid_field", "field_type": "uuid"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "uuid_field",
+            "field_schema": {
+                "type": "uuid",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
 
     # datetime
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "datetime_field", "field_schema": {"type": "datetime", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "datetime_field", "field_type": "datetime"},
-        )
-        assert response.ok
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "datetime_field",
+            "field_schema": {
+                "type": "datetime",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
 
 
 def rand_dense_vec(dims: int = DENSE_DIM):
