@@ -18,7 +18,6 @@ use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQu
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
-use segment::entry::partial_snapshot_entry::PartialSnapshotEntry;
 use segment::entry::snapshot_entry::SnapshotEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
@@ -1348,32 +1347,6 @@ impl SnapshotEntry for ProxySegment {
             .get()
             .read()
             .collect_segment_manifests(manifests)?;
-
-        Ok(())
-    }
-}
-
-impl PartialSnapshotEntry for ProxySegment {
-    fn take_partial_snapshot(
-        &self,
-        temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
-        manifest: &SegmentManifests,
-        snapshotted_segments: &mut HashSet<String>,
-    ) -> OperationResult<()> {
-        self.wrapped_segment.get().read().take_partial_snapshot(
-            temp_path,
-            tar,
-            manifest,
-            snapshotted_segments,
-        )?;
-
-        self.write_segment.get().read().take_partial_snapshot(
-            temp_path,
-            tar,
-            manifest,
-            snapshotted_segments,
-        )?;
 
         Ok(())
     }
