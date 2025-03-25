@@ -50,13 +50,13 @@ fn random_query<R: Rng + ?Sized>(
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
     match query_variant {
-        QueryVariant::Recommend => random_reco_query(rnd, sampler),
+        QueryVariant::RecoBestScore => random_reco_best_score_query(rnd, sampler),
         QueryVariant::Discovery => random_discovery_query(rnd, sampler),
         QueryVariant::Context => random_context_query(rnd, sampler),
     }
 }
 
-fn random_reco_query<R: Rng + ?Sized>(
+fn random_reco_best_score_query<R: Rng + ?Sized>(
     rnd: &mut R,
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
@@ -71,7 +71,7 @@ fn random_reco_query<R: Rng + ?Sized>(
         .map(|_| sampler.take(DIMS).collect_vec().into())
         .collect_vec();
 
-    RecoQuery::new(positives, negatives).into()
+    QueryVector::RecommendBestScore(RecoQuery::new(positives, negatives))
 }
 
 fn random_discovery_query<R: Rng + ?Sized>(
@@ -175,7 +175,8 @@ fn binary() -> WithQuantization {
 }
 
 enum QueryVariant {
-    Recommend,
+    RecoBestScore,
+    RecoSumScores,
     Discovery,
     Context,
 }
@@ -323,7 +324,7 @@ fn scoring_equivalency(
 #[rstest]
 fn compare_scoring_equivalency(
     #[values(
-        QueryVariant::Recommend,
+        QueryVariant::RecoBestScore,
         QueryVariant::Discovery,
         QueryVariant::Context
     )]
