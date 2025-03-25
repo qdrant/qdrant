@@ -85,7 +85,7 @@ impl Segment {
         Ok(id)
     }
 
-    fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
+    pub fn get_segment_manifest(&self) -> OperationResult<SegmentManifest> {
         let segment_id = self.segment_id()?;
         let segment_version = self.version();
 
@@ -217,7 +217,7 @@ impl Segment {
     }
 }
 
-fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<PathBuf> {
+pub fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<PathBuf> {
     // Compare two segment manifests, and return a list of files from `current` manifest, that
     // should be included into partial snapshot.
 

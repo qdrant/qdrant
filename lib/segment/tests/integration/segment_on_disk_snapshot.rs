@@ -158,7 +158,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     // snapshotting!
     let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&parent_snapshot_tar).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, &mut HashSet::new())
+        .take_snapshot(temp_dir.path(), &tar, format, None, &mut HashSet::new())
         .unwrap();
     tar.blocking_finish().unwrap();
 

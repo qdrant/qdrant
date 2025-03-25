@@ -4,6 +4,7 @@ use std::path::Path;
 use common::tar_ext;
 
 use crate::common::operation_error::OperationResult;
+use crate::data_types::segment_manifest::SegmentManifests;
 use crate::types::SnapshotFormat;
 
 pub trait SnapshotEntry {
@@ -17,6 +18,7 @@ pub trait SnapshotEntry {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: Option<&SegmentManifests>,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()>;
 }

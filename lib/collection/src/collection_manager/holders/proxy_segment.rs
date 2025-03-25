@@ -1312,6 +1312,7 @@ impl SnapshotEntry for ProxySegment {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: Option<&SegmentManifests>,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         log::info!("Taking a snapshot of a proxy segment");
@@ -1321,6 +1322,7 @@ impl SnapshotEntry for ProxySegment {
             temp_path,
             tar,
             format,
+            manifest,
             snapshotted_segments,
         )?;
 
@@ -1329,6 +1331,7 @@ impl SnapshotEntry for ProxySegment {
             temp_path,
             tar,
             format,
+            manifest,
             snapshotted_segments,
         )?;
 
@@ -1909,6 +1912,7 @@ mod tests {
                 temp_dir.path(),
                 &tar,
                 SnapshotFormat::Regular,
+                None,
                 &mut snapshotted_segments,
             )
             .unwrap();
@@ -1917,6 +1921,7 @@ mod tests {
                 temp_dir2.path(),
                 &tar,
                 SnapshotFormat::Regular,
+                None,
                 &mut snapshotted_segments,
             )
             .unwrap();

@@ -13,8 +13,8 @@ use crate::common::{check_named_vectors, check_vector, check_vector_name};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::query_context::QueryContext;
 use crate::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
-use crate::entry::entry_point::SegmentEntry;
 use crate::entry::SnapshotEntry as _;
+use crate::entry::entry_point::SegmentEntry;
 use crate::segment_constructor::load_segment;
 use crate::segment_constructor::simple_segment_constructor::{
     VECTOR1_NAME, VECTOR2_NAME, build_multivec_segment, build_simple_segment,
@@ -207,7 +207,7 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     // snapshotting!
     let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&parent_snapshot_tar).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, &mut HashSet::new())
+        .take_snapshot(temp_dir.path(), &tar, format, None, &mut HashSet::new())
         .unwrap();
     tar.blocking_finish().unwrap();
 

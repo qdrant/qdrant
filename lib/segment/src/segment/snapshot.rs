@@ -8,13 +8,14 @@ use io::storage_version::VERSION_FILE;
 use uuid::Uuid;
 
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::segment_manifest::{SegmentManifest, SegmentManifests};
 use crate::entry::SegmentEntry as _;
 use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::payload_storage::PayloadStorage;
 use crate::segment::{
     DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
-    Segment,
+    Segment, partial_snapshot,
 };
 use crate::types::SnapshotFormat;
 use crate::utils::path::strip_prefix;
@@ -29,6 +30,7 @@ impl SnapshotEntry for Segment {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: Option<&SegmentManifests>,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
         let segment_id = self
@@ -47,6 +49,42 @@ impl SnapshotEntry for Segment {
         // flush segment to capture latest state
         self.flush(true, false)?;
 
+        let include_files = match manifest {
+            None => HashSet::new(),
+
+            Some(manifest) => {
+                let updated_manifest = self.get_segment_manifest()?;
+
+                let updated_manifest_json =
+                    serde_json::to_vec(&updated_manifest).map_err(|err| {
+                        OperationError::service_error(format!(
+                            "failed to serialize segment manifest into JSON: {err}"
+                        ))
+                    })?;
+
+                let tar = tar.descend(Path::new(&segment_id))?;
+                tar.blocking_append_data(
+                    &updated_manifest_json,
+                    Path::new("segment_manifest.json"),
+                )?;
+
+                let mut empty_manifest = None;
+                let request_manifest = manifest
+                    .get(segment_id)
+                    .unwrap_or_else(|| empty_manifest.insert(SegmentManifest::empty(segment_id)));
+
+                partial_snapshot::updated_files(request_manifest, &updated_manifest)
+            }
+        };
+
+        let include_if = |path: &Path| {
+            if manifest.is_none() {
+                true
+            } else {
+                include_files.contains(path)
+            }
+        };
+
         match format {
             SnapshotFormat::Ancient => {
                 debug_assert!(false, "Unsupported snapshot format: {format:?}");
@@ -58,12 +96,12 @@ impl SnapshotEntry for Segment {
                 tar.blocking_write_fn(Path::new(&format!("{segment_id}.tar")), |writer| {
                     let tar = tar_ext::BuilderExt::new_streaming_borrowed(writer);
                     let tar = tar.descend(Path::new(SNAPSHOT_PATH))?;
-                    snapshot_files(self, temp_path, &tar, |_| true)
+                    snapshot_files(self, temp_path, &tar, include_if)
                 })??;
             }
             SnapshotFormat::Streamable => {
                 let tar = tar.descend(Path::new(&segment_id))?;
-                snapshot_files(self, temp_path, &tar, |_| true)?;
+                snapshot_files(self, temp_path, &tar, include_if)?;
             }
         }
 
