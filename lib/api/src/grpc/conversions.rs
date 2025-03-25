@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use common::counter::hardware_data::{HardwareData, RealCpuMeasurement};
+use common::counter::hardware_data::HardwareData;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;

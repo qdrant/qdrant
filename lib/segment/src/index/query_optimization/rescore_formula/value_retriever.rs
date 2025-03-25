@@ -366,12 +366,16 @@ mod tests {
         let mut builder = NumericIndex::builder_mmap(dir.path(), false);
 
         builder
-            .add_point(0, &[&json!("2023-01-01T00:00:00Z")])
+            .add_point(0, &[&json!("2023-01-01T00:00:00Z")], &hw_counter)
             .unwrap();
         builder
-            .add_point(1, &[&json!("2023-01-02"), &json!("2023-01-03T00:00:00Z")])
+            .add_point(
+                1,
+                &[&json!("2023-01-02"), &json!("2023-01-03T00:00:00Z")],
+                &hw_counter,
+            )
             .unwrap();
-        builder.add_point(2, &[]).unwrap();
+        builder.add_point(2, &[], &hw_counter).unwrap();
         let datetime_index = builder.finalize().unwrap();
         let datetime_index = FieldIndex::DatetimeIndex(datetime_index);
 
