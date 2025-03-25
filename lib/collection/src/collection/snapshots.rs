@@ -21,6 +21,7 @@ use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::replica_set::snapshots::RecoveryType;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
@@ -226,6 +227,7 @@ impl Collection {
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
+        recovery_type: RecoveryType,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
@@ -239,7 +241,13 @@ impl Collection {
             .shards_holder
             .read()
             .await
-            .recover_local_shard_from(snapshot_shard_path, &self.path, shard_id, cancel)
+            .recover_local_shard_from(
+                snapshot_shard_path,
+                recovery_type,
+                &self.path,
+                shard_id,
+                cancel,
+            )
             .await?;
 
         Ok(res)
@@ -285,10 +293,12 @@ impl Collection {
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
+    #[expect(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
         snapshot_path: &Path,
+        recovery_type: RecoveryType,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
@@ -305,6 +315,7 @@ impl Collection {
             .await
             .restore_shard_snapshot(
                 snapshot_path,
+                recovery_type,
                 &self.path,
                 &self.name(),
                 shard_id,

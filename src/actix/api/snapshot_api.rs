@@ -11,6 +11,7 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
 };
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
 use futures::{FutureExt as _, TryFutureExt as _};
 use reqwest::Url;
@@ -496,6 +497,7 @@ async fn upload_shard_snapshot(
             shard,
             form.snapshot.file.path(),
             priority.unwrap_or_default(),
+            RecoveryType::Full,
             cancel,
         )
         .await?;

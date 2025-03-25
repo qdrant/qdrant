@@ -7,6 +7,7 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
 };
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
@@ -189,6 +190,7 @@ pub async fn recover_shard_snapshot(
             shard_id,
             &snapshot_path,
             snapshot_priority,
+            RecoveryType::Full,
             cancel,
         )
         .await;
@@ -214,6 +216,7 @@ pub async fn recover_shard_snapshot_impl(
     shard: ShardId,
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
+    recovery_type: RecoveryType,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
     // `Collection::restore_shard_snapshot` and `activate_shard` calls *have to* be executed as a
@@ -227,6 +230,7 @@ pub async fn recover_shard_snapshot_impl(
         .restore_shard_snapshot(
             shard,
             snapshot_path,
+            recovery_type,
             toc.this_peer_id,
             toc.is_distributed(),
             &toc.optional_temp_or_snapshot_temp_path()?,
