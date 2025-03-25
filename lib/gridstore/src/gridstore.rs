@@ -434,7 +434,7 @@ impl<V: Blob> Gridstore<V> {
     }
 
     /// Iterate over all the values in the storage
-    pub fn iter<F>(&self, mut callback: F) -> std::io::Result<()>
+    pub fn iter<F>(&self, mut callback: F, hw_counter: HwMetricRefCounter) -> std::io::Result<()>
     where
         F: FnMut(PointOffset, &V) -> std::io::Result<bool>,
     {
@@ -453,6 +453,9 @@ impl<V: Blob> Gridstore<V> {
             } = pointer;
 
             let raw = self.read_from_pages(page_id, block_offset, length);
+
+            hw_counter.incr_delta(raw.len());
+
             let decompressed = self.decompress(raw);
             let value = V::from_bytes(&decompressed);
             if !callback(point_offset, &value)? {

@@ -67,7 +67,7 @@ pub trait PayloadStorage {
     /// Stop iteration if callback returns false or error.
     ///
     /// Required for building payload index.
-    fn iter<F>(&self, callback: F) -> OperationResult<()>
+    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>;
 
