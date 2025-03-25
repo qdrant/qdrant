@@ -260,7 +260,7 @@ pub async fn recover_shard_snapshot_impl(
         })
         .collect();
 
-    if other_active_replicas.is_empty() {
+    if other_active_replicas.is_empty() || recovery_type.is_partial() {
         snapshots::recover::activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
     } else {
         match priority {
