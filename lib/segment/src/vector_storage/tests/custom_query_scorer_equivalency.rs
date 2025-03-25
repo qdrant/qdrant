@@ -50,8 +50,12 @@ fn random_query<R: Rng + ?Sized>(
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
     match query_variant {
-        QueryVariant::RecoBestScore => QueryVector::RecommendBestScore(random_reco_query(rnd, sampler)),
-        QueryVariant::RecoSumScores => QueryVector::RecommendSumScores(random_reco_query(rnd, sampler)),
+        QueryVariant::RecoBestScore => {
+            QueryVector::RecommendBestScore(random_reco_query(rnd, sampler))
+        }
+        QueryVariant::RecoSumScores => {
+            QueryVector::RecommendSumScores(random_reco_query(rnd, sampler))
+        }
         QueryVariant::Discovery => random_discovery_query(rnd, sampler),
         QueryVariant::Context => random_context_query(rnd, sampler),
     }
