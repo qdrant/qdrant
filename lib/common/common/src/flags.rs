@@ -87,3 +87,15 @@ pub fn feature_flags() -> FeatureFlags {
     log::warn!("Feature flags not initialized!");
     FeatureFlags::default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Ensure we properly deserialize and don't crash on empty state
+    #[test]
+    fn test_deserialize_empty_flags() {
+        let empty: FeatureFlags = serde_json::from_str("{}").unwrap();
+        assert!(empty.is_empty());
+    }
+}
