@@ -25,7 +25,7 @@ use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
 use crate::shards::shard_holder::{SHARD_KEY_MAPPING_FILE, ShardHolder, shard_not_found_error};
-use crate::shards::{shard_initializing_flag_path, shard_path};
+use crate::shards::shard_path;
 
 impl Collection {
     pub fn get_snapshots_storage_manager(&self) -> CollectionResult<SnapshotStorageManager> {
@@ -235,23 +235,14 @@ impl Collection {
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
 
-        // set shard_id initialization flag
-        // the file is removed after full recovery to indicate a well-formed shard
-        let shard_flag = shard_initializing_flag_path(&self.path, shard_id);
-        let flag_file = tokio::fs::File::create(&shard_flag).await?;
-        flag_file.sync_all().await?;
-
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let res = self
             .shards_holder
             .read()
             .await
-            .recover_local_shard_from(snapshot_shard_path, shard_id, cancel)
+            .recover_local_shard_from(snapshot_shard_path, &self.path, shard_id, cancel)
             .await?;
-
-        // remove shard_id initialization flag because shard is fully recovered
-        tokio::fs::remove_file(&shard_flag).await?;
 
         Ok(res)
     }
@@ -316,6 +307,7 @@ impl Collection {
             .await
             .restore_shard_snapshot(
                 snapshot_path,
+                &self.path,
                 &self.name(),
                 shard_id,
                 this_peer_id,
