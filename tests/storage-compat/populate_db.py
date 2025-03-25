@@ -12,6 +12,7 @@ QDRANT_HOST = os.environ.get("QDRANT_HOST", "localhost:6333")
 
 POINTS_COUNT = 1000
 DENSE_DIM = 256
+MULTI_DENSE_DIM = 128
 
 
 def drop_collection(name: str):
@@ -30,6 +31,14 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quanti
                     "size": DENSE_DIM,
                     "distance": "Dot",
                     "on_disk": on_disk
+                },
+                "multi-image": {
+                    "size": MULTI_DENSE_DIM,
+                    "distance": "Dot",
+                    "on_disk": on_disk,
+                    "multivector_config": {
+                        "comparator": "max_sim"
+                    }
                 }
             },
             "sparse_vectors": {
@@ -168,6 +177,11 @@ def rand_dense_vec(dims: int = DENSE_DIM):
     return [(random.random() * 20) - 10 for _ in range(dims)]
 
 
+# Create multiple dense vectors
+def random_multi_dense_vec(dims: int = MULTI_DENSE_DIM):
+    return [rand_dense_vec(dims) for _ in range(3)]
+
+
 # Generate random sparse vector with given size and density
 # The density is the probability of non-zero value over the whole vector
 def rand_sparse_vec(size: int = 1000, density: float = 0.1):
@@ -225,19 +239,24 @@ def rand_point(num: int, use_uuid: bool):
     else:
         point_id = num
 
+    # draw [0, 1)
     vec_draw = random.random()
     vec = {}
-    if vec_draw < 0.3:
-        # dense vector
+    if vec_draw < 0.2:
+        # just a dense vector
         vec = {"image": rand_dense_vec()}
+    elif vec_draw < 0.4:
+        # just a multi dense vector
+        vec = {"multi-image": random_multi_dense_vec()}
     elif vec_draw < 0.6:
-        # sparse vector
+        # just a sparse vector
         vec = {"text": rand_sparse_vec()}
     else:
-        # mixed vector
+        # else mixed vector
         vec = {
             "image": rand_dense_vec(),
             "text": rand_sparse_vec(),
+            "multi-image": random_multi_dense_vec(),
         }
 
     payload = {}
