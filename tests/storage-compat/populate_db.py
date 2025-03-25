@@ -3,6 +3,7 @@
 import os
 import random
 import uuid
+import datetime
 from typing import List, Optional
 
 import requests
@@ -52,66 +53,74 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quanti
 
 
 def create_payload_indexes(name: str, on_disk_payload_index: bool):
-    # Create some payload indexes
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "keyword_field", "field_schema": {"type": "keyword", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "keyword_field", "field_type": "keyword"},
-        )
-        assert response.ok
-
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "float_field", "field_schema": {"type": "float", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "float_field", "field_type": "float"},
-        )
-        assert response.ok
-
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "integer_field", "field_schema": {"type": "integer", "on_disk": True, "lookup": True, "range": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "integer_field", "field_type": "integer"},
-        )
-        assert response.ok
-
-    if on_disk_payload_index:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "boolean_field", "field_schema": {"type": "bool", "on_disk": True }},
-        )
-        assert response.ok
-    else:
-        response = requests.put(
-            f"http://{QDRANT_HOST}/collections/{name}/index",
-            json={"field_name": "boolean_field", "field_type": "bool"},
-        )
-        assert response.ok
-        
-
+    # keyword
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
-        json={"field_name": "geo_field", "field_type": "geo"},
+        json={
+            "field_name": "keyword_field",
+            "field_schema": {
+                "type": "keyword",
+                "on_disk": on_disk_payload_index
+            }
+        },
     )
     assert response.ok
 
+    # float
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "float_field",
+            "field_schema": {
+                "type": "float",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
+
+    # integer
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "integer_field",
+            "field_schema": {
+                "type": "integer",
+                "on_disk": on_disk_payload_index,
+                "lookup": True,
+                "range": True
+            }
+        },
+    )
+    assert response.ok
+
+    # boolean
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "boolean_field",
+            "field_schema": {
+                "type": "bool",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
+
+    # geo
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "geo_field",
+            "field_schema": {
+                "type": "geo",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
+
+    # text
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}/index",
         json={
@@ -122,7 +131,34 @@ def create_payload_indexes(name: str, on_disk_payload_index: bool):
                 "min_token_len": 2,
                 "max_token_len": 20,
                 "lowercase": True,
+                "on_disk": on_disk_payload_index,
             },
+        },
+    )
+    assert response.ok
+
+    # uuid
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "uuid_field",
+            "field_schema": {
+                "type": "uuid",
+                "on_disk": on_disk_payload_index
+            }
+        },
+    )
+    assert response.ok
+
+    # datetime
+    response = requests.put(
+        f"http://{QDRANT_HOST}/collections/{name}/index",
+        json={
+            "field_name": "datetime_field",
+            "field_schema": {
+                "type": "datetime",
+                "on_disk": on_disk_payload_index
+            }
         },
     )
     assert response.ok
@@ -166,6 +202,13 @@ def rand_geo():
         "lat": random.random(),
         "lon": random.random(),
     }
+
+def rand_uuid():
+    return str(uuid.uuid4())
+
+
+def rand_datetime():
+    return str(datetime.datetime.now())
 
 
 def single_or_multi_value(generator):
@@ -218,6 +261,12 @@ def rand_point(num: int, use_uuid: bool):
 
     if random.random() < 0.5:
         payload["text_field"] = single_or_multi_value(rand_text)
+
+    if random.random() < 0.5:
+        payload["uuid_field"] = single_or_multi_value(rand_uuid)
+
+    if random.random() < 0.5:
+        payload["datetime_field"] = single_or_multi_value(rand_datetime)
 
     point = {
         "id": point_id,
