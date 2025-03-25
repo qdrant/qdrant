@@ -20,7 +20,7 @@ def drop_collection(name: str):
     requests.delete(f"http://{QDRANT_HOST}/collections/{name}")
 
 
-def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quantization_config: Optional[dict] = None):
+def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, datatype: str, quantization_config: Optional[dict] = None):
     # create collection with a lower `indexing_threshold_kb` to generate the HNSW index
     response = requests.put(
         f"http://{QDRANT_HOST}/collections/{name}",
@@ -30,12 +30,14 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quanti
                 "image": {
                     "size": DENSE_DIM,
                     "distance": "Dot",
-                    "on_disk": on_disk
+                    "on_disk": on_disk,
+                    "datatype": datatype,
                 },
                 "multi-image": {
                     "size": MULTI_DENSE_DIM,
                     "distance": "Dot",
                     "on_disk": on_disk,
+                    "datatype": datatype,
                     "multivector_config": {
                         "comparator": "max_sim"
                     }
@@ -45,6 +47,7 @@ def create_collection(name: str, memmap_threshold_kb: int, on_disk: bool, quanti
                 "text": {
                     "index": {
                         "on_disk": on_disk,
+                        "datatype": datatype,
                     }
                 }
             },
@@ -336,12 +339,12 @@ def basic_retrieve(name: str):
 # There are two ways to configure the usage of memmap storage:
 # - `memmap_threshold_kb` - the threshold for the indexer to use memmap storage
 # - `on_disk` - to store vectors immediately on disk
-def populate_collection(name: str, on_disk: bool, quantization_config: Optional[dict] = None, memmap_threshold: bool = False, on_disk_payload_index: bool = False):
+def populate_collection(name: str, on_disk: bool, quantization_config: Optional[dict] = None, memmap_threshold: bool = False, on_disk_payload_index: bool = False, datatype: str = "float32"):
     drop_collection(name)
     memmap_threshold_kb = 0
     if memmap_threshold:
         memmap_threshold_kb = 10  # low value to force transition to memmap storage
-    create_collection(name, memmap_threshold_kb, on_disk, quantization_config)
+    create_collection(name, memmap_threshold_kb, on_disk, datatype, quantization_config)
     create_payload_indexes(name, on_disk_payload_index)
     upload_points(name)
     basic_retrieve(name)
@@ -359,3 +362,5 @@ if __name__ == "__main__":
     populate_collection("test_collection_product_x8", on_disk=False, quantization_config={"product": {"compression": "x8"}})
     populate_collection("test_collection_binary", on_disk=False, quantization_config={"binary": {"always_ram": True}})
     populate_collection("test_collection_mmap_field_index", on_disk=True, on_disk_payload_index=True)
+    populate_collection("test_collection_vector_datatype_u8", on_disk=True, datatype="uint8")
+    populate_collection("test_collection_vector_datatype_f16", on_disk=True, datatype="float16")
