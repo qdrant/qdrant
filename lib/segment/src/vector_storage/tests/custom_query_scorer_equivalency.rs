@@ -346,7 +346,8 @@ fn compare_scoring_equivalency(
 #[rstest]
 fn async_compare_scoring_equivalency(
     #[values(
-        QueryVariant::Recommend,
+        QueryVariant::RecoBestScore,
+        QueryVariant::RecoSumScores,
         QueryVariant::Discovery,
         QueryVariant::Context
     )]
