@@ -1053,11 +1053,9 @@ impl ShardHolder {
             .get_shard(shard_id)
             .ok_or_else(|| shard_not_found_error(shard_id))?;
 
-        let shard_initializing_flag_path = shard_initializing_flag_path(collection_path, shard_id);
-
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         let res = replica_set
-            .restore_local_replica_from(snapshot_shard_path, &shard_initializing_flag_path, cancel)
+            .restore_local_replica_from(snapshot_shard_path, collection_path, cancel)
             .await?;
 
         Ok(res)

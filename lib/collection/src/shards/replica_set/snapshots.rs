@@ -11,6 +11,7 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_config::ShardConfig;
+use crate::shards::shard_initializing_flag_path;
 
 impl ShardReplicaSet {
     pub async fn create_snapshot(
@@ -81,7 +82,7 @@ impl ShardReplicaSet {
     pub async fn restore_local_replica_from(
         &self,
         replica_path: &Path,
-        shard_initializing_flag_path: &Path,
+        collection_path: &Path,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
         // `local.take()` call and `restore` task have to be executed as a single transaction
@@ -99,7 +100,8 @@ impl ShardReplicaSet {
         // set shard_id initialization flag
         // the file is removed after full recovery to indicate a well-formed shard
         // for example: some of the files may go missing if node gets killed during shard directory move/replace
-        let flag_file = tokio::fs::File::create(shard_initializing_flag_path).await?;
+        let shard_flag = shard_initializing_flag_path(collection_path, self.shard_id);
+        let flag_file = tokio::fs::File::create(&shard_flag).await?;
         flag_file.sync_all().await?;
 
         // Check `cancel` token one last time before starting non-cancellable section
@@ -120,7 +122,7 @@ impl ShardReplicaSet {
             LocalShard::move_data(replica_path, &self.shard_path).await?;
 
             // remove shard_id initialization flag because shard is fully recovered
-            tokio::fs::remove_file(&shard_initializing_flag_path).await?;
+            tokio::fs::remove_file(&shard_flag).await?;
 
             LocalShard::load(
                 self.shard_id,
