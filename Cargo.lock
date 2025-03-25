@@ -1249,6 +1249,7 @@ dependencies = [
  "self_cell",
  "semver",
  "serde",
+ "serde_json",
  "tango-bench",
  "tap",
  "tar",
