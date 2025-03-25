@@ -14,6 +14,4 @@ pub trait PartialSnapshotEntry {
         manifest: &SegmentManifests,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()>;
-
-    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()>;
 }

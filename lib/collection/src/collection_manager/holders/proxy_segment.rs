@@ -1337,6 +1337,20 @@ impl SnapshotEntry for ProxySegment {
 
         Ok(())
     }
+
+    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()> {
+        self.wrapped_segment
+            .get()
+            .read()
+            .collect_segment_manifests(manifests)?;
+
+        self.write_segment
+            .get()
+            .read()
+            .collect_segment_manifests(manifests)?;
+
+        Ok(())
+    }
 }
 
 impl PartialSnapshotEntry for ProxySegment {
@@ -1360,20 +1374,6 @@ impl PartialSnapshotEntry for ProxySegment {
             manifest,
             snapshotted_segments,
         )?;
-
-        Ok(())
-    }
-
-    fn collect_segment_manifests(&self, manifests: &mut SegmentManifests) -> OperationResult<()> {
-        self.wrapped_segment
-            .get()
-            .read()
-            .collect_segment_manifests(manifests)?;
-
-        self.write_segment
-            .get()
-            .read()
-            .collect_segment_manifests(manifests)?;
 
         Ok(())
     }
