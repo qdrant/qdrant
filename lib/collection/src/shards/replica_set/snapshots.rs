@@ -121,9 +121,6 @@ impl ShardReplicaSet {
 
             LocalShard::move_data(replica_path, &self.shard_path).await?;
 
-            // remove shard_id initialization flag because shard is fully recovered
-            tokio::fs::remove_file(&shard_flag).await?;
-
             LocalShard::load(
                 self.shard_id,
                 self.collection_id.clone(),
@@ -142,6 +139,8 @@ impl ShardReplicaSet {
         match restore.await {
             Ok(new_local) => {
                 local.replace(Shard::Local(new_local));
+                // remove shard_id initialization flag because shard is fully recovered
+                tokio::fs::remove_file(&shard_flag).await?;
                 Ok(true)
             }
 
