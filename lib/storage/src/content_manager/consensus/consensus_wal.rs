@@ -294,9 +294,7 @@ impl ConsensusOpWal {
         );
 
         log::debug!(
-            "Compacting WAL until Raft index {}, WAL index {}",
-            until_raft_index,
-            compact_until_wal_index,
+            "Compacting WAL until Raft index {until_raft_index}, WAL index {compact_until_wal_index}",
         );
 
         // Compact WAL

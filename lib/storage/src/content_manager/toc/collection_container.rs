@@ -228,8 +228,7 @@ impl TableOfContent {
                                 ))
                             {
                                 log::error!(
-                                    "Can't report transfer progress to consensus: {}",
-                                    error
+                                    "Can't report transfer progress to consensus: {error}"
                                 )
                             };
                         };

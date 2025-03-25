@@ -639,8 +639,7 @@ impl ShardHolder {
 
             if dirty_shard_data {
                 log::error!(
-                    "Shard {collection_id}:{} is not fully initialized - deleting segments data",
-                    shard_id
+                    "Shard {collection_id}:{shard_id} is not fully initialized - deleting segments data"
                 );
                 let shard_path = shard_path(collection_path, shard_id);
                 LocalShard::clear(&shard_path).await.unwrap();

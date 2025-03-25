@@ -36,8 +36,7 @@ impl Segment {
                     Some(point_id) => Some((point_id, scored_point_offset)),
                     None => {
                         log::warn!(
-                            "Point with internal ID {} not found in id tracker, skipping",
-                            point_offset
+                            "Point with internal ID {point_offset} not found in id tracker, skipping"
                         );
                         None
                     }

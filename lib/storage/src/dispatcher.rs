@@ -196,9 +196,9 @@ impl Dispatcher {
                 match operation_awaiter.await {
                     Ok(Ok(())) => {} // all good
                     Ok(Err(err)) => {
-                        log::warn!("Not all expected operations were completed: {}", err)
+                        log::warn!("Not all expected operations were completed: {err}")
                     }
-                    Err(err) => log::warn!("Awaiting for expected operations timed out: {}", err),
+                    Err(err) => log::warn!("Awaiting for expected operations timed out: {err}"),
                 }
             }
 
@@ -246,11 +246,7 @@ impl Dispatcher {
                 .await_commit_on_all_peers(this_peer_id, commit, term, timeout)
                 .await?;
 
-            log::debug!(
-                "Consensus is synchronized with term: {}, commit: {}",
-                term,
-                commit
-            );
+            log::debug!("Consensus is synchronized with term: {term}, commit: {commit}");
 
             Ok(())
         } else {

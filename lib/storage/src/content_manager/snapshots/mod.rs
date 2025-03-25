@@ -42,7 +42,7 @@ pub async fn do_delete_full_snapshot(
         snapshot_manager.get_full_snapshot_path(toc.snapshots_path(), snapshot_name)?;
 
     let res = tokio::spawn(async move {
-        log::info!("Deleting full storage snapshot {:?}", snapshot_dir);
+        log::info!("Deleting full storage snapshot {snapshot_dir:?}");
         snapshot_manager.delete_snapshot(&snapshot_dir).await
     })
     .await??;
@@ -73,7 +73,7 @@ pub async fn do_delete_collection_snapshot(
         snapshot_manager.get_snapshot_path(collection.snapshots_path(), &snapshot_name)?;
 
     let res = tokio::spawn(async move {
-        log::info!("Deleting collection snapshot {:?}", file_name);
+        log::info!("Deleting collection snapshot {file_name:?}");
         snapshot_manager.delete_snapshot(&file_name).await
     })
     .await??;

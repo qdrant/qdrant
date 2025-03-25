@@ -9,7 +9,7 @@ pub fn warn_validation_errors(description: &str, errs: &ValidationErrors) {
     log::warn!("{description} has validation errors:");
     describe_errors(errs)
         .into_iter()
-        .for_each(|(key, msg)| log::warn!("- {key}: {}", msg));
+        .for_each(|(key, msg)| log::warn!("- {key}: {msg}"));
 }
 
 /// Label the given validation errors in a single string.

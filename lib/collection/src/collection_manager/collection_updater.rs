@@ -28,9 +28,9 @@ impl CollectionUpdater {
                 if collection_error.is_transient() {
                     let mut write_segments = segments.write();
                     write_segments.failed_operation.insert(op_num);
-                    log::error!("Update operation failed: {}", collection_error)
+                    log::error!("Update operation failed: {collection_error}")
                 } else {
-                    log::warn!("Update operation declined: {}", collection_error)
+                    log::warn!("Update operation declined: {collection_error}")
                 }
             }
         }

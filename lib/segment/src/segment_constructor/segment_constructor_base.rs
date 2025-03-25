@@ -763,7 +763,7 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
     let app_version = SegmentVersion::current();
 
     if stored_version != app_version {
-        info!("Migrating segment {} -> {}", stored_version, app_version,);
+        info!("Migrating segment {stored_version} -> {app_version}");
 
         if stored_version > app_version {
             return Err(OperationError::service_error(format!(

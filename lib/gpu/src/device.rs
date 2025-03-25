@@ -338,7 +338,7 @@ impl Device {
             let mut gpu_allocator = gpu_allocator.lock();
             if let Err(e) = gpu_allocator.free(allocation) {
                 // Log error because free is called from Drop.
-                log::error!("Failed to free GPU memory: {:?}", e);
+                log::error!("Failed to free GPU memory: {e:?}");
             }
         } else {
             log::error!("GPU allocator is not available");

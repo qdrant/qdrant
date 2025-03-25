@@ -1066,7 +1066,7 @@ impl ShardReplicaSet {
     }
 
     fn notify_peer_failure(&self, peer_id: PeerId, from_state: Option<ReplicaState>) {
-        log::debug!("Notify peer failure: {}", peer_id);
+        log::debug!("Notify peer failure: {peer_id}");
         self.notify_peer_failure_cb.deref()(peer_id, self.shard_id, from_state)
     }
 

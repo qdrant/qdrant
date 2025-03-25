@@ -413,7 +413,7 @@ impl Collection {
 
             if !replica_set.is_local().await {
                 // We have proxy or something, we need to unwrap it
-                log::warn!("Unwrapping proxy shard {}", shard_id);
+                log::warn!("Unwrapping proxy shard {shard_id}");
                 replica_set.un_proxify_local().await?;
             }
 

@@ -80,7 +80,7 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         // Advise kernel that we'll need this page soon so the kernel can prepare
         #[cfg(unix)]
         if let Err(err) = deleted_mmap.advise(memmap2::Advice::WillNeed) {
-            log::error!("Failed to advise MADV_WILLNEED for deleted flags: {}", err,);
+            log::error!("Failed to advise MADV_WILLNEED for deleted flags: {err}");
         }
 
         // Transform into mmap BitSlice

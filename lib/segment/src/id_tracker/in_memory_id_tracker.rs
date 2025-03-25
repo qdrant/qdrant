@@ -157,7 +157,7 @@ impl IdTracker for InMemoryIdTracker {
             self.drop(external_id)?;
             #[cfg(debug_assertions)] // Only for dev builds
             {
-                log::debug!("dropped version for point {} without version", external_id);
+                log::debug!("dropped version for point {external_id} without version");
             }
         }
         Ok(())
