@@ -173,16 +173,16 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
-    fn iter<F>(&self, callback: F) -> OperationResult<()>
+    fn iter<F>(&self, callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
         match self {
             #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback),
-            PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback),
-            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback),
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback),
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.iter(callback, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.iter(callback, hw_counter),
         }
     }
 

@@ -198,18 +198,21 @@ impl PayloadStorage for MmapPayloadStorage {
         })
     }
 
-    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
+    fn iter<F>(&self, mut callback: F, hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {
-        self.storage.read().iter(|point_id, payload| {
-            callback(point_id, payload).map_err(|e|
+        self.storage.read().iter(
+            |point_id, payload| {
+                callback(point_id, payload).map_err(|e|
                     // TODO return proper error
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
                         e.to_string(),
                     ))
-        })?;
+            },
+            hw_counter.ref_payload_io_read_counter(),
+        )?;
         Ok(())
     }
 

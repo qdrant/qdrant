@@ -100,7 +100,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Box::new(|| Ok(()))
     }
 
-    fn iter<F>(&self, mut callback: F) -> OperationResult<()>
+    fn iter<F>(&self, mut callback: F, _hw_counter: &HardwareCounterCell) -> OperationResult<()>
     where
         F: FnMut(PointOffsetType, &Payload) -> OperationResult<bool>,
     {

@@ -97,14 +97,17 @@ fn test_trait_impl<S: PayloadStorage>(open: impl Fn(&Path) -> S) {
 
     let assert_payloads = |storage: &S| {
         storage
-            .iter(|key, value| {
-                if key == 0 {
-                    assert_eq!(value, &payload_json! {});
-                    return Ok(true);
-                }
-                assert_eq!(value, &payload);
-                Ok(true)
-            })
+            .iter(
+                |key, value| {
+                    if key == 0 {
+                        assert_eq!(value, &payload_json! {});
+                        return Ok(true);
+                    }
+                    assert_eq!(value, &payload);
+                    Ok(true)
+                },
+                &hw_counter,
+            )
             .unwrap();
     };
 
