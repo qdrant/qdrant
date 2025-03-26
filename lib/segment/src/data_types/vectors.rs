@@ -693,7 +693,10 @@ impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector 
     {
         match self {
             QueryVector::Nearest(v) => f(v).map(QueryVector::Nearest),
-            QueryVector::RecommendBestScore(v) | QueryVector::RecommendSumScores(v) => {
+            QueryVector::RecommendBestScore(v) => {
+                Ok(QueryVector::RecommendBestScore(v.transform(&mut f)?))
+            }
+            QueryVector::RecommendSumScores(v) => {
                 Ok(QueryVector::RecommendSumScores(v.transform(&mut f)?))
             }
             QueryVector::Discovery(v) => Ok(QueryVector::Discovery(v.transform(&mut f)?)),
