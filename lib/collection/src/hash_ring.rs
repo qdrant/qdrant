@@ -210,30 +210,30 @@ impl<T: Eq + Hash> HashRingRouter<T> {
                 // - shards: 1 -> 2
                 //   points: 100 -> 50/50
                 //   transfer points of each shard: 50/1 = 50 -> 50/100 = 50%
-                //   transfer fraction of each shard: 1/to = 1/2 = 0.5
+                //   transfer fraction to each shard: 1/to = 1/2 = 0.5
                 // - shards: 2 -> 3
                 //   points: 50/50 -> 33/33/33
                 //   transfer points of each shard: 33/2 = 16.5 -> 16.5/50 = 33%
-                //   transfer fraction of each shard: 1/to = 1/3 = 0.33
+                //   transfer fraction to each shard: 1/to = 1/3 = 0.33
                 // - shards: 3 -> 4
                 //   points: 33/33/33 -> 25/25/25/25
                 //   transfer points of each shard: 25/3 = 8.3 -> 8.3/33 = 25%
-                //   transfer fraction of each shard: 1/to = 1/4 = 0.25
+                //   transfer fraction to each shard: 1/to = 1/4 = 0.25
                 //
                 // Resharding down:
                 //
                 // - shards: 2 -> 1
                 //   points: 50/50 -> 100
                 //   transfer points of each shard: 50/1 = 50 -> 50/50 = 100%
-                //   transfer fraction of each shard: 1/to = 1/1 = 1.0
+                //   transfer fraction to each shard: 1/to = 1/1 = 1.0
                 // - shards: 3 -> 2
                 //   points: 33/33/33 -> 50/50
                 //   transfer points of each shard: 33/2 = 16.5 -> 16.5/33 = 50%
-                //   transfer fraction of each shard: 1/to = 1/2 = 0.5
+                //   transfer fraction to each shard: 1/to = 1/2 = 0.5
                 // - shards: 4 -> 3
                 //   points: 25/25/25/25 -> 33/33/33
                 //   transfer points of each shard: 25/3 = 8.3 -> 8.3/25 = 33%
-                //   transfer fraction of each shard: 1/to = 1/3 = 0.33
+                //   transfer fraction to each shard: 1/to = 1/3 = 0.33
                 1.0 / to as f32
             }
         }
