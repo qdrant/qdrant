@@ -201,6 +201,10 @@ impl<T: Eq + Hash> HashRingRouter<T> {
                     "expects resharding to only move up or down by one shard",
                 );
 
+                if from == to {
+                    return 1.0;
+                }
+
                 // Resharding up:
                 //
                 // - shards: 1 -> 2
