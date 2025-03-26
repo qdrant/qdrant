@@ -14,7 +14,9 @@ use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::types::Distance;
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-use segment::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer_for_test};
+use segment::vector_storage::{
+    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
+};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100000;
@@ -71,7 +73,8 @@ fn benchmark_naive(c: &mut Criterion) {
                 borrowed_id_tracker.deleted_point_bitslice(),
             )
             .unwrap()
-            .peek_top_all(10)
+            .peek_top_all(10, &DEFAULT_STOPPED)
+            .unwrap();
         })
     });
 }

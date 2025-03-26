@@ -10,6 +10,7 @@ use rand::rngs::StdRng;
 use segment::fixtures::index_fixtures::{FakeFilterContext, random_vector};
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
+use segment::vector_storage::DEFAULT_STOPPED;
 
 const NUM_VECTORS: usize = 1_000_000;
 const DIM: usize = 64;
@@ -39,7 +40,11 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            black_box(graph_layers.search(TOP, EF, scorer, None));
+            black_box(
+                graph_layers
+                    .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                    .unwrap(),
+            );
         })
     });
 
@@ -52,7 +57,11 @@ fn hnsw_benchmark(c: &mut Criterion) {
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            black_box(graph_layers.search(TOP, EF, scorer, None));
+            black_box(
+                graph_layers
+                    .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                    .unwrap(),
+            );
         })
     });
 

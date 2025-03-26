@@ -14,7 +14,9 @@ use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantization
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer_for_test};
+use crate::vector_storage::{
+    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
+};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points = [
@@ -57,7 +59,9 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let scorer =
         new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
             .unwrap();
-    let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    let closest = scorer
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+        .unwrap();
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
     assert_eq!(closest[1].idx, 1);
@@ -78,7 +82,9 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let scorer =
         new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
             .unwrap();
-    let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    let closest = scorer
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+        .unwrap();
     assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
     assert_eq!(closest[0].idx, 4);
     assert_eq!(closest[1].idx, 0);
@@ -98,7 +104,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let scorer =
         new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
             .unwrap();
-    let closest = scorer.peek_top_all(5);
+    let closest = scorer.peek_top_all(5, &DEFAULT_STOPPED).unwrap();
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
 
@@ -159,7 +165,9 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let scorer =
         new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
             .unwrap();
-    let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+    let closest = scorer
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+        .unwrap();
     drop(scorer);
     assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
     assert_eq!(closest[0].idx, 0);
@@ -205,7 +213,9 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         borrowed_id_tracker.deleted_point_bitslice(),
     )
     .unwrap();
-    let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+    let closest = scorer
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+        .unwrap();
     drop(scorer);
 
     let top_idx = match closest.first() {
@@ -223,7 +233,9 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
     let raw_scorer =
         new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
             .unwrap();
-    let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+    let closest = raw_scorer
+        .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+        .unwrap();
 
     let query_points = vec![0, 1, 2, 3, 4];
 
@@ -295,7 +307,6 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
             query.clone(),
             borrowed_id_tracker.deleted_point_bitslice(),
             storage.deleted_vector_bitslice(),
-            &stopped,
             hardware_counter,
         )
         .unwrap();
@@ -329,7 +340,6 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
             query.clone(),
             borrowed_id_tracker.deleted_point_bitslice(),
             storage.deleted_vector_bitslice(),
-            &stopped,
             hardware_counter,
         )
         .unwrap();

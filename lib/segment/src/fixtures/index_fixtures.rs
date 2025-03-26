@@ -16,9 +16,7 @@ use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::{
-    DEFAULT_STOPPED, DenseVectorStorage, RawScorer, VectorStorage, raw_scorer_impl,
-};
+use crate::vector_storage::{DenseVectorStorage, RawScorer, VectorStorage, raw_scorer_impl};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
     (0..size).map(|_| rnd_gen.random_range(-1.0..1.0)).collect()
@@ -147,7 +145,6 @@ where
             query,
             self,
             self.deleted_vector_bitslice(),
-            &DEFAULT_STOPPED,
             HardwareCounterCell::new(),
         )
     }

@@ -10,6 +10,7 @@ use segment::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
+use segment::vector_storage::DEFAULT_STOPPED;
 
 const DIM: usize = 16;
 const M: usize = 16;
@@ -37,7 +38,9 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.search(TOP, EF, scorer, None);
+            graph_layers
+                .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                .unwrap();
         })
     });
 
@@ -56,7 +59,9 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
             let query = random_vector(&mut rng, DIM);
             let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.search(TOP, EF, scorer, None);
+            graph_layers
+                .search(TOP, EF, scorer, None, &DEFAULT_STOPPED)
+                .unwrap();
         })
     });
 

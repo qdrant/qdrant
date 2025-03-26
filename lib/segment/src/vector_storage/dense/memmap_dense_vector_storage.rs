@@ -297,8 +297,8 @@ mod tests {
     use crate::id_tracker::id_tracker_base::IdTracker;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-    use crate::vector_storage::new_raw_scorer_for_test;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
+    use crate::vector_storage::{DEFAULT_STOPPED, new_raw_scorer_for_test};
 
     #[test]
     fn test_basic_persistence() {
@@ -406,13 +406,15 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
-        let res = raw_scorer.peek_top_all(2);
+        let res = raw_scorer.peek_top_all(2, &DEFAULT_STOPPED).unwrap();
 
         assert_eq!(res.len(), 2);
 
         assert_ne!(res[0].idx, 2);
 
-        let res = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
+        let res = raw_scorer
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
+            .unwrap();
 
         assert_eq!(res.len(), 2);
         assert_ne!(res[0].idx, 2);
@@ -489,7 +491,9 @@ mod tests {
         )
         .unwrap();
 
-        let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        let closest = scorer
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+            .unwrap();
         assert_eq!(closest.len(), 3, "must have 3 vectors, 2 are deleted");
         assert_eq!(closest[0].idx, 0);
         assert_eq!(closest[1].idx, 1);
@@ -514,7 +518,9 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
-        let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        let closest = scorer
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+            .unwrap();
         assert_eq!(closest.len(), 2, "must have 2 vectors, 3 are deleted");
         assert_eq!(closest[0].idx, 4);
         assert_eq!(closest[1].idx, 0);
@@ -537,7 +543,7 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
-        let closest = scorer.peek_top_all(5);
+        let closest = scorer.peek_top_all(5, &DEFAULT_STOPPED).unwrap();
         assert!(closest.is_empty(), "must have no results, all deleted");
     }
 
@@ -604,7 +610,9 @@ mod tests {
             borrowed_id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
-        let closest = scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5);
+        let closest = scorer
+            .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
+            .unwrap();
 
         drop(scorer);
 
@@ -773,7 +781,6 @@ mod tests {
                 query.clone(),
                 borrowed_id_tracker.deleted_point_bitslice(),
                 storage.deleted_vector_bitslice(),
-                &stopped,
                 hardware_counter,
             )
             .unwrap();
@@ -808,7 +815,6 @@ mod tests {
                 query.clone(),
                 borrowed_id_tracker.deleted_point_bitslice(),
                 storage.deleted_vector_bitslice(),
-                &stopped,
                 hardware_counter,
             )
             .unwrap();
