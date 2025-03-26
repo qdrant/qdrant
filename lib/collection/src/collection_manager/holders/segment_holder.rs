@@ -161,7 +161,7 @@ pub struct SegmentHolder {
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
 
-impl<'s> SegmentHolder {
+impl SegmentHolder {
     pub fn segment_manifests(&self) -> OperationResult<SegmentManifests> {
         let mut manifests = SegmentManifests::default();
 
@@ -178,7 +178,7 @@ impl<'s> SegmentHolder {
     /// Iterate over all segments with their IDs
     ///
     /// Appendable first, then non-appendable.
-    pub fn iter(&'s self) -> impl Iterator<Item = (&'s SegmentId, &'s LockedSegment)> + 's {
+    pub fn iter(&self) -> impl Iterator<Item = (&SegmentId, &LockedSegment)> {
         self.appendable_segments
             .iter()
             .chain(self.non_appendable_segments.iter())
@@ -329,9 +329,7 @@ impl<'s> SegmentHolder {
     }
 
     /// Get all locked segments, non-appendable first, then appendable.
-    pub fn non_appendable_then_appendable_segments(
-        &'s self,
-    ) -> impl Iterator<Item = LockedSegment> + 's {
+    pub fn non_appendable_then_appendable_segments(&self) -> impl Iterator<Item = LockedSegment> {
         self.non_appendable_segments
             .values()
             .chain(self.appendable_segments.values())
