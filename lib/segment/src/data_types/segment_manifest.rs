@@ -45,6 +45,16 @@ pub struct SegmentManifest {
     pub file_versions: HashMap<PathBuf, FileVersion>,
 }
 
+impl SegmentManifest {
+    pub fn empty(segment_id: impl Into<String>) -> Self {
+        Self {
+            segment_id: segment_id.into(),
+            segment_version: 0,
+            file_versions: HashMap::new(),
+        }
+    }
+}
+
 #[derive(
     Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, serde::Serialize, serde::Deserialize,
 )]

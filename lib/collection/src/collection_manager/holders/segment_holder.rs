@@ -1361,7 +1361,13 @@ impl<'s> SegmentHolder {
             payload_index_schema,
             |segment| {
                 let read_segment = segment.read();
-                read_segment.take_snapshot(temp_dir, tar, format, &mut snapshotted_segments)?;
+                read_segment.take_snapshot(
+                    temp_dir,
+                    tar,
+                    format,
+                    None,
+                    &mut snapshotted_segments,
+                )?;
                 Ok(())
             },
         )
