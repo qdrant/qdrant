@@ -1,10 +1,9 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::tar_ext;
 use common::types::TelemetryDetail;
 
 use crate::common::operation_error::{OperationResult, SegmentFailedState};
@@ -13,21 +12,21 @@ use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
 use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQueryContext};
 use crate::data_types::vectors::{QueryVector, VectorInternal};
-use crate::entry::partial_snapshot_entry::PartialSnapshotEntry;
+use crate::entry::snapshot_entry::SnapshotEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
 use crate::json_path::JsonPath;
 use crate::telemetry::SegmentTelemetry;
 use crate::types::{
     Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PointIdType,
-    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType,
-    SnapshotFormat, VectorName, VectorNameBuf, WithPayload, WithVector,
+    ScoredPoint, SearchParams, SegmentConfig, SegmentInfo, SegmentType, SeqNumberType, VectorName,
+    VectorNameBuf, WithPayload, WithVector,
 };
 
 /// Define all operations which can be performed with Segment or Segment-like entity.
 ///
 /// Assume all operations are idempotent - which means that no matter how many times an operation
 /// is executed - the storage state will be the same.
-pub trait SegmentEntry: PartialSnapshotEntry {
+pub trait SegmentEntry: SnapshotEntry {
     /// Get current update version of the segment
     fn version(&self) -> SeqNumberType;
 
@@ -320,19 +319,6 @@ pub trait SegmentEntry: PartialSnapshotEntry {
         filter: &'a Filter,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<usize>;
-
-    /// Take a snapshot of the segment.
-    ///
-    /// Creates a tar archive of the segment directory into `snapshot_dir_path`.
-    /// Uses `temp_path` to prepare files to archive.
-    /// The `snapshotted_segments` set is used to avoid writing the same snapshot twice.
-    fn take_snapshot(
-        &self,
-        temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
-        format: SnapshotFormat,
-        snapshotted_segments: &mut HashSet<String>,
-    ) -> OperationResult<()>;
 
     // Get collected telemetry data of segment
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry;

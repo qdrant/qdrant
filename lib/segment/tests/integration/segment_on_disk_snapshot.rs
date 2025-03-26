@@ -8,6 +8,7 @@ use rstest::rstest;
 use segment::data_types::index::{IntegerIndexParams, KeywordIndexParams};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
+use segment::entry::snapshot_entry::SnapshotEntry as _;
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::json_path::JsonPath;
 use segment::segment::Segment;
@@ -157,7 +158,7 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     // snapshotting!
     let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&parent_snapshot_tar).unwrap());
     segment
-        .take_snapshot(temp_dir.path(), &tar, format, &mut HashSet::new())
+        .take_snapshot(temp_dir.path(), &tar, format, None, &mut HashSet::new())
         .unwrap();
     tar.blocking_finish().unwrap();
 

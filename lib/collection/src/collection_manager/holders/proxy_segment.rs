@@ -18,7 +18,7 @@ use segment::data_types::query_context::{FormulaContext, QueryContext, SegmentQu
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::{QueryVector, VectorInternal};
 use segment::entry::entry_point::SegmentEntry;
-use segment::entry::partial_snapshot_entry::PartialSnapshotEntry;
+use segment::entry::snapshot_entry::SnapshotEntry;
 use segment::index::field_index::{CardinalityEstimation, FieldIndex};
 use segment::json_path::JsonPath;
 use segment::telemetry::SegmentTelemetry;
@@ -1292,34 +1292,6 @@ impl SegmentEntry for ProxySegment {
         self.write_segment.get().read().vector_names()
     }
 
-    fn take_snapshot(
-        &self,
-        temp_path: &Path,
-        tar: &tar_ext::BuilderExt,
-        format: SnapshotFormat,
-        snapshotted_segments: &mut HashSet<String>,
-    ) -> OperationResult<()> {
-        log::info!("Taking a snapshot of a proxy segment");
-
-        // Snapshot wrapped segment data into the temporary dir
-        self.wrapped_segment.get().read().take_snapshot(
-            temp_path,
-            tar,
-            format,
-            snapshotted_segments,
-        )?;
-
-        // Snapshot write_segment
-        self.write_segment.get().read().take_snapshot(
-            temp_path,
-            tar,
-            format,
-            snapshotted_segments,
-        )?;
-
-        Ok(())
-    }
-
     fn get_telemetry_data(&self, detail: TelemetryDetail) -> SegmentTelemetry {
         self.wrapped_segment.get().read().get_telemetry_data(detail)
     }
@@ -1333,24 +1305,31 @@ impl SegmentEntry for ProxySegment {
     }
 }
 
-impl PartialSnapshotEntry for ProxySegment {
-    fn take_partial_snapshot(
+impl SnapshotEntry for ProxySegment {
+    fn take_snapshot(
         &self,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
-        manifest: &SegmentManifests,
+        format: SnapshotFormat,
+        manifest: Option<&SegmentManifests>,
         snapshotted_segments: &mut HashSet<String>,
     ) -> OperationResult<()> {
-        self.wrapped_segment.get().read().take_partial_snapshot(
+        log::info!("Taking a snapshot of a proxy segment");
+
+        // Snapshot wrapped segment data into the temporary dir
+        self.wrapped_segment.get().read().take_snapshot(
             temp_path,
             tar,
+            format,
             manifest,
             snapshotted_segments,
         )?;
 
-        self.write_segment.get().read().take_partial_snapshot(
+        // Snapshot write_segment
+        self.write_segment.get().read().take_snapshot(
             temp_path,
             tar,
+            format,
             manifest,
             snapshotted_segments,
         )?;
@@ -1906,6 +1885,7 @@ mod tests {
                 temp_dir.path(),
                 &tar,
                 SnapshotFormat::Regular,
+                None,
                 &mut snapshotted_segments,
             )
             .unwrap();
@@ -1914,6 +1894,7 @@ mod tests {
                 temp_dir2.path(),
                 &tar,
                 SnapshotFormat::Regular,
+                None,
                 &mut snapshotted_segments,
             )
             .unwrap();
