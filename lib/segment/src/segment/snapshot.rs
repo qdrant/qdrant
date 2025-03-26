@@ -62,7 +62,7 @@ impl SnapshotEntry for Segment {
                 let tar = tar.descend(Path::new(&segment_id))?;
                 tar.blocking_append_data(
                     &updated_manifest_json,
-                    Path::new("segment_manifest.json"),
+                    Path::new("files/segment_manifest.json"),
                 )?;
 
                 let mut empty_manifest = None;
