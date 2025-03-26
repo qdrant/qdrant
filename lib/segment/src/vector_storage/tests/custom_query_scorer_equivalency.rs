@@ -189,15 +189,12 @@ fn scoring_equivalency(
         )
         .unwrap();
 
-        let is_stopped = AtomicBool::new(false);
-
         let other_scorer = match &quantized_vectors {
             Some(quantized_storage) => quantized_storage
                 .raw_scorer(
                     query.clone(),
                     id_tracker.deleted_point_bitslice(),
                     other_storage.deleted_vector_bitslice(),
-                    &is_stopped,
                     HardwareCounterCell::new(),
                 )
                 .unwrap(),

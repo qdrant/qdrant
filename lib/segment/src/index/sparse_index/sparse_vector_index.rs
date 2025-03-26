@@ -36,7 +36,7 @@ use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
 use crate::vector_storage::{
-    VectorStorage, VectorStorageEnum, check_deleted_condition, new_stoppable_raw_scorer,
+    VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
 };
 
 /// Whether to use the new compressed format.
@@ -300,11 +300,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let is_stopped = vector_query_context.is_stopped();
 
-        let raw_scorer = new_stoppable_raw_scorer(
+        let raw_scorer = new_raw_scorer(
             query_vector.clone(),
             &vector_storage,
             deleted_point_bitslice,
-            &is_stopped,
             vector_query_context.hardware_counter(),
         )?;
         let hw_counter = vector_query_context.hardware_counter();
@@ -319,11 +318,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
-                let res = raw_scorer.peek_top_iter(&mut filtered_points, top);
+                let res = raw_scorer.peek_top_iter(&mut filtered_points, top, &is_stopped)?;
                 Ok(res)
             }
             None => {
-                let res = raw_scorer.peek_top_all(top);
+                let res = raw_scorer.peek_top_all(top, &is_stopped)?;
                 Ok(res)
             }
         }
