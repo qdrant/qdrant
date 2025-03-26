@@ -300,6 +300,8 @@ service:
   # Hardware reporting adds information to the API responses with a
   # hint on how many resources were used to execute the request.
   #
+  # Warning: experimental, this feature is still under development and is not supported yet.
+  #
   # Uncomment to enable.
   # hardware_reporting: true
 
