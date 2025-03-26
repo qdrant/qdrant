@@ -125,7 +125,7 @@ pub(crate) async fn transfer_resharding_stream_records(
                 new.len()
             }
         };
-        let transfer_size = (count_result.count as f64 / new_shard_count as f64) as usize;
+        let transfer_size = count_result.count / new_shard_count;
         progress.lock().set(0, transfer_size);
 
         replica_set.transfer_indexes().await?;
