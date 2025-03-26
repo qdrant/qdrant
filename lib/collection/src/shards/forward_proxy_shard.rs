@@ -131,17 +131,26 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
         let _update_lock = self.update_lock.lock().await;
+
+        // If scrolling with data, we fetch all point data right in the scroll request
+        // If we scroll without data, we fetch only point IDs and defer fetching all point data
+        // with an explicit retrieve operation
+        //
+        // If using a hash ring filter, we defer reading data so that we only read vectors and
+        // payload for points that are actually transferred.
+        let scroll_with_data = hashring_filter.is_none();
+
         let mut batch = self
             .wrapped_shard
             .scroll_by(
                 offset,
                 limit,
-                &WithPayloadInterface::Bool(true),
-                &true.into(),
+                &WithPayloadInterface::Bool(scroll_with_data),
+                &WithVector::Bool(scroll_with_data),
                 None,
                 runtime_handle,
                 None,
-                None,                           // no timeout
+                None,                           // No timeout
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
             )
             .await?;
@@ -153,18 +162,49 @@ impl ForwardProxyShard {
             Some(batch.pop().unwrap().id)
         };
 
-        let points: Result<Vec<PointStructPersisted>, String> = batch
-            .into_iter()
-            // If using a hashring filter, only transfer points that moved, otherwise transfer all
-            .filter(|point| {
-                hashring_filter
-                    .map(|hashring| hashring.is_in_shard(&point.id, self.remote_shard.id))
-                    .unwrap_or(true)
-            })
-            .map(PointStructPersisted::try_from)
-            .collect();
+        let points = if scroll_with_data {
+            // Transform scroll batch into list of points
+            batch
+                .into_iter()
+                .map(PointStructPersisted::try_from)
+                .collect::<Result<Vec<PointStructPersisted>, String>>()?
+        } else {
+            // Reading point data is deferred, grab point IDs and read vectors and payloads now
+            let ids = batch
+                .into_iter()
+                // While using a hashring filter, only transfer points that moved, otherwise transfer all
+                .filter(|point| {
+                    hashring_filter
+                        .map(|hashring| hashring.is_in_shard(&point.id, self.remote_shard.id))
+                        .unwrap_or(true)
+                })
+                .map(PointStructPersisted::try_from)
+                .map(|point| point.map(|point| point.id))
+                .collect::<Result<Vec<ExtendedPointId>, String>>()?;
 
-        let points = points?;
+            let request = PointRequestInternal {
+                ids,
+                with_payload: Some(WithPayloadInterface::Bool(true)),
+                with_vector: WithVector::Bool(true),
+            };
+            let batch = self
+                .wrapped_shard
+                .retrieve(
+                    Arc::new(request),
+                    &WithPayload::from(true),
+                    &WithVector::Bool(true),
+                    runtime_handle,
+                    None,                           // No timeout
+                    HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+                )
+                .await?;
+
+            batch
+                .into_iter()
+                .map(PointStructPersisted::try_from)
+                .collect::<Result<Vec<PointStructPersisted>, String>>()?
+        };
+
         let count = points.len();
 
         // Use sync API to leverage potentially existing points
