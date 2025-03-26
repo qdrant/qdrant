@@ -180,64 +180,6 @@ impl<T: Eq + Hash> HashRingRouter<T> {
             HashRingRouter::Resharding { new, .. } => new.nodes(),
         }
     }
-
-    /// Point count fraction in resharding shard transfer
-    ///
-    /// If we do a resharding shard transfer, what fraction of points in the source shard will be
-    /// transferred to the target shard.
-    ///
-    /// Note: the fraction if points is relative to the point count in the source shard, not to the
-    /// point count of the whole collection.
-    ///
-    /// If not resharding, the fraction is 1.0.
-    pub fn resharding_transfer_fraction(&self) -> f32 {
-        match self {
-            HashRingRouter::Single(_) => 1.0,
-            HashRingRouter::Resharding { old, new } => {
-                let (from, to) = (old.len(), new.len());
-
-                debug_assert!(
-                    from.abs_diff(to) <= 1,
-                    "expects resharding to only move up or down by one shard",
-                );
-
-                if from == to {
-                    return 1.0;
-                }
-
-                // Resharding up:
-                //
-                // - shards: 1 -> 2
-                //   points: 100 -> 50/50
-                //   transfer points of each shard: 50/1 = 50 -> 50/100 = 50%
-                //   transfer fraction to each shard: 1/to = 1/2 = 0.5
-                // - shards: 2 -> 3
-                //   points: 50/50 -> 33/33/33
-                //   transfer points of each shard: 33/2 = 16.5 -> 16.5/50 = 33%
-                //   transfer fraction to each shard: 1/to = 1/3 = 0.33
-                // - shards: 3 -> 4
-                //   points: 33/33/33 -> 25/25/25/25
-                //   transfer points of each shard: 25/3 = 8.3 -> 8.3/33 = 25%
-                //   transfer fraction to each shard: 1/to = 1/4 = 0.25
-                //
-                // Resharding down:
-                //
-                // - shards: 2 -> 1
-                //   points: 50/50 -> 100
-                //   transfer points of each shard: 50/1 = 50 -> 50/50 = 100%
-                //   transfer fraction to each shard: 1/to = 1/1 = 1.0
-                // - shards: 3 -> 2
-                //   points: 33/33/33 -> 50/50
-                //   transfer points of each shard: 33/2 = 16.5 -> 16.5/33 = 50%
-                //   transfer fraction to each shard: 1/to = 1/2 = 0.5
-                // - shards: 4 -> 3
-                //   points: 25/25/25/25 -> 33/33/33
-                //   transfer points of each shard: 25/3 = 8.3 -> 8.3/25 = 33%
-                //   transfer fraction to each shard: 1/to = 1/3 = 0.33
-                1.0 / to as f32
-            }
-        }
-    }
 }
 
 /// List type for shard IDs
