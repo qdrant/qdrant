@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::Hash;
@@ -179,54 +178,6 @@ impl<T: Eq + Hash> HashRingRouter<T> {
         match self {
             HashRingRouter::Single(ring) => ring.nodes(),
             HashRingRouter::Resharding { new, .. } => new.nodes(),
-        }
-    }
-
-    /// Point count fraction in resharding shard transfer
-    ///
-    /// If we do a resharding shard transfer, what fraction of points in the source shard will be
-    /// transferred to the target shard.
-    ///
-    /// If not resharding, the fraction is 1.0.
-    pub fn resharding_transfer_fraction(&self) -> f32 {
-        match self {
-            HashRingRouter::Single(_) => 1.0,
-            HashRingRouter::Resharding { old, new } => {
-                let (from, to) = (old.len(), new.len());
-
-                debug_assert!(
-                    from.abs_diff(to) <= 1,
-                    "expects resharding to only move up or down by one shard",
-                );
-
-                match from.cmp(&to) {
-                    Ordering::Equal => 1.0,
-                    // Resharding up:
-                    //
-                    // - shards: 1 -> 2
-                    //   points: 100 -> 50/50
-                    //   transfer fraction of each shard: 1/2/1 = 0.5
-                    // - shards: 2 -> 3
-                    //   points: 50/50 -> 33/33/33
-                    //   transfer fraction of each shard: 1/3/2 = 0.167
-                    // - shards: 3 -> 4
-                    //   points: 33/33/33 -> 25/25/25/25
-                    //   transfer fraction of each shard: 1/4/3 = 0.083
-                    Ordering::Less => (1.0 / to as f32) / (from as f32),
-                    // Resharding down:
-                    //
-                    // - shards: 2 -> 1
-                    //   points: 50/50 -> 100
-                    //   transfer fraction of each shard: 1/1 = 1.0
-                    // - shards: 3 -> 2
-                    //   points: 33/33/33 -> 50/50
-                    //   transfer fraction of each shard: 1/2 = 0.5
-                    // - shards: 4 -> 3
-                    //   points: 25/25/25/25 -> 33/33/33
-                    //   transfer fraction of each shard: 1/3 = 0.333
-                    Ordering::Greater => 1.0 / to as f32,
-                }
-            }
         }
     }
 }
