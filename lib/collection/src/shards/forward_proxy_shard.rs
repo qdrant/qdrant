@@ -112,10 +112,10 @@ impl ForwardProxyShard {
         Ok(())
     }
 
-    /// Move batch of points to the remote shard.
-    /// Returns an offset of the next batch to be transferred.
+    /// Move batch of points to the remote shard
     ///
-    /// Returns new point offset and transferred count
+    /// Returns new point offset and real number of transferred points. The new point offset can be
+    /// used to start the next batch from.
     ///
     /// # Cancel safety
     ///
@@ -129,8 +129,59 @@ impl ForwardProxyShard {
         runtime_handle: &Handle,
     ) -> CollectionResult<(Option<PointIdType>, usize)> {
         debug_assert!(batch_size > 0);
-        let limit = batch_size + 1;
         let _update_lock = self.update_lock.lock().await;
+
+        let (points, next_page_offset) = self
+            .read_batch(offset, batch_size, hashring_filter, runtime_handle)
+            .await?;
+
+        let count = points.len();
+
+        // Use sync API to leverage potentially existing points
+        // Normally use SyncPoints, to completely replace everything in the target shard
+        // For resharding we need to merge points from multiple transfers, requiring a different operation
+        let point_operation = if !merge_points {
+            PointOperations::SyncPoints(PointSyncOperation {
+                from_id: offset,
+                to_id: next_page_offset,
+                points,
+            })
+        } else {
+            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+        };
+        let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
+
+        // We only need to wait for the last batch.
+        let wait = next_page_offset.is_none();
+
+        self.remote_shard
+            .update(
+                OperationWithClockTag::from(insert_points_operation),
+                wait,
+                HwMeasurementAcc::disposable(), // Internal operation
+            ) // TODO: Assign clock tag!? 🤔
+            .await?;
+
+        Ok((next_page_offset, count))
+    }
+
+    /// Read a batch of points to transfer to the remote shard
+    ///
+    /// Returns batch of points and new point offset. The new point offset can be used to start the
+    /// next batch from.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn read_batch(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        hashring_filter: Option<&HashRingRouter>,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
+        debug_assert!(batch_size > 0);
+        let limit = batch_size + 1;
 
         // If scrolling with data, we fetch all point data right in the scroll request
         // If we scroll without data, we fetch only point IDs and defer fetching all point data
@@ -205,35 +256,7 @@ impl ForwardProxyShard {
                 .collect::<Result<Vec<PointStructPersisted>, String>>()?
         };
 
-        let count = points.len();
-
-        // Use sync API to leverage potentially existing points
-        // Normally use SyncPoints, to completely replace everything in the target shard
-        // For resharding we need to merge points from multiple transfers, requiring a different operation
-        let point_operation = if !merge_points {
-            PointOperations::SyncPoints(PointSyncOperation {
-                from_id: offset,
-                to_id: next_page_offset,
-                points,
-            })
-        } else {
-            PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
-        };
-        let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
-
-        // We only need to wait for the last batch.
-        let wait = next_page_offset.is_none();
-
-        // TODO: Is cancelling `RemoteShard::update` safe for *receiver*?
-        self.remote_shard
-            .update(
-                OperationWithClockTag::from(insert_points_operation),
-                wait,
-                HwMeasurementAcc::disposable(), // Internal operation
-            ) // TODO: Assign clock tag!? 🤔
-            .await?;
-
-        Ok((next_page_offset, count))
+        Ok((points, next_page_offset))
     }
 
     pub fn deconstruct(self) -> (LocalShard, RemoteShard) {
