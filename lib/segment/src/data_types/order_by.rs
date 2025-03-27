@@ -6,10 +6,8 @@ use validator::Validate;
 
 use crate::json_path::JsonPath;
 use crate::types::{
-    DateTimePayloadType, FloatPayloadType, IntPayloadType, Order, Payload, Range, RangeInterface,
+    DateTimePayloadType, FloatPayloadType, IntPayloadType, Order, Range, RangeInterface,
 };
-
-const INTERNAL_KEY_OF_ORDER_BY_VALUE: &str = "____ordered_with____";
 
 #[derive(Deserialize, Serialize, JsonSchema, Copy, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -105,38 +103,6 @@ impl OrderBy {
                 Direction::Asc => OrderValue::MIN,
                 Direction::Desc => OrderValue::MAX,
             })
-    }
-
-    pub fn insert_order_value_in_payload(
-        payload: Option<Payload>,
-        value: impl Into<serde_json::Value>,
-    ) -> Payload {
-        let mut new_payload = payload.unwrap_or_default();
-        new_payload
-            .0
-            .insert(INTERNAL_KEY_OF_ORDER_BY_VALUE.to_string(), value.into());
-        new_payload
-    }
-
-    fn json_value_to_ordering_value(&self, value: Option<serde_json::Value>) -> OrderValue {
-        value
-            .and_then(|v| OrderValue::try_from(v).ok())
-            .unwrap_or_else(|| match self.direction() {
-                Direction::Asc => OrderValue::MAX,
-                Direction::Desc => OrderValue::MIN,
-            })
-    }
-
-    pub fn get_order_value_from_payload(&self, payload: Option<&Payload>) -> OrderValue {
-        self.json_value_to_ordering_value(
-            payload.and_then(|payload| payload.0.get(INTERNAL_KEY_OF_ORDER_BY_VALUE).cloned()),
-        )
-    }
-
-    pub fn remove_order_value_from_payload(&self, payload: Option<&mut Payload>) -> OrderValue {
-        self.json_value_to_ordering_value(
-            payload.and_then(|payload| payload.0.remove(INTERNAL_KEY_OF_ORDER_BY_VALUE)),
-        )
     }
 }
 

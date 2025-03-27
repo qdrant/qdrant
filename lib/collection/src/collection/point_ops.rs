@@ -340,42 +340,15 @@ impl Collection {
                 .collect_vec(),
             Some(order_by) => {
                 retrieved_iter
-                    // Extract and remove order value from payload
-                    .map(|records| {
-                        // TODO(1.11): read value only from record.order_value, remove & cleanup this part
-                        records.into_iter().map(|mut record| {
-                            let value;
-                            if local_only {
-                                value = record.order_value.unwrap_or_else(|| {
-                                    order_by.get_order_value_from_payload(record.payload.as_ref())
-                                });
-                            } else {
-                                value = if let Some(order_value) = record.order_value {
-                                    order_by
-                                        .remove_order_value_from_payload(record.payload.as_mut());
-                                    order_value
-                                } else {
-                                    order_by
-                                        .remove_order_value_from_payload(record.payload.as_mut())
-                                };
-                                if !with_payload_interface.is_required() {
-                                    // Use None instead of empty hashmap
-                                    record.payload = None;
-                                }
-                            };
-                            (value, record)
-                        })
-                    })
                     // Get top results
-                    .kmerge_by(|(value_a, record_a), (value_b, record_b)| {
-                        match order_by.direction() {
-                            Direction::Asc => (value_a, record_a.id) < (value_b, record_b.id),
-                            Direction::Desc => (value_a, record_a.id) > (value_b, record_b.id),
-                        }
+                    .kmerge_by(|a, b| match order_by.direction() {
+                        Direction::Asc => (a.order_value, a.id) < (b.order_value, b.id),
+                        Direction::Desc => (a.order_value, a.id) > (b.order_value, b.id),
                     })
-                    // Only keep the point with the most "valuable" order value
-                    .dedup_by(|(_, record_a), (_, record_b)| record_a.id == record_b.id)
-                    .map(|(_, record)| api::rest::Record::from(record))
+                    .dedup_by(|record_a, record_b| {
+                        (record_a.order_value, record_a.id) == (record_b.order_value, record_b.id)
+                    })
+                    .map(api::rest::Record::from)
                     .take(limit)
                     .collect_vec()
             }
