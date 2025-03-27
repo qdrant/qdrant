@@ -646,7 +646,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
                 let b = b.0.get(key).unwrap().as_f64();
                 a >= b
             }),
-            "got: {:#?}",
+            "Expected descending order when using {key} key, got: {:#?}",
             result_desc.points
         );
 

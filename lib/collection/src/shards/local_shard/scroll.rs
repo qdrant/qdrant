@@ -9,7 +9,7 @@ use itertools::Itertools as _;
 use rand::distr::weighted::WeightedIndex;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use segment::data_types::order_by::{Direction, OrderBy, OrderValue};
+use segment::data_types::order_by::{Direction, OrderBy};
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
@@ -75,9 +75,9 @@ impl LocalShard {
 
         let offset_id = None;
 
-        let point_results = match scroll_order {
-            ScrollOrder::ById => self
-                .scroll_by_id(
+        let record_results = match scroll_order {
+            ScrollOrder::ById => {
+                self.scroll_by_id(
                     offset_id,
                     limit,
                     with_payload,
@@ -88,72 +88,46 @@ impl LocalShard {
                     hw_measurement_acc,
                 )
                 .await?
-                .into_iter()
-                .map(|record| ScoredPoint {
-                    id: record.id,
-                    version: 0,
-                    score: 0.0,
-                    payload: record.payload,
-                    vector: record.vector,
-                    shard_key: record.shard_key,
-                    order_value: None,
-                })
-                .collect(),
+            }
             ScrollOrder::ByField(order_by) => {
-                let (records, values) = self
-                    .scroll_by_field(
-                        limit,
-                        with_payload,
-                        with_vector,
-                        filter.as_ref(),
-                        search_runtime_handle,
-                        order_by,
-                        timeout,
-                        hw_measurement_acc,
-                    )
-                    .await?;
-
-                records
-                    .into_iter()
-                    .zip(values)
-                    .map(|(record, value)| ScoredPoint {
-                        id: record.id,
-                        version: 0,
-                        score: 0.0,
-                        payload: record.payload,
-                        vector: record.vector,
-                        shard_key: record.shard_key,
-                        order_value: Some(value),
-                    })
-                    .collect()
+                self.scroll_by_field(
+                    limit,
+                    with_payload,
+                    with_vector,
+                    filter.as_ref(),
+                    search_runtime_handle,
+                    order_by,
+                    timeout,
+                    hw_measurement_acc,
+                )
+                .await?
             }
             ScrollOrder::Random => {
-                let records = self
-                    .scroll_randomly(
-                        limit,
-                        with_payload,
-                        with_vector,
-                        filter.as_ref(),
-                        search_runtime_handle,
-                        timeout,
-                        hw_measurement_acc,
-                    )
-                    .await?;
-
-                records
-                    .into_iter()
-                    .map(|record| ScoredPoint {
-                        id: record.id,
-                        version: 0,
-                        score: 0.0,
-                        payload: record.payload,
-                        vector: record.vector,
-                        shard_key: record.shard_key,
-                        order_value: None,
-                    })
-                    .collect()
+                self.scroll_randomly(
+                    limit,
+                    with_payload,
+                    with_vector,
+                    filter.as_ref(),
+                    search_runtime_handle,
+                    timeout,
+                    hw_measurement_acc,
+                )
+                .await?
             }
         };
+
+        let point_results = record_results
+            .into_iter()
+            .map(|record| ScoredPoint {
+                id: record.id,
+                version: 0,
+                score: 0.0,
+                payload: record.payload,
+                vector: record.vector,
+                shard_key: record.shard_key,
+                order_value: record.order_value,
+            })
+            .collect();
 
         Ok(point_results)
     }
@@ -251,7 +225,7 @@ impl LocalShard {
         order_by: &OrderBy,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<(Vec<RecordInternal>, Vec<OrderValue>)> {
+    ) -> CollectionResult<Vec<RecordInternal>> {
         let start = Instant::now();
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let stopping_guard = StoppingGuard::new();
@@ -326,10 +300,15 @@ impl LocalShard {
 
         let ordered_records = point_ids
             .iter()
-            .filter_map(|point_id| records_map.get(point_id).cloned())
+            .zip(values)
+            .filter_map(|(point_id, value)| {
+                let mut record = records_map.get(point_id).cloned()?;
+                record.order_value = Some(value);
+                Some(record)
+            })
             .collect();
 
-        Ok((ordered_records, values))
+        Ok(ordered_records)
     }
 
     #[allow(clippy::too_many_arguments)]
