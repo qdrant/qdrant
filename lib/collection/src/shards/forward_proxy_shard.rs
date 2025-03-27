@@ -277,10 +277,9 @@ impl ForwardProxyShard {
         // Make preselection of point IDs by hash ring
         let ids = batch
             .into_iter()
-            .filter(|point| hashring_filter.is_in_shard(&point.id, self.remote_shard.id))
-            .map(PointStructPersisted::try_from)
-            .map(|point| point.map(|point| point.id))
-            .collect::<Result<Vec<ExtendedPointId>, String>>()?;
+            .map(|point| point.id)
+            .filter(|point_id| hashring_filter.is_in_shard(point_id, self.remote_shard.id))
+            .collect();
 
         // Read actual vectors and payloads for preselection of points
         let request = PointRequestInternal {
