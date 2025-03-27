@@ -114,8 +114,8 @@ impl ForwardProxyShard {
 
     /// Move batch of points to the remote shard
     ///
-    /// Returns new point offset and real number of transferred points. The new point offset can be
-    /// used to start the next batch from.
+    /// Returns new point offset and actual number of transferred points. The new point offset can
+    /// be used to start the next batch from.
     ///
     /// # Cancel safety
     ///
@@ -247,7 +247,7 @@ impl ForwardProxyShard {
             // - resharding: 2 -> 1, transfer 100%, factor 1
             // - resharding: 3 -> 2, transfer 50%,  factor 2
             // - resharding: 4 -> 3, transfer 33%,  factor 3
-            HashRingRouter::Resharding { old: _, new } => new.len(),
+            HashRingRouter::Resharding { old: _, new } => new.len().max(1),
         };
         let limit = (batch_size * oversample_factor) + 1;
 
