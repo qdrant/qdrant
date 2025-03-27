@@ -9198,6 +9198,8 @@ pub struct SyncPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9211,6 +9213,8 @@ pub struct UpsertPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9224,6 +9228,8 @@ pub struct DeletePointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9237,6 +9243,8 @@ pub struct UpdateVectorsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9250,6 +9258,8 @@ pub struct DeleteVectorsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9263,6 +9273,8 @@ pub struct SetPayloadPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9276,6 +9288,8 @@ pub struct DeletePayloadPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9289,6 +9303,8 @@ pub struct ClearPayloadPointsInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9304,6 +9320,8 @@ pub struct CreateFieldIndexCollectionInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9319,6 +9337,8 @@ pub struct DeleteFieldIndexCollectionInternal {
     pub shard_id: ::core::option::Option<u32>,
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
+    #[prost(message, optional, tag = "4")]
+    pub debug_metadata: ::core::option::Option<DebugMetadata>,
 }
 /// Has to be backward compatible with `PointsOperationResponse`!
 #[derive(serde::Serialize)]
@@ -9361,6 +9381,19 @@ pub struct ClockTag {
     pub token: u64,
     #[prost(bool, tag = "5")]
     pub force: bool,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DebugMetadata {
+    #[prost(bytes = "vec", tag = "1")]
+    pub uuid: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub timestamp: ::core::option::Option<::prost_wkt_types::Timestamp>,
+    #[prost(enumeration = "Reason", tag = "3")]
+    pub reason: i32,
+    #[prost(uint64, optional, tag = "4")]
+    pub sender: ::core::option::Option<u64>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9822,6 +9855,51 @@ pub struct FacetResponseInternal {
     pub time: f64,
     #[prost(message, optional, tag = "3")]
     pub usage: ::core::option::Option<HardwareUsage>,
+}
+#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum Reason {
+    Unknown = 0,
+    Client = 1,
+    Peer = 2,
+    ForwardProxy = 3,
+    QueueProxy = 4,
+    StreamRecordsTransfer = 5,
+    WalDeltaTransfer = 6,
+    Resharding = 7,
+}
+impl Reason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Reason::Unknown => "ReasonUnknown",
+            Reason::Client => "ReasonClient",
+            Reason::Peer => "ReasonPeer",
+            Reason::ForwardProxy => "ReasonForwardProxy",
+            Reason::QueueProxy => "ReasonQueueProxy",
+            Reason::StreamRecordsTransfer => "ReasonStreamRecordsTransfer",
+            Reason::WalDeltaTransfer => "ReasonWalDeltaTransfer",
+            Reason::Resharding => "ReasonResharding",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ReasonUnknown" => Some(Self::Unknown),
+            "ReasonClient" => Some(Self::Client),
+            "ReasonPeer" => Some(Self::Peer),
+            "ReasonForwardProxy" => Some(Self::ForwardProxy),
+            "ReasonQueueProxy" => Some(Self::QueueProxy),
+            "ReasonStreamRecordsTransfer" => Some(Self::StreamRecordsTransfer),
+            "ReasonWalDeltaTransfer" => Some(Self::WalDeltaTransfer),
+            "ReasonResharding" => Some(Self::Resharding),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod points_internal_client {

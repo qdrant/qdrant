@@ -15,6 +15,7 @@ workspace = true
 testing = []
 tracing = ["dep:tracing", "api/tracing", "segment/tracing"]
 data-consistency-check = []
+update-operations-debug-metadata = []
 
 [dev-dependencies]
 criterion = { workspace = true }

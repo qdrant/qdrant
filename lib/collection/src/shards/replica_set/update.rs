@@ -9,7 +9,7 @@ use itertools::Itertools as _;
 use super::{ReplicaSetState, ReplicaState, ShardReplicaSet, clock_set};
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{CollectionError, CollectionResult, UpdateResult, UpdateStatus};
-use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag};
+use crate::operations::{ClockTag, CollectionUpdateOperations, OperationWithClockTag, Reason};
 use crate::shards::shard::{PeerId, Shard};
 use crate::shards::shard_trait::ShardOperation as _;
 
@@ -319,7 +319,7 @@ impl ShardReplicaSet {
         }
 
         for remote in updatable_remote_shards {
-            let operation = operation.clone();
+            let operation = operation.clone().reason(Reason::Peer).sender(this_peer_id);
 
             let hw_acc = hw_measurement_acc.clone();
             let remote_update = async move {

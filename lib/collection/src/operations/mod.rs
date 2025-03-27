@@ -20,6 +20,7 @@ pub mod verification;
 
 use std::collections::HashMap;
 
+use chrono::Timelike;
 use segment::json_path::JsonPath;
 use segment::types::{ExtendedPointId, PayloadFieldSchema, PointIdType};
 use serde::{Deserialize, Serialize};
@@ -47,13 +48,17 @@ pub enum FieldIndexOperations {
     DeleteIndex(JsonPath),
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OperationWithClockTag {
     #[serde(flatten)]
     pub operation: CollectionUpdateOperations,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clock_tag: Option<ClockTag>,
+
+    #[cfg(feature = "update-operations-debug-metadata")]
+    #[serde(default, skip_serializing_if = "Option::is_some")]
+    pub debug_metadata: Option<DebugMetadata>,
 }
 
 impl OperationWithClockTag {
@@ -64,7 +69,63 @@ impl OperationWithClockTag {
         Self {
             operation: operation.into(),
             clock_tag,
+
+            #[cfg(feature = "update-operations-debug-metadata")]
+            debug_metadata: Some(DebugMetadata::new()),
         }
+    }
+
+    pub fn reason(mut self, reason: Reason) -> Self {
+        if let Some(meta) = self.debug_metadata_mut() {
+            meta.reason = reason;
+        }
+
+        self
+    }
+
+    pub fn sender(mut self, sender: PeerId) -> Self {
+        if let Some(meta) = self.debug_metadata_mut() {
+            meta.sender = Some(sender);
+        }
+
+        self
+    }
+
+    #[allow(unused_mut, unused_variables)]
+    pub fn with_debug_metadata(mut self, debug_metadata: Option<DebugMetadata>) -> Self {
+        #[cfg(feature = "update-operations-debug-metadata")]
+        {
+            self.debug_metadata = debug_metadata;
+        }
+
+        self
+    }
+
+    pub fn debug_metadata(&self) -> Option<DebugMetadata> {
+        #[cfg(feature = "update-operations-debug-metadata")]
+        {
+            self.debug_metadata
+        }
+
+        #[cfg(not(feature = "update-operations-debug-metadata"))]
+        None
+    }
+
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
+    fn debug_metadata_mut(&mut self) -> Option<&mut DebugMetadata> {
+        #[cfg(feature = "update-operations-debug-metadata")]
+        {
+            self.debug_metadata.as_mut()
+        }
+
+        #[cfg(not(feature = "update-operations-debug-metadata"))]
+        None
+    }
+}
+
+impl PartialEq for OperationWithClockTag {
+    fn eq(&self, other: &Self) -> bool {
+        self.operation.eq(&other.operation) && self.clock_tag.eq(&other.clock_tag)
     }
 }
 
@@ -145,6 +206,133 @@ impl From<ClockTag> for api::grpc::qdrant::ClockTag {
             clock_tick,
             token,
             force,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+pub struct DebugMetadata {
+    /// Unique ID of the operation
+    uuid: uuid::Uuid,
+    /// When operation was issued by client
+    timestamp: chrono::DateTime<chrono::Utc>,
+    /// Why operation was sent
+    reason: Reason,
+    /// Which peer sent the operation
+    sender: Option<PeerId>,
+    /// When operation was received
+    received_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Default for DebugMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DebugMetadata {
+    pub fn new() -> Self {
+        let now = chrono::Utc::now();
+
+        Self {
+            uuid: uuid::Uuid::new_v4(),
+            timestamp: now,
+            reason: Reason::Client,
+            sender: None,
+            received_at: now,
+        }
+    }
+}
+
+impl From<api::grpc::qdrant::DebugMetadata> for DebugMetadata {
+    fn from(meta: api::grpc::qdrant::DebugMetadata) -> Self {
+        let timestamp = meta
+            .timestamp
+            .clone()
+            .and_then(|ts| chrono::DateTime::from_timestamp(ts.seconds, ts.nanos as _))
+            .unwrap_or(chrono::DateTime::UNIX_EPOCH);
+
+        Self {
+            uuid: uuid::Uuid::from_slice(&meta.uuid).unwrap_or(uuid::Uuid::nil()),
+            timestamp,
+            reason: meta.reason().into(),
+            sender: meta.sender,
+            received_at: chrono::Utc::now(),
+        }
+    }
+}
+
+impl From<DebugMetadata> for api::grpc::qdrant::DebugMetadata {
+    fn from(meta: DebugMetadata) -> Self {
+        let mut grpc = Self {
+            uuid: meta.uuid.into_bytes().into(),
+            timestamp: None,
+            reason: meta.reason.to_grpc() as _,
+            sender: meta.sender,
+        };
+
+        // Stupid hack to avoid explicitly referencing `prost_wkt_types::Timestamp` 🙄
+        let ts = grpc.timestamp.get_or_insert(Default::default());
+        ts.seconds = meta.timestamp.timestamp();
+        ts.nanos = meta.timestamp.nanosecond() as _;
+
+        grpc
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+pub enum Reason {
+    /// TODO
+    #[default]
+    Unknown,
+    /// Operation was sent by client
+    Client,
+    /// Operation was propagated by another peer
+    Peer,
+    /// Operation was sent by forward proxy on another peer
+    ForwardProxy,
+    /// Operation was sent by queue proxy on another peer
+    QueueProxy,
+    /// Operation was transferred by stream records shard transfer
+    StreamRecordsTransfer,
+    /// Operation was transferred by WAL delta shard transfer
+    WalDeltaTransfer,
+    /// Operation was transferred during resharding
+    Resharding,
+}
+
+impl Reason {
+    pub fn to_grpc(self) -> api::grpc::qdrant::Reason {
+        self.into()
+    }
+}
+
+impl From<api::grpc::qdrant::Reason> for Reason {
+    fn from(reason: api::grpc::qdrant::Reason) -> Self {
+        match reason {
+            api::grpc::qdrant::Reason::Unknown => Self::Unknown,
+            api::grpc::qdrant::Reason::Client => Self::Client,
+            api::grpc::qdrant::Reason::Peer => Self::Peer,
+            api::grpc::qdrant::Reason::ForwardProxy => Self::ForwardProxy,
+            api::grpc::qdrant::Reason::QueueProxy => Self::QueueProxy,
+            api::grpc::qdrant::Reason::StreamRecordsTransfer => Self::StreamRecordsTransfer,
+            api::grpc::qdrant::Reason::WalDeltaTransfer => Self::WalDeltaTransfer,
+            api::grpc::qdrant::Reason::Resharding => Self::Resharding,
+        }
+    }
+}
+
+impl From<Reason> for api::grpc::qdrant::Reason {
+    fn from(reason: Reason) -> Self {
+        match reason {
+            Reason::Unknown => Self::Unknown,
+            Reason::Client => Self::Client,
+            Reason::Peer => Self::Peer,
+            Reason::ForwardProxy => Self::ForwardProxy,
+            Reason::QueueProxy => Self::QueueProxy,
+            Reason::StreamRecordsTransfer => Self::StreamRecordsTransfer,
+            Reason::WalDeltaTransfer => Self::WalDeltaTransfer,
+            Reason::Resharding => Self::Resharding,
         }
     }
 }
