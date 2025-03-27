@@ -178,7 +178,9 @@ impl FieldIndex {
             FieldIndex::BoolIndex(_) => None,
             FieldIndex::FullTextIndex(full_text_index) => match &condition.r#match {
                 Some(Match::Text(MatchText { text })) => {
-                    let query = full_text_index.parse_query(text, hw_counter);
+                    let Some(query) = full_text_index.parse_query(text, hw_counter) else {
+                        return Some(false);
+                    };
                     for value in FullTextIndex::get_values(payload_value) {
                         let document = full_text_index.parse_document(&value, hw_counter);
                         if query.check_match(&document) {

@@ -150,14 +150,10 @@ impl InvertedIndex for MutableInvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|&vocab_idx| match vocab_idx {
-                None => None,
-                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                // dictionary. Posting list entry can be None but it exists.
-                Some(idx) => {
-                    let postings = self.postings.get(idx as usize).unwrap().as_ref();
-                    postings
-                }
+            .map(|&vocab_idx| {
+                // Posting list entry can be None but it exists.
+                let postings = self.postings.get(vocab_idx as usize).unwrap().as_ref();
+                postings
             })
             .collect();
         if postings_opt.is_none() {
