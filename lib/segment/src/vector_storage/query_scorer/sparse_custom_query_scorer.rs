@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
-use sparse::common::types::DimId;
+use sparse::common::types::{DimId, DimWeight};
 
 use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
@@ -34,6 +34,8 @@ impl<
             Ok(vector)
         })
         .unwrap();
+
+        hardware_counter.set_cpu_multiplier(size_of::<DimWeight>());
 
         if vector_storage.is_on_disk() {
             hardware_counter.set_vector_io_read_multiplier(size_of::<DimId>());
