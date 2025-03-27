@@ -131,10 +131,16 @@ impl ForwardProxyShard {
         debug_assert!(batch_size > 0);
         let _update_lock = self.update_lock.lock().await;
 
-        let (points, next_page_offset) = self
-            .read_batch(offset, batch_size, hashring_filter, runtime_handle)
-            .await?;
+        let (points, next_page_offset) = match hashring_filter {
+            Some(hashring_filter) => {
+                self.read_batch_with_hashring(offset, batch_size, hashring_filter, runtime_handle)
+                    .await?
+            }
+            None => self.read_batch(offset, batch_size, runtime_handle).await?,
+        };
 
+        // Only wait on last batch
+        let wait = next_page_offset.is_none();
         let count = points.len();
 
         // Use sync API to leverage potentially existing points
@@ -151,9 +157,6 @@ impl ForwardProxyShard {
         };
         let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
 
-        // We only need to wait for the last batch.
-        let wait = next_page_offset.is_none();
-
         self.remote_shard
             .update(
                 OperationWithClockTag::from(insert_points_operation),
@@ -167,6 +170,10 @@ impl ForwardProxyShard {
 
     /// Read a batch of points to transfer to the remote shard
     ///
+    /// This function is optimized for reading and transferring 100% of the points in this shard
+    /// without filtering. If you need to filter by hash ring, use [`read_batch_with_hashring`]
+    /// instead.
+    ///
     /// Returns batch of points and new point offset. The new point offset can be used to start the
     /// next batch from.
     ///
@@ -177,27 +184,17 @@ impl ForwardProxyShard {
         &self,
         offset: Option<PointIdType>,
         batch_size: usize,
-        hashring_filter: Option<&HashRingRouter>,
         runtime_handle: &Handle,
     ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
-        debug_assert!(batch_size > 0);
         let limit = batch_size + 1;
-
-        // If scrolling with data, we fetch all point data right in the scroll request
-        // If we scroll without data, we fetch only point IDs and defer fetching all point data
-        // with an explicit retrieve operation
-        //
-        // If using a hash ring filter, we defer reading data so that we only read vectors and
-        // payload for points that are actually transferred.
-        let scroll_with_data = hashring_filter.is_none();
 
         let mut batch = self
             .wrapped_shard
             .scroll_by(
                 offset,
                 limit,
-                &WithPayloadInterface::Bool(scroll_with_data),
-                &WithVector::Bool(scroll_with_data),
+                &WithPayloadInterface::Bool(true),
+                &WithVector::Bool(true),
                 None,
                 runtime_handle,
                 None,
@@ -205,56 +202,108 @@ impl ForwardProxyShard {
                 HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
             )
             .await?;
-        let next_page_offset = if batch.len() < limit {
-            // This was the last page
-            None
-        } else {
-            // remove extra point, it would be a first point of the next page
-            Some(batch.pop().unwrap().id)
+
+        let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
+
+        let points = batch
+            .into_iter()
+            .map(PointStructPersisted::try_from)
+            .collect::<Result<Vec<PointStructPersisted>, String>>()?;
+
+        Ok((points, next_page_offset))
+    }
+
+    /// Read a batch of points using a hash ring to transfer to the remote shard
+    ///
+    /// Only the points that satisfy the hash ring filter will be transferred.
+    ///
+    /// This applies oversampling in case of resharding to account for points that will be filtered
+    /// out by the hash ring. Each batch of points should therefore be roughly `batch_size`, but it
+    /// may be a bit smaller or larger.
+    ///
+    /// It is optimized for reading and transferring only a fraction of the points in this shard by
+    /// using a hash ring. If you need to read and transfer 100% of the points, use [`read_batch`]
+    /// instead.
+    ///
+    /// Returns batch of points and new point offset. The new point offset can be used to start the
+    /// next batch from.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    async fn read_batch_with_hashring(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        hashring_filter: &HashRingRouter,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<(Vec<PointStructPersisted>, Option<PointIdType>)> {
+        // Oversample batch size to account for points that will be filtered out by the hash ring
+        let oversample_factor = match &hashring_filter {
+            HashRingRouter::Single(_) => 1,
+            // - resharding: 1 -> 2, transfer 50%,  factor 2
+            // - resharding: 2 -> 3, transfer 33%,  factor 3
+            // - resharding: 3 -> 4, transfer 25%,  factor 4
+            // - resharding: 2 -> 1, transfer 100%, factor 1
+            // - resharding: 3 -> 2, transfer 50%,  factor 2
+            // - resharding: 4 -> 3, transfer 33%,  factor 3
+            HashRingRouter::Resharding { old: _, new } => new.len(),
         };
+        let limit = (batch_size * oversample_factor) + 1;
 
-        let points = if scroll_with_data {
-            // Transform scroll batch into list of points
-            batch
-                .into_iter()
-                .map(PointStructPersisted::try_from)
-                .collect::<Result<Vec<PointStructPersisted>, String>>()?
-        } else {
-            // Reading point data is deferred, grab point IDs and read vectors and payloads now
-            let ids = batch
-                .into_iter()
-                // While using a hashring filter, only transfer points that moved, otherwise transfer all
-                .filter(|point| {
-                    hashring_filter
-                        .map(|hashring| hashring.is_in_shard(&point.id, self.remote_shard.id))
-                        .unwrap_or(true)
-                })
-                .map(PointStructPersisted::try_from)
-                .map(|point| point.map(|point| point.id))
-                .collect::<Result<Vec<ExtendedPointId>, String>>()?;
+        // Read only point IDs without point data
+        // We first make a preselection of those point IDs by applying the hash ring filter, and
+        // then we read the actual point data in a separate request. It prevents reading a lot of
+        // data we immediately discard due to the hash ring. That is much more efficient,
+        // especially on large deployments when only a small fraction of points needs to be
+        // transferred.
+        let mut batch = self
+            .wrapped_shard
+            .scroll_by(
+                offset,
+                limit,
+                &WithPayloadInterface::Bool(false),
+                &WithVector::Bool(false),
+                None,
+                runtime_handle,
+                None,
+                None,                           // No timeout
+                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+            )
+            .await?;
 
-            let request = PointRequestInternal {
-                ids,
-                with_payload: Some(WithPayloadInterface::Bool(true)),
-                with_vector: WithVector::Bool(true),
-            };
-            let batch = self
-                .wrapped_shard
-                .retrieve(
-                    Arc::new(request),
-                    &WithPayload::from(true),
-                    &WithVector::Bool(true),
-                    runtime_handle,
-                    None,                           // No timeout
-                    HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
-                )
-                .await?;
+        let next_page_offset = (batch.len() >= limit).then(|| batch.pop().unwrap().id);
 
-            batch
-                .into_iter()
-                .map(PointStructPersisted::try_from)
-                .collect::<Result<Vec<PointStructPersisted>, String>>()?
+        // Make preselection of point IDs by hash ring
+        let ids = batch
+            .into_iter()
+            .filter(|point| hashring_filter.is_in_shard(&point.id, self.remote_shard.id))
+            .map(PointStructPersisted::try_from)
+            .map(|point| point.map(|point| point.id))
+            .collect::<Result<Vec<ExtendedPointId>, String>>()?;
+
+        // Read actual vectors and payloads for preselection of points
+        let request = PointRequestInternal {
+            ids,
+            with_payload: Some(WithPayloadInterface::Bool(true)),
+            with_vector: WithVector::Bool(true),
         };
+        let batch = self
+            .wrapped_shard
+            .retrieve(
+                Arc::new(request),
+                &WithPayload::from(true),
+                &WithVector::Bool(true),
+                runtime_handle,
+                None,                           // No timeout
+                HwMeasurementAcc::disposable(), // Internal operation, no need to measure hardware here.
+            )
+            .await?;
+
+        let points = batch
+            .into_iter()
+            .map(PointStructPersisted::try_from)
+            .collect::<Result<Vec<PointStructPersisted>, String>>()?;
 
         Ok((points, next_page_offset))
     }
