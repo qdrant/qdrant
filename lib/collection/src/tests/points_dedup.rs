@@ -205,8 +205,9 @@ async fn test_scroll_dedup() {
     for record in result.points.iter() {
         assert!(
             seen.insert((record.id, record.order_value)),
-            "got point id {:?} more than once, they should be deduplicated",
+            "got point id {:?} with order value {:?} more than once, they should be deduplicated",
             record.id,
+            record.order_value,
         );
         assert!(record.order_value.is_some());
     }
