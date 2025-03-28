@@ -5,6 +5,7 @@ use std::path::Path;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
 use common::types::TelemetryDetail;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{Filter, SnapshotFormat};
 
@@ -120,6 +121,16 @@ impl Shard {
                     .create_snapshot(temp_path, tar, format, save_wal)
                     .await
             }
+        }
+    }
+
+    pub fn segment_manifests(&self) -> CollectionResult<SegmentManifests> {
+        match self {
+            Shard::Local(local_shard) => local_shard.segment_manifests(),
+            Shard::Proxy(proxy_shard) => proxy_shard.segment_manifests(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.segment_manifests(),
+            Shard::QueueProxy(proxy_shard) => proxy_shard.segment_manifests(),
+            Shard::Dummy(dummy_shard) => dummy_shard.segment_manifests(),
         }
     }
 

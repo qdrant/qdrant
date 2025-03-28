@@ -26,6 +26,7 @@ use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
@@ -990,6 +991,13 @@ impl LocalShard {
                 })?;
         }
         Ok(())
+    }
+
+    pub fn segment_manifests(&self) -> CollectionResult<SegmentManifests> {
+        self.segments()
+            .read()
+            .segment_manifests()
+            .map_err(CollectionError::from)
     }
 
     pub fn estimate_cardinality<'a>(

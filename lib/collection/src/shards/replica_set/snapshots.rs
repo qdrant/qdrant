@@ -209,9 +209,8 @@ impl ShardReplicaSet {
         let local_manifests = match local.take() {
             _ if snapshot_manifests.is_empty() => None,
 
-            // TODO: Generalize to handle both local and proxy shards 🤔
-            Some(Shard::Local(shard)) => {
-                let local_manifests = shard.segments().read().segment_manifests();
+            Some(shard) => {
+                let local_manifests = shard.segment_manifests();
 
                 match local_manifests {
                     Ok(local_manifests) => {
@@ -221,7 +220,7 @@ impl ShardReplicaSet {
                     }
 
                     Err(err) => {
-                        let _ = local.insert(Shard::Local(shard));
+                        let _ = local.insert(shard);
 
                         return Err(CollectionError::service_error(format!(
                             "failed to restore partial shard snapshot for shard {}:{}: \
@@ -231,18 +230,6 @@ impl ShardReplicaSet {
                         )));
                     }
                 }
-            }
-
-            Some(shard) => {
-                let proxy_type = shard.variant_name();
-
-                let _ = local.insert(shard);
-
-                return Err(CollectionError::bad_request(format!(
-                    "failed to restore partial shard snapshot for shard {}:{}: \
-                     shard {}:{} is a {proxy_type}",
-                    self.collection_id, self.shard_id, self.collection_id, self.shard_id,
-                )));
             }
 
             None => {
