@@ -692,7 +692,7 @@ fn store_version_changes(
         .open(versions_path)?;
 
     // Grow file if necessary in one shot
-    // Prevents potentially reallocating the file multiple times when progressivly writing changes
+    // Prevents potentially reallocating the file multiple times when progressively writing changes
     match file.metadata() {
         Ok(metadata) => {
             let (&max_internal_id, _) = changes.last_key_value().unwrap();
@@ -703,7 +703,7 @@ fn store_version_changes(
         }
         Err(err) => {
             log::warn!(
-                "Failed to get file length of immutable ID tracker versions file, ignoring: {err}"
+                "Failed to get file length of mutable ID tracker versions file, ignoring: {err}"
             );
         }
     }
