@@ -102,13 +102,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         }
 
         // Check that all tokens are in document
-        parsed_query
-            .tokens
-            .iter()
-            .all(|token_id| {
-                let postings = &self.postings[*token_id as usize];
-                postings.reader().contains(point_id)
-            })
+        parsed_query.tokens.iter().all(|token_id| {
+            let postings = &self.postings[*token_id as usize];
+            postings.reader().contains(point_id)
+        })
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
