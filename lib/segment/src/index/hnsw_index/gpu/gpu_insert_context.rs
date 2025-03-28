@@ -471,10 +471,9 @@ mod tests {
 
     use super::*;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
-    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+    use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-    use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
     use crate::vector_storage::VectorStorage;
@@ -536,11 +535,11 @@ mod tests {
             graph_layers_builder.set_levels(idx, level);
         }
         for idx in 0..(num_vectors as PointOffsetType) {
-            let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers_builder.link_new_point(idx, scorer);
+            let (raw_scorer, filterer) = vector_holder
+                .get_scorer_and_filterer(added_vector.clone())
+                .unwrap();
+            graph_layers_builder.link_new_point(idx, &filterer, raw_scorer.as_ref());
         }
 
         // Create GPU search context
@@ -745,20 +744,18 @@ mod tests {
 
         // Check response
         for i in 0..groups_count {
-            let fake_filter_context = FakeFilterContext {};
             let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
-            let raw_scorer = test
+            let (raw_scorer, filterer) = test
                 .vector_holder
-                .get_raw_scorer(added_vector.clone())
+                .get_scorer_and_filterer(added_vector.clone())
                 .unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let entry = ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: raw_scorer.score_point(0),
             };
             let search_result = test
                 .graph_layers_builder
-                .search_on_level(entry, 0, ef, &mut scorer)
+                .search_on_level(entry, 0, ef, &filterer, raw_scorer.as_ref())
                 .into_sorted_vec();
             for (cpu, (gpu_1, gpu_2)) in search_result
                 .iter()
@@ -804,16 +801,17 @@ mod tests {
 
         // Check response
         for (i, &gpu_search_result) in gpu_responses.iter().enumerate() {
-            let fake_filter_context = FakeFilterContext {};
             let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
-            let raw_scorer = test
+            let (raw_scorer, filterer) = test
                 .vector_holder
-                .get_raw_scorer(added_vector.clone())
+                .get_scorer_and_filterer(added_vector.clone())
                 .unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            let search_result = test
-                .graph_layers_builder
-                .search_entry_on_level(0, 0, &mut scorer);
+            let search_result = test.graph_layers_builder.search_entry_on_level(
+                0,
+                0,
+                &filterer,
+                raw_scorer.as_ref(),
+            );
             assert_eq!(search_result.idx, gpu_search_result);
         }
     }
@@ -972,22 +970,24 @@ mod tests {
 
         // Check response
         for (i, gpu_group_result) in gpu_responses.iter().enumerate() {
-            let fake_filter_context = FakeFilterContext {};
             let added_vector = test.vector_holder.vectors.get(num_vectors + i).to_vec();
-            let raw_scorer = test
+            let (raw_scorer, filterer) = test
                 .vector_holder
-                .get_raw_scorer(added_vector.clone())
+                .get_scorer_and_filterer(added_vector.clone())
                 .unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
             let entry = ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: raw_scorer.score_point(0),
             };
-            let search_result =
-                test.graph_layers_builder
-                    .search_on_level(entry, 0, ef, &mut scorer);
+            let search_result = test.graph_layers_builder.search_on_level(
+                entry,
+                0,
+                ef,
+                &filterer,
+                raw_scorer.as_ref(),
+            );
 
-            let scorer_fn = |a, b| scorer.score_internal(a, b);
+            let scorer_fn = |a, b| raw_scorer.score_internal(a, b);
 
             let heuristic =
                 GraphLayersBuilder::select_candidates_with_heuristic(search_result, m, scorer_fn);

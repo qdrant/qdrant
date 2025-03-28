@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bitvec::prelude::BitSlice;
@@ -69,45 +70,17 @@ impl<TQueryScorer> RawScorer for AsyncRawScorerImpl<'_, TQueryScorer>
 where
     TQueryScorer: QueryScorer<[VectorElementType]>,
 {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+    fn score_points(&self, scores: &mut [ScoredPointOffset]) {
         if self.is_stopped.load(Ordering::Relaxed) {
-            return 0;
+            return;
         }
-        let points_stream = points
-            .iter()
-            .copied()
-            .filter(|point_id| self.check_vector(*point_id));
+        let scores = Cell::from_mut(scores).as_slice_of_cells();
 
-        let mut processed = 0;
+        let points_stream = scores.iter().map(|score| score.get().idx);
+
         self.storage
             .read_vectors_async(points_stream, |idx, point_id, other_vector| {
-                scores[idx] = ScoredPointOffset {
-                    idx: point_id,
-                    score: self.query_scorer.score(other_vector),
-                };
-                processed += 1;
-            })
-            .unwrap();
-
-        // ToDo: io_uring is experimental, it can fail if it is not supported.
-        // Instead of silently falling back to the sync implementation, we prefer to panic
-        // and notify the user that they better use the default IO implementation.
-
-        processed
-    }
-
-    fn score_points_unfiltered(
-        &self,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Vec<ScoredPointOffset> {
-        if self.is_stopped.load(Ordering::Relaxed) {
-            return vec![];
-        }
-        let mut scores = vec![];
-
-        self.storage
-            .read_vectors_async(points, |_idx, point_id, other_vector| {
-                scores.push(ScoredPointOffset {
+                scores[idx].set(ScoredPointOffset {
                     idx: point_id,
                     score: self.query_scorer.score(other_vector),
                 });
@@ -117,8 +90,6 @@ where
         // ToDo: io_uring is experimental, it can fail if it is not supported.
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
-
-        scores
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {

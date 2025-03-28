@@ -674,9 +674,11 @@ mod tests {
         )
         .unwrap();
 
-        let mut res = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
-        let res_count = scorer.score_points(&query_points, &mut res);
-        res.resize(res_count, ScoredPointOffset { idx: 0, score: 0. });
+        let mut res = query_points
+            .iter()
+            .map(|&idx| ScoredPointOffset::new_unset(idx))
+            .collect::<Vec<_>>();
+        scorer.score_points(&mut res);
 
         assert_eq!(res.len(), 3);
         assert_eq!(res[0].idx, 0);

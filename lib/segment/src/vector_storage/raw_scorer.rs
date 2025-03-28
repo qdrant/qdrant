@@ -53,21 +53,8 @@ use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQ
 /// Optimized scorer for multiple scoring requests comparing with a single query
 /// Holds current query and params, receives only subset of points to score
 pub trait RawScorer {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize;
-
-    /// Score points without excluding deleted and filtered points
-    ///
-    /// # Arguments
-    ///
-    /// * `points` - points to score
-    ///
-    /// # Returns
-    ///
-    /// Vector of scored points
-    fn score_points_unfiltered(
-        &self,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Vec<ScoredPointOffset>;
+    /// Set [`ScoredPointOffset::score`] field for each point in the given slice.
+    fn score_points(&self, scores: &mut [ScoredPointOffset]);
 
     /// Return true if vector satisfies current search context for given point (exists and not deleted)
     fn check_vector(&self, point: PointOffsetType) -> bool;
@@ -951,43 +938,13 @@ where
     TVector: ?Sized,
     TQueryScorer: QueryScorer<TVector>,
 {
-    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
+    fn score_points(&self, scores: &mut [ScoredPointOffset]) {
         if self.is_stopped.load(Ordering::Relaxed) {
-            return 0;
+            return;
         }
-        let mut size: usize = 0;
-        for point_id in points.iter().copied() {
-            if !self.check_vector(point_id) {
-                continue;
-            }
-            scores[size] = ScoredPointOffset {
-                idx: point_id,
-                score: self.query_scorer.score_stored(point_id),
-            };
-
-            size += 1;
-            if size == scores.len() {
-                return size;
-            }
-        }
-        size
-    }
-
-    fn score_points_unfiltered(
-        &self,
-        points: &mut dyn Iterator<Item = PointOffsetType>,
-    ) -> Vec<ScoredPointOffset> {
-        if self.is_stopped.load(Ordering::Relaxed) {
-            return vec![];
-        }
-        let mut scores = vec![];
-        for point_id in points {
-            scores.push(ScoredPointOffset {
-                idx: point_id,
-                score: self.query_scorer.score_stored(point_id),
-            });
-        }
-        scores
+        scores.iter_mut().for_each(|score| {
+            score.score = self.query_scorer.score_stored(score.idx);
+        });
     }
 
     fn check_vector(&self, point: PointOffsetType) -> bool {

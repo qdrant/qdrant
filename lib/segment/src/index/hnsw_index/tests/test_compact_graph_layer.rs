@@ -10,19 +10,21 @@ use crate::fixtures::index_fixtures::random_vector;
 use crate::index::hnsw_index::graph_layers::GraphLayersBase;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::graph_links::GraphLinksFormat;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::point_filterer::PointsFilterer;
 use crate::index::hnsw_index::tests::create_graph_layer_builder_fixture;
 use crate::spaces::simple::CosineMetric;
+use crate::vector_storage::RawScorer;
 
 fn search_in_builder(
     builder: &GraphLayersBuilder,
     top: usize,
     ef: usize,
-    mut points_scorer: FilteredScorer,
+    filterer: &PointsFilterer,
+    raw_scorer: &dyn RawScorer,
 ) -> Vec<ScoredPointOffset> {
     let entry_point = match builder
         .get_entry_points()
-        .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+        .get_entry_point(|point_id| filterer.check_vector(point_id))
     {
         None => return vec![],
         Some(ep) => ep,
@@ -32,10 +34,11 @@ fn search_in_builder(
         entry_point.point_id,
         entry_point.level,
         0,
-        &mut points_scorer,
+        filterer,
+        raw_scorer,
     );
 
-    let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
+    let nearest = builder.search_on_level(zero_level_entry, 0, max(top, ef), filterer, raw_scorer);
     nearest.into_iter_sorted().take(top).collect_vec()
 }
 
@@ -64,8 +67,14 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .iter()
         .map(|query| {
             let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            search_in_builder(&graph_layers_builder, top, ef, scorer)
+            let filterer = vector_holder.get_filterer(None);
+            search_in_builder(
+                &graph_layers_builder,
+                top,
+                ef,
+                &filterer,
+                raw_scorer.as_ref(),
+            )
         })
         .collect_vec();
 
@@ -75,8 +84,8 @@ fn test_compact_graph_layers(#[case] format: GraphLinksFormat) {
         .iter()
         .map(|query| {
             let raw_scorer = vector_holder.get_raw_scorer(query.clone()).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
-            graph_layers.search(top, ef, scorer, None)
+            let filterer = vector_holder.get_filterer(None);
+            graph_layers.search(top, ef, &filterer, raw_scorer.as_ref(), None)
         })
         .collect_vec();
 

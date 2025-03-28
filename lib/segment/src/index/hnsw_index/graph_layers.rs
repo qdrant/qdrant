@@ -11,13 +11,14 @@ use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
 use super::graph_links::{GraphLinks, GraphLinksFormat};
+use super::point_filterer::PointsFilterer;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
+use crate::vector_storage::RawScorer;
 
 pub type LinkContainer = Vec<PointOffsetType>;
 pub type LayersContainer = Vec<LinkContainer>;
@@ -60,24 +61,26 @@ pub trait GraphLayersBase {
         searcher: &mut SearchContext,
         level: usize,
         visited_list: &mut VisitedListHandle,
-        points_scorer: &mut FilteredScorer,
+        filterer: &PointsFilterer,
+        scorer: &dyn RawScorer,
     ) {
         let limit = self.get_m(level);
-        let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
+        let mut scores: Vec<ScoredPointOffset> = Vec::with_capacity(2 * limit);
 
         while let Some(candidate) = searcher.candidates.pop() {
             if candidate.score < searcher.lower_bound() {
                 break;
             }
 
-            points_ids.clear();
+            scores.clear();
             self.links_map(candidate.idx, level, |link| {
                 if !visited_list.check(link) {
-                    points_ids.push(link);
+                    scores.push(ScoredPointOffset::new_unset(link));
                 }
             });
 
-            let scores = points_scorer.score_points(&mut points_ids, limit);
+            filterer.filter_scores(&mut scores, limit);
+            scorer.score_points(&mut scores);
             scores.iter().copied().for_each(|score_point| {
                 searcher.process_candidate(score_point);
                 visited_list.check_and_update_visited(score_point.idx);
@@ -90,13 +93,20 @@ pub trait GraphLayersBase {
         level_entry: ScoredPointOffset,
         level: usize,
         ef: usize,
-        points_scorer: &mut FilteredScorer,
+        filterer: &PointsFilterer,
+        scorer: &dyn RawScorer,
     ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
         let mut search_context = SearchContext::new(level_entry, ef);
 
-        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
+        self._search_on_level(
+            &mut search_context,
+            level,
+            &mut visited_list,
+            filterer,
+            scorer,
+        );
         search_context.nearest
     }
 
@@ -107,13 +117,14 @@ pub trait GraphLayersBase {
         entry_point: PointOffsetType,
         top_level: usize,
         target_level: usize,
-        points_scorer: &mut FilteredScorer,
+        filterer: &PointsFilterer,
+        scorer: &dyn RawScorer,
     ) -> ScoredPointOffset {
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
+        let mut scores: Vec<ScoredPointOffset> = Vec::with_capacity(2 * self.get_m(0));
 
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
-            score: points_scorer.score_point(entry_point),
+            score: scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
             let limit = self.get_m(level);
@@ -122,12 +133,13 @@ pub trait GraphLayersBase {
             while changed {
                 changed = false;
 
-                links.clear();
+                scores.clear();
                 self.links_map(current_point.idx, level, |link| {
-                    links.push(link);
+                    scores.push(ScoredPointOffset::new_unset(link));
                 });
 
-                let scores = points_scorer.score_points(&mut links, limit);
+                filterer.filter_scores(&mut scores, limit);
+                scorer.score_points(&mut scores);
                 scores.iter().copied().for_each(|score_point| {
                     if score_point.score > current_point.score {
                         changed = true;
@@ -139,31 +151,32 @@ pub trait GraphLayersBase {
         current_point
     }
 
-    #[cfg(test)]
-    #[cfg(feature = "gpu")]
+    #[cfg(all(test, feature = "gpu"))]
     fn search_entry_on_level(
         &self,
         entry_point: PointOffsetType,
         level: usize,
-        points_scorer: &mut FilteredScorer,
+        filterer: &PointsFilterer,
+        scorer: &dyn RawScorer,
     ) -> ScoredPointOffset {
         let limit = self.get_m(level);
-        let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
+        let mut scores: Vec<ScoredPointOffset> = Vec::with_capacity(2 * self.get_m(0));
         let mut current_point = ScoredPointOffset {
             idx: entry_point,
-            score: points_scorer.score_point(entry_point),
+            score: scorer.score_point(entry_point),
         };
 
         let mut changed = true;
         while changed {
             changed = false;
 
-            links.clear();
+            scores.clear();
             self.links_map(current_point.idx, level, |link| {
-                links.push(link);
+                scores.push(ScoredPointOffset::new_unset(link));
             });
 
-            let scores = points_scorer.score_points(&mut links, limit);
+            filterer.filter_scores(&mut scores, limit);
+            scorer.score_points(&mut scores);
             scores.iter().copied().for_each(|score_point| {
                 if score_point.score > current_point.score {
                     changed = true;
@@ -203,7 +216,7 @@ impl GraphLayers {
 
     fn get_entry_point(
         &self,
-        points_scorer: &FilteredScorer,
+        filterer: &PointsFilterer,
         custom_entry_points: Option<&[PointOffsetType]>,
     ) -> Option<EntryPoint> {
         // Try to get it from custom entry points
@@ -211,7 +224,7 @@ impl GraphLayers {
             .and_then(|custom_entry_points| {
                 custom_entry_points
                     .iter()
-                    .filter(|&&point_id| points_scorer.check_vector(point_id))
+                    .filter(|&&point_id| filterer.check_vector(point_id))
                     .map(|&point_id| {
                         let level = self.point_level(point_id);
                         EntryPoint { point_id, level }
@@ -221,7 +234,7 @@ impl GraphLayers {
             .or_else(|| {
                 // Otherwise use normal entry points
                 self.entry_points
-                    .get_entry_point(|point_id| points_scorer.check_vector(point_id))
+                    .get_entry_point(|point_id| filterer.check_vector(point_id))
             })
     }
 
@@ -229,20 +242,17 @@ impl GraphLayers {
         &self,
         top: usize,
         ef: usize,
-        mut points_scorer: FilteredScorer,
+        filterer: &PointsFilterer,
+        scorer: &dyn RawScorer,
         custom_entry_points: Option<&[PointOffsetType]>,
     ) -> Vec<ScoredPointOffset> {
-        let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
+        let Some(entry_point) = self.get_entry_point(filterer, custom_entry_points) else {
             return Vec::default();
         };
 
-        let zero_level_entry = self.search_entry(
-            entry_point.point_id,
-            entry_point.level,
-            0,
-            &mut points_scorer,
-        );
-        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
+        let zero_level_entry =
+            self.search_entry(entry_point.point_id, entry_point.level, 0, filterer, scorer);
+        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), filterer, scorer);
         nearest.into_iter_sorted().take(top).collect_vec()
     }
 
@@ -356,9 +366,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::VectorElementType;
-    use crate::fixtures::index_fixtures::{
-        FakeFilterContext, TestRawScorerProducer, random_vector,
-    };
+    use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
     use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
@@ -373,12 +381,11 @@ mod tests {
         vector_storage: &TestRawScorerProducer<CosineMetric>,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_storage.get_raw_scorer(query.to_owned()).unwrap();
-
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        let (raw_scorer, filterer) = vector_storage
+            .get_scorer_and_filterer(query.to_owned())
+            .unwrap();
         let ef = 16;
-        graph.search(top, ef, scorer, None)
+        graph.search(top, ef, &filterer, raw_scorer.as_ref(), None)
     }
 
     const M: usize = 8;
@@ -411,22 +418,21 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder
             .vectors
             .get(linking_idx as VectorOffsetType)
             .to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-        let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(added_vector).unwrap();
 
         let nearest_on_level = graph_layers.search_on_level(
             ScoredPointOffset {
                 idx: 0,
-                score: scorer.score_point(0),
+                score: raw_scorer.score_point(0),
             },
             0,
             32,
-            &mut scorer,
+            &filterer,
+            raw_scorer.as_ref(),
         );
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
@@ -435,7 +441,7 @@ mod tests {
             // eprintln!("nearest = {:#?}", nearest);
             assert_eq!(
                 nearest.score,
-                scorer.score_internal(linking_idx, nearest.idx)
+                raw_scorer.score_internal(linking_idx, nearest.idx)
             )
         }
     }

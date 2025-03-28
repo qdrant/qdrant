@@ -8,7 +8,7 @@ pub mod graph_layers;
 pub mod graph_layers_builder;
 pub mod graph_links;
 pub mod hnsw;
-pub mod point_scorer;
+pub mod point_filterer;
 mod search_context;
 
 #[cfg(feature = "gpu")]
