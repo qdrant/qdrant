@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
-use common::flags::feature_flags;
 use parking_lot::RwLock;
 //use atomic_refcell::{AtomicRef, AtomicRefCell};
 use rocksdb::{ColumnFamily, DB, DBRecoveryMode, LogLevel, Options, WriteOptions};
@@ -79,9 +78,9 @@ pub fn open_db<T: AsRef<str>>(
     let options = make_db_options();
     let mut column_families = vec![DB_PAYLOAD_CF, DB_DEFAULT_CF];
 
-    // If using new ID tracker, only add RocksDB ID tracker column families if they already exist
-    // Not creating them prevents older Qdrant versions from trying to load the unused RocksDB ID tracker
-    if feature_flags().use_mutable_id_tracker_without_rocksdb {
+    // We're using new ID tracker, only add RocksDB ID tracker column families if they already exist
+    // Not adding them prevents older Qdrant versions from trying to load the unused RocksDB ID tracker
+    {
         let exists = check_db_exists(path);
         let existing_column_families = if exists {
             DB::list_cf(&options, path)?
@@ -97,8 +96,6 @@ pub fn open_db<T: AsRef<str>>(
                 .into_iter()
                 .filter(|cf| !exists || existing_column_families.iter().any(|other| other == cf)),
         );
-    } else {
-        column_families.extend([DB_MAPPING_CF, DB_VERSIONS_CF]);
     }
 
     for vector_path in vector_paths {

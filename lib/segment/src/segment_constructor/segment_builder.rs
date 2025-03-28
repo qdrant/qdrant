@@ -20,10 +20,9 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use super::{
-    create_mutable_id_tracker, create_payload_storage, create_rocksdb_id_tracker,
-    create_sparse_vector_index, create_sparse_vector_storage, get_payload_index_path,
-    get_vector_index_path, get_vector_storage_path, new_segment_path, open_segment_db,
-    open_vector_storage,
+    create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
+    create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
+    get_vector_storage_path, new_segment_path, open_segment_db, open_vector_storage,
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -87,11 +86,7 @@ impl SegmentBuilder {
         let database = open_segment_db(temp_dir.path(), segment_config)?;
 
         let id_tracker = if segment_config.is_appendable() {
-            if feature_flags().use_mutable_id_tracker_without_rocksdb {
-                IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path())?)
-            } else {
-                IdTrackerEnum::RocksDbIdTracker(create_rocksdb_id_tracker(database.clone())?)
-            }
+            IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path())?)
         } else {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
