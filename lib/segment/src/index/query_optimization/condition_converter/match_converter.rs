@@ -254,7 +254,9 @@ fn get_match_text_checker(
     let hw_counter = hw_acc.get_counter_cell();
     match index {
         FieldIndex::FullTextIndex(full_text_index) => {
-            let parsed_query = full_text_index.parse_query(&text, &hw_counter);
+            let Some(parsed_query) = full_text_index.parse_query(&text, &hw_counter) else {
+                return Some(Box::new(|_| false));
+            };
             Some(Box::new(move |point_id: PointOffsetType| {
                 full_text_index.check_match(&parsed_query, point_id, &hw_counter)
             }))

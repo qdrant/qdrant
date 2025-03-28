@@ -53,13 +53,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|&token_id| match token_id {
-                None => None,
-                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                Some(idx) => {
-                    let postings = self.postings.get(idx as usize);
-                    postings
-                }
+            .map(|&token_id| {
+                let postings = self.postings.get(token_id as usize);
+                postings
             })
             .collect();
 
@@ -107,9 +103,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
-        if parsed_query.tokens.contains(&None) {
-            return false;
-        }
         // check presence of the document
         if self.values_is_empty(point_id) {
             return false;
@@ -119,8 +112,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .tokens
             .iter()
             // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
-            .all(|query_token| {
-                let postings = &self.postings[query_token.unwrap() as usize];
+            .all(|token_id| {
+                let postings = &self.postings[*token_id as usize];
                 postings.reader(hw_counter).contains(point_id)
             })
     }
