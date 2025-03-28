@@ -680,12 +680,34 @@ fn store_version_changes(
     versions_path: &Path,
     changes: BTreeMap<PointOffsetType, SeqNumberType>,
 ) -> OperationResult<()> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+
     // Create or open file
     let file = File::options()
         .create(true)
         .write(true)
         .truncate(false)
         .open(versions_path)?;
+
+    // Grow file if necessary in one shot
+    // Prevents potentially reallocating the file multiple times when progressively writing changes
+    match file.metadata() {
+        Ok(metadata) => {
+            let (&max_internal_id, _) = changes.last_key_value().unwrap();
+            let required_size = u64::from(max_internal_id + 1) * VERSION_ELEMENT_SIZE;
+            if metadata.len() < required_size {
+                file.set_len(required_size)?;
+            }
+        }
+        Err(err) => {
+            log::warn!(
+                "Failed to get file length of mutable ID tracker versions file, ignoring: {err}"
+            );
+        }
+    }
+
     let mut writer = BufWriter::new(file);
 
     write_version_changes(&mut writer, changes).map_err(|err| {
