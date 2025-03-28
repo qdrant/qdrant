@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::SeqNumberType;
 
 #[derive(Clone, Debug, Default)]
@@ -9,14 +10,27 @@ pub struct SegmentManifests {
 }
 
 impl SegmentManifests {
+    pub fn validate(&self) -> OperationResult<()> {
+        for (segment_id, manifest) in &self.manifests {
+            for (file, version) in &manifest.file_versions {
+                if version.or_segment_version(manifest.segment_version) > manifest.segment_version {
+                    return Err(OperationError::validation_error(format!(
+                        "invalid snapshot manifest: \
+                         file {segment_id}/{} is newer than segment {segment_id} ({version:?} > {})",
+                        file.display(),
+                        manifest.segment_version,
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn version(&self, segment_id: &str) -> Option<SeqNumberType> {
         self.manifests
             .get(segment_id)
             .map(|manifest| manifest.segment_version)
-    }
-
-    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
-        self.manifests.get(segment_id)
     }
 
     pub fn add(&mut self, new_manifest: SegmentManifest) -> bool {
@@ -35,6 +49,22 @@ impl SegmentManifests {
         }
 
         false
+    }
+
+    pub fn get(&self, segment_id: &str) -> Option<&SegmentManifest> {
+        self.manifests.get(segment_id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &SegmentManifest)> {
+        self.manifests.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.manifests.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.manifests.is_empty()
     }
 }
 
