@@ -188,6 +188,10 @@ impl ShardReplicaSet {
             debug_assert!(added);
         }
 
+        snapshot_manifests.validate().map_err(|err| {
+            CollectionError::bad_request(format!("invalid partial snapshot: {err}"))
+        })?;
+
         // TODO:
         //   Check that shard snapshot is compatible with the collection
         //   (see `VectorsConfig::check_compatible_with_segment_config`)
@@ -214,7 +218,14 @@ impl ShardReplicaSet {
 
                 match local_manifests {
                     Ok(local_manifests) => {
-                        // TODO: Validate that all segments in `local_manifests` are *older* than segments in `snapshot_manifests` 😵‍💫
+                        local_manifests.validate().map_err(|err| {
+                            CollectionError::service_error(format!(
+                                "failed to restore partial shard snapshot for shard {}:{}: \
+                                 local shard produces invalid segment manifests: \
+                                 {err}",
+                                self.collection_id, self.shard_id,
+                            ))
+                        })?;
 
                         Some(local_manifests)
                     }
