@@ -32,4 +32,5 @@ jobs:
           uses: codecov/codecov-action@v5
           with:
             files: lcov.info
+            override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
             token: ${{ secrets.CODECOV_TOKEN }}
