@@ -203,6 +203,9 @@ fn convert_query_with_inferred(
                 rest::RecommendStrategy::BestScore => {
                     Ok(Query::Vector(VectorQuery::RecommendBestScore(reco_query)))
                 }
+                rest::RecommendStrategy::SumScores => {
+                    Ok(Query::Vector(VectorQuery::RecommendSumScores(reco_query)))
+                }
             }
         }
         rest::Query::Discover(discover) => {

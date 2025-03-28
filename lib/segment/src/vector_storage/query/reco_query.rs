@@ -37,42 +37,89 @@ impl<T, U> TransformInto<RecoQuery<U>, T, U> for RecoQuery<T> {
     }
 }
 
-impl<T> Query<T> for RecoQuery<T> {
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecoBestScoreQuery<T>(RecoQuery<T>);
+
+impl<T> From<RecoQuery<T>> for RecoBestScoreQuery<T> {
+    fn from(query: RecoQuery<T>) -> Self {
+        Self(query)
+    }
+}
+
+impl<T, U> TransformInto<RecoBestScoreQuery<U>, T, U> for RecoBestScoreQuery<T> {
+    fn transform<F>(self, f: F) -> OperationResult<RecoBestScoreQuery<U>>
+    where
+        F: FnMut(T) -> OperationResult<U>,
+    {
+        Ok(RecoBestScoreQuery(self.0.transform(f)?))
+    }
+}
+
+impl From<RecoBestScoreQuery<VectorInternal>> for QueryVector {
+    fn from(query: RecoBestScoreQuery<VectorInternal>) -> Self {
+        QueryVector::RecommendBestScore(query.0)
+    }
+}
+
+impl<T> Query<T> for RecoBestScoreQuery<T> {
     fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
         // get similarities to all positives
-        let positive_similarities = self.positives.iter().map(&similarity);
+        let positive_similarities = self.0.positives.iter().map(&similarity);
 
         // and all negatives
-        let negative_similarities = self.negatives.iter().map(&similarity);
+        let negative_similarities = self.0.negatives.iter().map(&similarity);
 
-        merge_similarities(positive_similarities, negative_similarities)
+        // get max similarity to positives and max to negatives
+        let max_positive = positive_similarities
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or(ScoreType::NEG_INFINITY);
+
+        let max_negative = negative_similarities
+            .max_by(|a, b| a.total_cmp(b))
+            .unwrap_or(ScoreType::NEG_INFINITY);
+
+        if max_positive > max_negative {
+            scaled_fast_sigmoid(max_positive)
+        } else {
+            -scaled_fast_sigmoid(max_negative)
+        }
     }
 }
 
-#[inline]
-fn merge_similarities(
-    positives: impl Iterator<Item = ScoreType>,
-    negatives: impl Iterator<Item = ScoreType>,
-) -> ScoreType {
-    // get max similarity to positives and max to negatives
-    let max_positive = positives
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap_or(ScoreType::NEG_INFINITY);
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecoSumScoresQuery<T>(RecoQuery<T>);
 
-    let max_negative = negatives
-        .max_by(|a, b| a.total_cmp(b))
-        .unwrap_or(ScoreType::NEG_INFINITY);
-
-    if max_positive > max_negative {
-        scaled_fast_sigmoid(max_positive)
-    } else {
-        -scaled_fast_sigmoid(max_negative)
+impl<T> From<RecoQuery<T>> for RecoSumScoresQuery<T> {
+    fn from(query: RecoQuery<T>) -> Self {
+        Self(query)
     }
 }
 
-impl From<RecoQuery<VectorInternal>> for QueryVector {
-    fn from(query: RecoQuery<VectorInternal>) -> Self {
-        QueryVector::Recommend(query)
+impl<T, U> TransformInto<RecoSumScoresQuery<U>, T, U> for RecoSumScoresQuery<T> {
+    fn transform<F>(self, f: F) -> OperationResult<RecoSumScoresQuery<U>>
+    where
+        F: FnMut(T) -> OperationResult<U>,
+    {
+        Ok(RecoSumScoresQuery(self.0.transform(f)?))
+    }
+}
+
+impl From<RecoSumScoresQuery<VectorInternal>> for QueryVector {
+    fn from(query: RecoSumScoresQuery<VectorInternal>) -> Self {
+        QueryVector::RecommendSumScores(query.0)
+    }
+}
+
+impl<T> Query<T> for RecoSumScoresQuery<T> {
+    fn score_by(&self, similarity: impl Fn(&T) -> ScoreType) -> ScoreType {
+        // Sum all positive vectors scores
+        let positive_score: ScoreType = self.0.positives.iter().map(&similarity).sum();
+
+        // Sum all negative vectors scores
+        let negative_score: ScoreType = self.0.negatives.iter().map(&similarity).sum();
+
+        // Subtract
+        positive_score - negative_score
     }
 }
 
@@ -85,8 +132,7 @@ mod test {
     use proptest::prelude::*;
     use rstest::rstest;
 
-    use super::RecoQuery;
-    use crate::vector_storage::query::Query;
+    use crate::vector_storage::query::{Query, RecoBestScoreQuery, RecoQuery};
 
     enum Chosen {
         Positive,
@@ -108,7 +154,9 @@ mod test {
         #[case] chosen: Chosen,
         #[case] expected: ScoreType,
     ) {
-        let query = RecoQuery::new(positives, negatives);
+        use super::{RecoBestScoreQuery, RecoQuery};
+
+        let query = RecoBestScoreQuery::from(RecoQuery::new(positives, negatives));
 
         let dummy_similarity = |x: &isize| *x as ScoreType;
 
@@ -155,8 +203,8 @@ mod test {
 
             let ordering_before = float_cmp(dummy_similarity(&a), dummy_similarity(&b));
 
-            let query_a = RecoQuery::new(vec![], vec![a]);
-            let query_b = RecoQuery::new(vec![], vec![b]);
+            let query_a = RecoBestScoreQuery::from(RecoQuery::new(vec![], vec![a]));
+            let query_b = RecoBestScoreQuery::from(RecoQuery::new(vec![], vec![b]));
 
             let score_a = query_a.score_by(dummy_similarity);
             let score_b = query_b.score_by(dummy_similarity);
@@ -181,8 +229,8 @@ mod test {
             // This would make the test useless, so we skip those cases.
             prop_assume!(ordering_before != Ordering::Equal);
 
-            let query_a = RecoQuery::new(vec![a], vec![]);
-            let query_b = RecoQuery::new(vec![b], vec![]);
+            let query_a = RecoBestScoreQuery::from(RecoQuery::new(vec![a], vec![]));
+            let query_b = RecoBestScoreQuery::from(RecoQuery::new(vec![b], vec![]));
 
             let score_a = query_a.score_by(dummy_similarity);
             let score_b = query_b.score_by(dummy_similarity);
@@ -198,8 +246,8 @@ mod test {
         fn correct_positive_and_negative_order(p in -100f32..=100f32, n in -100f32..=100f32) {
             let dummy_similarity = |x: &f32| *x as ScoreType;
 
-            let query_p = RecoQuery::new(vec![p], vec![]);
-            let query_n = RecoQuery::new(vec![], vec![n]);
+            let query_p = RecoBestScoreQuery::from(RecoQuery::new(vec![p], vec![]));
+            let query_n = RecoBestScoreQuery::from(RecoQuery::new(vec![], vec![n]));
 
             let ordering = query_p.score_by(dummy_similarity).total_cmp(&query_n.score_by(dummy_similarity));
 

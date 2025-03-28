@@ -2099,7 +2099,8 @@ impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
             QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
-            QueryEnum::RecommendBestScore(named) => QueryVector::Recommend(named.query),
+            QueryEnum::RecommendBestScore(named) => QueryVector::RecommendBestScore(named.query),
+            QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
             QueryEnum::Discover(named) => QueryVector::Discovery(named.query),
             QueryEnum::Context(named) => QueryVector::Context(named.query),
         }

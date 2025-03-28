@@ -12,6 +12,7 @@ impl QueryEnum {
         match self {
             QueryEnum::Nearest(vector) => vector.get_name(),
             QueryEnum::RecommendBestScore(reco_query) => reco_query.get_name(),
+            QueryEnum::RecommendSumScores(reco_query) => reco_query.get_name(),
             QueryEnum::Discover(discovery_query) => discovery_query.get_name(),
             QueryEnum::Context(context_query) => context_query.get_name(),
         }
@@ -21,9 +22,10 @@ impl QueryEnum {
     pub fn is_distance_scored(&self) -> bool {
         match self {
             QueryEnum::Nearest(_) => true,
-            QueryEnum::RecommendBestScore(_) | QueryEnum::Discover(_) | QueryEnum::Context(_) => {
-                false
-            }
+            QueryEnum::RecommendBestScore(_)
+            | QueryEnum::RecommendSumScores(_)
+            | QueryEnum::Discover(_)
+            | QueryEnum::Context(_) => false,
         }
     }
 
@@ -37,7 +39,8 @@ impl QueryEnum {
                 | NamedVectorStruct::Dense(_)
                 | NamedVectorStruct::MultiDense(_) => {}
             },
-            QueryEnum::RecommendBestScore(reco_query) => {
+            QueryEnum::RecommendBestScore(reco_query)
+            | QueryEnum::RecommendSumScores(reco_query) => {
                 let name = reco_query.get_name();
                 for vector in reco_query.query.flat_iter() {
                     match vector {
@@ -72,6 +75,7 @@ impl QueryEnum {
 pub enum QueryEnum {
     Nearest(NamedVectorStruct),
     RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),
+    RecommendSumScores(NamedQuery<RecoQuery<VectorInternal>>),
     Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
     Context(NamedQuery<ContextQuery<VectorInternal>>),
 }

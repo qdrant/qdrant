@@ -680,7 +680,8 @@ impl NamedQuery<RecoQuery<VectorInternal>> {
 #[derive(Debug, Clone)]
 pub enum QueryVector {
     Nearest(VectorInternal),
-    Recommend(RecoQuery<VectorInternal>),
+    RecommendBestScore(RecoQuery<VectorInternal>),
+    RecommendSumScores(RecoQuery<VectorInternal>),
     Discovery(DiscoveryQuery<VectorInternal>),
     Context(ContextQuery<VectorInternal>),
 }
@@ -692,7 +693,12 @@ impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector 
     {
         match self {
             QueryVector::Nearest(v) => f(v).map(QueryVector::Nearest),
-            QueryVector::Recommend(v) => Ok(QueryVector::Recommend(v.transform(&mut f)?)),
+            QueryVector::RecommendBestScore(v) => {
+                Ok(QueryVector::RecommendBestScore(v.transform(&mut f)?))
+            }
+            QueryVector::RecommendSumScores(v) => {
+                Ok(QueryVector::RecommendSumScores(v.transform(&mut f)?))
+            }
             QueryVector::Discovery(v) => Ok(QueryVector::Discovery(v.transform(&mut f)?)),
             QueryVector::Context(v) => Ok(QueryVector::Context(v.transform(&mut f)?)),
         }

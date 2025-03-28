@@ -92,7 +92,7 @@ fn random_reco_query<R: Rng + ?Sized>(
         .map(|_| random_vector(rnd, dim, data_type).into())
         .collect_vec();
 
-    RecoQuery::new(positive, negative).into()
+    QueryVector::RecommendBestScore(RecoQuery::new(positive, negative))
 }
 
 fn random_query<R: Rng + ?Sized>(

@@ -13,7 +13,7 @@ use rstest::rstest;
 
 use super::utils::sampler;
 use crate::common::rocksdb_wrapper;
-use crate::data_types::vectors::{QueryVector, VectorElementType};
+use crate::data_types::vectors::{QueryVector, VectorElementType, VectorInternal};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::id_tracker_base::IdTracker;
 use crate::types::{
@@ -50,7 +50,12 @@ fn random_query<R: Rng + ?Sized>(
     sampler: &mut impl Iterator<Item = f32>,
 ) -> QueryVector {
     match query_variant {
-        QueryVariant::Recommend => random_reco_query(rnd, sampler),
+        QueryVariant::RecoBestScore => {
+            QueryVector::RecommendBestScore(random_reco_query(rnd, sampler))
+        }
+        QueryVariant::RecoSumScores => {
+            QueryVector::RecommendSumScores(random_reco_query(rnd, sampler))
+        }
         QueryVariant::Discovery => random_discovery_query(rnd, sampler),
         QueryVariant::Context => random_context_query(rnd, sampler),
     }
@@ -59,7 +64,7 @@ fn random_query<R: Rng + ?Sized>(
 fn random_reco_query<R: Rng + ?Sized>(
     rnd: &mut R,
     sampler: &mut impl Iterator<Item = f32>,
-) -> QueryVector {
+) -> RecoQuery<VectorInternal> {
     let num_positives: usize = rnd.random_range(0..MAX_EXAMPLES);
     let num_negatives: usize = rnd.random_range(1..MAX_EXAMPLES);
 
@@ -71,7 +76,7 @@ fn random_reco_query<R: Rng + ?Sized>(
         .map(|_| sampler.take(DIMS).collect_vec().into())
         .collect_vec();
 
-    RecoQuery::new(positives, negatives).into()
+    RecoQuery::new(positives, negatives)
 }
 
 fn random_discovery_query<R: Rng + ?Sized>(
@@ -175,7 +180,8 @@ fn binary() -> WithQuantization {
 }
 
 enum QueryVariant {
-    Recommend,
+    RecoBestScore,
+    RecoSumScores,
     Discovery,
     Context,
 }
@@ -323,7 +329,8 @@ fn scoring_equivalency(
 #[rstest]
 fn compare_scoring_equivalency(
     #[values(
-        QueryVariant::Recommend,
+        QueryVariant::RecoBestScore,
+        QueryVariant::RecoSumScores,
         QueryVariant::Discovery,
         QueryVariant::Context
     )]
@@ -339,7 +346,8 @@ fn compare_scoring_equivalency(
 #[rstest]
 fn async_compare_scoring_equivalency(
     #[values(
-        QueryVariant::Recommend,
+        QueryVariant::RecoBestScore,
+        QueryVariant::RecoSumScores,
         QueryVariant::Discovery,
         QueryVariant::Context
     )]

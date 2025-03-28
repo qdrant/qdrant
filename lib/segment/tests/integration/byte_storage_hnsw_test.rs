@@ -47,7 +47,7 @@ fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVect
     DiscoveryQuery::new(target, pairs).into()
 }
 
-fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
+fn random_reco_best_score_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
     let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
 
     let positive = (0..num_examples)
@@ -57,14 +57,14 @@ fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
         .map(|_| random_dense_byte_vector(rnd, dim).into())
         .collect_vec();
 
-    RecoQuery::new(positive, negative).into()
+    QueryVector::RecommendBestScore(RecoQuery::new(positive, negative))
 }
 
 fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize) -> QueryVector {
     match variant {
         QueryVariant::Nearest => random_dense_byte_vector(rnd, dim).into(),
         QueryVariant::Discovery => random_discovery_query(rnd, dim),
-        QueryVariant::RecommendBestScore => random_reco_query(rnd, dim),
+        QueryVariant::RecommendBestScore => random_reco_best_score_query(rnd, dim),
     }
 }
 

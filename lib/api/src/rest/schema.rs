@@ -567,12 +567,16 @@ pub struct Prefetch {
 ///   examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
 ///   If the `max_neg_score` is chosen then it is squared and negated, otherwise it is just
 ///   the `max_pos_score`.
+///
+/// * `sum_scores` - Uses custom search objective. Compares against all inputs, sums all the scores.
+///   Scores against positive vectors are added, against negatives are subtracted.
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum RecommendStrategy {
     #[default]
     AverageVector,
     BestScore,
+    SumScores,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

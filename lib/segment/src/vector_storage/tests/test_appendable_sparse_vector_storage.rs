@@ -72,7 +72,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
         .try_into()
         .unwrap();
-    let query_vector = QueryVector::Recommend(RecoQuery {
+    let query_vector = QueryVector::RecommendBestScore(RecoQuery {
         positives: vec![vector.into()],
         negatives: vec![],
     });
@@ -167,7 +167,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let vector: SparseVector = vec![(0, 1.0), (1, 1.0), (2, 1.0), (3, 1.0)]
         .try_into()
         .unwrap();
-    let query_vector = QueryVector::Recommend(RecoQuery {
+    let query_vector = QueryVector::RecommendBestScore(RecoQuery {
         positives: vec![vector.into()],
         negatives: vec![],
     });

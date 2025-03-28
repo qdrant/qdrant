@@ -72,6 +72,7 @@ impl LocalShard {
                         }
                         // Don't post-process if we are dealing with custom scoring
                         QueryEnum::RecommendBestScore(_)
+                        | QueryEnum::RecommendSumScores(_)
                         | QueryEnum::Discover(_)
                         | QueryEnum::Context(_) => {}
                     };

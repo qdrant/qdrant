@@ -425,6 +425,10 @@ enum RecommendStrategy {
   // examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
   // If the `max_neg_score` is chosen then it is squared and negated.
   BestScore = 1;
+  
+  // Uses custom search objective. Compares against all inputs, sums all the scores.
+  // Scores against positive vectors are added, against negatives are subtracted.
+  SumScores = 2;
 }
 
 message LookupLocation {

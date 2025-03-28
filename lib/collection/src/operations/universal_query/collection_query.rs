@@ -147,6 +147,7 @@ pub enum VectorQuery<T> {
     Nearest(T),
     RecommendAverageVector(RecoQuery<T>),
     RecommendBestScore(RecoQuery<T>),
+    RecommendSumScores(RecoQuery<T>),
     Discover(DiscoveryQuery<T>),
     Context(ContextQuery<T>),
 }
@@ -156,8 +157,9 @@ impl<T> VectorQuery<T> {
     pub fn flat_iter(&self) -> Box<dyn Iterator<Item = &T> + '_> {
         match self {
             VectorQuery::Nearest(input) => Box::new(std::iter::once(input)),
-            VectorQuery::RecommendAverageVector(query) => Box::new(query.flat_iter()),
-            VectorQuery::RecommendBestScore(query) => Box::new(query.flat_iter()),
+            VectorQuery::RecommendAverageVector(query)
+            | VectorQuery::RecommendBestScore(query)
+            | VectorQuery::RecommendSumScores(query) => Box::new(query.flat_iter()),
             VectorQuery::Discover(query) => Box::new(query.flat_iter()),
             VectorQuery::Context(query) => Box::new(query.flat_iter()),
         }
@@ -201,6 +203,17 @@ impl VectorQuery<VectorInputInternal> {
                     lookup_collection,
                 );
                 Ok(VectorQuery::RecommendBestScore(RecoQuery::new(
+                    positives, negatives,
+                )))
+            }
+            VectorQuery::RecommendSumScores(reco) => {
+                let (positives, negatives) = Self::resolve_reco_reference(
+                    reco,
+                    ids_to_vectors,
+                    lookup_vector_name,
+                    lookup_collection,
+                );
+                Ok(VectorQuery::RecommendSumScores(RecoQuery::new(
                     positives, negatives,
                 )))
             }
@@ -314,6 +327,10 @@ impl VectorQuery<VectorInternal> {
                 QueryEnum::Nearest(NamedVectorStruct::new_from_vector(search_vector, using))
             }
             VectorQuery::RecommendBestScore(reco) => QueryEnum::RecommendBestScore(NamedQuery {
+                query: reco,
+                using: Some(using),
+            }),
+            VectorQuery::RecommendSumScores(reco) => QueryEnum::RecommendSumScores(NamedQuery {
                 query: reco,
                 using: Some(using),
             }),

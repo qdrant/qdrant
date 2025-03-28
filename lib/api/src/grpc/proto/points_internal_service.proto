@@ -155,6 +155,7 @@ message QueryEnum {
     RecoQuery recommend_best_score = 2; // Recommend points with higher similarity to positive examples
     DiscoveryQuery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
     ContextQuery context = 4; // Use only the context to find points that minimize loss against negative examples
+    RecoQuery recommend_sum_scores = 5; // Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
   }
 }
 
@@ -235,6 +236,7 @@ message RawQuery {
     Recommend recommend_best_score = 2; // Recommend points with highest similarity to positive examples, or lowest to negative examples
     Discovery discover = 3; // Search for points that get closer to a target, constrained by a context of positive and negative pairs
     Context context = 4; // Use only the context to find points that minimize loss against negative examples
+    Recommend recommend_sum_scores = 5; // Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
   }
 }
 

@@ -6,7 +6,9 @@ use common::ext::BitSliceExt as _;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
-use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
+use super::query::{
+    ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
+};
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorInternal};
@@ -289,10 +291,26 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     } // TODO(colbert) add support?
                 }
             }
-            QueryVector::Recommend(reco_query) => {
+            QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
                 let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    storage,
+                    hardware_counter,
+                );
+                Ok(Box::new(AsyncRawScorerImpl::new(
+                    points_count,
+                    query_scorer,
+                    storage.get_mmap_vectors(),
+                    point_deleted,
+                    vec_deleted,
+                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
+                )))
+            }
+            QueryVector::RecommendSumScores(reco_query) => {
+                let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+                let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     storage,
                     hardware_counter,
                 );
