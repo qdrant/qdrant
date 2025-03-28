@@ -13,15 +13,6 @@ pub struct FeatureFlags {
     /// Note that this will only be applied to all flags when passed into [`init_feature_flags`].
     all: bool,
 
-    /// Whether to use the new format to persist shard keys
-    ///
-    /// The old format fails to persist shard key numbers correctly, converting them into strings on
-    /// load. While this is false, the new format is only used if any shard key is a number.
-    ///
-    /// First implemented in Qdrant 1.13.1
-    // TODO(1.14): set to true, remove other branches in code, and remove this flag
-    pub use_new_shard_key_mapping_format: bool,
-
     /// Whether to skip usage of RocksDB in immutable payload indices.
     ///
     /// First implemented in Qdrant 1.13.5
@@ -37,7 +28,6 @@ impl Default for FeatureFlags {
     fn default() -> FeatureFlags {
         FeatureFlags {
             all: false,
-            use_new_shard_key_mapping_format: false,
             payload_index_skip_rocksdb: false,
             incremental_hnsw_building: true,
         }
@@ -56,14 +46,12 @@ impl FeatureFlags {
 pub fn init_feature_flags(mut flags: FeatureFlags) {
     let FeatureFlags {
         all,
-        use_new_shard_key_mapping_format,
         payload_index_skip_rocksdb,
         incremental_hnsw_building,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
     if *all {
-        *use_new_shard_key_mapping_format = true;
         *payload_index_skip_rocksdb = true;
         *incremental_hnsw_building = true;
     }
