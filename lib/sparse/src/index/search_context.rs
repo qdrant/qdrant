@@ -113,6 +113,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
 
             indices.clear();
             values.clear();
+            let mut cpu_cost = 0;
             // collect indices and values for the current record id from the query's posting lists *only*
             for posting_iterator in self.postings_iterators.iter_mut() {
                 // rely on underlying binary search as the posting lists are sorted by record id
@@ -122,6 +123,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
                         // match for posting list
                         indices.push(posting_iterator.query_index);
                         values.push(element.weight);
+                        cpu_cost += posting_iterator.posting_list_iterator.element_size();
                     }
                 }
             }
@@ -132,8 +134,7 @@ impl<'a, 'b, T: PostingListIter> SearchContext<'a, 'b, T> {
 
             // Accumulate the sum of the length of the retrieved sparse vector and the query vector length
             // as measurement for CPU usage of plain search.
-            cpu_counter
-                .incr_delta(self.query.indices.len() + values.len() * size_of::<DimWeight>());
+            cpu_counter.incr_delta(self.query.indices.len() + cpu_cost);
 
             // reconstruct sparse vector and score against query
             let sparse_score =
