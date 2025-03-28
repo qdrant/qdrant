@@ -45,10 +45,11 @@ use crate::grpc::qdrant::{
     Match, MinShould, NamedVectors, NestedCondition, PayloadExcludeSelector,
     PayloadIncludeSelector, PayloadIndexParams, PayloadSchemaInfo, PayloadSchemaType, PointId,
     PointStruct, PointsOperationResponse, PointsOperationResponseInternal, ProductQuantization,
-    QuantizationConfig, QuantizationSearchParams, QuantizationType, RepeatedIntegers,
-    RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey, StrictModeConfig,
-    TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal, ValuesCount,
-    VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key, with_vectors_selector,
+    QuantizationConfig, QuantizationSearchParams, QuantizationType, QueryQuantizationConfig,
+    RepeatedIntegers, RepeatedStrings, ScalarQuantization, ScoredPoint, SearchParams, ShardKey,
+    StrictModeConfig, TextIndexParams, TokenizerType, UpdateResult, UpdateResultInternal,
+    ValuesCount, VectorsSelector, WithPayloadSelector, WithVectorsSelector, shard_key,
+    with_vectors_selector,
 };
 use crate::grpc::{
     DecayParamsExpression, DivExpression, GeoDistance, MultExpression, PowExpression, SumExpression,
@@ -1007,8 +1008,14 @@ impl TryFrom<ProductQuantization> for segment::types::ProductQuantization {
 impl From<segment::types::BinaryQuantization> for BinaryQuantization {
     fn from(value: segment::types::BinaryQuantization) -> Self {
         let segment::types::BinaryQuantization { binary } = value;
-        let segment::types::BinaryQuantizationConfig { always_ram } = binary;
-        BinaryQuantization { always_ram }
+        let segment::types::BinaryQuantizationConfig {
+            always_ram,
+            query_quantization,
+        } = binary;
+        BinaryQuantization {
+            always_ram,
+            query_quantization: query_quantization.map(From::from),
+        }
     }
 }
 
@@ -1016,9 +1023,15 @@ impl TryFrom<BinaryQuantization> for segment::types::BinaryQuantization {
     type Error = Status;
 
     fn try_from(value: BinaryQuantization) -> Result<Self, Self::Error> {
-        let BinaryQuantization { always_ram } = value;
+        let BinaryQuantization {
+            always_ram,
+            query_quantization,
+        } = value;
         Ok(segment::types::BinaryQuantization {
-            binary: segment::types::BinaryQuantizationConfig { always_ram },
+            binary: segment::types::BinaryQuantizationConfig {
+                always_ram,
+                query_quantization: query_quantization.map(TryFrom::try_from).transpose()?,
+            },
         })
     }
 }
@@ -1062,6 +1075,56 @@ impl TryFrom<QuantizationConfig> for segment::types::QuantizationConfig {
             super::qdrant::quantization_config::Quantization::Binary(config) => Ok(
                 segment::types::QuantizationConfig::Binary(config.try_into()?),
             ),
+        }
+    }
+}
+
+impl TryFrom<QueryQuantizationConfig> for segment::types::QueryQuantizationConfig {
+    type Error = Status;
+
+    fn try_from(value: QueryQuantizationConfig) -> Result<Self, Self::Error> {
+        use crate::grpc::qdrant::query_quantization_config::{Setting, Variant};
+
+        let QueryQuantizationConfig { variant } = value;
+        let variant = variant
+            .ok_or_else(|| Status::invalid_argument("Malformed `QueryQuantizationConfig`"))?;
+
+        let converted = match variant {
+            Variant::Setting(setting_int) => {
+                let setting = Setting::try_from(setting_int).map_err(|err| {
+                    Status::invalid_argument(format!(
+                        "Invalid `QueryQuantizationConfig` setting: {err}"
+                    ))
+                })?;
+                match setting {
+                    Setting::Default => segment::types::QueryQuantizationConfig::Default,
+                    Setting::Binary => segment::types::QueryQuantizationConfig::Binary,
+                    Setting::Scalar => segment::types::QueryQuantizationConfig::Scalar,
+                }
+            }
+        };
+        Ok(converted)
+    }
+}
+
+impl From<segment::types::QueryQuantizationConfig> for QueryQuantizationConfig {
+    fn from(value: segment::types::QueryQuantizationConfig) -> Self {
+        use crate::grpc::qdrant::query_quantization_config::{Setting, Variant};
+
+        let variant = match value {
+            segment::types::QueryQuantizationConfig::Default => {
+                Variant::Setting(Setting::Default.into())
+            }
+            segment::types::QueryQuantizationConfig::Binary => {
+                Variant::Setting(Setting::Binary.into())
+            }
+            segment::types::QueryQuantizationConfig::Scalar => {
+                Variant::Setting(Setting::Scalar.into())
+            }
+        };
+
+        Self {
+            variant: Some(variant),
         }
     }
 }
