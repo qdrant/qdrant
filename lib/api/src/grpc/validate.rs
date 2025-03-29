@@ -235,7 +235,18 @@ impl Validate for grpc::FieldCondition {
 
 impl Validate for grpc::Vector {
     fn validate(&self) -> Result<(), ValidationErrors> {
-        match (&self.indices, self.vectors_count) {
+        let grpc::Vector {
+            data,
+            indices,
+            vectors_count,
+            vector,
+        } = self;
+
+        if let Some(vector) = vector {
+            vector.validate()?;
+        }
+
+        match (indices, vectors_count) {
             (Some(_), Some(_)) => {
                 let mut errors = ValidationErrors::new();
                 errors.add(
@@ -244,15 +255,42 @@ impl Validate for grpc::Vector {
                 );
                 Err(errors)
             }
-            (Some(indices), None) => sparse::common::sparse_vector::validate_sparse_vector_impl(
-                &indices.data,
-                &self.data,
-            ),
+            (Some(indices), None) => {
+                sparse::common::sparse_vector::validate_sparse_vector_impl(&indices.data, data)
+            }
             (None, Some(vectors_count)) => {
-                common::validation::validate_multi_vector_len(vectors_count, &self.data)
+                common::validation::validate_multi_vector_len(*vectors_count, data)
             }
             (None, None) => Ok(()),
         }
+    }
+}
+
+impl Validate for grpc::vector::Vector {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::vector::Vector::Dense(_dense) => Ok(()),
+            grpc::vector::Vector::Sparse(sparse) => sparse.validate(),
+            grpc::vector::Vector::MultiDense(multi) => multi.validate(),
+            grpc::vector::Vector::Document(_document) => Ok(()),
+            grpc::vector::Vector::Image(_image) => Ok(()),
+            grpc::vector::Vector::Object(_obj) => Ok(()),
+        }
+    }
+}
+
+impl Validate for grpc::SparseVector {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::SparseVector { indices, values } = self;
+        sparse::common::sparse_vector::validate_sparse_vector_impl(indices, values)
+    }
+}
+
+impl Validate for grpc::MultiDenseVector {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let grpc::MultiDenseVector { vectors } = self;
+        let multivec_length: Vec<_> = vectors.iter().map(|v| v.data.len()).collect();
+        common::validation::validate_multi_vector_by_length(&multivec_length)
     }
 }
 
