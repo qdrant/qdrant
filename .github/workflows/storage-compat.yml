@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  storage-compat-test:
 
     runs-on: ubuntu-latest
 

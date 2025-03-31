@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-gpu:
+  unit-tests-gpu:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
