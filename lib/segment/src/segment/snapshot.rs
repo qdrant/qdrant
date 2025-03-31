@@ -291,18 +291,20 @@ pub fn snapshot_files(
             .take_database_snapshot(&payload_index_db_backup_path)?;
     }
 
-    tar.blocking_append_dir_all(&temp_path, Path::new(""))?;
+    if temp_path.exists() {
+        tar.blocking_append_dir_all(&temp_path, Path::new(""))?;
 
-    // remove tmp directory in background
-    let _ = thread::spawn(move || {
-        let res = fs::remove_dir_all(&temp_path);
-        if let Err(err) = res {
-            log::error!(
-                "Failed to remove tmp directory at {}: {err:?}",
-                temp_path.display(),
-            );
-        }
-    });
+        // remove tmp directory in background
+        let _ = thread::spawn(move || {
+            let res = fs::remove_dir_all(&temp_path);
+            if let Err(err) = res {
+                log::error!(
+                    "Failed to remove tmp directory at {}: {err:?}",
+                    temp_path.display(),
+                );
+            }
+        });
+    }
 
     let tar = tar.descend(Path::new(SNAPSHOT_FILES_PATH))?;
 
