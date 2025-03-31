@@ -30,6 +30,10 @@ use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
 
+/// A factor which determines if we need to use the 2-step search or not.
+/// Should be adjusted based on usage statistics.
+pub(super) const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
+
 struct IntermediateQueryInfo<'a> {
     scoring_query: Option<&'a ScoringQuery>,
     /// Limit + offset
@@ -208,9 +212,6 @@ impl Collection {
         if requests_batch.iter().all(|s| s.limit == 0) {
             return Ok(vec![]);
         }
-        // A factor which determines if we need to use the 2-step search or not
-        // Should be adjusted based on usage statistics.
-        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
 
         let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());
         let with_vectors = requests_batch.iter().all(|s| s.with_vector.is_enabled());

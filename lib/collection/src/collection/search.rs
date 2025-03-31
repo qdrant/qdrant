@@ -59,9 +59,6 @@ impl Collection {
         if request.searches.iter().all(|s| s.limit == 0) {
             return Ok(vec![]);
         }
-        // A factor which determines if we need to use the 2-step search or not
-        // Should be adjusted based on usage statistics.
-        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
 
         let is_payload_required = request
             .searches
@@ -82,8 +79,8 @@ impl Collection {
         // Actually used number of records.
         let used_transfers = sum_limits;
 
-        let is_required_transfer_large_enough =
-            require_transfers > used_transfers.saturating_mul(PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
+        let is_required_transfer_large_enough = require_transfers
+            > used_transfers.saturating_mul(super::query::PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
 
         if metadata_required && is_required_transfer_large_enough {
             // If there is a significant offset, we need to retrieve the whole result
