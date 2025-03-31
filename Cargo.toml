@@ -170,7 +170,7 @@ bytes = "1.10.1"
 chrono = { version = "0.4.40", features = ["serde"] }
 criterion = "0.5.1"
 data-encoding = "2.8.0"
-delegate = "0.13.2"
+delegate = "0.13.3"
 fnv = "1.0"
 futures = "0.3.31"
 futures-util = "0.3.31"
