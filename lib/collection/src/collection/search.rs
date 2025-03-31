@@ -66,13 +66,11 @@ impl Collection {
         let is_payload_required = request
             .searches
             .iter()
-            .all(|s| s.with_payload.clone().is_some_and(|p| p.is_required()));
-        let with_vectors = request.searches.iter().all(|s| {
-            s.with_vector
-                .as_ref()
-                .map(|wv| wv.is_enabled())
-                .unwrap_or(false)
-        });
+            .all(|s| s.with_payload.as_ref().is_some_and(|p| p.is_required()));
+        let with_vectors = request
+            .searches
+            .iter()
+            .all(|s| s.with_vector.as_ref().is_some_and(|wv| wv.is_enabled()));
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -95,8 +93,12 @@ impl Collection {
             let mut without_payload_requests = Vec::with_capacity(request.searches.len());
             for search in &request.searches {
                 let mut without_payload_request = search.clone();
-                without_payload_request.with_payload = None;
-                without_payload_request.with_vector = None;
+                without_payload_request
+                    .with_payload
+                    .replace(WithPayloadInterface::Bool(false));
+                without_payload_request
+                    .with_vector
+                    .replace(WithVector::Bool(false));
                 without_payload_requests.push(without_payload_request);
             }
             let without_payload_batch = CoreSearchRequestBatch {
