@@ -10,7 +10,7 @@ use sparse::common::types::{DimId, DimWeight};
 
 use crate::data_types::tiny_map;
 use crate::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use crate::types::{ScoredPoint, VectorName, VectorNameBuf, WithPayload, WithVector};
+use crate::types::{ScoredPoint, VectorName, VectorNameBuf};
 
 #[derive(Debug)]
 pub struct QueryContext {
@@ -250,8 +250,6 @@ impl Default for VectorQueryContext<'_> {
 pub struct FormulaContext {
     pub formula: ParsedFormula,
     pub prefetches_results: Vec<Vec<ScoredPoint>>,
-    pub with_payload: WithPayload,
-    pub with_vector: WithVector,
     pub limit: usize,
     pub is_stopped: Arc<AtomicBool>,
 }

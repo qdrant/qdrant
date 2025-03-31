@@ -4,7 +4,7 @@ use std::time::Duration;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::query_context::FormulaContext;
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
-use segment::types::{ScoredPoint, WithPayload, WithVector};
+use segment::types::ScoredPoint;
 
 use super::LocalShard;
 use crate::collection_manager::segments_searcher::SegmentsSearcher;
@@ -12,13 +12,10 @@ use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::types::{CollectionError, CollectionResult};
 
 impl LocalShard {
-    #[expect(clippy::too_many_arguments)]
     pub async fn rescore_with_formula(
         &self,
         formula: ParsedFormula,
         prefetches_results: Vec<Vec<ScoredPoint>>,
-        with_payload: WithPayload,
-        with_vector: WithVector,
         limit: usize,
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
@@ -28,8 +25,6 @@ impl LocalShard {
         let ctx = FormulaContext {
             formula,
             prefetches_results,
-            with_payload,
-            with_vector,
             limit,
             is_stopped: stopping_guard.get_is_stopped(),
         };
