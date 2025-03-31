@@ -19,6 +19,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 
 impl Collection {
+    #[cfg(feature = "testing")]
     pub async fn search(
         &self,
         request: CoreSearchRequest,
