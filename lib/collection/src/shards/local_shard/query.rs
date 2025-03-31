@@ -89,16 +89,19 @@ impl LocalShard {
         // decrease timeout by the time spent so far
         let timeout = timeout.saturating_sub(start_time.elapsed());
 
-        let merge_futures = request.root_plans.into_iter().map(|merge_plan| {
-            self.recurse_prefetch(
-                merge_plan,
+        let merge_futures = request.root_plans.into_iter().map(|root_plan| Box::pin(Box::new(async move {
+            let results = self.recurse_prefetch(
+                root_plan.merge_plan,
                 &prefetch_holder,
                 search_runtime_handle,
                 timeout,
                 0,
                 hw_counter_acc.clone(),
-            )
-        });
+            ).await?;
+
+            // self.fill_with_payload_or_vectors(query_response, with_payload, with_vector, timeout, hw_measurement_acc)
+            Ok(results)
+        })));
 
         let batched_scored_points = futures::future::try_join_all(merge_futures).await?;
 
