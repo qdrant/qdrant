@@ -44,6 +44,9 @@ impl CollectionUpdater {
     ) -> CollectionResult<usize> {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
+        let scroll_lock = segments.read().scroll_read_lock.clone();
+        let _scroll_lock = futures::executor::block_on(scroll_lock.write());
+
         let operation_result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
                 process_point_operation(segments, op_num, point_operation, hw_counter)
