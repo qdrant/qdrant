@@ -36,12 +36,13 @@ impl SnapshotEntry for Segment {
     ) -> OperationResult<()> {
         let segment_id = self.segment_id()?;
 
+        log::debug!("Taking snapshot of segment {segment_id}");
+
         if !snapshotted_segments.insert(segment_id.to_string()) {
             // Already snapshotted.
+            log::debug!("Segment {segment_id} is already snapshotted!");
             return Ok(());
         }
-
-        log::debug!("Taking snapshot of segment {:?}", self.current_path);
 
         // flush segment to capture latest state
         self.flush(true, false)?;
