@@ -245,7 +245,7 @@ impl Collection {
                 .do_query_batch_impl(
                     without_payload_batch,
                     read_consistency,
-                    shard_selection.clone(),
+                    &shard_selection,
                     timeout,
                     hw_measurement_acc.clone(),
                 )
@@ -271,7 +271,7 @@ impl Collection {
             self.do_query_batch_impl(
                 requests_batch,
                 read_consistency,
-                shard_selection,
+                &shard_selection,
                 timeout,
                 hw_measurement_acc.clone(),
             )
@@ -284,7 +284,7 @@ impl Collection {
         &self,
         requests_batch: Vec<ShardQueryRequest>,
         read_consistency: Option<ReadConsistency>,
-        shard_selection: ShardSelectorInternal,
+        shard_selection: &ShardSelectorInternal,
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
@@ -296,7 +296,7 @@ impl Collection {
             .batch_query_shards_concurrently(
                 requests_batch.clone(),
                 read_consistency,
-                &shard_selection,
+                shard_selection,
                 timeout,
                 hw_measurement_acc,
             )
