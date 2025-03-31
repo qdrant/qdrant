@@ -161,9 +161,9 @@ impl PlannedQuery {
                         query,
                         filter,
                         score_threshold,
-                        with_vector: Some(false.into()), // will be fetched after aggregating from segments
-                        with_payload: Some(false.into()), // will be fetched after aggregating from segments
-                        offset: 0,                        // offset is handled at collection level
+                        with_vector: Some(WithVector::from(false)), // will be fetched after aggregating from segments
+                        with_payload: Some(WithPayloadInterface::from(false)), // will be fetched after aggregating from segments\
+                        offset: 0, // offset is handled at collection level
                         params,
                         limit,
                     };
@@ -184,8 +184,8 @@ impl PlannedQuery {
                         scroll_order: ScrollOrder::ByField(order_by),
                         limit,
                         filter,
-                        with_vector: false.into(), // will be fetched after aggregating from segments
-                        with_payload: false.into(), // will be fetched after aggregating from segments
+                        with_vector: WithVector::from(false), // will be fetched after aggregating from segments
+                        with_payload: WithPayloadInterface::from(false), // will be fetched after aggregating from segments
                     };
 
                     let idx = self.scrolls.len();
@@ -204,8 +204,8 @@ impl PlannedQuery {
                         scroll_order: ScrollOrder::Random,
                         limit,
                         filter,
-                        with_vector: false.into(), // will be fetched after aggregating from segments
-                        with_payload: false.into(), // will be fetched after aggregating from segments
+                        with_vector: WithVector::from(false), // will be fetched after aggregating from segments
+                        with_payload: WithPayloadInterface::from(false), // will be fetched after aggregating from segments
                     };
 
                     let idx = self.scrolls.len();
@@ -219,8 +219,8 @@ impl PlannedQuery {
                         scroll_order: ScrollOrder::ById,
                         limit,
                         filter,
-                        with_vector: false.into(), // will be fetched after aggregating from segments
-                        with_payload: false.into(), // will be fetched after aggregating from segments
+                        with_vector: WithVector::from(false), // will be fetched after aggregating from segments
+                        with_payload: WithPayloadInterface::from(false), // will be fetched after aggregating from segments
                     };
 
                     let idx = self.scrolls.len();
