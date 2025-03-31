@@ -19,6 +19,7 @@ use crate::operations::shard_selector_internal::ShardSelectorInternal;
 use crate::operations::types::*;
 
 impl Collection {
+    #[cfg(feature = "testing")]
     pub async fn search(
         &self,
         request: CoreSearchRequest,
@@ -59,20 +60,15 @@ impl Collection {
         if request.searches.iter().all(|s| s.limit == 0) {
             return Ok(vec![]);
         }
-        // A factor which determines if we need to use the 2-step search or not
-        // Should be adjusted based on usage statistics.
-        const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
 
         let is_payload_required = request
             .searches
             .iter()
-            .all(|s| s.with_payload.clone().is_some_and(|p| p.is_required()));
-        let with_vectors = request.searches.iter().all(|s| {
-            s.with_vector
-                .as_ref()
-                .map(|wv| wv.is_enabled())
-                .unwrap_or(false)
-        });
+            .all(|s| s.with_payload.as_ref().is_some_and(|p| p.is_required()));
+        let with_vectors = request
+            .searches
+            .iter()
+            .all(|s| s.with_vector.as_ref().is_some_and(|wv| wv.is_enabled()));
 
         let metadata_required = is_payload_required || with_vectors;
 
@@ -84,8 +80,8 @@ impl Collection {
         // Actually used number of records.
         let used_transfers = sum_limits;
 
-        let is_required_transfer_large_enough =
-            require_transfers > used_transfers.saturating_mul(PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
+        let is_required_transfer_large_enough = require_transfers
+            > used_transfers.saturating_mul(super::query::PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
 
         if metadata_required && is_required_transfer_large_enough {
             // If there is a significant offset, we need to retrieve the whole result
@@ -95,8 +91,12 @@ impl Collection {
             let mut without_payload_requests = Vec::with_capacity(request.searches.len());
             for search in &request.searches {
                 let mut without_payload_request = search.clone();
-                without_payload_request.with_payload = None;
-                without_payload_request.with_vector = None;
+                without_payload_request
+                    .with_payload
+                    .replace(WithPayloadInterface::Bool(false));
+                without_payload_request
+                    .with_vector
+                    .replace(WithVector::Bool(false));
                 without_payload_requests.push(without_payload_request);
             }
             let without_payload_batch = CoreSearchRequestBatch {
@@ -115,7 +115,7 @@ impl Collection {
             let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
             let filled_results = without_payload_results
                 .into_iter()
-                .zip(request.clone().searches.into_iter())
+                .zip(request.searches.into_iter())
                 .map(|(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
