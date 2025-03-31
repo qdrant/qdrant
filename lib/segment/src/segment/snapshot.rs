@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::io::{Seek, Write};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
-use std::{fs, thread};
+use std::{fmt, fs, thread};
 
 use common::tar_ext;
 use io::storage_version::VERSION_FILE;
@@ -279,7 +279,12 @@ pub fn snapshot_files(
         let db_backup_path = temp_path.join(DB_BACKUP_PATH);
 
         let db = segment.database.read();
-        crate::rocksdb_backup::create(&db, &db_backup_path)?;
+        crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to create RocksDB backup at {}: {err}",
+                db_backup_path.display()
+            ))
+        })?;
     }
 
     if include_if(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE.as_ref()) {
@@ -288,18 +293,30 @@ pub fn snapshot_files(
         segment
             .payload_index
             .borrow()
-            .take_database_snapshot(&payload_index_db_backup_path)?;
+            .take_database_snapshot(&payload_index_db_backup_path)
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to create payload index RocksDB backup at {}: {err}",
+                    payload_index_db_backup_path.display()
+                ))
+            })?;
     }
 
     if temp_path.exists() {
-        tar.blocking_append_dir_all(&temp_path, Path::new(""))?;
+        tar.blocking_append_dir_all(&temp_path, Path::new(""))
+            .map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to add RockDB backup {} into snapshot: {err}",
+                    temp_path.display()
+                ))
+            })?;
 
         // remove tmp directory in background
         let _ = thread::spawn(move || {
             let res = fs::remove_dir_all(&temp_path);
             if let Err(err) = res {
                 log::error!(
-                    "Failed to remove tmp directory at {}: {err:?}",
+                    "failed to remove temporary directory {}: {err}",
                     temp_path.display(),
                 );
             }
@@ -313,7 +330,8 @@ pub fn snapshot_files(
             let stripped_path = strip_prefix(&file, &segment.current_path)?;
 
             if include_if(stripped_path) {
-                tar.blocking_append_file(&file, stripped_path)?;
+                tar.blocking_append_file(&file, stripped_path)
+                    .map_err(|err| failed_to_add("vector index file", &file, err))?;
             }
         }
 
@@ -321,7 +339,8 @@ pub fn snapshot_files(
             let stripped_path = strip_prefix(&file, &segment.current_path)?;
 
             if include_if(stripped_path) {
-                tar.blocking_append_file(&file, stripped_path)?;
+                tar.blocking_append_file(&file, stripped_path)
+                    .map_err(|err| failed_to_add("vector storage file", &file, err))?;
             }
         }
 
@@ -330,7 +349,8 @@ pub fn snapshot_files(
                 let stripped_path = strip_prefix(&file, &segment.current_path)?;
 
                 if include_if(stripped_path) {
-                    tar.blocking_append_file(&file, stripped_path)?;
+                    tar.blocking_append_file(&file, stripped_path)
+                        .map_err(|err| failed_to_add("quantized vectors file", &file, err))?;
                 }
             }
         }
@@ -340,7 +360,8 @@ pub fn snapshot_files(
         let stripped_path = strip_prefix(&file, &segment.current_path)?;
 
         if include_if(stripped_path) {
-            tar.blocking_append_file(&file, stripped_path)?;
+            tar.blocking_append_file(&file, stripped_path)
+                .map_err(|err| failed_to_add("payload index file", &file, err))?;
         }
     }
 
@@ -348,7 +369,8 @@ pub fn snapshot_files(
         let stripped_path = strip_prefix(&file, &segment.current_path)?;
 
         if include_if(stripped_path) {
-            tar.blocking_append_file(&file, stripped_path)?;
+            tar.blocking_append_file(&file, stripped_path)
+                .map_err(|err| failed_to_add("payload storage file", &file, err))?;
         }
     }
 
@@ -356,21 +378,27 @@ pub fn snapshot_files(
         let stripped_path = strip_prefix(&file, &segment.current_path)?;
 
         if include_if(stripped_path) {
-            tar.blocking_append_file(&file, stripped_path)?;
+            tar.blocking_append_file(&file, stripped_path)
+                .map_err(|err| failed_to_add("id tracker file", &file, err))?;
         }
     }
 
-    tar.blocking_append_file(
-        &segment.current_path.join(SEGMENT_STATE_FILE),
-        Path::new(SEGMENT_STATE_FILE),
-    )?;
+    let segment_state_path = segment.current_path.join(SEGMENT_STATE_FILE);
+    tar.blocking_append_file(&segment_state_path, Path::new(SEGMENT_STATE_FILE))
+        .map_err(|err| failed_to_add("segment state file", &segment_state_path, err))?;
 
-    tar.blocking_append_file(
-        &segment.current_path.join(VERSION_FILE),
-        Path::new(VERSION_FILE),
-    )?;
+    let version_file_path = segment.current_path.join(VERSION_FILE);
+    tar.blocking_append_file(&version_file_path, Path::new(VERSION_FILE))
+        .map_err(|err| failed_to_add("segment version file", &version_file_path, err))?;
 
     Ok(())
+}
+
+fn failed_to_add(what: &str, path: &Path, err: impl fmt::Display) -> OperationError {
+    OperationError::service_error(format!(
+        "failed to add {what} {} into snapshot: {err}",
+        path.display(),
+    ))
 }
 
 fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<PathBuf> {
