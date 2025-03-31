@@ -9,7 +9,7 @@ use itertools::{Either, Itertools};
 use rand::Rng;
 use segment::common::reciprocal_rank_fusion::rrf_scoring;
 use segment::common::score_fusion::{ScoreFusion, score_fusion};
-use segment::types::{Order, ScoredPoint};
+use segment::types::{Order, ScoredPoint, WithPayloadInterface, WithVector};
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tokio::sync::RwLockReadGuard;
 use tokio::time::Instant;
@@ -29,6 +29,10 @@ use crate::operations::universal_query::collection_query::CollectionQueryRequest
 use crate::operations::universal_query::shard_query::{
     FusionInternal, ScoringQuery, ShardQueryRequest, ShardQueryResponse,
 };
+
+/// A factor which determines if we need to use the 2-step search or not.
+/// Should be adjusted based on usage statistics.
+pub(super) const PAYLOAD_TRANSFERS_FACTOR_THRESHOLD: usize = 10;
 
 struct IntermediateQueryInfo<'a> {
     scoring_query: Option<&'a ScoringQuery>,
@@ -202,6 +206,89 @@ impl Collection {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        let start = Instant::now();
+
+        // shortcuts batch if all requests with limit=0
+        if requests_batch.iter().all(|s| s.limit == 0) {
+            return Ok(vec![]);
+        }
+
+        let is_payload_required = requests_batch.iter().all(|s| s.with_payload.is_required());
+        let with_vectors = requests_batch.iter().all(|s| s.with_vector.is_enabled());
+
+        let metadata_required = is_payload_required || with_vectors;
+
+        let sum_limits: usize = requests_batch.iter().map(|s| s.limit).sum();
+        let sum_offsets: usize = requests_batch.iter().map(|s| s.offset).sum();
+
+        // Number of records we need to retrieve to fill the search result.
+        let require_transfers = self.shards_holder.read().await.len() * (sum_limits + sum_offsets);
+        // Actually used number of records.
+        let used_transfers = sum_limits;
+
+        let is_required_transfer_large_enough =
+            require_transfers > used_transfers.saturating_mul(PAYLOAD_TRANSFERS_FACTOR_THRESHOLD);
+
+        if metadata_required && is_required_transfer_large_enough {
+            // If there is a significant offset, we need to retrieve the whole result
+            // set without payload first and then retrieve the payload.
+            // It is required to do this because the payload might be too large to send over the
+            // network.
+            let mut without_payload_requests = Vec::with_capacity(requests_batch.len());
+            for query in &requests_batch {
+                let mut without_payload_request = query.clone();
+                without_payload_request.with_payload = WithPayloadInterface::Bool(false);
+                without_payload_request.with_vector = WithVector::Bool(false);
+                without_payload_requests.push(without_payload_request);
+            }
+            let without_payload_batch = without_payload_requests;
+            let without_payload_results = self
+                .do_query_batch_impl(
+                    without_payload_batch,
+                    read_consistency,
+                    &shard_selection,
+                    timeout,
+                    hw_measurement_acc.clone(),
+                )
+                .await?;
+            // update timeout
+            let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
+            let filled_results = without_payload_results
+                .into_iter()
+                .zip(requests_batch.into_iter())
+                .map(|(without_payload_result, req)| {
+                    self.fill_search_result_with_payload(
+                        without_payload_result,
+                        Some(req.with_payload),
+                        req.with_vector,
+                        read_consistency,
+                        &shard_selection,
+                        timeout,
+                        hw_measurement_acc.clone(),
+                    )
+                });
+            future::try_join_all(filled_results).await
+        } else {
+            self.do_query_batch_impl(
+                requests_batch,
+                read_consistency,
+                &shard_selection,
+                timeout,
+                hw_measurement_acc.clone(),
+            )
+            .await
+        }
+    }
+
+    /// This function is used to query the collection. It will return a list of scored points.
+    async fn do_query_batch_impl(
+        &self,
+        requests_batch: Vec<ShardQueryRequest>,
+        read_consistency: Option<ReadConsistency>,
+        shard_selection: &ShardSelectorInternal,
+        timeout: Option<Duration>,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let instant = Instant::now();
 
         let requests_batch = Arc::new(requests_batch);
@@ -210,7 +297,7 @@ impl Collection {
             .batch_query_shards_concurrently(
                 requests_batch.clone(),
                 read_consistency,
-                &shard_selection,
+                shard_selection,
                 timeout,
                 hw_measurement_acc,
             )
