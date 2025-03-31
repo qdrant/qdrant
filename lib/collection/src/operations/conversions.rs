@@ -133,6 +133,7 @@ pub fn try_record_from_grpc(
         vectors,
         shard_key,
         order_value,
+        version,
     } = point;
     let id = id
         .ok_or_else(|| Status::invalid_argument("retrieved point does not have an ID"))?
@@ -154,6 +155,7 @@ pub fn try_record_from_grpc(
 
     Ok(RecordInternal {
         id,
+        version,
         payload,
         vector,
         shard_key: convert_shard_key_from_grpc_opt(shard_key),
@@ -539,6 +541,7 @@ impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
     fn from(record: RecordInternal) -> Self {
         let RecordInternal {
             id,
+            version,
             payload,
             vector,
             shard_key,
@@ -546,6 +549,7 @@ impl From<RecordInternal> for api::grpc::qdrant::RetrievedPoint {
         } = record;
         Self {
             id: Some(id.into()),
+            version,
             payload: payload.map(payload_to_proto).unwrap_or_default(),
             vectors: vector.map(api::grpc::qdrant::VectorsOutput::from),
             shard_key: shard_key.map(convert_shard_key_to_grpc),

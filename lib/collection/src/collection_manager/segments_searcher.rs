@@ -434,6 +434,7 @@ impl SegmentsSearcher {
                     id,
                     RecordInternal {
                         id,
+                        version,
                         payload: if with_payload.enable {
                             if let Some(selector) = &with_payload.payload_selector {
                                 Some(selector.process(segment.payload(id, &hw_counter)?))

@@ -6055,6 +6055,9 @@ pub struct RetrievedPoint {
     /// Order-by value
     #[prost(message, optional, tag = "6")]
     pub order_value: ::core::option::Option<OrderValue>,
+    /// version of the point
+    #[prost(uint64, tag = "7")]
+    pub version: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

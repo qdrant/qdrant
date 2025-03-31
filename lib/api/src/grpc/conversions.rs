@@ -734,6 +734,7 @@ impl TryFrom<rest::Record> for RetrievedPoint {
     fn try_from(record: rest::Record) -> Result<Self, Self::Error> {
         let rest::Record {
             id,
+            version,
             payload,
             vector,
             shard_key,
@@ -741,6 +742,7 @@ impl TryFrom<rest::Record> for RetrievedPoint {
         } = record;
         let retrieved_point = Self {
             id: Some(PointId::from(id)),
+            version,
             payload: payload.map(json::payload_to_proto).unwrap_or_default(),
             vectors: vector.map(VectorsOutput::try_from).transpose()?,
             shard_key: shard_key.map(convert_shard_key_to_grpc),

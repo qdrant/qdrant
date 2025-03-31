@@ -131,6 +131,8 @@ pub enum OptimizersStatus {
 pub struct RecordInternal {
     /// Id of the point
     pub id: PointIdType,
+    /// Version of the point
+    pub version: u64,
     /// Payload - values assigned to the point
     pub payload: Option<Payload>,
     /// Vector of the point
@@ -148,6 +150,7 @@ impl TryFrom<RecordInternal> for PointStructPersisted {
     fn try_from(record: RecordInternal) -> Result<Self, Self::Error> {
         let RecordInternal {
             id,
+            version: _,
             payload,
             vector,
             shard_key: _,
@@ -172,6 +175,7 @@ impl TryFrom<Record> for PointStructPersisted {
     fn try_from(record: Record) -> Result<Self, Self::Error> {
         let Record {
             id,
+            version: _,
             payload,
             vector,
             shard_key: _,
@@ -556,6 +560,7 @@ fn points_example() -> Vec<api::rest::Record> {
     vec![
         api::rest::Record {
             id: PointIdType::NumId(40),
+            version: 12,
             payload: Some(Payload(payload_map_1)),
             vector: Some(VectorStructOutput::Single(vec![0.875, 0.140625, 0.897_6])),
             shard_key: Some("region_1".into()),
@@ -563,6 +568,7 @@ fn points_example() -> Vec<api::rest::Record> {
         },
         api::rest::Record {
             id: PointIdType::NumId(41),
+            version: 13,
             payload: Some(Payload(payload_map_2)),
             vector: Some(VectorStructOutput::Single(vec![0.75, 0.640625, 0.8945])),
             shard_key: Some("region_1".into()),

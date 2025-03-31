@@ -4177,6 +4177,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | vectors | [VectorsOutput](#qdrant-VectorsOutput) | optional |  |
 | shard_key | [ShardKey](#qdrant-ShardKey) | optional | Shard key |
 | order_value | [OrderValue](#qdrant-OrderValue) | optional | Order-by value |
+| version | [uint64](#uint64) |  | version of the point |
 
 
 

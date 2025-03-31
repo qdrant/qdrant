@@ -307,6 +307,7 @@ fn test_delete_all_point_versions() {
             point_id,
             RecordInternal {
                 id: point_id,
+                version: 101,
                 vector: Some(VectorStructInternal::Single(new_vector)),
                 payload: None,
                 shard_key: None,

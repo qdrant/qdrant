@@ -4,6 +4,7 @@ impl From<RecordInternal> for api::rest::Record {
     fn from(value: RecordInternal) -> Self {
         let RecordInternal {
             id,
+            version,
             payload,
             vector,
             shard_key,
@@ -11,6 +12,7 @@ impl From<RecordInternal> for api::rest::Record {
         } = value;
         Self {
             id,
+            version,
             payload,
             vector: vector.map(api::rest::VectorStructOutput::from),
             shard_key,

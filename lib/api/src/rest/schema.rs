@@ -300,6 +300,7 @@ pub struct ScoredPoint {
 pub struct Record {
     /// Id of the point
     pub id: segment::types::PointIdType,
+    pub version: segment::types::SeqNumberType,
     /// Payload - values assigned to the point
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<segment::types::Payload>,

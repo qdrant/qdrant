@@ -625,13 +625,13 @@ message PowExpression {
 
 message DecayParamsExpression {
     // The variable to decay
-    Expression x = 1; 
+    Expression x = 1;
     // The target value to start decaying from. Defaults to 0.
-    optional Expression target = 2; 
+    optional Expression target = 2;
     // The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
-    optional float scale = 3; 
+    optional float scale = 3;
     // The midpoint of the decay. Defaults to 0.5. Output will be this value when `|x - target| == scale`.
-    optional float midpoint = 4; 
+    optional float midpoint = 4;
 }
 
 message Query {
@@ -942,6 +942,7 @@ message RetrievedPoint {
   optional VectorsOutput vectors = 4;
   optional ShardKey shard_key = 5; // Shard key
   optional OrderValue order_value = 6; // Order-by value
+  uint64 version = 7; // version of the point
 }
 
 message GetResponse {

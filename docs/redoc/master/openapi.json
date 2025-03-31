@@ -7898,11 +7898,17 @@
         "description": "Point data",
         "type": "object",
         "required": [
-          "id"
+          "id",
+          "version"
         ],
         "properties": {
           "id": {
             "$ref": "#/components/schemas/ExtendedPointId"
+          },
+          "version": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           },
           "payload": {
             "description": "Payload - values assigned to the point",
@@ -9319,6 +9325,7 @@
             "example": [
               {
                 "id": 40,
+                "version": 12,
                 "payload": {
                   "city": "London",
                   "color": "green"
@@ -9332,6 +9339,7 @@
               },
               {
                 "id": 41,
+                "version": 13,
                 "payload": {
                   "city": "Paris",
                   "color": "red"
