@@ -254,7 +254,7 @@ impl Collection {
             let timeout = timeout.map(|t| t.saturating_sub(start.elapsed()));
             let filled_results = without_payload_results
                 .into_iter()
-                .zip(requests_batch.clone().into_iter())
+                .zip(requests_batch.into_iter())
                 .map(|(without_payload_result, req)| {
                     self.fill_search_result_with_payload(
                         without_payload_result,
