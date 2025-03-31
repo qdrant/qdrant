@@ -85,8 +85,6 @@ impl SegmentEntry for Segment {
         let FormulaContext {
             formula,
             prefetches_results,
-            with_payload,
-            with_vector,
             limit,
             is_stopped,
         } = &*ctx;
@@ -99,7 +97,7 @@ impl SegmentEntry for Segment {
             hw_counter,
         )?;
 
-        self.process_search_result(internal_results, with_payload, with_vector, hw_counter)
+        self.process_search_result(internal_results, &false.into(), &false.into(), hw_counter)
     }
 
     fn upsert_point(
