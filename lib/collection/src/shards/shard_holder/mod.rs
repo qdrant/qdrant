@@ -928,7 +928,7 @@ impl ShardHolder {
 
         let (read_half, write_half) = tokio::io::duplex(4096);
 
-        tokio::spawn(async move {
+        let future = async move {
             let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
             shard
@@ -951,6 +951,12 @@ impl ShardHolder {
             tar.finish().await?;
 
             CollectionResult::Ok(())
+        };
+
+        tokio::spawn(async move {
+            if let Err(err) = future.await {
+                log::error!("Failed to stream shard snapshot: {err}");
+            }
         });
 
         Ok(SnapshotStream::new_stream(
