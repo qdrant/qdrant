@@ -230,7 +230,7 @@ impl VectorStorage for MmapSparseVectorStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         let vector = <&SparseVector>::try_from(vector)?;
-        debug_assert!(vector.is_sorted());
+        debug_assert!(vector.is_sorted(), "Vector is not sorted {vector:?}");
         self.set_deleted(key, false)?;
         self.update_stored(key, Some(vector), hw_counter)?;
         Ok(())
