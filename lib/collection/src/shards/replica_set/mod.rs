@@ -236,6 +236,7 @@ impl ShardReplicaSet {
         shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         shard_path: &Path,
+        is_dirty_shard: bool,
         collection_config: Arc<RwLock<CollectionConfigInternal>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -278,6 +279,11 @@ impl ShardReplicaSet {
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Shard::Dummy(DummyShard::new(recovery_reason))
+            } else if is_dirty_shard {
+                log::error!(
+                    "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
+                );
+                Shard::Dummy(DummyShard::new("Shard is dirty"))
             } else {
                 let res = LocalShard::load(
                     shard_id,
@@ -363,7 +369,30 @@ impl ShardReplicaSet {
                 .disable_peer(this_peer_id);
         }
 
+        if is_dirty_shard {
+            replica_set.mark_local_as_dead();
+        }
+
         replica_set
+    }
+
+    pub fn mark_local_as_dead(&self) {
+        // Mark this peer as "locally disabled"...
+        //
+        // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
+        let has_other_active_peers = !self.active_remote_shards().is_empty();
+
+        // ...if this peer is *not* the last active replica
+        if has_other_active_peers {
+            let notify = self
+                .locally_disabled_peers
+                .write()
+                .disable_peer_and_notify_if_elapsed(self.this_peer_id(), None);
+
+            if notify {
+                self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id, None);
+            }
+        }
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -391,6 +420,16 @@ impl ShardReplicaSet {
     pub async fn is_dummy(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Dummy(_)))
+    }
+
+    #[allow(dead_code)]
+    pub async fn is_dummy_but_not_dirty(&self) -> bool {
+        // ToDo: Maybe add a boolean in DummyShard to mark if it's dirty.
+        let local_read = self.local.read().await;
+        match *local_read {
+            Some(Shard::Dummy(_)) => true,
+            _ => false
+        }
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {

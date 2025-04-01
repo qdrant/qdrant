@@ -681,9 +681,11 @@ impl Collection {
                 continue;
             }
 
-            if this_peer_state != Some(Dead) || replica_set.is_dummy().await {
+            if this_peer_state != Some(Dead) {
                 continue; // All good
             }
+
+            // TODO: Skip transfers for dummy shards that aren't dirty
 
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
