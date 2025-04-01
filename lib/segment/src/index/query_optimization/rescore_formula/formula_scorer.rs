@@ -148,7 +148,7 @@ impl FormulaScorer<'_> {
                     serde_json::from_value::<GeoPoint>,
                 )?;
 
-                Ok(Haversine::distance((*origin).into(), value.into()))
+                Ok(Haversine.distance((*origin).into(), value.into()))
             }
             ParsedExpression::Datetime(dt_expr) => {
                 let datetime = match dt_expr {
