@@ -485,7 +485,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
 
     let get_payload = |value: f64| -> Option<Payload> {
         let mut payload_map = Map::new();
-        payload_map.insert(PRICE_FLOAT_KEY.to_string(), (value).into());
+        payload_map.insert(PRICE_FLOAT_KEY.to_string(), value.into());
         payload_map.insert(PRICE_INT_KEY.to_string(), (value as i64).into());
         payload_map.insert(
             MULTI_VALUE_KEY.to_string(),

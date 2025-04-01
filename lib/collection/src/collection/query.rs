@@ -55,7 +55,7 @@ impl Collection {
         }
         let results = self
             .do_query_batch(
-                vec![(request)],
+                vec![request],
                 read_consistency,
                 shard_selection,
                 timeout,
