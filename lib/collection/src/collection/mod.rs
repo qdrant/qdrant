@@ -681,7 +681,7 @@ impl Collection {
                 continue;
             }
 
-            if this_peer_state != Some(Dead) {
+            if !(this_peer_state == Some(Dead) || replica_set.is_dirty().await) {
                 continue; // All good
             }
 

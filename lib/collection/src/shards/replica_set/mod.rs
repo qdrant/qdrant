@@ -278,12 +278,12 @@ impl ShardReplicaSet {
         let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
-                Shard::Dummy(DummyShard::new(recovery_reason))
+                Shard::Dummy(DummyShard::new(recovery_reason, false))
             } else if is_dirty_shard {
                 log::error!(
                     "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
                 );
-                Shard::Dummy(DummyShard::new("Shard is dirty"))
+                Shard::Dummy(DummyShard::new("Shard is dirty", true))
             } else {
                 let res = LocalShard::load(
                     shard_id,
@@ -314,9 +314,10 @@ impl ShardReplicaSet {
                              {err}"
                         );
 
-                        Shard::Dummy(DummyShard::new(format!(
-                            "Failed to load local shard {shard_path:?}: {err}"
-                        )))
+                        Shard::Dummy(DummyShard::new(
+                            format!("Failed to load local shard {shard_path:?}: {err}",),
+                            false,
+                        ))
                     }
                 }
             };
@@ -420,6 +421,14 @@ impl ShardReplicaSet {
     pub async fn is_dummy(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Dummy(_)))
+    }
+
+    pub async fn is_dirty(&self) -> bool {
+        let local_read = self.local.read().await;
+        match local_read.as_ref() {
+            Some(Shard::Dummy(dummy_shard)) => dummy_shard.is_dirty(),
+            _ => false
+        }
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
