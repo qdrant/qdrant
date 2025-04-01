@@ -329,7 +329,7 @@ impl GraphLayers {
     #[cfg(feature = "testing")]
     pub fn compress_ram(&mut self) {
         use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
-        assert!(self.links.format() == GraphLinksFormat::Plain);
+        assert_eq!(self.links.format(), GraphLinksFormat::Plain);
         let dummy = GraphLinksSerializer::new(Vec::new(), GraphLinksFormat::Plain, 0, 0)
             .to_graph_links_ram();
         let links = std::mem::replace(&mut self.links, dummy);

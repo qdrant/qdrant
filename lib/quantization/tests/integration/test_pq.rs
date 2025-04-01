@@ -328,7 +328,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
 
             // check that all threads are finished
-            assert!(num_threads::num_threads() == start_num_threads);
+            assert_eq!(num_threads::num_threads(), start_num_threads);
 
             println!("Finished iteration {i}");
         }

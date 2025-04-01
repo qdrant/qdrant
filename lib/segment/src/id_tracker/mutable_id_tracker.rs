@@ -421,7 +421,7 @@ fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
     if read_to < file_len {
         log::warn!(
             "Mutable ID tracker mappings file ends with incomplete entry, removing last {} bytes and assuming automatic recovery by WAL",
-            (file_len - read_to),
+            file_len - read_to,
         );
         let file = File::options()
             .write(true)
