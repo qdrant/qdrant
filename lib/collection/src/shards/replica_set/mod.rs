@@ -427,7 +427,7 @@ impl ShardReplicaSet {
         let local_read = self.local.read().await;
         match local_read.as_ref() {
             Some(Shard::Dummy(dummy_shard)) => dummy_shard.is_dirty(),
-            _ => false
+            _ => false,
         }
     }
 
