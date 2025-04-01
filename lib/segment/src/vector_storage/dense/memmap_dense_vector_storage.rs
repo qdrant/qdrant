@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fs::{File, OpenOptions, create_dir_all};
 use std::io::{self, Write};
+use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -140,9 +141,13 @@ impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for MemmapDenseVectorStora
             .unwrap_or_else(|| panic!("vector not found: {key}"))
     }
 
-    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+    fn get_dense_batch<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
         let mmap_store = self.mmap_store.as_ref().unwrap();
-        mmap_store.get_vectors(keys, vectors);
+        mmap_store.get_vectors(keys, vectors)
     }
 }
 

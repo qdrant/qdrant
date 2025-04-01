@@ -22,7 +22,7 @@ use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord, VECTOR_READ_BATCH_SIZE};
+use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord};
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;
@@ -308,19 +308,6 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
                 dim: self.dim,
             }
         })
-    }
-
-    fn get_batch_multi<'a>(
-        &'a self,
-        keys: &[PointOffsetType],
-        vectors: &mut [TypedMultiDenseVectorRef<'a, T>],
-    ) {
-        debug_assert_eq!(keys.len(), vectors.len());
-        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-
-        for (i, key) in keys.iter().enumerate() {
-            vectors[i] = self.get_multi(*key);
-        }
     }
 
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {

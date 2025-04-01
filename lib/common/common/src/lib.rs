@@ -12,6 +12,7 @@ pub mod fixed_length_priority_queue;
 pub mod flags;
 pub mod iterator_ext;
 pub mod math;
+pub mod maybe_uninit;
 pub mod mmap_hashmap;
 pub mod num_traits;
 pub mod panic;

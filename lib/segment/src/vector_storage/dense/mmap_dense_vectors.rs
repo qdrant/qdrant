@@ -1,11 +1,12 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::mem::{self, size_of, transmute};
+use std::mem::{self, MaybeUninit, size_of, transmute};
 use std::path::Path;
 use std::sync::Arc;
 
 use bitvec::prelude::BitSlice;
 use common::ext::BitSliceExt as _;
+use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting};
@@ -156,17 +157,22 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             .map(|offset| self.raw_vector_offset_sequential(offset))
     }
 
-    pub fn get_vectors<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
+    pub fn get_vectors<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
         debug_assert_eq!(keys.len(), vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         if is_read_with_prefetch_efficient_points(keys) {
-            for (i, key) in keys.iter().enumerate() {
-                vectors[i] = self.get_vector_opt_sequential(*key).unwrap_or(&[]);
-            }
+            maybe_uninit_fill_from(
+                vectors,
+                keys.iter()
+                    .map(|key| self.get_vector_opt_sequential(*key).unwrap_or(&[])),
+            )
+            .0
         } else {
-            for (i, key) in keys.iter().enumerate() {
-                vectors[i] = self.get_vector(*key);
-            }
+            maybe_uninit_fill_from(vectors, keys.iter().map(|key| self.get_vector(*key))).0
         }
     }
 
