@@ -2197,7 +2197,7 @@ pub struct GeoRadius {
 impl GeoRadius {
     pub fn check_point(&self, point: &GeoPoint) -> bool {
         let query_center = Point::from(self.center);
-        Haversine::distance(query_center, Point::from(*point)) < self.radius
+        Haversine.distance(query_center, Point::from(*point)) < self.radius
     }
 }
 

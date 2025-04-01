@@ -2220,9 +2220,9 @@ dependencies = [
 
 [[package]]
 name = "geo"
-version = "0.29.3"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34f0e6e028c581e82e6822a68869514e94c25e7f8ea669a2d8595bdf7461ccc5"
+checksum = "4416397671d8997e9a3e7ad99714f4f00a22e9eaa9b966a5985d2194fc9e02e1"
 dependencies = [
  "earcutr",
  "float_next_after",
@@ -2238,9 +2238,9 @@ dependencies = [
 
 [[package]]
 name = "geo-types"
-version = "0.7.14"
+version = "0.7.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6f47c611187777bbca61ea7aba780213f5f3441fd36294ab333e96cfa791b65"
+checksum = "62ddb1950450d67efee2bbc5e429c68d052a822de3aad010d28b351fbb705224"
 dependencies = [
  "approx",
  "num-traits",
@@ -2760,9 +2760,9 @@ dependencies = [
 
 [[package]]
 name = "i_float"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "775f9961a8d2f879725da8aff789bb20a3ddf297473e0c90af75e69313919490"
+checksum = "85df3a416829bb955fdc2416c7b73680c8dcea8d731f2c7aa23e1042fe1b8343"
 dependencies = [
  "serde",
 ]
@@ -2775,9 +2775,9 @@ checksum = "347c253b4748a1a28baf94c9ce133b6b166f08573157e05afe718812bc599fcd"
 
 [[package]]
 name = "i_overlay"
-version = "1.9.3"
+version = "2.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06740cd31c1f963823e007d8e6edcd2db634b2856f4f613e3df01737fd852482"
+checksum = "0542dfef184afdd42174a03dcc0625b6147fb73e1b974b1a08a2a42ac35cee49"
 dependencies = [
  "i_float",
  "i_key_sort",
@@ -2788,9 +2788,9 @@ dependencies = [
 
 [[package]]
 name = "i_shape"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27dbe9e5238d6b9c694c08415bf00fb370b089949bd818ab01f41f8927b8774c"
+checksum = "0a38f5a42678726718ff924f6d4a0e79b129776aeed298f71de4ceedbd091bce"
 dependencies = [
  "i_float",
  "serde",
