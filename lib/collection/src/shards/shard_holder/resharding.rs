@@ -36,15 +36,15 @@ impl ShardHolder {
             assert_resharding_state_consistency(&state, ring, shard_key);
 
             if let Some(state) = state.deref() {
-                if state.matches(resharding_key) {
-                    return Err(CollectionError::bad_request(format!(
+                return if state.matches(resharding_key) {
+                    Err(CollectionError::bad_request(format!(
                         "resharding {resharding_key} is already in progress:\n{state:#?}"
-                    )));
+                    )))
                 } else {
-                    return Err(CollectionError::bad_request(format!(
+                    Err(CollectionError::bad_request(format!(
                         "another resharding is in progress:\n{state:#?}"
-                    )));
-                }
+                    )))
+                };
             }
         }
 

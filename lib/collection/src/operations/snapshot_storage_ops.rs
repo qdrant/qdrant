@@ -50,7 +50,7 @@ pub async fn get_snapshot_description(
             path.display()
         ))
     })?)?;
-    let size = file_meta.size as u64;
+    let size = file_meta.size;
     let last_modified = file_meta.last_modified.naive_local();
     let checksum = None;
 

@@ -28,7 +28,7 @@ mod tests {
         };
         let zero_vector = vec![0.0; vector_dim];
 
-        assert!(
+        assert_eq!(
             EncodedVectorsU8::encode(
                 (0..vector_parameters.count).map(|_| &zero_vector),
                 Vec::<u8>::new(),
@@ -36,8 +36,8 @@ mod tests {
                 None,
                 stopped_ref,
             )
-            .err()
-                == Some(EncodingError::Stopped)
+            .err(),
+            Some(EncodingError::Stopped)
         );
 
         stop_thread.join().unwrap();
@@ -64,7 +64,7 @@ mod tests {
         };
         let zero_vector = vec![0.0; vector_dim];
 
-        assert!(
+        assert_eq!(
             EncodedVectorsPQ::encode(
                 (0..vector_parameters.count).map(|_| &zero_vector),
                 Vec::<u8>::new(),
@@ -73,8 +73,8 @@ mod tests {
                 1,
                 stopped_ref,
             )
-            .err()
-                == Some(EncodingError::Stopped)
+            .err(),
+            Some(EncodingError::Stopped)
         );
 
         stop_thread.join().unwrap();

@@ -651,7 +651,7 @@ impl SegmentEntry for ProxySegment {
         vector_name: &VectorName,
         point_id: PointIdType,
     ) -> OperationResult<Option<VectorInternal>> {
-        return if self.deleted_points.read().contains_key(&point_id) {
+        if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment
                 .get()
                 .read()
@@ -668,7 +668,7 @@ impl SegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .vector(vector_name, point_id)
-        };
+        }
     }
 
     fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
@@ -705,7 +705,7 @@ impl SegmentEntry for ProxySegment {
         point_id: PointIdType,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload> {
-        return if self.deleted_points.read().contains_key(&point_id) {
+        if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment
                 .get()
                 .read()
@@ -722,7 +722,7 @@ impl SegmentEntry for ProxySegment {
                 .get()
                 .read()
                 .payload(point_id, hw_counter)
-        };
+        }
     }
 
     /// Not implemented for proxy
@@ -924,12 +924,12 @@ impl SegmentEntry for ProxySegment {
     }
 
     fn has_point(&self, point_id: PointIdType) -> bool {
-        return if self.deleted_points.read().contains_key(&point_id) {
+        if self.deleted_points.read().contains_key(&point_id) {
             self.write_segment.get().read().has_point(point_id)
         } else {
             self.write_segment.get().read().has_point(point_id)
                 || self.wrapped_segment.get().read().has_point(point_id)
-        };
+        }
     }
 
     fn is_empty(&self) -> bool {
