@@ -422,16 +422,6 @@ impl ShardReplicaSet {
         matches!(*local_read, Some(Shard::Dummy(_)))
     }
 
-    #[allow(dead_code)]
-    pub async fn is_dummy_but_not_dirty(&self) -> bool {
-        // ToDo: Maybe add a boolean in DummyShard to mark if it's dirty.
-        let local_read = self.local.read().await;
-        match *local_read {
-            Some(Shard::Dummy(_)) => true,
-            _ => false
-        }
-    }
-
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
         self.replica_state.read().peers()
     }
