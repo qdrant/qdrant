@@ -45,7 +45,10 @@ impl CollectionUpdater {
         // Allow only one update at a time, ensure no data races between segments.
         // let _lock = self.update_lock.lock().unwrap();
         let scroll_lock = segments.read().scroll_read_lock.clone();
-        let _scroll_lock = futures::executor::block_on(scroll_lock.write());
+
+        // Use block_in_place here to avoid blocking the current async executor
+        let _scroll_lock =
+            tokio::task::block_in_place(|| tokio::sync::RwLock::write_owned(scroll_lock));
 
         let operation_result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
