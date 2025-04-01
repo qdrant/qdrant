@@ -553,8 +553,7 @@ pub trait SegmentOptimizer {
     ///
     /// * `segments` - segments holder
     /// * `ids` - list of segment ids to perform optimization on. All segments will be merged into single one
-    /// * `stopped` - flag for early stopping of the optimization.
-    ///               If appears to be `true` - optimization process should be cancelled, all segments unwrapped
+    /// * `stopped` - flag for early stopping of the optimization. If appears to be `true` - optimization process should be cancelled, all segments unwrapped.
     ///
     /// # Result
     ///

@@ -51,10 +51,10 @@ pub trait VectorIndex {
     /// # Arguments
     /// - `id` - sequential vector id, offset in the vector storage
     /// - `vector` - new vector value,
-    ///        if None - vector will be removed from the index marked as deleted in storage.
-    ///        Note: inserting None vector is not equal to removing vector from the storage.
-    ///              Unlike removing, it will always result in storage growth.
-    ///              Proper removing should be performed by the optimizer.
+    ///   if None - vector will be removed from the index marked as deleted in storage.
+    ///   Note: inserting None vector is not equal to removing vector from the storage.
+    ///   Unlike removing, it will always result in storage growth.
+    ///   Proper removing should be performed by the optimizer.
     fn update_vector(
         &mut self,
         id: PointOffsetType,

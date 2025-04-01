@@ -913,7 +913,7 @@ fn recover_first_voter(
                 }
             }
 
-            EntryType::EntryNormal => continue,
+            EntryType::EntryNormal => (),
         }
     }
 

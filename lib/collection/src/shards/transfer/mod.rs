@@ -211,7 +211,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                 Ok(()) => break,
                 Err(err) => {
                     log::error!("Failed to confirm recovered operation on consensus: {err}");
-                    continue;
                 }
             }
         }
@@ -265,7 +264,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                     log::error!(
                         "Failed to confirm start shard transfer operation on consensus: {err}"
                     );
-                    continue;
                 }
             }
         }
@@ -320,7 +318,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                     log::error!(
                         "Failed to confirm restart shard transfer operation on consensus: {err}"
                     );
-                    continue;
                 }
             }
         }
@@ -377,7 +374,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                     log::error!(
                         "Failed to confirm abort shard transfer operation on consensus: {err}"
                     );
-                    continue;
                 }
             }
         }
@@ -436,7 +432,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                     log::error!(
                         "Failed to confirm set shard replica set state operation on consensus: {err}"
                     );
-                    continue;
                 }
             }
         }
@@ -491,7 +486,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                     log::error!(
                         "Failed to confirm commit read hashring operation on consensus: {err}"
                     );
-                    continue;
                 }
             }
         }
@@ -546,7 +540,6 @@ pub trait ShardTransferConsensus: Send + Sync {
                     log::error!(
                         "Failed to confirm commit write hashring operation on consensus: {err}"
                     );
-                    continue;
                 }
             }
         }

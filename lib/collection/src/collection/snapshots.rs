@@ -203,13 +203,11 @@ impl Collection {
                         RemoteShard::restore_snapshot(&shard_path)
                     }
                     shard_config::ShardType::Temporary => {}
-                    shard_config::ShardType::ReplicaSet { .. } => {
-                        ShardReplicaSet::restore_snapshot(
-                            &shard_path,
-                            this_peer_id,
-                            is_distributed,
-                        )?
-                    }
+                    shard_config::ShardType::ReplicaSet => ShardReplicaSet::restore_snapshot(
+                        &shard_path,
+                        this_peer_id,
+                        is_distributed,
+                    )?,
                 }
             } else {
                 return Err(CollectionError::service_error(format!(
