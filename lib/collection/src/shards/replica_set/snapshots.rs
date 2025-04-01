@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::ops::Deref as _;
 use std::path::Path;
 use std::{fs, io};
 

@@ -378,6 +378,8 @@ impl ShardReplicaSet {
     }
 
     pub fn mark_local_as_dead(&self) {
+        // ToDo: Can we just reuse self.add_locally_disabled()? instead
+
         // Mark this peer as "locally disabled"...
         //
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
