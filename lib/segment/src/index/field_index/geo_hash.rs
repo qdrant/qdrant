@@ -358,10 +358,10 @@ fn check_circle_intersection(geohash: &str, circle: &GeoRadius) -> bool {
     let c1 = rect.max();
 
     let bbox_center = Point::new((c0.x + c1.x) / 2f64, (c0.y + c1.y) / 2f64);
-    let half_diagonal = Haversine::distance(bbox_center, Point(c0));
+    let half_diagonal = Haversine.distance(bbox_center, Point(c0));
 
     half_diagonal + circle.radius
-        > Haversine::distance(
+        > Haversine.distance(
             bbox_center,
             Point::new(circle.center.lon, circle.center.lat),
         )
@@ -1288,10 +1288,10 @@ mod tests {
 
     #[test]
     fn long_overflow_distance() {
-        let dist = Haversine::distance(Point::new(-179.999, 66.0), Point::new(179.999, 66.0));
+        let dist = Haversine.distance(Point::new(-179.999, 66.0), Point::new(179.999, 66.0));
         eprintln!("dist` = {dist:#?}");
         assert_eq!(dist, 90.45422731917998);
-        let dist = Haversine::distance(Point::new(0.99, 90.), Point::new(0.99, -90.0));
+        let dist = Haversine.distance(Point::new(0.99, 90.), Point::new(0.99, -90.0));
         assert_eq!(dist, 20015114.442035925);
     }
 

@@ -135,7 +135,7 @@ impl FormulaScorer<'_> {
                     serde_json::from_value::<GeoPoint>,
                 )?;
 
-                Ok(Haversine::distance((*origin).into(), value.into()) as ScoreType)
+                Ok(Haversine.distance((*origin).into(), value.into()) as ScoreType)
             }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
