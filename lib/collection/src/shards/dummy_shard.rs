@@ -28,13 +28,19 @@ use crate::shards::telemetry::LocalShardTelemetry;
 #[derive(Clone, Debug)]
 pub struct DummyShard {
     message: String,
+    is_dirty: bool,
 }
 
 impl DummyShard {
-    pub fn new(message: impl Into<String>) -> Self {
+    pub fn new(message: impl Into<String>, is_dirty: bool) -> Self {
         Self {
             message: message.into(),
+            is_dirty,
         }
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.is_dirty
     }
 
     pub async fn create_snapshot(
