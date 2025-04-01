@@ -47,8 +47,7 @@ impl CollectionUpdater {
         let scroll_lock = segments.read().scroll_read_lock.clone();
 
         // Use block_in_place here to avoid blocking the current async executor
-        let _scroll_lock =
-            tokio::task::block_in_place(|| tokio::sync::RwLock::write_owned(scroll_lock));
+        let _scroll_lock = tokio::task::block_in_place(|| scroll_lock.blocking_write());
 
         let operation_result = match operation {
             CollectionUpdateOperations::PointOperation(point_operation) => {
