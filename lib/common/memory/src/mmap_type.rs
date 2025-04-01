@@ -165,7 +165,7 @@ where
             let mmap = self.mmap.clone();
             move || {
                 // flushing a zero-sized mmap can cause panicking on some systems
-                if mmap.len() > 0 {
+                if !mmap.is_empty() {
                     mmap.flush()?;
                 }
                 Ok(())

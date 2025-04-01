@@ -488,7 +488,7 @@ impl<V: Blob> Gridstore<V> {
                 },
             );
             match callback(point_offset, value.as_ref()) {
-                ControlFlow::Continue(()) => continue,
+                ControlFlow::Continue(()) => (),
                 ControlFlow::Break(message) => return Err(message),
             }
         }

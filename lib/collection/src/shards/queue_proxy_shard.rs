@@ -520,7 +520,6 @@ impl Inner {
                         "Failed to transfer batch of updates to peer {}, retrying: {err}",
                         self.remote_shard.peer_id,
                     );
-                    continue;
                 }
                 Err(err) => return Err(err),
             }

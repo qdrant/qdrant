@@ -116,7 +116,6 @@ impl GroupsAggregator {
             match self.add_point(point) {
                 Ok(()) | Err(AggregatorError::KeyNotFound | AggregatorError::BadKeyType) => {
                     // ignore points that don't have the group_by field
-                    continue;
                 }
             }
         }
