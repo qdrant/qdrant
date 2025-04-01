@@ -475,13 +475,16 @@ def check_collection_shard_transfer_progress(peer_api_uri: str, collection_name:
 
 
 def check_all_replicas_active(peer_api_uri: str, collection_name: str, headers={}) -> bool:
-    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-    for shard in collection_cluster_info["local_shards"]:
-        if shard['state'] != 'Active':
-            return False
-    for shard in collection_cluster_info["remote_shards"]:
-        if shard['state'] != 'Active':
-            return False
+    try:
+        collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
+        for shard in collection_cluster_info["local_shards"]:
+            if shard['state'] != 'Active':
+                return False
+        for shard in collection_cluster_info["remote_shards"]:
+            if shard['state'] != 'Active':
+                return False
+    except requests.exceptions.ConnectionError:
+        return False
     return True
 
 
