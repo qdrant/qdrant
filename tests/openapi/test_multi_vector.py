@@ -413,9 +413,8 @@ def test_multi_with_euclidean(collection_name):
                     "id": 1,
                     "vector": {
                         "my-multivec": [
-                            [1.0, 2.0, 3.0],
                             [3.0, 3.0, 3.0],
-                            [4.0, 5.0, 6.0]
+                            [4.0, 2.0, 1.0]
                         ]
                     }
                 }
@@ -435,9 +434,8 @@ def test_multi_with_euclidean(collection_name):
     point = response.json()['result']
     assert point['id'] == 1
     assert point['vector']['my-multivec'] == [
-        [1.0, 2.0, 3.0],
         [3.0, 3.0, 3.0],
-        [4.0, 5.0, 6.0]
+        [4.0, 2.0, 1.0]
     ]
 
     response = request_with_validation(
@@ -446,8 +444,9 @@ def test_multi_with_euclidean(collection_name):
         path_params={'collection_name': collection_name},
         body={
             "query": [
+                [1.0, 2.0, 3.0],
                 [3.0, 3.0, 3.0],
-                [4.0, 2.0, 1.0]
+                [4.0, 5.0, 6.0]
             ],
             "using": "my-multivec",
             "limit": 10
@@ -455,6 +454,5 @@ def test_multi_with_euclidean(collection_name):
     )
     assert response.ok
     assert len(response.json()['result']) == 1
-    print(response.json())
     assert response.json()['result']['points'][0]['id'] == 1
-    assert response.json()['result']['points'][0]['score'] == 9.572609
+    assert response.json()['result']['points'][0]['score'] == 11.885993

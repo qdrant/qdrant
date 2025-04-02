@@ -131,15 +131,15 @@ mod tests {
 
     #[test]
     fn test_score_multi_euclidean() {
-        let a = MultiDenseVectorInternal::try_from(vec![vec![3.0, 3.0, 3.0], vec![4.0, 2.0, 1.0]])
-            .unwrap();
-        let b = MultiDenseVectorInternal::try_from(vec![
+        let a = MultiDenseVectorInternal::try_from(vec![
             vec![1.0, 2.0, 3.0],
             vec![3.0, 3.0, 3.0],
             vec![4.0, 5.0, 6.0],
         ])
         .unwrap();
+        let b = MultiDenseVectorInternal::try_from(vec![vec![3.0, 3.0, 3.0], vec![4.0, 2.0, 1.0]])
+            .unwrap();
         let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&b).into());
-        assert_eq!(score, 9.572609);
+        assert_eq!(score, 11.885993);
     }
 }
