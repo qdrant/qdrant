@@ -3,7 +3,7 @@ use common::types::{PointOffsetType, ScoreType};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
 use crate::spaces::metric::{Metric, MetricPostProcessing};
-use crate::types::{MultiVectorComparator, MultiVectorConfig};
+use crate::types::{MultiVectorComparator, MultiVectorConfig, Order};
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
 pub mod custom_query_scorer;
@@ -38,13 +38,24 @@ pub fn score_max_similarity<
     debug_assert!(!multi_dense_a.is_empty());
     debug_assert!(!multi_dense_b.is_empty());
     let mut sum = 0.0;
+    let distance = TMetric::distance().distance_order();
+    let init_value = match distance {
+        Order::LargeBetter => ScoreType::NEG_INFINITY,
+        Order::SmallBetter => ScoreType::INFINITY,
+    };
+    let order = |a: ScoreType, b: ScoreType| -> bool {
+        match distance {
+            Order::LargeBetter => a > b,
+            Order::SmallBetter => a < b,
+        }
+    };
     for dense_a in multi_dense_a.multi_vectors() {
-        let mut max_sim = ScoreType::NEG_INFINITY;
+        let mut max_sim = init_value;
         // manual `max_by` for performance
         for dense_b in multi_dense_b.multi_vectors() {
             let sim = TMetric::similarity(dense_a, dense_b);
             let sim = TMetric::postprocess(sim);
-            if sim > max_sim {
+            if order(sim, max_sim) {
                 max_sim = sim;
             }
         }
@@ -140,6 +151,6 @@ mod tests {
         let b = MultiDenseVectorInternal::try_from(vec![vec![3.0, 3.0, 3.0], vec![4.0, 2.0, 1.0]])
             .unwrap();
         let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&b).into());
-        assert_eq!(score, 11.885993);
+        assert_eq!(score, 5.9777255);
     }
 }

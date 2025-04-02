@@ -455,4 +455,4 @@ def test_multi_with_euclidean(collection_name):
     assert response.ok
     assert len(response.json()['result']) == 1
     assert response.json()['result']['points'][0]['id'] == 1
-    assert response.json()['result']['points'][0]['score'] == 11.885993
+    assert response.json()['result']['points'][0]['score'] == 5.9777255
