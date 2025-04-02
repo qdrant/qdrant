@@ -167,10 +167,10 @@ def assert_with_upper_bound_error(inp: int, min_value: int, upper_bound_error_pe
 
 @pytest.mark.parametrize("test_item", [
     {"path":"query",
-     "json": {"query": 123, "limit": 10, "with_payload": True,}
+     "json": {"query": 123, "limit": 10, "with_payload": True}
      },
     {"path":"scroll",
-     "json": {"limit": 10, "with_payload": True,}
+     "json": {"limit": 10, "with_payload": True}
      }], ids=["query", "scroll"])
 def test_payload_io_read_is_within_limit(tmp_path: pathlib.Path, test_item):
     assert_project_root()
@@ -182,6 +182,8 @@ def test_payload_io_read_is_within_limit(tmp_path: pathlib.Path, test_item):
     # Create collection with 50 segments and 1000 points.
     # Each point has a payload of roughly 22B.
     # With a request's limit of 10 points, the payload_io_read should be within 300B
+    # Before when reading payloads in every segment it would read 11 kilobytes
+    # See: <https://github.com/qdrant/qdrant/pull/6279>
     create_collection(peer_api_uris[0], default_segment_number=50, on_disk_payload=True)
     wait_collection_exists_and_active_on_all_peers(collection_name="test_collection", peer_api_uris=peer_api_uris)
     upsert_random_points(peer_api_uris[0], 1000)
