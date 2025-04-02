@@ -24,6 +24,7 @@ jobs:
       uses: arduino/setup-protoc@v3
       with:
         repo-token: ${{ secrets.GITHUB_TOKEN }}
+    # Force cmake version for 'shaderc' crate. The runner `ubuntu-latest` has cmake 4.x
     - name: Setup cmake
       uses: jwlawson/actions-setup-cmake@v2
       with:
