@@ -23,10 +23,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v5
         with:
@@ -56,10 +52,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
       - uses: Swatinem/rust-cache@v2
       - name: Install dependencies
         run: sudo apt-get install clang
@@ -180,10 +172,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
       - name: gRPC file consistency check
         run: ./tests/grpc_consistency_check.sh
       - name: OpenAPI file consistency check
@@ -206,10 +194,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -270,10 +254,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -325,10 +305,6 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: '3.x'
       - name: Install dependencies
         run: sudo apt-get install clang jq
       - name: Build
