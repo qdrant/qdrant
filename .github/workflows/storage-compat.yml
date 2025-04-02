@@ -26,6 +26,10 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Setup cmake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.x'
       - uses: Swatinem/rust-cache@v2
       - name: Run storage compatibility test
         run: ./tests/storage-compat/storage-compatibility.sh

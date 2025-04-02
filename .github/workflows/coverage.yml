@@ -22,6 +22,10 @@ jobs:
           uses: arduino/setup-protoc@v3
           with:
             repo-token: ${{ secrets.GITHUB_TOKEN }}
+        - name: Setup cmake
+          uses: jwlawson/actions-setup-cmake@v2
+          with:
+            cmake-version: '3.x'
         - name: Install nextest
           uses: taiki-e/install-action@nextest
         - name: Install llvm-cov
