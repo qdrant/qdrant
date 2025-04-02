@@ -47,7 +47,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        _hw_counter: &'a HardwareCounterCell,
+        hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
@@ -72,7 +72,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .iter()
             // We can safely pass hw_counter here because it's not measured.
             // Due to lifetime issues, we can't return a disposable counter.
-            .map(|posting| posting.reader(_hw_counter))
+            .map(|posting| posting.reader(hw_counter))
             .collect();
 
         // in case of immutable index, deleted documents are still in the postings
