@@ -20,6 +20,7 @@ use tokio::sync::{OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio_util::codec::{BytesCodec, FramedRead};
 use tokio_util::io::SyncIoBridge;
 
+use super::replica_set::snapshots::RecoveryType;
 use super::replica_set::{AbortShardTransfer, ChangePeerFromState};
 use super::resharding::{ReshardStage, ReshardState};
 use super::transfer::transfer_tasks_pool::TransferTasksPool;
@@ -927,7 +928,7 @@ impl ShardHolder {
 
         let (read_half, write_half) = tokio::io::duplex(4096);
 
-        tokio::spawn(async move {
+        let future = async move {
             let tar = BuilderExt::new_streaming_owned(SyncIoBridge::new(write_half));
 
             shard
@@ -950,6 +951,12 @@ impl ShardHolder {
             tar.finish().await?;
 
             CollectionResult::Ok(())
+        };
+
+        tokio::spawn(async move {
+            if let Err(err) = future.await {
+                log::error!("Failed to stream shard snapshot: {err}");
+            }
         });
 
         Ok(SnapshotStream::new_stream(
@@ -1057,7 +1064,12 @@ impl ShardHolder {
 
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         let res = replica_set
-            .restore_local_replica_from(snapshot_shard_path, collection_path, cancel)
+            .restore_local_replica_from(
+                snapshot_shard_path,
+                RecoveryType::Full,
+                collection_path,
+                cancel,
+            )
             .await?;
 
         Ok(res)
