@@ -70,7 +70,7 @@ impl BoolIndex {
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
-            BoolIndex::Simple(index) => index.check_values_any(point_id, is_true, hw_counter),
+            BoolIndex::Simple(index) => index.check_values_any(point_id, is_true),
             BoolIndex::Mmap(index) => index.check_values_any(point_id, is_true, hw_counter),
         }
     }
