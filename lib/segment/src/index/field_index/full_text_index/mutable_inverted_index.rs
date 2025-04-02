@@ -1,7 +1,6 @@
 use std::collections::{BTreeSet, HashMap};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 
 use super::inverted_index::InvertedIndex;
@@ -147,9 +146,8 @@ impl InvertedIndex for MutableInvertedIndex {
     fn filter(
         &self,
         query: ParsedQuery,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + '_> {
-        let hw_counter = hw_counter.payload_index_io_read_counter();
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
@@ -159,10 +157,6 @@ impl InvertedIndex for MutableInvertedIndex {
                 // dictionary. Posting list entry can be None but it exists.
                 Some(idx) => {
                     let postings = self.postings.get(idx as usize).unwrap().as_ref();
-                    hw_counter.incr_delta(
-                        size_of::<Option<PostingList>>()
-                            + postings.map(|i| i.len()).unwrap_or(0) * size_of::<PointOffsetType>(),
-                    );
                     postings
                 }
             })
@@ -179,21 +173,12 @@ impl InvertedIndex for MutableInvertedIndex {
         intersect_postings_iterator(postings)
     }
 
-    fn get_posting_len(
-        &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<usize> {
-        let len = self
-            .postings
+    fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
+        self.postings
             .get(token_id as usize)
             .and_then(|posting| posting.as_ref())
             .as_ref()
-            .map(|x| x.len());
-        hw_counter.payload_index_io_read_counter().incr_delta(
-            size_of::<Option<PostingList>>() + len.unwrap_or(0) * size_of::<PointOffsetType>(),
-        );
-        len
+            .map(|x| x.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
@@ -210,10 +195,10 @@ impl InvertedIndex for MutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
+        _: &HardwareCounterCell,
     ) -> bool {
         if let Some(doc) = self.get_doc(point_id) {
-            parsed_query.check_match(doc, hw_counter)
+            parsed_query.check_match(doc)
         } else {
             false
         }
@@ -232,10 +217,7 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count
     }
 
-    fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(BUCKET_OFFSET_OVERHEAD + size_of::<TokenId>());
+    fn get_token_id(&self, token: &str, _hw_counter: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab.get(token).copied()
     }
 }

@@ -2,6 +2,7 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
@@ -121,7 +122,7 @@ impl MmapPostings {
             chunks,
             data,
             remainder_postings,
-            hw_counter,
+            ConditionedCounter::always(hw_counter),
         ))
     }
 

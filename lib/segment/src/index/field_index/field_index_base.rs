@@ -181,7 +181,7 @@ impl FieldIndex {
                     let query = full_text_index.parse_query(text, hw_counter);
                     for value in FullTextIndex::get_values(payload_value) {
                         let document = full_text_index.parse_document(&value, hw_counter);
-                        if query.check_match(&document, hw_counter) {
+                        if query.check_match(&document) {
                             return Some(true);
                         }
                     }
