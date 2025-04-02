@@ -189,11 +189,6 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     assert local_shards[0]["state"] == "Active"
     assert local_shards[0]["points_count"] == 1000
 
-    # Trigger replication to fix the broken shard
-    from_peer_id = get_peer_id(peer_api_uris[0])
-    to_peer_id = get_peer_id(peer_api_uris[-1])
-    replicate_shard(peer_api_uris[0], COLLECTION_NAME, 0, from_peer_id, to_peer_id)
-
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
