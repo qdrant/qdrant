@@ -1,15 +1,14 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use parking_lot::{Mutex as ParkingMutex, MutexGuard as ParkingMutexGuard};
 use thiserror::Error;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::operations::{ClockTag, OperationWithClockTag};
 use crate::shards::local_shard::clock_map::{ClockMap, RecoveryPoint};
 use crate::wal::SerdeWal;
 
-pub type LockedWal = Arc<ParkingMutex<SerdeWal<OperationWithClockTag>>>;
+pub(crate) type LockedWal = Arc<Mutex<SerdeWal<OperationWithClockTag>>>;
 
 /// A WAL that is recoverable, with operations having clock tags and a corresponding clock map.
 pub struct RecoverableWal {
@@ -43,17 +42,15 @@ impl RecoverableWal {
         }
     }
 
-    // TODO: More meaningful method name and documentation
-    //
     /// Write a record to the WAL, guarantee durability.
     ///
     /// On success, this returns the WAL record number of the written operation along with a WAL
     /// lock guard.
     #[must_use = "returned record number and WAL lock must be used carefully"]
-    pub async fn lock_and_write<'a>(
-        &'a self,
+    pub async fn lock_and_write(
+        &self,
         operation: &mut OperationWithClockTag,
-    ) -> crate::wal::Result<(u64, ParkingMutexGuard<'a, SerdeWal<OperationWithClockTag>>)> {
+    ) -> crate::wal::Result<(u64, OwnedMutexGuard<SerdeWal<OperationWithClockTag>>)> {
         // Update last seen clock map and correct clock tag if necessary
         if let Some(clock_tag) = &mut operation.clock_tag {
             let operation_accepted = self
@@ -68,7 +65,7 @@ impl RecoverableWal {
         }
 
         // Write operation to WAL
-        let mut wal_lock = self.wal.lock();
+        let mut wal_lock = Mutex::lock_owned(self.wal.clone()).await;
         wal_lock.write(operation).map(|op_num| (op_num, wal_lock))
     }
 
@@ -112,6 +109,7 @@ impl RecoverableWal {
         resolve_wal_delta(
             self.wal
                 .lock()
+                .await
                 .read_all(true)
                 .map(|(op_num, op)| (op_num, op.clock_tag)),
             recovery_point,
@@ -120,8 +118,8 @@ impl RecoverableWal {
         )
     }
 
-    pub fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
-        let wal = self.wal.lock();
+    pub async fn wal_version(&self) -> Result<Option<u64>, WalDeltaError> {
+        let wal = self.wal.lock().await;
         if wal.is_empty() {
             Ok(None)
         } else {
