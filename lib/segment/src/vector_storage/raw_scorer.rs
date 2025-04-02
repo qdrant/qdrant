@@ -19,7 +19,7 @@ use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, QueryVector, VectorElementType, VectorElementTypeByte,
     VectorElementTypeHalf,
 };
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
@@ -357,7 +357,7 @@ pub fn raw_scorer_impl<'a, TVectorStorage: DenseVectorStorage<VectorElementType>
 
 fn new_scorer_with_metric<
     'a,
-    TMetric: Metric<VectorElementType> + 'a,
+    TMetric: Metric<VectorElementType> + MetricPostProcessing + 'a,
     TVectorStorage: DenseVectorStorage<VectorElementType>,
 >(
     query: QueryVector,
@@ -474,7 +474,7 @@ pub fn raw_scorer_byte_impl<'a, TVectorStorage: DenseVectorStorage<VectorElement
 
 fn new_scorer_byte_with_metric<
     'a,
-    TMetric: Metric<VectorElementTypeByte> + 'a,
+    TMetric: Metric<VectorElementTypeByte> + MetricPostProcessing + 'a,
     TVectorStorage: DenseVectorStorage<VectorElementTypeByte>,
 >(
     query: QueryVector,
@@ -591,7 +591,7 @@ pub fn raw_scorer_half_impl<'a, TVectorStorage: DenseVectorStorage<VectorElement
 
 fn new_scorer_half_with_metric<
     'a,
-    TMetric: Metric<VectorElementTypeHalf> + 'a,
+    TMetric: Metric<VectorElementTypeHalf> + MetricPostProcessing + 'a,
     TVectorStorage: DenseVectorStorage<VectorElementTypeHalf>,
 >(
     query: QueryVector,
@@ -727,7 +727,7 @@ pub fn raw_multi_scorer_impl<'a, TVectorStorage: MultiVectorStorage<VectorElemen
 
 fn new_multi_scorer_with_metric<
     'a,
-    TMetric: Metric<VectorElementType> + 'a,
+    TMetric: Metric<VectorElementType> + MetricPostProcessing + 'a,
     TVectorStorage: MultiVectorStorage<VectorElementType>,
 >(
     query: QueryVector,
@@ -846,7 +846,7 @@ pub fn raw_multi_scorer_byte_impl<'a, TVectorStorage: MultiVectorStorage<VectorE
 
 fn new_multi_scorer_byte_with_metric<
     'a,
-    TMetric: Metric<VectorElementTypeByte> + 'a,
+    TMetric: Metric<VectorElementTypeByte> + MetricPostProcessing + 'a,
     TVectorStorage: MultiVectorStorage<VectorElementTypeByte>,
 >(
     query: QueryVector,
@@ -965,7 +965,7 @@ pub fn raw_multi_scorer_half_impl<'a, TVectorStorage: MultiVectorStorage<VectorE
 
 fn new_multi_scorer_half_with_metric<
     'a,
-    TMetric: Metric<VectorElementTypeHalf> + 'a,
+    TMetric: Metric<VectorElementTypeHalf> + MetricPostProcessing + 'a,
     TVectorStorage: MultiVectorStorage<VectorElementTypeHalf>,
 >(
     query: QueryVector,

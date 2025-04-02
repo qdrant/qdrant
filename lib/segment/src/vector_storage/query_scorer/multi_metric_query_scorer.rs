@@ -9,7 +9,7 @@ use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
     DenseVector, MultiDenseVectorInternal, TypedMultiDenseVector, TypedMultiDenseVectorRef,
 };
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::vector_storage::MultiVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -17,7 +17,7 @@ use crate::vector_storage::query_scorer::QueryScorer;
 pub struct MultiMetricQueryScorer<
     'a,
     TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
+    TMetric: Metric<TElement> + MetricPostProcessing,
     TVectorStorage: MultiVectorStorage<TElement>,
 > {
     vector_storage: &'a TVectorStorage,
@@ -29,7 +29,7 @@ pub struct MultiMetricQueryScorer<
 impl<
     'a,
     TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
+    TMetric: Metric<TElement> + MetricPostProcessing,
     TVectorStorage: MultiVectorStorage<TElement>,
 > MultiMetricQueryScorer<'a, TElement, TMetric, TVectorStorage>
 {
@@ -84,7 +84,7 @@ impl<
 
 impl<
     TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
+    TMetric: Metric<TElement> + MetricPostProcessing,
     TVectorStorage: MultiVectorStorage<TElement>,
 > QueryScorer<TypedMultiDenseVector<TElement>>
     for MultiMetricQueryScorer<'_, TElement, TMetric, TVectorStorage>

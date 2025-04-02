@@ -6,7 +6,7 @@ use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{TypedDenseVector, VectorElementType};
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::vector_storage::DenseVectorStorage;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query_scorer::QueryScorer;
@@ -58,7 +58,7 @@ impl<
 
 impl<
     TElement: PrimitiveVectorElement,
-    TMetric: Metric<TElement>,
+    TMetric: Metric<TElement> + MetricPostProcessing,
     TVectorStorage: DenseVectorStorage<TElement>,
 > QueryScorer<[TElement]> for MetricQueryScorer<'_, TElement, TMetric, TVectorStorage>
 {

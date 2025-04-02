@@ -12,7 +12,7 @@ use super::query::{
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorInternal};
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::Distance;
 use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
@@ -249,7 +249,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         self
     }
 
-    fn _build_with_metric<TMetric: Metric<VectorElementType> + 'a>(
+    fn _build_with_metric<TMetric: Metric<VectorElementType> + MetricPostProcessing + 'a>(
         self,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let Self {

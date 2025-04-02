@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
+use segment::data_types::vectors::NamedVectorStruct;
 use segment::types::ScoredPoint;
 use tokio::runtime::Handle;
 
@@ -66,9 +67,19 @@ impl LocalShard {
                 let vector_name = req.query.get_vector_name();
                 let distance = collection_params.get_distance(vector_name).unwrap();
                 let processed_res = vector_res.into_iter().map(|mut scored_point| {
-                    match req.query {
-                        QueryEnum::Nearest(_) => {
-                            scored_point.score = distance.postprocess_score(scored_point.score);
+                    match &req.query {
+                        QueryEnum::Nearest(vector) => {
+                            match vector {
+                                NamedVectorStruct::Default(_)
+                                | NamedVectorStruct::Dense(_)
+                                | NamedVectorStruct::Sparse(_) => {
+                                    scored_point.score =
+                                        distance.postprocess_score(scored_point.score);
+                                }
+                                NamedVectorStruct::MultiDense(_) => {
+                                    // no post-processing for multi dense vectors because 'maxsim' postprocesses already
+                                }
+                            }
                         }
                         // Don't post-process if we are dealing with custom scoring
                         QueryEnum::RecommendBestScore(_)

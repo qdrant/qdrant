@@ -2,7 +2,7 @@ use common::types::{PointOffsetType, ScoreType};
 
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::TypedMultiDenseVectorRef;
-use crate::spaces::metric::Metric;
+use crate::spaces::metric::{Metric, MetricPostProcessing};
 use crate::types::{MultiVectorComparator, MultiVectorConfig};
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
@@ -28,7 +28,10 @@ pub trait QueryScorer<TVector: ?Sized> {
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// <https://arxiv.org/pdf/2112.01488.pdf>, figure 1
 /// This metric is also implemented in `QuantizedMultivectorStorage` structure for quantized data.
-pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
+pub fn score_max_similarity<
+    T: PrimitiveVectorElement,
+    TMetric: Metric<T> + MetricPostProcessing,
+>(
     multi_dense_a: TypedMultiDenseVectorRef<T>,
     multi_dense_b: TypedMultiDenseVectorRef<T>,
 ) -> ScoreType {
@@ -45,12 +48,12 @@ pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
             }
         }
         // sum of max similarity
-        sum += max_sim;
+        sum += TMetric::postprocess(max_sim);
     }
     sum
 }
 
-fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T>>(
+fn score_multi<T: PrimitiveVectorElement, TMetric: Metric<T> + MetricPostProcessing>(
     multi_vector_config: &MultiVectorConfig,
     multi_dense_a: TypedMultiDenseVectorRef<T>,
     multi_dense_b: TypedMultiDenseVectorRef<T>,
@@ -104,6 +107,8 @@ fn is_read_with_prefetch_efficient(ids: impl IntoIterator<Item = usize>) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::vectors::MultiDenseVectorInternal;
+    use crate::spaces::simple::EuclidMetric;
 
     #[test]
     fn test_check_ids_rather_contiguous() {
@@ -121,5 +126,22 @@ mod tests {
         assert!(!is_read_with_prefetch_efficient_points(&[
             1, 2, 3, 4, 9, 1000, 12, 14
         ]));
+    }
+
+    #[test]
+    fn test_score_multi_euclidean() {
+        let a = MultiDenseVectorInternal::try_from(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![3.0, 3.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+        ])
+        .unwrap();
+        let b = MultiDenseVectorInternal::try_from(vec![vec![3.0, 3.0, 3.0], vec![4.0, 2.0, 1.0]])
+            .unwrap();
+        let config = MultiVectorConfig::default();
+        eprintln!("{:?}", a);
+        eprintln!("{:?}", b);
+        let score = score_multi::<f32, EuclidMetric>(&config, (&a).into(), (&b).into());
+        assert_eq!(score, 5.9777255);
     }
 }
