@@ -198,6 +198,14 @@ impl Drop for HardwareCounterCell {
     }
 }
 
+impl From<&HardwareCounterCell> for HardwareData {
+    fn from(value: &HardwareCounterCell) -> Self {
+        let counter_values = value.get_hw_data();
+        let acc_values = value.accumulator.hw_data();
+        counter_values + acc_values
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::counter::hardware_accumulator::HwMeasurementAcc;

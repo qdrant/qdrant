@@ -185,6 +185,28 @@ impl HwMeasurementAcc {
     pub fn get_vector_io_write(&self) -> usize {
         self.request_drain.get_vector_io_write()
     }
+
+    pub fn hw_data(&self) -> HardwareData {
+        let HwSharedDrain {
+            cpu_counter,
+            payload_io_read_counter,
+            payload_io_write_counter,
+            payload_index_io_read_counter,
+            payload_index_io_write_counter,
+            vector_io_read_counter,
+            vector_io_write_counter,
+        } = &self.request_drain;
+
+        HardwareData {
+            cpu: cpu_counter.load(Ordering::Relaxed),
+            payload_io_read: payload_io_read_counter.load(Ordering::Relaxed),
+            payload_io_write: payload_io_write_counter.load(Ordering::Relaxed),
+            vector_io_read: vector_io_read_counter.load(Ordering::Relaxed),
+            vector_io_write: vector_io_write_counter.load(Ordering::Relaxed),
+            payload_index_io_read: payload_index_io_read_counter.load(Ordering::Relaxed),
+            payload_index_io_write: payload_index_io_write_counter.load(Ordering::Relaxed),
+        }
+    }
 }
 
 #[cfg(feature = "testing")]
