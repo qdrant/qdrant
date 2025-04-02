@@ -142,7 +142,7 @@ def create_collection(
     strict_mode=None,
     sparse_vectors=True,
     default_segment_number=None,
-    on_disk_payload=False,
+    on_disk_payload=None,
 ):
     payload = {
         "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
