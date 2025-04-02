@@ -652,6 +652,32 @@ async fn recover_partial_snapshot(
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
 
+#[get("/collections/{collection}/shards/{shard}/snapshot/partial/manifest")]
+async fn get_partial_snapshot_manifest(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, ShardId)>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let (collection, shard) = path.into_inner();
+    let pass = new_unchecked_verification_pass();
+
+    let future = async move {
+        let collection_pass = access
+            .check_global_access(AccessRequirements::new().extras())?
+            .issue_pass(&collection);
+
+        dispatcher
+            .toc(&access, &pass)
+            .get_collection(&collection_pass)
+            .await?
+            .get_partial_snapshot_manifest(shard)
+            .await
+            .map_err(StorageError::from)
+    };
+
+    helpers::time(future).await
+}
+
 // Configure services
 pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
     cfg.service(list_snapshots)
@@ -672,5 +698,6 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(download_shard_snapshot)
         .service(delete_shard_snapshot)
         .service(create_partial_snapshot)
-        .service(recover_partial_snapshot);
+        .service(recover_partial_snapshot)
+        .service(get_partial_snapshot_manifest);
 }

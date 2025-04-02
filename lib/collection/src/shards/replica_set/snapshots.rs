@@ -408,4 +408,20 @@ impl ShardReplicaSet {
             }
         }
     }
+
+    pub async fn get_partial_snapshot_manifest(&self) -> CollectionResult<SegmentManifests> {
+        self.local
+            .read()
+            .await
+            .as_ref()
+            .ok_or_else(|| {
+                CollectionError::bad_request(format!(
+                    "local shard {}:{} does not exist on peer {}",
+                    self.collection_id,
+                    self.shard_id,
+                    self.this_peer_id(),
+                ))
+            })?
+            .segment_manifests()
+    }
 }
