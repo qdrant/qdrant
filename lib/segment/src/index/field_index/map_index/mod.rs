@@ -126,8 +126,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
         match self {
-            MapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
-            MapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
+            MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }
@@ -181,16 +181,16 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn get_count_for_value(&self, value: &N, hw_counter: &HardwareCounterCell) -> Option<usize> {
         match self {
-            MapIndex::Mutable(index) => index.get_count_for_value(value, hw_counter),
-            MapIndex::Immutable(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::Mutable(index) => index.get_count_for_value(value),
+            MapIndex::Immutable(index) => index.get_count_for_value(value),
             MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
         }
     }
 
     fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
         match self {
-            MapIndex::Mutable(index) => index.get_iterator(value, hw_counter),
-            MapIndex::Immutable(index) => index.get_iterator(value, hw_counter),
+            MapIndex::Mutable(index) => index.get_iterator(value),
+            MapIndex::Immutable(index) => index.get_iterator(value),
             MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
         }
     }
@@ -216,8 +216,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         hw_cell: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = (&'a N, IdIter<'a>)> + 'a> {
         match self {
-            MapIndex::Mutable(index) => Box::new(index.iter_values_map(hw_cell)),
-            MapIndex::Immutable(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
+            MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
             MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_cell)),
         }
     }

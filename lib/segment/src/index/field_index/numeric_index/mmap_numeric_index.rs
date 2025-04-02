@@ -2,6 +2,7 @@ use std::fs::{create_dir_all, remove_dir};
 use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
@@ -33,6 +34,7 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + '
     deleted_count: usize,
     max_values_per_point: usize,
     point_to_values: MmapPointToValues<T>,
+    is_on_disk: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,6 +178,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             deleted_count,
             max_values_per_point: config.max_values_per_point,
             point_to_values,
+            is_on_disk,
         })
     }
 
@@ -210,11 +213,13 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         check_fn: impl Fn(&T) -> bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         if self.deleted.get(idx as usize) == Some(false) {
             self.point_to_values.check_values_any(
                 idx,
                 |v| check_fn(T::from_referenced(&v)),
-                hw_counter,
+                &hw_counter,
             )
         } else {
             false
@@ -253,9 +258,11 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         end_bound: Bound<Point<T>>,
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         self.values_range_iterator(start_bound, end_bound)
             .map(|Point { idx, .. }| idx)
-            .measure_hw_with_cell(hw_counter, size_of::<Point<T>>(), |i| {
+            .measure_hw_with_condition_cell(hw_counter, size_of::<Point<T>>(), |i| {
                 i.payload_index_io_read_counter()
             })
     }
@@ -340,5 +347,12 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
             start_index,
             end_index,
         }
+    }
+
+    fn make_conditioned_counter<'a>(
+        &self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> ConditionedCounter<'a> {
+        ConditionedCounter::new(self.is_on_disk, hw_counter)
     }
 }

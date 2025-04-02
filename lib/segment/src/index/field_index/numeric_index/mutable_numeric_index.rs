@@ -4,7 +4,6 @@ use std::ops::Bound::{Excluded, Unbounded};
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -71,22 +70,10 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         Ok(index)
     }
 
-    pub fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool {
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
         self.point_to_values
             .get(idx as usize)
-            .map(|values| {
-                values
-                    .iter()
-                    .measure_hw_with_cell(hw_counter, size_of::<T>(), |i| {
-                        i.payload_index_io_read_counter()
-                    })
-                    .any(check_fn)
-            })
+            .map(|values| values.iter().any(check_fn))
             .unwrap_or(false)
     }
 
@@ -106,18 +93,14 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
         self.map.len()
     }
 
-    pub fn values_range<'a>(
-        &'a self,
+    pub fn values_range(
+        &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+    ) -> impl Iterator<Item = PointOffsetType> {
         self.map
             .range((start_bound, end_bound))
             .map(|point| point.idx)
-            .measure_hw_with_cell(hw_counter, size_of::<T>(), |i| {
-                i.payload_index_io_read_counter()
-            })
     }
 
     pub fn orderable_values_range(
@@ -299,14 +282,8 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         self.in_memory_index.total_unique_values_count()
     }
     #[inline]
-    pub fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
-    ) -> bool {
-        self.in_memory_index
-            .check_values_any(idx, check_fn, hw_counter)
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
+        self.in_memory_index.check_values_any(idx, check_fn)
     }
     #[inline]
     pub fn get_points_count(&self) -> usize {
@@ -321,14 +298,12 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         self.in_memory_index.values_count(idx)
     }
     #[inline]
-    pub fn values_range<'a>(
-        &'a self,
+    pub fn values_range(
+        &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        self.in_memory_index
-            .values_range(start_bound, end_bound, hw_counter)
+    ) -> impl Iterator<Item = PointOffsetType> {
+        self.in_memory_index.values_range(start_bound, end_bound)
     }
     #[inline]
     pub fn orderable_values_range(
