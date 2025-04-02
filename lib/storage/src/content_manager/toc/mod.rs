@@ -32,7 +32,7 @@ use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
 use common::types::TelemetryDetail;
 use dashmap::DashMap;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 
 use self::dispatcher::TocDispatcher;
@@ -685,5 +685,9 @@ impl TableOfContent {
                 (key, hw_usage)
             })
             .collect()
+    }
+
+    pub(crate) fn general_runtime_handle(&self) -> &Handle {
+        self.general_runtime.handle()
     }
 }

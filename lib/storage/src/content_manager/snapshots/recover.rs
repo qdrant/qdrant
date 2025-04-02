@@ -59,10 +59,16 @@ pub async fn do_recover_from_snapshot(
     let dispatcher = dispatcher.clone();
     let collection_pass = multipass.issue_pass(collection_name).into_static();
 
-    let res = tokio::spawn(async move {
-        _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
-    })
-    .await??;
+    let toc = dispatcher
+        .toc(&access, &new_unchecked_verification_pass())
+        .clone();
+
+    let res = toc
+        .general_runtime_handle()
+        .spawn(async move {
+            _do_recover_from_snapshot(dispatcher, access, collection_pass, source, &client).await
+        })
+        .await??;
 
     Ok(res)
 }

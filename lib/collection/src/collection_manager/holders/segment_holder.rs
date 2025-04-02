@@ -156,6 +156,14 @@ pub struct SegmentHolder {
 
     /// Holds the first uncorrected error happened with optimizer
     pub optimizer_errors: Option<CollectionError>,
+
+    /// Scroll read lock
+    /// The lock, which must prevent updates during scroll + retrieve operations
+    /// Consistency of scroll operations is especially important for internal processes like
+    /// re-sharding and shard transfer, so explicit lock for those operations is required.
+    ///
+    /// Write lock must be held for updates, while read lock must be held for scroll
+    pub scroll_read_lock: Arc<tokio::sync::RwLock<()>>,
 }
 
 pub type LockedSegmentHolder = Arc<RwLock<SegmentHolder>>;
