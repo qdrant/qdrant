@@ -336,4 +336,17 @@ impl Collection {
             .await
             .assert_shard_exists(shard_id)
     }
+
+    pub async fn get_partial_snapshot_manifest(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<SegmentManifests> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?
+            .get_partial_snapshot_manifest()
+            .await
+    }
 }
