@@ -625,9 +625,9 @@ impl LocalShard {
         bar.set_style(progress_style);
 
         log::debug!(
-            "Recovering shard {:?} starting reading WAL from {}",
-            &self.path,
-            wal.first_index()
+            "Recovering shard {} starting reading WAL from {}",
+            self.path.display(),
+            wal.first_index(),
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));
