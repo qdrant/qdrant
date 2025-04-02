@@ -1,10 +1,10 @@
 """
 Usage examples:
   # Basic usage - show aggregated cache percentages for all vector index files
-  python measure.py $(pidof qdrant) '.*/vector_index/.*'
+  python smaps-view.py $(pidof qdrant) '.*/vector_index/.*'
 
   # Verbose mode - show individual files larger than 1MB
-  python measure.py $(pidof qdrant) '.*/vector_storage/.*' -v
+  python smaps-view.py $(pidof qdrant) '.*/vector_storage/.*' -v
 
 Example output:
     Cache percentages for pattern '.vector_storage.*':
@@ -125,7 +125,7 @@ def parse_smaps(smaps_content: str, pattern: str, verbose: bool = False) -> Dict
         
         # Log individual file percentage for the last entry if verbose mode is enabled and file is larger than 1MB
         if verbose and current_size > 1024:
-            percentage = (current_rss / current_size) * 100
+            percentage = (current_rss / current_size) * 100 if current_size > 0 else 0
             print(f"File: {current_file} ({current_permissions})")
             print(f"  Size: {current_size} kB")
             print(f"  RSS: {current_rss} kB")
