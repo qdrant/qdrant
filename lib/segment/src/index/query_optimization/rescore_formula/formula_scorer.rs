@@ -7,17 +7,19 @@ use common::types::{PointOffsetType, ScoreType};
 use geo::{Distance, Haversine};
 use serde_json::Value;
 
-use super::parsed_formula::{DecayKind, ParsedExpression, ParsedFormula, VariableId};
+use super::parsed_formula::{
+    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
+};
 use super::value_retriever::VariableRetrieverFn;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::query_optimization::optimized_filter::{OptimizedCondition, check_condition};
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::json_path::JsonPath;
-use crate::types::GeoPoint;
+use crate::types::{DateTimePayloadType, GeoPoint};
 
-const DEFAULT_SCORE: ScoreType = 0.0;
-const DEFAULT_DECAY_TARGET: ScoreType = 0.0;
+const DEFAULT_SCORE: PreciseScore = 0.0;
+const DEFAULT_DECAY_TARGET: PreciseScore = 0.0;
 
 /// A scorer to evaluate the same formula for many points
 pub struct FormulaScorer<'a> {
@@ -37,7 +39,7 @@ pub trait FriendlyName {
     fn friendly_name() -> &'static str;
 }
 
-impl FriendlyName for ScoreType {
+impl FriendlyName for PreciseScore {
     fn friendly_name() -> &'static str {
         "number"
     }
@@ -46,6 +48,12 @@ impl FriendlyName for ScoreType {
 impl FriendlyName for GeoPoint {
     fn friendly_name() -> &'static str {
         "geo point"
+    }
+}
+
+impl FriendlyName for DateTimePayloadType {
+    fn friendly_name() -> &'static str {
+        "datetime"
     }
 }
 
@@ -90,6 +98,15 @@ impl FormulaScorer<'_> {
     /// Evaluate the formula for the given point
     pub fn score(&self, point_id: PointOffsetType) -> OperationResult<ScoreType> {
         self.eval_expression(&self.formula, point_id)
+            .and_then(|score| {
+                let score_f32 = score as f32;
+                if !score_f32.is_finite() {
+                    return Err(OperationError::NonFiniteNumber {
+                        expression: format!("{score} as f32 = {score_f32}"),
+                    });
+                }
+                Ok(score_f32)
+            })
     }
 
     /// Evaluate the expression recursively
@@ -97,7 +114,7 @@ impl FormulaScorer<'_> {
         &self,
         expression: &ParsedExpression,
         point_id: PointOffsetType,
-    ) -> OperationResult<ScoreType> {
+    ) -> OperationResult<PreciseScore> {
         match expression {
             ParsedExpression::Constant(c) => Ok(*c),
             ParsedExpression::Variable(v) => match v {
@@ -105,21 +122,17 @@ impl FormulaScorer<'_> {
                     .prefetches_scores
                     .get(*prefetch_idx)
                     .and_then(|scores| scores.get(&point_id))
-                    .copied()
+                    .map(|score| PreciseScore::from(*score))
                     .or_else(|| {
                         self.defaults
                             // if there is no score, or it isn't a number, we use the default score
                             .get(&VariableId::Score(*prefetch_idx))
                             .and_then(|value| value.as_f64())
-                            .map(|score| score as ScoreType)
                     })
                     .unwrap_or(DEFAULT_SCORE)),
                 VariableId::Payload(path) => {
                     self.get_parsed_payload_value(path, point_id, |value| {
-                        value
-                            .as_f64()
-                            .map(|value| value as ScoreType)
-                            .ok_or("Value is not a number")
+                        value.as_f64().ok_or("Value is not a number")
                     })
                 }
                 VariableId::Condition(id) => {
@@ -135,7 +148,31 @@ impl FormulaScorer<'_> {
                     serde_json::from_value::<GeoPoint>,
                 )?;
 
-                Ok(Haversine.distance((*origin).into(), value.into()) as ScoreType)
+                Ok(Haversine.distance((*origin).into(), value.into()))
+            }
+            ParsedExpression::Datetime(dt_expr) => {
+                let datetime = match dt_expr {
+                    DatetimeExpression::Constant(dt) => *dt,
+                    DatetimeExpression::PayloadVariable(json_path) => {
+                        self.get_parsed_payload_value(json_path, point_id, |value| {
+                            value
+                                // datetime index also returns the Serialize impl of datetime which is a string
+                                .as_str()
+                                .ok_or("Value is not a string")?
+                                .parse::<DateTimePayloadType>()
+                                .map_err(|e| e.to_string())
+                        })?
+                    }
+                };
+                // Convert from i64 to f64.
+                // f64's 53 bits of sign + mantissa for microseconds means a span of exact equivalence of
+                // about 285 years, after which precision starts dropping
+                let float_micros = datetime.timestamp() as PreciseScore;
+
+                // Convert to seconds
+                let float_seconds = float_micros / 1_000_000.0;
+
+                Ok(float_seconds)
             }
             ParsedExpression::Mult(expressions) => {
                 let mut product = 1.0;
@@ -290,39 +327,38 @@ impl FormulaScorer<'_> {
         E: ToString,
         T: FriendlyName,
     {
-        self.get_payload_value(json_path, point_id)
+        let value = self
+            .get_payload_value(json_path, point_id)
             .or_else(|| {
                 self.defaults
                     .get(&VariableId::Payload(json_path.clone()))
                     .cloned()
             })
-            .map(|value| {
-                from_value(value).map_err(|e| OperationError::VariableTypeError {
-                    field_name: json_path.clone(),
-                    expected_type: T::friendly_name().to_owned(),
-                    description: e.to_string(),
-                })
-            })
-            .transpose()?
             .ok_or_else(|| OperationError::VariableTypeError {
                 field_name: json_path.clone(),
                 expected_type: T::friendly_name().to_owned(),
                 description: "No value found in a payload nor defaults".to_string(),
-            })
+            })?;
+
+        from_value(value).map_err(|e| OperationError::VariableTypeError {
+            field_name: json_path.clone(),
+            expected_type: T::friendly_name().to_owned(),
+            description: e.to_string(),
+        })
     }
 }
 
-fn exp_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+fn exp_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> PreciseScore {
     let diff = (x - target).abs();
     (lambda * diff).exp()
 }
 
-fn gauss_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+fn gauss_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> PreciseScore {
     let diff = x - target;
     (lambda * diff * diff).exp()
 }
 
-fn linear_decay(x: ScoreType, target: ScoreType, lambda: ScoreType) -> f32 {
+fn linear_decay(x: PreciseScore, target: PreciseScore, lambda: PreciseScore) -> PreciseScore {
     let diff = (x - target).abs();
     (-lambda * diff + 1.0).max(0.0)
 }
@@ -341,8 +377,11 @@ mod tests {
 
     const FIELD_NAME: &str = "number";
     const NO_VALUE_FIELD_NAME: &str = "no_number";
+    const ARRAY_OF_ONE_FIELD_NAME: &str = "array_of_one";
+    const ARRAY_FIELD_NAME: &str = "array";
     const GEO_FIELD_NAME: &str = "geo_point";
     const NO_VALUE_GEO_POINT: &str = "no_value_geo_point";
+    const NO_VALUE_DATETIME: &str = "no_value_datetime";
 
     // self_cell just to be able to create FormulaScorer with a "reference" to fixture scores
     self_cell::self_cell!(
@@ -364,6 +403,14 @@ mod tests {
             payload_retrievers.insert(
                 JsonPath::new(FIELD_NAME),
                 Box::new(|_| smallvec![json!(85.0)]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(ARRAY_OF_ONE_FIELD_NAME),
+                Box::new(|_| smallvec![json!(1.2)]),
+            );
+            payload_retrievers.insert(
+                JsonPath::new(ARRAY_FIELD_NAME),
+                Box::new(|_| smallvec![json!(1.2), json!(2.3)]),
             );
             payload_retrievers.insert(
                 JsonPath::new(GEO_FIELD_NAME),
@@ -415,7 +462,7 @@ mod tests {
     // Error cases
     #[case(ParsedExpression::new_geo_distance(
         GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(GEO_FIELD_NAME)
-    ), 21926.494)]
+    ), 21926.494151786308)]
     #[should_panic(
         expected = r#"VariableTypeError { field_name: JsonPath { first_key: "number", rest: [] }, expected_type: "geo point", "#
     )]
@@ -438,7 +485,7 @@ mod tests {
     #[should_panic(expected = r#"NonFiniteNumber { expression: "ln(0) = -inf" }"#)]
     #[case(ParsedExpression::new_ln(ParsedExpression::Constant(0.0)), 0.0)]
     #[test]
-    fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: ScoreType) {
+    fn test_evaluation(#[case] expr: ParsedExpression, #[case] expected: PreciseScore) {
         let defaults = HashMap::new();
         let scorer_fixture = make_formula_scorer(&defaults);
 
@@ -455,6 +502,14 @@ mod tests {
     #[case(ParsedExpression::new_score_id(10), Ok(DEFAULT_SCORE))]
     // missing value in payload
     #[case(
+        ParsedExpression::new_payload_id(JsonPath::new(ARRAY_OF_ONE_FIELD_NAME)),
+        Ok(1.2)
+    )]
+    #[case(
+        ParsedExpression::new_payload_id(JsonPath::new(ARRAY_FIELD_NAME)),
+        Err(OperationError::VariableTypeError { field_name: JsonPath::new("array"), expected_type: "number".into(), description: "Value is not a number".into() })
+    )]
+    #[case(
         ParsedExpression::new_payload_id(JsonPath::new(NO_VALUE_FIELD_NAME)),
         Ok(85.0)
     )]
@@ -463,16 +518,35 @@ mod tests {
         ParsedExpression::new_payload_id(JsonPath::new("missing_field")),
         Err(OperationError::VariableTypeError {
             field_name: JsonPath::new("missing_field"),
-            expected_type: ScoreType::friendly_name().to_string(),
+            expected_type: PreciseScore::friendly_name().to_string(),
             description: "No value found in a payload nor defaults".to_string(),
         })
     )]
     // geo distance with default value
-    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.3))]
+    #[case(ParsedExpression::new_geo_distance(GeoPoint { lat: 25.717877679163667, lon: -100.43383200156751 }, JsonPath::new(NO_VALUE_GEO_POINT)), Ok(90951.29600298218))]
+    // datetime expression constant
+    #[case(
+        ParsedExpression::Datetime(DatetimeExpression::Constant("2025-03-18".parse().unwrap())),
+        Ok("2025-03-18".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
+    )]
+    // datetime expression with payload variable that doesn't exist in payload and no default
+    #[case(
+        ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(JsonPath::new("missing_datetime"))),
+        Err(OperationError::VariableTypeError {
+            field_name: JsonPath::new("missing_datetime"),
+            expected_type: DateTimePayloadType::friendly_name().to_string(),
+            description: "No value found in a payload nor defaults".to_string(),
+        })
+    )]
+    // datetime expression with payload variable that doesn't exist in payload but has default
+    #[case(
+        ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(JsonPath::new(NO_VALUE_DATETIME))),
+        Ok("2025-03-19T12:00:00".parse::<DateTimePayloadType>().unwrap().timestamp() as PreciseScore / 1_000_000.0)
+    )]
     #[test]
     fn test_default_values(
         #[case] expr: ParsedExpression,
-        #[case] expected: OperationResult<ScoreType>,
+        #[case] expected: OperationResult<PreciseScore>,
     ) {
         let defaults = [
             (VariableId::Score(3), json!(1.5)),
@@ -483,6 +557,10 @@ mod tests {
             (
                 VariableId::Payload(JsonPath::new(NO_VALUE_GEO_POINT)),
                 json!({"lat": 25.0, "lon": -100.0}),
+            ),
+            (
+                VariableId::Payload(JsonPath::new(NO_VALUE_DATETIME)),
+                json!("2025-03-19T12:00:00"),
             ),
         ]
         .into_iter()

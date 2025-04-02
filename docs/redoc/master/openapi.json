@@ -14471,6 +14471,15 @@
             "$ref": "#/components/schemas/Condition"
           },
           {
+            "$ref": "#/components/schemas/GeoDistance"
+          },
+          {
+            "$ref": "#/components/schemas/DatetimeExpression"
+          },
+          {
+            "$ref": "#/components/schemas/DatetimeKeyExpression"
+          },
+          {
             "$ref": "#/components/schemas/MultExpression"
           },
           {
@@ -14501,9 +14510,6 @@
             "$ref": "#/components/schemas/LnExpression"
           },
           {
-            "$ref": "#/components/schemas/GeoDistance"
-          },
-          {
             "$ref": "#/components/schemas/LinDecayExpression"
           },
           {
@@ -14513,6 +14519,55 @@
             "$ref": "#/components/schemas/GaussDecayExpression"
           }
         ]
+      },
+      "GeoDistance": {
+        "type": "object",
+        "required": [
+          "geo_distance"
+        ],
+        "properties": {
+          "geo_distance": {
+            "$ref": "#/components/schemas/GeoDistanceParams"
+          }
+        }
+      },
+      "GeoDistanceParams": {
+        "type": "object",
+        "required": [
+          "origin",
+          "to"
+        ],
+        "properties": {
+          "origin": {
+            "$ref": "#/components/schemas/GeoPoint"
+          },
+          "to": {
+            "description": "Payload field with the destination geo point",
+            "type": "string"
+          }
+        }
+      },
+      "DatetimeExpression": {
+        "type": "object",
+        "required": [
+          "datetime"
+        ],
+        "properties": {
+          "datetime": {
+            "type": "string"
+          }
+        }
+      },
+      "DatetimeKeyExpression": {
+        "type": "object",
+        "required": [
+          "datetime_key"
+        ],
+        "properties": {
+          "datetime_key": {
+            "type": "string"
+          }
+        }
       },
       "MultExpression": {
         "type": "object",
@@ -14662,33 +14717,6 @@
         "properties": {
           "ln": {
             "$ref": "#/components/schemas/Expression"
-          }
-        }
-      },
-      "GeoDistance": {
-        "type": "object",
-        "required": [
-          "geo_distance"
-        ],
-        "properties": {
-          "geo_distance": {
-            "$ref": "#/components/schemas/GeoDistanceParams"
-          }
-        }
-      },
-      "GeoDistanceParams": {
-        "type": "object",
-        "required": [
-          "origin",
-          "to"
-        ],
-        "properties": {
-          "origin": {
-            "$ref": "#/components/schemas/GeoPoint"
-          },
-          "to": {
-            "description": "Payload field with the destination geo point",
-            "type": "string"
           }
         }
       },

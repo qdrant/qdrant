@@ -5,10 +5,10 @@ use api::rest::GeoDistance;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
-    DecayKind, ParsedExpression, ParsedFormula, VariableId,
+    DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
 };
 use segment::json_path::JsonPath;
-use segment::types::{Condition, GeoPoint};
+use segment::types::{Condition, GeoPoint, PayloadKeyType};
 use serde_json::Value;
 
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -24,6 +24,12 @@ pub enum ExpressionInternal {
     Constant(f32),
     Variable(String),
     Condition(Box<Condition>),
+    GeoDistance {
+        origin: GeoPoint,
+        to: JsonPath,
+    },
+    Datetime(String),
+    DatetimeKey(String),
     Mult(Vec<ExpressionInternal>),
     Sum(Vec<ExpressionInternal>),
     Neg(Box<ExpressionInternal>),
@@ -41,10 +47,6 @@ pub enum ExpressionInternal {
     Log10(Box<ExpressionInternal>),
     Ln(Box<ExpressionInternal>),
     Abs(Box<ExpressionInternal>),
-    GeoDistance {
-        origin: GeoPoint,
-        to: JsonPath,
-    },
     Decay {
         kind: DecayKind,
         x: Box<ExpressionInternal>,
@@ -61,7 +63,7 @@ impl ExpressionInternal {
         conditions: &mut Vec<Condition>,
     ) -> CollectionResult<ParsedExpression> {
         let expr = match self {
-            ExpressionInternal::Constant(c) => ParsedExpression::Constant(c),
+            ExpressionInternal::Constant(c) => ParsedExpression::Constant(PreciseScore::from(c)),
             ExpressionInternal::Variable(var) => {
                 let var: VariableId = var.parse()?;
                 if let VariableId::Payload(payload_var) = var.clone() {
@@ -73,6 +75,24 @@ impl ExpressionInternal {
                 let condition_id = conditions.len();
                 conditions.push(*condition);
                 ParsedExpression::new_condition_id(condition_id)
+            }
+            ExpressionInternal::GeoDistance { origin, to } => {
+                payload_vars.insert(to.clone());
+                ParsedExpression::new_geo_distance(origin, to)
+            }
+            ExpressionInternal::Datetime(dt_str) => {
+                ParsedExpression::Datetime(DatetimeExpression::Constant(
+                    dt_str
+                        .parse()
+                        .map_err(|err: chrono::ParseError| err.to_string())?,
+                ))
+            }
+            ExpressionInternal::DatetimeKey(dt_key) => {
+                let json_path: PayloadKeyType = dt_key
+                    .parse()
+                    .map_err(|_| format!("Invalid datetime payload variable: {dt_key}"))?;
+                payload_vars.insert(json_path.clone());
+                ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(json_path))
             }
             ExpressionInternal::Mult(internal_expressions) => ParsedExpression::Mult(
                 internal_expressions
@@ -96,12 +116,8 @@ impl ExpressionInternal {
             } => ParsedExpression::new_div(
                 left.parse_and_convert(payload_vars, conditions)?,
                 right.parse_and_convert(payload_vars, conditions)?,
-                by_zero_default,
+                by_zero_default.map(PreciseScore::from),
             ),
-            ExpressionInternal::GeoDistance { origin, to } => {
-                payload_vars.insert(to.clone());
-                ParsedExpression::new_geo_distance(origin, to)
-            }
             ExpressionInternal::Sqrt(expression_internal) => ParsedExpression::Sqrt(Box::new(
                 expression_internal.parse_and_convert(payload_vars, conditions)?,
             )),
@@ -195,6 +211,15 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::Constant(c) => ExpressionInternal::Constant(c),
             rest::Expression::Variable(key) => ExpressionInternal::Variable(key),
             rest::Expression::Condition(condition) => ExpressionInternal::Condition(condition),
+            rest::Expression::GeoDistance(GeoDistance {
+                geo_distance: rest::GeoDistanceParams { origin, to },
+            }) => ExpressionInternal::GeoDistance { origin, to },
+            rest::Expression::Datetime(rest::DatetimeExpression { datetime }) => {
+                ExpressionInternal::Datetime(datetime)
+            }
+            rest::Expression::DatetimeKey(rest::DatetimeKeyExpression { datetime_key }) => {
+                ExpressionInternal::DatetimeKey(datetime_key)
+            }
             rest::Expression::Mult(rest::MultExpression { mult: exprs }) => {
                 ExpressionInternal::Mult(exprs.into_iter().map(ExpressionInternal::from).collect())
             }
@@ -239,9 +264,6 @@ impl From<rest::Expression> for ExpressionInternal {
             rest::Expression::Abs(rest::AbsExpression { abs: expr }) => {
                 ExpressionInternal::Abs(Box::new(ExpressionInternal::from(*expr)))
             }
-            rest::Expression::GeoDistance(GeoDistance {
-                geo_distance: rest::GeoDistanceParams { origin, to },
-            }) => ExpressionInternal::GeoDistance { origin, to },
             rest::Expression::LinDecay(rest::LinDecayExpression {
                 lin_decay:
                     rest::DecayParamsExpression {

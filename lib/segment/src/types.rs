@@ -70,13 +70,11 @@ impl DateTimeWrapper {
     }
 
     pub fn from_timestamp(ts: i64) -> Option<Self> {
-        Some(DateTimeWrapper(chrono::DateTime::from_timestamp_micros(
-            ts,
-        )?))
+        Some(Self(chrono::DateTime::from_timestamp_micros(ts)?))
     }
 }
 
-impl<'de> Deserialize<'de> for DateTimeWrapper {
+impl<'de> Deserialize<'de> for DateTimePayloadType {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -92,7 +90,46 @@ impl<'de> Deserialize<'de> for DateTimeWrapper {
     }
 }
 
-impl From<chrono::DateTime<chrono::Utc>> for DateTimeWrapper {
+impl FromStr for DateTimePayloadType {
+    type Err = chrono::ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Attempt to parse the input string in RFC 3339 format
+        if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
+            // Attempt to parse the input string in the specified formats:
+            // - YYYY-MM-DD'T'HH:MM:SS-HHMM (timezone without colon)
+            // - YYYY-MM-DD HH:MM:SS-HHMM (timezone without colon)
+            .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z"))
+            .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
+            .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
+        {
+            return Ok(datetime);
+        }
+
+        // Attempt to parse the input string in the specified formats:
+        // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
+        // - YYYY-MM-DD HH:MM:SS (without timezone or Z)
+        // - YYYY-MM-DD HH:MM
+        // - YYYY-MM-DD
+        // See: <https://github.com/qdrant/qdrant/issues/3529>
+        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
+            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
+            .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
+
+        // Convert the parsed NaiveDateTime to a DateTime<Utc>
+        let datetime_utc = datetime.and_utc().into();
+        Ok(datetime_utc)
+    }
+}
+
+impl Display for DateTimePayloadType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<chrono::DateTime<chrono::Utc>> for DateTimePayloadType {
     fn from(dt: chrono::DateTime<chrono::Utc>) -> Self {
         DateTimeWrapper(dt)
     }
@@ -2064,38 +2101,6 @@ pub struct Range<T> {
     pub gte: Option<T>,
     /// point.key <= range.lte
     pub lte: Option<T>,
-}
-impl FromStr for DateTimePayloadType {
-    type Err = chrono::ParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Attempt to parse the input string in RFC 3339 format
-        if let Ok(datetime) = chrono::DateTime::parse_from_rfc3339(s)
-            // Attempt to parse the input string in the specified formats:
-            // - YYYY-MM-DD'T'HH:MM:SS-HHMM (timezone without colon)
-            // - YYYY-MM-DD HH:MM:SS-HHMM (timezone without colon)
-            .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z"))
-            .or_else(|_| chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z"))
-            .map(|dt| chrono::DateTime::<chrono::Utc>::from(dt).into())
-        {
-            return Ok(datetime);
-        }
-
-        // Attempt to parse the input string in the specified formats:
-        // - YYYY-MM-DD'T'HH:MM:SS (without timezone or Z)
-        // - YYYY-MM-DD HH:MM:SS (without timezone or Z)
-        // - YYYY-MM-DD HH:MM
-        // - YYYY-MM-DD
-        // See: <https://github.com/qdrant/qdrant/issues/3529>
-        let datetime = chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f"))
-            .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M"))
-            .or_else(|_| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").map(Into::into))?;
-
-        // Convert the parsed NaiveDateTime to a DateTime<Utc>
-        let datetime_utc = datetime.and_utc().into();
-        Ok(datetime_utc)
-    }
 }
 
 impl<T: Copy> Range<T> {
