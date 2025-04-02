@@ -20,7 +20,7 @@ use crate::collection::Collection;
 // want to be able to access `TableOfContent` using `.toc()`.
 // If you're not implementing a new point-api endpoint for which a strict mode check
 // is required, this is safe to use.
-pub fn new_unchecked_verification_pass() -> VerificationPass {
+pub const fn new_unchecked_verification_pass() -> VerificationPass {
     VerificationPass { _inner: () }
 }
 
