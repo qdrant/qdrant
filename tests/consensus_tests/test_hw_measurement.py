@@ -155,7 +155,20 @@ def test_measuring_hw_for_updates_without_waiting(tmp_path: pathlib.Path):
     # TODO: also test vector updates when implemented
 
 def assert_with_upper_bound_error(inp: int, min_value: int, upper_bound_error_percent: float = 0.05):
-    """Asserts `inp` being equal to `min_value` with a max upperbound error given in percent."""
+    """
+    Assert that a value is within an acceptable error margin.
+    
+    This function verifies that the input value is not less than the specified minimum and does not exceed
+    the maximum allowed value, which is computed as the minimum value increased by a specified percentage
+    margin (default 5%) and rounded up to the nearest integer. An assertion error is raised if the value falls
+    outside this range.
+    
+    Args:
+        inp: The integer value to validate.
+        min_value: The minimum acceptable integer value.
+        upper_bound_error_percent: Permissible percentage error (as a fraction, e.g., 0.05 for 5%) added to
+            min_value to compute the upper bound.
+    """
     if inp < min_value:
         assert False, f"Assertion {inp} >= {min_value} failed"
 
@@ -173,6 +186,14 @@ def assert_with_upper_bound_error(inp: int, min_value: int, upper_bound_error_pe
      "json": {"limit": 10, "with_payload": True,}
      }], ids=["query", "scroll"])
 def test_payload_io_read_is_within_limit(tmp_path: pathlib.Path, test_item):
+    """
+    Tests that the payload I/O read from a points query is within the acceptable limit.
+    
+    This test starts a cluster with hardware telemetry enabled, creates a collection with on-disk
+    payload storage (50 segments, 1000 points), and sends a POST request to the collection’s points
+    endpoint using parameters defined in test_item. It then verifies that the usage metric for
+    payload_io_read is present and does not exceed 300 bytes.
+    """
     assert_project_root()
     # Start cluster
     env = {

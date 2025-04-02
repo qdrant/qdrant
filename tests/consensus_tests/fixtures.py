@@ -144,6 +144,30 @@ def create_collection(
     default_segment_number=None,
     on_disk_payload=False,
 ):
+    """
+    Creates a new collection in the remote vector service.
+    
+    Builds a configuration payload that includes settings for dense vectors, sharding,
+    replication, indexing thresholds, and optionally for sparse vectors, strict mode,
+    and on-disk payload storage. Sends a PUT request to the specified peer URL to
+    create the collection and asserts that the HTTP response is successful.
+    
+    Args:
+        collection: Name of the collection to create.
+        shard_number: Number of shards assigned to the collection.
+        replication_factor: Number of replicas per shard.
+        write_consistency_factor: Number of replicas that must acknowledge writes.
+        timeout: Request timeout in seconds.
+        sharding_method: Optional sharding algorithm; if None, defaults are used.
+        indexing_threshold: Data threshold at which indexing optimization is triggered.
+        strict_mode: Optional configuration to enforce strict collection rules.
+        sparse_vectors: If True, includes a default sparse vector configuration.
+        default_segment_number: Optional segment number for optimizer configuration.
+        on_disk_payload: If True, enables storage of payload data on disk.
+    
+    Raises:
+        AssertionError: If the HTTP response indicates an error.
+    """
     payload = {
         "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
         "shard_number": shard_number,
