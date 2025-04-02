@@ -77,7 +77,7 @@ impl LocalShard {
                                         distance.postprocess_score(scored_point.score);
                                 }
                                 NamedVectorStruct::MultiDense(_) => {
-                                    // no post-processing for multi dense vectors because 'maxsim' postprocesses already
+                                    // no post-processing for multi dense vectors because 'maxsim' post-processes already
                                 }
                             }
                         }

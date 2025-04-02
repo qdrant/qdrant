@@ -372,3 +372,89 @@ def test_search_legacy_api(collection_name):
     )
     assert response.ok
     assert len(response.json()['result']) == 3
+
+def test_multi_with_euclidean(collection_name):
+    drop_collection(collection_name=collection_name)
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "my-multivec": {
+                    "size": 3,
+                    "distance": "Euclid",
+                    "multivector_config": {
+                        "comparator": "max_sim"
+                    }
+                }
+            },
+        }
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    # insert vector
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": {
+                        "my-multivec": [
+                            [1.0, 2.0, 3.0],
+                            [3.0, 3.0, 3.0],
+                            [4.0, 5.0, 6.0]
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+    assert response.ok
+
+    # get by id
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+
+    assert response.ok
+    point = response.json()['result']
+    assert point['id'] == 1
+    assert point['vector']['my-multivec'] == [
+        [1.0, 2.0, 3.0],
+        [3.0, 3.0, 3.0],
+        [4.0, 5.0, 6.0]
+    ]
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": [
+                [3.0, 3.0, 3.0],
+                [4.0, 2.0, 1.0]
+            ],
+            "using": "my-multivec",
+            "limit": 10
+        }
+    )
+    assert response.ok
+    assert len(response.json()['result']) == 1
+    print(response.json())
+    assert response.json()['result']['points'][0]['id'] == 1
+    assert response.json()['result']['points'][0]['score'] == 9.572609
