@@ -7,14 +7,14 @@ mod scroll;
 mod search;
 mod segment_ops;
 
-mod snapshot;
+pub mod snapshot;
 
 #[cfg(test)]
 mod tests;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
@@ -24,7 +24,7 @@ use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 
-use crate::common::operation_error::{OperationResult, SegmentFailedState};
+use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::VectorIndexEnum;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -116,4 +116,15 @@ impl Drop for Segment {
             log::error!("Failed to flush segment during drop: {flushing_err}");
         }
     }
+}
+
+pub fn destroy_rocksdb(path: &Path) -> OperationResult<()> {
+    rocksdb::DB::destroy(&Default::default(), path).map_err(|err| {
+        OperationError::service_error(format!(
+            "failed to destroy RocksDB at {}: {err}",
+            path.display()
+        ))
+    })?;
+
+    Ok(())
 }

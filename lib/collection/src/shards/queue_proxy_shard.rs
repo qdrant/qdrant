@@ -11,6 +11,7 @@ use common::types::TelemetryDetail;
 use parking_lot::Mutex as ParkingMutex;
 use segment::data_types::facets::{FacetParams, FacetResponse};
 use segment::data_types::order_by::OrderBy;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
@@ -146,6 +147,10 @@ impl QueueProxyShard {
             .wrapped_shard
             .create_snapshot(temp_path, tar, format, save_wal)
             .await
+    }
+
+    pub fn segment_manifests(&self) -> CollectionResult<SegmentManifests> {
+        self.inner_unchecked().wrapped_shard.segment_manifests()
     }
 
     /// Transfer all updates that the remote missed from WAL

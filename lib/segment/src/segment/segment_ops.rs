@@ -734,8 +734,10 @@ fn restore_snapshot_in_place(snapshot_path: &Path) -> OperationResult<()> {
 
 fn unpack_snapshot(segment_path: &Path) -> OperationResult<()> {
     let db_backup_path = segment_path.join(DB_BACKUP_PATH);
-    crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
-    std::fs::remove_dir_all(&db_backup_path)?;
+    if db_backup_path.is_dir() {
+        crate::rocksdb_backup::restore(&db_backup_path, segment_path)?;
+        std::fs::remove_dir_all(&db_backup_path)?;
+    }
 
     let payload_index_db_backup = segment_path.join(PAYLOAD_DB_BACKUP_PATH);
     if payload_index_db_backup.is_dir() {
