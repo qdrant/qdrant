@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use bitvec::slice::BitSlice;
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
@@ -29,6 +30,7 @@ pub struct MmapBoolIndex {
     falses_count: usize,
     trues_slice: DynamicMmapFlags,
     falses_slice: DynamicMmapFlags,
+    populated: bool,
 }
 
 impl MmapBoolIndex {
@@ -79,7 +81,16 @@ impl MmapBoolIndex {
             indexed_count: 0,
             trues_count: 0,
             falses_count: 0,
+            populated: populate,
         })
+    }
+
+    fn make_conditioned_counter<'a>(
+        &self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> ConditionedCounter<'a> {
+        let on_disk = !self.populated; // Measure if on disk.
+        ConditionedCounter::new(on_disk, hw_counter)
     }
 
     fn set_or_insert(
@@ -89,11 +100,13 @@ impl MmapBoolIndex {
         has_false: bool,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         // Set or insert the flags
         let prev_true =
-            set_or_insert_flag(&mut self.trues_slice, id as usize, has_true, hw_counter)?;
+            set_or_insert_flag(&mut self.trues_slice, id as usize, has_true, &hw_counter)?;
         let prev_false =
-            set_or_insert_flag(&mut self.falses_slice, id as usize, has_false, hw_counter)?;
+            set_or_insert_flag(&mut self.falses_slice, id as usize, has_false, &hw_counter)?;
 
         let was_indexed = prev_true || prev_false;
         let is_indexed = has_true || has_false;
@@ -209,6 +222,8 @@ impl MmapBoolIndex {
         is_true: bool,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         hw_counter
             .payload_index_io_read_counter()
             .incr_delta(size_of::<bool>());
@@ -227,12 +242,14 @@ impl MmapBoolIndex {
         &'a self,
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (bool, IdIter<'a>)> + 'a {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         [
             (false, Box::new(self.falses_slice.iter_trues()) as IdIter),
             (true, Box::new(self.trues_slice.iter_trues()) as IdIter),
         ]
         .into_iter()
-        .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
+        .measure_hw_with_acc(hw_counter.new_accumulator(), u8::BITS as usize, |i| {
             i.payload_index_io_read_counter()
         })
     }
@@ -272,7 +289,7 @@ fn set_or_insert_flag(
     flags: &mut DynamicMmapFlags,
     key: usize,
     value: bool,
-    hw_counter: &HardwareCounterCell,
+    hw_counter: &ConditionedCounter,
 ) -> OperationResult<bool> {
     let counter = hw_counter.payload_index_io_write_counter();
 
@@ -314,7 +331,8 @@ impl FieldIndexBuilderTrait for MmapBoolIndexBuilder {
         payload: &[&serde_json::Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        self.0.add_point(id, payload, hw_counter)
+        let hw_counter = self.0.make_conditioned_counter(hw_counter);
+        self.0.add_point(id, payload, &hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -335,10 +353,12 @@ impl ValueIndexer for MmapBoolIndex {
             return Ok(());
         }
 
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        self.set_or_insert(id, has_true, has_false, hw_counter)?;
+        self.set_or_insert(id, has_true, has_false, &hw_counter)?;
 
         Ok(())
     }
@@ -369,6 +389,7 @@ impl PayloadFieldIndex for MmapBoolIndex {
             falses_count,
             trues_slice,
             falses_slice,
+            populated: _,
         } = self;
 
         *indexed_count = calculated_indexed_count as usize;
@@ -391,6 +412,7 @@ impl PayloadFieldIndex for MmapBoolIndex {
             falses_count: _,
             trues_slice,
             falses_slice,
+            populated: _,
         } = self;
 
         let trues_flusher = trues_slice.flusher();
@@ -415,6 +437,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
         condition: &'a FieldCondition,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
@@ -423,9 +447,11 @@ impl PayloadFieldIndex for MmapBoolIndex {
                     .get_slice_for(*value)
                     .iter_ones()
                     .map(|x| x as PointOffsetType)
-                    .measure_hw_with_cell_and_fraction(hw_counter, u8::BITS as usize, |i| {
-                        i.payload_index_io_read_counter()
-                    });
+                    .measure_hw_with_acc_and_fraction(
+                        hw_counter.new_accumulator(),
+                        u8::BITS as usize,
+                        |i| i.payload_index_io_read_counter(),
+                    );
                 Some(Box::new(iter))
             }
             _ => None,
@@ -437,6 +463,8 @@ impl PayloadFieldIndex for MmapBoolIndex {
         condition: &FieldCondition,
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         match &condition.r#match {
             Some(Match::Value(MatchValue {
                 value: ValueVariants::Bool(value),
