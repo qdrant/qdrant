@@ -88,7 +88,6 @@ smol_str = { version = "0.3.2", default-features = false, features = ["serde"] }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }
-http = { workspace = true }
 self_cell = "1.1.0"
 sha2 = { workspace = true }
 smallvec = "1.14.0"

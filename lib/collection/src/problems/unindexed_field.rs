@@ -9,10 +9,10 @@ use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use strum::IntoEnumIterator as _;
 
-use crate::common::operation_error::OperationError;
-use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-use crate::json_path::JsonPath;
-use crate::types::{
+use segment::common::operation_error::OperationError;
+use segment::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+use segment::json_path::JsonPath;
+use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface, UuidPayloadType,
 };
@@ -166,7 +166,7 @@ fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
 
 fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
     match &value.value {
-        crate::types::ValueVariants::String(string) => {
+        segment::types::ValueVariants::String(string) => {
             let mut inferred = Vec::new();
 
             if UuidPayloadType::parse_str(string).is_ok() {
@@ -177,10 +177,10 @@ fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> 
 
             inferred
         }
-        crate::types::ValueVariants::Integer(_integer) => {
+        segment::types::ValueVariants::Integer(_integer) => {
             vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
         }
-        crate::types::ValueVariants::Bool(_boolean) => {
+        segment::types::ValueVariants::Bool(_boolean) => {
             vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)]
         }
     }
