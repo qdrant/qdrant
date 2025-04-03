@@ -97,7 +97,7 @@ impl MmapPostings {
     fn get_reader<'a>(
         &'a self,
         header: &PostingListHeader,
-        hw_counter: &'a HardwareCounterCell,
+        hw_counter: ConditionedCounter<'a>,
     ) -> Option<ChunkReader<'a>> {
         let counter = hw_counter.payload_index_io_read_counter();
 
@@ -123,7 +123,7 @@ impl MmapPostings {
             chunks,
             data,
             remainder_postings,
-            ConditionedCounter::new(self.on_disk, hw_counter),
+            hw_counter,
         ))
     }
 
@@ -132,6 +132,8 @@ impl MmapPostings {
         token_id: TokenId,
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<ChunkReader<'a>> {
+        let hw_counter = ConditionedCounter::new(self.on_disk, hw_counter);
+
         hw_counter
             .payload_index_io_read_counter()
             .incr_delta(size_of::<PostingListHeader>());

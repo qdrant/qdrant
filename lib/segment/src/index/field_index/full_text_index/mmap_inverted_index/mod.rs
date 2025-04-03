@@ -33,6 +33,7 @@ pub struct MmapInvertedIndex {
         MmapBitSliceBufferedUpdateWrapper,
     /// Number of points which are not deleted
     pub(in crate::index::field_index::full_text_index) active_points_count: usize,
+    is_on_disk: bool,
 }
 
 impl MmapInvertedIndex {
@@ -111,6 +112,7 @@ impl MmapInvertedIndex {
             point_to_tokens_count,
             deleted_points,
             active_points_count: points_count,
+            is_on_disk: !populate,
         })
     }
 
@@ -273,9 +275,11 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
-        hw_counter.payload_index_io_read_counter().incr_delta(
-            READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-        );
+        if self.is_on_disk {
+            hw_counter.payload_index_io_read_counter().incr_delta(
+                READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+            );
+        }
 
         self.vocab
             .get(token)
