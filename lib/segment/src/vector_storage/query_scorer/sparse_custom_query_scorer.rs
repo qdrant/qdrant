@@ -4,7 +4,6 @@ use sparse::common::sparse_vector::SparseVector;
 use sparse::common::types::{DimId, DimWeight};
 
 use crate::vector_storage::SparseVectorStorage;
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -70,16 +69,6 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
             self.hardware_counter.cpu_counter().incr_delta(cpu_units);
             stored.score(example).unwrap_or(0.0)
         })
-    }
-
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
-        debug_assert_eq!(ids.len(), scores.len());
-
-        // no specific implementation for batch scoring
-        for (idx, id) in ids.iter().enumerate() {
-            scores[idx] = self.score_stored(*id);
-        }
     }
 
     fn score(&self, v: &SparseVector) -> ScoreType {

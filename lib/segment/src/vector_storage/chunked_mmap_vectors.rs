@@ -1,8 +1,10 @@
 use std::cmp::max;
 use std::fs::create_dir_all;
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::maybe_uninit::maybe_uninit_fill_from;
 use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
 use memory::chunked_utils::{UniversalMmapChunk, chunk_name, create_chunk, read_mmaps};
@@ -294,16 +296,23 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
         }
     }
 
-    pub fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+    pub fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
         debug_assert!(keys.len() == vectors.len());
         debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
         let do_sequential_read = is_read_with_prefetch_efficient_vectors(keys);
 
-        for (i, key) in keys.iter().enumerate() {
-            vectors[i] = self
-                .get(*key, do_sequential_read)
-                .unwrap_or_else(|| panic!("Vector {key} not found"));
-        }
+        maybe_uninit_fill_from(
+            vectors,
+            keys.iter().map(|key| {
+                self.get(*key, do_sequential_read)
+                    .unwrap_or_else(|| panic!("Vector {key} not found"))
+            }),
+        )
+        .0
     }
 
     pub fn flusher(&self) -> Flusher {
@@ -393,7 +402,11 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
-    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+    fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
         ChunkedMmapVectors::get_batch(self, keys, vectors)
     }
 
@@ -451,9 +464,7 @@ mod tests {
                 chunked_mmap.push(vec, &hw_counter).unwrap();
             }
 
-            let mut vectors_buffer = Vec::with_capacity(VECTOR_READ_BATCH_SIZE);
-
-            vectors_buffer.resize_with(VECTOR_READ_BATCH_SIZE, Default::default);
+            let mut vectors_buffer = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
 
             let random_offset = 666;
             let batch_size = 10;
@@ -462,7 +473,8 @@ mod tests {
             assert!(batch_size <= VECTOR_READ_BATCH_SIZE);
 
             let batch_ids = (random_offset..random_offset + batch_size).collect::<Vec<_>>();
-            chunked_mmap.get_batch(&batch_ids, &mut vectors_buffer[..batch_size]);
+            let vectors_buffer =
+                chunked_mmap.get_batch(&batch_ids, &mut vectors_buffer[..batch_size]);
 
             for (i, (vec, loaded_vec)) in zip(
                 &vectors[random_offset..random_offset + batch_size],

@@ -11,7 +11,6 @@ use crate::data_types::vectors::{
 };
 use crate::spaces::metric::Metric;
 use crate::types::QuantizationConfig;
-use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::query::{Query, TransformInto};
 use crate::vector_storage::query_scorer::QueryScorer;
 
@@ -159,15 +158,6 @@ where
             self.quantized_storage
                 .score_point(this, idx, &self.hardware_counter)
         })
-    }
-
-    fn score_stored_batch(&self, ids: &[PointOffsetType], scores: &mut [ScoreType]) {
-        debug_assert!(ids.len() <= VECTOR_READ_BATCH_SIZE);
-        debug_assert_eq!(ids.len(), scores.len());
-        // no specific implementation for batch scoring
-        for (idx, id) in ids.iter().enumerate() {
-            scores[idx] = self.score_stored(*id);
-        }
     }
 
     fn score(&self, _v2: &[TElement]) -> ScoreType {

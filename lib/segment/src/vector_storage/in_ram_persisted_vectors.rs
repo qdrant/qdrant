@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -91,7 +92,11 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     }
 
     #[inline]
-    fn get_batch<'a>(&'a self, keys: &[VectorOffsetType], vectors: &mut [&'a [T]]) {
+    fn get_batch<'a>(
+        &'a self,
+        keys: &[VectorOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
         self.mmap_storage.get_batch(keys, vectors)
     }
 
