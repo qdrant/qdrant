@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 
 use super::inverted_index::InvertedIndex;
@@ -71,6 +70,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
         let posting_readers: Vec<_> = postings
             .iter()
+            // We can safely pass hw_counter here because it's not measured.
+            // Due to lifetime issues, we can't return a disposable counter.
             .map(|posting| posting.reader(hw_counter))
             .collect();
 
@@ -81,16 +82,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
         intersect_compressed_postings_iterator(posting_readers, filter)
     }
 
-    fn get_posting_len(
-        &self,
-        token_id: TokenId,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<usize> {
-        let len = self.postings.get(token_id as usize).map(|p| p.len());
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<Option<CompressedPostingList>>());
-        len
+    fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
+        self.postings.get(token_id as usize).map(|p| p.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
@@ -105,7 +98,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &self,
         parsed_query: &ParsedQuery,
         point_id: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
+        _: &HardwareCounterCell,
     ) -> bool {
         if parsed_query.tokens.contains(&None) {
             return false;
@@ -114,6 +107,9 @@ impl InvertedIndex for ImmutableInvertedIndex {
         if self.values_is_empty(point_id) {
             return false;
         }
+
+        let disposed_hw = HardwareCounterCell::disposable();
+
         // Check that all tokens are in document
         parsed_query
             .tokens
@@ -121,7 +117,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
             .all(|query_token| {
                 let postings = &self.postings[query_token.unwrap() as usize];
-                postings.reader(hw_counter).contains(point_id)
+                postings.reader(&disposed_hw).contains(point_id)
             })
     }
 
@@ -142,10 +138,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         self.points_count
     }
 
-    fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(BUCKET_OFFSET_OVERHEAD + size_of::<TokenId>());
+    fn get_token_id(&self, token: &str, _: &HardwareCounterCell) -> Option<TokenId> {
         self.vocab.get(token).copied()
     }
 }

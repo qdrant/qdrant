@@ -1,5 +1,5 @@
 use bitpacking::BitPacker;
-use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_common::{
@@ -11,7 +11,7 @@ pub struct ChunkReader<'a> {
     chunks: &'a [CompressedPostingChunksIndex],
     data: &'a [u8],
     remainder_postings: &'a [PointOffsetType],
-    hw_counter: &'a HardwareCounterCell,
+    hw_counter: ConditionedCounter<'a>,
 }
 
 impl<'a> ChunkReader<'a> {
@@ -20,7 +20,7 @@ impl<'a> ChunkReader<'a> {
         chunks: &'a [CompressedPostingChunksIndex],
         data: &'a [u8],
         reminder_postings: &'a [PointOffsetType],
-        hw_counter: &'a HardwareCounterCell,
+        hw_counter: ConditionedCounter<'a>,
     ) -> Self {
         Self {
             data,
