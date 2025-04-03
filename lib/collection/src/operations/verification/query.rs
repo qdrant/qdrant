@@ -5,7 +5,7 @@ use super::StrictModeVerification;
 use crate::collection::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
-    CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
 };
 
 impl StrictModeVerification for QueryRequestInternal {
@@ -141,10 +141,56 @@ impl StrictModeVerification for CollectionQueryRequest {
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
+        // CollectionPrefetch.prefetch is of type CollectionPrefetch (recursive type)
+        for prefetch in &self.prefetch {
+            Box::pin(prefetch.check_strict_mode(collection, strict_mode_config)).await?;
+        }
+
         if let Some(query) = self.query.as_ref() {
             // check for unindexed fields in formula
             query.check_strict_mode(collection, strict_mode_config)?
         }
+
+        Ok(())
+    }
+
+    fn query_limit(&self) -> Option<usize> {
+        Some(self.limit)
+    }
+
+    fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
+        self.filter.as_ref()
+    }
+
+    fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
+        None
+    }
+
+    fn request_exact(&self) -> Option<bool> {
+        None
+    }
+
+    fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
+        self.params.as_ref()
+    }
+}
+
+impl StrictModeVerification for CollectionPrefetch {
+    async fn check_custom(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> Result<(), crate::operations::types::CollectionError> {
+        // CollectionPrefetch.prefetch is of type CollectionPrefetch (recursive type)
+        for prefetch in &self.prefetch {
+            Box::pin(prefetch.check_strict_mode(collection, strict_mode_config)).await?;
+        }
+
+        if let Some(query) = self.query.as_ref() {
+            // check for unindexed fields in formula
+            query.check_strict_mode(collection, strict_mode_config)?
+        }
+
         Ok(())
     }
 
