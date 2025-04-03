@@ -249,10 +249,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         hw_counter: &HardwareCounterCell,
     ) -> bool {
         match self {
-            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn, hw_counter),
-            NumericIndexInner::Immutable(index) => {
-                index.check_values_any(idx, check_fn, hw_counter)
-            }
+            NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
+            NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
             NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn, hw_counter),
         }
     }
@@ -375,12 +373,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         let start = Bound::Included(Point::new(value, PointOffsetType::MIN));
         let end = Bound::Included(Point::new(value, PointOffsetType::MAX));
         match &self {
-            NumericIndexInner::Mutable(mutable) => {
-                Box::new(mutable.values_range(start, end, hw_counter))
-            }
-            NumericIndexInner::Immutable(immutable) => {
-                Box::new(immutable.values_range(start, end, hw_counter))
-            }
+            NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
+            NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
             NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)),
         }
     }
@@ -705,10 +699,10 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
         Some(match self {
             NumericIndexInner::Mutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter))
+                Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndexInner::Immutable(index) => {
-                Box::new(index.values_range(start_bound, end_bound, hw_counter))
+                Box::new(index.values_range(start_bound, end_bound))
             }
             NumericIndexInner::Mmap(index) => {
                 Box::new(index.values_range(start_bound, end_bound, hw_counter))

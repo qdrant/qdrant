@@ -1,6 +1,7 @@
 use std::fs::{create_dir_all, remove_dir};
 use std::path::{Path, PathBuf};
 
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -72,6 +73,7 @@ pub struct MmapGeoMapIndex {
     deleted_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
+    is_on_disk: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,6 +240,7 @@ impl MmapGeoMapIndex {
             deleted_count,
             points_values_count: stats.points_values_count,
             max_values_per_point: stats.max_values_per_point,
+            is_on_disk,
         })
     }
 
@@ -247,6 +250,8 @@ impl MmapGeoMapIndex {
         hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         // Measure self.deleted read.
         hw_counter
             .payload_index_io_read_counter()
@@ -257,7 +262,7 @@ impl MmapGeoMapIndex {
             .filter(|b| !b)
             .map(|_| {
                 self.point_to_values
-                    .check_values_any(idx, |v| check_fn(&v), hw_counter)
+                    .check_values_any(idx, |v| check_fn(&v), &hw_counter)
             })
             .unwrap_or(false)
     }
@@ -281,6 +286,8 @@ impl MmapGeoMapIndex {
     }
 
     pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         hw_counter
             .payload_index_io_read_counter()
             // Simulate binary search complexity as IO read estimation
@@ -296,6 +303,8 @@ impl MmapGeoMapIndex {
     }
 
     pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         hw_counter
             .payload_index_io_read_counter()
             // Simulate binary search complexity as IO read estimation
@@ -380,5 +389,12 @@ impl MmapGeoMapIndex {
 
     pub fn max_values_per_point(&self) -> usize {
         self.max_values_per_point
+    }
+
+    fn make_conditioned_counter<'a>(
+        &self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> ConditionedCounter<'a> {
+        ConditionedCounter::new(self.is_on_disk, hw_counter)
     }
 }

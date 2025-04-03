@@ -1,3 +1,4 @@
+use super::conditioned_counter::ConditionedCounter;
 use super::counter_cell::CounterCell;
 use super::hardware_accumulator::HwMeasurementAcc;
 use super::hardware_counter::HardwareCounterCell;
@@ -23,6 +24,27 @@ pub trait HwMeasurementIteratorExt: Iterator {
         OnFinalCount::new(self, move |total_count| {
             let hw_counter = hw_acc.get_counter_cell();
             f(&hw_counter).incr_delta(total_count * multiplier);
+        })
+    }
+
+    /// Measures the hardware usage of an iterator.
+    ///
+    /// # Arguments
+    /// - `cc`: Condition counter to write the measurements into.
+    /// - `multiplier`: multiplies the number of iterations by this factor.
+    /// - `f`: Closure to get the specific counter to increase from the cell inside the accumulator.
+    fn measure_hw_with_condition_cell<R>(
+        self,
+        cc: ConditionedCounter,
+        multiplier: usize,
+        mut f: R,
+    ) -> OnFinalCount<Self, impl FnMut(usize)>
+    where
+        Self: Sized,
+        R: FnMut(&HardwareCounterCell) -> &CounterCell,
+    {
+        OnFinalCount::new(self, move |total_count| {
+            f(&cc).incr_delta(total_count * multiplier);
         })
     }
 

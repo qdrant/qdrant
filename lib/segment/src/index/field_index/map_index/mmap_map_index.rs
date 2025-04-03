@@ -5,6 +5,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 
 use ahash::HashMap;
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::mmap_hashmap::{Key, MmapHashMap, READ_ENTRY_OVERHEAD};
@@ -34,6 +35,7 @@ pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
     deleted: MmapBitSliceBufferedUpdateWrapper,
     deleted_count: usize,
     total_key_value_pairs: usize,
+    is_on_disk: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +66,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             deleted: MmapBitSliceBufferedUpdateWrapper::new(deleted),
             deleted_count,
             total_key_value_pairs: config.total_key_value_pairs,
+            is_on_disk,
         })
     }
 
@@ -161,11 +164,13 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_acc: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         // Measure self.deleted access.
-        hw_acc
+        hw_counter
             .payload_index_io_read_counter()
             .incr_delta(size_of::<bool>());
 
@@ -176,7 +181,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 self.point_to_values.check_values_any(
                     idx,
                     |v| check_fn(N::from_referenced(&v)),
-                    hw_acc,
+                    &hw_counter,
                 )
             })
     }
@@ -219,6 +224,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         value: &N,
         hw_counter: &HardwareCounterCell,
     ) -> Option<usize> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         // Since `value_to_points.get` doesn't actually force read from disk for all values
         // we need to only account for the overhead of hashmap lookup
         hw_counter
@@ -244,6 +251,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         value: &N,
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         match self.value_to_points.get(value) {
             Ok(Some(slice)) => {
                 // We're iterating over the whole (mmapped) slice
@@ -294,6 +303,8 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         &'a self,
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         self.value_to_points.iter().map(move |(k, v)| {
             hw_counter
                 .payload_index_io_read_counter()
@@ -305,11 +316,20 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                     v.iter()
                         .copied()
                         .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true))
-                        .measure_hw_with_cell(hw_counter, size_of::<PointOffsetType>(), |i| {
-                            i.payload_index_io_read_counter()
-                        }),
+                        .measure_hw_with_acc(
+                            hw_counter.new_accumulator(),
+                            size_of::<PointOffsetType>(),
+                            |i| i.payload_index_io_read_counter(),
+                        ),
                 ) as IdIter,
             )
         })
+    }
+
+    fn make_conditioned_counter<'a>(
+        &self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> ConditionedCounter<'a> {
+        ConditionedCounter::new(self.is_on_disk, hw_counter)
     }
 }

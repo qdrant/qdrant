@@ -5,7 +5,6 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -16,7 +15,7 @@ use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
-use crate::index::field_index::mmap_point_to_values::{MMAP_PTV_ACCESS_OVERHEAD, MmapValue};
+use crate::index::field_index::mmap_point_to_values::MmapValue;
 
 pub struct ImmutableMapIndex<N: MapIndexKey + ?Sized> {
     value_to_points: HashMap<N::Owned, ContainerSegment>,
@@ -249,17 +248,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         Ok(result)
     }
 
-    pub fn check_values_any(
-        &self,
-        idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
-        check_fn: impl Fn(&N) -> bool,
-    ) -> bool {
-        // Overhead of accessing the index.
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
-
+    pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
         let mut hw_count_val = 0;
 
         let res = self.point_to_values.check_values_any(idx, |v| {
@@ -267,10 +256,6 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             hw_count_val += <N as MmapValue>::mmapped_size(v.as_referenced());
             check_fn(v)
         });
-
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(hw_count_val);
 
         res
     }
@@ -295,16 +280,10 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         self.value_to_points.len()
     }
 
-    pub fn get_count_for_value(
-        &self,
-        value: &N,
-        hw_counter: &HardwareCounterCell,
-    ) -> Option<usize> {
-        let counter = hw_counter.payload_index_io_read_counter();
-        self.value_to_points.get(value).map(|entry| {
-            counter.incr_delta(size_of_val(entry));
-            entry.count as usize
-        })
+    pub fn get_count_for_value(&self, value: &N) -> Option<usize> {
+        self.value_to_points
+            .get(value)
+            .map(|entry| entry.count as usize)
     }
 
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
@@ -313,25 +292,18 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
             .map(|(k, entry)| (k.borrow(), entry.count as usize))
     }
 
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (&'a N, IdIter<'a>)> + 'a {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (&N, IdIter)> {
         self.value_to_points.keys().map(move |k| {
             (
                 k.borrow(),
-                Box::new(self.get_iterator(k.borrow(), hw_counter).copied()) as IdIter,
+                Box::new(self.get_iterator(k.borrow()).copied()) as IdIter,
             )
         })
     }
 
-    pub fn get_iterator(&self, value: &N, hw_counter: &HardwareCounterCell) -> IdRefIter<'_> {
+    pub fn get_iterator(&self, value: &N) -> IdRefIter<'_> {
         if let Some(entry) = self.value_to_points.get(value) {
             let range = entry.range.start as usize..entry.range.end as usize;
-
-            hw_counter
-                .payload_index_io_read_counter()
-                .incr_delta(range.len());
 
             let deleted_flags = self
                 .deleted_value_to_points_container
