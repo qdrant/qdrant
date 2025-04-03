@@ -133,7 +133,9 @@ impl CollectionAccessView<'_> {
     ) -> Result<(), StorageError> {
         match vector_query {
             VectorQuery::Nearest(nearest) => self.check_vector_input(nearest)?,
-            VectorQuery::RecommendBestScore(reco) | VectorQuery::RecommendAverageVector(reco) => {
+            VectorQuery::RecommendBestScore(reco)
+            | VectorQuery::RecommendSumScores(reco)
+            | VectorQuery::RecommendAverageVector(reco) => {
                 for vector_input in reco.flat_iter() {
                     self.check_vector_input(vector_input)?
                 }

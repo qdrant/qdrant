@@ -4,13 +4,13 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::types::TelemetryDetail;
-use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, QueryVector, only_default_multi_vector};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_multi_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
+use segment::fixtures::query_fixtures::{QueryVariant, random_multi_vec_query};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -21,70 +21,7 @@ use segment::types::{
     VectorStorageType,
 };
 use segment::vector_storage::VectorStorage;
-use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use tempfile::Builder;
-
-const MAX_EXAMPLE_PAIRS: usize = 4;
-
-enum QueryVariant {
-    Nearest,
-    RecommendBestScore,
-    Discovery,
-}
-
-fn random_multi_vec_discovery_query<R: Rng + ?Sized>(
-    rnd: &mut R,
-    dim: usize,
-    num_vector_per_points: usize,
-) -> QueryVector {
-    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
-
-    let target = random_multi_vector(rnd, dim, num_vector_per_points).into();
-
-    let pairs = (0..num_pairs)
-        .map(|_| {
-            let positive = random_multi_vector(rnd, dim, num_vector_per_points).into();
-            let negative = random_multi_vector(rnd, dim, num_vector_per_points).into();
-            ContextPair { positive, negative }
-        })
-        .collect_vec();
-
-    DiscoveryQuery::new(target, pairs).into()
-}
-
-fn random_multi_vec_reco_query<R: Rng + ?Sized>(
-    rnd: &mut R,
-    dim: usize,
-    num_vector_per_points: usize,
-) -> QueryVector {
-    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
-
-    let positive = (0..num_examples)
-        .map(|_| random_multi_vector(rnd, dim, num_vector_per_points).into())
-        .collect_vec();
-    let negative = (0..num_examples)
-        .map(|_| random_multi_vector(rnd, dim, num_vector_per_points).into())
-        .collect_vec();
-
-    RecoQuery::new(positive, negative).into()
-}
-
-fn random_multi_vec_query<R: Rng + ?Sized>(
-    variant: &QueryVariant,
-    rnd: &mut R,
-    dim: usize,
-    num_vector_per_points: usize,
-) -> QueryVector {
-    match variant {
-        QueryVariant::Nearest => random_multi_vector(rnd, dim, num_vector_per_points).into(),
-        QueryVariant::Discovery => {
-            random_multi_vec_discovery_query(rnd, dim, num_vector_per_points)
-        }
-        QueryVariant::RecommendBestScore => {
-            random_multi_vec_reco_query(rnd, dim, num_vector_per_points)
-        }
-    }
-}
 
 /// Check all cases with single vector per multi and several vectors per multi
 #[rstest]
@@ -92,8 +29,10 @@ fn random_multi_vec_query<R: Rng + ?Sized>(
 #[case::nearest_multi(QueryVariant::Nearest, 3, 64, 20)]
 #[case::discovery_eq(QueryVariant::Discovery, 1, 128, 5)]
 #[case::discovery_multi(QueryVariant::Discovery, 3, 128, 20)]
-#[case::recommend_eq(QueryVariant::RecommendBestScore, 1, 64, 5)]
-#[case::recommend_multi(QueryVariant::RecommendBestScore, 2, 64, 10)]
+#[case::recobestscore_eq(QueryVariant::RecoBestScore, 1, 64, 5)]
+#[case::recobestscore_multi(QueryVariant::RecoBestScore, 2, 64, 10)]
+#[case::recosumscores_eq(QueryVariant::RecoSumScores, 1, 64, 5)]
+#[case::recosumscores_multi(QueryVariant::RecoSumScores, 2, 64, 10)]
 fn test_multi_filterable_hnsw(
     #[case] query_variant: QueryVariant,
     #[case] max_num_vector_per_points: usize,

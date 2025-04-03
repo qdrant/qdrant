@@ -6,7 +6,6 @@ use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::ScoredPointOffset;
-use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
@@ -15,6 +14,7 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
+use segment::fixtures::query_fixtures::QueryVariant;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -27,17 +27,9 @@ use segment::types::{
     SeqNumberType, VectorDataConfig, VectorStorageType,
 };
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use tempfile::Builder;
 
-const MAX_EXAMPLE_PAIRS: usize = 4;
 const MAX_VECTORS_COUNT: usize = 3;
-
-enum QueryVariant {
-    Nearest,
-    RecommendBestScore,
-    Discovery,
-}
 
 enum QuantizationVariant {
     Scalar,
@@ -53,41 +45,10 @@ fn random_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> MultiDenseVectorIn
     vector
 }
 
-fn random_discovery_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
-
-    let target = random_vector(rnd, dim).into();
-
-    let pairs = (0..num_pairs)
-        .map(|_| {
-            let positive = random_vector(rnd, dim).into();
-            let negative = random_vector(rnd, dim).into();
-            ContextPair { positive, negative }
-        })
-        .collect_vec();
-
-    DiscoveryQuery::new(target, pairs).into()
-}
-
-fn random_reco_query<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> QueryVector {
-    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
-
-    let positive = (0..num_examples)
-        .map(|_| random_vector(rnd, dim).into())
-        .collect_vec();
-    let negative = (0..num_examples)
-        .map(|_| random_vector(rnd, dim).into())
-        .collect_vec();
-
-    RecoQuery::new(positive, negative).into()
-}
-
-fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rnd: &mut R, dim: usize) -> QueryVector {
-    match variant {
-        QueryVariant::Nearest => random_vector(rnd, dim).into(),
-        QueryVariant::Discovery => random_discovery_query(rnd, dim),
-        QueryVariant::RecommendBestScore => random_reco_query(rnd, dim),
-    }
+fn random_query<R: Rng + ?Sized>(variant: &QueryVariant, rng: &mut R, dim: usize) -> QueryVector {
+    segment::fixtures::query_fixtures::random_query(variant, rng, |rng: &mut R| {
+        random_vector(rng, dim).into()
+    })
 }
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
@@ -117,8 +78,17 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     false,
     20., // min_acc out of 100
 )]
-#[case::recommend_binary_dot(
-    QueryVariant::RecommendBestScore,
+#[case::recobestscore_binary_dot(
+    QueryVariant::RecoBestScore,
+    QuantizationVariant::Binary,
+    Distance::Dot,
+    128, // dim
+    64, // ef
+    false,
+    20., // min_acc out of 100
+)]
+#[case::recosumscores_binary_dot(
+    QueryVariant::RecoSumScores,
     QuantizationVariant::Binary,
     Distance::Dot,
     128, // dim
@@ -144,8 +114,17 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     false,
     15., // min_acc out of 100
 )]
-#[case::recommend_binary_cosine(
-    QueryVariant::RecommendBestScore,
+#[case::recobestscore_binary_cosine(
+    QueryVariant::RecoBestScore,
+    QuantizationVariant::Binary,
+    Distance::Cosine,
+    128, // dim
+    64, // ef
+    false,
+    15., // min_acc out of 100
+)]
+#[case::recosumscores_binary_cosine(
+    QueryVariant::RecoSumScores,
     QuantizationVariant::Binary,
     Distance::Cosine,
     128, // dim

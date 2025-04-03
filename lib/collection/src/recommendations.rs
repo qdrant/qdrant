@@ -212,10 +212,17 @@ pub fn recommend_into_core_search(
             reference_vectors_ids_to_exclude,
             all_vectors_records_map,
         ),
-        RecommendStrategy::BestScore => Ok(recommend_by_best_score(
+        RecommendStrategy::BestScore => Ok(recommend_by_custom_score(
             request,
             reference_vectors_ids_to_exclude,
             all_vectors_records_map,
+            QueryEnum::RecommendBestScore,
+        )),
+        RecommendStrategy::SumScores => Ok(recommend_by_custom_score(
+            request,
+            reference_vectors_ids_to_exclude,
+            all_vectors_records_map,
+            QueryEnum::RecommendSumScores,
         )),
     }
 }
@@ -266,7 +273,7 @@ where
                     });
                 }
             }
-            RecommendStrategy::BestScore => {
+            RecommendStrategy::BestScore | RecommendStrategy::SumScores => {
                 if request.positive.is_empty() && request.negative.is_empty() {
                     return Err(CollectionError::BadRequest {
                         description: "At least one positive or negative vector ID required with this strategy"
@@ -401,10 +408,11 @@ fn recommend_by_avg_vector(
     })
 }
 
-fn recommend_by_best_score(
+fn recommend_by_custom_score(
     request: RecommendRequestInternal,
     reference_vectors_ids_to_exclude: Vec<PointIdType>,
     all_vectors_records_map: &ReferencedVectors,
+    query_variant: impl Fn(NamedQuery<RecoQuery<VectorInternal>>) -> QueryEnum,
 ) -> CoreSearchRequest {
     let lookup_vector_name = request.get_lookup_vector_name();
 
@@ -439,7 +447,7 @@ fn recommend_by_best_score(
         lookup_collection_name,
     );
 
-    let query = QueryEnum::RecommendBestScore(NamedQuery {
+    let query = query_variant(NamedQuery {
         query: RecoQuery::new(positive, negative),
         using: using.map(|x| match x {
             UsingVector::Name(name) => name,

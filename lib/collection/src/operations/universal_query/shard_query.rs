@@ -304,6 +304,9 @@ impl QueryEnum {
             Variant::RecommendBestScore(recommend) => QueryEnum::RecommendBestScore(
                 NamedQuery::new(RecoQuery::try_from(recommend)?, using),
             ),
+            Variant::RecommendSumScores(recommend) => QueryEnum::RecommendSumScores(
+                NamedQuery::new(RecoQuery::try_from(recommend)?, using),
+            ),
             Variant::Discover(discovery) => QueryEnum::Discover(NamedQuery {
                 query: DiscoveryQuery::try_from(discovery)?,
                 using,
@@ -572,6 +575,9 @@ impl From<QueryEnum> for grpc::RawQuery {
             QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.to_vector())),
             QueryEnum::RecommendBestScore(named) => {
                 Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
+            }
+            QueryEnum::RecommendSumScores(named) => {
+                Variant::RecommendSumScores(grpc::raw_query::Recommend::from(named.query))
             }
             QueryEnum::Discover(named) => {
                 Variant::Discover(grpc::raw_query::Discovery::from(named.query))
