@@ -66,6 +66,7 @@ pub struct MmapPostings {
     _path: PathBuf,
     mmap: Mmap,
     header: PostingsHeader,
+    on_disk: bool,
 }
 
 impl MmapPostings {
@@ -122,7 +123,7 @@ impl MmapPostings {
             chunks,
             data,
             remainder_postings,
-            ConditionedCounter::always(hw_counter),
+            ConditionedCounter::new(self.on_disk, hw_counter),
         ))
     }
 
@@ -228,6 +229,7 @@ impl MmapPostings {
             _path: path,
             mmap,
             header,
+            on_disk: !populate,
         })
     }
 }
