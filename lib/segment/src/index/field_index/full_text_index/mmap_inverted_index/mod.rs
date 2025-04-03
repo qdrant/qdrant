@@ -283,11 +283,11 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
-
-        hw_counter.payload_index_io_read_counter().incr_delta(
-            READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
-        );
+        if self.is_on_disk {
+            hw_counter.payload_index_io_read_counter().incr_delta(
+                READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
+            );
+        }
 
         self.vocab
             .get(token)
