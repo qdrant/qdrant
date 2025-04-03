@@ -1,4 +1,3 @@
-use api::rest::{QueryGroupsRequestInternal};
 use segment::types::StrictModeConfig;
 
 use super::StrictModeVerification;
@@ -7,28 +6,6 @@ use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
     CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
 };
-
-impl StrictModeVerification for QueryGroupsRequestInternal {
-    fn query_limit(&self) -> Option<usize> {
-        self.group_request.limit
-    }
-
-    fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
-        self.filter.as_ref()
-    }
-
-    fn indexed_filter_write(&self) -> Option<&segment::types::Filter> {
-        None
-    }
-
-    fn request_exact(&self) -> Option<bool> {
-        None
-    }
-
-    fn request_search_params(&self) -> Option<&segment::types::SearchParams> {
-        self.params.as_ref()
-    }
-}
 
 impl Query {
     fn check_strict_mode(
