@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::json_path::JsonPath;
-use segment::problems::unindexed_field;
 use segment::types::{Filter, PayloadFieldSchema, PayloadKeyType};
 use serde::{Deserialize, Serialize};
 
 use crate::collection::Collection;
 use crate::operations::types::{CollectionResult, UpdateResult};
 use crate::operations::{CollectionUpdateOperations, CreateIndex, FieldIndexOperations};
+use crate::problems::unindexed_field;
 use crate::save_on_disk::SaveOnDisk;
 
 pub const PAYLOAD_INDEX_CONFIG_FILE: &str = "payload_index.json";
