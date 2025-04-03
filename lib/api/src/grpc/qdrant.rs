@@ -6680,6 +6680,9 @@ pub enum RecommendStrategy {
     /// examples, its score is then chosen from the `max(max_pos_score, max_neg_score)`.
     /// If the `max_neg_score` is chosen then it is squared and negated.
     BestScore = 1,
+    /// Uses custom search objective. Compares against all inputs, sums all the scores.
+    /// Scores against positive vectors are added, against negatives are subtracted.
+    SumScores = 2,
 }
 impl RecommendStrategy {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -6690,6 +6693,7 @@ impl RecommendStrategy {
         match self {
             RecommendStrategy::AverageVector => "AverageVector",
             RecommendStrategy::BestScore => "BestScore",
+            RecommendStrategy::SumScores => "SumScores",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -6697,6 +6701,7 @@ impl RecommendStrategy {
         match value {
             "AverageVector" => Some(Self::AverageVector),
             "BestScore" => Some(Self::BestScore),
+            "SumScores" => Some(Self::SumScores),
             _ => None,
         }
     }
@@ -9444,7 +9449,7 @@ pub struct ContextQuery {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryEnum {
-    #[prost(oneof = "query_enum::Query", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "query_enum::Query", tags = "1, 2, 3, 4, 5")]
     pub query: ::core::option::Option<query_enum::Query>,
 }
 /// Nested message and enum types in `QueryEnum`.
@@ -9465,6 +9470,9 @@ pub mod query_enum {
         /// Use only the context to find points that minimize loss against negative examples
         #[prost(message, tag = "4")]
         Context(super::ContextQuery),
+        /// Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+        #[prost(message, tag = "5")]
+        RecommendSumScores(super::RecoQuery),
     }
 }
 /// This is only used internally, so it makes more sense to add it here rather than in points.proto
@@ -9587,7 +9595,7 @@ pub mod raw_vector {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RawQuery {
-    #[prost(oneof = "raw_query::Variant", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "raw_query::Variant", tags = "1, 2, 3, 4, 5")]
     pub variant: ::core::option::Option<raw_query::Variant>,
 }
 /// Nested message and enum types in `RawQuery`.
@@ -9642,6 +9650,9 @@ pub mod raw_query {
         /// Use only the context to find points that minimize loss against negative examples
         #[prost(message, tag = "4")]
         Context(Context),
+        /// Recommend points which have the greatest sum of scores against all vectors. Positive vectors are added, negatives are subtracted.
+        #[prost(message, tag = "5")]
+        RecommendSumScores(Recommend),
     }
 }
 #[derive(serde::Serialize)]

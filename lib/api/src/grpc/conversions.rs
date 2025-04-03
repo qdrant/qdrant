@@ -32,7 +32,7 @@ use super::qdrant::{
     StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
-use super::{Expression, Formula};
+use super::{Expression, Formula, RecoQuery};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
@@ -2308,6 +2308,7 @@ impl From<RecommendStrategy> for crate::rest::RecommendStrategy {
         match value {
             RecommendStrategy::AverageVector => crate::rest::RecommendStrategy::AverageVector,
             RecommendStrategy::BestScore => crate::rest::RecommendStrategy::BestScore,
+            RecommendStrategy::SumScores => crate::rest::RecommendStrategy::SumScores,
         }
     }
 }
@@ -2352,6 +2353,34 @@ impl TryFrom<raw_query::Recommend> for segment_query::RecoQuery<segment_vectors:
                 .into_iter()
                 .map(segment_vectors::VectorInternal::try_from)
                 .try_collect()?,
+        })
+    }
+}
+
+impl From<segment_query::RecoQuery<segment_vectors::VectorInternal>> for RecoQuery {
+    fn from(query: segment_query::RecoQuery<segment_vectors::VectorInternal>) -> Self {
+        Self {
+            positives: query.positives.into_iter().map(From::from).collect(),
+            negatives: query.negatives.into_iter().map(From::from).collect(),
+        }
+    }
+}
+
+impl TryFrom<RecoQuery> for segment_query::RecoQuery<segment_vectors::VectorInternal> {
+    type Error = Status;
+
+    fn try_from(request: RecoQuery) -> Result<Self, Self::Error> {
+        Ok(Self {
+            positives: request
+                .positives
+                .into_iter()
+                .map(TryFrom::try_from)
+                .collect::<Result<_, _>>()?,
+            negatives: request
+                .negatives
+                .into_iter()
+                .map(TryFrom::try_from)
+                .collect::<Result<_, _>>()?,
         })
     }
 }

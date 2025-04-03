@@ -9,7 +9,7 @@ mod reco_query;
 
 pub use context_query::{ContextPair, ContextQuery};
 pub use discovery_query::DiscoveryQuery;
-pub use reco_query::RecoQuery;
+pub use reco_query::{RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery};
 
 pub trait TransformInto<Output, T = DenseVector, U = DenseVector> {
     /// Change the underlying type of the query, or just process it in some way.

@@ -7,7 +7,9 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 use sparse::common::sparse_vector::SparseVector;
 
-use super::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
+use super::query::{
+    ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
+};
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
 use super::query_scorer::multi_custom_query_scorer::MultiCustomQueryScorer;
 use super::query_scorer::sparse_custom_query_scorer::SparseCustomQueryScorer;
@@ -228,10 +230,27 @@ pub fn raw_sparse_scorer_impl<'a, TVectorStorage: SparseVectorStorage>(
         QueryVector::Nearest(_vector) => Err(OperationError::service_error(
             "Raw scorer must not be used for nearest queries",
         )),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<SparseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
-                SparseCustomQueryScorer::<_, _>::new(reco_query, vector_storage, hardware_counter),
+                SparseCustomQueryScorer::<_, _>::new(
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<SparseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                SparseCustomQueryScorer::<_, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
                 point_deleted,
                 vec_deleted,
                 is_stopped,
@@ -359,11 +378,24 @@ fn new_scorer_with_metric<
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     vector_storage,
                     hardware_counter,
                 ),
@@ -463,11 +495,24 @@ fn new_scorer_byte_with_metric<
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     vector_storage,
                     hardware_counter,
                 ),
@@ -567,11 +612,24 @@ fn new_scorer_half_with_metric<
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter_cell,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     vector_storage,
                     hardware_counter_cell,
                 ),
@@ -690,11 +748,24 @@ fn new_multi_scorer_with_metric<
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     vector_storage,
                     hardware_counter,
                 ),
@@ -796,11 +867,24 @@ fn new_multi_scorer_byte_with_metric<
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     vector_storage,
                     hardware_counter,
                 ),
@@ -902,11 +986,24 @@ fn new_multi_scorer_half_with_metric<
             vec_deleted,
             is_stopped,
         ),
-        QueryVector::Recommend(reco_query) => {
+        QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
             raw_scorer_from_query_scorer(
                 MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    vector_storage,
+                    hardware_counter,
+                ),
+                point_deleted,
+                vec_deleted,
+                is_stopped,
+            )
+        }
+        QueryVector::RecommendSumScores(reco_query) => {
+            let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
+            raw_scorer_from_query_scorer(
+                MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     vector_storage,
                     hardware_counter,
                 ),

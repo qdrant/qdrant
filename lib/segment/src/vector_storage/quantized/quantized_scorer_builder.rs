@@ -16,7 +16,9 @@ use crate::data_types::vectors::{
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
 use crate::types::{Distance, QuantizationConfig, VectorStorageDatatype};
-use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
+use crate::vector_storage::query::{
+    ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
+};
 use crate::vector_storage::{RawScorer, raw_scorer_from_query_scorer};
 
 pub(super) struct QuantizedScorerBuilder<'a> {
@@ -166,10 +168,20 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
-            QueryVector::Recommend(reco_query) => {
+            QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
                 let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
-                    reco_query,
+                    RecoBestScoreQuery::from(reco_query),
+                    quantized_storage,
+                    quantization_config,
+                    hardware_counter,
+                );
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
+            }
+            QueryVector::RecommendSumScores(reco_query) => {
+                let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
+                let query_scorer = QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new(
+                    RecoSumScoresQuery::from(reco_query),
                     quantized_storage,
                     quantization_config,
                     hardware_counter,
@@ -231,12 +243,24 @@ impl<'a> QuantizedScorerBuilder<'a> {
                 );
                 raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
             }
-            QueryVector::Recommend(reco_query) => {
+            QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
                     reco_query.transform_into()?;
                 let query_scorer =
                     QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
-                        reco_query,
+                        RecoBestScoreQuery::from(reco_query),
+                        quantized_storage,
+                        quantization_config,
+                        hardware_counter,
+                    );
+                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted, is_stopped)
+            }
+            QueryVector::RecommendSumScores(reco_query) => {
+                let reco_query: RecoQuery<MultiDenseVectorInternal> =
+                    reco_query.transform_into()?;
+                let query_scorer =
+                    QuantizedCustomQueryScorer::<TElement, TMetric, _, _, _>::new_multi(
+                        RecoSumScoresQuery::from(reco_query),
                         quantized_storage,
                         quantization_config,
                         hardware_counter,

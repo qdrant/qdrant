@@ -5,7 +5,6 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::types::ScoredPointOffset;
-use itertools::Itertools;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use rstest::rstest;
@@ -14,6 +13,7 @@ use segment::data_types::vectors::{
 };
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_dense_byte_vector, random_int_payload};
+use segment::fixtures::query_fixtures::QueryVariant;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
@@ -26,16 +26,7 @@ use segment::types::{
 };
 use segment::vector_storage::VectorStorageEnum;
 use segment::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use segment::vector_storage::query::{ContextPair, DiscoveryQuery, RecoQuery};
 use tempfile::Builder;
-
-const MAX_EXAMPLE_PAIRS: usize = 4;
-
-enum QueryVariant {
-    Nearest,
-    RecommendBestScore,
-    Discovery,
-}
 
 enum QuantizationVariant {
     Scalar,
@@ -58,54 +49,15 @@ where
     }
 }
 
-fn random_discovery_query<R: Rng + ?Sized>(
-    rnd: &mut R,
-    dim: usize,
-    data_type: VectorStorageDatatype,
-) -> QueryVector {
-    let num_pairs: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
-
-    let target = random_vector(rnd, dim, data_type).into();
-
-    let pairs = (0..num_pairs)
-        .map(|_| {
-            let positive = random_vector(rnd, dim, data_type).into();
-            let negative = random_vector(rnd, dim, data_type).into();
-            ContextPair { positive, negative }
-        })
-        .collect_vec();
-
-    DiscoveryQuery::new(target, pairs).into()
-}
-
-fn random_reco_query<R: Rng + ?Sized>(
-    rnd: &mut R,
-    dim: usize,
-    data_type: VectorStorageDatatype,
-) -> QueryVector {
-    let num_examples: usize = rnd.random_range(1..MAX_EXAMPLE_PAIRS);
-
-    let positive = (0..num_examples)
-        .map(|_| random_vector(rnd, dim, data_type).into())
-        .collect_vec();
-    let negative = (0..num_examples)
-        .map(|_| random_vector(rnd, dim, data_type).into())
-        .collect_vec();
-
-    RecoQuery::new(positive, negative).into()
-}
-
 fn random_query<R: Rng + ?Sized>(
     variant: &QueryVariant,
-    rnd: &mut R,
+    rng: &mut R,
     dim: usize,
     data_type: VectorStorageDatatype,
 ) -> QueryVector {
-    match variant {
-        QueryVariant::Nearest => random_vector(rnd, dim, data_type).into(),
-        QueryVariant::Discovery => random_discovery_query(rnd, dim, data_type),
-        QueryVariant::RecommendBestScore => random_reco_query(rnd, dim, data_type),
-    }
+    segment::fixtures::query_fixtures::random_query(variant, rng, |rng| {
+        random_vector(rng, dim, data_type).into()
+    })
 }
 
 fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
@@ -144,8 +96,17 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     128, // ef
     1., // min_acc out of 100
 )]
-#[case::recommend_binary_dot(
-    QueryVariant::RecommendBestScore,
+#[case::recobestscore_binary_dot(
+    QueryVariant::RecoBestScore,
+    VectorStorageDatatype::Uint8,
+    QuantizationVariant::Binary,
+    Distance::Dot,
+    128, // dim
+    64, // ef
+    1., // min_acc out of 100
+)]
+#[case::recosumscores_binary_dot(
+    QueryVariant::RecoSumScores,
     VectorStorageDatatype::Uint8,
     QuantizationVariant::Binary,
     Distance::Dot,
@@ -171,8 +132,17 @@ fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> us
     128, // ef
     15., // min_acc out of 100
 )]
-#[case::recommend_binary_cosine(
-    QueryVariant::RecommendBestScore,
+#[case::recobestscore_binary_cosine(
+    QueryVariant::RecoBestScore,
+    VectorStorageDatatype::Uint8,
+    QuantizationVariant::Binary,
+    Distance::Cosine,
+    128, // dim
+    64, // ef
+    15., // min_acc out of 100
+)]
+#[case::recosumscores_binary_cosine(
+    QueryVariant::RecoSumScores,
     VectorStorageDatatype::Uint8,
     QuantizationVariant::Binary,
     Distance::Cosine,
