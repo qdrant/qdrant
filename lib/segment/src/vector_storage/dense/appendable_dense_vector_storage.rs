@@ -1,11 +1,13 @@
 use std::borrow::Cow;
 use std::fs::create_dir_all;
+use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use memory::madvise::AdviceSetting;
 
@@ -68,16 +70,18 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T
             .expect("mmap vector not found")
     }
 
-    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
-        debug_assert!(keys.len() == vectors.len());
-        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
-
-        let mut vector_offsets = [0; VECTOR_READ_BATCH_SIZE];
-        for (i, key) in keys.iter().enumerate() {
-            vector_offsets[i] = *key as VectorOffsetType;
-        }
-        self.vectors
-            .get_batch(&vector_offsets[..keys.len()], vectors);
+    fn get_dense_batch<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
+        let mut vector_offsets = [MaybeUninit::uninit(); VECTOR_READ_BATCH_SIZE];
+        let vector_offsets = maybe_uninit_fill_from(
+            &mut vector_offsets,
+            keys.iter().map(|key| *key as VectorOffsetType),
+        )
+        .0;
+        self.vectors.get_batch(vector_offsets, vectors)
     }
 }
 

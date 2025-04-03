@@ -1,9 +1,11 @@
+use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 
@@ -24,6 +26,7 @@ use crate::data_types::vectors::{
 };
 use crate::types::{Distance, MultiVectorConfig, SeqNumberType, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
+use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
 use crate::vector_storage::sparse::simple_sparse_vector_storage::SimpleSparseVectorStorage;
@@ -126,10 +129,12 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     /// Get the dense vectors by the given keys
     ///
     /// Implementation can assume that the keys are consecutive
-    fn get_dense_batch<'a>(&'a self, keys: &[PointOffsetType], vectors: &mut [&'a [T]]) {
-        for (idx, key) in keys.iter().enumerate() {
-            vectors[idx] = self.get_dense(*key);
-        }
+    fn get_dense_batch<'a>(
+        &'a self,
+        keys: &[PointOffsetType],
+        vectors: &'a mut [MaybeUninit<&'a [T]>],
+    ) -> &'a [&'a [T]] {
+        maybe_uninit_fill_from(vectors, keys.iter().map(|key| self.get_dense(*key))).0
     }
 
     fn size_of_available_vectors_in_bytes(&self) -> usize {
@@ -149,8 +154,12 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
     fn get_batch_multi<'a>(
         &'a self,
         keys: &[PointOffsetType],
-        vectors: &mut [TypedMultiDenseVectorRef<'a, T>],
-    );
+        vectors: &'a mut [MaybeUninit<TypedMultiDenseVectorRef<'a, T>>],
+    ) -> &'a [TypedMultiDenseVectorRef<'a, T>] {
+        debug_assert_eq!(keys.len(), vectors.len());
+        debug_assert!(keys.len() <= VECTOR_READ_BATCH_SIZE);
+        maybe_uninit_fill_from(vectors, keys.iter().map(|key| self.get_multi(*key))).0
+    }
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send;
     fn multi_vector_config(&self) -> &MultiVectorConfig;
 
