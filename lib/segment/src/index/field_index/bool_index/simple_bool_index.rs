@@ -2,7 +2,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -244,18 +243,12 @@ impl SimpleBoolIndex {
         self.memory.get(point_id).has_false()
     }
 
-    pub fn iter_values_map<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = (bool, IdIter<'a>)> + 'a {
+    pub fn iter_values_map(&self) -> impl Iterator<Item = (bool, IdIter)> {
         [
             (false, Box::new(self.memory.iter_has_false()) as IdIter),
             (true, Box::new(self.memory.iter_has_true()) as IdIter),
         ]
         .into_iter()
-        .measure_hw_with_cell(hw_counter, size_of::<usize>(), |i| {
-            i.payload_index_io_read_counter()
-        })
     }
 
     pub fn iter_values(&self) -> impl Iterator<Item = bool> + '_ {

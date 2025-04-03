@@ -30,7 +30,7 @@ impl BoolIndex {
         hw_acc: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = (bool, IdIter<'a>)> + 'a> {
         match self {
-            BoolIndex::Simple(index) => Box::new(index.iter_values_map(hw_acc)),
+            BoolIndex::Simple(index) => Box::new(index.iter_values_map()),
             BoolIndex::Mmap(index) => Box::new(index.iter_values_map(hw_acc)),
         }
     }
