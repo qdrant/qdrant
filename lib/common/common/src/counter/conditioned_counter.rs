@@ -21,6 +21,16 @@ impl<'a> ConditionedCounter<'a> {
             tmp: HardwareCounterCell::disposable(), // We manually accumulate collected values!
         }
     }
+
+    /// Never measure hardware.
+    pub fn never(parent: &'a HardwareCounterCell) -> Self {
+        Self::new(false, parent)
+    }
+
+    /// Always measure hardware.
+    pub fn always(parent: &'a HardwareCounterCell) -> Self {
+        Self::new(true, parent)
+    }
 }
 
 impl Deref for ConditionedCounter<'_> {

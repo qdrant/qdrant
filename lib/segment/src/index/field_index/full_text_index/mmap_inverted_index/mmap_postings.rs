@@ -2,6 +2,7 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
@@ -65,6 +66,7 @@ pub struct MmapPostings {
     _path: PathBuf,
     mmap: Mmap,
     header: PostingsHeader,
+    on_disk: bool,
 }
 
 impl MmapPostings {
@@ -121,7 +123,7 @@ impl MmapPostings {
             chunks,
             data,
             remainder_postings,
-            hw_counter,
+            ConditionedCounter::new(self.on_disk, hw_counter),
         ))
     }
 
@@ -227,6 +229,7 @@ impl MmapPostings {
             _path: path,
             mmap,
             header,
+            on_disk: !populate,
         })
     }
 }

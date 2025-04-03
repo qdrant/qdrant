@@ -1,4 +1,5 @@
 use bitpacking::BitPacker;
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
@@ -41,7 +42,7 @@ impl CompressedPostingList {
             &self.chunks,
             &self.data,
             &self.remainder_postings,
-            hw_counter,
+            ConditionedCounter::never(hw_counter),
         )
     }
 

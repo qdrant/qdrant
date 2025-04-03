@@ -44,14 +44,10 @@ pub struct ParsedQuery {
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, document: &Document, hw_counter: &HardwareCounterCell) -> bool {
+    pub fn check_match(&self, document: &Document) -> bool {
         if self.tokens.contains(&None) {
             return false;
         }
-
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta((self.tokens.len() + document.tokens().len()) * size_of::<TokenId>());
 
         // Check that all tokens are in document
         self.tokens
