@@ -28,6 +28,7 @@ pub trait QueryScorer<TVector: ?Sized> {
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// <https://arxiv.org/pdf/2112.01488.pdf>, figure 1
 /// This metric is also implemented in `QuantizedMultivectorStorage` structure for quantized data.
+/// It produces negative scores for distance where the smaller the score, the better the match.
 pub fn score_max_similarity<
     T: PrimitiveVectorElement,
     TMetric: Metric<T> + MetricPostProcessing,
@@ -61,6 +62,10 @@ pub fn score_max_similarity<
         }
         // sum of max similarity
         sum += max_sim;
+    }
+    // invert the score to match the distance order
+    if distance == Order::SmallBetter {
+        sum = -sum;
     }
     sum
 }
@@ -148,9 +153,13 @@ mod tests {
             vec![4.0, 5.0, 6.0],
         ])
         .unwrap();
+        // distance to itself
+        let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&a).into());
+        assert_eq!(score, -0.0);
+
         let b = MultiDenseVectorInternal::try_from(vec![vec![3.0, 3.0, 3.0], vec![4.0, 2.0, 1.0]])
             .unwrap();
         let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&b).into());
-        assert_eq!(score, 5.9777255);
+        assert_eq!(score, -5.9777255);
     }
 }

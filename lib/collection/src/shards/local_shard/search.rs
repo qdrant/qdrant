@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::vectors::NamedVectorStruct;
-use segment::types::ScoredPoint;
+use segment::types::{Order, ScoredPoint};
 use tokio::runtime::Handle;
 
 use super::LocalShard;
@@ -77,7 +77,11 @@ impl LocalShard {
                                         distance.postprocess_score(scored_point.score);
                                 }
                                 NamedVectorStruct::MultiDense(_) => {
-                                    // no post-processing for multi dense vectors because 'maxsim' post-processes already
+                                    // no post-processing for multi vectors because 'maxsim' apply post-processing already
+                                    // however, we need to invert the score to match the distance order
+                                    if distance.distance_order() == Order::SmallBetter {
+                                        scored_point.score = -scored_point.score;
+                                    }
                                 }
                             }
                         }

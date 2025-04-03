@@ -413,6 +413,16 @@ def test_multi_with_euclidean(collection_name):
                     "id": 1,
                     "vector": {
                         "my-multivec": [
+                            [1.0, 2.0, 3.0],
+                            [3.0, 3.0, 3.0],
+                            [4.0, 5.0, 6.0]
+                        ]
+                    }
+                },
+                {
+                    "id": 2,
+                    "vector": {
+                        "my-multivec": [
                             [3.0, 3.0, 3.0],
                             [4.0, 2.0, 1.0]
                         ]
@@ -423,7 +433,7 @@ def test_multi_with_euclidean(collection_name):
     )
     assert response.ok
 
-    # get by id
+    # get by id 1
     response = request_with_validation(
         api='/collections/{collection_name}/points/{id}',
         method="GET",
@@ -433,6 +443,22 @@ def test_multi_with_euclidean(collection_name):
     assert response.ok
     point = response.json()['result']
     assert point['id'] == 1
+    assert point['vector']['my-multivec'] == [
+        [1.0, 2.0, 3.0],
+        [3.0, 3.0, 3.0],
+        [4.0, 5.0, 6.0]
+    ]
+
+    # get by id 2
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 2},
+    )
+
+    assert response.ok
+    point = response.json()['result']
+    assert point['id'] == 2
     assert point['vector']['my-multivec'] == [
         [3.0, 3.0, 3.0],
         [4.0, 2.0, 1.0]
@@ -453,6 +479,9 @@ def test_multi_with_euclidean(collection_name):
         }
     )
     assert response.ok
-    assert len(response.json()['result']) == 1
+    assert len(response.json()['result']['points']) == 2
     assert response.json()['result']['points'][0]['id'] == 1
-    assert response.json()['result']['points'][0]['score'] == 5.9777255
+    assert response.json()['result']['points'][0]['score'] == 0.0
+
+    assert response.json()['result']['points'][1]['id'] == 2
+    assert response.json()['result']['points'][1]['score'] == 5.9777255
