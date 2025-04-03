@@ -58,15 +58,17 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             self.point_to_values.resize_with(idx as usize + 1, Vec::new)
         }
 
+        let mut hw_cell_wb = hw_counter
+            .payload_index_io_write_counter()
+            .write_back_counter();
+
         self.point_to_values[idx as usize] = Vec::with_capacity(values.len());
         for value in values {
             let entry = self.map.entry(value.into());
             self.point_to_values[idx as usize].push(entry.key().clone());
             let db_record = MapIndex::encode_db_record(entry.key().borrow(), idx);
             entry.or_default().insert(idx);
-            hw_counter
-                .payload_index_io_write_counter()
-                .incr_delta(db_record.len());
+            hw_cell_wb.incr_delta(db_record.len());
             self.db_wrapper.put(db_record, [])?;
         }
         self.indexed_points += 1;
@@ -130,15 +132,15 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_acc: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
-        // Overhead of accessing the index.
-        hw_acc
+        let mut hw_counter_wb = hw_counter
             .payload_index_io_read_counter()
-            .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
+            .write_back_counter();
 
-        let mut hw_counter_val = 0;
+        // Overhead of accessing the index.
+        hw_counter_wb.incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
 
         let res = self
             .point_to_values
@@ -146,15 +148,11 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
             .map(|values| {
                 values.iter().any(|v| {
                     let item: &N = v.borrow();
-                    hw_counter_val += N::mmapped_size(item.as_referenced());
+                    hw_counter_wb.incr_delta(N::mmapped_size(item.as_referenced()));
                     check_fn(item)
                 })
             })
             .unwrap_or(false);
-
-        hw_acc
-            .payload_index_io_read_counter()
-            .incr_delta(hw_counter_val);
 
         res
     }

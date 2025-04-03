@@ -284,12 +284,14 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         &self,
         point_id: PointOffsetType,
         check_fn: impl Fn(T::Referenced<'_>) -> bool,
-        hw_acc: &HardwareCounterCell,
+        hw_counter: &HardwareCounterCell,
     ) -> bool {
-        // Measure IO overhead of `self.get_range()`
-        hw_acc
+        let mut hw_cell_wb = hw_counter
             .payload_index_io_read_counter()
-            .incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
+            .write_back_counter();
+
+        // Measure IO overhead of `self.get_range()`
+        hw_cell_wb.incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
 
         self.get_range(point_id)
             .map(|range| {
@@ -298,7 +300,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                     let bytes = self.mmap.get(value_offset..).unwrap();
                     let value = T::read_from_mmap(bytes).unwrap();
                     let mmap_size = T::mmapped_size(value.clone());
-                    hw_acc.payload_index_io_read_counter().incr_delta(mmap_size);
+                    hw_cell_wb.incr_delta(mmap_size);
                     if check_fn(value) {
                         return true;
                     }

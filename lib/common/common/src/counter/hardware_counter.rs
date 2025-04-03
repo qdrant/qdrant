@@ -217,9 +217,14 @@ mod test {
         {
             let draining_cell = accumulator.get_counter_cell();
             draining_cell.cpu_counter().incr(); // Dropping here means we drain the values to `atomic` instead of panicking
+
+            {
+                let mut hw_cell_wb = draining_cell.cpu_counter().write_back_counter();
+                hw_cell_wb.incr_delta(1);
+            }
         }
 
-        assert_eq!(accumulator.get_cpu(), 1);
+        assert_eq!(accumulator.get_cpu(), 2);
     }
 
     #[test]
@@ -237,7 +242,10 @@ mod test {
                 }
             }
 
-            counter.cpu_counter().incr_delta(27);
+            let mut wb_counter = counter.cpu_counter().write_back_counter();
+            wb_counter.incr_delta(1);
+
+            counter.cpu_counter().incr_delta(26);
         }
 
         assert_eq!(accumulator.get_cpu(), 69);

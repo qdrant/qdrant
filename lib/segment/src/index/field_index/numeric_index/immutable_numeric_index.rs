@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -220,12 +221,10 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         self.map
             .values_range(start_bound, end_bound)
-            .inspect(move |_| {
-                hw_counter
-                    .payload_io_read_counter()
-                    .incr_delta(size_of::<Point<T>>())
-            })
             .map(|Point { idx, .. }| idx)
+            .measure_hw_with_cell(hw_counter, size_of::<Point<T>>(), |i| {
+                i.payload_index_io_read_counter()
+            })
     }
 
     pub(super) fn orderable_values_range(
