@@ -371,31 +371,12 @@ impl ShardReplicaSet {
         }
 
         if is_dirty_shard {
-            replica_set.mark_local_as_dead();
+            // Mark local replica as Dead since it's dummy and dirty
+            let replica_state = replica_set.replica_state.read();
+            replica_set.add_locally_disabled(&replica_state, replica_set.this_peer_id(), None);
         }
 
         replica_set
-    }
-
-    pub fn mark_local_as_dead(&self) {
-        // ToDo: Can we just reuse self.add_locally_disabled()? instead
-
-        // Mark this peer as "locally disabled"...
-        //
-        // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
-        let has_other_active_peers = !self.active_remote_shards().is_empty();
-
-        // ...if this peer is *not* the last active replica
-        if has_other_active_peers {
-            let notify = self
-                .locally_disabled_peers
-                .write()
-                .disable_peer_and_notify_if_elapsed(self.this_peer_id(), None);
-
-            if notify {
-                self.notify_peer_failure_cb.deref()(self.this_peer_id(), self.shard_id, None);
-            }
-        }
     }
 
     pub fn this_peer_id(&self) -> PeerId {
@@ -554,12 +535,13 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Clears the local shard data and loads an empty local shard
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         let current_shard = local.take();
 
-        // ToDo: Remove shard files here?
+        LocalShard::clear(&self.shard_path).await?;
         let local_shard_res = LocalShard::build(
             self.shard_id,
             self.collection_id.clone(),

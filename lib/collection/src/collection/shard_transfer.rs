@@ -420,12 +420,16 @@ impl Collection {
             }
 
             if replica_set.is_dummy().await {
-                // Check if shard was dirty before init_empty_local_shard
+                // We can reach here because of either of these:
+                // 1. Qdrant is in recovery mode (shard not dirty), and user intentionally triggered a transfer
+                // 2. Shard is dirty (shard initializing flag), and Qdrant automatically triggered a transfer to fix it (note: initializing flag means there must be another replica)
+                //
+                // In both cases, it's safe to drop existing local shard data
                 let was_dirty = replica_set.is_dirty().await;
-                // TODO: If dirty, still try to load the shard and init empty shard only if it's not recoverable?
                 replica_set.init_empty_local_shard().await?;
 
                 if was_dirty {
+                    // TODO: Shouldn't we do this after start the transfer?
                     let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
                     tokio::fs::remove_file(&shard_flag).await?;
                 }
