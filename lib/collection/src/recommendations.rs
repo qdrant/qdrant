@@ -150,14 +150,19 @@ fn merge_positive_and_negative_avg(
 }
 
 pub fn avg_vector_for_recommendation<'a>(
-    positive: impl IntoIterator<Item = VectorRef<'a>>,
+    positive: impl Iterator<Item = VectorRef<'a>>,
     mut negative: Peekable<impl Iterator<Item = VectorRef<'a>>>,
 ) -> CollectionResult<VectorInternal> {
-    let avg_positive = avg_vectors(positive)?;
-
     let search_vector = if negative.peek().is_none() {
-        avg_positive
+        // If there is just one positive vector, return it without any modifications
+        let positive_vec = positive.collect_vec();
+        if positive_vec.len() == 1 {
+            positive_vec[0].to_owned()
+        } else {
+            avg_vectors(positive_vec)?
+        }
     } else {
+        let avg_positive = avg_vectors(positive)?;
         let avg_negative = avg_vectors(negative)?;
         merge_positive_and_negative_avg(avg_positive, avg_negative)?
     };
