@@ -402,7 +402,7 @@ impl<'a> Extractor<'a> {
         }
     }
 
-    fn needs_index(&self, key: &JsonPath, inferred: &Vec<PayloadFieldSchema>) -> bool {
+    fn needs_index(&self, key: &JsonPath, inferred: &[PayloadFieldSchema]) -> bool {
         match self.payload_schema.get(key) {
             Some(index_info) => {
                 let index_info_kind = index_info.kind();
@@ -456,7 +456,7 @@ impl<'a> Extractor<'a> {
                 }
             }
             ExpressionInternal::Condition(condition) => {
-                self.update_from_condition(None, &*condition);
+                self.update_from_condition(None, condition);
                 return;
             }
             ExpressionInternal::GeoDistance { origin: _, to } => {
@@ -470,18 +470,18 @@ impl<'a> Extractor<'a> {
             }
             ExpressionInternal::Mult(expression_internals) => {
                 for expr in expression_internals {
-                    self.update_from_expression(&*expr);
+                    self.update_from_expression(expr);
                 }
                 return;
             }
             ExpressionInternal::Sum(expression_internals) => {
                 for expr in expression_internals {
-                    self.update_from_expression(&*expr);
+                    self.update_from_expression(expr);
                 }
                 return;
             }
             ExpressionInternal::Neg(expression_internal) => {
-                self.update_from_expression(&*expression_internal);
+                self.update_from_expression(expression_internal);
                 return;
             }
             ExpressionInternal::Div {
@@ -489,33 +489,33 @@ impl<'a> Extractor<'a> {
                 right,
                 by_zero_default: _,
             } => {
-                self.update_from_expression(&*left);
-                self.update_from_expression(&*right);
+                self.update_from_expression(left);
+                self.update_from_expression(right);
                 return;
             }
             ExpressionInternal::Sqrt(expression_internal) => {
-                self.update_from_expression(&*expression_internal);
+                self.update_from_expression(expression_internal);
                 return;
             }
             ExpressionInternal::Pow { base, exponent } => {
-                self.update_from_expression(&*base);
-                self.update_from_expression(&*exponent);
+                self.update_from_expression(base);
+                self.update_from_expression(exponent);
                 return;
             }
             ExpressionInternal::Exp(expression_internal) => {
-                self.update_from_expression(&*expression_internal);
+                self.update_from_expression(expression_internal);
                 return;
             }
             ExpressionInternal::Log10(expression_internal) => {
-                self.update_from_expression(&*expression_internal);
+                self.update_from_expression(expression_internal);
                 return;
             }
             ExpressionInternal::Ln(expression_internal) => {
-                self.update_from_expression(&*expression_internal);
+                self.update_from_expression(expression_internal);
                 return;
             }
             ExpressionInternal::Abs(expression_internal) => {
-                self.update_from_expression(&*expression_internal);
+                self.update_from_expression(expression_internal);
                 return;
             }
             ExpressionInternal::Decay {
@@ -525,8 +525,10 @@ impl<'a> Extractor<'a> {
                 midpoint: _,
                 scale: _,
             } => {
-                self.update_from_expression(&*x);
-                target.as_ref().map(|t| self.update_from_expression(&*t));
+                self.update_from_expression(x);
+                if let Some(t) = target.as_ref() {
+                    self.update_from_expression(t)
+                };
                 return;
             }
         }
