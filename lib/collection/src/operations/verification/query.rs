@@ -105,15 +105,14 @@ impl StrictModeVerification for QueryGroupsRequestInternal {
     }
 }
 
-impl StrictModeVerification for CollectionQueryRequest {
-    async fn check_custom(
+impl Query {
+    fn check_strict_mode(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
-        // check for unindexed fields in formula
         if strict_mode_config.unindexed_filtering_retrieve == Some(false) {
-            if let Some(Query::Formula(formula)) = self.query.as_ref() {
+            if let Query::Formula(formula) = self {
                 if let Some((key, schemas)) =
                     collection.one_unindexed_expression_key(&formula.formula)
                 {
@@ -131,6 +130,20 @@ impl StrictModeVerification for CollectionQueryRequest {
                     ));
                 }
             }
+        }
+        Ok(())
+    }
+}
+
+impl StrictModeVerification for CollectionQueryRequest {
+    async fn check_custom(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        if let Some(query) = self.query.as_ref() {
+            // check for unindexed fields in formula
+            query.check_strict_mode(collection, strict_mode_config)?
         }
         Ok(())
     }
@@ -157,31 +170,14 @@ impl StrictModeVerification for CollectionQueryRequest {
 }
 
 impl StrictModeVerification for CollectionQueryGroupsRequest {
-    // check for unindexed fields in formula
     async fn check_custom(
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
-        if strict_mode_config.unindexed_filtering_retrieve == Some(false) {
-            if let Some(Query::Formula(formula)) = self.query.as_ref() {
-                if let Some((key, schemas)) =
-                    collection.one_unindexed_expression_key(&formula.formula)
-                {
-                    let possible_schemas_str = schemas
-                        .iter()
-                        .map(|schema| schema.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    return Err(CollectionError::strict_mode(
-                        format!(
-                            "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
-                        ),
-                        "Create an index for this key or use a different expression.",
-                    ));
-                }
-            }
+        if let Some(query) = self.query.as_ref() {
+            // check for unindexed fields in formula
+            query.check_strict_mode(collection, strict_mode_config)?
         }
         Ok(())
     }
