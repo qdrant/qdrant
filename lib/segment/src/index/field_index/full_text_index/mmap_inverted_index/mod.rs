@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
-use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
@@ -136,13 +135,6 @@ impl MmapInvertedIndex {
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
             self.path.join(DELETED_POINTS_FILE),
         ]
-    }
-
-    fn make_conditioned_counter<'a>(
-        &self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> ConditionedCounter<'a> {
-        ConditionedCounter::new(self.is_on_disk, hw_counter)
     }
 }
 
