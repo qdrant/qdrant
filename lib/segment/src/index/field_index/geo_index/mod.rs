@@ -111,16 +111,16 @@ impl GeoMapIndex {
 
     fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.points_of_hash(hash, hw_counter),
-            GeoMapIndex::Immutable(index) => index.points_of_hash(hash, hw_counter),
+            GeoMapIndex::Mutable(index) => index.points_of_hash(hash),
+            GeoMapIndex::Immutable(index) => index.points_of_hash(hash),
             GeoMapIndex::Mmap(index) => index.points_of_hash(hash, hw_counter),
         }
     }
 
     fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
         match self {
-            GeoMapIndex::Mutable(index) => index.values_of_hash(hash, hw_counter),
-            GeoMapIndex::Immutable(index) => index.values_of_hash(hash, hw_counter),
+            GeoMapIndex::Mutable(index) => index.values_of_hash(hash),
+            GeoMapIndex::Immutable(index) => index.values_of_hash(hash),
             GeoMapIndex::Mmap(index) => index.values_of_hash(hash, hw_counter),
         }
     }
@@ -189,8 +189,8 @@ impl GeoMapIndex {
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
         match self {
-            GeoMapIndex::Mutable(index) => index.check_values_any(idx, hw_counter, check_fn),
-            GeoMapIndex::Immutable(index) => index.check_values_any(idx, hw_counter, check_fn),
+            GeoMapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
+            GeoMapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
             GeoMapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
         }
     }

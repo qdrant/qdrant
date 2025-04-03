@@ -2,8 +2,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::BUCKET_OFFSET_OVERHEAD;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -75,21 +73,14 @@ impl ImmutableGeoMapIndex {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
         let mut counter = 0usize;
 
-        let res = self.point_to_values.check_values_any(idx, |v| {
+        self.point_to_values.check_values_any(idx, |v| {
             counter += 1;
             check_fn(v)
-        });
-
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(counter * size_of::<GeoPoint>() + BUCKET_OFFSET_OVERHEAD);
-
-        res
+        })
     }
 
     pub fn get_values(&self, idx: u32) -> Option<impl Iterator<Item = &GeoPoint> + '_> {
@@ -108,14 +99,7 @@ impl ImmutableGeoMapIndex {
             .map(|counts| (&counts.hash, counts.points as usize))
     }
 
-    pub fn points_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        hw_counter
-            .payload_index_io_read_counter()
-            // Simulate binary search complexity as IO read estimation
-            .incr_delta(
-                (self.counts_per_hash.len() as f32).log2().ceil() as usize * size_of::<Counts>(),
-            );
-
+    pub fn points_of_hash(&self, hash: &GeoHash) -> usize {
         if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(hash)) {
             self.counts_per_hash[index].points as usize
         } else {
@@ -123,12 +107,7 @@ impl ImmutableGeoMapIndex {
         }
     }
 
-    pub fn values_of_hash(&self, hash: &GeoHash, hw_counter: &HardwareCounterCell) -> usize {
-        hw_counter
-            .payload_index_io_read_counter()
-            // Simulate binary search complexity as IO read estimation
-            .incr_delta((self.counts_per_hash.len() as f32).log2().ceil() as usize);
-
+    pub fn values_of_hash(&self, hash: &GeoHash) -> usize {
         if let Ok(index) = self.counts_per_hash.binary_search_by(|x| x.hash.cmp(hash)) {
             self.counts_per_hash[index].values as usize
         } else {

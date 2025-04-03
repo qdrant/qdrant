@@ -3,8 +3,6 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use bitvec::vec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -172,20 +170,8 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
     ) -> bool {
-        let mut call_counter = 0;
-
-        let res = self.point_to_values.check_values_any(idx, |v| {
-            call_counter += 1;
-            check_fn(v)
-        });
-
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(call_counter);
-
-        res
+        self.point_to_values.check_values_any(idx, |v| check_fn(v))
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>> {
@@ -213,18 +199,14 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
         iterator.end_index - iterator.start_index
     }
 
-    pub(super) fn values_range<'a>(
-        &'a self,
+    pub(super) fn values_range(
+        &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
+    ) -> impl Iterator<Item = PointOffsetType> {
         self.map
             .values_range(start_bound, end_bound)
             .map(|Point { idx, .. }| idx)
-            .measure_hw_with_cell(hw_counter, size_of::<Point<T>>(), |i| {
-                i.payload_index_io_read_counter()
-            })
     }
 
     pub(super) fn orderable_values_range(
