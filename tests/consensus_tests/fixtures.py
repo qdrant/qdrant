@@ -141,6 +141,8 @@ def create_collection(
     headers={},
     strict_mode=None,
     sparse_vectors=True,
+    default_segment_number=None,
+    on_disk_payload=None,
 ):
     payload = {
         "vectors": {"size": DENSE_VECTOR_SIZE, "distance": "Dot"},
@@ -150,8 +152,10 @@ def create_collection(
         "sharding_method": sharding_method,
         "optimizers_config": {
             "indexing_threshold": indexing_threshold,
+            "default_segment_number": default_segment_number,
         },
         "strict_mode_config": strict_mode,
+        "on_disk_payload": on_disk_payload,
     }
 
     if sparse_vectors:
