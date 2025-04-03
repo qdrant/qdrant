@@ -682,7 +682,7 @@ pub struct DatetimeExpression {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct DatetimeKeyExpression {
-    pub datetime_key: String,
+    pub datetime_key: JsonPath,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

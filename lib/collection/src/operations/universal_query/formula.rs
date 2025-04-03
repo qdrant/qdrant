@@ -8,7 +8,7 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DatetimeExpression, DecayKind, ParsedExpression, ParsedFormula, PreciseScore, VariableId,
 };
 use segment::json_path::JsonPath;
-use segment::types::{Condition, GeoPoint, PayloadKeyType};
+use segment::types::{Condition, GeoPoint};
 use serde_json::Value;
 
 use crate::operations::types::{CollectionError, CollectionResult};
@@ -29,7 +29,7 @@ pub enum ExpressionInternal {
         to: JsonPath,
     },
     Datetime(String),
-    DatetimeKey(String),
+    DatetimeKey(JsonPath),
     Mult(Vec<ExpressionInternal>),
     Sum(Vec<ExpressionInternal>),
     Neg(Box<ExpressionInternal>),
@@ -87,10 +87,7 @@ impl ExpressionInternal {
                         .map_err(|err: chrono::ParseError| err.to_string())?,
                 ))
             }
-            ExpressionInternal::DatetimeKey(dt_key) => {
-                let json_path: PayloadKeyType = dt_key
-                    .parse()
-                    .map_err(|_| format!("Invalid datetime payload variable: {dt_key}"))?;
+            ExpressionInternal::DatetimeKey(json_path) => {
                 payload_vars.insert(json_path.clone());
                 ParsedExpression::Datetime(DatetimeExpression::PayloadVariable(json_path))
             }
