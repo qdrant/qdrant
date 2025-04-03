@@ -3,6 +3,7 @@ use std::ops::Bound;
 use std::path::{Path, PathBuf};
 
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
@@ -253,12 +254,10 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         hw_counter: &'a HardwareCounterCell,
     ) -> impl Iterator<Item = PointOffsetType> + 'a {
         self.values_range_iterator(start_bound, end_bound)
-            .inspect(move |_| {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(size_of::<Point<T>>())
-            })
             .map(|Point { idx, .. }| idx)
+            .measure_hw_with_cell(hw_counter, size_of::<Point<T>>(), |i| {
+                i.payload_index_io_read_counter()
+            })
     }
 
     pub(super) fn orderable_values_range(
