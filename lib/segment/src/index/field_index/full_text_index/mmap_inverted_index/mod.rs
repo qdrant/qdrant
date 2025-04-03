@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use bitvec::vec::BitVec;
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
@@ -33,6 +34,7 @@ pub struct MmapInvertedIndex {
         MmapBitSliceBufferedUpdateWrapper,
     /// Number of points which are not deleted
     pub(in crate::index::field_index::full_text_index) active_points_count: usize,
+    is_on_disk: bool,
 }
 
 impl MmapInvertedIndex {
@@ -111,6 +113,7 @@ impl MmapInvertedIndex {
             point_to_tokens_count,
             deleted_points,
             active_points_count: points_count,
+            is_on_disk: !populate,
         })
     }
 
@@ -133,6 +136,13 @@ impl MmapInvertedIndex {
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
             self.path.join(DELETED_POINTS_FILE),
         ]
+    }
+
+    fn make_conditioned_counter<'a>(
+        &self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> ConditionedCounter<'a> {
+        ConditionedCounter::new(self.is_on_disk, hw_counter)
     }
 }
 
@@ -273,6 +283,8 @@ impl InvertedIndex for MmapInvertedIndex {
     }
 
     fn get_token_id(&self, token: &str, hw_counter: &HardwareCounterCell) -> Option<TokenId> {
+        let hw_counter = self.make_conditioned_counter(hw_counter);
+
         hw_counter.payload_index_io_read_counter().incr_delta(
             READ_ENTRY_OVERHEAD + size_of::<TokenId>(), // Avoid check overhead and assume token is always read
         );
