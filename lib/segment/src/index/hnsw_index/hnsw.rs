@@ -5,6 +5,21 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 
+use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitSlice;
+use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(target_os = "linux")]
+use common::cpu::linux_low_thread_priority;
+use common::ext::BitSliceExt as _;
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use log::debug;
+use memory::madvise::clear_disk_cache;
+use memory::mmap_ops;
+use parking_lot::Mutex;
+use rayon::ThreadPool;
+use rayon::prelude::*;
+
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
@@ -43,20 +58,6 @@ use crate::vector_storage::query::DiscoveryQuery;
 use crate::vector_storage::{
     RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer, new_stoppable_raw_scorer,
 };
-use atomic_refcell::AtomicRefCell;
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
-#[cfg(target_os = "linux")]
-use common::cpu::linux_low_thread_priority;
-use common::ext::BitSliceExt as _;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use log::debug;
-use memory::madvise::clear_disk_cache;
-use memory::mmap_ops;
-use parking_lot::Mutex;
-use rayon::ThreadPool;
-use rayon::prelude::*;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
