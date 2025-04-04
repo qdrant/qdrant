@@ -116,7 +116,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    n_points = 1_000
+    n_points = 2_000
     upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
@@ -247,7 +247,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    n_points = 1_000
+    n_points = 2_000
     upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
