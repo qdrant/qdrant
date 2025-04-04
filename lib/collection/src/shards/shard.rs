@@ -242,7 +242,7 @@ impl Shard {
             Ok(Some(version)) => {
                 log::debug!(
                     "Resolved WAL delta from {version}, which counts {} records",
-                    wal.wal.lock().last_index().saturating_sub(version),
+                    wal.wal.lock().await.last_index().saturating_sub(version),
                 );
                 Ok(Some(version))
             }
@@ -258,9 +258,9 @@ impl Shard {
         }
     }
 
-    pub fn wal_version(&self) -> CollectionResult<Option<u64>> {
+    pub async fn wal_version(&self) -> CollectionResult<Option<u64>> {
         match self {
-            Self::Local(local_shard) => local_shard.wal.wal_version().map_err(|err| {
+            Self::Local(local_shard) => local_shard.wal.wal_version().await.map_err(|err| {
                 CollectionError::service_error(format!(
                     "Cannot get WAL version on {}: {err}",
                     self.variant_name(),

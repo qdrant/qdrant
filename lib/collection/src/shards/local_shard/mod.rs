@@ -174,7 +174,7 @@ impl LocalShard {
     ) -> Self {
         let segment_holder = Arc::new(RwLock::new(segment_holder));
         let config = collection_config.read().await;
-        let locked_wal = Arc::new(ParkingMutex::new(wal));
+        let locked_wal = Arc::new(Mutex::new(wal));
         let optimizers_log = Arc::new(ParkingMutex::new(Default::default()));
         let total_optimized_points = Arc::new(AtomicUsize::new(0));
 
@@ -617,7 +617,7 @@ impl LocalShard {
     /// Loads latest collection operations from WAL
     pub async fn load_from_wal(&self, collection_id: CollectionId) -> CollectionResult<()> {
         let mut newest_clocks = self.wal.newest_clocks.lock().await;
-        let wal = self.wal.wal.lock();
+        let wal = self.wal.wal.lock().await;
         let bar = ProgressBar::new(wal.len(false));
 
         let progress_style = ProgressStyle::default_bar()
@@ -626,9 +626,9 @@ impl LocalShard {
         bar.set_style(progress_style);
 
         log::debug!(
-            "Recovering shard {:?} starting reading WAL from {}",
-            &self.path,
-            wal.first_index()
+            "Recovering shard {} starting reading WAL from {}",
+            self.path.display(),
+            wal.first_index(),
         );
 
         bar.set_message(format!("Recovering collection {collection_id}"));
@@ -927,13 +927,17 @@ impl LocalShard {
     }
 
     /// Create empty WAL which is compatible with currently stored data
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
     pub fn snapshot_empty_wal(
         wal: LockedWal,
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
     ) -> CollectionResult<()> {
         let (segment_capacity, latest_op_num) = {
-            let wal_guard = wal.lock();
+            let wal_guard = wal.blocking_lock();
             (wal_guard.segment_capacity(), wal_guard.last_index())
         };
 
@@ -962,9 +966,13 @@ impl LocalShard {
     }
 
     /// snapshot WAL
+    ///
+    /// # Panics
+    ///
+    /// This function panics if called within an asynchronous execution context.
     pub fn snapshot_wal(wal: LockedWal, tar: &tar_ext::BuilderExt) -> CollectionResult<()> {
         // lock wal during snapshot
-        let mut wal_guard = wal.lock();
+        let mut wal_guard = wal.blocking_lock();
         wal_guard.flush()?;
         let source_wal_path = wal_guard.path();
 

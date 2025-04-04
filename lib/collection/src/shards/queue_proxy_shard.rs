@@ -66,19 +66,14 @@ impl QueueProxyShard {
     /// Queue proxy the given local shard and point to the remote shard.
     ///
     /// This starts queueing all new updates on the local shard at the point of creation.
-    pub fn new(
+    pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
         Self {
-            inner: Some(Inner::new(
-                wrapped_shard,
-                remote_shard,
-                wal_keep_from,
-                progress,
-            )),
+            inner: Some(Inner::new(wrapped_shard, remote_shard, wal_keep_from, progress).await),
         }
     }
 
@@ -93,7 +88,7 @@ impl QueueProxyShard {
     ///
     /// This fails if the given `version` is not in bounds of our current WAL. If the given
     /// `version` is too old or too new, queue proxy creation is rejected.
-    pub fn new_from_version(
+    pub async fn new_from_version(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
@@ -102,7 +97,7 @@ impl QueueProxyShard {
     ) -> Result<Self, (LocalShard, CollectionError)> {
         // Lock WAL until we've successfully created the queue proxy shard
         let wal = wrapped_shard.wal.wal.clone();
-        let wal_lock = wal.lock();
+        let wal_lock = wal.lock().await;
 
         // If start version is not in current WAL bounds [first_idx, last_idx + 1], we cannot reliably transfer WAL
         // Allow it to be one higher than the last index to only send new updates
@@ -395,13 +390,13 @@ struct Inner {
 }
 
 impl Inner {
-    pub fn new(
+    pub async fn new(
         wrapped_shard: LocalShard,
         remote_shard: RemoteShard,
         wal_keep_from: Arc<AtomicU64>,
         progress: Arc<ParkingMutex<TransferTaskProgress>>,
     ) -> Self {
-        let start_from = wrapped_shard.wal.wal.lock().last_index() + 1;
+        let start_from = wrapped_shard.wal.wal.lock().await.last_index() + 1;
         Self::new_from_version(
             wrapped_shard,
             remote_shard,
@@ -475,7 +470,7 @@ impl Inner {
 
         // Lock wall, count pending items to transfer, grab batch
         let (pending_count, total, batch) = {
-            let wal = self.wrapped_shard.wal.wal.lock();
+            let wal = self.wrapped_shard.wal.wal.lock().await;
             let items_left = (wal.last_index() + 1).saturating_sub(transfer_from);
             let items_total = (transfer_from - self.started_at) + items_left;
             let batch = wal.read(transfer_from).take(BATCH_SIZE).collect::<Vec<_>>();
