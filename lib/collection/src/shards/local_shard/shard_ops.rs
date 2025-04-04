@@ -124,7 +124,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1, &hw_measurement_acc, "scroll_by")?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || 1)?;
         match order_by {
             None => {
                 self.scroll_by_id(
@@ -169,7 +169,10 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(request.searches.len(), &hw_measurement_acc, "core_search")?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
+            // TODO(strict-mode) compute cost based on content of searches
+            request.searches.len()
+        })?;
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
     }
@@ -183,7 +186,10 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1, &hw_measurement_acc, "count")?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "count", || {
+            // TODO(strict-mode) exact count should be more expensive
+            1
+        })?;
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
             let all_points = tokio::time::timeout(
@@ -220,7 +226,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1, &hw_measurement_acc, "retrieve")?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || 1)?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
@@ -255,8 +261,10 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
         // Check read rate limiter before proceeding
-        let cost = planned_query.searches.len() + planned_query.scrolls.len();
-        self.check_read_rate_limiter(cost, &hw_measurement_acc, "query_batch")?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
+            // TODO(strict-mode) compute cost based on content of queries
+            planned_query.searches.len() + planned_query.scrolls.len()
+        })?;
         self.do_planned_query(
             planned_query,
             search_runtime_handle,
@@ -275,7 +283,10 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<FacetResponse> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(1, &hw_measurement_acc, "facet")?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "facet", || {
+            // TODO(strict-mode) exact facet should be more expensive
+            1
+        })?;
         let hits = if request.exact {
             self.exact_facet(request, search_runtime_handle, timeout, hw_measurement_acc)
                 .await?

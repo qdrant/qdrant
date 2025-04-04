@@ -1218,20 +1218,26 @@ impl LocalShard {
     }
 
     /// Check if the read rate limiter allows the operation to proceed
-    /// - cost: the cost of the operation
+    /// - hw_measurement_acc: the current hardware measurement accumulator
+    /// - context: the context of the operation to add on the error message
+    /// - cost_fn: the cost of the operation called lazily
     ///
     /// Returns an error if the rate limit is exceeded.
-    fn check_read_rate_limiter(
+    fn check_read_rate_limiter<F>(
         &self,
-        cost: usize,
         hw_measurement_acc: &HwMeasurementAcc,
         context: &str,
-    ) -> CollectionResult<()> {
+        cost_fn: F,
+    ) -> CollectionResult<()>
+    where
+        F: FnOnce() -> usize,
+    {
         // Do not rate limit internal operation tagged with disposable measurement
         if hw_measurement_acc.is_disposable() {
             return Ok(());
         }
         if let Some(rate_limiter) = &self.read_rate_limiter {
+            let cost = cost_fn();
             rate_limiter
                 .lock()
                 .try_consume(cost as f64)
