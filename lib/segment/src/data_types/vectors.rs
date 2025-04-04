@@ -6,6 +6,7 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
+use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::named_vectors::NamedVectors;
@@ -15,7 +16,8 @@ use crate::common::utils::transpose_map_into_named_vector;
 use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 pub enum VectorInternal {
     Dense(DenseVector),
     Sparse(SparseVector),

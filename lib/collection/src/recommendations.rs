@@ -500,38 +500,64 @@ fn recommend_by_custom_score(
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::{VectorInternal, VectorRef};
+    use segment::data_types::vectors::{VectorInternal, VectorInternalDiscriminants, VectorRef};
     use sparse::common::sparse_vector::SparseVector;
+    use strum::IntoEnumIterator;
 
     use super::avg_vectors;
 
+    fn check_avg_vectors(variant: VectorInternalDiscriminants) {
+        match variant {
+            VectorInternalDiscriminants::Dense => {
+                let vectors: Vec<VectorInternal> = vec![
+                    vec![1.0, 2.0, 3.0].into(),
+                    vec![1.0, 2.0, 3.0].into(),
+                    vec![1.0, 2.0, 3.0].into(),
+                ];
+                assert_eq!(
+                    avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+                    vec![1.0, 2.0, 3.0].into(),
+                );
+            }
+            VectorInternalDiscriminants::Sparse => {
+                let vectors: Vec<VectorInternal> = vec![
+                    SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
+                        .unwrap()
+                        .into(),
+                    SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
+                        .unwrap()
+                        .into(),
+                ];
+                assert_eq!(
+                    avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+                    SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
+                        .unwrap()
+                        .into(),
+                );
+            }
+            VectorInternalDiscriminants::MultiDense => {
+                let vectors: Vec<VectorInternal> = vec![
+                    vec![vec![1.0, 2.0, 3.0]].try_into().unwrap(), // multivec of 1 vector
+                    vec![vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0]]
+                        .try_into()
+                        .unwrap(), // multivec of 2 vectors
+                ];
+                assert_eq!(
+                    avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+                    vec![vec![1.0, 2.0, 3.0]].try_into().unwrap(),
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_avg_vectors() {
-        let vectors: Vec<VectorInternal> = vec![
-            vec![1.0, 2.0, 3.0].into(),
-            vec![1.0, 2.0, 3.0].into(),
-            vec![1.0, 2.0, 3.0].into(),
-        ];
-        assert_eq!(
-            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
-            vec![1.0, 2.0, 3.0].into(),
-        );
+        // Check all variants of vectors
+        for variant in VectorInternalDiscriminants::iter() {
+            check_avg_vectors(variant);
+        }
 
-        let vectors: Vec<VectorInternal> = vec![
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
-                .unwrap()
-                .into(),
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
-                .unwrap()
-                .into(),
-        ];
-        assert_eq!(
-            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
-                .unwrap()
-                .into(),
-        );
-
+        // Check that different vector types cannot be averaged
         let vectors: Vec<VectorInternal> = vec![
             vec![1.0, 2.0, 3.0].into(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
