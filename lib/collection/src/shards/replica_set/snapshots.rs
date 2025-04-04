@@ -245,7 +245,7 @@ impl ShardReplicaSet {
             None => {
                 return Err(CollectionError::bad_request(format!(
                     "failed to restore partial shard snapshot for shard {}:{}: \
-                     shard does not exist on peer {}",
+                     local shard does not exist on peer {}",
                     self.collection_id,
                     self.shard_id,
                     self.this_peer_id(),
