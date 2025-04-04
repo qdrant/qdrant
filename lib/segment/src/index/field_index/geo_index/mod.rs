@@ -342,6 +342,27 @@ impl GeoMapIndex {
     pub fn values_is_empty(&self, idx: PointOffsetType) -> bool {
         self.values_count(idx) == 0
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            GeoMapIndex::Mutable(_) => {}   // Not a mmap
+            GeoMapIndex::Immutable(_) => {} // Not a mmap
+            GeoMapIndex::Mmap(index) => index.populate()?,
+        }
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            GeoMapIndex::Mutable(_) => {}   // Not a mmap
+            GeoMapIndex::Immutable(_) => {} // Not a mmap
+            GeoMapIndex::Mmap(index) => index.clear_cache()?,
+        }
+        Ok(())
+    }
 }
 
 pub struct GeoMapIndexBuilder(GeoMapIndex);

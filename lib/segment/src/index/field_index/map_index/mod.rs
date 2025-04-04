@@ -7,6 +7,19 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use ahash::HashMap;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::mmap_hashmap::Key;
+use common::types::PointOffsetType;
+use indexmap::IndexSet;
+use itertools::Itertools;
+use mmap_map_index::MmapMapIndex;
+use parking_lot::RwLock;
+use rocksdb::DB;
+use serde_json::Value;
+use smol_str::SmolStr;
+use uuid::Uuid;
+
 use self::immutable_map_index::ImmutableMapIndex;
 use self::mutable_map_index::MutableMapIndex;
 use super::FieldIndexBuilderTrait;
@@ -25,18 +38,6 @@ use crate::types::{
     AnyVariants, FieldCondition, IntPayloadType, Match, MatchAny, MatchExcept, MatchValue,
     PayloadKeyType, UuidIntType, ValueVariants,
 };
-use ahash::HashMap;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::mmap_hashmap::Key;
-use common::types::PointOffsetType;
-use indexmap::IndexSet;
-use itertools::Itertools;
-use mmap_map_index::MmapMapIndex;
-use parking_lot::RwLock;
-use rocksdb::DB;
-use serde_json::Value;
-use smol_str::SmolStr;
-use uuid::Uuid;
 
 pub mod immutable_map_index;
 pub mod mmap_map_index;

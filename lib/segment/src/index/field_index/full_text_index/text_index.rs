@@ -260,6 +260,27 @@ impl FullTextIndex {
         let parsed_query = self.parse_query(query, hw_counter);
         self.filter(parsed_query, hw_counter)
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            FullTextIndex::Mutable(_) => {}   // Not a mmap
+            FullTextIndex::Immutable(_) => {} // Not a mmap
+            FullTextIndex::Mmap(index) => index.populate()?,
+        }
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            FullTextIndex::Mutable(_) => {}   // Not a mmap
+            FullTextIndex::Immutable(_) => {} // Not a mmap
+            FullTextIndex::Mmap(index) => index.clear_cache()?,
+        }
+        Ok(())
+    }
 }
 
 pub struct FullTextIndexBuilder(FullTextIndex);
