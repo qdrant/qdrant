@@ -580,6 +580,7 @@ impl SegmentBuilder {
                         old_indices: &old_indices.remove(vector_name).unwrap(),
                         gpu_device: gpu_device.as_ref(),
                         stopped,
+                        feature_flags: feature_flags(),
                     },
                 )?;
             }

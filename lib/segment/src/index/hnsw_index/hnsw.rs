@@ -208,6 +208,7 @@ impl HNSWIndex {
             old_indices: _,
             gpu_device,
             stopped,
+            feature_flags: _,
         } = build_args;
 
         create_dir_all(path)?;

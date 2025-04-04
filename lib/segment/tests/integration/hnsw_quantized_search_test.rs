@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -135,6 +136,7 @@ fn hnsw_quantized_search_test(
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
+use common::flags::FeatureFlags;
 use common::types::{ScoredPointOffset, TelemetryDetail};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -193,6 +194,7 @@ fn test_byte_storage_hnsw(
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();
