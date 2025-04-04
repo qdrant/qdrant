@@ -340,16 +340,6 @@ impl<T: Sized + Copy + 'static> ChunkedMmapVectors<T> {
     }
 }
 
-impl<T: Sized + 'static> ChunkedMmapVectors<T> {
-    fn clear_cache(&self) -> OperationResult<()> {
-        for chunk_idx in 0..self.chunks.len() {
-            let file_path = chunk_name(&self.directory, chunk_idx);
-            clear_disk_cache(&file_path)?;
-        }
-        Ok(())
-    }
-}
-
 impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T> {
     #[inline]
     fn len(&self) -> usize {
@@ -432,6 +422,21 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
 
     fn is_on_disk(&self) -> bool {
         true
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        for chunk in &self.chunks {
+            chunk.populate()?;
+        }
+        Ok(())
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        for chunk_idx in 0..self.chunks.len() {
+            let file_path = chunk_name(&self.directory, chunk_idx);
+            clear_disk_cache(&file_path)?;
+        }
+        Ok(())
     }
 }
 

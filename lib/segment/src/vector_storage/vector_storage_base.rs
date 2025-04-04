@@ -432,35 +432,60 @@ impl VectorStorageEnum {
 
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            VectorStorageEnum::DenseSimple(_) => {}
-            VectorStorageEnum::DenseSimpleByte(_) => {}
-            VectorStorageEnum::DenseSimpleHalf(_) => {}
+            VectorStorageEnum::DenseSimple(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::DenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::DenseSimpleHalf(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::DenseMemmap(vs) => vs.populate()?,
             VectorStorageEnum::DenseMemmapByte(vs) => vs.populate()?,
             VectorStorageEnum::DenseMemmapHalf(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableMemmap(_) => {}
-            VectorStorageEnum::DenseAppendableMemmapByte(_) => todo!(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(_) => {}
-            VectorStorageEnum::DenseAppendableInRam(_) => {}
-            VectorStorageEnum::DenseAppendableInRamByte(_) => {}
-            VectorStorageEnum::DenseAppendableInRamHalf(_) => {}
-            VectorStorageEnum::SparseSimple(_) => {}
-            VectorStorageEnum::SparseMmap(_) => {}
-            VectorStorageEnum::MultiDenseSimple(_) => {}
-            VectorStorageEnum::MultiDenseSimpleByte(_) => {}
-            VectorStorageEnum::MultiDenseSimpleHalf(_) => {}
-            VectorStorageEnum::MultiDenseAppendableMemmap(_) => {}
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => {}
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {}
-            VectorStorageEnum::MultiDenseAppendableInRam(_) => {}
-            VectorStorageEnum::MultiDenseAppendableInRamByte(_) => {}
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(_) => {}
+            VectorStorageEnum::DenseAppendableMemmap(vs) => vs.populate()?,
+            VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.populate()?,
+            VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.populate()?,
+            VectorStorageEnum::DenseAppendableInRam(vs) => vs.populate()?,
+            VectorStorageEnum::DenseAppendableInRamByte(vs) => vs.populate()?,
+            VectorStorageEnum::DenseAppendableInRamHalf(vs) => vs.populate()?,
+            VectorStorageEnum::SparseSimple(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::SparseMmap(vs) => vs.populate()?,
+            VectorStorageEnum::MultiDenseSimple(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::MultiDenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::MultiDenseSimpleHalf(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::MultiDenseAppendableMemmap(vs) => vs.populate()?,
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => vs.populate()?,
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => vs.populate()?,
+            VectorStorageEnum::MultiDenseAppendableInRam(vs) => vs.populate()?,
+            VectorStorageEnum::MultiDenseAppendableInRamByte(vs) => vs.populate()?,
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(vs) => vs.populate()?,
         }
         Ok(())
     }
 
     pub fn clear_cache(&self) -> OperationResult<()> {
-        todo!()
+        match self {
+            VectorStorageEnum::DenseSimple(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::DenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::DenseSimpleHalf(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::DenseMemmap(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseMemmapByte(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseMemmapHalf(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseAppendableMemmap(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseAppendableInRam(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseAppendableInRamByte(vs) => vs.clear_cache()?,
+            VectorStorageEnum::DenseAppendableInRamHalf(vs) => vs.clear_cache()?,
+            VectorStorageEnum::SparseSimple(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::SparseMmap(vs) => vs.clear_cache()?,
+            VectorStorageEnum::MultiDenseSimple(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::MultiDenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::MultiDenseSimpleHalf(_) => {} // Can't populate as it is not mmap
+            VectorStorageEnum::MultiDenseAppendableMemmap(vs) => vs.clear_cache()?,
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => vs.clear_cache()?,
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
+            VectorStorageEnum::MultiDenseAppendableInRam(vs) => vs.clear_cache()?,
+            VectorStorageEnum::MultiDenseAppendableInRamByte(vs) => vs.clear_cache()?,
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(vs) => vs.clear_cache()?,
+        }
+        Ok(())
     }
 }
 
