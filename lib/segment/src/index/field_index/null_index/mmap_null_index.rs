@@ -177,6 +177,22 @@ impl MmapNullIndex {
             histogram_bucket_size: None,
         }
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.is_null_slice.populate()?;
+        self.has_values_slice.populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.is_null_slice.clear_cache()?;
+        self.has_values_slice.clear_cache()?;
+
+        Ok(())
+    }
 }
 
 impl PayloadFieldIndex for MmapNullIndex {

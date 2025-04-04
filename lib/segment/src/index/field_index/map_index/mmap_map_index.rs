@@ -345,7 +345,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         let value_to_points_path = self.path.join(HASHMAP_PATH);
+        let deleted_path = self.path.join(DELETED_PATH);
+
         clear_disk_cache(&value_to_points_path)?;
+        clear_disk_cache(&deleted_path)?;
+
         self.point_to_values.clear_cache()?;
         Ok(())
     }

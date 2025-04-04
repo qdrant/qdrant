@@ -7,7 +7,6 @@ use std::mem::{align_of, size_of};
 use std::path::Path;
 use std::str;
 
-use crate::zeros::WriteZerosExt as _;
 use memmap2::Mmap;
 use memory::madvise::{AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
@@ -17,6 +16,8 @@ use rand::Rng as _;
 #[cfg(any(test, feature = "testing"))]
 use rand::rngs::StdRng;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+use crate::zeros::WriteZerosExt as _;
 
 type ValuesLen = u32;
 

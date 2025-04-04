@@ -25,6 +25,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use uuid::Uuid;
+
 use self::immutable_numeric_index::ImmutableNumericIndex;
 use super::FieldIndexBuilderTrait;
 use super::histogram::Point;
@@ -425,8 +426,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(_) => {}, // Not a mmap
-            NumericIndexInner::Immutable(_) => {}, // Not a mmap
+            NumericIndexInner::Mutable(_) => {}   // Not a mmap
+            NumericIndexInner::Immutable(_) => {} // Not a mmap
             NumericIndexInner::Mmap(index) => index.populate()?,
         }
         Ok(())
@@ -435,7 +436,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(_) => {} // Not a mmap
+            NumericIndexInner::Mutable(_) => {}   // Not a mmap
             NumericIndexInner::Immutable(_) => {} // Not a mmap
             NumericIndexInner::Mmap(index) => index.clear_cache()?,
         }

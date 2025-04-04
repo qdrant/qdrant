@@ -60,6 +60,19 @@ impl MmapFullTextIndex {
     pub fn flusher(&self) -> Flusher {
         self.inverted_index.deleted_points.flusher()
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.inverted_index.populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.inverted_index.clear_cache()?;
+        Ok(())
+    }
 }
 
 pub struct FullTextMmapIndexBuilder {

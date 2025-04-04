@@ -367,7 +367,10 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         let pairs_path = self.path.join(PAIRS_PATH);
+        let deleted_path = self.path.join(DELETED_PATH);
+
         clear_disk_cache(&pairs_path)?;
+        clear_disk_cache(&deleted_path)?;
 
         self.point_to_values.clear_cache()?;
 
