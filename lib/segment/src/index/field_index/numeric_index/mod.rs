@@ -25,7 +25,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use uuid::Uuid;
-
 use self::immutable_numeric_index::ImmutableNumericIndex;
 use super::FieldIndexBuilderTrait;
 use super::histogram::Point;
@@ -421,6 +420,27 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             }
         }
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            NumericIndexInner::Mutable(_) => {}, // Not a mmap
+            NumericIndexInner::Immutable(_) => {}, // Not a mmap
+            NumericIndexInner::Mmap(index) => index.populate()?,
+        }
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            NumericIndexInner::Mutable(_) => {} // Not a mmap
+            NumericIndexInner::Immutable(_) => {} // Not a mmap
+            NumericIndexInner::Mmap(index) => index.clear_cache()?,
+        }
+        Ok(())
+    }
 }
 
 pub struct NumericIndex<T: Encodable + Numericable + MmapValue + Default, P> {
@@ -495,6 +515,8 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
             pub fn values_count(&self, idx: PointOffsetType) -> usize;
             pub fn get_values(&self, idx: PointOffsetType) -> Option<Box<dyn Iterator<Item = T> + '_>>;
             pub fn values_is_empty(&self, idx: PointOffsetType) -> bool;
+            pub fn populate(&self) -> OperationResult<()>;
+            pub fn clear_cache(&self) -> OperationResult<()>;
         }
     }
 }

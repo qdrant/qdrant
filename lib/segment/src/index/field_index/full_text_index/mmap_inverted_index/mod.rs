@@ -87,7 +87,7 @@ impl MmapInvertedIndex {
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
         let postings = MmapPostings::open(&postings_path, populate)?;
-        let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path)?;
+        let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path, false)?;
 
         let point_to_tokens_count = unsafe {
             MmapSlice::try_from(mmap_ops::open_write_mmap(

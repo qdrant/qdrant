@@ -224,7 +224,7 @@ impl MmapGeoMapIndex {
                 populate,
             )?)?
         };
-        let point_to_values = MmapPointToValues::open(path)?;
+        let point_to_values = MmapPointToValues::open(path, true)?;
 
         let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
