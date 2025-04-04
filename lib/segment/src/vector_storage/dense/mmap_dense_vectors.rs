@@ -199,10 +199,6 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
         &self.deleted
     }
 
-    pub fn prefault_mmap_pages(&self, path: &Path) -> mmap_ops::PrefaultMmapPages {
-        mmap_ops::PrefaultMmapPages::new(self.mmap.clone(), Some(path))
-    }
-
     #[cfg(target_os = "linux")]
     fn process_points_uring(
         &self,

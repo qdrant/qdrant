@@ -20,7 +20,6 @@ use std::thread::JoinHandle;
 
 use atomic_refcell::AtomicRefCell;
 use io::storage_version::StorageVersion;
-use memory::mmap_ops;
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 
@@ -91,22 +90,6 @@ pub struct VectorData {
 impl fmt::Debug for VectorData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VectorData").finish_non_exhaustive()
-    }
-}
-
-impl VectorData {
-    pub fn prefault_mmap_pages(&self) -> impl Iterator<Item = mmap_ops::PrefaultMmapPages> {
-        let index_task = match &*self.vector_index.borrow() {
-            VectorIndexEnum::Hnsw(index) => index.prefault_mmap_pages(),
-            _ => None,
-        };
-
-        let storage_task = match &*self.vector_storage.borrow() {
-            VectorStorageEnum::DenseMemmap(storage) => storage.prefault_mmap_pages(),
-            _ => None,
-        };
-
-        index_task.into_iter().chain(storage_task)
     }
 }
 

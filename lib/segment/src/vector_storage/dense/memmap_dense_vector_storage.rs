@@ -127,14 +127,6 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
 }
 
 impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
-    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
-        Some(
-            self.mmap_store
-                .as_ref()?
-                .prefault_mmap_pages(&self.vectors_path),
-        )
-    }
-
     pub fn get_mmap_vectors(&self) -> &MmapDenseVectors<T> {
         self.mmap_store.as_ref().unwrap()
     }

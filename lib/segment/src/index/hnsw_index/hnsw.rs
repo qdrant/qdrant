@@ -15,7 +15,6 @@ use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use log::debug;
 use memory::madvise::clear_disk_cache;
-use memory::mmap_ops;
 use parking_lot::Mutex;
 use rayon::ThreadPool;
 use rayon::prelude::*;
@@ -1130,10 +1129,6 @@ impl HNSWIndex {
         };
         postprocess_result.truncate(top);
         Ok(postprocess_result)
-    }
-
-    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
-        self.graph.prefault_mmap_pages(&self.path)
     }
 
     /// Read underlying data from disk into disk cache.
