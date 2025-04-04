@@ -133,7 +133,7 @@ impl ScoringQuery {
                     FusionInternal::Rrf | FusionInternal::Dbsf => Some(Order::LargeBetter),
                 },
                 // Score boosting formulas are always have descending order,
-                // euclidean scores can be negated within the formula
+                // Euclidean scores can be negated within the formula
                 ScoringQuery::Formula(_formula) => Some(Order::LargeBetter),
                 ScoringQuery::OrderBy(order_by) => Some(Order::from(order_by.direction())),
                 // Random sample does not require ordering
