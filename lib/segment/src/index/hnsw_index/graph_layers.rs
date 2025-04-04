@@ -345,6 +345,11 @@ impl GraphLayers {
     pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
         self.links.prefault_mmap_pages(path)
     }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.links.populate()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

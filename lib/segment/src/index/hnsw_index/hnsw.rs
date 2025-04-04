@@ -5,20 +5,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 
-use atomic_refcell::AtomicRefCell;
-use bitvec::prelude::BitSlice;
-use bitvec::vec::BitVec;
-use common::counter::hardware_counter::HardwareCounterCell;
-#[cfg(target_os = "linux")]
-use common::cpu::linux_low_thread_priority;
-use common::ext::BitSliceExt as _;
-use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use log::debug;
-use memory::mmap_ops;
-use parking_lot::Mutex;
-use rayon::ThreadPool;
-use rayon::prelude::*;
-
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
@@ -57,6 +43,20 @@ use crate::vector_storage::query::DiscoveryQuery;
 use crate::vector_storage::{
     RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer, new_stoppable_raw_scorer,
 };
+use atomic_refcell::AtomicRefCell;
+use bitvec::prelude::BitSlice;
+use bitvec::vec::BitVec;
+use common::counter::hardware_counter::HardwareCounterCell;
+#[cfg(target_os = "linux")]
+use common::cpu::linux_low_thread_priority;
+use common::ext::BitSliceExt as _;
+use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
+use log::debug;
+use memory::madvise::clear_disk_cache;
+use memory::mmap_ops;
+use parking_lot::Mutex;
+use rayon::ThreadPool;
+use rayon::prelude::*;
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
@@ -81,6 +81,7 @@ pub struct HNSWIndex {
     path: PathBuf,
     graph: GraphLayers,
     searches_telemetry: HNSWSearchesTelemetry,
+    is_on_disk: bool,
 }
 
 #[derive(Debug)]
@@ -157,7 +158,9 @@ impl HNSWIndex {
 
         let do_convert = LINK_COMPRESSION_CONVERT_EXISTING;
 
-        let graph = GraphLayers::load(path, hnsw_config.on_disk.unwrap_or(false), do_convert)?;
+        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+
+        let graph = GraphLayers::load(path, is_on_disk, do_convert)?;
 
         Ok(HNSWIndex {
             id_tracker,
@@ -168,7 +171,12 @@ impl HNSWIndex {
             path: path.to_owned(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
+            is_on_disk,
         })
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.is_on_disk
     }
 
     #[cfg(test)]
@@ -475,11 +483,10 @@ impl HNSWIndex {
 
         config.indexed_vector_count.replace(indexed_vectors);
 
-        let graph: GraphLayers = graph_layers_builder.into_graph_layers(
-            path,
-            LINK_COMPRESSION_FORMAT,
-            hnsw_config.on_disk.unwrap_or(false),
-        )?;
+        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+
+        let graph: GraphLayers =
+            graph_layers_builder.into_graph_layers(path, LINK_COMPRESSION_FORMAT, is_on_disk)?;
 
         #[cfg(debug_assertions)]
         {
@@ -510,6 +517,7 @@ impl HNSWIndex {
             path: path.to_owned(),
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
+            is_on_disk,
         })
     }
 
@@ -1125,6 +1133,19 @@ impl HNSWIndex {
 
     pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
         self.graph.prefault_mmap_pages(&self.path)
+    }
+
+    /// Read underlying data from disk into disk cache.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.graph.populate()
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        for file in self.graph.files(&self.path) {
+            clear_disk_cache(&file)?
+        }
+        Ok(())
     }
 }
 

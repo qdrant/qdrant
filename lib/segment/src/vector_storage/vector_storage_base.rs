@@ -429,6 +429,39 @@ impl VectorStorageEnum {
             }
         }
     }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            VectorStorageEnum::DenseSimple(_) => {}
+            VectorStorageEnum::DenseSimpleByte(_) => {}
+            VectorStorageEnum::DenseSimpleHalf(_) => {}
+            VectorStorageEnum::DenseMemmap(vs) => vs.populate()?,
+            VectorStorageEnum::DenseMemmapByte(vs) => vs.populate()?,
+            VectorStorageEnum::DenseMemmapHalf(vs) => vs.populate()?,
+            VectorStorageEnum::DenseAppendableMemmap(_) => {}
+            VectorStorageEnum::DenseAppendableMemmapByte(_) => todo!(),
+            VectorStorageEnum::DenseAppendableMemmapHalf(_) => {}
+            VectorStorageEnum::DenseAppendableInRam(_) => {}
+            VectorStorageEnum::DenseAppendableInRamByte(_) => {}
+            VectorStorageEnum::DenseAppendableInRamHalf(_) => {}
+            VectorStorageEnum::SparseSimple(_) => {}
+            VectorStorageEnum::SparseMmap(_) => {}
+            VectorStorageEnum::MultiDenseSimple(_) => {}
+            VectorStorageEnum::MultiDenseSimpleByte(_) => {}
+            VectorStorageEnum::MultiDenseSimpleHalf(_) => {}
+            VectorStorageEnum::MultiDenseAppendableMemmap(_) => {}
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => {}
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => {}
+            VectorStorageEnum::MultiDenseAppendableInRam(_) => {}
+            VectorStorageEnum::MultiDenseAppendableInRamByte(_) => {}
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(_) => {}
+        }
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        todo!()
+    }
 }
 
 impl VectorStorage for VectorStorageEnum {
@@ -488,6 +521,9 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
+
+    /// If false - data is stored in RAM (and persisted on disk)
+    /// If true - data is stored on disk, and is not forced to be in RAM
     fn is_on_disk(&self) -> bool {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.is_on_disk(),

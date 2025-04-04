@@ -1,11 +1,11 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
+use serde::Deserialize;
 use std::hint::black_box;
 use std::io;
 use std::num::Wrapping;
-
-use serde::Deserialize;
+use std::path::Path;
 
 /// Global [`Advice`] value, to trivially set [`Advice`] value
 /// used by all memmaps created by the `segment` crate.
@@ -168,4 +168,27 @@ fn populate_simple(slice: &[u8]) {
             .step_by(512)
             .sum::<Wrapping<u8>>(),
     );
+}
+
+/// For given file path, clear disk cache with `posix_fadvise`
+///
+/// If `posix_fadvise` is not supported, this function does nothing.
+pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use libc::{POSIX_FADV_DONTNEED, posix_fadvise};
+        use std::os::unix::io::AsRawFd;
+
+        let file = std::fs::OpenOptions::new().read(true).open(file_path)?;
+        let fd = file.as_raw_fd();
+
+        // Clear the cache, offset 0, length 0 (whole file)
+        let ret = unsafe { posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED) };
+
+        if ret != 0 {
+            Err(io::Error::from_raw_os_error(ret))
+        } else {
+            Ok(())
+        }
+    }
 }
