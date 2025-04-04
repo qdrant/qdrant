@@ -175,7 +175,7 @@ fn populate_simple(slice: &[u8]) {
 ///
 /// If `posix_fadvise` is not supported, this function does nothing.
 pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     {
         use std::os::unix::io::AsRawFd;
 
