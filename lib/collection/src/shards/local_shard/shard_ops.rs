@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -268,23 +269,80 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
+        // Chunk requests for parallelism in certain scenarios
+        //
+        // Deeper down, each segment gets its own dedicated search thread. If this shard has just
+        // one segment, all requests will be executed on a single thread.
+        //
+        // To prevent this from being a bottleneck if we have a lot of requests, we can chunk the
+        // requests into multiple searches to allow more parallelism.
+        //
+        // We don't create smaller chunks than MIN_BATCH_SIZE to ensure our 'filter reuse
+        // optimization' can be properly used.
+        const MIN_CHUNK_SIZE: usize = 10;
+        let chunk_size = {
+            let count = requests.len();
+            if count <= MIN_CHUNK_SIZE {
+                // If number of requests is less than minimum batch size, create one chunk
+                count
+            } else {
+                let segment_count = max(self.segments.read().len().saturating_sub(1), 1);
+                if count <= segment_count {
+                    // If number of requests is less than segment count, create one chunk
+                    // Each request is also already parallelized over each segment
+                    count
+                } else {
+                    // Determine CPU count per segment, create up to that amount of chunks to parallelize
+                    // Each request is also already parallelized over each segment
+                    let cpus_per_segment = max(common::cpu::get_num_cpus() / segment_count, 1);
+                    max(count.div_ceil(cpus_per_segment), MIN_CHUNK_SIZE)
+                }
+            }
+        };
+
+        // Calculate read cost if read rate limit is enabled
+        let mut read_cost = self.read_rate_limiter.is_some().then_some(0);
+
+        let chunk_futures = requests
+            .chunks(chunk_size)
+            .map(|r| {
+                let planned_query = PlannedQuery::try_from(r.to_vec())?;
+                if let Some(rate_limit_cost) = &mut read_cost {
+                    *rate_limit_cost += planned_query
+                        .searches
+                        .iter()
+                        .map(|s| s.search_rate_cost())
+                        .sum::<usize>();
+                    *rate_limit_cost += planned_query
+                        .scrolls
+                        .iter()
+                        .map(|s| s.scroll_rate_cost())
+                        .sum::<usize>();
+                }
+                let future = self.do_planned_query(
+                    planned_query,
+                    search_runtime_handle,
+                    timeout,
+                    hw_measurement_acc.clone(),
+                );
+
+                CollectionResult::Ok(future)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
-            planned_query
-                .searches
-                .iter()
-                .map(|s| s.search_rate_cost())
-                .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
-                .sum()
+            read_cost.unwrap_or_default()
         })?;
-        self.do_planned_query(
-            planned_query,
-            search_runtime_handle,
-            timeout,
-            hw_measurement_acc,
-        )
-        .await
+
+        // Drive all searches and concatenate chunks again
+        let results = futures::future::try_join_all(chunk_futures)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect();
+
+        Ok(results)
     }
 
     /// This call is rate limited by the read rate limiter.
