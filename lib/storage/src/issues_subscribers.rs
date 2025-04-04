@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
+use collection::problems::UnindexedField;
 use issues::Code;
 use issues::broker::Subscriber;
-use segment::problems::UnindexedField;
 
 #[derive(Clone, Copy)]
 pub struct UnindexedFieldSubscriber;
@@ -15,7 +15,7 @@ impl Subscriber<SlowQueryEvent> for UnindexedFieldSubscriber {
         }
 
         for filter in &event.filters {
-            segment::problems::UnindexedField::submit_possible_suspects(
+            collection::problems::UnindexedField::submit_possible_suspects(
                 filter,
                 &event.schema,
                 event.collection_id.clone(),

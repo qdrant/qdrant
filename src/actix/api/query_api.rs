@@ -13,7 +13,7 @@ use tokio::time::Instant;
 use super::CollectionPath;
 use super::read_params::ReadParams;
 use crate::actix::auth::ActixAccess;
-use crate::actix::helpers::{self, get_request_hardware_counter, process_response_error};
+use crate::actix::helpers::{self, get_request_hardware_counter};
 use crate::common::inference::InferenceToken;
 use crate::common::inference::query_requests_rest::{
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
@@ -36,19 +36,6 @@ async fn query_points(
         shard_key,
     } = request.into_inner();
 
-    let pass = match check_strict_mode(
-        &query_request,
-        params.timeout_as_secs(),
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -64,6 +51,15 @@ async fn query_points(
     let hw_measurement_acc = request_hw_counter.get_counter();
     let result = async move {
         let request = convert_query_request_from_rest(query_request, &inference_token).await?;
+
+        let pass = check_strict_mode(
+            &request,
+            params.timeout_as_secs(),
+            &collection.name,
+            &dispatcher,
+            &access,
+        )
+        .await?;
 
         let points = dispatcher
             .toc(&access, &pass)
@@ -103,19 +99,6 @@ async fn query_points_batch(
 ) -> impl Responder {
     let QueryRequestBatch { searches } = request.into_inner();
 
-    let pass = match check_strict_mode_batch(
-        searches.iter().map(|i| &i.internal),
-        params.timeout_as_secs(),
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -141,6 +124,15 @@ async fn query_points_batch(
 
             batch.push((request, shard_selection));
         }
+
+        let pass = check_strict_mode_batch(
+            batch.iter().map(|i| &i.0),
+            params.timeout_as_secs(),
+            &collection.name,
+            &dispatcher,
+            &access,
+        )
+        .await?;
 
         let res = dispatcher
             .toc(&access, &pass)
@@ -183,19 +175,6 @@ async fn query_points_groups(
         shard_key,
     } = request.into_inner();
 
-    let pass = match check_strict_mode(
-        &search_group_request,
-        params.timeout_as_secs(),
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
-
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
         collection.name.clone(),
@@ -212,6 +191,15 @@ async fn query_points_groups(
         };
         let query_group_request =
             convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
+
+        let pass = check_strict_mode(
+            &query_group_request,
+            params.timeout_as_secs(),
+            &collection.name,
+            &dispatcher,
+            &access,
+        )
+        .await?;
 
         do_query_point_groups(
             dispatcher.toc(&access, &pass),

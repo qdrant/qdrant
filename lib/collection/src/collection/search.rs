@@ -317,7 +317,7 @@ impl Collection {
         duration: Duration,
         filters: impl IntoIterator<Item = Option<&'a Filter>>,
     ) {
-        if duration > segment::problems::UnindexedField::slow_query_threshold() {
+        if duration > crate::problems::UnindexedField::slow_query_threshold() {
             let filters = filters.into_iter().flatten().cloned().collect_vec();
 
             let schema = self.payload_index_schema.read().schema.clone();

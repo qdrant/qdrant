@@ -7,15 +7,17 @@ use http::header::CONTENT_TYPE;
 use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
-use strum::IntoEnumIterator as _;
-
-use crate::common::operation_error::OperationError;
-use crate::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
-use crate::json_path::JsonPath;
-use crate::types::{
+use segment::common::operation_error::OperationError;
+use segment::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
+use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
+use segment::json_path::JsonPath;
+use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface, UuidPayloadType,
 };
+use strum::IntoEnumIterator as _;
+
+use crate::operations::universal_query::formula::ExpressionInternal;
 #[derive(Debug)]
 pub struct UnindexedField {
     field_name: JsonPath,
@@ -166,7 +168,7 @@ fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
 
 fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
     match &value.value {
-        crate::types::ValueVariants::String(string) => {
+        segment::types::ValueVariants::String(string) => {
             let mut inferred = Vec::new();
 
             if UuidPayloadType::parse_str(string).is_ok() {
@@ -177,10 +179,10 @@ fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> 
 
             inferred
         }
-        crate::types::ValueVariants::Integer(_integer) => {
+        segment::types::ValueVariants::Integer(_integer) => {
             vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
         }
-        crate::types::ValueVariants::Bool(_boolean) => {
+        segment::types::ValueVariants::Bool(_boolean) => {
             vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)]
         }
     }
@@ -392,7 +394,16 @@ impl<'a> Extractor<'a> {
 
         let full_key = JsonPath::extend_or_new(nested_prefix, key);
 
-        let needs_index = match self.payload_schema.get(&full_key) {
+        if self.needs_index(&full_key, &inferred) {
+            self.unindexed_schema
+                .entry(full_key)
+                .or_default()
+                .extend(inferred);
+        }
+    }
+
+    fn needs_index(&self, key: &JsonPath, inferred: &[PayloadFieldSchema]) -> bool {
+        match self.payload_schema.get(key) {
             Some(index_info) => {
                 let index_info_kind = index_info.kind();
 
@@ -416,11 +427,115 @@ impl<'a> Extractor<'a> {
                 !already_indexed
             }
             None => true,
-        };
+        }
+    }
 
-        if needs_index {
+    pub fn update_from_expression(&mut self, expression: &ExpressionInternal) {
+        let key;
+        let inferred;
+
+        match expression {
+            ExpressionInternal::Constant(_) => return,
+            ExpressionInternal::Variable(variable) => {
+                // check if it is indexed with a numeric index
+                let Ok(var) = variable.parse::<VariableId>() else {
+                    // If it fails here, it will also fail when parsing.
+                    return;
+                };
+
+                match var {
+                    VariableId::Score(_) => return,
+                    VariableId::Payload(json_path) => {
+                        key = json_path;
+                        inferred = vec![
+                            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
+                            PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
+                        ];
+                    }
+                    VariableId::Condition(_) => return,
+                }
+            }
+            ExpressionInternal::Condition(condition) => {
+                self.update_from_condition(None, condition);
+                return;
+            }
+            ExpressionInternal::GeoDistance { origin: _, to } => {
+                key = to.clone();
+                inferred = vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)];
+            }
+            ExpressionInternal::Datetime(_) => return,
+            ExpressionInternal::DatetimeKey(variable) => {
+                key = variable.clone();
+                inferred = vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)];
+            }
+            ExpressionInternal::Mult(expression_internals) => {
+                for expr in expression_internals {
+                    self.update_from_expression(expr);
+                }
+                return;
+            }
+            ExpressionInternal::Sum(expression_internals) => {
+                for expr in expression_internals {
+                    self.update_from_expression(expr);
+                }
+                return;
+            }
+            ExpressionInternal::Neg(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Div {
+                left,
+                right,
+                by_zero_default: _,
+            } => {
+                self.update_from_expression(left);
+                self.update_from_expression(right);
+                return;
+            }
+            ExpressionInternal::Sqrt(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Pow { base, exponent } => {
+                self.update_from_expression(base);
+                self.update_from_expression(exponent);
+                return;
+            }
+            ExpressionInternal::Exp(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Log10(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Ln(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Abs(expression_internal) => {
+                self.update_from_expression(expression_internal);
+                return;
+            }
+            ExpressionInternal::Decay {
+                kind: _,
+                x,
+                target,
+                midpoint: _,
+                scale: _,
+            } => {
+                self.update_from_expression(x);
+                if let Some(t) = target.as_ref() {
+                    self.update_from_expression(t)
+                };
+                return;
+            }
+        }
+
+        if self.needs_index(&key, &inferred) {
             self.unindexed_schema
-                .entry(full_key)
+                .entry(key)
                 .or_default()
                 .extend(inferred);
         }
