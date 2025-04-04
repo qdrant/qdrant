@@ -426,10 +426,15 @@ impl Collection {
                 //
                 // In both cases, it's safe to drop existing local shard data
                 let was_dirty = replica_set.is_dirty().await;
+                log::debug!(
+                    "Initiating transfer to dummy shard {} with dirty = {}. Initializing empty local shard first",
+                    replica_set.shard_id,
+                    was_dirty
+                );
                 replica_set.init_empty_local_shard().await?;
 
                 if was_dirty {
-                    // TODO: Shouldn't we do this after start the transfer?
+                    // TODO: Shouldn't we do this after we start the transfer?
                     let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
                     tokio::fs::remove_file(&shard_flag).await?;
                 }
