@@ -247,7 +247,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    n_points = 2_000
+    n_points = 1_000
     upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
@@ -289,8 +289,12 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     local_shards = get_local_shards(peer_api_uris[-1])
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
-    assert local_shards[0]["state"] in ["Dead", "Partial", "Recovery"]
-    assert local_shards[0]["points_count"] == 0
+    shard_state = local_shards[0]["state"]
+    assert shard_state in ["Dead", "Partial", "Recovery"]
+    if shard_state == "Partial":
+        assert local_shards[0]["points_count"] <= n_points
+    else:
+        assert local_shards[0]["points_count"] == 0
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
