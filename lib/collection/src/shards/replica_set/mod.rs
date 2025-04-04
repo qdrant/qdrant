@@ -236,6 +236,7 @@ impl ShardReplicaSet {
         shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         shard_path: &Path,
+        is_dirty_shard: bool,
         collection_config: Arc<RwLock<CollectionConfigInternal>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -277,7 +278,12 @@ impl ShardReplicaSet {
         let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
-                Shard::Dummy(DummyShard::new(recovery_reason))
+                Shard::Dummy(DummyShard::new(recovery_reason, false))
+            } else if is_dirty_shard {
+                log::error!(
+                    "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
+                );
+                Shard::Dummy(DummyShard::new("Shard is dirty", true))
             } else {
                 let res = LocalShard::load(
                     shard_id,
@@ -308,9 +314,10 @@ impl ShardReplicaSet {
                              {err}"
                         );
 
-                        Shard::Dummy(DummyShard::new(format!(
-                            "Failed to load local shard {shard_path:?}: {err}"
-                        )))
+                        Shard::Dummy(DummyShard::new(
+                            format!("Failed to load local shard {shard_path:?}: {err}",),
+                            false,
+                        ))
                     }
                 }
             };
@@ -363,6 +370,12 @@ impl ShardReplicaSet {
                 .disable_peer(this_peer_id);
         }
 
+        if is_dirty_shard {
+            // Mark local replica as Dead since it's dummy and dirty
+            let replica_state = replica_set.replica_state.read();
+            replica_set.add_locally_disabled(&replica_state, replica_set.this_peer_id(), None);
+        }
+
         replica_set
     }
 
@@ -391,6 +404,14 @@ impl ShardReplicaSet {
     pub async fn is_dummy(&self) -> bool {
         let local_read = self.local.read().await;
         matches!(*local_read, Some(Shard::Dummy(_)))
+    }
+
+    pub async fn is_dirty(&self) -> bool {
+        let local_read = self.local.read().await;
+        match local_read.as_ref() {
+            Some(Shard::Dummy(dummy_shard)) => dummy_shard.is_dirty(),
+            _ => false,
+        }
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
@@ -514,12 +535,13 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Clears the local shard data and loads an empty local shard
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         let current_shard = local.take();
 
-        // ToDo: Remove shard files here?
+        LocalShard::clear(&self.shard_path).await?;
         let local_shard_res = LocalShard::build(
             self.shard_id,
             self.collection_id.clone(),

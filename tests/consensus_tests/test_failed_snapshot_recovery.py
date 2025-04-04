@@ -105,8 +105,9 @@ def remove_file_from_tar(original_tar, file_to_remove, new_tar):
 
 
 # The test validates that a node can recover from a corrupted snapshot
-def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
+def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     assert_project_root()
+
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
@@ -115,7 +116,8 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    upsert_random_points(peer_api_uris[0], 1_000)
+    n_points = 2_000
+    upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
 
@@ -170,28 +172,23 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
             continue
         break
 
-    # Assert storage does not contain initialized flag
-    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
-    assert not os.path.exists(flag_path)
-
     # Assert that the local shard is dead and empty
     local_shards = get_local_shards(peer_api_uris[-1])
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
-    assert local_shards[0]["state"] == "Partial"
+    assert local_shards[0]["state"] in ["Partial", "Recovery"]
     assert local_shards[0]["points_count"] == 0
+
+    # Assert storage does not contain initialized flag after restoring on restart
+    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
+    assert not os.path.exists(flag_path)
 
     # There are two other replicas, try moving shards into broken state
     local_shards = get_local_shards(peer_api_uris[0])
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
     assert local_shards[0]["state"] == "Active"
-    assert local_shards[0]["points_count"] == 1000
-
-    # Trigger replication to fix the broken shard
-    from_peer_id = get_peer_id(peer_api_uris[0])
-    to_peer_id = get_peer_id(peer_api_uris[-1])
-    replicate_shard(peer_api_uris[0], COLLECTION_NAME, 0, from_peer_id, to_peer_id)
+    assert local_shards[0]["points_count"] == n_points
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
@@ -204,7 +201,7 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
     assert local_shards[0]["state"] == "Active"
-    assert local_shards[0]["points_count"] == 1000
+    assert local_shards[0]["points_count"] == n_points
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one
@@ -234,6 +231,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         "QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS": "false"
     }
 
+
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
         tmp_path,
         N_PEERS,
@@ -249,7 +247,8 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    upsert_random_points(peer_api_uris[0], 1_000)
+    n_points = 1_000
+    upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
 
@@ -281,11 +280,21 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         extra_env=extra_env
     )
 
-    # Last peer panics on restart because the recovery logic for dirty shards was broken (and we set handle_collection_load_errors=false like prod envs)
-    # Ideally Qdrant should try to recover this shard automatically using other replicas
+    # Qdrant loads a dummy shard and marks it as dead to initiate a transfer from other replicas
 
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
+    # Assert that the local shard is in partial/recovery state
+    local_shards = get_local_shards(peer_api_uris[-1])
+    assert len(local_shards) == 1
+    assert local_shards[0]["shard_id"] == 0
+    shard_state = local_shards[0]["state"]
+    assert shard_state in ["Dead", "Partial", "Recovery"]
+    if shard_state == "Partial":
+        assert local_shards[0]["points_count"] <= n_points
+    else:
+        assert local_shards[0]["points_count"] == 0
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
@@ -298,7 +307,9 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
     assert local_shards[0]["state"] == "Active"
-    assert local_shards[0]["points_count"] == 1000
+    assert local_shards[0]["points_count"] == n_points
+
+    assert not os.path.exists(flag_path) # shard initializing flag should be dropped after recovery is successful
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one

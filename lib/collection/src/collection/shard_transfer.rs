@@ -13,11 +13,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
-use crate::shards::transfer;
 use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
+use crate::shards::{shard_initializing_flag_path, transfer};
 
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
@@ -396,6 +396,8 @@ impl Collection {
 
         let shards_holder = self.shards_holder.clone();
 
+        let collection_path = self.path.clone();
+
         async move {
             let shards_holder = shards_holder.read_owned().await;
 
@@ -418,7 +420,24 @@ impl Collection {
             }
 
             if replica_set.is_dummy().await {
+                // We can reach here because of either of these:
+                // 1. Qdrant is in recovery mode (shard not dirty), and user intentionally triggered a transfer
+                // 2. Shard is dirty (shard initializing flag), and Qdrant automatically triggered a transfer to fix it (note: initializing flag means there must be another replica)
+                //
+                // In both cases, it's safe to drop existing local shard data
+                let was_dirty = replica_set.is_dirty().await;
+                log::debug!(
+                    "Initiating transfer to dummy shard {} with dirty = {}. Initializing empty local shard first",
+                    replica_set.shard_id,
+                    was_dirty
+                );
                 replica_set.init_empty_local_shard().await?;
+
+                if was_dirty {
+                    // TODO: Shouldn't we do this after we start the transfer?
+                    let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+                    tokio::fs::remove_file(&shard_flag).await?;
+                }
             }
 
             let this_peer_id = replica_set.this_peer_id();
