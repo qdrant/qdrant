@@ -1,6 +1,7 @@
 import pathlib
 import subprocess
 import tempfile
+import shutil
 import requests
 from time import sleep
 
@@ -74,6 +75,16 @@ def corrupt_snapshot(snapshot_path: pathlib.Path, segment_name: str):
 
             # Replace the original snapshot tar with the corrupted one
             os.rename(new_segment_archive, snapshot_path)
+
+def corrupt_shard_dir(shard_path: pathlib.Path):
+    segements_path = shard_path / "segments"
+    segment_names = filter(lambda x: x.is_dir(), pathlib.Path(segements_path).iterdir())
+
+    first_segment_path = next(segment_names)
+    shutil.rmtree(first_segment_path)
+
+    wal_path = shard_path / "wal"
+    shutil.rmtree(wal_path)
 
 def remove_file_from_tar(original_tar, file_to_remove, new_tar):
     file_to_remove = file_to_remove.replace(os.sep, "/")
@@ -218,11 +229,15 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
 @pytest.mark.parametrize("transfer_method", ["snapshot", "stream_records", "wal_delta"])
 def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, transfer_method: str):
     assert_project_root()
+    extra_env = {
+        "QDRANT__STORAGE__SHARD_TRANSFER_METHOD": transfer_method,
+        "QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS": "false"
+    }
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
         tmp_path,
         N_PEERS,
-        extra_env={"QDRANT__STORAGE__SHARD_TRANSFER_METHOD": transfer_method },
+        extra_env=extra_env,
     )
 
     create_collection(
@@ -244,11 +259,17 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     )
     assert len(initial_dense_search_result) > 0
 
-    # Create a shard initializing flag to trigger dirty shard fixing logic
+    # Simulate killing on snapshot recovery (corrupting shard dir and adding a shard initializing flag)
     # this can happen in practice when a node is killed while shard directory was being moved from /qdrant/snapshots to /qdrant/storage
     # the initializing flag is created but never deleted in such cases, when Qdrant restarts it considers it as dirty shard and tries to recover it
-    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
+    shard_id = 0
+    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, shard_id)
     Path(flag_path).touch()
+
+    # Delete some of the files from the shard:
+    shard_path = Path(peer_dirs[-1]) / "storage" / "collections" / COLLECTION_NAME / f"{shard_id}"
+    assert shard_path.exists()
+    # corrupt_shard_dir(shard_path)
 
     # Kill last peer
     p = processes.pop()
@@ -256,8 +277,12 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     # Restart same peer
     peer_api_uris[-1] = start_peer(
-        peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri
+        peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri,
+        extra_env=extra_env
     )
+
+    # Last peer panics on restart because the recovery logic for dirty shards was broken (and we set handle_collection_load_errors=false like prod envs)
+    # Ideally Qdrant should try to recover this shard automatically using other replicas
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
@@ -270,10 +295,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
     assert local_shards[0]["state"] == "Active"
-    assert local_shards[0]["points_count"] == 1000  # FAILS because of dummy shard
-
-    # Qdrant loads a dummy shard (since handle_collection_load_errors=true) so we get 0 points instead of 1000 and test fails
-    # Ideally Qdrant should try to recover this shard automatically using other replicas
+    assert local_shards[0]["points_count"] == 1000
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one
