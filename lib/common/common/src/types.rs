@@ -15,6 +15,15 @@ pub struct ScoredPointOffset {
     pub score: ScoreType,
 }
 
+impl ScoredPointOffset {
+    pub fn new_unset(idx: PointOffsetType) -> Self {
+        ScoredPointOffset {
+            idx,
+            score: 0.0, // arbitrary value, will be set later by the scorer
+        }
+    }
+}
+
 impl Eq for ScoredPointOffset {}
 
 impl Ord for ScoredPointOffset {

@@ -23,6 +23,9 @@ use rayon::prelude::*;
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
 use super::graph_links::GraphLinksFormat;
+use super::point_filterer::PointsFilterer;
+#[cfg(feature = "gpu")]
+use super::point_filterer::SimplePointsFilterer;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::common::operation_time_statistics::{
@@ -37,7 +40,6 @@ use crate::index::hnsw_index::config::HnswGraphConfig;
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sample_estimation::sample_check_cardinality;
 use crate::index::struct_payload_index::StructPayloadIndex;
@@ -381,9 +383,10 @@ impl HNSWIndex {
                         internal_hardware_counter,
                     )
                 }?;
-                let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), None);
+                let filterer =
+                    PointsFilterer::new(vector_storage_ref.deref(), id_tracker_ref.deref(), None);
 
-                graph_layers_builder.link_new_point(vector_id, points_scorer);
+                graph_layers_builder.link_new_point(vector_id, &filterer, raw_scorer.as_ref());
 
                 Ok::<_, OperationError>(())
             };
@@ -602,10 +605,10 @@ impl HNSWIndex {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
             };
-            let points_scorer =
-                FilteredScorer::new(raw_scorer.as_ref(), Some(&block_condition_checker));
+            let filterer =
+                PointsFilterer::new(vector_storage, id_tracker, Some(&block_condition_checker));
 
-            graph_layers_builder.link_new_point(block_point_id, points_scorer);
+            graph_layers_builder.link_new_point(block_point_id, &filterer, raw_scorer.as_ref());
 
             Ok::<_, OperationError>(())
         };
@@ -669,6 +672,7 @@ impl HNSWIndex {
         };
 
         Self::build_graph_on_gpu(
+            SimplePointsFilterer::new(vector_storage, id_tracker),
             gpu_vectors,
             graph_layers_builder,
             id_tracker.iter_ids_excluding(deleted_bitslice),
@@ -719,6 +723,7 @@ impl HNSWIndex {
         };
 
         Self::build_graph_on_gpu(
+            SimplePointsFilterer::new(vector_storage, id_tracker),
             gpu_vectors,
             graph_layers_builder,
             points_to_index.iter().copied(),
@@ -731,6 +736,7 @@ impl HNSWIndex {
     #[cfg(feature = "gpu")]
     #[allow(clippy::too_many_arguments)]
     fn build_graph_on_gpu<'a>(
+        filterer: SimplePointsFilterer<'_>,
         gpu_vectors: Option<&GpuVectorStorage>,
         graph_layers_builder: &GraphLayersBuilder,
         points_to_index: impl Iterator<Item = PointOffsetType>,
@@ -746,6 +752,7 @@ impl HNSWIndex {
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         if let Some(gpu_vectors) = gpu_vectors {
             let gpu_constructed_graph = build_hnsw_on_gpu(
+                filterer,
                 gpu_vectors,
                 graph_layers_builder,
                 get_gpu_groups_count(),
@@ -846,11 +853,19 @@ impl HNSWIndex {
         let hw_counter = vector_query_context.hardware_counter();
 
         let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
-        let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
+        let points_filterer = PointsFilterer::new(
+            vector_storage.deref(),
+            id_tracker.deref(),
+            filter_context.as_deref(),
+        );
 
-        let search_result =
-            self.graph
-                .search(oversampled_top, ef, points_scorer, custom_entry_points);
+        let search_result = self.graph.search(
+            oversampled_top,
+            ef,
+            &points_filterer,
+            raw_scorer.as_ref(),
+            custom_entry_points,
+        );
 
         let res = self.postprocess_search_result(
             search_result,
@@ -1078,7 +1093,7 @@ impl HNSWIndex {
 
     fn postprocess_search_result(
         &self,
-        search_result: Vec<ScoredPointOffset>,
+        mut search_result: Vec<ScoredPointOffset>,
         vector: &QueryVector,
         params: Option<&SearchParams>,
         top: usize,
@@ -1101,7 +1116,7 @@ impl HNSWIndex {
                 .and_then(|q| q.rescore)
                 .unwrap_or(default_rescoring);
 
-        let mut postprocess_result = if rescore {
+        if rescore {
             let raw_scorer = new_stoppable_raw_scorer(
                 vector.to_owned(),
                 &vector_storage,
@@ -1110,17 +1125,12 @@ impl HNSWIndex {
                 hardware_counter,
             )?;
 
-            let mut ids_iterator = search_result.iter().map(|x| x.idx);
-            let mut re_scored = raw_scorer.score_points_unfiltered(&mut ids_iterator);
-
-            re_scored.sort_unstable();
-            re_scored.reverse();
-            re_scored
-        } else {
-            search_result
+            raw_scorer.score_points(&mut search_result);
+            search_result.sort_unstable();
+            search_result.reverse();
         };
-        postprocess_result.truncate(top);
-        Ok(postprocess_result)
+        search_result.truncate(top);
+        Ok(search_result)
     }
 
     pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {

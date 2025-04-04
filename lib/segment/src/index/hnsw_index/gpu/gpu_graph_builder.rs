@@ -10,7 +10,7 @@ use crate::index::hnsw_index::gpu::create_graph_layers_builder;
 use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_level_builder::build_level_on_gpu;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::index::hnsw_index::point_filterer::SimplePointsFilterer;
 use crate::payload_storage::FilterContext;
 use crate::vector_storage::RawScorer;
 
@@ -20,6 +20,7 @@ static MAX_VISITED_FLAGS_FACTOR: usize = 32;
 /// Build HNSW graph on GPU.
 #[allow(clippy::too_many_arguments)]
 pub fn build_hnsw_on_gpu<'a>(
+    simple_filterer: SimplePointsFilterer,
     gpu_vector_storage: &GpuVectorStorage,
     // Graph with all settings like m, ef, levels, etc.
     reference_graph: &GraphLayersBuilder,
@@ -67,8 +68,8 @@ pub fn build_hnsw_on_gpu<'a>(
         for point in batch.points {
             check_stopped(stopped)?;
             let (raw_scorer, filter_context) = points_scorer_builder(point.point_id)?;
-            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
-            graph_layers_builder.link_new_point(point.point_id, points_scorer);
+            let filterer = simple_filterer.with_context(filter_context.as_deref());
+            graph_layers_builder.link_new_point(point.point_id, &filterer, raw_scorer.as_ref());
             cpu_linked_points_count += 1;
             if cpu_linked_points_count >= cpu_linked_points {
                 break;
@@ -153,7 +154,9 @@ mod tests {
         .unwrap();
 
         let ids = (0..num_vectors as PointOffsetType).collect();
+        let simple_filterer = test.vector_holder.get_simple_filterer();
         build_hnsw_on_gpu(
+            simple_filterer,
             &gpu_vector_storage,
             &test.graph_layers_builder,
             groups_count,
@@ -162,7 +165,6 @@ mod tests {
             exact,
             ids,
             |point_id| {
-                let fake_filter_context = FakeFilterContext {};
                 let added_vector = test
                     .vector_holder
                     .vectors
@@ -172,6 +174,7 @@ mod tests {
                     .vector_holder
                     .get_raw_scorer(added_vector.clone())
                     .unwrap();
+                let fake_filter_context = FakeFilterContext {};
                 Ok((raw_scorer, Some(Box::new(fake_filter_context))))
             },
             &false.into(),

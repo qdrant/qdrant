@@ -17,6 +17,7 @@ use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::fixtures::query_fixtures::QueryVariant;
 use crate::id_tracker::id_tracker_base::IdTracker;
+use crate::index::hnsw_index::point_filterer::PointsFilterer;
 use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig,
@@ -188,6 +189,7 @@ fn scoring_equivalency(
             id_tracker.deleted_point_bitslice(),
         )
         .unwrap();
+        let filterer = PointsFilterer::new(&raw_storage, &id_tracker, None);
 
         let is_stopped = AtomicBool::new(false);
 
@@ -212,8 +214,8 @@ fn scoring_equivalency(
         let points =
             (0..other_storage.total_vector_count() as _).choose_multiple(&mut rng, SAMPLE_SIZE);
 
-        let raw_scores = score(&*raw_scorer, &points);
-        let other_scores = score(&*other_scorer, &points);
+        let raw_scores = score(&*raw_scorer, &filterer, &points);
+        let other_scores = score(&*other_scorer, &filterer, &points);
 
         // Compare scores
         if quantized_vectors.is_none() {

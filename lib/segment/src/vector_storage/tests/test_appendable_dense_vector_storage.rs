@@ -225,15 +225,19 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
             .unwrap();
     let closest = raw_scorer.peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2);
 
-    let query_points = vec![0, 1, 2, 3, 4];
+    let query_points = [0, 1, 2, 3, 4];
 
-    let mut raw_res1 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
-    let raw_res1_count = raw_scorer.score_points(&query_points, &mut raw_res1);
-    raw_res1.resize(raw_res1_count, ScoredPointOffset { idx: 0, score: 0. });
+    let mut raw_res1 = query_points
+        .iter()
+        .map(|&idx| ScoredPointOffset::new_unset(idx))
+        .collect::<Vec<_>>();
+    raw_scorer.score_points(&mut raw_res1);
 
-    let mut raw_res2 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
-    let raw_res2_count = raw_scorer.score_points(&query_points, &mut raw_res2);
-    raw_res2.resize(raw_res2_count, ScoredPointOffset { idx: 0, score: 0. });
+    let mut raw_res2 = query_points
+        .iter()
+        .map(|&idx| ScoredPointOffset::new_unset(idx))
+        .collect::<Vec<_>>();
+    raw_scorer.score_points(&mut raw_res2);
 
     assert_eq!(raw_res1, raw_res2);
 

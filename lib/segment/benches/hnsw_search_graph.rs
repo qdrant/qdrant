@@ -4,17 +4,16 @@ mod prof;
 use std::hint::black_box;
 use std::path::Path;
 
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use criterion::{Criterion, criterion_group, criterion_main};
 use indicatif::{ParallelProgressIterator, ProgressStyle};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
-use segment::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer, random_vector};
+use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormat;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::simple::CosineMetric;
 
 const NUM_VECTORS: usize = 1_000_000;
@@ -29,8 +28,6 @@ type Metric = CosineMetric;
 
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("hnsw-search-graph");
-
-    let fake_filter_context = FakeFilterContext {};
 
     // Note: make sure that vector generation is deterministic.
     let vector_holder =
@@ -67,10 +64,13 @@ fn hnsw_benchmark(c: &mut Criterion) {
                 )
                 .for_each(|idx| {
                     let added_vector = vector_holder.vectors.get(idx).to_vec();
-                    let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-                    let scorer =
-                        FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-                    graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
+                    let (raw_scorer, filterer) =
+                        vector_holder.get_scorer_and_filterer(added_vector).unwrap();
+                    graph_layers_builder.link_new_point(
+                        idx as PointOffsetType,
+                        &filterer,
+                        raw_scorer.as_ref(),
+                    );
                 });
 
             std::fs::create_dir_all(&path).unwrap();
@@ -85,10 +85,9 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
-            black_box(graph_layers.search(TOP, EF, scorer, None));
+            black_box(graph_layers.search(TOP, EF, &filterer, raw_scorer.as_ref(), None));
         })
     });
 
@@ -98,25 +97,27 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
-            black_box(graph_layers.search(TOP, EF, scorer, None));
+            black_box(graph_layers.search(TOP, EF, &filterer, raw_scorer.as_ref(), None));
         })
     });
 
-    let mut plain_search_range: Vec<PointOffsetType> =
-        (0..NUM_VECTORS as PointOffsetType).collect();
+    let plain_search_range: Vec<PointOffsetType> = (0..NUM_VECTORS as PointOffsetType).collect();
     let mut rng = StdRng::seed_from_u64(42);
     group.bench_function("plain", |b| {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
             let mut top_score = 0.;
-            let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);
+            let mut scores: Vec<ScoredPointOffset> = plain_search_range
+                .iter()
+                .map(|&idx| ScoredPointOffset::new_unset(idx))
+                .collect();
+            filterer.filter_scores(&mut scores, NUM_VECTORS);
+            raw_scorer.score_points(&mut scores);
             scores.iter().copied().for_each(|score| {
                 if score.score > top_score {
                     top_score = score.score

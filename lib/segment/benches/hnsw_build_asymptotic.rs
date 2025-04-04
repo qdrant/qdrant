@@ -1,16 +1,15 @@
 #[cfg(not(target_os = "windows"))]
 mod prof;
 
-use common::types::PointOffsetType;
+use common::types::{PointOffsetType, ScoredPointOffset};
 use criterion::{Criterion, criterion_group, criterion_main};
 use itertools::Itertools;
 use rand::{Rng, rng};
 use segment::data_types::vectors::VectorElementType;
-use segment::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer, random_vector};
+use segment::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormat;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 use segment::spaces::simple::{CosineMetric, DotProductMetric};
 use segment::vector_storage::chunked_vector_storage::VectorOffsetType;
@@ -31,14 +30,12 @@ fn build_index<TMetric: Metric<VectorElementType>>(
     let vector_holder = TestRawScorerProducer::<TMetric>::new(DIM, num_vectors, &mut rng);
     let mut graph_layers_builder =
         GraphLayersBuilder::new(num_vectors, M, M * 2, EF_CONSTRUCT, 10, USE_HEURISTIC);
-    let fake_filter_context = FakeFilterContext {};
     for idx in 0..(num_vectors as PointOffsetType) {
         let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(added_vector).unwrap();
         let level = graph_layers_builder.get_random_layer(&mut rng);
         graph_layers_builder.set_levels(idx, level);
-        graph_layers_builder.link_new_point(idx, scorer);
+        graph_layers_builder.link_new_point(idx, &filterer, raw_scorer.as_ref());
     }
     (
         vector_holder,
@@ -55,54 +52,47 @@ fn hnsw_build_asymptotic(c: &mut Criterion) {
 
     group.bench_function("build-n-search-hnsw", |b| {
         b.iter(|| {
-            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.search(TOP, EF, scorer, None);
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
+            graph_layers.search(TOP, EF, &filterer, raw_scorer.as_ref(), None);
         })
     });
 
     for _ in 0..10 {
-        let fake_filter_context = FakeFilterContext {};
         let query = random_vector(&mut rng, DIM);
-        let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-        graph_layers.search(TOP, EF, scorer, None);
+        let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
+        graph_layers.search(TOP, EF, &filterer, raw_scorer.as_ref(), None);
     }
 
     let (vector_holder, graph_layers) = build_index::<CosineMetric>(NUM_VECTORS * 10);
 
     group.bench_function("build-n-search-hnsw-10x", |b| {
         b.iter(|| {
-            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-            graph_layers.search(TOP, EF, scorer, None);
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
+            graph_layers.search(TOP, EF, &filterer, raw_scorer.as_ref(), None);
         })
     });
 
     group.bench_function("build-n-search-hnsw-10x-score-point", |b| {
         b.iter(|| {
-            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
             let mut points_to_score = (0..1500)
-                .map(|_| rng.random_range(0..(NUM_VECTORS * 10)) as u32)
+                .map(|_| {
+                    ScoredPointOffset::new_unset(rng.random_range(0..(NUM_VECTORS * 10)) as u32)
+                })
                 .collect_vec();
-            scorer.score_points(&mut points_to_score, 1000);
+            filterer.filter_scores(&mut points_to_score, 1000);
+            raw_scorer.score_points(&mut points_to_score);
         })
     });
 
     for _ in 0..10 {
-        let fake_filter_context = FakeFilterContext {};
         let query = random_vector(&mut rng, DIM);
-        let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
-        graph_layers.search(TOP, EF, scorer, None);
+        let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
+        graph_layers.search(TOP, EF, &filterer, raw_scorer.as_ref(), None);
     }
 }
 
@@ -117,15 +107,14 @@ fn scoring_vectors(c: &mut Criterion) {
 
     group.bench_function("score-point", |b| {
         b.iter(|| {
-            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.random_range(0..num_vectors) as u32)
+                .map(|_| ScoredPointOffset::new_unset(rng.random_range(0..num_vectors) as u32))
                 .collect_vec();
-            scorer.score_points(&mut points_to_score, points_per_cycle);
+            filterer.filter_scores(&mut points_to_score, points_per_cycle);
+            raw_scorer.score_points(&mut points_to_score);
         })
     });
 
@@ -134,15 +123,14 @@ fn scoring_vectors(c: &mut Criterion) {
 
     group.bench_function("score-point-10x", |b| {
         b.iter(|| {
-            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.random_range(0..num_vectors) as u32)
+                .map(|_| ScoredPointOffset::new_unset(rng.random_range(0..num_vectors) as u32))
                 .collect_vec();
-            scorer.score_points(&mut points_to_score, points_per_cycle);
+            filterer.filter_scores(&mut points_to_score, points_per_cycle);
+            raw_scorer.score_points(&mut points_to_score);
         })
     });
 
@@ -151,15 +139,14 @@ fn scoring_vectors(c: &mut Criterion) {
 
     group.bench_function("score-point-50x", |b| {
         b.iter(|| {
-            let fake_filter_context = FakeFilterContext {};
             let query = random_vector(&mut rng, DIM);
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let (raw_scorer, filterer) = vector_holder.get_scorer_and_filterer(query).unwrap();
 
             let mut points_to_score = (0..points_per_cycle)
-                .map(|_| rng.random_range(0..num_vectors) as u32)
+                .map(|_| ScoredPointOffset::new_unset(rng.random_range(0..num_vectors) as u32))
                 .collect_vec();
-            scorer.score_points(&mut points_to_score, points_per_cycle);
+            filterer.filter_scores(&mut points_to_score, points_per_cycle);
+            raw_scorer.score_points(&mut points_to_score);
         })
     });
 }

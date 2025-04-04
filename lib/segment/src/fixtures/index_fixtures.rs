@@ -12,6 +12,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
+use crate::index::hnsw_index::point_filterer::{PointsFilterer, SimplePointsFilterer};
 use crate::payload_storage::FilterContext;
 use crate::spaces::metric::Metric;
 use crate::types::{Distance, VectorStorageDatatype};
@@ -150,5 +151,28 @@ where
             &DEFAULT_STOPPED,
             HardwareCounterCell::new(),
         )
+    }
+
+    pub fn get_simple_filterer(&self) -> SimplePointsFilterer<'_> {
+        SimplePointsFilterer {
+            vec_deleted: self.deleted_vector_bitslice(),
+            point_deleted: &self.deleted_points,
+        }
+    }
+
+    pub fn get_filterer<'a>(
+        &'a self,
+        filter_context: Option<&'a dyn FilterContext>,
+    ) -> PointsFilterer<'a> {
+        self.get_simple_filterer().with_context(filter_context)
+    }
+
+    pub fn get_scorer_and_filterer(
+        &self,
+        query: DenseVector,
+    ) -> OperationResult<(Box<dyn RawScorer + '_>, PointsFilterer)> {
+        let raw_scorer = self.get_raw_scorer(query)?;
+        let filterer = self.get_filterer(Some(&FakeFilterContext {}));
+        Ok((raw_scorer, filterer))
     }
 }
