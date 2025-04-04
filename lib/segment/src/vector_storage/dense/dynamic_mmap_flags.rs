@@ -8,7 +8,7 @@ use bitvec::prelude::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::types::PointOffsetType;
 use memmap2::MmapMut;
-use memory::madvise::{self, clear_disk_cache, AdviceSetting, Madviseable as _};
+use memory::madvise::{self, AdviceSetting, Madviseable as _, clear_disk_cache};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
