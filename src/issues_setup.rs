@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use collection::events::{CollectionDeletedEvent, IndexCreatedEvent, SlowQueryEvent};
-use segment::problems::unindexed_field;
+use collection::problems::unindexed_field;
 use storage::issues_subscribers::UnindexedFieldSubscriber;
 
 use crate::settings::Settings;
