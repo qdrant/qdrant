@@ -193,4 +193,6 @@ pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
             Ok(())
         }
     }
+    #[cfg(not(target_os = "linux"))]
+    Ok(())
 }
