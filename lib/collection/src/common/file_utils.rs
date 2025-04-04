@@ -7,26 +7,63 @@ use crate::operations::types::{CollectionError, CollectionResult};
 /// Move directory from one location to another.
 /// Handles the case when the source and destination are on different filesystems.
 pub async fn move_dir(from: impl Into<PathBuf>, to: impl Into<PathBuf>) -> CollectionResult<()> {
-    // Try to rename first and fallback to copy to prevent TOCTOU
     let from = from.into();
     let to = to.into();
 
-    if let Err(_err) = tokio::fs::rename(&from, &to).await {
-        // If rename failed, try to copy.
-        // It is possible that the source and destination are on different filesystems.
-        let task = tokio::task::spawn_blocking(move || {
-            let options = CopyOptions::new().copy_inside(true);
-            fs_extra::dir::move_dir(&from, &to, &options).map_err(|err| {
-                CollectionError::service_error(format!(
-                    "Can't move dir from {} to {} due to {}",
-                    from.display(),
-                    to.display(),
-                    err
-                ))
-            })
-        });
-        task.await??;
+    log::trace!("Renaming directory {} to {}", from.display(), to.display());
+
+    let Err(err) = tokio::fs::rename(&from, &to).await else {
+        return Ok(());
+    };
+
+    log::trace!(
+        "Failed to rename directory {} to {}: {err}",
+        from.display(),
+        to.display(),
+    );
+
+    // TODO: Only retry to move directory, if error kind is `CrossesDevices` or `AlreadyExists`?
+    //
+    // match err.kind() {
+    //     io::ErrorKind::AlreadyExists | io::ErrorKind::CrossesDevices => (),
+    //     _ => {
+    //         return Err(CollectionError::service_error(format!(
+    //             "failed to rename directory {} to {}: {err}",
+    //             from.display(),
+    //             to.display(),
+    //         )));
+    //     }
+    // }
+
+    if !to.exists() {
+        log::trace!("Creating destination directory {}", to.display());
+
+        tokio::fs::create_dir(&to).await.map_err(|err| {
+            CollectionError::service_error(format!(
+                "failed to move directory {} to {}: \
+                 failed to create destination directory: \
+                 {err}",
+                from.display(),
+                to.display(),
+            ))
+        })?;
     }
+
+    tokio::task::spawn_blocking(move || {
+        log::trace!("Moving directory {} to {}", from.display(), to.display());
+
+        let opts = CopyOptions::new().content_only(true).overwrite(true);
+
+        fs_extra::dir::move_dir(&from, &to, &opts).map_err(|err| {
+            CollectionError::service_error(format!(
+                "failed to move directory {} to {}: {err}",
+                from.display(),
+                to.display(),
+            ))
+        })
+    })
+    .await??;
+
     Ok(())
 }
 
