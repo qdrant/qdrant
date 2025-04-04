@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use common::types::PointOffsetType;
 use rand::SeedableRng as _;
@@ -12,6 +13,12 @@ use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 
+/// Generate vectors and HNSW graph to be used in benchmarks.
+///
+/// Graph layers are cached on disk to avoid wait times across repeated
+/// benchmark runs.
+/// Vectors values are not saved on disk, but generated deterministically using
+/// the same seed.
 pub fn make_cached_graph<METRIC>(
     num_vectors: usize,
     dim: usize,
@@ -38,8 +45,11 @@ where
     let vector_holder =
         TestRawScorerProducer::<METRIC>::new(dim, num_vectors, &mut StdRng::seed_from_u64(42));
 
-    let graph_layers = if GraphLayers::get_path(&path).exists() {
-        eprintln!("Loading cached links from {path:?}");
+    let graph_layers_path = GraphLayers::get_path(&path);
+    let graph_layers = if graph_layers_path.exists() {
+        let updated_ago = updated_ago(&graph_layers_path).unwrap_or_else(|_| "???".to_string());
+        eprintln!("Loading cached links (built {updated_ago} ago) from {graph_layers_path:?}.");
+        eprintln!("Delete the directory above if code related to HNSW graph building is changed");
         GraphLayers::load(&path, false, false).unwrap()
     } else {
         let mut graph_layers_builder =
@@ -73,4 +83,10 @@ where
     };
 
     (vector_holder, graph_layers)
+}
+
+fn updated_ago(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let elapsed = std::fs::metadata(path)?.modified()?.elapsed()?;
+    let secs_rounded = elapsed.as_secs().next_multiple_of(60);
+    Ok(humantime::format_duration(Duration::from_secs(secs_rounded)).to_string())
 }
