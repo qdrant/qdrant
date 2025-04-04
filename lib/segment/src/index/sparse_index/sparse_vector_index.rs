@@ -74,10 +74,6 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         &self.payload_index
     }
 
-    pub fn inverted_index(&self) -> &TInvertedIndex {
-        &self.inverted_index
-    }
-
     pub fn indices_tracker(&self) -> &IndicesTracker {
         &self.indices_tracker
     }
@@ -242,6 +238,10 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             TInvertedIndex::from_ram_index(Cow::Owned(ram_index_builder.build()), path)?,
             indices_tracker,
         ))
+    }
+
+    pub fn inverted_index(&self) -> &TInvertedIndex {
+        &self.inverted_index
     }
 
     /// Returns the maximum number of results that can be returned by the index for a given sparse vector
