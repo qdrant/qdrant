@@ -938,7 +938,7 @@ impl QuantizedVectors {
         &self.storage_impl
     }
 
-    pub fn pupulate(&self) -> OperationResult<()> {
+    pub fn populate(&self) -> OperationResult<()> {
         match &self.storage_impl {
             QuantizedVectorStorage::ScalarRam(_) => {} // not mmap
             QuantizedVectorStorage::ScalarMmap(storage) => storage.storage().populate(),
