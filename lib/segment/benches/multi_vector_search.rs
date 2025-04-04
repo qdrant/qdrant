@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -126,6 +127,7 @@ fn make_segment_index<R: Rng + ?Sized>(rnd: &mut R, distance: Distance) -> HNSWI
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();

@@ -37,6 +37,10 @@ pub struct FeatureFlags {
     // ToDo(mmap-payload-index): remove for release
     #[serde(default)]
     pub payload_index_skip_rocksdb: bool,
+
+    /// Whether to use incremental HNSW building.
+    #[serde(default)]
+    pub incremental_hnsw_building: bool,
 }
 
 impl FeatureFlags {
@@ -47,10 +51,12 @@ impl FeatureFlags {
             use_new_shard_key_mapping_format,
             use_mutable_id_tracker_without_rocksdb,
             payload_index_skip_rocksdb,
+            incremental_hnsw_building,
         } = self;
         !use_new_shard_key_mapping_format
             && !use_mutable_id_tracker_without_rocksdb
             && !payload_index_skip_rocksdb
+            && !incremental_hnsw_building
     }
 }
 
@@ -62,6 +68,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         use_new_shard_key_mapping_format,
         use_mutable_id_tracker_without_rocksdb,
         payload_index_skip_rocksdb,
+        incremental_hnsw_building,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -69,6 +76,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *use_new_shard_key_mapping_format = true;
         *use_mutable_id_tracker_without_rocksdb = true;
         *payload_index_skip_rocksdb = true;
+        *incremental_hnsw_building = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);

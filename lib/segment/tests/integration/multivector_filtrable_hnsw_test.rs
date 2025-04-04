@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
+use common::flags::FeatureFlags;
 use common::types::TelemetryDetail;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -144,6 +145,7 @@ fn test_multi_filterable_hnsw(
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();

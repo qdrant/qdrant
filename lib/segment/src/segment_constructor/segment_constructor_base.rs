@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::flags::feature_flags;
+use common::flags::{FeatureFlags, feature_flags};
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
@@ -385,6 +385,7 @@ pub struct VectorIndexBuildArgs<'a> {
     pub old_indices: &'a [Arc<AtomicRefCell<VectorIndexEnum>>],
     pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
     pub stopped: &'a AtomicBool,
+    pub feature_flags: FeatureFlags,
 }
 
 pub(crate) fn open_vector_index(

@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::{ScoreType, ScoredPointOffset};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -32,7 +33,7 @@ use tempfile::Builder;
 
 use crate::fixtures::segment::build_segment_1;
 
-fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
+pub fn sames_count(a: &[Vec<ScoredPointOffset>], b: &[Vec<ScoredPointOffset>]) -> usize {
     a[0].iter()
         .map(|x| x.idx)
         .collect::<BTreeSet<_>>()
@@ -135,6 +136,7 @@ fn hnsw_quantized_search_test(
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();
@@ -178,7 +180,7 @@ fn hnsw_quantized_search_test(
     check_rescoring(&query_vectors, &hnsw_index, Some(&filter), ef, top);
 }
 
-fn check_matches(
+pub fn check_matches(
     query_vectors: &[QueryVector],
     segment: &Segment,
     hnsw_index: &HNSWIndex,

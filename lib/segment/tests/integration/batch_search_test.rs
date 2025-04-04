@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
 use segment::data_types::query_context::QueryContext;
@@ -162,6 +163,7 @@ fn test_batch_and_single_request_equivalency() {
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();

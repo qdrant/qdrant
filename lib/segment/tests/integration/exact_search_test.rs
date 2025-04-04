@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use common::types::PointOffsetType;
 use itertools::Itertools;
 use rand::{Rng, rng};
@@ -141,6 +142,7 @@ fn exact_search_test() {
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();
