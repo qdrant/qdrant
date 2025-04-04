@@ -64,9 +64,9 @@ const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
 /// Build first N points in HNSW graph using only a single thread, to avoid
 /// disconnected components in the graph.
 #[cfg(debug_assertions)]
-const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
+pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 32;
 #[cfg(not(debug_assertions))]
-const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
+pub const SINGLE_THREADED_HNSW_BUILD_THRESHOLD: usize = 256;
 
 const LINK_COMPRESSION_FORMAT: GraphLinksFormat = GraphLinksFormat::Compressed;
 const LINK_COMPRESSION_CONVERT_EXISTING: bool = false;
