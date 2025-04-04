@@ -3824,6 +3824,7 @@ name = "memory"
 version = "0.0.0"
 dependencies = [
  "bitvec",
+ "libc",
  "log",
  "memmap2",
  "parking_lot",

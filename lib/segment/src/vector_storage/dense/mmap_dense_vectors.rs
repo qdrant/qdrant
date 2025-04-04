@@ -9,7 +9,7 @@ use common::ext::BitSliceExt as _;
 use common::maybe_uninit::maybe_uninit_fill_from;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting};
+use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapFlusher};
 use parking_lot::Mutex;
@@ -246,6 +246,11 @@ impl<T: PrimitiveVectorElement> MmapDenseVectors<T> {
             self.process_points_simple(points, callback);
             Ok(())
         }
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        self.mmap.populate();
+        Ok(())
     }
 }
 
