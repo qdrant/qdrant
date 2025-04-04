@@ -59,6 +59,19 @@ impl MmapPayloadStorage {
         let storage = Arc::new(RwLock::new(storage));
         Ok(Self { storage })
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.storage.read().populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.storage.read().clear_cache()?;
+        Ok(())
+    }
 }
 
 impl PayloadStorage for MmapPayloadStorage {
