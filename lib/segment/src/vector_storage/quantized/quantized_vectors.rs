@@ -2,16 +2,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use bitvec::slice::BitSlice;
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use io::file_operations::{atomic_save_json, read_json};
-use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
-use quantization::{
-    EncodedQueryPQ, EncodedQueryU8, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,
-};
-use serde::{Deserialize, Serialize};
-
 use super::quantized_multivector_storage::{
     MultivectorOffset, MultivectorOffsetsStorage, MultivectorOffsetsStorageMmap,
     QuantizedMultivectorStorage, create_offsets_file_from_iter,
@@ -33,6 +23,16 @@ use crate::vector_storage::quantized::quantized_mmap_storage::{
 use crate::vector_storage::{
     DenseVectorStorage, MultiVectorStorage, RawScorer, VectorStorage, VectorStorageEnum,
 };
+use bitvec::slice::BitSlice;
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
+use io::file_operations::{atomic_save_json, read_json};
+use memory::madvise::clear_disk_cache;
+use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
+use quantization::{
+    EncodedQueryPQ, EncodedQueryU8, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,
+};
+use serde::{Deserialize, Serialize};
 
 pub const QUANTIZED_CONFIG_PATH: &str = "quantized.config.json";
 pub const QUANTIZED_DATA_PATH: &str = "quantized.data";
@@ -935,5 +935,34 @@ impl QuantizedVectors {
 
     pub fn get_storage(&self) -> &QuantizedVectorStorage {
         &self.storage_impl
+    }
+
+    pub fn pupulate(&self) -> OperationResult<()> {
+        match &self.storage_impl {
+            QuantizedVectorStorage::ScalarRam(_) => {} // not mmap
+            QuantizedVectorStorage::ScalarMmap(storage) => storage.storage().populate(),
+            QuantizedVectorStorage::PQRam(_) => {}
+            QuantizedVectorStorage::PQMmap(storage) => storage.storage().populate(),
+            QuantizedVectorStorage::BinaryRam(_) => {}
+            QuantizedVectorStorage::BinaryMmap(storage) => storage.storage().populate(),
+            QuantizedVectorStorage::ScalarRamMulti(_) => {}
+            QuantizedVectorStorage::ScalarMmapMulti(storage) => {
+                storage.storage().storage().populate()
+            }
+            QuantizedVectorStorage::PQRamMulti(_) => {}
+            QuantizedVectorStorage::PQMmapMulti(storage) => storage.storage().storage().populate(),
+            QuantizedVectorStorage::BinaryRamMulti(_) => {}
+            QuantizedVectorStorage::BinaryMmapMulti(storage) => {
+                storage.storage().storage().populate()
+            }
+        }
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        for file in self.files() {
+            clear_disk_cache(&file)?;
+        }
+        Ok(())
     }
 }
