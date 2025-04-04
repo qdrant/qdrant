@@ -1163,7 +1163,7 @@ def test_strict_mode_write_rate_limiting_batch_update_op(collection_name):
     # validate that updates with 11 points will never be allowed
     response = upsert_points([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
     assert response.status_code == 429
-    assert "Rate limiting exceeded: Write rate limit exceeded, request larger than than rate limiter capacity, please try to split your request" in response.json()['status']['error']
+    assert "Rate limiting exceeded: Write rate limit exceeded, request larger than rate limiter capacity, please try to split your request" in response.json()['status']['error']
 
     # validate that updates with 10 points is allowed because there are enough tokens for each point
     upsert_points([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]).raise_for_status()
@@ -1419,3 +1419,65 @@ def test_strict_mode_unset_rate_limiting_config(collection_name):
     assert new_strict_mode_config['read_rate_limit'] == 2
     # assert write rate limit is not unset because it is currently not supported
     assert new_strict_mode_config['write_rate_limit'] == 1
+
+
+# Test that examples in recommendations are tracked by rate limiter
+def test_strict_mode_recommendation_best_score_read_rate_limiting(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1, 2, 3, 4, 5],
+            "strategy": "best_score",
+            "limit": 10,
+        },
+    )
+    assert response.ok, response.text
+
+    # set read rate limit
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 4,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['read_rate_limit'] == 4
+
+    # try max number of examples
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1, 2, 3, 4, 5],
+            "strategy": "best_score",
+            "limit": 10,
+        },
+    )
+    assert response.status_code == 429
+    assert "Read rate limit exceeded, request larger than rate limiter capacity, please try to split your request" in response.json()['status']['error']
+
+    set_strict_mode(collection_name, {
+        "enabled": False,
+    })
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/recommend",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "positive": [1, 2, 3, 4, 5],
+            "strategy": "best_score",
+            "limit": 10,
+        },
+    )
+    assert response.ok, response.text

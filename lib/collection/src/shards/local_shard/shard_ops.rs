@@ -124,7 +124,10 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || 1)?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || {
+            // TODO(strict-mode) how much should a scroll cost?
+            1
+        })?;
         match order_by {
             None => {
                 self.scroll_by_id(
@@ -170,8 +173,7 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
-            // TODO(strict-mode) compute cost based on content of searches
-            request.searches.len()
+            request.searches.iter().map(|s| s.rate_cost()).sum()
         })?;
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
@@ -226,7 +228,10 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || 1)?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || {
+            // TODO(strict-mode) how much should a retrieve cost? (request.ids.len()?)
+            1
+        })?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
@@ -262,8 +267,12 @@ impl ShardOperation for LocalShard {
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
-            // TODO(strict-mode) compute cost based on content of queries
-            planned_query.searches.len() + planned_query.scrolls.len()
+            planned_query
+                .searches
+                .iter()
+                .map(|s| s.rate_cost())
+                .chain(planned_query.scrolls.iter().map(|s| s.rate_cost()))
+                .sum()
         })?;
         self.do_planned_query(
             planned_query,
