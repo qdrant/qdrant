@@ -284,6 +284,9 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Last peer panics on restart because the recovery logic for dirty shards was broken (and we set handle_collection_load_errors=false like prod envs)
     # Ideally Qdrant should try to recover this shard automatically using other replicas
 
+    # Wait for start of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
