@@ -243,13 +243,13 @@ impl UpdateHandler {
 
     /// Checks if there are any failed operations.
     /// If so - attempts to re-apply all failed operations.
-    fn try_recover(segments: LockedSegmentHolder, wal: LockedWal) -> CollectionResult<usize> {
+    async fn try_recover(segments: LockedSegmentHolder, wal: LockedWal) -> CollectionResult<usize> {
         // Try to re-apply everything starting from the first failed operation
         let first_failed_operation_option = segments.read().failed_operation.iter().cloned().min();
         match first_failed_operation_option {
             None => {}
             Some(first_failed_op) => {
-                let wal_lock = wal.lock();
+                let wal_lock = wal.lock().await;
                 for (op_num, operation) in wal_lock.read(first_failed_op) {
                     CollectionUpdater::update(
                         &segments,
@@ -624,7 +624,10 @@ impl UpdateHandler {
                 continue;
             }
 
-            if Self::try_recover(segments.clone(), wal.clone()).is_err() {
+            if Self::try_recover(segments.clone(), wal.clone())
+                .await
+                .is_err()
+            {
                 continue;
             }
 
@@ -689,7 +692,7 @@ impl UpdateHandler {
                     hw_measurements,
                 }) => {
                     let flush_res = if wait {
-                        wal.lock().flush().map_err(|err| {
+                        wal.lock().await.flush().map_err(|err| {
                             CollectionError::service_error(format!(
                                 "Can't flush WAL before operation {op_num} - {err}"
                             ))
@@ -772,7 +775,7 @@ impl UpdateHandler {
             }
 
             trace!("Attempting flushing");
-            let wal_flash_job = wal.lock().flush_async();
+            let wal_flash_job = wal.lock().await.flush_async();
 
             if let Err(err) = wal_flash_job.join() {
                 error!("Failed to flush wal: {err:?}");
@@ -813,7 +816,7 @@ impl UpdateHandler {
                 segments.write().report_optimizer_error(err);
             }
 
-            if let Err(err) = wal.lock().ack(ack) {
+            if let Err(err) = wal.lock().await.ack(ack) {
                 log::warn!("Failed to acknowledge WAL version: {err}");
                 segments.write().report_optimizer_error(err);
             }

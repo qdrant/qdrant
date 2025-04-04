@@ -177,19 +177,19 @@ impl ShardReplicaSet {
 
         // Try to queue proxify with or without version
         let proxy_shard = match from_version {
-            None => Ok(QueueProxyShard::new(
-                local_shard,
-                remote_shard,
-                wal_keep_from,
-                progress,
-            )),
-            Some(from_version) => QueueProxyShard::new_from_version(
-                local_shard,
-                remote_shard,
-                wal_keep_from,
-                from_version,
-                progress,
-            ),
+            None => {
+                Ok(QueueProxyShard::new(local_shard, remote_shard, wal_keep_from, progress).await)
+            }
+            Some(from_version) => {
+                QueueProxyShard::new_from_version(
+                    local_shard,
+                    remote_shard,
+                    wal_keep_from,
+                    from_version,
+                    progress,
+                )
+                .await
+            }
         };
 
         // Insert queue proxy shard on success or revert to local shard on failure
@@ -497,6 +497,6 @@ impl ShardReplicaSet {
             ));
         };
 
-        local_shard.wal_version()
+        local_shard.wal_version().await
     }
 }
