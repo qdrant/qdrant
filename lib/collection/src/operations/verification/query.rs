@@ -28,7 +28,7 @@ impl Query {
                         format!(
                             "Index required but not found for \"{key}\" of one of the following types: [{possible_schemas_str}]",
                         ),
-                        "Create an index for this key or use a different expression.",
+                        "Create an index for this key or use a different formula expression.",
                     ));
                 }
             }

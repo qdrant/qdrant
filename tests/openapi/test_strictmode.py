@@ -1323,6 +1323,46 @@ def test_filter_nested_condition(collection_name):
     assert not search_fail.ok
 
 
+def test_strict_mode_formula_expression(collection_name):
+
+    def query_request():
+        expression = {
+            "sum": [
+                "discount_price",
+                "$score",
+            ]
+        }
+
+        return request_with_validation(
+            api='/collections/{collection_name}/points/query',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "prefetch": {
+                    "query": [0.1, 0.2, 0.3, 0.4],
+                },
+                "query": {
+                    "formula": expression,
+                    "defaults": { "discount_price": 0 } # Even with default, it should still be restricted
+                }
+            }
+        )
+    # No restriction, query succeeds
+    query_ok = query_request()
+    assert query_ok.ok
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "unindexed_filtering_retrieve": False,
+    })
+
+    # Now it should fail
+    query_fail = query_request()
+    assert not query_fail.ok
+    assert "discount_price" in query_fail.json()['status']['error']
+    assert "formula expression" in query_fail.json()['status']['error']
+
+
 def test_strict_mode_read_rate_limiting_small_replenish(collection_name):
     """
     If our read rate limit capacity is larger, test that when exhausting it
