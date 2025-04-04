@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-gpu:
+  unit-tests-gpu:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -52,7 +52,7 @@ jobs:
   # Failure of updating an issue is ignored because it fails for external contributors.
   process-gpu-results:
     runs-on: ubuntu-latest
-    needs: test-gpu
+    needs: unit-tests-gpu
     permissions:
       contents: read
       issues: write
