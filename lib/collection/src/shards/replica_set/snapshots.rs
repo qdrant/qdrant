@@ -261,8 +261,12 @@ impl ShardReplicaSet {
                 for (segment_id, local_manifest) in local_manifests.iter() {
                     let segment_path = segments_path.join(segment_id);
 
+                    log::debug!("Cleaning up segment {}", segment_path.display());
+
                     // Delete local segment, if it's not present in partial snapshot
                     let Some(snapshot_manifest) = snapshot_manifests.get(segment_id) else {
+                        log::debug!("Removing outdated segment {}", segment_path.display());
+
                         tokio::fs::remove_dir_all(&segment_path)
                             .await
                             .map_err(|err| {
@@ -297,6 +301,8 @@ impl ShardReplicaSet {
                             if !is_rocksdb && !is_payload_index_rocksdb {
                                 let path = segment_path.join(file);
 
+                                log::debug!("Removing outdated segment file {}", path.display());
+
                                 tokio::fs::remove_file(&path).await.map_err(|err| {
                                     CollectionError::service_error(format!(
                                         "failed to remove outdated segment file {}: {err}",
@@ -309,8 +315,19 @@ impl ShardReplicaSet {
                             // if it was *updated* in or *removed* from the snapshot
 
                             if is_rocksdb {
+                                log::debug!(
+                                    "Destroying outdated RocksDB at {}",
+                                    segment_path.display(),
+                                );
+
                                 destroy_rocksdb(&segment_path)?;
                             } else if is_payload_index_rocksdb {
+                                log::debug!(
+                                    "Destroying outdated payload index RocksDB at {}/{}",
+                                    segment_path.display(),
+                                    PAYLOAD_INDEX_PATH,
+                                );
+
                                 destroy_rocksdb(&segment_path.join(PAYLOAD_INDEX_PATH))?;
                             }
                         }
@@ -319,6 +336,8 @@ impl ShardReplicaSet {
 
                 let wal_path = LocalShard::wal_path(&self.shard_path);
                 if wal_path.is_dir() {
+                    log::debug!("Removing WAL {}", wal_path.display());
+
                     tokio::fs::remove_dir_all(&wal_path).await.map_err(|err| {
                         CollectionError::service_error(format!(
                             "failed to remove WAL {}: {err}",
