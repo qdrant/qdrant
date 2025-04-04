@@ -113,15 +113,8 @@ fn test_random_score(
 
     let raw_scorer = new_raw_scorer_for_test(query.clone(), storage, deleted_points).unwrap();
 
-    let is_stopped = AtomicBool::new(false);
     let async_raw_scorer = if let VectorStorageEnum::DenseMemmap(storage) = storage {
-        async_raw_scorer::new(
-            query,
-            storage,
-            deleted_points,
-            &is_stopped,
-            HardwareCounterCell::new(),
-        )?
+        async_raw_scorer::new(query, storage, deleted_points, HardwareCounterCell::new())?
     } else {
         unreachable!();
     };

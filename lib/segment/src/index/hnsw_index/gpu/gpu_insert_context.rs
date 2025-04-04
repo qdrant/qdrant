@@ -477,9 +477,9 @@ mod tests {
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
-    use crate::vector_storage::VectorStorage;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage};
 
     #[derive(Copy, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
     #[repr(C)]
@@ -758,7 +758,8 @@ mod tests {
             };
             let search_result = test
                 .graph_layers_builder
-                .search_on_level(entry, 0, ef, &mut scorer)
+                .search_on_level(entry, 0, ef, &mut scorer, &DEFAULT_STOPPED)
+                .unwrap()
                 .into_sorted_vec();
             for (cpu, (gpu_1, gpu_2)) in search_result
                 .iter()
@@ -983,9 +984,10 @@ mod tests {
                 idx: 0,
                 score: scorer.score_point(0),
             };
-            let search_result =
-                test.graph_layers_builder
-                    .search_on_level(entry, 0, ef, &mut scorer);
+            let search_result = test
+                .graph_layers_builder
+                .search_on_level(entry, 0, ef, &mut scorer, &DEFAULT_STOPPED)
+                .unwrap();
 
             let scorer_fn = |a, b| scorer.score_internal(a, b);
 

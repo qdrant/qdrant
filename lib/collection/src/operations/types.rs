@@ -21,7 +21,7 @@ use issues::IssueRecord;
 use merge::Merge;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
-use segment::common::operation_error::OperationError;
+use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
@@ -1259,6 +1259,12 @@ impl From<OperationError> for CollectionError {
                 backtrace: None,
             },
         }
+    }
+}
+
+impl From<CancelledError> for CollectionError {
+    fn from(error: CancelledError) -> Self {
+        OperationError::from(error).into()
     }
 }
 

@@ -18,7 +18,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_stoppable_raw_scorer};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 #[derive(Debug)]
 pub struct PlainVectorIndex {
@@ -109,17 +109,18 @@ impl VectorIndex for PlainVectorIndex {
                 vectors
                     .iter()
                     .map(|&vector| {
-                        new_stoppable_raw_scorer(
+                        new_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
                             deleted_points,
-                            &is_stopped,
                             query_context.hardware_counter(),
                         )
-                        .map(|scorer| {
-                            let res =
-                                scorer.peek_top_iter(&mut filtered_ids_vec.iter().copied(), top);
-                            res
+                        .and_then(|scorer| {
+                            Ok(scorer.peek_top_iter(
+                                &mut filtered_ids_vec.iter().copied(),
+                                top,
+                                &is_stopped,
+                            )?)
                         })
                     })
                     .collect()
@@ -134,14 +135,13 @@ impl VectorIndex for PlainVectorIndex {
                 vectors
                     .iter()
                     .map(|&vector| {
-                        new_stoppable_raw_scorer(
+                        new_raw_scorer(
                             vector.to_owned(),
                             &vector_storage,
                             deleted_points,
-                            &is_stopped,
                             query_context.hardware_counter(),
                         )
-                        .map(|scorer| scorer.peek_top_all(top))
+                        .and_then(|scorer| Ok(scorer.peek_top_all(top, &is_stopped)?))
                     })
                     .collect()
             }
