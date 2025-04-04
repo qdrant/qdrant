@@ -4,6 +4,7 @@
 use std::hint::black_box;
 use std::io;
 use std::num::Wrapping;
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -168,4 +169,30 @@ fn populate_simple(slice: &[u8]) {
             .step_by(512)
             .sum::<Wrapping<u8>>(),
     );
+}
+
+/// For given file path, clear disk cache with `posix_fadvise`
+///
+/// If `posix_fadvise` is not supported, this function does nothing.
+pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::io::AsRawFd;
+
+        use libc::{POSIX_FADV_DONTNEED, posix_fadvise};
+
+        let file = std::fs::OpenOptions::new().read(true).open(file_path)?;
+        let fd = file.as_raw_fd();
+
+        // Clear the cache, offset 0, length 0 (whole file)
+        let ret = unsafe { posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED) };
+
+        if ret != 0 {
+            Err(io::Error::from_raw_os_error(ret))
+        } else {
+            Ok(())
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    Ok(())
 }

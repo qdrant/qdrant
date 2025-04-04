@@ -55,6 +55,21 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> AppendableMmapDenseV
         }
         Ok(previous)
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.deleted.populate()?;
+        self.vectors.populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        self.deleted.clear_cache()?;
+        self.vectors.clear_cache()?;
+        Ok(())
+    }
 }
 
 impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> DenseVectorStorage<T>

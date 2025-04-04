@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use memmap2::MmapMut;
-use memory::madvise::{Advice, AdviceSetting};
+use memory::madvise::{Advice, AdviceSetting, Madviseable, clear_disk_cache};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 
 use crate::tracker::BlockOffset;
@@ -111,5 +111,17 @@ impl Page {
     pub fn delete_page(self) {
         drop(self.mmap);
         std::fs::remove_file(&self.path).unwrap();
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) {
+        self.mmap.populate();
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        clear_disk_cache(&self.path)?;
+        Ok(())
     }
 }

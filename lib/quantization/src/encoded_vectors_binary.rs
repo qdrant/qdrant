@@ -167,6 +167,10 @@ impl BitsStoreType for u128 {
 impl<TBitsStoreType: BitsStoreType, TStorage: EncodedStorage>
     EncodedVectorsBin<TBitsStoreType, TStorage>
 {
+    pub fn storage(&self) -> &TStorage {
+        &self.encoded_vectors
+    }
+
     pub fn encode<'a>(
         orig_data: impl Iterator<Item = impl AsRef<[f32]> + 'a> + Clone,
         mut storage_builder: impl EncodedStorageBuilder<TStorage>,

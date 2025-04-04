@@ -30,7 +30,7 @@ use std::{fmt, mem, slice};
 use bitvec::slice::BitSlice;
 use memmap2::MmapMut;
 
-use crate::madvise::{Advice, AdviceSetting};
+use crate::madvise::{Advice, AdviceSetting, Madviseable};
 use crate::mmap_ops;
 
 /// Result for mmap errors.
@@ -182,6 +182,11 @@ where
     pub unsafe fn unchecked_advise(&self, advice: memmap2::UncheckedAdvice) -> std::io::Result<()> {
         unsafe { self.mmap.unchecked_advise(advice) }
     }
+
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap.populate();
+        Ok(())
+    }
 }
 
 impl<T> Deref for MmapType<T>
@@ -293,6 +298,13 @@ impl<T> MmapSlice<T> {
 
         Ok(())
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap.populate()?;
+        Ok(())
+    }
 }
 
 impl<T> Deref for MmapSlice<T> {
@@ -390,6 +402,13 @@ impl MmapBitSlice {
 
         mmap_bitslice.flusher()()?;
 
+        Ok(())
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap.populate()?;
         Ok(())
     }
 }

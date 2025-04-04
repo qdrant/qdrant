@@ -8,7 +8,7 @@ use common::maybe_uninit::maybe_uninit_fill_from;
 use io::file_operations::atomic_save_json;
 use memmap2::MmapMut;
 use memory::chunked_utils::{UniversalMmapChunk, chunk_name, create_chunk, read_mmaps};
-use memory::madvise::{Advice, AdviceSetting};
+use memory::madvise::{Advice, AdviceSetting, clear_disk_cache};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::MmapType;
 use num_traits::AsPrimitive;
@@ -422,6 +422,21 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
 
     fn is_on_disk(&self) -> bool {
         true
+    }
+
+    fn populate(&self) -> OperationResult<()> {
+        for chunk in &self.chunks {
+            chunk.populate()?;
+        }
+        Ok(())
+    }
+
+    fn clear_cache(&self) -> OperationResult<()> {
+        for chunk_idx in 0..self.chunks.len() {
+            let file_path = chunk_name(&self.directory, chunk_idx);
+            clear_disk_cache(&file_path)?;
+        }
+        Ok(())
     }
 }
 

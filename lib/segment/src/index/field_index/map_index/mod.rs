@@ -434,6 +434,27 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
                 .unique(),
         )
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(_) => {}   // Not a mmap
+            MapIndex::Immutable(_) => {} // Not a mmap
+            MapIndex::Mmap(index) => index.populate()?,
+        }
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            MapIndex::Mutable(_) => {}   // Not a mmap
+            MapIndex::Immutable(_) => {} // Not a mmap
+            MapIndex::Mmap(index) => index.clear_cache()?,
+        }
+        Ok(())
+    }
 }
 
 pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>);
