@@ -256,12 +256,22 @@ impl ShardReplicaSet {
         // Try to restore local replica from specified shard snapshot directory
         let restore = async {
             if let Some(local_manifests) = local_manifests {
+                let segments_path = LocalShard::segments_path(&self.shard_path);
+
                 for (segment_id, local_manifest) in local_manifests.iter() {
                     let segment_path = segments_path.join(segment_id);
 
                     // Delete local segment, if it's not present in partial snapshot
                     let Some(snapshot_manifest) = snapshot_manifests.get(segment_id) else {
-                        tokio::fs::remove_dir_all(&segment_path).await?;
+                        tokio::fs::remove_dir_all(&segment_path)
+                            .await
+                            .map_err(|err| {
+                                CollectionError::service_error(format!(
+                                    "failed to remove outdated segment {}: {err}",
+                                    segment_path.display(),
+                                ))
+                            })?;
+
                         continue;
                     };
 
@@ -285,7 +295,14 @@ impl ShardReplicaSet {
                             // *removed* from the snapshot
 
                             if !is_rocksdb && !is_payload_index_rocksdb {
-                                tokio::fs::remove_file(segment_path.join(file)).await?;
+                                let path = segment_path.join(file);
+
+                                tokio::fs::remove_file(&path).await.map_err(|err| {
+                                    CollectionError::service_error(format!(
+                                        "failed to remove outdated segment file {}: {err}",
+                                        path.display(),
+                                    ))
+                                })?;
                             }
                         } else if is_outdated {
                             // If `file` is a RocksDB "virtual" file, remove RocksDB from disk,
@@ -298,6 +315,16 @@ impl ShardReplicaSet {
                             }
                         }
                     }
+                }
+
+                let wal_path = LocalShard::wal_path(&self.shard_path);
+                if wal_path.is_dir() {
+                    tokio::fs::remove_dir_all(&wal_path).await.map_err(|err| {
+                        CollectionError::service_error(format!(
+                            "failed to remove WAL {}: {err}",
+                            wal_path.display(),
+                        ))
+                    })?;
                 }
             } else {
                 // Remove shard data but not configuration files
