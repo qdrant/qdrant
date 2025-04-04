@@ -37,7 +37,7 @@ impl RateLimiter {
         // Consumer wants more than maximum capacity, that's impossible
         if tokens > self.capacity_per_minute as f64 {
             return Err(RateLimitError::AlwaysOverBudget(
-                "request larger than than rate limiter capacity, please try to split your request",
+                "request larger than rate limiter capacity, please try to split your request",
             ));
         }
 
