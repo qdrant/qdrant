@@ -6,7 +6,7 @@ use api::rest::RecommendStrategy;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, TypedMultiDenseVector,
+    DEFAULT_VECTOR_NAME, DenseVector, MultiDenseVectorInternal, NamedQuery, NamedVectorStruct,
     VectorElementType, VectorInternal, VectorRef,
 };
 use segment::types::{
@@ -36,10 +36,10 @@ fn avg_vectors<'a>(
 ) -> CollectionResult<VectorInternal> {
     let mut avg_dense = DenseVector::default();
     let mut avg_sparse = SparseVector::default();
-    let mut avg_multi: Option<TypedMultiDenseVector<VectorElementType>> = None;
+    let mut avg_multi: Option<DenseVector> = None;
     let mut dense_count = 0;
     let mut sparse_count = 0;
-    let mut multi_count = 0;
+    let mut in_multi_count = 0;
     for vector in vectors {
         match vector {
             VectorRef::Dense(vector) => {
@@ -56,22 +56,28 @@ fn avg_vectors<'a>(
                 sparse_count += 1;
                 avg_sparse = vector.combine_aggregate(&avg_sparse, |v1, v2| v1 + v2);
             }
-            VectorRef::MultiDense(vector) => {
-                multi_count += 1;
-                avg_multi = Some(avg_multi.map_or_else(
-                    || vector.to_owned(),
-                    |mut avg_multi| {
-                        avg_multi
-                            .flattened_vectors
-                            .extend_from_slice(vector.flattened_vectors);
-                        avg_multi
-                    },
-                ));
+            VectorRef::MultiDense(multi_vector) => {
+                for vector in multi_vector.multi_vectors() {
+                    in_multi_count += 1;
+                    avg_multi = Some(avg_multi.map_or_else(
+                        || vector.to_owned(),
+                        |mut avg_multi| {
+                            for i in 0..vector.len() {
+                                if i >= avg_multi.len() {
+                                    avg_multi.push(vector[i])
+                                } else {
+                                    avg_multi[i] += vector[i];
+                                }
+                            }
+                            avg_multi
+                        },
+                    ));
+                }
             }
         }
     }
 
-    match (dense_count, sparse_count, multi_count) {
+    match (dense_count, sparse_count, in_multi_count) {
         // TODO(sparse): what if vectors iterator is empty? We added CollectionError::BadRequest,
         // but it's not clear if it's the best solution.
         // Currently it's hard to return an zeroed vector, because we don't know its type: dense or sparse.
@@ -91,7 +97,14 @@ fn avg_vectors<'a>(
             Ok(VectorInternal::from(avg_sparse))
         }
         (0, 0, _) => match avg_multi {
-            Some(avg_multi) => Ok(VectorInternal::from(avg_multi)),
+            Some(mut avg_multi) => {
+                for item in &mut avg_multi {
+                    *item /= in_multi_count as VectorElementType;
+                }
+                Ok(VectorInternal::MultiDense(
+                    MultiDenseVectorInternal::try_from_matrix(vec![avg_multi])?,
+                ))
+            }
             None => Err(CollectionError::bad_input(
                 "Positive vectors should not be empty with `average` strategy".to_owned(),
             )),
@@ -118,10 +131,17 @@ fn merge_positive_and_negative_avg(
         (VectorInternal::Sparse(positive), VectorInternal::Sparse(negative)) => Ok(positive
             .combine_aggregate(&negative, |pos, neg| pos + pos - neg)
             .into()),
-        (VectorInternal::MultiDense(mut positive), VectorInternal::MultiDense(negative)) => {
-            // merge positive and negative vectors as concatenated vectors with negative vectors negated
-            positive.flattened_vectors.extend(negative.flattened_vectors.into_iter().map(|x| -x));
-            Ok(VectorInternal::MultiDense(positive))
+        (VectorInternal::MultiDense(positive), VectorInternal::MultiDense(negative)) => {
+            // averaged positive and negative multivectors consist of just one vector each
+            debug_assert_eq!(positive.len(), 1);
+            debug_assert_eq!(negative.len(), 1);
+
+            let vector = positive.flattened_vectors.iter().zip(negative.flattened_vectors.iter()).map(|(pos, neg)| pos + pos - neg).collect();
+
+            Ok(VectorInternal::MultiDense(MultiDenseVectorInternal {
+                flattened_vectors: vector,
+                dim: positive.dim
+            }))
         },
         _ => Err(CollectionError::bad_input(
             "Positive and negative vectors should be of the same type, either all dense or all sparse or all multi".to_owned(),
@@ -130,14 +150,19 @@ fn merge_positive_and_negative_avg(
 }
 
 pub fn avg_vector_for_recommendation<'a>(
-    positive: impl IntoIterator<Item = VectorRef<'a>>,
+    positive: impl Iterator<Item = VectorRef<'a>>,
     mut negative: Peekable<impl Iterator<Item = VectorRef<'a>>>,
 ) -> CollectionResult<VectorInternal> {
-    let avg_positive = avg_vectors(positive)?;
-
     let search_vector = if negative.peek().is_none() {
-        avg_positive
+        // If there is just one positive vector, return it without any modifications
+        let positive_vec = positive.collect_vec();
+        if positive_vec.len() == 1 {
+            positive_vec[0].to_owned()
+        } else {
+            avg_vectors(positive_vec)?
+        }
     } else {
+        let avg_positive = avg_vectors(positive)?;
         let avg_negative = avg_vectors(negative)?;
         merge_positive_and_negative_avg(avg_positive, avg_negative)?
     };
@@ -475,38 +500,64 @@ fn recommend_by_custom_score(
 
 #[cfg(test)]
 mod tests {
-    use segment::data_types::vectors::{VectorInternal, VectorRef};
+    use segment::data_types::vectors::{VectorInternal, VectorInternalDiscriminants, VectorRef};
     use sparse::common::sparse_vector::SparseVector;
+    use strum::IntoEnumIterator;
 
     use super::avg_vectors;
 
+    fn check_avg_vectors(variant: VectorInternalDiscriminants) {
+        match variant {
+            VectorInternalDiscriminants::Dense => {
+                let vectors: Vec<VectorInternal> = vec![
+                    vec![1.0, 2.0, 3.0].into(),
+                    vec![1.0, 2.0, 3.0].into(),
+                    vec![1.0, 2.0, 3.0].into(),
+                ];
+                assert_eq!(
+                    avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+                    vec![1.0, 2.0, 3.0].into(),
+                );
+            }
+            VectorInternalDiscriminants::Sparse => {
+                let vectors: Vec<VectorInternal> = vec![
+                    SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
+                        .unwrap()
+                        .into(),
+                    SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
+                        .unwrap()
+                        .into(),
+                ];
+                assert_eq!(
+                    avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+                    SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
+                        .unwrap()
+                        .into(),
+                );
+            }
+            VectorInternalDiscriminants::MultiDense => {
+                let vectors: Vec<VectorInternal> = vec![
+                    vec![vec![1.0, 2.0, 3.0]].try_into().unwrap(), // multivec of 1 vector
+                    vec![vec![1.0, 2.0, 3.0], vec![1.0, 2.0, 3.0]]
+                        .try_into()
+                        .unwrap(), // multivec of 2 vectors
+                ];
+                assert_eq!(
+                    avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
+                    vec![vec![1.0, 2.0, 3.0]].try_into().unwrap(),
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_avg_vectors() {
-        let vectors: Vec<VectorInternal> = vec![
-            vec![1.0, 2.0, 3.0].into(),
-            vec![1.0, 2.0, 3.0].into(),
-            vec![1.0, 2.0, 3.0].into(),
-        ];
-        assert_eq!(
-            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
-            vec![1.0, 2.0, 3.0].into(),
-        );
+        // Check all variants of vectors
+        for variant in VectorInternalDiscriminants::iter() {
+            check_avg_vectors(variant);
+        }
 
-        let vectors: Vec<VectorInternal> = vec![
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])
-                .unwrap()
-                .into(),
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 1.0, 2.0])
-                .unwrap()
-                .into(),
-        ];
-        assert_eq!(
-            avg_vectors(vectors.iter().map(VectorRef::from)).unwrap(),
-            SparseVector::new(vec![0, 1, 2], vec![0.0, 0.55, 1.1])
-                .unwrap()
-                .into(),
-        );
-
+        // Check that different vector types cannot be averaged
         let vectors: Vec<VectorInternal> = vec![
             vec![1.0, 2.0, 3.0].into(),
             SparseVector::new(vec![0, 1, 2], vec![0.0, 0.1, 0.2])

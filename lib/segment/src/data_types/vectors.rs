@@ -6,6 +6,7 @@ use itertools::Itertools;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sparse::common::sparse_vector::SparseVector;
+use strum::{EnumDiscriminants, EnumIter};
 use validator::Validate;
 
 use super::named_vectors::NamedVectors;
@@ -15,7 +16,8 @@ use crate::common::utils::transpose_map_into_named_vector;
 use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter))]
 pub enum VectorInternal {
     Dense(DenseVector),
     Sparse(SparseVector),
@@ -241,6 +243,11 @@ impl<T> TypedMultiDenseVector<T> {
 
         Ok(multi_dense)
     }
+
+    /// Amount of vectors in the multivector
+    pub fn len(&self) -> usize {
+        self.flattened_vectors.len() / self.dim
+    }
 }
 
 pub type MultiDenseVectorInternal = TypedMultiDenseVector<VectorElementType>;
@@ -309,26 +316,7 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
     type Error = OperationError;
 
     fn try_from(value: Vec<TypedDenseVector<T>>) -> Result<Self, Self::Error> {
-        if value.is_empty() {
-            return Err(OperationError::ValidationError {
-                description: "MultiDenseVector cannot be empty".to_string(),
-            });
-        }
-        let dim = value[0].len();
-        // assert all vectors have the same dimension
-        if let Some(bad_vec) = value.iter().find(|v| v.len() != dim) {
-            Err(OperationError::WrongVectorDimension {
-                expected_dim: dim,
-                received_dim: bad_vec.len(),
-            })
-        } else {
-            let flattened_vectors = value.into_iter().flatten().collect_vec();
-            let multi_dense = TypedMultiDenseVector {
-                flattened_vectors,
-                dim,
-            };
-            Ok(multi_dense)
-        }
+        Self::try_from_matrix(value)
     }
 }
 
