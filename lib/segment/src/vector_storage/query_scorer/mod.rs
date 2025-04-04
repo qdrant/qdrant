@@ -37,6 +37,10 @@ pub trait QueryScorer<TVector: ?Sized> {
 /// Colbert MaxSim metric, metric for multi-dense vectors
 /// <https://arxiv.org/pdf/2112.01488.pdf>, figure 1
 /// This metric is also implemented in `QuantizedMultivectorStorage` structure for quantized data.
+///
+/// Disclaimer: this score is not equivalent to the original Colbert metric for Euclidean space because we do not apply the post-processing step.
+/// In that case the score value will be different but the ranking will be the same.
+/// We do that because of performance reasons and complex sort ordering of the vectors when applying the post-processing step.
 pub fn score_max_similarity<T: PrimitiveVectorElement, TMetric: Metric<T>>(
     multi_dense_a: TypedMultiDenseVectorRef<T>,
     multi_dense_b: TypedMultiDenseVectorRef<T>,
@@ -113,6 +117,8 @@ fn is_read_with_prefetch_efficient(ids: impl IntoIterator<Item = usize>) -> bool
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::data_types::vectors::MultiDenseVectorInternal;
+    use crate::spaces::simple::EuclidMetric;
 
     #[test]
     fn test_check_ids_rather_contiguous() {
@@ -130,5 +136,24 @@ mod tests {
         assert!(!is_read_with_prefetch_efficient_points(&[
             1, 2, 3, 4, 9, 1000, 12, 14
         ]));
+    }
+
+    #[test]
+    fn test_score_multi_euclidean() {
+        let a = MultiDenseVectorInternal::try_from(vec![
+            vec![1.0, 2.0, 3.0],
+            vec![3.0, 3.0, 3.0],
+            vec![4.0, 5.0, 6.0],
+        ])
+        .unwrap();
+        // distance to itself
+        let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&a).into());
+        assert_eq!(score, -0.0);
+
+        let b = MultiDenseVectorInternal::try_from(vec![vec![3.0, 3.0, 3.0], vec![4.0, 2.0, 1.0]])
+            .unwrap();
+        let score = score_max_similarity::<f32, EuclidMetric>((&a).into(), (&b).into());
+        // proper value according to theory should be `5.9777255` but we do not apply post-processing step
+        assert_eq!(score, -19.);
     }
 }
