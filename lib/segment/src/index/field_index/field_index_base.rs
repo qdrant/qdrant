@@ -1,13 +1,9 @@
 use std::fmt::Formatter;
 use std::path::PathBuf;
 
-use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::PointOffsetType;
-use serde_json::Value;
-
-use super::bool_index::BoolIndex;
 use super::bool_index::mmap_bool_index::MmapBoolIndexBuilder;
 use super::bool_index::simple_bool_index::BoolIndexBuilder;
+use super::bool_index::BoolIndex;
 use super::facet_index::FacetIndexEnum;
 use super::full_text_index::mmap_text_index::FullTextMmapIndexBuilder;
 use super::full_text_index::text_index::{FullTextIndex, FullTextIndexBuilder};
@@ -16,8 +12,8 @@ use super::map_index::{MapIndex, MapIndexBuilder, MapIndexMmapBuilder};
 use super::numeric_index::{
     NumericIndex, NumericIndexBuilder, NumericIndexMmapBuilder, StreamRange,
 };
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::common::Flusher;
 use crate::data_types::order_by::OrderValue;
 use crate::index::field_index::geo_index::GeoMapIndex;
 use crate::index::field_index::null_index::mmap_null_index::{MmapNullIndex, MmapNullIndexBuilder};
@@ -28,6 +24,9 @@ use crate::types::{
     DateTimePayloadType, FieldCondition, FloatPayloadType, IntPayloadType, Match, MatchText,
     PayloadKeyType, RangeInterface, UuidIntType, UuidPayloadType,
 };
+use common::counter::hardware_counter::HardwareCounterCell;
+use common::types::PointOffsetType;
+use serde_json::Value;
 
 pub trait PayloadFieldIndex {
     /// Return number of points with at least one value indexed in here
@@ -417,6 +416,41 @@ impl FieldIndex {
             | FieldIndex::GeoIndex(_)
             | FieldIndex::FullTextIndex(_)
             | FieldIndex::NullIndex(_) => None,
+        }
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            FieldIndex::IntIndex(index) => index.populate(),
+            FieldIndex::DatetimeIndex(index) => index.populate(),
+            FieldIndex::IntMapIndex(index) => index.populate(),
+            FieldIndex::KeywordIndex(index) => index.populate(),
+            FieldIndex::FloatIndex(index) => index.populate(),
+            FieldIndex::GeoIndex(_index) => todo!(),
+            FieldIndex::BoolIndex(_index) => todo!(),
+            FieldIndex::FullTextIndex(_index) => todo!(),
+            FieldIndex::UuidIndex(index) => index.populate(),
+            FieldIndex::UuidMapIndex(index) => index.populate(),
+            FieldIndex::NullIndex(_index) => todo!(),
+        }
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            FieldIndex::IntIndex(index) => index.clear_cache(),
+            FieldIndex::DatetimeIndex(index) => index.clear_cache(),
+            FieldIndex::IntMapIndex(index) => index.clear_cache(),
+            FieldIndex::KeywordIndex(index) => index.clear_cache(),
+            FieldIndex::FloatIndex(index) => index.clear_cache(),
+            FieldIndex::GeoIndex(_index) => todo!(),
+            FieldIndex::BoolIndex(_index) => todo!(),
+            FieldIndex::FullTextIndex(_index) => todo!(),
+            FieldIndex::UuidIndex(index) => index.clear_cache(),
+            FieldIndex::UuidMapIndex(index) => index.clear_cache(),
+            FieldIndex::NullIndex(_index) => todo!(),
         }
     }
 }

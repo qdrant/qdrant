@@ -18,7 +18,7 @@ fn bench_mmap_hashmap(c: &mut Criterion) {
     )
     .unwrap();
 
-    let mmap = MmapHashMap::<str, u32>::open(&mmap_path).unwrap();
+    let mmap = MmapHashMap::<str, u32>::open(&mmap_path, true).unwrap();
 
     let mut it = keys.iter().cycle();
     c.bench_function("get", |b| {
