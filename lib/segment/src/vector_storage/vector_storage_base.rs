@@ -521,7 +521,6 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-
     /// If false - data is stored in RAM (and persisted on disk)
     /// If true - data is stored on disk, and is not forced to be in RAM
     fn is_on_disk(&self) -> bool {

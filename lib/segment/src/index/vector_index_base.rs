@@ -1,14 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use super::hnsw_index::hnsw::HNSWIndex;
-use super::plain_vector_index::PlainVectorIndex;
-use super::sparse_index::sparse_vector_index::SparseVectorIndex;
-use crate::common::operation_error::OperationResult;
-use crate::data_types::query_context::VectorQueryContext;
-use crate::data_types::vectors::{QueryVector, VectorRef};
-use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams, SeqNumberType};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use half::f16;
@@ -19,6 +11,15 @@ use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndex
 use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
 use sparse::index::inverted_index::inverted_index_mmap::InvertedIndexMmap;
 use sparse::index::inverted_index::inverted_index_ram::InvertedIndexRam;
+
+use super::hnsw_index::hnsw::HNSWIndex;
+use super::plain_vector_index::PlainVectorIndex;
+use super::sparse_index::sparse_vector_index::SparseVectorIndex;
+use crate::common::operation_error::OperationResult;
+use crate::data_types::query_context::VectorQueryContext;
+use crate::data_types::vectors::{QueryVector, VectorRef};
+use crate::telemetry::VectorIndexSearchesTelemetry;
+use crate::types::{Filter, SearchParams, SeqNumberType};
 
 /// Trait for vector searching
 pub trait VectorIndex {
