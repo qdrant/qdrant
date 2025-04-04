@@ -283,6 +283,7 @@ impl ShardReplicaSet {
                 log::error!(
                     "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
                 );
+                // This dummy shard will be replaced only when it rejects an update (marked as dead so recovery process kicks in)
                 Shard::Dummy(DummyShard::new("Shard is dirty", true))
             } else {
                 let res = LocalShard::load(
@@ -368,12 +369,6 @@ impl ShardReplicaSet {
                 .locally_disabled_peers
                 .write()
                 .disable_peer(this_peer_id);
-        }
-
-        if is_dirty_shard {
-            // Mark local replica as Dead since it's dummy and dirty
-            let replica_state = replica_set.replica_state.read();
-            replica_set.add_locally_disabled(&replica_state, replica_set.this_peer_id(), None);
         }
 
         replica_set
