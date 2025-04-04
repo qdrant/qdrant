@@ -7,7 +7,6 @@ use io::file_operations::atomic_save_json;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
 use parking_lot::RwLock;
-
 use crate::bitmask::Bitmask;
 use crate::blob::Blob;
 use crate::config::{Compression, StorageConfig, StorageOptions};
@@ -525,6 +524,25 @@ impl<V> Gridstore<V> {
         });
         bitmask_guard.flush()?;
 
+        Ok(())
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> std::io::Result<()> {
+        for page in &self.pages {
+            page.populate();
+        }
+        self.bitmask.read().populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        for page in &self.pages {
+            page.clear_cache()?;
+        }
+        self.bitmask.read().clear_cache()?;
         Ok(())
     }
 }
