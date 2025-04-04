@@ -95,6 +95,7 @@ def remove_file_from_tar(original_tar, file_to_remove, new_tar):
 
 # The test validates that a node can recover from a corrupted snapshot
 def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
+    assert False
     assert_project_root()
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
@@ -213,3 +214,9 @@ def test_failed_snapshot_recovery(tmp_path: pathlib.Path):
     assert len(new_dense_search_result) == len(initial_dense_search_result)
     for i in range(len(new_dense_search_result)):
         assert new_dense_search_result[i]["id"] == initial_dense_search_result[i]["id"]
+
+def test_new_fail():
+    assert False
+
+def test_new_pass():
+    pass
