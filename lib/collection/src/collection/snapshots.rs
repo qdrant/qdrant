@@ -7,6 +7,7 @@ use common::tar_ext::BuilderExt;
 use io::file_operations::read_json;
 use io::storage_version::StorageVersion as _;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::types::SnapshotFormat;
 use tokio::sync::OwnedRwLockReadGuard;
 
@@ -21,6 +22,7 @@ use crate::operations::types::{CollectionError, CollectionResult, NodeType};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::replica_set::ShardReplicaSet;
+use crate::shards::replica_set::snapshots::RecoveryType;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::{self, ShardConfig};
 use crate::shards::shard_holder::shard_mapping::ShardKeyMapping;
@@ -103,6 +105,7 @@ impl Collection {
                         snapshot_temp_temp_dir.path(),
                         &tar.descend(&shard_snapshot_path)?,
                         SnapshotFormat::Regular,
+                        None,
                         save_wal,
                     )
                     .await
@@ -226,6 +229,7 @@ impl Collection {
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
+        recovery_type: RecoveryType,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
     ) -> CollectionResult<bool> {
@@ -239,7 +243,13 @@ impl Collection {
             .shards_holder
             .read()
             .await
-            .recover_local_shard_from(snapshot_shard_path, &self.path, shard_id, cancel)
+            .recover_local_shard_from(
+                snapshot_shard_path,
+                recovery_type,
+                &self.path,
+                shard_id,
+                cancel,
+            )
             .await?;
 
         Ok(res)
@@ -271,6 +281,7 @@ impl Collection {
     pub async fn stream_shard_snapshot(
         &self,
         shard_id: ShardId,
+        manifest: Option<SegmentManifests>,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         let shard = OwnedRwLockReadGuard::try_map(
@@ -279,16 +290,18 @@ impl Collection {
         )
         .map_err(|_| shard_not_found_error(shard_id))?;
 
-        ShardHolder::stream_shard_snapshot(shard, &self.name(), shard_id, temp_dir).await
+        ShardHolder::stream_shard_snapshot(shard, &self.name(), shard_id, manifest, temp_dir).await
     }
 
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
+    #[expect(clippy::too_many_arguments)]
     pub async fn restore_shard_snapshot(
         &self,
         shard_id: ShardId,
         snapshot_path: &Path,
+        recovery_type: RecoveryType,
         this_peer_id: PeerId,
         is_distributed: bool,
         temp_dir: &Path,
@@ -305,6 +318,7 @@ impl Collection {
             .await
             .restore_shard_snapshot(
                 snapshot_path,
+                recovery_type,
                 &self.path,
                 &self.name(),
                 shard_id,
@@ -321,5 +335,18 @@ impl Collection {
             .read()
             .await
             .assert_shard_exists(shard_id)
+    }
+
+    pub async fn get_partial_snapshot_manifest(
+        &self,
+        shard_id: ShardId,
+    ) -> CollectionResult<SegmentManifests> {
+        self.shards_holder
+            .read()
+            .await
+            .get_shard(shard_id)
+            .ok_or_else(|| shard_not_found_error(shard_id))?
+            .get_partial_snapshot_manifest()
+            .await
     }
 }
