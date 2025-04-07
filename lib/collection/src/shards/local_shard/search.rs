@@ -19,6 +19,10 @@ impl LocalShard {
         timeout: Option<Duration>,
         hw_counter_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        if core_request.searches.is_empty() {
+            return Ok(vec![]);
+        }
+
         let is_stopped_guard = StoppingGuard::new();
 
         let (query_context, collection_params) = {
