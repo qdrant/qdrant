@@ -87,7 +87,7 @@ pub async fn search(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let search_request = CoreSearchRequest {
-        query: QueryEnum::Nearest(vector_struct),
+        query: QueryEnum::Nearest(vector_struct.into()),
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
