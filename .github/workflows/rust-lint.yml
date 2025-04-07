@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  lint:
 
     runs-on: ubuntu-latest
 
@@ -36,6 +36,8 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: clippy
+    - name: Update apt
+      run: sudo apt-get update
     - name: Install dependencies
       run: sudo apt-get install clang libunwind-dev
     - name: Check code formatting
