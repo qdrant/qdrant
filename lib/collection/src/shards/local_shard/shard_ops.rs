@@ -21,6 +21,7 @@ use crate::operations::types::{
 };
 use crate::operations::universal_query::planned_query::PlannedQuery;
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
+use crate::operations::verification::operation_rate_cost::{BASE_COST, filter_rate_cost};
 use crate::shards::local_shard::LocalShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::update_handler::{OperationData, UpdateSignal};
@@ -125,8 +126,11 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "scroll_by", || {
-            // TODO(strict-mode) how much should a scroll cost?
-            1
+            let mut cost = BASE_COST;
+            if let Some(filter) = &filter {
+                cost += filter_rate_cost(filter);
+            }
+            cost
         })?;
         match order_by {
             None => {
@@ -173,7 +177,7 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "core_search", || {
-            request.searches.iter().map(|s| s.rate_cost()).sum()
+            request.searches.iter().map(|s| s.search_rate_cost()).sum()
         })?;
         self.do_search(request, search_runtime_handle, timeout, hw_measurement_acc)
             .await
@@ -189,8 +193,11 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<CountResult> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "count", || {
-            // TODO(strict-mode) exact count should be more expensive
-            1
+            let mut cost = BASE_COST;
+            if let Some(filter) = &request.filter {
+                cost += filter_rate_cost(filter);
+            }
+            cost
         })?;
         let total_count = if request.exact {
             let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
@@ -267,8 +274,8 @@ impl ShardOperation for LocalShard {
             planned_query
                 .searches
                 .iter()
-                .map(|s| s.rate_cost())
-                .chain(planned_query.scrolls.iter().map(|s| s.rate_cost()))
+                .map(|s| s.search_rate_cost())
+                .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
                 .sum()
         })?;
         self.do_planned_query(
@@ -290,8 +297,11 @@ impl ShardOperation for LocalShard {
     ) -> CollectionResult<FacetResponse> {
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "facet", || {
-            // TODO(strict-mode) exact facet should be more expensive
-            1
+            let mut cost = BASE_COST;
+            if let Some(filter) = &request.filter {
+                cost += filter_rate_cost(filter);
+            }
+            cost
         })?;
         let hits = if request.exact {
             self.exact_facet(request, search_runtime_handle, timeout, hw_measurement_acc)

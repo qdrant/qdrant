@@ -1584,4 +1584,49 @@ def test_strict_mode_retrieve_read_rate_limiting(collection_name):
         },
     )
     assert response.status_code == 429
-    assert "Read rate limit exceeded: Operation requires 4 tokens but only 0.0 were available. Retry after 60s" in response.json()['status']['error']
+    assert "Read rate limit exceeded: Operation requires 4 tokens but only 0.0 were available" in response.json()['status']['error']
+
+
+def test_scroll_filter_many_conditions(collection_name):
+    def scroll_request(condition_count: int):
+        conditions = []
+        for i in range(condition_count):
+            conditions.append({
+                "key": "price",
+                "match": {
+                    "value": i
+                }
+            })
+
+        return request_with_validation(
+            api='/collections/{collection_name}/points/scroll',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "filter": {
+                    "must": conditions
+                },
+            }
+        )
+
+    scroll_request(11).raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 10,
+    })
+
+    response = scroll_request(11)
+
+    assert response.status_code == 429
+    assert "Read rate limit exceeded, request larger than rate limiter capacity, please try to split your request" in response.json()['status']['error']
+
+    # Less than 11 is fine
+    scroll_request(6).raise_for_status()
+
+    # Should fail because we already consumed 6 tokens
+    response = scroll_request(6)
+
+    # Operation requires 7 tokens (1 for the request and one per filter)
+    assert response.status_code == 429
+    assert "Read rate limit exceeded: Operation requires 7 tokens" in response.json()['status']['error']
