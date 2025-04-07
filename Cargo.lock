@@ -5843,6 +5843,7 @@ dependencies = [
  "gpu",
  "gridstore",
  "half 2.5.0",
+ "humantime",
  "indexmap 2.8.0",
  "indicatif",
  "io",

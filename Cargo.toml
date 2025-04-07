@@ -177,6 +177,7 @@ futures-util = "0.3.31"
 generic-tests = "0.1.3"
 half = { version = "2.5.0", features = ["alloc", "bytemuck", "serde", "num-traits"] }
 http = "1.2.0"
+humantime = "2.1.0"
 indexmap = { version = "2", features = ["serde"] }
 indicatif = { version = "0.17.11", features = ["rayon"] }
 itertools = "0.14.0"
