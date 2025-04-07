@@ -1563,16 +1563,25 @@ def test_strict_mode_retrieve_read_rate_limiting(collection_name):
     assert response.status_code == 429
     assert "Read rate limit exceeded, request larger than rate limiter capacity, please try to split your request" in response.json()['status']['error']
 
-    set_strict_mode(collection_name, {
-        "enabled": False,
-    })
-
+    # Check with less examples
     response = request_with_validation(
         api="/collections/{collection_name}/points",
         method="POST",
         path_params={"collection_name": collection_name},
         body={
-            "ids": [1, 2, 3, 4, 5],
+            "ids": [1, 2, 3, 4],
         },
     )
     assert response.ok, response.text
+
+    # Check if tokens are gone
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "ids": [1, 2, 3, 4],
+        },
+    )
+    assert response.status_code == 429
+    assert "Read rate limit exceeded: Operation requires 4 tokens but only 0.0 were available. Retry after 60s" in response.json()['status']['error']
