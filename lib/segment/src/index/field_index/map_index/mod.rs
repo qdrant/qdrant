@@ -435,7 +435,6 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         )
     }
 
-
     pub fn is_on_disk(&self) -> bool {
         match self {
             MapIndex::Mutable(_) => false,

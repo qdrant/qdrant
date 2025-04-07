@@ -483,7 +483,6 @@ impl HNSWIndex {
 
         config.indexed_vector_count.replace(indexed_vectors);
 
-
         // Always skip loading graph to RAM on build
         // as it will be discarded anyway
         let is_on_disk = true;
