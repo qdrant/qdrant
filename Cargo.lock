@@ -5848,7 +5848,6 @@ dependencies = [
  "io",
  "io-uring",
  "is_sorted",
- "issues",
  "itertools 0.14.0",
  "lazy_static",
  "log",
