@@ -36,8 +36,10 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: clippy
+    - name: Update apt
+      run: sudo apt-get update
     - name: Install dependencies
-      run: sudo apt-get install clang
+      run: sudo apt-get install clang libunwind-dev
     - name: Check code formatting
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings
