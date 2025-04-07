@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  lint:
 
     runs-on: ubuntu-latest
 
@@ -37,7 +37,7 @@ jobs:
       with:
         key: clippy
     - name: Install dependencies
-      run: sudo apt-get install clang libunwind-dev
+      run: sudo apt-get install clang
     - name: Check code formatting
       run: cargo +nightly fmt --all -- --check
     - name: Check cargo clippy warnings
