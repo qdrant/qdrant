@@ -1521,3 +1521,67 @@ def test_strict_mode_recommendation_best_score_read_rate_limiting(collection_nam
         },
     )
     assert response.ok, response.text
+
+
+def test_strict_mode_retrieve_read_rate_limiting(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "ids": [1, 2, 3, 4, 5],
+        },
+    )
+    assert response.ok, response.text
+
+    # set read rate limit
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 4,
+    })
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert response.ok
+    new_strict_mode_config = response.json()['result']['config']['strict_mode_config']
+    assert new_strict_mode_config['enabled']
+    assert new_strict_mode_config['read_rate_limit'] == 4
+
+    # try max number of ids
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "ids": [1, 2, 3, 4, 5],
+        },
+    )
+    assert response.status_code == 429
+    assert "Read rate limit exceeded, request larger than rate limiter capacity, please try to split your request" in response.json()['status']['error']
+
+    # Check with less examples
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "ids": [1, 2, 3, 4],
+        },
+    )
+    assert response.ok, response.text
+
+    # Check if tokens are gone
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "ids": [1, 2, 3, 4],
+        },
+    )
+    assert response.status_code == 429
+    assert "Read rate limit exceeded: Operation requires 4 tokens but only 0.0 were available. Retry after 60s" in response.json()['status']['error']

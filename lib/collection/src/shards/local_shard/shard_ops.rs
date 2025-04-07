@@ -228,10 +228,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<RecordInternal>> {
         // Check read rate limiter before proceeding
-        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || {
-            // TODO(strict-mode) how much should a retrieve cost? (request.ids.len()?)
-            1
-        })?;
+        self.check_read_rate_limiter(&hw_measurement_acc, "retrieve", || request.ids.len())?;
         let timeout = timeout.unwrap_or(self.shared_storage_config.search_timeout);
         let records_map = tokio::time::timeout(
             timeout,
