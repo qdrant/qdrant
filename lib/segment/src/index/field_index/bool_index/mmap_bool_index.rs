@@ -281,6 +281,10 @@ impl MmapBoolIndex {
         .collect()
     }
 
+    pub fn is_on_disk(&self) -> bool {
+        !self.populated
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

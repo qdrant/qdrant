@@ -98,6 +98,37 @@ impl Drop for Segment {
         if let Err(flushing_err) = self.lock_flushing() {
             log::error!("Failed to flush segment during drop: {flushing_err}");
         }
+
+        // Try to remove everything from the disk cache, as it might pollute the cache
+        if let Err(e) = self.payload_storage.borrow().clear_cache() {
+            log::error!("Failed to clear cache of payload_storage: {e}");
+        }
+
+        if let Err(e) = self.payload_index.borrow().clear_cache() {
+            log::error!("Failed to clear cache of payload_index: {e}");
+        }
+
+        for (name, vector_data) in &self.vector_data {
+            let VectorData {
+                vector_index,
+                vector_storage,
+                quantized_vectors,
+            } = vector_data;
+
+            if let Err(e) = vector_index.borrow().clear_cache() {
+                log::error!("Failed to clear cache of vector index {name}: {e}");
+            }
+
+            if let Err(e) = vector_storage.borrow().clear_cache() {
+                log::error!("Failed to clear cache of vector storage {name}: {e}");
+            }
+
+            if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
+                if let Err(e) = quantized_vectors.clear_cache() {
+                    log::error!("Failed to clear cache of quantized vectors {name}: {e}");
+                }
+            }
+        }
     }
 }
 

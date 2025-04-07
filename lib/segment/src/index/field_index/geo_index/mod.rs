@@ -343,6 +343,14 @@ impl GeoMapIndex {
         self.values_count(idx) == 0
     }
 
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            GeoMapIndex::Mutable(_) => false,
+            GeoMapIndex::Immutable(_) => false,
+            GeoMapIndex::Mmap(index) => index.is_on_disk(),
+        }
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

@@ -356,6 +356,10 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         ConditionedCounter::new(self.is_on_disk, hw_counter)
     }
 
+    pub fn is_on_disk(&self) -> bool {
+        self.is_on_disk
+    }
+
     /// Populate all pages in the mmap.
     /// Block until all pages are populated.
     pub fn populate(&self) -> OperationResult<()> {

@@ -483,7 +483,10 @@ impl HNSWIndex {
 
         config.indexed_vector_count.replace(indexed_vectors);
 
-        let is_on_disk = hnsw_config.on_disk.unwrap_or(false);
+
+        // Always skip loading graph to RAM on build
+        // as it will be discarded anyway
+        let is_on_disk = true;
 
         let graph: GraphLayers =
             graph_layers_builder.into_graph_layers(path, LINK_COMPRESSION_FORMAT, is_on_disk)?;
