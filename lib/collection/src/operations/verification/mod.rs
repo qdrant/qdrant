@@ -3,7 +3,7 @@ mod discovery;
 mod facet;
 mod local_shard;
 mod matrix;
-mod operation_rate_cost;
+pub mod operation_rate_cost;
 mod query;
 mod recommend;
 mod search;
