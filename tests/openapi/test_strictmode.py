@@ -1530,7 +1530,6 @@ def test_strict_mode_retrieve_read_rate_limiting(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "ids": [1, 2, 3, 4, 5],
-
         },
     )
     assert response.ok, response.text
@@ -1559,7 +1558,6 @@ def test_strict_mode_retrieve_read_rate_limiting(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "ids": [1, 2, 3, 4, 5],
-
         },
     )
     assert response.status_code == 429
@@ -1575,7 +1573,6 @@ def test_strict_mode_retrieve_read_rate_limiting(collection_name):
         path_params={"collection_name": collection_name},
         body={
             "ids": [1, 2, 3, 4, 5],
-
         },
     )
     assert response.ok, response.text
