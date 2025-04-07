@@ -279,6 +279,8 @@ impl ShardOperation for LocalShard {
         //
         // We don't create smaller chunks than MIN_BATCH_SIZE to ensure our 'filter reuse
         // optimization' can be properly used.
+        // See: <https://github.com/qdrant/qdrant/pull/813>
+        // See: <https://github.com/qdrant/qdrant/pull/6326>
         const MIN_CHUNK_SIZE: usize = 10;
         let chunk_size = {
             let count = requests.len();
