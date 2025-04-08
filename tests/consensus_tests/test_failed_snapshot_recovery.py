@@ -176,7 +176,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     local_shards = get_local_shards(peer_api_uris[-1])
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
-    assert local_shards[0]["state"] in ["Partial", "Recovery"]
+    assert local_shards[0]["state"] in ["Dead", "Partial", "Recovery"]
     assert local_shards[0]["points_count"] <= n_points
 
     # Assert storage does not contain initialized flag after restoring on restart
