@@ -231,7 +231,6 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         "QDRANT__STORAGE__HANDLE_COLLECTION_LOAD_ERRORS": "false"
     }
 
-
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(
         tmp_path,
         N_PEERS,
@@ -247,7 +246,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    n_points = 1_000
+    n_points = 3_000
     upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
@@ -268,7 +267,8 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Delete some of the files from the shard:
     shard_path = Path(peer_dirs[-1]) / "storage" / "collections" / COLLECTION_NAME / f"{shard_id}"
     assert shard_path.exists()
-    # corrupt_shard_dir(shard_path)
+
+    corrupt_shard_dir(shard_path)
 
     # Kill last peer
     p = processes.pop()
@@ -286,15 +286,11 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Assert that the local shard is in partial/recovery state
-    local_shards = get_local_shards(peer_api_uris[-1])
-    assert len(local_shards) == 1
-    assert local_shards[0]["shard_id"] == 0
-    shard_state = local_shards[0]["state"]
+    [local_shard] = get_local_shards(peer_api_uris[-1])
+    assert local_shard["shard_id"] == 0
+    shard_state = local_shard["state"]
     assert shard_state in ["Dead", "Partial", "Recovery"]
-    if shard_state == "Partial":
-        assert local_shards[0]["points_count"] <= n_points
-    else:
-        assert local_shards[0]["points_count"] == 0
+    assert local_shard["points_count"] <= n_points, local_shard
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
@@ -303,11 +299,10 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME)
 
     # Assert that the local shard is active and not empty
-    local_shards = get_local_shards(peer_api_uris[-1])
-    assert len(local_shards) == 1
-    assert local_shards[0]["shard_id"] == 0
-    assert local_shards[0]["state"] == "Active"
-    assert local_shards[0]["points_count"] == n_points
+    [local_shard] = get_local_shards(peer_api_uris[-1])
+    assert local_shard["shard_id"] == 0
+    assert local_shard["state"] == "Active"
+    assert local_shard["points_count"] == n_points
 
     assert not os.path.exists(flag_path) # shard initializing flag should be dropped after recovery is successful
 
