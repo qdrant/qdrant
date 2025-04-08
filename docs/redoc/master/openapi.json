@@ -7268,6 +7268,13 @@
             "minimum": 1,
             "nullable": true
           },
+          "max_query_vectors": {
+            "description": "Max number of individual vectors allowed in a query, including vectors in a multivector and all vector inputs in special queries like recommend, discovery, etc.\n\nThis setting limits the amount of similarity calculations between a query and a point.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 1,
+            "nullable": true
+          },
           "max_timeout": {
             "description": "Max allowed `timeout` parameter.",
             "type": "integer",
@@ -9612,6 +9619,13 @@
             "type": "integer",
             "format": "uint",
             "minimum": 1,
+            "nullable": true
+          },
+          "max_query_vectors": {
+            "description": "Max number of individual vectors allowed in a query, including vectors in a multivector and all vector inputs in special queries like recommend, discovery, etc.\n\nThis setting limits the amount of similarity calculations between a query and a point.",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
             "nullable": true
           },
           "max_timeout": {
