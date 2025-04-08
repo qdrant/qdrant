@@ -1164,7 +1164,7 @@ dependencies = [
  "futures",
  "hashring",
  "http 1.2.0",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "indicatif",
  "io",
  "issues",
@@ -2417,7 +2417,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 0.2.9",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2436,7 +2436,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "http 1.2.0",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -3001,9 +3001,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3954d50fe15b02142bf25d3b8bdadb634ec3948f103d04ffe3031bc8fe9d7058"
+checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
  "hashbrown 0.15.2",
@@ -3031,7 +3031,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abfb2e51b23c338595ae0b6bdaaa7a4a8b860b8d788a4331cb07b50fe5dea71b"
 dependencies = [
  "ahash",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "is-terminal",
  "itoa",
  "log",
@@ -5689,7 +5689,7 @@ dependencies = [
  "chrono",
  "dyn-clone",
  "indexmap 1.9.2",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "schemars_derive",
  "serde",
  "serde_json",
@@ -5844,7 +5844,7 @@ dependencies = [
  "gridstore",
  "half 2.5.0",
  "humantime",
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "indicatif",
  "io",
  "io-uring",
@@ -5984,7 +5984,7 @@ version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
- "indexmap 2.8.0",
+ "indexmap 2.9.0",
  "itoa",
  "memchr",
  "ryu",
