@@ -265,20 +265,15 @@ impl ShardReplicaSet {
                         continue;
                     };
 
-                    for (file, &local_version) in &local_manifest.file_versions {
-                        let snapshot_version = snapshot_manifest.file_versions.get(file).copied();
+                    for (file, local_version) in local_manifest.file_versions() {
+                        let snapshot_version = snapshot_manifest.file_version(file);
 
                         let is_removed = snapshot_version.is_none();
 
                         let is_outdated = snapshot_version.is_none_or(|snapshot_version| {
-                            let local_version =
-                                local_version.or_segment_version(local_manifest.segment_version);
-
-                            let snapshot_version = snapshot_version
-                                .or_segment_version(snapshot_manifest.segment_version);
-
-                            // Compare versions to determine local file is outdated relative to snapshot
-                            local_version < snapshot_version
+                            let is_outdated = local_version < snapshot_version;
+                            let is_zero = local_version == 0 && snapshot_version == 0;
+                            is_outdated || is_zero
                         });
 
                         let is_rocksdb = file == Path::new(ROCKS_DB_VIRT_FILE);
