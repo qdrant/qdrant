@@ -17,6 +17,7 @@ jobs:
           with:
             # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
             ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+            fetch-depth: 0
         - uses: Swatinem/rust-cache@v2
         - name: Install Protoc
           uses: arduino/setup-protoc@v3
@@ -34,3 +35,4 @@ jobs:
             files: lcov.info
             override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
             token: ${{ secrets.CODECOV_TOKEN }}
+            verbose: true
