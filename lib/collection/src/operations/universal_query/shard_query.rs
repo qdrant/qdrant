@@ -9,8 +9,8 @@ use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DecayKind, ParsedFormula,
 };
 use segment::types::{
-    Filter, Order, ScoredPoint, SearchParams, VectorName, VectorNameBuf, WithPayloadInterface,
-    WithVector,
+    Filter, Order, ScoredPoint, SearchParams, StrictModeConfig, VectorName, VectorNameBuf,
+    WithPayloadInterface, WithVector,
 };
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use tonic::Status;
@@ -50,6 +50,17 @@ impl ShardQueryRequest {
             .map(ShardPrefetch::depth)
             .max()
             .unwrap_or(0)
+    }
+
+    pub fn check_strict_mode(
+        &self,
+        strict_mode_config: &Option<StrictModeConfig>,
+    ) -> CollectionResult<()> {
+        // Verify query against strict mode
+        if let (Some(query), Some(strict_mode_config)) = (&self.query, strict_mode_config) {
+            query.check_strict_mode(strict_mode_config)?;
+        }
+        Ok(())
     }
 }
 
@@ -143,6 +154,29 @@ impl ScoringQuery {
             }
         };
         Ok(order)
+    }
+
+    fn check_strict_mode(&self, strict_mode_config: &StrictModeConfig) -> CollectionResult<()> {
+        let Some(true) = strict_mode_config.enabled else {
+            return Ok(());
+        };
+
+        match self {
+            Self::Vector(query_enum) => {
+                query_enum.check_strict_mode(strict_mode_config)?;
+            }
+            Self::Fusion(fusion_internal) => match fusion_internal {
+                FusionInternal::Rrf => {}
+                FusionInternal::Dbsf => {}
+            },
+            Self::OrderBy(_order_by) => {}
+            Self::Sample(sample_internal) => match sample_internal {
+                SampleInternal::Random => {}
+            },
+            // unindexed fields for formula is already validated at `CollectionQueryRequest` level
+            Self::Formula(_formula) => {}
+        }
+        Ok(())
     }
 }
 

@@ -128,6 +128,8 @@ impl GroupRequest {
             }
         };
 
+        query_search.check_strict_mode(&collection.strict_mode_config().await)?;
+
         Ok(QueryGroupRequest {
             source: query_search,
             group_by: self.group_by,

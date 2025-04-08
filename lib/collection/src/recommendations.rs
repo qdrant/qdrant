@@ -357,7 +357,7 @@ fn recommend_by_avg_vector(
         positive,
         negative,
         lookup_from,
-        ..
+        strategy: _,
     } = request;
 
     let lookup_collection_name = lookup_from.as_ref().map(|x| &x.collection);

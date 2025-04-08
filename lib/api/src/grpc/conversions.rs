@@ -1887,6 +1887,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
         let StrictModeConfig {
             enabled,
             max_query_limit,
+            max_query_vectors,
             max_timeout,
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -1907,6 +1908,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfig {
         Self {
             enabled,
             max_query_limit: max_query_limit.map(|i| i as usize),
+            max_query_vectors: max_query_vectors.map(|i| i as usize),
             max_timeout: max_timeout.map(|i| i as usize),
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -2010,6 +2012,7 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
         let segment::types::StrictModeConfigOutput {
             enabled,
             max_query_limit,
+            max_query_vectors,
             max_timeout,
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -2030,6 +2033,7 @@ impl From<segment::types::StrictModeConfigOutput> for StrictModeConfig {
         Self {
             enabled,
             max_query_limit: max_query_limit.map(|i| i as u32),
+            max_query_vectors: max_query_vectors.map(|i| i as u32),
             max_timeout: max_timeout.map(|i| i as u32),
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -2055,6 +2059,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
         let StrictModeConfig {
             enabled,
             max_query_limit,
+            max_query_vectors,
             max_timeout,
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -2075,6 +2080,7 @@ impl From<StrictModeConfig> for segment::types::StrictModeConfigOutput {
         Self {
             enabled,
             max_query_limit: max_query_limit.map(|i| i as usize),
+            max_query_vectors: max_query_vectors.map(|i| i as usize),
             max_timeout: max_timeout.map(|i| i as usize),
             unindexed_filtering_retrieve,
             unindexed_filtering_update,

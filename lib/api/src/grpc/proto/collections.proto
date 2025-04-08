@@ -345,6 +345,7 @@ message StrictModeConfig {
   optional StrictModeMultivectorConfig multivector_config = 16;
   optional StrictModeSparseConfig sparse_config = 17;
   optional uint64 max_points_count = 18;
+  optional uint32 max_query_vectors = 19;
 }
 
 message StrictModeSparseConfig {

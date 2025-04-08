@@ -115,6 +115,7 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
     let api::grpc::qdrant::StrictModeConfig {
         enabled,
         max_query_limit,
+        max_query_vectors,
         max_timeout,
         unindexed_filtering_retrieve,
         unindexed_filtering_update,
@@ -135,6 +136,7 @@ pub fn strict_mode_from_api(value: api::grpc::qdrant::StrictModeConfig) -> Stric
     StrictModeConfig {
         enabled,
         max_query_limit: max_query_limit.map(|i| i as usize),
+        max_query_vectors: max_query_vectors.map(|i| i as usize),
         max_timeout: max_timeout.map(|i| i as usize),
         unindexed_filtering_retrieve,
         unindexed_filtering_update,

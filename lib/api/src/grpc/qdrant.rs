@@ -529,6 +529,8 @@ pub struct StrictModeConfig {
     pub sparse_config: ::core::option::Option<StrictModeSparseConfig>,
     #[prost(uint64, optional, tag = "18")]
     pub max_points_count: ::core::option::Option<u64>,
+    #[prost(uint32, optional, tag = "19")]
+    pub max_query_vectors: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

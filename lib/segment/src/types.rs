@@ -885,6 +885,12 @@ pub struct StrictModeConfig {
     #[validate(range(min = 1))]
     pub max_query_limit: Option<usize>,
 
+    /// Max number of individual vectors allowed in a query, including vectors in a multivector
+    /// and all vector inputs in special queries like recommend, discovery, etc.
+    ///
+    /// This setting limits the amount of similarity calculations between a query and a point.
+    pub max_query_vectors: Option<usize>,
+
     /// Max allowed `timeout` parameter.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[validate(range(min = 1))]
@@ -957,6 +963,12 @@ pub struct StrictModeConfig {
     pub sparse_config: Option<StrictModeSparseConfig>,
 }
 
+impl StrictModeConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled == Some(true)
+    }
+}
+
 impl Eq for StrictModeConfig {}
 
 impl Hash for StrictModeConfig {
@@ -964,6 +976,7 @@ impl Hash for StrictModeConfig {
         let Self {
             enabled,
             max_query_limit,
+            max_query_vectors,
             max_timeout,
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -984,6 +997,7 @@ impl Hash for StrictModeConfig {
         } = self;
         enabled.hash(state);
         max_query_limit.hash(state);
+        max_query_vectors.hash(state);
         max_timeout.hash(state);
         unindexed_filtering_retrieve.hash(state);
         unindexed_filtering_update.hash(state);
@@ -1015,6 +1029,15 @@ pub struct StrictModeConfigOutput {
     #[validate(range(min = 1))]
     #[anonymize(false)]
     pub max_query_limit: Option<usize>,
+
+    /// Max number of individual vectors allowed in a query, including vectors in a multivector
+    /// and all vector inputs in special queries like recommend, discovery, etc.
+    ///
+    /// This setting limits the amount of similarity calculations between a query and a point.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1))]
+    #[anonymize(false)]
+    pub max_query_vectors: Option<usize>,
 
     /// Max allowed `timeout` parameter.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1099,6 +1122,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
         let StrictModeConfig {
             enabled,
             max_query_limit,
+            max_query_vectors,
             max_timeout,
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
@@ -1120,6 +1144,7 @@ impl From<StrictModeConfig> for StrictModeConfigOutput {
         Self {
             enabled,
             max_query_limit,
+            max_query_vectors,
             max_timeout,
             unindexed_filtering_retrieve,
             unindexed_filtering_update,
