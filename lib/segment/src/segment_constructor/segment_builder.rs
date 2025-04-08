@@ -565,6 +565,8 @@ impl SegmentBuilder {
 
             for (vector_name, vector_config) in &segment_config.vector_data {
                 let vector_storage = vector_storages_arc.remove(vector_name).unwrap();
+                let quantized_vectors =
+                    Arc::new(AtomicRefCell::new(quantized_vectors.remove(vector_name)));
 
                 let index = build_vector_index(
                     vector_config,
@@ -573,9 +575,7 @@ impl SegmentBuilder {
                         id_tracker: id_tracker_arc.clone(),
                         vector_storage: vector_storage.clone(),
                         payload_index: payload_index_arc.clone(),
-                        quantized_vectors: Arc::new(AtomicRefCell::new(
-                            quantized_vectors.remove(vector_name),
-                        )),
+                        quantized_vectors: quantized_vectors.clone(),
                     },
                     VectorIndexBuildArgs {
                         permit: permit.clone(),
@@ -589,6 +589,10 @@ impl SegmentBuilder {
                     // If vector storage is expected to be on-disk, we need to clear cache
                     // to avoid cache pollution
                     vector_storage.borrow().clear_cache()?;
+                }
+
+                if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
+                    quantized_vectors.clear_cache()?;
                 }
 
                 // Index if always loaded on-disk=true from build function
