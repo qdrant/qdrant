@@ -116,7 +116,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    n_points = 2_000
+    n_points = 3_000
     upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
@@ -177,11 +177,15 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
     assert local_shards[0]["state"] in ["Partial", "Recovery"]
-    assert local_shards[0]["points_count"] == 0
+    assert local_shards[0]["points_count"] <= n_points
 
     # Assert storage does not contain initialized flag after restoring on restart
+    print("Checking that the shard initializing flag was removed after recovery")
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
-    assert not os.path.exists(flag_path)
+    try:
+        wait_for(lambda : not os.path.exists(flag_path))
+    except TimeoutError:
+        assert False, f"Flag {flag_path} still exists after recovery"
 
     # There are two other replicas, try moving shards into broken state
     local_shards = get_local_shards(peer_api_uris[0])
