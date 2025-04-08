@@ -3055,7 +3055,6 @@ version = "0.0.0"
 dependencies = [
  "atomicwrites",
  "bincode",
- "nix 0.29.0",
  "semver",
  "serde",
  "serde_json",
@@ -3825,9 +3824,9 @@ name = "memory"
 version = "0.0.0"
 dependencies = [
  "bitvec",
- "libc",
  "log",
  "memmap2",
+ "nix 0.29.0",
  "parking_lot",
  "rand 0.9.0",
  "serde",

@@ -1,6 +1,7 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
+use std::fs::File;
 use std::hint::black_box;
 use std::io;
 use std::num::Wrapping;
@@ -175,24 +176,29 @@ fn populate_simple(slice: &[u8]) {
 ///
 /// If `posix_fadvise` is not supported, this function does nothing.
 pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
-    #[cfg(target_os = "linux")]
+    // https://github.com/nix-rust/nix/blob/v0.29.0/src/fcntl.rs#L35-L42
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "android",
+        target_os = "fuchsia",
+        target_os = "emscripten",
+        target_os = "wasi",
+        target_env = "uclibc",
+    ))]
     {
-        use std::os::unix::io::AsRawFd;
+        use std::os::fd::AsRawFd as _;
 
-        use libc::{POSIX_FADV_DONTNEED, posix_fadvise};
+        use nix::fcntl;
 
-        let file = std::fs::OpenOptions::new().read(true).open(file_path)?;
+        let file = File::open(file_path)?;
         let fd = file.as_raw_fd();
 
-        // Clear the cache, offset 0, length 0 (whole file)
-        let ret = unsafe { posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED) };
-
-        if ret != 0 {
-            Err(io::Error::from_raw_os_error(ret))
-        } else {
-            Ok(())
-        }
+        fcntl::posix_fadvise(fd, 0, 0, fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED)
+            .map_err(io::Error::from)?;
     }
-    #[cfg(not(target_os = "linux"))]
+
+    _ = file_path;
+
     Ok(())
 }
