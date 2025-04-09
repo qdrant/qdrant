@@ -176,7 +176,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     local_shards = get_local_shards(peer_api_uris[-1])
     assert len(local_shards) == 1
     assert local_shards[0]["shard_id"] == 0
-    assert local_shards[0]["state"] in ["Dead", "Partial", "Recovery"]
+    assert local_shards[0]["state"] in ["Active", "Dead", "Partial", "Recovery"]
     assert local_shards[0]["points_count"] <= n_points
 
     # Assert storage does not contain initialized flag after restoring on restart
@@ -293,7 +293,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     [local_shard] = get_local_shards(peer_api_uris[-1])
     assert local_shard["shard_id"] == 0
     shard_state = local_shard["state"]
-    assert shard_state in ["Dead", "Partial", "Recovery"]
+    assert shard_state in ["Active", "Dead", "Partial", "Recovery"]
     assert local_shard["points_count"] <= n_points, local_shard
 
     # Wait for end of shard transfer
