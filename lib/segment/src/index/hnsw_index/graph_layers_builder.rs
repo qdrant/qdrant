@@ -404,7 +404,7 @@ impl GraphLayersBuilder {
             // We can't do much here, so just quit
         }
         let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        assert!(!was_ready);
+        debug_assert!(!was_ready);
         self.entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
@@ -425,7 +425,7 @@ impl GraphLayersBuilder {
         }
 
         let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        assert!(!was_ready);
+        debug_assert!(!was_ready);
         self.entry_points
             .lock()
             .new_point(point_id, level, |_| true);
