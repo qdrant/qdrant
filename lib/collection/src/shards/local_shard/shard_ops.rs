@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -277,36 +276,17 @@ impl ShardOperation for LocalShard {
         // To prevent this from being a bottleneck if we have a lot of requests, we can chunk the
         // requests into multiple searches to allow more parallelism.
         //
-        // We don't create smaller chunks than MIN_BATCH_SIZE to ensure our 'filter reuse
-        // optimization' can be properly used.
+        // For simplicity, we use a fixed chunk size. Using chunks helps to ensure our 'filter
+        // reuse optimization' is still properly utilized.
         // See: <https://github.com/qdrant/qdrant/pull/813>
         // See: <https://github.com/qdrant/qdrant/pull/6326>
-        const MIN_CHUNK_SIZE: usize = 10;
-        let chunk_size = {
-            let count = requests.len();
-            if count <= MIN_CHUNK_SIZE {
-                // If number of requests is less than minimum batch size, create one chunk
-                count
-            } else {
-                let segment_count = max(self.segments.read().len().saturating_sub(1), 1);
-                if count <= segment_count {
-                    // If number of requests is less than segment count, create one chunk
-                    // Each request is also already parallelized over each segment
-                    count
-                } else {
-                    // Determine CPU count per segment, create up to that amount of chunks to parallelize
-                    // Each request is also already parallelized over each segment
-                    let cpus_per_segment = max(common::cpu::get_num_cpus() / segment_count, 1);
-                    max(count.div_ceil(cpus_per_segment), MIN_CHUNK_SIZE)
-                }
-            }
-        };
+        const CHUNK_SIZE: usize = 16;
 
         // Calculate read cost if read rate limit is enabled
         let mut read_cost = self.read_rate_limiter.is_some().then_some(0);
 
         let chunk_futures = requests
-            .chunks(chunk_size)
+            .chunks(CHUNK_SIZE)
             .map(|r| {
                 let planned_query = PlannedQuery::try_from(r.to_vec())?;
                 if let Some(rate_limit_cost) = &mut read_cost {
