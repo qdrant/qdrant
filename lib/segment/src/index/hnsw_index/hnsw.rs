@@ -371,22 +371,23 @@ impl HNSWIndex {
             let timer = std::time::Instant::now();
 
             let mut ids = Vec::with_capacity(total_vector_count);
-            if let Some(old_index) = &old_index {
-                for vector_id in id_tracker_ref.iter_ids_excluding(deleted_bitslice) {
+            let mut first_few_ids = Vec::with_capacity(SINGLE_THREADED_HNSW_BUILD_THRESHOLD);
+
+            let mut ids_iter = id_tracker_ref.iter_ids_excluding(deleted_bitslice);
+            if let Some(old_index) = old_index {
+                for vector_id in ids_iter {
                     if let Some(links) = old_index.get_links(vector_id) {
                         graph_layers_builder.add_new_point(vector_id, links);
+                    } else if first_few_ids.len() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+                        first_few_ids.push(vector_id);
                     } else {
                         ids.push(vector_id);
                     }
                 }
             } else {
-                ids.extend(id_tracker_ref.iter_ids_excluding(deleted_bitslice));
+                first_few_ids.extend(ids_iter.by_ref().take(SINGLE_THREADED_HNSW_BUILD_THRESHOLD));
+                ids.extend(ids_iter);
             }
-
-            let first_few_ids = ids.split_off(
-                ids.len()
-                    .saturating_sub(SINGLE_THREADED_HNSW_BUILD_THRESHOLD),
-            );
 
             let insert_point = |vector_id| {
                 check_process_stopped(stopped)?;
@@ -428,6 +429,8 @@ impl HNSWIndex {
             }
 
             debug!("{FINISH_MAIN_GRAPH_LOG_MESSAGE} {:?}", timer.elapsed());
+        } else {
+            drop(old_index);
         }
 
         let visited_pool = VisitedPool::new();
