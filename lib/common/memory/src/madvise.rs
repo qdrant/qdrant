@@ -1,7 +1,6 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
-use std::fs::File;
 use std::hint::black_box;
 use std::io;
 use std::num::Wrapping;
