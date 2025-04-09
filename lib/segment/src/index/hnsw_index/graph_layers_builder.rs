@@ -431,14 +431,6 @@ impl GraphLayersBuilder {
             .new_point(point_id, level, |_| true);
     }
 
-    pub fn link_new_point_complete_indexing(&self, point_id: PointOffsetType) {
-        let level = self.get_point_level(point_id);
-        self.ready_list.write().set(point_id as usize, true);
-        self.entry_points
-            .lock()
-            .new_point(point_id, level, |_| true);
-    }
-
     /// Link a new point on a specific level.
     /// Returns an entry point for the level below.
     fn link_new_point_on_level(
