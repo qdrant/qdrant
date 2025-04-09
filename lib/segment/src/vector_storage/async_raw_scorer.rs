@@ -10,7 +10,7 @@ use super::query::{
     ContextQuery, DiscoveryQuery, RecoBestScoreQuery, RecoQuery, RecoSumScoresQuery, TransformInto,
 };
 use super::query_scorer::custom_query_scorer::CustomQueryScorer;
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{CancellableResult, OperationError, OperationResult};
 use crate::data_types::vectors::{DenseVector, QueryVector, VectorElementType, VectorInternal};
 use crate::spaces::metric::Metric;
 use crate::spaces::simple::{CosineMetric, DotProductMetric, EuclidMetric, ManhattanMetric};
@@ -19,18 +19,15 @@ use crate::vector_storage::dense::memmap_dense_vector_storage::MemmapDenseVector
 use crate::vector_storage::dense::mmap_dense_vectors::MmapDenseVectors;
 use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
-use crate::vector_storage::{DEFAULT_STOPPED, RawScorer, VectorStorage as _};
+use crate::vector_storage::{RawScorer, VectorStorage as _};
 
 pub fn new<'a>(
     query: QueryVector,
     storage: &'a MemmapDenseVectorStorage<VectorElementType>,
     point_deleted: &'a BitSlice,
-    is_stopped: &'a AtomicBool,
     hardware_counter: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
-    AsyncRawScorerBuilder::new(query, storage, point_deleted, hardware_counter)
-        .with_is_stopped(is_stopped)
-        .build()
+    AsyncRawScorerBuilder::new(query, storage, point_deleted, hardware_counter).build()
 }
 
 pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<[VectorElementType]>> {
@@ -39,9 +36,6 @@ pub struct AsyncRawScorerImpl<'a, TQueryScorer: QueryScorer<[VectorElementType]>
     storage: &'a MmapDenseVectors<VectorElementType>,
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
-    /// This flag indicates that the search process is stopped externally,
-    /// the search result is no longer needed and the search process should be stopped as soon as possible.
-    pub is_stopped: &'a AtomicBool,
 }
 
 impl<'a, TQueryScorer> AsyncRawScorerImpl<'a, TQueryScorer>
@@ -54,7 +48,6 @@ where
         storage: &'a MmapDenseVectors<VectorElementType>,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
-        is_stopped: &'a AtomicBool,
     ) -> Self {
         Self {
             points_count,
@@ -62,7 +55,6 @@ where
             storage,
             point_deleted,
             vec_deleted,
-            is_stopped,
         }
     }
 }
@@ -72,9 +64,6 @@ where
     TQueryScorer: QueryScorer<[VectorElementType]>,
 {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoredPointOffset]) -> usize {
-        if self.is_stopped.load(Ordering::Relaxed) {
-            return 0;
-        }
         let points_stream = points
             .iter()
             .copied()
@@ -102,9 +91,6 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
     ) -> Vec<ScoredPointOffset> {
-        if self.is_stopped.load(Ordering::Relaxed) {
-            return vec![];
-        }
         let mut scores = vec![];
 
         self.storage
@@ -145,14 +131,15 @@ where
         &self,
         points: &mut dyn Iterator<Item = PointOffsetType>,
         top: usize,
-    ) -> Vec<ScoredPointOffset> {
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<ScoredPointOffset>> {
         if top == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let mut pq = FixedLengthPriorityQueue::new(top);
         let points_stream = points
-            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .take_while(|_| !is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id));
 
         self.storage
@@ -169,16 +156,20 @@ where
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
 
-        pq.into_sorted_vec()
+        Ok(pq.into_sorted_vec())
     }
 
-    fn peek_top_all(&self, top: usize) -> Vec<ScoredPointOffset> {
+    fn peek_top_all(
+        &self,
+        top: usize,
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<ScoredPointOffset>> {
         if top == 0 {
-            return vec![];
+            return Ok(vec![]);
         }
 
         let points_stream = (0..self.points_count)
-            .take_while(|_| !self.is_stopped.load(Ordering::Relaxed))
+            .take_while(|_| !is_stopped.load(Ordering::Relaxed))
             .filter(|point_id| self.check_vector(*point_id));
 
         let mut pq = FixedLengthPriorityQueue::new(top);
@@ -196,7 +187,7 @@ where
         // Instead of silently falling back to the sync implementation, we prefer to panic
         // and notify the user that they better use the default IO implementation.
 
-        pq.into_sorted_vec()
+        Ok(pq.into_sorted_vec())
     }
 }
 
@@ -207,7 +198,6 @@ struct AsyncRawScorerBuilder<'a> {
     point_deleted: &'a BitSlice,
     vec_deleted: &'a BitSlice,
     distance: Distance,
-    is_stopped: Option<&'a AtomicBool>,
     hardware_counter: HardwareCounterCell,
 }
 
@@ -226,11 +216,10 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         Self {
             points_count,
             query,
+            storage,
             point_deleted,
             vec_deleted,
-            storage,
             distance,
-            is_stopped: None,
             hardware_counter,
         }
     }
@@ -244,11 +233,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         }
     }
 
-    pub fn with_is_stopped(mut self, is_stopped: &'a AtomicBool) -> Self {
-        self.is_stopped = Some(is_stopped);
-        self
-    }
-
     fn _build_with_metric<TMetric: Metric<VectorElementType> + 'a>(
         self,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
@@ -259,7 +243,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             point_deleted,
             vec_deleted,
             distance: _,
-            is_stopped,
             hardware_counter,
         } = self;
 
@@ -278,7 +261,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                             storage.get_mmap_vectors(),
                             point_deleted,
                             vec_deleted,
-                            is_stopped.unwrap_or(&DEFAULT_STOPPED),
                         )))
                     }
                     VectorInternal::Sparse(_sparse_vector) => Err(OperationError::service_error(
@@ -304,7 +286,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
-                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 )))
             }
             QueryVector::RecommendSumScores(reco_query) => {
@@ -320,7 +301,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
-                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 )))
             }
             QueryVector::Discovery(discovery_query) => {
@@ -337,7 +317,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
-                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 )))
             }
             QueryVector::Context(context_query) => {
@@ -353,7 +332,6 @@ impl<'a> AsyncRawScorerBuilder<'a> {
                     storage.get_mmap_vectors(),
                     point_deleted,
                     vec_deleted,
-                    is_stopped.unwrap_or(&DEFAULT_STOPPED),
                 )))
             }
         }

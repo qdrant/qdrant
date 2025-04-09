@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cmp::max;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
@@ -10,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
 use super::graph_links::{GraphLinks, GraphLinksFormat};
-use crate::common::operation_error::{OperationError, OperationResult};
+use crate::common::operation_error::{
+    CancellableResult, OperationError, OperationResult, check_process_stopped,
+};
 use crate::common::utils::rev_range;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
@@ -60,11 +63,14 @@ pub trait GraphLayersBase {
         level: usize,
         visited_list: &mut VisitedListHandle,
         points_scorer: &mut FilteredScorer,
-    ) {
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<()> {
         let limit = self.get_m(level);
         let mut points_ids: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
 
         while let Some(candidate) = searcher.candidates.pop() {
+            check_process_stopped(is_stopped)?;
+
             if candidate.score < searcher.lower_bound() {
                 break;
             }
@@ -82,6 +88,8 @@ pub trait GraphLayersBase {
                 visited_list.check_and_update_visited(score_point.idx);
             });
         }
+
+        Ok(())
     }
 
     fn search_on_level(
@@ -90,13 +98,20 @@ pub trait GraphLayersBase {
         level: usize,
         ef: usize,
         points_scorer: &mut FilteredScorer,
-    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
         let mut search_context = SearchContext::new(level_entry, ef);
 
-        self._search_on_level(&mut search_context, level, &mut visited_list, points_scorer);
-        search_context.nearest
+        self._search_on_level(
+            &mut search_context,
+            level,
+            &mut visited_list,
+            points_scorer,
+            is_stopped,
+        )?;
+        Ok(search_context.nearest)
     }
 
     /// Greedy searches for entry point of level `target_level`.
@@ -107,7 +122,8 @@ pub trait GraphLayersBase {
         top_level: usize,
         target_level: usize,
         points_scorer: &mut FilteredScorer,
-    ) -> ScoredPointOffset {
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<ScoredPointOffset> {
         let mut links: Vec<PointOffsetType> = Vec::with_capacity(2 * self.get_m(0));
 
         let mut current_point = ScoredPointOffset {
@@ -115,6 +131,8 @@ pub trait GraphLayersBase {
             score: points_scorer.score_point(entry_point),
         };
         for level in rev_range(top_level, target_level) {
+            check_process_stopped(is_stopped)?;
+
             let limit = self.get_m(level);
 
             let mut changed = true;
@@ -135,7 +153,7 @@ pub trait GraphLayersBase {
                 });
             }
         }
-        current_point
+        Ok(current_point)
     }
 
     #[cfg(test)]
@@ -230,9 +248,10 @@ impl GraphLayers {
         ef: usize,
         mut points_scorer: FilteredScorer,
         custom_entry_points: Option<&[PointOffsetType]>,
-    ) -> Vec<ScoredPointOffset> {
+        is_stopped: &AtomicBool,
+    ) -> CancellableResult<Vec<ScoredPointOffset>> {
         let Some(entry_point) = self.get_entry_point(&points_scorer, custom_entry_points) else {
-            return Vec::default();
+            return Ok(Vec::default());
         };
 
         let zero_level_entry = self.search_entry(
@@ -240,9 +259,16 @@ impl GraphLayers {
             entry_point.level,
             0,
             &mut points_scorer,
-        );
-        let nearest = self.search_on_level(zero_level_entry, 0, max(top, ef), &mut points_scorer);
-        nearest.into_iter_sorted().take(top).collect_vec()
+            is_stopped,
+        )?;
+        let nearest = self.search_on_level(
+            zero_level_entry,
+            0,
+            max(top, ef),
+            &mut points_scorer,
+            is_stopped,
+        )?;
+        Ok(nearest.into_iter_sorted().take(top).collect_vec())
     }
 
     pub fn get_path(path: &Path) -> PathBuf {
@@ -365,6 +391,7 @@ mod tests {
     };
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, DotProductMetric};
+    use crate::vector_storage::DEFAULT_STOPPED;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
     fn search_in_graph(
@@ -378,7 +405,9 @@ mod tests {
 
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        graph.search(top, ef, scorer, None)
+        graph
+            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .unwrap()
     }
 
     const M: usize = 8;
@@ -419,15 +448,18 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
         let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-        let nearest_on_level = graph_layers.search_on_level(
-            ScoredPointOffset {
-                idx: 0,
-                score: scorer.score_point(0),
-            },
-            0,
-            32,
-            &mut scorer,
-        );
+        let nearest_on_level = graph_layers
+            .search_on_level(
+                ScoredPointOffset {
+                    idx: 0,
+                    score: scorer.score_point(0),
+                },
+                0,
+                32,
+                &mut scorer,
+                &DEFAULT_STOPPED,
+            )
+            .unwrap();
 
         assert_eq!(nearest_on_level.len(), graph_links[0][0].len() + 1);
 

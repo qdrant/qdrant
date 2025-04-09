@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cmp::{max, min};
 use std::collections::BinaryHeap;
 use std::path::Path;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
@@ -381,7 +381,9 @@ impl GraphLayersBuilder {
                     entry_point.level,
                     level,
                     &mut points_scorer,
+                    &AtomicBool::new(false),
                 )
+                .unwrap()
             } else {
                 ScoredPointOffset {
                     idx: entry_point.point_id,
@@ -431,7 +433,9 @@ impl GraphLayersBuilder {
             curr_level,
             &mut visited_list,
             points_scorer,
-        );
+            &AtomicBool::new(false),
+        )
+        .unwrap();
 
         if let Some(the_nearest) = search_context.nearest.iter_unsorted().max() {
             level_entry = *the_nearest;
@@ -576,6 +580,7 @@ mod tests {
     use crate::index::hnsw_index::tests::create_graph_layer_fixture;
     use crate::spaces::metric::Metric;
     use crate::spaces::simple::{CosineMetric, EuclidMetric};
+    use crate::vector_storage::DEFAULT_STOPPED;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
     const M: usize = 8;
@@ -735,7 +740,9 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        let graph_search = graph.search(top, ef, scorer, None);
+        let graph_search = graph
+            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .unwrap();
 
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
@@ -828,7 +835,9 @@ mod tests {
         let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
         let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
-        let graph_search = graph.search(top, ef, scorer, None);
+        let graph_search = graph
+            .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+            .unwrap();
         assert_eq!(reference_top.into_sorted_vec(), graph_search);
     }
 

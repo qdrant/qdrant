@@ -103,15 +103,6 @@ impl OperationError {
     }
 }
 
-pub fn check_process_stopped(stopped: &AtomicBool) -> OperationResult<()> {
-    if stopped.load(Ordering::Relaxed) {
-        return Err(OperationError::Cancelled {
-            description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
-        });
-    }
-    Ok(())
-}
-
 /// Contains information regarding last operation error, which should be fixed before next operation could be processed
 #[derive(Debug, Clone)]
 pub struct SegmentFailedState {
@@ -233,4 +224,24 @@ pub fn get_service_error<T>(err: &OperationResult<T>) -> Option<OperationError> 
             _ => None,
         },
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct CancelledError;
+
+pub type CancellableResult<T> = Result<T, CancelledError>;
+
+impl From<CancelledError> for OperationError {
+    fn from(CancelledError: CancelledError) -> Self {
+        OperationError::Cancelled {
+            description: PROCESS_CANCELLED_BY_SERVICE_MESSAGE.to_string(),
+        }
+    }
+}
+
+pub fn check_process_stopped(stopped: &AtomicBool) -> CancellableResult<()> {
+    if stopped.load(Ordering::Relaxed) {
+        return Err(CancelledError);
+    }
+    Ok(())
 }

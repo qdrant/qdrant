@@ -54,9 +54,7 @@ use crate::types::{
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::query::DiscoveryQuery;
-use crate::vector_storage::{
-    RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer, new_stoppable_raw_scorer,
-};
+use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 const HNSW_USE_HEURISTIC: bool = true;
 const FINISH_MAIN_GRAPH_LOG_MESSAGE: &str = "Finish main graph in time";
@@ -377,7 +375,6 @@ impl HNSWIndex {
                         vector,
                         id_tracker_ref.deleted_point_bitslice(),
                         vector_storage_ref.deleted_vector_bitslice(),
-                        stopped,
                         internal_hardware_counter,
                     )
                 } else {
@@ -385,7 +382,6 @@ impl HNSWIndex {
                         vector,
                         &vector_storage_ref,
                         id_tracker_ref.deleted_point_bitslice(),
-                        stopped,
                         internal_hardware_counter,
                     )
                 }?;
@@ -597,14 +593,12 @@ impl HNSWIndex {
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     deleted_bitslice,
-                    stopped,
                     internal_hardware_counter,
                 ),
                 None => new_raw_scorer(
                     vector,
                     vector_storage,
                     id_tracker.deleted_point_bitslice(),
-                    stopped,
                     internal_hardware_counter,
                 ),
             }?;
@@ -663,7 +657,6 @@ impl HNSWIndex {
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     vector_storage.deleted_vector_bitslice(),
-                    stopped,
                     hardware_counter,
                 )
             } else {
@@ -671,7 +664,6 @@ impl HNSWIndex {
                     vector,
                     vector_storage,
                     id_tracker.deleted_point_bitslice(),
-                    stopped,
                     hardware_counter,
                 )
             }?;
@@ -710,14 +702,12 @@ impl HNSWIndex {
                     vector,
                     id_tracker.deleted_point_bitslice(),
                     deleted_bitslice,
-                    stopped,
                     hardware_counter,
                 ),
                 None => new_raw_scorer(
                     vector,
                     vector_storage,
                     id_tracker.deleted_point_bitslice(),
-                    stopped,
                     hardware_counter,
                 ),
             }?;
@@ -848,7 +838,6 @@ impl HNSWIndex {
             quantized_vectors.as_ref(),
             deleted_points,
             params,
-            &is_stopped,
             vector_query_context.hardware_counter(),
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
@@ -858,16 +847,19 @@ impl HNSWIndex {
         let filter_context = filter.map(|f| payload_index.filter_context(f, &hw_counter));
         let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
 
-        let search_result =
-            self.graph
-                .search(oversampled_top, ef, points_scorer, custom_entry_points);
+        let search_result = self.graph.search(
+            oversampled_top,
+            ef,
+            points_scorer,
+            custom_entry_points,
+            &is_stopped,
+        )?;
 
         let res = self.postprocess_search_result(
             search_result,
             vector,
             params,
             top,
-            &is_stopped,
             vector_query_context.hardware_counter(),
         )?;
 
@@ -923,19 +915,17 @@ impl HNSWIndex {
             quantized_vectors.as_ref(),
             deleted_points,
             params,
-            &is_stopped,
             vector_query_context.hardware_counter(),
         )?;
         let oversampled_top = Self::get_oversampled_top(quantized_vectors.as_ref(), params, top);
 
-        let search_result = raw_scorer.peek_top_iter(points, oversampled_top);
+        let search_result = raw_scorer.peek_top_iter(points, oversampled_top, &is_stopped)?;
 
         let res = self.postprocess_search_result(
             search_result,
             vector,
             params,
             top,
-            &is_stopped,
             vector_query_context.hardware_counter(),
         )?;
         Ok(res)
@@ -1044,7 +1034,6 @@ impl HNSWIndex {
         quantized_storage: Option<&'a QuantizedVectors>,
         deleted_points: &'a BitSlice,
         params: Option<&SearchParams>,
-        is_stopped: &'a AtomicBool,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         let quantization_enabled = Self::is_quantized_search(quantized_storage, params);
@@ -1053,14 +1042,12 @@ impl HNSWIndex {
                 vector.to_owned(),
                 deleted_points,
                 vector_storage.deleted_vector_bitslice(),
-                is_stopped,
                 hardware_counter,
             ),
-            _ => new_stoppable_raw_scorer(
+            _ => new_raw_scorer(
                 vector.to_owned(),
                 vector_storage,
                 deleted_points,
-                is_stopped,
                 hardware_counter,
             ),
         }
@@ -1092,7 +1079,6 @@ impl HNSWIndex {
         vector: &QueryVector,
         params: Option<&SearchParams>,
         top: usize,
-        is_stopped: &AtomicBool,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
         let id_tracker = self.id_tracker.borrow();
@@ -1112,11 +1098,10 @@ impl HNSWIndex {
                 .unwrap_or(default_rescoring);
 
         let mut postprocess_result = if rescore {
-            let raw_scorer = new_stoppable_raw_scorer(
+            let raw_scorer = new_raw_scorer(
                 vector.to_owned(),
                 &vector_storage,
                 id_tracker.deleted_point_bitslice(),
-                is_stopped,
                 hardware_counter,
             )?;
 

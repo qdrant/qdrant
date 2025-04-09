@@ -150,7 +150,6 @@ impl QuantizedVectors {
         query: QueryVector,
         point_deleted: &'a BitSlice,
         vec_deleted: &'a BitSlice,
-        is_stopped: &'a AtomicBool,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         QuantizedScorerBuilder::new(
@@ -159,7 +158,6 @@ impl QuantizedVectors {
             query,
             point_deleted,
             vec_deleted,
-            is_stopped,
             &self.distance,
             self.datatype,
             hardware_counter,
