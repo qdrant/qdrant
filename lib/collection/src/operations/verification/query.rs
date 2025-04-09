@@ -131,7 +131,7 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
     }
 
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit)
+        Some(self.limit * self.group_size)
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
