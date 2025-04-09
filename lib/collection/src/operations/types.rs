@@ -25,7 +25,7 @@ use segment::common::operation_error::OperationError;
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedVectorStruct, QueryVector, VectorRef,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, QueryVector, VectorRef,
     VectorStructInternal,
 };
 use segment::types::{
@@ -2029,7 +2029,7 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
             with_payload,
         } = request;
         Self {
-            query: QueryEnum::Nearest(NamedVectorStruct::from(vector).into()),
+            query: QueryEnum::Nearest(NamedQuery::from(NamedVectorStruct::from(vector))),
             filter,
             params,
             limit,
@@ -2056,9 +2056,9 @@ impl From<SearchRequestInternal> for ShardQueryRequest {
 
         Self {
             prefetches: vec![],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
-                NamedVectorStruct::from(vector).into(),
-            ))),
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::from(
+                NamedVectorStruct::from(vector),
+            )))),
             filter,
             score_threshold,
             limit,
