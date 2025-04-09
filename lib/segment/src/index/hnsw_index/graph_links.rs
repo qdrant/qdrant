@@ -13,7 +13,8 @@ mod serializer;
 mod view;
 
 pub use serializer::GraphLinksSerializer;
-use view::{CompressionInfo, GraphLinksView, LinksIterator};
+pub use view::LinksIterator;
+use view::{CompressionInfo, GraphLinksView};
 
 /*
 Links data for whole graph layers.
