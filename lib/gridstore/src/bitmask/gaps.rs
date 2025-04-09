@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
-use memory::madvise::{Advice, AdviceSetting};
+use memory::madvise::{Advice, AdviceSetting, clear_disk_cache};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{self, MmapSlice};
 
@@ -252,6 +252,19 @@ impl BitmaskGaps {
                     None
                 }
             })
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> std::io::Result<()> {
+        self.mmap_slice.populate()?;
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> std::io::Result<()> {
+        clear_disk_cache(&self.path)?;
+        Ok(())
     }
 }
 

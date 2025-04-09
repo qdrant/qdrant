@@ -1241,6 +1241,7 @@ dependencies = [
  "lazy_static",
  "log",
  "memmap2",
+ "memory",
  "num-traits",
  "num_cpus",
  "ordered-float 5.0.0",
@@ -3054,7 +3055,6 @@ version = "0.0.0"
 dependencies = [
  "atomicwrites",
  "bincode",
- "nix 0.29.0",
  "semver",
  "serde",
  "serde_json",
@@ -3826,6 +3826,7 @@ dependencies = [
  "bitvec",
  "log",
  "memmap2",
+ "nix 0.29.0",
  "parking_lot",
  "rand 0.9.0",
  "serde",

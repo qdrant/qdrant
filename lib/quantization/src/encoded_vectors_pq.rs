@@ -42,6 +42,10 @@ pub struct Metadata {
 }
 
 impl<TStorage: EncodedStorage> EncodedVectorsPQ<TStorage> {
+    pub fn storage(&self) -> &TStorage {
+        &self.encoded_vectors
+    }
+
     /// Encode vector data using product quantization.
     ///
     /// # Arguments

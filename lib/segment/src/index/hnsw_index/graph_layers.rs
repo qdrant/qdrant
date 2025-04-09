@@ -6,7 +6,6 @@ use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::read_bin;
 use itertools::Itertools;
-use memory::mmap_ops;
 use serde::{Deserialize, Serialize};
 
 use super::entry_points::EntryPoint;
@@ -342,8 +341,9 @@ impl GraphLayers {
         .to_graph_links_ram();
     }
 
-    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
-        self.links.prefault_mmap_pages(path)
+    pub fn populate(&self) -> OperationResult<()> {
+        self.links.populate()?;
+        Ok(())
     }
 }
 

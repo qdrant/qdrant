@@ -19,6 +19,7 @@ parking_lot = { workspace = true }
 serde = { workspace = true }
 bitvec = { workspace = true }
 thiserror = { workspace = true }
+nix = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }

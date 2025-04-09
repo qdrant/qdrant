@@ -8,7 +8,6 @@ pub(super) mod search;
 pub(super) mod shard_ops;
 
 use std::collections::{BTreeSet, HashMap};
-use std::mem::size_of;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,16 +26,14 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use parking_lot::{Mutex as ParkingMutex, RwLock};
 use segment::data_types::segment_manifest::SegmentManifests;
-use segment::data_types::vectors::VectorElementType;
 use segment::entry::entry_point::SegmentEntry as _;
 use segment::index::field_index::CardinalityEstimation;
 use segment::segment::Segment;
 use segment::segment_constructor::{build_segment, load_segment};
 use segment::types::{
-    CompressionRatio, Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, QuantizationConfig,
-    SegmentConfig, SegmentType, SnapshotFormat,
+    Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
+    SnapshotFormat,
 };
-use segment::utils::mem::Mem;
 use segment::vector_storage::common::get_async_scorer;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
@@ -433,27 +430,6 @@ impl LocalShard {
 
         // Apply outstanding operations from WAL
         local_shard.load_from_wal(collection_id).await?;
-
-        let available_memory_bytes = Mem::new().available_memory_bytes() as usize;
-        let vectors_size_bytes = local_shard.estimate_vector_data_size().await;
-
-        // Simple heuristic to exclude mmap prefaulting for collections that won't benefit from it.
-        //
-        // We assume that mmap prefaulting is beneficial if we can put significant part of data
-        // into RAM in advance. However, if we can see that the data is too big to fit into RAM,
-        // it is better to avoid prefaulting, because it will only cause extra disk IO.
-        //
-        // This heuristic is not perfect, but it exclude cases when we don't have enough RAM
-        // even to store half of the vector data.
-        let do_mmap_prefault = available_memory_bytes * 2 > vectors_size_bytes;
-
-        if do_mmap_prefault {
-            for (_, segment) in local_shard.segments.read().iter() {
-                if let LockedSegment::Original(segment) = segment {
-                    segment.read().prefault_mmap_pages();
-                }
-            }
-        }
 
         Ok(local_shard)
     }
@@ -1080,43 +1056,6 @@ impl LocalShard {
             },
             async_scorer: Some(get_async_scorer()),
         }
-    }
-
-    /// Returns estimated size of vector data in bytes
-    async fn estimate_vector_data_size(&self) -> usize {
-        let info = self.local_shard_info().await;
-
-        let vector_size: usize = info
-            .config
-            .params
-            .vectors
-            .params_iter()
-            .map(|(_, value)| {
-                let vector_size = value.size.get() as usize;
-
-                let quantization_config = value
-                    .quantization_config
-                    .as_ref()
-                    .or(info.config.quantization_config.as_ref());
-
-                let quantized_size_bytes = match quantization_config {
-                    None => 0,
-                    Some(QuantizationConfig::Scalar(_)) => vector_size,
-                    Some(QuantizationConfig::Product(pq)) => match pq.product.compression {
-                        CompressionRatio::X4 => vector_size,
-                        CompressionRatio::X8 => vector_size / 2,
-                        CompressionRatio::X16 => vector_size / 4,
-                        CompressionRatio::X32 => vector_size / 8,
-                        CompressionRatio::X64 => vector_size / 16,
-                    },
-                    Some(QuantizationConfig::Binary(_)) => vector_size / 8,
-                };
-
-                vector_size * size_of::<VectorElementType>() + quantized_size_bytes
-            })
-            .sum();
-
-        vector_size * info.points_count
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {

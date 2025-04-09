@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{AdviceSetting, Madviseable, clear_disk_cache};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -259,9 +259,9 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         })
     }
 
-    pub fn open(path: &Path) -> OperationResult<Self> {
+    pub fn open(path: &Path, populate: bool) -> OperationResult<Self> {
         let file_name = path.join(POINT_TO_VALUES_PATH);
-        let mmap = open_write_mmap(&file_name, AdviceSetting::Global, false)?;
+        let mmap = open_write_mmap(&file_name, AdviceSetting::Global, populate)?;
         let (header, _) = Header::read_from_prefix(mmap.as_ref()).map_err(|_| {
             OperationError::InconsistentStorage {
                 description: NOT_ENOUGHT_BYTES_ERROR_MESSAGE.to_owned(),
@@ -367,6 +367,18 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
             None
         }
     }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) {
+        self.mmap.populate();
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        clear_disk_cache(&self.file_name)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -429,7 +441,7 @@ mod tests {
                 .map(|(id, values)| (id as PointOffsetType, values.iter().map(|s| s.as_str()))),
         )
         .unwrap();
-        let point_to_values = MmapPointToValues::<str>::open(dir.path()).unwrap();
+        let point_to_values = MmapPointToValues::<str>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values.get_values(idx as PointOffsetType);
@@ -486,7 +498,7 @@ mod tests {
                 .map(|(id, values)| (id as PointOffsetType, values.iter().cloned())),
         )
         .unwrap();
-        let point_to_values = MmapPointToValues::<GeoPoint>::open(dir.path()).unwrap();
+        let point_to_values = MmapPointToValues::<GeoPoint>::open(dir.path(), false).unwrap();
 
         for (idx, values) in values.iter().enumerate() {
             let iter = point_to_values.get_values(idx as PointOffsetType);

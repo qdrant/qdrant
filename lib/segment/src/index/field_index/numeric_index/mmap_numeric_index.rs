@@ -8,7 +8,7 @@ use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{AdviceSetting, clear_disk_cache};
 use memory::mmap_ops::{self, create_and_ensure_length};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
@@ -168,7 +168,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
                 do_populate,
             )?)?
         };
-        let point_to_values = MmapPointToValues::open(path)?;
+        let point_to_values = MmapPointToValues::open(path, do_populate)?;
 
         Ok(Self {
             pairs: map,
@@ -354,5 +354,30 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         hw_counter: &'a HardwareCounterCell,
     ) -> ConditionedCounter<'a> {
         ConditionedCounter::new(self.is_on_disk, hw_counter)
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.is_on_disk
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.pairs.populate()?;
+        self.point_to_values.populate();
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let pairs_path = self.path.join(PAIRS_PATH);
+        let deleted_path = self.path.join(DELETED_PATH);
+
+        clear_disk_cache(&pairs_path)?;
+        clear_disk_cache(&deleted_path)?;
+
+        self.point_to_values.clear_cache()?;
+
+        Ok(())
     }
 }

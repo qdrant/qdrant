@@ -548,6 +548,13 @@ impl Indexes {
             Indexes::Hnsw(_) => true,
         }
     }
+
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            Indexes::Plain {} => false,
+            Indexes::Hnsw(config) => config.on_disk.unwrap_or_default(),
+        }
+    }
 }
 
 /// Config of HNSW index
@@ -1373,6 +1380,18 @@ pub enum SparseVectorStorageType {
     // (gridstore storage)
     #[default]
     Mmap,
+}
+
+impl SparseVectorStorageType {
+    /// Whether this storage type is a mmap on disk
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            // Both options are on disk, but we keep it explicit for the case if someone adds a new
+            // storage type in the future
+            Self::OnDisk => true,
+            Self::Mmap => true,
+        }
+    }
 }
 
 /// Config of single sparse vector data storage
