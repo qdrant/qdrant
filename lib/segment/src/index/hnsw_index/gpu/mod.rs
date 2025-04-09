@@ -113,7 +113,7 @@ mod tests {
     use crate::types::Distance;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
     use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-    use crate::vector_storage::{VectorStorage, VectorStorageEnum};
+    use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
     pub struct GpuGraphTestData {
         pub _temp_dir: TempDir,
@@ -239,7 +239,9 @@ mod tests {
                 .unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            let search_result_gpu = graph.search(top, ef, scorer, None);
+            let search_result_gpu = graph
+                .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+                .unwrap();
 
             let fake_filter_context = FakeFilterContext {};
             let raw_scorer = test
@@ -248,7 +250,9 @@ mod tests {
                 .unwrap();
             let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
 
-            let search_result_cpu = ref_graph.search(top, ef, scorer, None);
+            let search_result_cpu = ref_graph
+                .search(top, ef, scorer, None, &DEFAULT_STOPPED)
+                .unwrap();
 
             let mut gpu_set = HashSet::default();
             let mut cpu_set = HashSet::default();
