@@ -2,7 +2,7 @@ name: Storage compatibility tests
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ master, dev, ci-test-** ]
   pull_request:
     branches: [ '**' ]
 

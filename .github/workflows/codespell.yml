@@ -3,7 +3,7 @@ name: Codespell
 
 on:
   push:
-    branches: [dev,master]
+    branches: [dev,master,ci-test-**]
   pull_request:
     branches: [dev,master]
 

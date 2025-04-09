@@ -2,7 +2,7 @@ name: Formatter and linter
 
 on:
   push:
-    branches: [ master, dev ]
+    branches: [ master, dev, ci-test-** ]
   pull_request:
     branches: [ '**' ]
 
