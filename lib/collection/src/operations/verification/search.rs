@@ -87,7 +87,7 @@ impl StrictModeVerification for SearchRequestBatch {
 
 impl StrictModeVerification for SearchGroupsRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.group_request.limit as usize)
+        Some(self.group_request.limit as usize * self.group_request.group_size as usize)
     }
 
     fn indexed_filter_read(&self) -> Option<&Filter> {
