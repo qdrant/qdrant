@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::FeatureFlags;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
 use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
@@ -148,6 +149,7 @@ fn test_single_multi_and_dense_hnsw_equivalency() {
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();

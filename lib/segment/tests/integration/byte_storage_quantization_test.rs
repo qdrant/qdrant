@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::flags::FeatureFlags;
 use common::types::ScoredPointOffset;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
@@ -338,6 +339,7 @@ fn test_byte_storage_binary_quantization_hnsw(
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            feature_flags: FeatureFlags::default(),
         },
     )
     .unwrap();
