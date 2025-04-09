@@ -1411,6 +1411,12 @@ impl<'a> OldIndexCandidate<'a> {
         let new_deleted = vector_storage.deleted_vector_bitslice();
         let old_id_tracker = old_index.id_tracker.borrow();
 
+        if old_id_tracker.deleted_point_count() != 0 {
+            // Old index has deleted points.
+            // FIXME: Not supported yet.
+            return None;
+        }
+
         // Build old_to_new mapping.
         let mut valid_points = 0;
         let mut old_to_new = vec![None; old_id_tracker.total_point_count()];
@@ -1442,7 +1448,7 @@ impl<'a> OldIndexCandidate<'a> {
                 (_, None) => (),
                 (None, Some(_)) => {
                     // Vector was in the old index, but not in the new one.
-                    // Not supported yet.
+                    // FIXME: Not supported yet.
                     return None;
                 }
                 (Some(new_offset), Some(old_offset)) => {
@@ -1453,11 +1459,15 @@ impl<'a> OldIndexCandidate<'a> {
                         valid_points += 1;
                     } else {
                         // Vector is changed.
-                        // Not supported yet.
+                        // FIXME: Not supported yet.
                         return None;
                     }
                 }
             }
+        }
+
+        if valid_points == 0 {
+            return None;
         }
 
         drop(old_id_tracker);
