@@ -5,7 +5,12 @@ use crate::collection::distance_matrix::CollectionSearchMatrixRequest;
 
 impl StrictModeVerification for SearchMatrixRequestInternal {
     fn query_limit(&self) -> Option<usize> {
-        self.limit
+        match (self.limit, self.sample) {
+            (Some(limit), Some(sample)) => Some(limit * sample),
+            (Some(limit), None) => Some(limit),
+            (None, Some(sample)) => Some(sample),
+            (None, None) => None,
+        }
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
@@ -27,7 +32,7 @@ impl StrictModeVerification for SearchMatrixRequestInternal {
 
 impl StrictModeVerification for CollectionSearchMatrixRequest {
     fn query_limit(&self) -> Option<usize> {
-        Some(self.limit_per_sample)
+        Some(self.limit_per_sample * self.sample_size)
     }
 
     fn indexed_filter_read(&self) -> Option<&segment::types::Filter> {
