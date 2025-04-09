@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use half::f16;
 use sparse::common::types::{DimId, QuantizedU8};
+use sparse::index::inverted_index::InvertedIndex;
 use sparse::index::inverted_index::inverted_index_compressed_immutable_ram::InvertedIndexCompressedImmutableRam;
 use sparse::index::inverted_index::inverted_index_compressed_mmap::InvertedIndexCompressedMmap;
 use sparse::index::inverted_index::inverted_index_immutable_ram::InvertedIndexImmutableRam;
@@ -95,6 +96,58 @@ impl VectorIndexEnum {
             Self::SparseCompressedMmapF16(_) => true,
             Self::SparseCompressedMmapU8(_) => true,
         }
+    }
+
+    /// Returns true if underlying storage is configured to be stored on disk without
+    /// actively holding data in RAM
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            Self::Plain(_) => false,
+            Self::Hnsw(index) => index.is_on_disk(),
+            Self::SparseRam(index) => index.inverted_index().is_on_disk(),
+            Self::SparseImmutableRam(index) => index.inverted_index().is_on_disk(),
+            Self::SparseMmap(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedImmutableRamF32(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedImmutableRamF16(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedImmutableRamU8(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().is_on_disk(),
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().is_on_disk(),
+        }
+    }
+
+    pub fn populate(&self) -> OperationResult<()> {
+        match self {
+            Self::Plain(_) => {}
+            Self::Hnsw(index) => index.populate()?,
+            Self::SparseRam(_) => {}
+            Self::SparseImmutableRam(_) => {}
+            Self::SparseMmap(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedImmutableRamF32(_) => {}
+            Self::SparseCompressedImmutableRamF16(_) => {}
+            Self::SparseCompressedImmutableRamU8(_) => {}
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().populate()?,
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().populate()?,
+        };
+        Ok(())
+    }
+
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        match self {
+            Self::Plain(_) => {}
+            Self::Hnsw(index) => index.clear_cache()?,
+            Self::SparseRam(_) => {}
+            Self::SparseImmutableRam(_) => {}
+            Self::SparseMmap(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedImmutableRamF32(_) => {}
+            Self::SparseCompressedImmutableRamF16(_) => {}
+            Self::SparseCompressedImmutableRamU8(_) => {}
+            Self::SparseCompressedMmapF32(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedMmapF16(index) => index.inverted_index().clear_cache()?,
+            Self::SparseCompressedMmapU8(index) => index.inverted_index().clear_cache()?,
+        };
+        Ok(())
     }
 
     pub fn fill_idf_statistics(

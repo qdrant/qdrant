@@ -13,7 +13,7 @@ use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use itertools::Itertools;
 use memmap2::MmapMut;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{AdviceSetting, clear_disk_cache};
 use memory::mmap_ops::{self, create_and_ensure_length};
 use memory::mmap_type::MmapBitSlice;
 use serde::{Deserialize, Serialize};
@@ -51,10 +51,11 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
         let config: MmapMapIndexConfig = read_json(&config_path)?;
 
-        let hashmap = MmapHashMap::open(&hashmap_path)?;
-        let point_to_values = MmapPointToValues::open(path)?;
-
         let do_populate = !is_on_disk;
+
+        let hashmap = MmapHashMap::open(&hashmap_path, do_populate)?;
+        let point_to_values = MmapPointToValues::open(path, do_populate)?;
+
         let deleted = mmap_ops::open_write_mmap(&deleted_path, AdviceSetting::Global, do_populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
         let deleted_count = deleted.count_ones();
@@ -331,5 +332,29 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         hw_counter: &'a HardwareCounterCell,
     ) -> ConditionedCounter<'a> {
         ConditionedCounter::new(self.is_on_disk, hw_counter)
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.is_on_disk
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.value_to_points.populate()?;
+        self.point_to_values.populate();
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let value_to_points_path = self.path.join(HASHMAP_PATH);
+        let deleted_path = self.path.join(DELETED_PATH);
+
+        clear_disk_cache(&value_to_points_path)?;
+        clear_disk_cache(&deleted_path)?;
+
+        self.point_to_values.clear_cache()?;
+        Ok(())
     }
 }

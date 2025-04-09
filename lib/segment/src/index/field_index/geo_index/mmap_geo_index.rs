@@ -6,7 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use memmap2::MmapMut;
-use memory::madvise::AdviceSetting;
+use memory::madvise::{AdviceSetting, clear_disk_cache};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use serde::{Deserialize, Serialize};
@@ -224,7 +224,7 @@ impl MmapGeoMapIndex {
                 populate,
             )?)?
         };
-        let point_to_values = MmapPointToValues::open(path)?;
+        let point_to_values = MmapPointToValues::open(path, true)?;
 
         let deleted = open_write_mmap(&deleted_path, AdviceSetting::Global, populate)?;
         let deleted = MmapBitSlice::from(deleted, 0);
@@ -396,5 +396,36 @@ impl MmapGeoMapIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> ConditionedCounter<'a> {
         ConditionedCounter::new(self.is_on_disk, hw_counter)
+    }
+
+    pub fn is_on_disk(&self) -> bool {
+        self.is_on_disk
+    }
+
+    /// Populate all pages in the mmap.
+    /// Block until all pages are populated.
+    pub fn populate(&self) -> OperationResult<()> {
+        self.counts_per_hash.populate()?;
+        self.points_map.populate()?;
+        self.points_map_ids.populate()?;
+        self.point_to_values.populate();
+        Ok(())
+    }
+
+    /// Drop disk cache.
+    pub fn clear_cache(&self) -> OperationResult<()> {
+        let deleted_path = self.path.join(DELETED_PATH);
+        let counts_per_hash_path = self.path.join(COUNTS_PER_HASH);
+        let points_map_path = self.path.join(POINTS_MAP);
+        let points_map_ids_path = self.path.join(POINTS_MAP_IDS);
+
+        clear_disk_cache(&deleted_path)?;
+        clear_disk_cache(&counts_per_hash_path)?;
+        clear_disk_cache(&points_map_path)?;
+        clear_disk_cache(&points_map_ids_path)?;
+
+        self.point_to_values.clear_cache()?;
+
+        Ok(())
     }
 }

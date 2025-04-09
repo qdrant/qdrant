@@ -222,6 +222,7 @@ zerocopy = { version = "0.8.24", features = ["derive"] }
 atomic_refcell = "0.1.13"
 byteorder = "1.5.0"
 thiserror = "2.0.12"
+libc = "0.2"
 bitvec = "1.0.1"
 merge = "0.1.0"
 dashmap = "6.1"

@@ -129,6 +129,7 @@ fn make_segment_index<R: Rng + ?Sized>(rnd: &mut R, distance: Distance) -> HNSWI
         },
     )
     .unwrap();
+    hnsw_index.populate().unwrap();
     hnsw_index
 }
 

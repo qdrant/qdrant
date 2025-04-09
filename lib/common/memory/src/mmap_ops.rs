@@ -1,8 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::mem::{align_of, size_of};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::{io, mem, ops, ptr, time};
+use std::path::Path;
+use std::{io, mem, ptr};
 
 use memmap2::{Mmap, MmapMut};
 
@@ -76,44 +75,6 @@ pub fn open_write_mmap(path: &Path, advice: AdviceSetting, populate: bool) -> io
     madvise::madvise(&mmap, advice.resolve())?;
 
     Ok(mmap)
-}
-
-#[derive(Clone, Debug)]
-pub struct PrefaultMmapPages {
-    mmap: Arc<Mmap>,
-    path: Option<PathBuf>,
-}
-
-impl PrefaultMmapPages {
-    pub fn new(mmap: Arc<Mmap>, path: Option<impl Into<PathBuf>>) -> Self {
-        Self {
-            mmap,
-            path: path.map(Into::into),
-        }
-    }
-
-    pub fn exec(&self) {
-        prefault_mmap_pages(self.mmap.as_ref(), self.path.as_deref());
-    }
-}
-
-fn prefault_mmap_pages<T>(mmap: &T, path: Option<&Path>)
-where
-    T: Madviseable + ops::Deref<Target = [u8]>,
-{
-    let separator = path.map_or("", |_| " "); // space if `path` is `Some` or nothing
-    let path = path.unwrap_or(Path::new("")); // path if `path` is `Some` or nothing
-
-    log::trace!("Reading mmap{separator}{path:?} to populate cache...");
-
-    let instant = time::Instant::now();
-
-    mmap.populate();
-
-    log::trace!(
-        "Reading mmap{separator}{path:?} to populate cache took {:?}",
-        instant.elapsed()
-    );
 }
 pub fn transmute_from_u8<T>(v: &[u8]) -> &T {
     debug_assert_eq!(v.len(), size_of::<T>());
