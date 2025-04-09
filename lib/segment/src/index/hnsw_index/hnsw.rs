@@ -244,7 +244,8 @@ impl HNSWIndex {
         let old_index = old_indices
             .iter()
             .filter_map(|old_index| {
-                feature_flags.incremental_hnsw_building.then_some(())?;
+                // feature_flags.incremental_hnsw_building.then_some(())?;
+                let _ = &feature_flags;
                 OldIndexCandidate::evaluate(
                     old_index,
                     &config,
