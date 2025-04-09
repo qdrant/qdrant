@@ -404,7 +404,7 @@ impl GraphLayersBuilder {
             // We can't do much here, so just quit
         }
         let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        assert!(!was_ready);
+        debug_assert!(!was_ready);
         self.entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
@@ -416,7 +416,7 @@ impl GraphLayersBuilder {
     /// Mutually exclusive with [`Self::link_new_point`].
     pub fn add_new_point(&self, point_id: PointOffsetType, levels: Vec<Vec<PointOffsetType>>) {
         let level = self.get_point_level(point_id);
-        assert_eq!(levels.len(), level + 1);
+        debug_assert_eq!(levels.len(), level + 1);
 
         for (level, neighbours) in levels.iter().enumerate() {
             let mut links = self.links_layers[point_id as usize][level].write();
@@ -425,7 +425,7 @@ impl GraphLayersBuilder {
         }
 
         let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        assert!(!was_ready);
+        debug_assert!(!was_ready);
         self.entry_points
             .lock()
             .new_point(point_id, level, |_| true);
