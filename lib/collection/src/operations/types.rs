@@ -25,7 +25,7 @@ use segment::common::operation_error::{CancelledError, OperationError};
 use segment::data_types::groups::GroupId;
 use segment::data_types::order_by::{OrderBy, OrderValue};
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedVectorStruct, QueryVector, VectorRef,
+    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, QueryVector, VectorRef,
     VectorStructInternal,
 };
 use segment::types::{
@@ -2035,7 +2035,7 @@ impl From<SearchRequestInternal> for CoreSearchRequest {
             with_payload,
         } = request;
         Self {
-            query: QueryEnum::Nearest(NamedVectorStruct::from(vector)),
+            query: QueryEnum::Nearest(NamedQuery::from(NamedVectorStruct::from(vector))),
             filter,
             params,
             limit,
@@ -2062,7 +2062,9 @@ impl From<SearchRequestInternal> for ShardQueryRequest {
 
         Self {
             prefetches: vec![],
-            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(vector.into()))),
+            query: Some(ScoringQuery::Vector(QueryEnum::Nearest(NamedQuery::from(
+                NamedVectorStruct::from(vector),
+            )))),
             filter,
             score_threshold,
             limit,
@@ -2104,7 +2106,7 @@ impl From<CoreSearchRequest> for ShardQueryRequest {
 impl From<QueryEnum> for QueryVector {
     fn from(query: QueryEnum) -> Self {
         match query {
-            QueryEnum::Nearest(named) => QueryVector::Nearest(named.into()),
+            QueryEnum::Nearest(named) => QueryVector::Nearest(named.query),
             QueryEnum::RecommendBestScore(named) => QueryVector::RecommendBestScore(named.query),
             QueryEnum::RecommendSumScores(named) => QueryVector::RecommendSumScores(named.query),
             QueryEnum::Discover(named) => QueryVector::Discovery(named.query),

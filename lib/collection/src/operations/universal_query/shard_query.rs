@@ -4,9 +4,7 @@ use api::grpc::{DecayParamsExpression, qdrant as grpc};
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, NamedQuery, NamedVectorStruct, VectorInternal,
-};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::index::query_optimization::rescore_formula::parsed_formula::{
     DecayKind, ParsedFormula,
 };
@@ -298,7 +296,7 @@ impl QueryEnum {
                         DEFAULT_VECTOR_NAME.to_owned()
                     }
                 };
-                let named_vector = NamedVectorStruct::new_from_vector(vector, name);
+                let named_vector = NamedQuery::new_from_vector(vector, name);
                 QueryEnum::Nearest(named_vector)
             }
             Variant::RecommendBestScore(recommend) => QueryEnum::RecommendBestScore(
@@ -577,7 +575,7 @@ impl From<QueryEnum> for grpc::RawQuery {
         use api::grpc::qdrant::raw_query::Variant;
 
         let variant = match value {
-            QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.to_vector())),
+            QueryEnum::Nearest(named) => Variant::Nearest(grpc::RawVector::from(named.query)),
             QueryEnum::RecommendBestScore(named) => {
                 Variant::RecommendBestScore(grpc::raw_query::Recommend::from(named.query))
             }

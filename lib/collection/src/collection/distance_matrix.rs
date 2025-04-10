@@ -6,7 +6,7 @@ use api::rest::{
     SearchMatrixRequestInternal,
 };
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedVectorStruct};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery};
 use segment::types::{
     Condition, Filter, HasIdCondition, HasVectorCondition, PointIdType, ScoredPoint, VectorNameBuf,
     WithVector,
@@ -218,7 +218,7 @@ impl Collection {
                 .expect("Vector not found in the point");
 
             // nearest query on the sample vector
-            let named_vector = NamedVectorStruct::new_from_vector(vector, using.clone());
+            let named_vector = NamedQuery::new_from_vector(vector, using.clone());
             let query = QueryEnum::Nearest(named_vector);
 
             searches.push(CoreSearchRequest {

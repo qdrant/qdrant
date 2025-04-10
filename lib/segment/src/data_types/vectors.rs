@@ -658,6 +658,47 @@ pub struct NamedQuery<TQuery> {
     pub using: Option<VectorNameBuf>,
 }
 
+impl NamedQuery<VectorInternal> {
+    pub fn default_dense(vec: DenseVector) -> NamedQuery<VectorInternal> {
+        NamedQuery {
+            query: VectorInternal::Dense(vec),
+            using: None,
+        }
+    }
+}
+
+impl<TVector> NamedQuery<TVector> {
+    pub fn new_from_vector(vector: TVector, using: impl Into<String>) -> NamedQuery<TVector> {
+        NamedQuery {
+            query: vector,
+            using: Some(using.into()),
+        }
+    }
+}
+
+impl From<NamedVectorStruct> for NamedQuery<VectorInternal> {
+    fn from(named_vector: NamedVectorStruct) -> Self {
+        match named_vector {
+            NamedVectorStruct::Default(dense) => NamedQuery {
+                query: VectorInternal::Dense(dense),
+                using: None,
+            },
+            NamedVectorStruct::Dense(NamedVector { name, vector }) => NamedQuery {
+                query: VectorInternal::Dense(vector),
+                using: Some(name),
+            },
+            NamedVectorStruct::Sparse(NamedSparseVector { name, vector }) => NamedQuery {
+                query: VectorInternal::Sparse(vector),
+                using: Some(name),
+            },
+            NamedVectorStruct::MultiDense(NamedMultiDenseVector { name, vector }) => NamedQuery {
+                query: VectorInternal::MultiDense(vector),
+                using: Some(name),
+            },
+        }
+    }
+}
+
 impl<T> Named for NamedQuery<T> {
     fn get_name(&self) -> &VectorName {
         self.using.as_deref().unwrap_or(DEFAULT_VECTOR_NAME)
