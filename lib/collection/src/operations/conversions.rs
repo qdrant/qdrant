@@ -1099,7 +1099,7 @@ impl TryFrom<api::grpc::qdrant::SearchPoints> for CoreSearchRequest {
             api::grpc::conversions::into_named_vector_struct(vector_name, vector, sparse_indices)?;
 
         Ok(Self {
-            query: QueryEnum::Nearest(vector_struct),
+            query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
             filter: filter.map(Filter::try_from).transpose()?,
             params: params.map(SearchParams::from),
             limit: limit as usize,
@@ -1118,7 +1118,7 @@ impl From<QueryEnum> for api::grpc::qdrant::QueryEnum {
         match value {
             QueryEnum::Nearest(vector) => api::grpc::qdrant::QueryEnum {
                 query: Some(api::grpc::qdrant::query_enum::Query::NearestNeighbors(
-                    vector.to_vector().into(),
+                    api::grpc::qdrant::Vector::from(vector.query),
                 )),
             },
             QueryEnum::RecommendBestScore(named) => api::grpc::qdrant::QueryEnum {
@@ -1264,11 +1264,13 @@ impl TryFrom<api::grpc::qdrant::CoreSearchPoints> for CoreSearchRequest {
             .map(|query| {
                 Ok(match query {
                     api::grpc::qdrant::query_enum::Query::NearestNeighbors(vector) => {
-                        QueryEnum::Nearest(api::grpc::conversions::into_named_vector_struct(
-                            value.vector_name,
-                            vector.data,
-                            vector.indices,
-                        )?)
+                        QueryEnum::Nearest(NamedQuery::from(
+                            api::grpc::conversions::into_named_vector_struct(
+                                value.vector_name,
+                                vector.data,
+                                vector.indices,
+                            )?,
+                        ))
                     }
                     api::grpc::qdrant::query_enum::Query::RecommendBestScore(query) => {
                         QueryEnum::RecommendBestScore(NamedQuery {

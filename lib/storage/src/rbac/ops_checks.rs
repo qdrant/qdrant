@@ -685,7 +685,7 @@ mod tests_ops {
         CollectionUpdateOperationsDiscriminants, CreateIndex, FieldIndexOperations,
         FieldIndexOperationsDiscriminants,
     };
-    use segment::data_types::vectors::NamedVectorStruct;
+    use segment::data_types::vectors::NamedQuery;
     use segment::types::{PointIdType, SearchParams, WithPayloadInterface, WithVector};
     use strum::IntoEnumIterator as _;
 
@@ -859,7 +859,7 @@ mod tests_ops {
     #[test]
     fn test_core_search_request() {
         let op = CoreSearchRequest {
-            query: QueryEnum::Nearest(NamedVectorStruct::Default(vec![0.0, 1.0, 2.0])),
+            query: QueryEnum::Nearest(NamedQuery::default_dense(vec![0.0, 1.0, 2.0])),
             filter: None,
             params: Some(SearchParams::default()),
             limit: 100,

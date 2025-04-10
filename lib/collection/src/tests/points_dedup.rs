@@ -6,7 +6,7 @@ use api::rest::OrderByInterface;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use rand::{Rng, rng};
-use segment::data_types::vectors::NamedVectorStruct;
+use segment::data_types::vectors::NamedQuery;
 use segment::types::{
     Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,
 };
@@ -254,7 +254,7 @@ async fn test_search_dedup() {
     let points = collection
         .search(
             CoreSearchRequest {
-                query: QueryEnum::Nearest(NamedVectorStruct::Default(vec![0.1, 0.2, 0.3, 0.4])),
+                query: QueryEnum::Nearest(NamedQuery::default_dense(vec![0.1, 0.2, 0.3, 0.4])),
                 filter: None,
                 params: Some(SearchParams {
                     exact: true,

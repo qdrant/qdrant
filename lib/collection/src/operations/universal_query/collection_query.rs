@@ -4,9 +4,7 @@ use api::rest::LookupLocation;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, NamedQuery, NamedVectorStruct, VectorInternal, VectorRef,
-};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal, VectorRef};
 use segment::index::query_optimization::rescore_formula::parsed_formula::ParsedFormula;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -316,7 +314,7 @@ impl VectorQuery<VectorInternal> {
     fn into_query_enum(self, using: VectorNameBuf) -> CollectionResult<QueryEnum> {
         let query_enum = match self {
             VectorQuery::Nearest(vector) => {
-                QueryEnum::Nearest(NamedVectorStruct::new_from_vector(vector, using))
+                QueryEnum::Nearest(NamedQuery::new_from_vector(vector, using))
             }
             VectorQuery::RecommendAverageVector(reco) => {
                 // Get average vector
@@ -324,7 +322,7 @@ impl VectorQuery<VectorInternal> {
                     reco.positives.iter().map(VectorRef::from),
                     reco.negatives.iter().map(VectorRef::from).peekable(),
                 )?;
-                QueryEnum::Nearest(NamedVectorStruct::new_from_vector(search_vector, using))
+                QueryEnum::Nearest(NamedQuery::new_from_vector(search_vector, using))
             }
             VectorQuery::RecommendBestScore(reco) => QueryEnum::RecommendBestScore(NamedQuery {
                 query: reco,

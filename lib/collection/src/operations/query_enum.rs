@@ -1,8 +1,6 @@
 use std::fmt::Debug;
 
-use segment::data_types::vectors::{
-    DenseVector, Named, NamedQuery, NamedVectorStruct, VectorInternal,
-};
+use segment::data_types::vectors::{DenseVector, Named, NamedQuery, VectorInternal};
 use segment::types::VectorName;
 use segment::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery};
 use sparse::common::sparse_vector::SparseVector;
@@ -31,13 +29,9 @@ impl QueryEnum {
 
     pub fn iterate_sparse(&self, mut f: impl FnMut(&VectorName, &SparseVector)) {
         match self {
-            QueryEnum::Nearest(vector) => match vector {
-                NamedVectorStruct::Sparse(named_sparse_vector) => {
-                    f(&named_sparse_vector.name, &named_sparse_vector.vector)
-                }
-                NamedVectorStruct::Default(_)
-                | NamedVectorStruct::Dense(_)
-                | NamedVectorStruct::MultiDense(_) => {}
+            QueryEnum::Nearest(named) => match &named.query {
+                VectorInternal::Sparse(sparse_vector) => f(named.get_name(), sparse_vector),
+                VectorInternal::Dense(_) | VectorInternal::MultiDense(_) => {}
             },
             QueryEnum::RecommendBestScore(reco_query)
             | QueryEnum::RecommendSumScores(reco_query) => {
@@ -73,7 +67,7 @@ impl QueryEnum {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QueryEnum {
-    Nearest(NamedVectorStruct),
+    Nearest(NamedQuery<VectorInternal>),
     RecommendBestScore(NamedQuery<RecoQuery<VectorInternal>>),
     RecommendSumScores(NamedQuery<RecoQuery<VectorInternal>>),
     Discover(NamedQuery<DiscoveryQuery<VectorInternal>>),
@@ -82,7 +76,10 @@ pub enum QueryEnum {
 
 impl From<DenseVector> for QueryEnum {
     fn from(vector: DenseVector) -> Self {
-        QueryEnum::Nearest(NamedVectorStruct::Default(vector))
+        QueryEnum::Nearest(NamedQuery {
+            query: VectorInternal::Dense(vector),
+            using: None,
+        })
     }
 }
 

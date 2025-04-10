@@ -6,8 +6,7 @@ use api::rest::RecommendStrategy;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use itertools::Itertools;
 use segment::data_types::vectors::{
-    DEFAULT_VECTOR_NAME, DenseVector, NamedQuery, NamedVectorStruct, TypedMultiDenseVector,
-    VectorElementType, VectorInternal, VectorRef,
+    DenseVector, NamedQuery, TypedMultiDenseVector, VectorElementType, VectorInternal, VectorRef,
 };
 use segment::types::{
     Condition, ExtendedPointId, Filter, HasIdCondition, PointIdType, ScoredPoint,
@@ -377,19 +376,14 @@ fn recommend_by_avg_vector(
         lookup_collection_name,
     );
 
-    let vector_name = match using {
-        None => DEFAULT_VECTOR_NAME.to_owned(),
-        Some(UsingVector::Name(name)) => name,
-    };
-
     let search_vector =
         avg_vector_for_recommendation(positive_vectors, negative_vectors.peekable())?;
 
     Ok(CoreSearchRequest {
-        query: QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
-            search_vector,
-            vector_name,
-        )),
+        query: QueryEnum::Nearest(NamedQuery {
+            query: search_vector,
+            using: using.map(|name| name.as_name()),
+        }),
         filter: Some(Filter {
             should: None,
             min_should: None,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
-use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedVectorStruct, VectorInternal};
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery, VectorInternal};
 use segment::types::{PointIdType, WithPayloadInterface, WithVector};
 use tempfile::Builder;
 use tokio::runtime::Handle;
@@ -77,7 +77,7 @@ async fn test_shard_query_rrf_rescoring() {
     assert!(matches!(sources_scores, Err(err) if err == expected_error));
 
     // RRF query with single prefetch
-    let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+    let nearest_query = QueryEnum::Nearest(NamedQuery::new_from_vector(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
@@ -247,7 +247,7 @@ async fn test_shard_query_vector_rescoring() {
         .await
         .unwrap();
 
-    let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+    let nearest_query = QueryEnum::Nearest(NamedQuery::new_from_vector(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));
@@ -385,7 +385,7 @@ async fn test_shard_query_payload_vector() {
         .await
         .unwrap();
 
-    let nearest_query = QueryEnum::Nearest(NamedVectorStruct::new_from_vector(
+    let nearest_query = QueryEnum::Nearest(NamedQuery::new_from_vector(
         VectorInternal::Dense(vec![1.0, 2.0, 3.0, 4.0]),
         DEFAULT_VECTOR_NAME,
     ));

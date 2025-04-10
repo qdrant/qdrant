@@ -26,7 +26,7 @@ use collection::shards::shard::ShardId;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use segment::data_types::facets::FacetParams;
 use segment::data_types::order_by::OrderBy;
-use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, NamedQuery};
 use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::request_hw_counter::RequestHwCounter;
 use storage::rbac::Access;
@@ -87,7 +87,7 @@ pub async fn search(
     let shard_selector = convert_shard_selector_for_read(shard_selection, shard_key_selector);
 
     let search_request = CoreSearchRequest {
-        query: QueryEnum::Nearest(vector_struct),
+        query: QueryEnum::Nearest(NamedQuery::from(vector_struct)),
         filter: filter.map(|f| f.try_into()).transpose()?,
         params: params.map(|p| p.into()),
         limit: limit as usize,
