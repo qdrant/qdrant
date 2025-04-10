@@ -454,13 +454,15 @@ impl Collection {
             Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
         );
 
+        // Marks replica as dead
+        replica_set
+            .ensure_replica_with_state(peer_id, new_state)
+            .await?;
+
         if is_resharding && new_state == ReplicaState::Dead {
             drop(shard_holder);
 
-            let resharding_state = self
-                .resharding_state()
-                .await
-                .filter(|state| state.peer_id == peer_id);
+            let resharding_state = self.resharding_state().await;
 
             if let Some(state) = resharding_state {
                 self.abort_resharding(state.key(), false).await?;
@@ -468,10 +470,6 @@ impl Collection {
 
             return Ok(());
         }
-
-        replica_set
-            .ensure_replica_with_state(peer_id, new_state)
-            .await?;
 
         if new_state == ReplicaState::Dead {
             // TODO(resharding): Abort all resharding transfers!?
