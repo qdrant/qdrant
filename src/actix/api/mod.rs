@@ -19,6 +19,7 @@ pub mod service_api;
 pub mod shards_api;
 pub mod snapshot_api;
 pub mod update_api;
+pub mod read_only;
 
 /// A collection path with stricter validation
 ///

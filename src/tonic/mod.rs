@@ -45,6 +45,7 @@ use crate::common::helpers;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
+use crate::tonic::api::read_only::ReadOnlyLayer;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
@@ -196,6 +197,7 @@ pub fn init(
             .layer(tonic_telemetry::TonicTelemetryLayer::new(
                 telemetry_collector,
             ))
+            .layer(ReadOnlyLayer::new(settings.service.read_only))
             .option_layer({
                 AuthKeys::try_create(
                     &settings.service,
@@ -311,6 +313,7 @@ pub fn init_internal(
                 .layer(tonic_telemetry::TonicTelemetryLayer::new(
                     telemetry_collector,
                 ))
+                .layer(ReadOnlyLayer::new(settings.service.read_only))
                 .into_inner();
 
             server

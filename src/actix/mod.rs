@@ -29,6 +29,7 @@ use crate::actix::api::discovery_api::config_discovery_api;
 use crate::actix::api::issues_api::config_issues_api;
 use crate::actix::api::local_shard_api::config_local_shard_api;
 use crate::actix::api::query_api::config_query_api;
+use crate::actix::api::read_only::ReadOnlyMiddleware;
 use crate::actix::api::recommend_api::config_recommend_api;
 use crate::actix::api::retrieve_api::{get_point, get_points, scroll_points};
 use crate::actix::api::search_api::config_search_api;
@@ -110,6 +111,8 @@ pub fn init(
 
             let mut app = App::new()
                 .wrap(Compress::default()) // Reads the `Accept-Encoding` header to negotiate which compression codec to use.
+                // Read-only middleware
+                .wrap(ReadOnlyMiddleware::new(settings.service.read_only))
                 // api_key middleware
                 // note: the last call to `wrap()` or `wrap_fn()` is executed first
                 .wrap(ConditionEx::from_option(auth_keys.as_ref().map(
