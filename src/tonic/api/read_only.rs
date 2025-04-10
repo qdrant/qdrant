@@ -2,11 +2,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use tower::{Layer, Service};
-
 use tonic::body::BoxBody;
 use tonic::transport::Body;
 use tonic::{Request, Response, Status};
+use tower::{Layer, Service};
 
 /// Middleware that rejects write operations when in read-only mode
 #[derive(Clone)]
@@ -95,4 +94,4 @@ fn is_write_operation<ReqBody>(req: &Request<ReqBody>) -> bool {
         "/qdrant.QdrantInternal/GetConsensusCommit" |
         "/qdrant.QdrantInternal/WaitOnConsensusCommit"
     )
-} 
+}

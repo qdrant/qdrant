@@ -12,16 +12,17 @@ mod tonic;
 mod tracing;
 
 use std::io::Error;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::path::PathBuf;
 
 use ::common::budget::{ResourceBudget, get_io_budget};
 use ::common::cpu::get_cpu_budget;
 use ::common::flags::{feature_flags, init_feature_flags};
 use ::tonic::transport::Uri;
+use actix_web::rt::System;
 use api::grpc::transport_channel_pool::TransportChannelPool;
 use clap::Parser;
 use collection::shards::channel_service::ChannelService;
@@ -35,6 +36,7 @@ use storage::content_manager::toc::TableOfContent;
 use storage::content_manager::toc::dispatcher::TocDispatcher;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::Access;
+use storage::types::StorageConfig;
 #[cfg(all(
     not(target_env = "msvc"),
     any(target_arch = "x86_64", target_arch = "aarch64")
@@ -53,9 +55,6 @@ use crate::migrations::single_to_cluster::handle_existing_collections;
 use crate::settings::{Cli, Settings};
 use crate::snapshots::{recover_full_snapshot, recover_snapshots};
 use crate::startup::{remove_started_file_indicator, touch_started_file_indicator};
-
-use actix_web::rt::System;
-use storage::types::StorageConfig;
 
 #[cfg(all(
     not(target_env = "msvc"),
@@ -172,7 +171,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize HTTP server
     let http_server = actix::init(
         dispatcher.clone(),
-        Arc::new(parking_lot::Mutex::new(common::telemetry::TelemetryCollector::new())),
+        Arc::new(parking_lot::Mutex::new(
+            common::telemetry::TelemetryCollector::new(),
+        )),
         None,
         settings.clone(),
         common::tracing::LoggerHandle::default(),

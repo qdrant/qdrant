@@ -1,6 +1,6 @@
 use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform};
 use actix_web::{Error, HttpResponse};
-use futures::future::{ok, Ready};
+use futures::future::{Ready, ok};
 use storage::content_manager::toc::TableOfContent;
 
 pub struct ReadOnlyMiddleware {
@@ -48,7 +48,10 @@ where
     type Error = Error;
     type Future = S::Future;
 
-    fn poll_ready(&self, ctx: &mut core::task::Context<'_>) -> core::task::Poll<Result<(), Self::Error>> {
+    fn poll_ready(
+        &self,
+        ctx: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<Result<(), Self::Error>> {
         self.service.poll_ready(ctx)
     }
 
@@ -68,5 +71,10 @@ where
 
 fn is_write_operation(req: &ServiceRequest) -> bool {
     // Check if the request is a write operation based on HTTP method
-    matches!(req.method(), &actix_web::http::Method::POST | &actix_web::http::Method::PUT | &actix_web::http::Method::DELETE)
-} 
+    matches!(
+        req.method(),
+        &actix_web::http::Method::POST
+            | &actix_web::http::Method::PUT
+            | &actix_web::http::Method::DELETE
+    )
+}

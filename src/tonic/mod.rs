@@ -45,11 +45,11 @@ use crate::common::helpers;
 use crate::common::http_client::HttpClient;
 use crate::common::telemetry_ops::requests_telemetry::TonicTelemetryCollector;
 use crate::settings::Settings;
-use crate::tonic::api::read_only::ReadOnlyLayer;
 use crate::tonic::api::collections_api::CollectionsService;
 use crate::tonic::api::collections_internal_api::CollectionsInternalService;
 use crate::tonic::api::points_api::PointsService;
 use crate::tonic::api::points_internal_api::PointsInternalService;
+use crate::tonic::api::read_only::ReadOnlyLayer;
 use crate::tonic::api::snapshots_api::{ShardSnapshotsService, SnapshotsService};
 
 #[derive(Default)]
