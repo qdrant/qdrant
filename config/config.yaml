@@ -270,7 +270,7 @@ service:
   verify_https_client_certificate: false
 
   # Enable read-only mode
-  read_only: true
+  read_only: false
 
   # Set an api-key.
   # If set, all requests must include a header with the api-key.
