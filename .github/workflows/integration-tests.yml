@@ -189,17 +189,10 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang git-lfs jq
+        run: sudo apt-get install git-lfs jq
       - name: Setup git-lfs
         run: git lfs install
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -249,17 +242,10 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
       - name: Install dependencies
-        run: sudo apt-get install clang jq
+        run: sudo apt-get install git-lfs jq
       - name: Setup git-lfs
         run: git lfs install
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
