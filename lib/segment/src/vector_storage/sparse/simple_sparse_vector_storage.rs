@@ -179,7 +179,7 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        false
     }
 
     fn total_vector_count(&self) -> usize {

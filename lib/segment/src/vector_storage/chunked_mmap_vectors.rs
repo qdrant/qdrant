@@ -421,7 +421,7 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        !self.config.populate.unwrap_or(false)
     }
 
     fn populate(&self) -> OperationResult<()> {

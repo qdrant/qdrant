@@ -222,7 +222,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        false
     }
 }
 

@@ -34,7 +34,7 @@ where
         raw_query: DenseVector,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
-        hardware_counter: HardwareCounterCell,
+        mut hardware_counter: HardwareCounterCell,
     ) -> Self {
         let raw_preprocessed_query = TMetric::preprocess(raw_query);
         let original_query = TElement::slice_from_float_cow(Cow::Owned(raw_preprocessed_query));
@@ -44,6 +44,12 @@ where
             original_query.as_ref(),
         );
         let query = quantized_data.encode_query(&original_query_prequantized);
+
+        if quantized_data.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(1);
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
 
         Self {
             query,
@@ -58,7 +64,7 @@ where
         raw_query: &MultiDenseVectorInternal,
         quantized_data: &'a TEncodedVectors,
         quantization_config: &QuantizationConfig,
-        hardware_counter: HardwareCounterCell,
+        mut hardware_counter: HardwareCounterCell,
     ) -> Self {
         let mut query = Vec::new();
         for inner_vector in raw_query.multi_vectors() {
@@ -73,6 +79,12 @@ where
         }
 
         let query = quantized_data.encode_query(&query);
+
+        if quantized_data.is_on_disk() {
+            hardware_counter.set_vector_io_read_multiplier(1);
+        } else {
+            hardware_counter.set_vector_io_read_multiplier(0);
+        }
 
         Self {
             query,
