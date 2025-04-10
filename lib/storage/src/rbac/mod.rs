@@ -99,7 +99,10 @@ impl Access {
     pub fn is_read_only(&self) -> bool {
         match self {
             Access::Global(mode) => *mode == GlobalAccessMode::Read,
-            Access::Collection(list) => list.0.iter().all(|access| access.access == CollectionAccessMode::Read),
+            Access::Collection(list) => list
+                .0
+                .iter()
+                .all(|access| access.access == CollectionAccessMode::Read),
         }
     }
 
