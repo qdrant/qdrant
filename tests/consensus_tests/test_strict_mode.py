@@ -1,8 +1,21 @@
 import logging
 import pathlib
 
-from .fixtures import create_collection, upsert_random_points, upsert_points, random_dense_vector, set_strict_mode
-from .utils import *
+from .fixtures import (
+    create_collection,
+    random_dense_vector,
+    set_strict_mode,
+    upsert_points,
+    upsert_random_points,
+)
+from .utils import (
+    create_shard_key,
+    get_cluster_info,
+    get_collection_local_shards_count,
+    start_cluster,
+    wait_collection_exists_and_active_on_all_peers,
+    wait_for_strict_mode_enabled,
+)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
