@@ -1698,3 +1698,33 @@ def test_strict_mode_group_limits(collection_name):
     )
     assert not response.ok
     assert "Forbidden: Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
+
+def test_strict_mode_distance_matrix_limits(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/matrix/pairs",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "sample": 10,
+            "limit": 2,
+        },
+    )
+    assert response.ok
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_query_limit": 15,
+    })
+
+    # try again
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/matrix/pairs",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "sample": 10,
+            "limit": 2,
+        },
+    )
+    assert not response.ok
+    assert "Forbidden: Limit exceeded 20 > 15 for \"limit\"" in response.json()['status']['error']
