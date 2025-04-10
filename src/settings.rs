@@ -34,6 +34,8 @@ pub struct ServiceConfig {
     pub read_only_api_key: Option<String>,
     #[serde(default)]
     pub jwt_rbac: Option<bool>,
+    #[serde(default)]
+    pub read_only: bool,
 
     #[serde(default)]
     pub hide_jwt_dashboard: Option<bool>,

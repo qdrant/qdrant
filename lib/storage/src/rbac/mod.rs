@@ -95,6 +95,14 @@ impl Access {
         Self::Global(GlobalAccessMode::Read)
     }
 
+    /// Check if the access is read-only
+    pub fn is_read_only(&self) -> bool {
+        match self {
+            Access::Global(mode) => *mode == GlobalAccessMode::Read,
+            Access::Collection(list) => list.0.iter().all(|access| access.access == CollectionAccessMode::Read),
+        }
+    }
+
     /// Check if the user has global access.
     pub fn check_global_access(
         &self,

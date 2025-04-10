@@ -132,6 +132,11 @@ struct Args {
     ///             It'll also compact consensus WAL to force snapshot
     #[arg(long, action, default_value_t = false)]
     reinit: bool,
+
+    /// Enable read-only mode
+    /// If provided - all write operations will be rejected
+    #[arg(long, action, default_value_t = false)]
+    read_only: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -319,6 +324,12 @@ fn main() -> anyhow::Result<()> {
 
     // Table of content manages the list of collections.
     // It is a main entry point for the storage.
+    if is_distributed_deployment && (settings.service.read_only || args.read_only) {
+        return Err(anyhow::Error::msg(
+            "Read-only mode is not supported in distributed deployments",
+        ));
+    }
+
     let toc = TableOfContent::new(
         &settings.storage,
         search_runtime,
@@ -328,6 +339,7 @@ fn main() -> anyhow::Result<()> {
         channel_service.clone(),
         persistent_consensus_state.this_peer_id(),
         propose_operation_sender.clone(),
+        settings.service.read_only || args.read_only,
     );
 
     toc.clear_all_tmp_directories()?;

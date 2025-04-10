@@ -269,6 +269,9 @@ service:
   # Check user HTTPS client certificate against CA file specified in tls config
   verify_https_client_certificate: false
 
+  # Enable read-only mode
+  read_only: true
+
   # Set an api-key.
   # If set, all requests must include a header with the api-key.
   # example header: `api-key: <API-KEY>`

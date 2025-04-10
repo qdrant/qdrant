@@ -83,6 +83,7 @@ pub struct TableOfContent {
     collection_create_lock: Mutex<()>,
     /// Aggregation of all hardware measurements for each alias or collection config.
     collection_hw_metrics: DashMap<CollectionId, HwSharedDrain>,
+    is_read_only: bool,
 }
 
 impl TableOfContent {
@@ -97,6 +98,7 @@ impl TableOfContent {
         channel_service: ChannelService,
         this_peer_id: PeerId,
         consensus_proposal_sender: Option<OperationSender>,
+        is_read_only: bool,
     ) -> Self {
         let collections_path = Path::new(&storage_config.storage_path).join(COLLECTIONS_DIR);
         create_dir_all(&collections_path).expect("Can't create Collections directory");
@@ -201,6 +203,7 @@ impl TableOfContent {
             update_rate_limiter: rate_limiter,
             collection_create_lock: Default::default(),
             collection_hw_metrics: DashMap::new(),
+            is_read_only,
         }
     }
 
@@ -685,5 +688,14 @@ impl TableOfContent {
                 (key, hw_usage)
             })
             .collect()
+    }
+
+    fn check_write_lock(&self) -> CollectionResult<()> {
+        if self.is_read_only {
+            return Err(CollectionError::service_error(
+                "Service is in read-only mode. Write operations are not allowed.",
+            ));
+        }
+        Ok(())
     }
 }

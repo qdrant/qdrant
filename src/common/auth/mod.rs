@@ -32,6 +32,9 @@ pub struct AuthKeys {
 
     /// Table of content, needed to do stateful validation of JWT
     toc: Arc<TableOfContent>,
+
+    /// Whether the instance is in read-only mode
+    is_read_only: bool,
 }
 
 #[derive(Debug)]
@@ -67,6 +70,7 @@ impl AuthKeys {
                 read_only,
                 jwt_parser: Self::get_jwt_parser(service_config),
                 toc,
+                is_read_only: service_config.read_only,
             }),
         }
     }
@@ -83,6 +87,19 @@ impl AuthKeys {
                 "Must provide an API key or an Authorization bearer token".to_string(),
             ));
         };
+
+        if self.is_read_only {
+            // In read-only mode, only allow read operations
+            if self.can_read(key) {
+                return Ok((
+                    Access::full_ro("Read-only access by key"),
+                    InferenceToken(None),
+                ));
+            }
+            return Err(AuthError::Forbidden(
+                "Instance is in read-only mode".to_string(),
+            ));
+        }
 
         if self.can_write(key) {
             return Ok((
@@ -105,6 +122,12 @@ impl AuthKeys {
                 access,
                 value_exists,
             } = claims?;
+
+            if self.is_read_only && !access.is_read_only() {
+                return Err(AuthError::Forbidden(
+                    "Instance is in read-only mode".to_string(),
+                ));
+            }
 
             if let Some(value_exists) = value_exists {
                 self.validate_value_exists(&value_exists).await?;
