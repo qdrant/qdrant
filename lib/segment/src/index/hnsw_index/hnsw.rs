@@ -933,6 +933,11 @@ impl HNSWIndex {
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
+        if vector_query_context.strict_mode_enabled() && vector.is_multivector() {
+            return Err(OperationError::validation_error(
+                "Multivector full scan search not allowed in strict mode",
+            ));
+        }
         let id_tracker = self.id_tracker.borrow();
         let vector_storage = self.vector_storage.borrow();
         let quantized_vectors = self.quantized_vectors.borrow();
@@ -973,11 +978,6 @@ impl HNSWIndex {
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        if vector_query_context.strict_mode_enabled() && vector.is_multivector() {
-            return Err(OperationError::validation_error(
-                "Multivector full scan search not allowed in strict mode",
-            ));
-        }
         self.search_plain_iterator(
             vector,
             &mut filtered_points.iter().copied(),
@@ -994,11 +994,6 @@ impl HNSWIndex {
         params: Option<&SearchParams>,
         vector_query_context: &VectorQueryContext,
     ) -> OperationResult<Vec<ScoredPointOffset>> {
-        if vector_query_context.strict_mode_enabled() && vector.is_multivector() {
-            return Err(OperationError::validation_error(
-                "Multivector full scan search not allowed in strict mode",
-            ));
-        }
         let id_tracker = self.id_tracker.borrow();
         let mut ids_iterator = id_tracker.iter_internal();
         self.search_plain_iterator(vector, &mut ids_iterator, top, params, vector_query_context)
