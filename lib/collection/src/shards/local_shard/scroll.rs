@@ -33,6 +33,10 @@ impl LocalShard {
         timeout: Duration,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
+        if batch.is_empty() {
+            return Ok(vec![]);
+        }
+
         let scrolls = batch.iter().map(|request| {
             self.query_scroll(
                 request,

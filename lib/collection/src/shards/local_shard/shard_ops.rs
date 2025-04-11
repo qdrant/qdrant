@@ -269,6 +269,7 @@ impl ShardOperation for LocalShard {
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
         let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
+
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
             planned_query
@@ -278,6 +279,7 @@ impl ShardOperation for LocalShard {
                 .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
                 .sum()
         })?;
+
         self.do_planned_query(
             planned_query,
             search_runtime_handle,
