@@ -1637,6 +1637,105 @@ def test_scroll_filter_many_conditions(collection_name):
     assert response.status_code == 429
     assert "Read rate limit exceeded: Operation requires 7 tokens" in response.json()['status']['error']
 
+
+def test_strict_mode_group_limits(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+        },
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+        },
+    )
+    assert response.ok
+
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_query_limit": 15,
+    })
+
+    # try again
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+        },
+    )
+
+    assert not response.ok
+    assert "Forbidden: Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+        },
+    )
+    assert not response.ok
+    assert "Forbidden: Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
+
+def test_strict_mode_distance_matrix_limits(collection_name):
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/matrix/pairs",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "sample": 10,
+            "limit": 2,
+        },
+    )
+    assert response.ok
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "max_query_limit": 15,
+    })
+
+    # try again
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/matrix/pairs",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "sample": 10,
+            "limit": 2,
+        },
+    )
+    assert not response.ok
+    assert "Forbidden: Limit exceeded 20 > 15 for \"limit\"" in response.json()['status']['error']
+
+
 def test_read_rate_limiter_many_vectors(full_collection_name):
     collection_name = full_collection_name
 
