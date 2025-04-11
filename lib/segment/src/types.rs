@@ -964,6 +964,12 @@ pub struct StrictModeConfig {
     pub sparse_config: Option<StrictModeSparseConfig>,
 }
 
+impl StrictModeConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.enabled == Some(true)
+    }
+}
+
 impl Eq for StrictModeConfig {}
 
 impl Hash for StrictModeConfig {

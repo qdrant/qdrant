@@ -23,7 +23,6 @@ impl LocalShard {
 
         let (query_context, collection_params) = {
             let collection_config = self.collection_config.read().await;
-
             let query_context_opt = SegmentsSearcher::prepare_query_context(
                 self.segments.clone(),
                 &core_request,

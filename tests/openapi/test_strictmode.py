@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from .conftest import collection_name
@@ -11,6 +13,21 @@ def setup(collection_name):
     yield
     drop_collection(collection_name=collection_name)
 
+
+def wait_collection_green(collection_name):
+    while True:
+        response = request_with_validation(
+            api='/collections/{collection_name}',
+            method="GET",
+            path_params={'collection_name': collection_name},
+        )
+        assert response.ok
+
+        json = response.json()
+        if json['result']['status'] == 'green':
+            break
+
+        time.sleep(1)
 
 def set_strict_mode(collection_name, strict_mode_config):
     request_with_validation(
@@ -1563,7 +1580,7 @@ def test_strict_mode_retrieve_read_rate_limiting(collection_name):
     assert response.status_code == 429
     assert "Read rate limit exceeded, request larger than rate limiter capacity, please try to split your request" in response.json()['status']['error']
 
-    # Check with less examples
+    # Check with fewer examples
     response = request_with_validation(
         api="/collections/{collection_name}/points",
         method="POST",
@@ -1728,3 +1745,108 @@ def test_strict_mode_distance_matrix_limits(collection_name):
     )
     assert not response.ok
     assert "Forbidden: Limit exceeded 20 > 15 for \"limit\"" in response.json()['status']['error']
+
+def test_strict_mode_fullscan_multivector(collection_name):
+    # Clear collection to not depend on other tests
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="DELETE",
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "dense-multi": {
+                    "size": 2,
+                    "distance": "Dot",
+                    "multivector_config": {
+                        "comparator": "max_sim"
+                    }
+                },
+            },
+            "optimizers_config": {
+                "default_segment_number": 1,
+                "indexing_threshold": 1,
+                "max_segment_size": 1, # force creation of a second segment to trigger indexing
+            },
+            "hnsw_config": {
+                "m": 0, # disable HNSW index
+            }
+        }
+    )
+    assert response.ok
+
+    # upsert multivectors with 10 vectors (points list)
+    points = [
+        {
+            "id": i,
+            "vector": {
+                "dense-multi": [
+                    [1.05 * i, 1.61 * i],
+                    [2.05 * i, 2.61 * i],
+                    [3.05 * i, 3.61 * i]
+                ],
+            }
+        }
+        for i in range(1, 100)
+    ]
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "points": points,
+        }
+    )
+    assert response.ok
+
+    # assert there are 2 segments
+    info = request_with_validation(
+        api='/collections/{collection_name}',
+        method="GET",
+        path_params={'collection_name': collection_name},
+    )
+
+    assert info.json()['result']['segments_count'] == 2
+    wait_collection_green(collection_name)
+
+    # query with full scan (because hsnw.m = 0)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": [[0.2, 0.1]],
+            "using": "dense-multi",
+            "limit": 4
+        }
+    )
+
+    assert response.ok
+
+    # enable strict mode
+    set_strict_mode(collection_name, {
+        "enabled": True,
+    })
+
+    # query with full scan (because hsnw.m = 0)
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": [[0.2, 0.1]],
+            "using": "dense-multi",
+            "limit": 4
+        }
+    )
+
+    assert not response.ok
+    assert "Multivector full scan search not allowed in strict mode" in response.json()['status']['error']

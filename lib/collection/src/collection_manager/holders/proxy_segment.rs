@@ -1544,7 +1544,7 @@ mod tests {
         eprintln!("search_result = {search_result:#?}");
 
         let hardware_accumulator = HwMeasurementAcc::new();
-        let query_context = QueryContext::new(10000, hardware_accumulator.clone());
+        let query_context = QueryContext::new(10000, hardware_accumulator.clone(), false);
         let segment_query_context = query_context.get_segment_query_context();
 
         let search_batch_result = proxy_segment

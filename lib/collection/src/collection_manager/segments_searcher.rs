@@ -179,6 +179,11 @@ impl SegmentsSearcher {
             .indexing_threshold
             .unwrap_or(DEFAULT_INDEXING_THRESHOLD_KB);
         let full_scan_threshold_kb = collection_config.hnsw_config.full_scan_threshold;
+        let strict_mode_enabled = collection_config
+            .strict_mode_config
+            .as_ref()
+            .map(|config| config.is_enabled())
+            .unwrap_or(false);
 
         const DEFAULT_CAPACITY: usize = 3;
         let mut idf_vectors: TinyVec<[&VectorName; DEFAULT_CAPACITY]> = Default::default();
@@ -202,6 +207,7 @@ impl SegmentsSearcher {
         let mut query_context = QueryContext::new(
             indexing_threshold_kb.max(full_scan_threshold_kb),
             hw_measurement_acc,
+            strict_mode_enabled,
         )
         .with_is_stopped(is_stopped_guard.get_is_stopped());
 
@@ -858,7 +864,7 @@ mod tests {
             Arc::new(batch_request),
             &Handle::current(),
             true,
-            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc),
+            QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_acc, false),
         )
         .await
         .unwrap()
@@ -919,8 +925,11 @@ mod tests {
             let batch_request = Arc::new(batch_request);
 
             let hw_measurement_acc = HwMeasurementAcc::new();
-            let query_context =
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
+            let query_context = QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                hw_measurement_acc.clone(),
+                false,
+            );
 
             let result_no_sampling = SegmentsSearcher::search(
                 segment_holder.clone(),
@@ -935,8 +944,11 @@ mod tests {
             assert_ne!(hw_measurement_acc.get_cpu(), 0);
 
             let hw_measurement_acc = HwMeasurementAcc::new();
-            let query_context =
-                QueryContext::new(DEFAULT_INDEXING_THRESHOLD_KB, hw_measurement_acc.clone());
+            let query_context = QueryContext::new(
+                DEFAULT_INDEXING_THRESHOLD_KB,
+                hw_measurement_acc.clone(),
+                false,
+            );
 
             assert!(!result_no_sampling.is_empty());
 

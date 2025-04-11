@@ -33,12 +33,16 @@ pub struct QueryContext {
     /// Structure to accumulate and report hardware usage.
     /// Holds reference to the shared drain, which is used to accumulate the values.
     hardware_usage_accumulator: HwMeasurementAcc,
+
+    /// Whether the strict mode is enabled.
+    strict_mode_enabled: bool,
 }
 
 impl QueryContext {
     pub fn new(
         search_optimized_threshold_kb: usize,
         hardware_usage_accumulator: HwMeasurementAcc,
+        strict_mode_enabled: bool,
     ) -> Self {
         Self {
             available_point_count: 0,
@@ -46,6 +50,7 @@ impl QueryContext {
             is_stopped: Arc::new(AtomicBool::new(false)),
             idf: tiny_map::TinyMap::new(),
             hardware_usage_accumulator,
+            strict_mode_enabled,
         }
     }
 
@@ -95,6 +100,7 @@ impl QueryContext {
             query_context: self,
             deleted_points: None,
             hardware_counter: self.hardware_usage_accumulator.get_counter_cell(),
+            strict_mode_enabled: self.strict_mode_enabled,
         }
     }
 
@@ -106,7 +112,7 @@ impl QueryContext {
 #[cfg(feature = "testing")]
 impl Default for QueryContext {
     fn default() -> Self {
-        Self::new(usize::MAX, HwMeasurementAcc::new()) // Search optimized threshold won't affect the search.
+        Self::new(usize::MAX, HwMeasurementAcc::new(), false) // Search optimized threshold won't affect the search.
     }
 }
 
@@ -116,6 +122,7 @@ pub struct SegmentQueryContext<'a> {
     query_context: &'a QueryContext,
     deleted_points: Option<&'a BitSlice>,
     hardware_counter: HardwareCounterCell,
+    strict_mode_enabled: bool,
 }
 
 impl<'a> SegmentQueryContext<'a> {
@@ -131,6 +138,7 @@ impl<'a> SegmentQueryContext<'a> {
             idf: self.query_context.idf.get(vector_name),
             deleted_points: self.deleted_points,
             hardware_counter: self.hardware_counter.fork(),
+            strict_mode_enabled: self.strict_mode_enabled,
         }
     }
 
@@ -144,6 +152,7 @@ impl<'a> SegmentQueryContext<'a> {
             query_context: self.query_context,
             deleted_points: self.deleted_points,
             hardware_counter: self.hardware_counter.fork(),
+            strict_mode_enabled: self.strict_mode_enabled,
         }
     }
 }
@@ -165,6 +174,9 @@ pub struct VectorQueryContext<'a> {
     deleted_points: Option<&'a BitSlice>,
 
     hardware_counter: HardwareCounterCell,
+
+    /// Whether the strict mode is enabled.
+    strict_mode_enabled: bool,
 }
 
 pub enum SimpleCow<'a, T> {
@@ -206,6 +218,10 @@ impl VectorQueryContext<'_> {
             .unwrap_or_else(|| SimpleCow::Owned(AtomicBool::new(false)))
     }
 
+    pub fn strict_mode_enabled(&self) -> bool {
+        self.strict_mode_enabled
+    }
+
     /// Compute advanced formula for Inverse Document Frequency (IDF) according to wikipedia.
     /// This should account for corner cases when `df` and `n` are small or zero.
     #[inline]
@@ -243,6 +259,7 @@ impl Default for VectorQueryContext<'_> {
             idf: None,
             deleted_points: None,
             hardware_counter: HardwareCounterCell::new(),
+            strict_mode_enabled: false,
         }
     }
 }

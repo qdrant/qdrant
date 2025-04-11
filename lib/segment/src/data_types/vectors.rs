@@ -13,13 +13,24 @@ use super::primitive::PrimitiveVectorElement;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::utils::transpose_map_into_named_vector;
 use crate::types::{VectorName, VectorNameBuf};
-use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
+use crate::vector_storage::query::{
+    ContextPair, ContextQuery, DiscoveryQuery, RecoQuery, TransformInto,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorInternal {
     Dense(DenseVector),
     Sparse(SparseVector),
     MultiDense(MultiDenseVectorInternal),
+}
+
+impl VectorInternal {
+    pub fn is_multivector(&self) -> bool {
+        match self {
+            VectorInternal::Dense(_) | VectorInternal::Sparse(_) => false,
+            VectorInternal::MultiDense(_) => true,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -725,6 +736,26 @@ pub enum QueryVector {
     RecommendSumScores(RecoQuery<VectorInternal>),
     Discovery(DiscoveryQuery<VectorInternal>),
     Context(ContextQuery<VectorInternal>),
+}
+
+impl QueryVector {
+    /// Returns true if the QueryVector contains a multivector
+    pub fn is_multivector(&self) -> bool {
+        fn context_pairs_is_multivector(pairs: &[ContextPair<VectorInternal>]) -> bool {
+            pairs
+                .iter()
+                .any(|v| v.negative.is_multivector() || v.positive.is_multivector())
+        }
+        match self {
+            QueryVector::Nearest(v) => v.is_multivector(),
+            QueryVector::RecommendBestScore(v) | QueryVector::RecommendSumScores(v) => {
+                v.positives.iter().any(|v| v.is_multivector())
+                    || v.negatives.iter().any(|v| v.is_multivector())
+            }
+            QueryVector::Discovery(v) => context_pairs_is_multivector(&v.pairs),
+            QueryVector::Context(v) => context_pairs_is_multivector(&v.pairs),
+        }
+    }
 }
 
 impl TransformInto<QueryVector, VectorInternal, VectorInternal> for QueryVector {
