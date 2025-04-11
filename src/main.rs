@@ -216,7 +216,7 @@ fn main() -> anyhow::Result<()> {
 
     // Report feature flags that are enabled for easier debugging
     let flags = feature_flags();
-    if !flags.is_empty() {
+    if !flags.is_default() {
         log::debug!("Feature flags: {flags:?}");
     }
 
