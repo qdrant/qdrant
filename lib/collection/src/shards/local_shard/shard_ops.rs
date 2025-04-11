@@ -283,7 +283,7 @@ impl ShardOperation for LocalShard {
         const CHUNK_SIZE: usize = 16;
 
         // Calculate read cost if read rate limit is enabled
-        let mut read_cost = self.read_rate_limiter.is_some().then_some(0);
+        let mut read_cost = (!hw_measurement_acc.is_disposable() && self.read_rate_limiter.is_some()).then_some(0);
 
         let chunk_futures = requests
             .chunks(CHUNK_SIZE)
