@@ -268,63 +268,25 @@ impl ShardOperation for LocalShard {
         timeout: Option<Duration>,
         hw_measurement_acc: HwMeasurementAcc,
     ) -> CollectionResult<Vec<ShardQueryResponse>> {
-        // Chunk requests for parallelism in certain scenarios
-        //
-        // Deeper down, each segment gets its own dedicated search thread. If this shard has just
-        // one segment, all requests will be executed on a single thread.
-        //
-        // To prevent this from being a bottleneck if we have a lot of requests, we can chunk the
-        // requests into multiple searches to allow more parallelism.
-        //
-        // For simplicity, we use a fixed chunk size. Using chunks helps to ensure our 'filter
-        // reuse optimization' is still properly utilized.
-        // See: <https://github.com/qdrant/qdrant/pull/813>
-        // See: <https://github.com/qdrant/qdrant/pull/6326>
-        const CHUNK_SIZE: usize = 16;
-
-        // Calculate read cost if read rate limit is enabled
-        let mut read_cost = (!hw_measurement_acc.is_disposable() && self.read_rate_limiter.is_some()).then_some(0);
-
-        let chunk_futures = requests
-            .chunks(CHUNK_SIZE)
-            .map(|r| {
-                let planned_query = PlannedQuery::try_from(r.to_vec())?;
-                if let Some(rate_limit_cost) = &mut read_cost {
-                    *rate_limit_cost += planned_query
-                        .searches
-                        .iter()
-                        .map(|s| s.search_rate_cost())
-                        .sum::<usize>();
-                    *rate_limit_cost += planned_query
-                        .scrolls
-                        .iter()
-                        .map(|s| s.scroll_rate_cost())
-                        .sum::<usize>();
-                }
-                let future = self.do_planned_query(
-                    planned_query,
-                    search_runtime_handle,
-                    timeout,
-                    hw_measurement_acc.clone(),
-                );
-
-                CollectionResult::Ok(future)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let planned_query = PlannedQuery::try_from(requests.as_ref().to_owned())?;
 
         // Check read rate limiter before proceeding
         self.check_read_rate_limiter(&hw_measurement_acc, "query_batch", || {
-            read_cost.unwrap_or_default()
+            planned_query
+                .searches
+                .iter()
+                .map(|s| s.search_rate_cost())
+                .chain(planned_query.scrolls.iter().map(|s| s.scroll_rate_cost()))
+                .sum()
         })?;
 
-        // Drive all searches and concatenate chunks again
-        let results = futures::future::try_join_all(chunk_futures)
-            .await?
-            .into_iter()
-            .flatten()
-            .collect();
-
-        Ok(results)
+        self.do_planned_query(
+            planned_query,
+            search_runtime_handle,
+            timeout,
+            hw_measurement_acc,
+        )
+        .await
     }
 
     /// This call is rate limited by the read rate limiter.

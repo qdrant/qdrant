@@ -11,6 +11,20 @@ use crate::common::stopping_guard::StoppingGuard;
 use crate::operations::query_enum::QueryEnum;
 use crate::operations::types::{CollectionError, CollectionResult, CoreSearchRequestBatch};
 
+// Chunk requests for parallelism in certain scenarios
+//
+// Deeper down, each segment gets its own dedicated search thread. If this shard has just
+// one segment, all requests will be executed on a single thread.
+//
+// To prevent this from being a bottleneck if we have a lot of requests, we can chunk the
+// requests into multiple searches to allow more parallelism.
+//
+// For simplicity, we use a fixed chunk size. Using chunks helps to ensure our 'filter
+// reuse optimization' is still properly utilized.
+// See: <https://github.com/qdrant/qdrant/pull/813>
+// See: <https://github.com/qdrant/qdrant/pull/6326>
+const CHUNK_SIZE: usize = 16;
+
 impl LocalShard {
     pub async fn do_search(
         &self,
@@ -25,6 +39,55 @@ impl LocalShard {
 
         let is_stopped_guard = StoppingGuard::new();
 
+        // Don't batch if we have few searches, prevents cloning request
+        if core_request.searches.len() <= CHUNK_SIZE {
+            return self
+                .do_search_impl(
+                    core_request,
+                    search_runtime_handle,
+                    timeout,
+                    hw_counter_acc,
+                    &is_stopped_guard,
+                )
+                .await;
+        }
+
+        // Batch if we have many searches, allows for more parallelism
+        let CoreSearchRequestBatch { searches } = core_request.as_ref();
+
+        let chunk_futures = searches
+            .chunks(CHUNK_SIZE)
+            .map(|chunk| {
+                let core_request = CoreSearchRequestBatch {
+                    searches: chunk.to_vec(),
+                };
+                self.do_search_impl(
+                    Arc::new(core_request),
+                    search_runtime_handle,
+                    timeout,
+                    hw_counter_acc.clone(),
+                    &is_stopped_guard,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let results = futures::future::try_join_all(chunk_futures)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect();
+
+        Ok(results)
+    }
+
+    async fn do_search_impl(
+        &self,
+        core_request: Arc<CoreSearchRequestBatch>,
+        search_runtime_handle: &Handle,
+        timeout: Option<Duration>,
+        hw_counter_acc: HwMeasurementAcc,
+        is_stopped_guard: &StoppingGuard,
+    ) -> CollectionResult<Vec<Vec<ScoredPoint>>> {
         let (query_context, collection_params) = {
             let collection_config = self.collection_config.read().await;
 
@@ -32,7 +95,7 @@ impl LocalShard {
                 self.segments.clone(),
                 &core_request,
                 &collection_config,
-                &is_stopped_guard,
+                is_stopped_guard,
                 hw_counter_acc.clone(),
             )
             .await?;
