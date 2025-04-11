@@ -93,9 +93,6 @@ impl PlannedQuery {
             with_payload,
             params,
         } = request;
-        // Final offset is handled at collection level
-        let limit = limit + offset;
-
         let merge_plan = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
                 return Err(CollectionError::bad_request(format!(
@@ -108,13 +105,8 @@ impl PlannedQuery {
             })?;
 
             if rescore.needs_intermediate_results() {
-                let sources = recurse_prefetches(
-                    &mut self.searches,
-                    &mut self.scrolls,
-                    prefetches,
-                    offset,
-                    &filter,
-                )?;
+                let sources =
+                    recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
 
                 let merge_plan = MergePlan {
                     sources,
@@ -129,13 +121,8 @@ impl PlannedQuery {
                     with_payload,
                 }
             } else {
-                let sources = recurse_prefetches(
-                    &mut self.searches,
-                    &mut self.scrolls,
-                    prefetches,
-                    offset,
-                    &filter,
-                )?;
+                let sources =
+                    recurse_prefetches(&mut self.searches, &mut self.scrolls, prefetches, &filter)?;
 
                 let merge_plan = MergePlan {
                     sources,
@@ -154,6 +141,14 @@ impl PlannedQuery {
                 }
             }
         } else {
+            // Only increase the limit with the offset when there are no prefetches
+            //
+            // Reason for this is because there is no guarantee of stability of results when prefetches and main query are not
+            // strongly correlated.
+            // For example: if prefetch is a knn search, and main query is an `order_by`, propagating the offset for trying to
+            // get a second page will just increase the pool of candidates for `order_by`. The second page in this case will be
+            // invalid because it will cut the offset on a different total ordering.
+            let limit = limit + offset;
             let sources = match query {
                 Some(ScoringQuery::Vector(query)) => {
                     // Everything should come from 1 core search
@@ -254,7 +249,6 @@ fn recurse_prefetches(
     core_searches: &mut Vec<CoreSearchRequest>,
     scrolls: &mut Vec<QueryScrollRequestInternal>,
     prefetches: Vec<ShardPrefetch>,
-    root_offset: usize, // Offset is added to all prefetches, so we make sure we have enough
     propagate_filter: &Option<Filter>, // Global filter to apply to all prefetches
 ) -> CollectionResult<Vec<Source>> {
     let mut sources = Vec::with_capacity(prefetches.len());
@@ -266,22 +260,18 @@ fn recurse_prefetches(
         let ShardPrefetch {
             prefetches,
             query,
-            limit: prefetch_limit,
+            limit,
             params,
             filter,
             score_threshold,
         } = prefetch;
-
-        // Offset is replicated at each step from the root to the leaves
-        let limit = prefetch_limit + root_offset;
 
         // Filters are propagated into the leaves
         let filter = Filter::merge_opts(propagate_filter.clone(), filter);
 
         let source = if !prefetches.is_empty() {
             // This has nested prefetches. Recurse into them
-            let inner_sources =
-                recurse_prefetches(core_searches, scrolls, prefetches, root_offset, &filter)?;
+            let inner_sources = recurse_prefetches(core_searches, scrolls, prefetches, &filter)?;
 
             let rescore = query.ok_or_else(|| {
                 CollectionError::bad_request("cannot have prefetches without a query".to_string())
@@ -767,7 +757,7 @@ mod tests {
                 ),),
                 filter: dummy_filter,
                 params: dummy_params,
-                limit: 37 + 49, // limit + offset
+                limit: 37,
                 offset: 0,
                 with_payload: Some(WithPayloadInterface::Bool(false)),
                 with_vector: Some(WithVector::Bool(false)),

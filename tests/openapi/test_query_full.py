@@ -1441,8 +1441,8 @@ def test_random_rescore_with_offset(collection_name):
     random_result = response.json()["result"]["points"]
     assert len(random_result) == 1
     assert random_result[0]["id"] == 1
-    
-    # assert offset is propagated to prefetch
+
+    # assert offset is NOT propagated to prefetch
     seen = set()
     for _ in range(100):
         response = request_with_validation(
@@ -1450,7 +1450,7 @@ def test_random_rescore_with_offset(collection_name):
             method="POST",
             path_params={"collection_name": collection_name},
             body={
-                "prefetch": { "limit": 1 },
+                "prefetch": { "limit": 2 },
                 "query": {"sample": "random"},
                 "offset": 1,
             },
@@ -1458,14 +1458,14 @@ def test_random_rescore_with_offset(collection_name):
         assert response.ok, response.json()
         random_result = response.json()["result"]["points"]
         assert len(random_result) == 1
-    
+
         seen.add(random_result[0]["id"])
         if seen == {1, 2}:
             return
-    
-    # Although prefetch limit is 1, offset should be propagated, so randomness is applied to points 1 and 2.
+
+    # Offset is not propagated to prefetch, since prefetch without a query is a scroll, random sampling is applied to points 1 and 2.
     # By this point we should've seen both points.
-    assert False, f"after 100 tries, `seen` is expected to be {{1, 2}}, but it was {seen}"
+    raise AssertionError(f"after 100 tries, `seen` is expected to be {{1, 2}}, but it was {seen}")
 
 
 @pytest.mark.parametrize("query_filter", [None, *get_uuid_index_filters()])

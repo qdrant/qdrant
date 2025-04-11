@@ -1,7 +1,6 @@
 //! Platform-independent abstractions over [`memmap2::Mmap::advise`]/[`memmap2::MmapMut::advise`]
 //! and [`memmap2::Advice`].
 
-use std::fs::File;
 use std::hint::black_box;
 use std::io;
 use std::num::Wrapping;
@@ -187,6 +186,7 @@ pub fn clear_disk_cache(file_path: &Path) -> io::Result<()> {
         target_env = "uclibc",
     ))]
     {
+        use std::fs::File;
         use std::os::fd::AsRawFd as _;
 
         use nix::fcntl;
