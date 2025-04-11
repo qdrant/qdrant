@@ -63,20 +63,15 @@ impl FeatureFlags {
 /// Initializes the global feature flags with `flags`. Must only be called once at
 /// startup or otherwise throws a warning and discards the values.
 pub fn init_feature_flags(mut flags: FeatureFlags) {
-    let FeatureFlags {
-        all,
-        use_new_shard_key_mapping_format,
-        use_mutable_id_tracker_without_rocksdb,
-        payload_index_skip_rocksdb,
-        incremental_hnsw_building,
-    } = &mut flags;
+    let FeatureFlags { all, .. } = &mut flags;
 
     // If all is set, explicitly set all feature flags
     if *all {
-        *use_new_shard_key_mapping_format = true;
-        *use_mutable_id_tracker_without_rocksdb = true;
-        *payload_index_skip_rocksdb = true;
-        *incremental_hnsw_building = true;
+        // Cross-checking impact of features on perf.
+        // *use_new_shard_key_mapping_format = true;
+        // *use_mutable_id_tracker_without_rocksdb = true;
+        // *payload_index_skip_rocksdb = true;
+        // *incremental_hnsw_building = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);
