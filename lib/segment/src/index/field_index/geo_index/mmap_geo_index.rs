@@ -250,14 +250,10 @@ impl MmapGeoMapIndex {
         _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
-
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)
-            .map(|_| {
-                self.point_to_values
-                    .check_values_any(idx, |v| check_fn(&v))
-            })
+            .map(|_| self.point_to_values.check_values_any(idx, |v| check_fn(&v)))
             .unwrap_or(false)
     }
 
