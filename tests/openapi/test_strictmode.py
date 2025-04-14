@@ -1779,7 +1779,7 @@ def test_read_rate_limiter_many_vectors(full_collection_name):
     check_multivector_query_raw(should_succeed=True)
     check_multivector_query_id(should_succeed=True)
 
-    ##### Set strict mode with very low read_rate_limit, it should not succeed
+    # Set strict mode with very low read_rate_limit, it should not succeed
     set_strict_mode(collection_name, {
         "enabled": True,
         "read_rate_limit": 2 # multivector has 3 vectors
@@ -1794,7 +1794,7 @@ def test_read_rate_limiter_many_vectors(full_collection_name):
     check_multivector_query_id(should_succeed=False)
 
 
-    #### Set strict mode with just enough read_rate_limit, it should succeed
+    # Set strict mode with just enough read_rate_limit, it should succeed
     set_strict_mode(collection_name, {
         "enabled": True,
         "read_rate_limit": 3 # multivector has 3 vectors

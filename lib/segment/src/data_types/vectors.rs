@@ -32,7 +32,7 @@ impl VectorInternal {
             VectorInternal::Dense(_dense) => 1,
             // TODO(ratelimits): Currently one sparse vector counts as one, regardless of number of dimensions.
             //                   We should come up with a formula for adjusting its cost.
-            VectorInternal::Sparse(sparse) => 1.max(sparse.indices.len() / SPARSE_VECTOR_COST),
+            VectorInternal::Sparse(sparse) => sparse.indices.len().div_ceil(SPARSE_VECTOR_COST),
             VectorInternal::MultiDense(multivec) => multivec.len(),
         }
     }
