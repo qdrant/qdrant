@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  rust-tests:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -43,7 +43,7 @@ jobs:
   # Failure of updating an issue is ignored because it fails for external contributors.
   process-results:
     runs-on: ubuntu-latest
-    needs: test
+    needs: rust-tests
     permissions:
       contents: read
       issues: write
