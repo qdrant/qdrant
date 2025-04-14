@@ -43,7 +43,7 @@ common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }
 itertools = { workspace = true }
 rstest = { workspace = true }
-self_cell = "1.1.0"
+self_cell = "1.2.0"
 serde_json = { workspace = true }
 tango-bench = "0.6.0"
 
