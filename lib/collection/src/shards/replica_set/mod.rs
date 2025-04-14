@@ -401,6 +401,10 @@ impl ShardReplicaSet {
         matches!(*local_read, Some(Shard::Dummy(_)))
     }
 
+    pub async fn is_recovery(&self) -> bool {
+        self.shared_storage_config.recovery_mode.is_some()
+    }
+
     pub async fn is_dirty(&self) -> bool {
         let local_read = self.local.read().await;
         match local_read.as_ref() {
