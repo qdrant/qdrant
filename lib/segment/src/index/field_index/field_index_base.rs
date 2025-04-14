@@ -419,57 +419,6 @@ impl FieldIndex {
             | FieldIndex::NullIndex(_) => None,
         }
     }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            FieldIndex::IntIndex(index) => index.is_on_disk(),
-            FieldIndex::DatetimeIndex(index) => index.is_on_disk(),
-            FieldIndex::IntMapIndex(index) => index.is_on_disk(),
-            FieldIndex::KeywordIndex(index) => index.is_on_disk(),
-            FieldIndex::FloatIndex(index) => index.is_on_disk(),
-            FieldIndex::GeoIndex(index) => index.is_on_disk(),
-            FieldIndex::BoolIndex(index) => index.is_on_disk(),
-            FieldIndex::FullTextIndex(index) => index.is_on_disk(),
-            FieldIndex::UuidIndex(index) => index.is_on_disk(),
-            FieldIndex::UuidMapIndex(index) => index.is_on_disk(),
-            FieldIndex::NullIndex(index) => index.is_on_disk(),
-        }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            FieldIndex::IntIndex(index) => index.populate(),
-            FieldIndex::DatetimeIndex(index) => index.populate(),
-            FieldIndex::IntMapIndex(index) => index.populate(),
-            FieldIndex::KeywordIndex(index) => index.populate(),
-            FieldIndex::FloatIndex(index) => index.populate(),
-            FieldIndex::GeoIndex(index) => index.populate(),
-            FieldIndex::BoolIndex(index) => index.populate(),
-            FieldIndex::FullTextIndex(index) => index.populate(),
-            FieldIndex::UuidIndex(index) => index.populate(),
-            FieldIndex::UuidMapIndex(index) => index.populate(),
-            FieldIndex::NullIndex(index) => index.populate(),
-        }
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            FieldIndex::IntIndex(index) => index.clear_cache(),
-            FieldIndex::DatetimeIndex(index) => index.clear_cache(),
-            FieldIndex::IntMapIndex(index) => index.clear_cache(),
-            FieldIndex::KeywordIndex(index) => index.clear_cache(),
-            FieldIndex::FloatIndex(index) => index.clear_cache(),
-            FieldIndex::GeoIndex(index) => index.clear_cache(),
-            FieldIndex::BoolIndex(index) => index.clear_cache(),
-            FieldIndex::FullTextIndex(index) => index.clear_cache(),
-            FieldIndex::UuidIndex(index) => index.clear_cache(),
-            FieldIndex::UuidMapIndex(index) => index.clear_cache(),
-            FieldIndex::NullIndex(index) => index.clear_cache(),
-        }
-    }
 }
 
 /// Common interface for all index builders.

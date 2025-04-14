@@ -36,8 +36,6 @@ thiserror = { workspace = true }
 zerocopy = { workspace = true }
 log = { workspace = true }
 
-memory = { path = "../memory" }
-
 [dev-dependencies]
 common = { path = ".", features = ["testing"] }
 criterion = { workspace = true }

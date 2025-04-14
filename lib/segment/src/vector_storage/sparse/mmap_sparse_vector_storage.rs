@@ -174,21 +174,6 @@ impl MmapSparseVectorStorage {
 
         Ok(())
     }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.deleted.populate()?;
-        self.storage.read().populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.deleted.clear_cache()?;
-        self.storage.read().clear_cache()?;
-        Ok(())
-    }
 }
 
 impl SparseVectorStorage for MmapSparseVectorStorage {

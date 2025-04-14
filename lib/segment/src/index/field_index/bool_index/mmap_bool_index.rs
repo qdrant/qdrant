@@ -280,27 +280,6 @@ impl MmapBoolIndex {
         .flatten()
         .collect()
     }
-
-    pub fn is_on_disk(&self) -> bool {
-        !self.populated
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.trues_slice.populate()?;
-        self.falses_slice.populate()?;
-
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.trues_slice.clear_cache()?;
-        self.falses_slice.clear_cache()?;
-
-        Ok(())
-    }
 }
 
 /// Set or insert a flag in the given flags. Returns previous value.

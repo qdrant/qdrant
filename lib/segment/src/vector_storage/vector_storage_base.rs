@@ -429,64 +429,6 @@ impl VectorStorageEnum {
             }
         }
     }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::DenseSimple(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseSimpleByte(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseSimpleHalf(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseMemmap(vs) => vs.populate()?,
-            VectorStorageEnum::DenseMemmapByte(vs) => vs.populate()?,
-            VectorStorageEnum::DenseMemmapHalf(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableMemmap(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableInRam(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableInRamByte(vs) => vs.populate()?,
-            VectorStorageEnum::DenseAppendableInRamHalf(vs) => vs.populate()?,
-            VectorStorageEnum::SparseSimple(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::SparseMmap(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseSimple(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::MultiDenseSimpleByte(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::MultiDenseSimpleHalf(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::MultiDenseAppendableMemmap(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseAppendableInRam(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseAppendableInRamByte(vs) => vs.populate()?,
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(vs) => vs.populate()?,
-        }
-        Ok(())
-    }
-
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            VectorStorageEnum::DenseSimple(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseSimpleByte(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseSimpleHalf(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::DenseMemmap(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseMemmapByte(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseMemmapHalf(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseAppendableMemmap(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseAppendableMemmapByte(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseAppendableInRam(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseAppendableInRamByte(vs) => vs.clear_cache()?,
-            VectorStorageEnum::DenseAppendableInRamHalf(vs) => vs.clear_cache()?,
-            VectorStorageEnum::SparseSimple(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::SparseMmap(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseSimple(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::MultiDenseSimpleByte(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::MultiDenseSimpleHalf(_) => {} // Can't populate as it is not mmap
-            VectorStorageEnum::MultiDenseAppendableMemmap(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseAppendableInRam(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseAppendableInRamByte(vs) => vs.clear_cache()?,
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(vs) => vs.clear_cache()?,
-        }
-        Ok(())
-    }
 }
 
 impl VectorStorage for VectorStorageEnum {
@@ -546,8 +488,6 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    /// If false - data is stored in RAM (and persisted on disk)
-    /// If true - data is stored on disk, and is not forced to be in RAM
     fn is_on_disk(&self) -> bool {
         match self {
             VectorStorageEnum::DenseSimple(v) => v.is_on_disk(),

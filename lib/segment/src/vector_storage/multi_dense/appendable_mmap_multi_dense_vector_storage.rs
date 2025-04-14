@@ -70,21 +70,6 @@ impl<
         }
         Ok(previous)
     }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.vectors.populate()?;
-        self.offsets.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        self.vectors.clear_cache()?;
-        self.offsets.clear_cache()?;
-        Ok(())
-    }
 }
 
 impl<

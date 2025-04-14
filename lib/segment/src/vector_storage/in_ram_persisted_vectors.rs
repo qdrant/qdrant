@@ -112,12 +112,4 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     fn is_on_disk(&self) -> bool {
         false
     }
-
-    fn populate(&self) -> OperationResult<()> {
-        self.mmap_storage.populate()
-    }
-
-    fn clear_cache(&self) -> OperationResult<()> {
-        self.mmap_storage.clear_cache()
-    }
 }

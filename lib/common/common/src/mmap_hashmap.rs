@@ -1,5 +1,6 @@
 #[cfg(any(test, feature = "testing"))]
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
 use std::hash::Hash;
 use std::io::{self, Cursor, Write};
 use std::marker::PhantomData;
@@ -8,8 +9,6 @@ use std::path::Path;
 use std::str;
 
 use memmap2::Mmap;
-use memory::madvise::{AdviceSetting, Madviseable};
-use memory::mmap_ops::open_read_mmap;
 use ph::fmph::Function;
 #[cfg(any(test, feature = "testing"))]
 use rand::Rng as _;
@@ -194,8 +193,12 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
     }
 
     /// Load the hash map from file.
-    pub fn open(path: &Path, populate: bool) -> io::Result<Self> {
-        let mmap = open_read_mmap(path, AdviceSetting::Global, populate)?;
+    pub fn open(path: &Path) -> io::Result<Self> {
+        let file = File::open(path)?;
+
+        // SAFETY: Assume other processes do not modify the file.
+        // See https://docs.rs/memmap2/latest/memmap2/struct.Mmap.html#safety
+        let mmap = unsafe { Mmap::map(&file)? };
 
         let (header, _) =
             Header::read_from_prefix(mmap.as_ref()).map_err(|_| io::ErrorKind::InvalidData)?;
@@ -335,13 +338,6 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
                 format!("Can't read entry from mmap, bucket_val {entry_start} is out of bounds"),
             )
         })
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> io::Result<()> {
-        self.mmap.populate();
-        Ok(())
     }
 }
 
@@ -518,7 +514,7 @@ mod tests {
             map.iter().map(|(k, v)| (as_ref(k), v.iter().copied())),
         )
         .unwrap();
-        let mmap = MmapHashMap::<K, u32>::open(&tmpdir.path().join("map"), false).unwrap();
+        let mmap = MmapHashMap::<K, u32>::open(&tmpdir.path().join("map")).unwrap();
 
         // Non-existing keys should return None
         for _ in 0..1000 {
@@ -565,7 +561,7 @@ mod tests {
         )
         .unwrap();
 
-        let mmap = MmapHashMap::<i64, u64>::open(&tmpdir.path().join("map"), true).unwrap();
+        let mmap = MmapHashMap::<i64, u64>::open(&tmpdir.path().join("map")).unwrap();
 
         for (k, v) in map {
             assert_eq!(

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::madvise::{Advice, AdviceSetting};
@@ -40,10 +39,6 @@ impl<T: Sized + 'static> UniversalMmapChunk<T> {
 
     pub fn is_empty(&self) -> bool {
         self.mmap.is_empty()
-    }
-
-    pub fn populate(&self) -> io::Result<()> {
-        self.mmap.populate()
     }
 }
 

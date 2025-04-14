@@ -441,35 +441,6 @@ impl StructPayloadIndex {
                 key: key.to_string(),
             })
     }
-
-    pub fn populate(&self) -> OperationResult<()> {
-        for (_, field_indexes) in self.field_indexes.iter() {
-            for index in field_indexes {
-                index.populate()?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        for (_, field_indexes) in self.field_indexes.iter() {
-            for index in field_indexes {
-                index.clear_cache()?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn clear_cache_if_on_disk(&self) -> OperationResult<()> {
-        for (_, field_indexes) in self.field_indexes.iter() {
-            for index in field_indexes {
-                if index.is_on_disk() {
-                    index.clear_cache()?;
-                }
-            }
-        }
-        Ok(())
-    }
 }
 
 impl PayloadIndex for StructPayloadIndex {

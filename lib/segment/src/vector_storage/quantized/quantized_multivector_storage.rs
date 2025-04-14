@@ -118,10 +118,6 @@ where
     QuantizedStorage: EncodedVectors<TEncodedQuery>,
     TMultivectorOffsetsStorage: MultivectorOffsetsStorage,
 {
-    pub fn storage(&self) -> &QuantizedStorage {
-        &self.quantized_storage
-    }
-
     pub fn new(
         dim: usize,
         quantized_storage: QuantizedStorage,

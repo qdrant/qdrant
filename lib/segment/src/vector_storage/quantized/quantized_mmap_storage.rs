@@ -2,17 +2,10 @@ use std::path::Path;
 
 use memmap2::{Mmap, MmapMut};
 use memory::madvise;
-use memory::madvise::Madviseable;
 
 #[derive(Debug)]
 pub struct QuantizedMmapStorage {
     mmap: Mmap,
-}
-
-impl QuantizedMmapStorage {
-    pub fn populate(&self) {
-        self.mmap.populate();
-    }
 }
 
 pub struct QuantizedMmapStorageBuilder {

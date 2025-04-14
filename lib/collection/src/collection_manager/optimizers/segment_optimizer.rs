@@ -735,6 +735,8 @@ pub trait SegmentOptimizer {
                     .unwrap();
             }
 
+            optimized_segment.prefault_mmap_pages();
+
             let point_count = optimized_segment.available_point_count();
 
             let (_, proxies) = write_segments_guard.swap_new(optimized_segment, &proxy_ids);

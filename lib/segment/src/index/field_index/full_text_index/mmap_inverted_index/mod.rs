@@ -5,7 +5,7 @@ use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::{MmapHashMap, READ_ENTRY_OVERHEAD};
 use common::types::PointOffsetType;
-use memory::madvise::{AdviceSetting, clear_disk_cache};
+use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
@@ -87,7 +87,7 @@ impl MmapInvertedIndex {
         let deleted_points_path = path.join(DELETED_POINTS_FILE);
 
         let postings = MmapPostings::open(&postings_path, populate)?;
-        let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path, false)?;
+        let vocab = MmapHashMap::<str, TokenId>::open(&vocab_path)?;
 
         let point_to_tokens_count = unsafe {
             MmapSlice::try_from(mmap_ops::open_write_mmap(
@@ -135,29 +135,6 @@ impl MmapInvertedIndex {
             self.path.join(POINT_TO_TOKENS_COUNT_FILE),
             self.path.join(DELETED_POINTS_FILE),
         ]
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        self.is_on_disk
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.postings.populate();
-        self.vocab.populate()?;
-        self.point_to_tokens_count.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let files = self.files();
-        for file in files {
-            clear_disk_cache(&file)?;
-        }
-
-        Ok(())
     }
 }
 

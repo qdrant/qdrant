@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use common::types::PointOffsetType;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
+use memory::madvise::{Advice, AdviceSetting};
+use memory::mmap_ops;
 use memory::mmap_ops::open_read_mmap;
 
 use crate::common::operation_error::OperationResult;
@@ -145,14 +146,14 @@ impl GraphLinks {
         edges
     }
 
-    /// Populate the disk cache with data, if applicable.
-    /// This is a blocking operation.
-    pub fn populate(&self) -> OperationResult<()> {
+    pub fn prefault_mmap_pages(&self, path: &Path) -> Option<mmap_ops::PrefaultMmapPages> {
         match self.borrow_owner() {
-            GraphLinksEnum::Mmap(mmap) => mmap.populate(),
-            GraphLinksEnum::Ram(_) => {}
-        };
-        Ok(())
+            GraphLinksEnum::Mmap(mmap) => Some(mmap_ops::PrefaultMmapPages::new(
+                Arc::clone(mmap),
+                Some(path.to_owned()),
+            )),
+            GraphLinksEnum::Ram(_) => None,
+        }
     }
 }
 

@@ -31,6 +31,35 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     Ok(value)
 }
 
+/// Advise the operating system that the file is no longer needed to be in the page cache.
+pub fn advise_dontneed(path: &Path) -> Result<()> {
+    // https://github.com/nix-rust/nix/blob/v0.29.0/src/fcntl.rs#L35-L42
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "android",
+        target_os = "fuchsia",
+        target_os = "emscripten",
+        target_os = "wasi",
+        target_env = "uclibc",
+    ))]
+    {
+        use std::os::fd::AsRawFd as _;
+
+        use nix::fcntl;
+
+        let file = File::open(path)?;
+        let fd = file.as_raw_fd();
+
+        fcntl::posix_fadvise(fd, 0, 0, fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED)
+            .map_err(io::Error::from)?;
+    }
+
+    _ = path;
+
+    Ok(())
+}
+
 pub type FileOperationResult<T> = Result<T>;
 pub type FileStorageError = Error;
 

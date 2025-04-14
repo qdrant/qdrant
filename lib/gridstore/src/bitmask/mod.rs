@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use bitvec::slice::BitSlice;
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
-use memory::madvise::{Advice, AdviceSetting, clear_disk_cache};
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{self, MmapBitSlice};
 
@@ -499,21 +499,6 @@ impl Bitmask {
         {
             RegionGaps::new(leading as u16, trailing as u16, max as u16)
         }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> std::io::Result<()> {
-        self.bitslice.populate()?;
-        self.regions_gaps.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)?;
-        self.regions_gaps.clear_cache()?;
-        Ok(())
     }
 }
 

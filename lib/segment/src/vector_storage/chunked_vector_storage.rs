@@ -60,11 +60,4 @@ pub trait ChunkedVectorStorage<T> {
 
     /// True, if this storage is on-disk by default.
     fn is_on_disk(&self) -> bool;
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    fn populate(&self) -> OperationResult<()>;
-
-    /// Drop disk cache.
-    fn clear_cache(&self) -> OperationResult<()>;
 }

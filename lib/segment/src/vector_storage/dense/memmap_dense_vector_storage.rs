@@ -9,7 +9,6 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use memory::madvise::clear_disk_cache;
 use memory::mmap_ops;
 
 use crate::common::Flusher;
@@ -37,24 +36,6 @@ pub struct MemmapDenseVectorStorage<T: PrimitiveVectorElement> {
     deleted_path: PathBuf,
     mmap_store: Option<MmapDenseVectors<T>>,
     distance: Distance,
-}
-
-impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        if let Some(mmap_store) = &self.mmap_store {
-            mmap_store.populate()?;
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        clear_disk_cache(&self.vectors_path)?;
-        clear_disk_cache(&self.deleted_path)?;
-        Ok(())
-    }
 }
 
 pub fn open_memmap_vector_storage(
@@ -127,6 +108,14 @@ fn open_memmap_vector_storage_with_async_io_impl<T: PrimitiveVectorElement>(
 }
 
 impl<T: PrimitiveVectorElement> MemmapDenseVectorStorage<T> {
+    pub fn prefault_mmap_pages(&self) -> Option<mmap_ops::PrefaultMmapPages> {
+        Some(
+            self.mmap_store
+                .as_ref()?
+                .prefault_mmap_pages(&self.vectors_path),
+        )
+    }
+
     pub fn get_mmap_vectors(&self) -> &MmapDenseVectors<T> {
         self.mmap_store.as_ref().unwrap()
     }

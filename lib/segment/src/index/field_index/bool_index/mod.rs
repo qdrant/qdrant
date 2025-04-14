@@ -6,7 +6,6 @@ use simple_bool_index::SimpleBoolIndex;
 use super::facet_index::FacetIndex;
 use super::map_index::IdIter;
 use super::{PayloadFieldIndex, ValueIndexer};
-use crate::common::operation_error::OperationResult;
 use crate::data_types::facets::{FacetHit, FacetValueRef};
 use crate::telemetry::PayloadIndexTelemetry;
 
@@ -81,32 +80,6 @@ impl BoolIndex {
             BoolIndex::Simple(index) => index.values_is_empty(point_id),
             BoolIndex::Mmap(index) => index.values_is_empty(point_id),
         }
-    }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            BoolIndex::Simple(_) => false,
-            BoolIndex::Mmap(index) => index.is_on_disk(),
-        }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Simple(_) => {} // Not a mmap
-            BoolIndex::Mmap(index) => index.populate()?,
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            BoolIndex::Simple(_) => {} // Not a mmap
-            BoolIndex::Mmap(index) => index.clear_cache()?,
-        }
-        Ok(())
     }
 }
 

@@ -534,7 +534,7 @@ impl SegmentBuilder {
             let payload_index_path = get_payload_index_path(temp_dir.path());
 
             let mut payload_index = StructPayloadIndex::open(
-                payload_storage_arc.clone(),
+                payload_storage_arc,
                 id_tracker_arc.clone(),
                 vector_storages_arc.clone(),
                 &payload_index_path,
@@ -564,18 +564,16 @@ impl SegmentBuilder {
             let permit = Arc::new(permit);
 
             for (vector_name, vector_config) in &segment_config.vector_data {
-                let vector_storage = vector_storages_arc.remove(vector_name).unwrap();
-                let quantized_vectors =
-                    Arc::new(AtomicRefCell::new(quantized_vectors.remove(vector_name)));
-
-                let index = build_vector_index(
+                build_vector_index(
                     vector_config,
                     VectorIndexOpenArgs {
                         path: &get_vector_index_path(temp_dir.path(), vector_name),
                         id_tracker: id_tracker_arc.clone(),
-                        vector_storage: vector_storage.clone(),
+                        vector_storage: vector_storages_arc.remove(vector_name).unwrap(),
                         payload_index: payload_index_arc.clone(),
-                        quantized_vectors: quantized_vectors.clone(),
+                        quantized_vectors: Arc::new(AtomicRefCell::new(
+                            quantized_vectors.remove(vector_name),
+                        )),
                     },
                     VectorIndexBuildArgs {
                         permit: permit.clone(),
@@ -585,20 +583,6 @@ impl SegmentBuilder {
                         feature_flags: feature_flags(),
                     },
                 )?;
-
-                if vector_storage.borrow().is_on_disk() {
-                    // If vector storage is expected to be on-disk, we need to clear cache
-                    // to avoid cache pollution
-                    vector_storage.borrow().clear_cache()?;
-                }
-
-                if let Some(quantized_vectors) = quantized_vectors.borrow().as_ref() {
-                    quantized_vectors.clear_cache()?;
-                }
-
-                // Index if always loaded on-disk=true from build function
-                // So we may clear unconditionally
-                index.clear_cache()?;
             }
 
             for (vector_name, sparse_vector_config) in &segment_config.sparse_vector_data {
@@ -606,7 +590,7 @@ impl SegmentBuilder {
 
                 let vector_storage_arc = vector_storages_arc.remove(vector_name).unwrap();
 
-                let index = create_sparse_vector_index(SparseVectorIndexOpenArgs {
+                create_sparse_vector_index(SparseVectorIndexOpenArgs {
                     config: sparse_vector_config.index,
                     id_tracker: id_tracker_arc.clone(),
                     vector_storage: vector_storage_arc.clone(),
@@ -615,26 +599,7 @@ impl SegmentBuilder {
                     stopped,
                     tick_progress: || (),
                 })?;
-
-                if sparse_vector_config.storage_type.is_on_disk() {
-                    // If vector storage is expected to be on-disk, we need to clear cache
-                    // to avoid cache pollution
-                    vector_storage_arc.borrow().clear_cache()?;
-                }
-
-                if sparse_vector_config.index.index_type.is_on_disk() {
-                    index.clear_cache()?;
-                }
             }
-
-            if segment_config.payload_storage_type.is_on_disk() {
-                // If payload storage is expected to be on-disk, we need to clear cache
-                // to avoid cache pollution
-                payload_storage_arc.borrow().clear_cache()?;
-            }
-
-            // Clear cache for payload index to avoid cache pollution
-            payload_index_arc.borrow().clear_cache_if_on_disk()?;
 
             // We're done with CPU-intensive tasks, release CPU permit
             debug_assert_eq!(

@@ -2,12 +2,13 @@ use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::thread::JoinHandle;
+use std::thread::{self, JoinHandle};
 
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
+use memory::mmap_ops;
 
 use super::{
     DB_BACKUP_PATH, PAYLOAD_DB_BACKUP_PATH, SEGMENT_STATE_FILE, SNAPSHOT_FILES_PATH, SNAPSHOT_PATH,
@@ -650,6 +651,21 @@ impl Segment {
 
     pub fn total_point_count(&self) -> usize {
         self.id_tracker.borrow().total_point_count()
+    }
+
+    pub fn prefault_mmap_pages(&self) {
+        let tasks: Vec<_> = self
+            .vector_data
+            .values()
+            .flat_map(|data| data.prefault_mmap_pages())
+            .collect();
+
+        let _ = thread::Builder::new()
+            .name(format!(
+                "segment-{:?}-prefault-mmap-pages",
+                self.current_path,
+            ))
+            .spawn(move || tasks.iter().for_each(mmap_ops::PrefaultMmapPages::exec));
     }
 
     pub fn cleanup_versions(&mut self) -> OperationResult<()> {

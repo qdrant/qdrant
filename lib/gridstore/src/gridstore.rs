@@ -527,25 +527,6 @@ impl<V> Gridstore<V> {
 
         Ok(())
     }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> std::io::Result<()> {
-        for page in &self.pages {
-            page.populate();
-        }
-        self.bitmask.read().populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        for page in &self.pages {
-            page.clear_cache()?;
-        }
-        self.bitmask.read().clear_cache()?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]

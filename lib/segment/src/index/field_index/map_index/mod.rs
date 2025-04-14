@@ -434,35 +434,6 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
                 .unique(),
         )
     }
-
-    pub fn is_on_disk(&self) -> bool {
-        match self {
-            MapIndex::Mutable(_) => false,
-            MapIndex::Immutable(_) => false,
-            MapIndex::Mmap(index) => index.is_on_disk(),
-        }
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(_) => {}   // Not a mmap
-            MapIndex::Immutable(_) => {} // Not a mmap
-            MapIndex::Mmap(index) => index.populate()?,
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            MapIndex::Mutable(_) => {}   // Not a mmap
-            MapIndex::Immutable(_) => {} // Not a mmap
-            MapIndex::Mmap(index) => index.clear_cache()?,
-        }
-        Ok(())
-    }
 }
 
 pub struct MapIndexBuilder<N: MapIndexKey + ?Sized>(MapIndex<N>);

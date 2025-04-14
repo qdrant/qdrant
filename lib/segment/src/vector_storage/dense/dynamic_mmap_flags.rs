@@ -8,7 +8,7 @@ use bitvec::prelude::BitSlice;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use common::types::PointOffsetType;
 use memmap2::MmapMut;
-use memory::madvise::{self, AdviceSetting, Madviseable as _, clear_disk_cache};
+use memory::madvise::{self, AdviceSetting, Madviseable as _};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{MmapBitSlice, MmapFlusher, MmapType};
 use parking_lot::Mutex;
@@ -283,20 +283,6 @@ impl DynamicMmapFlags {
     /// Iterate over all "true" flags
     pub fn iter_trues(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.flags.iter_ones().map(|x| x as PointOffsetType)
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        self.flags.populate()?;
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        let flags_file = self.directory.join(FLAGS_FILE);
-        clear_disk_cache(&flags_file)?;
-        Ok(())
     }
 }
 

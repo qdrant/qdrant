@@ -207,33 +207,6 @@ impl PayloadStorage for PayloadStorageEnum {
     }
 }
 
-impl PayloadStorageEnum {
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
-            PayloadStorageEnum::SimplePayloadStorage(_) => {}
-            PayloadStorageEnum::OnDiskPayloadStorage(_) => {}
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.populate()?,
-        }
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> OperationResult<()> {
-        match self {
-            #[cfg(feature = "testing")]
-            PayloadStorageEnum::InMemoryPayloadStorage(_) => {}
-            PayloadStorageEnum::SimplePayloadStorage(_) => {}
-            PayloadStorageEnum::OnDiskPayloadStorage(_) => {}
-            PayloadStorageEnum::MmapPayloadStorage(s) => s.clear_cache()?,
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use tempfile::Builder;

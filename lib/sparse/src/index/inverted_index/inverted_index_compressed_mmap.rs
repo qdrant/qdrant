@@ -10,7 +10,7 @@ use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
 use io::storage_version::StorageVersion;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting, Madviseable, clear_disk_cache};
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{
     create_and_ensure_length, open_read_mmap, transmute_from_u8_to_slice, transmute_to_u8,
     transmute_to_u8_slice,
@@ -345,18 +345,6 @@ impl<W: Weight> InvertedIndexCompressedMmap<W> {
                     .map(|posting| posting.store_size().total)
             })
             .sum()
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) -> std::io::Result<()> {
-        self.mmap.populate();
-        Ok(())
-    }
-
-    /// Drop disk cache.
-    pub fn clear_cache(&self) -> std::io::Result<()> {
-        clear_disk_cache(&self.path)
     }
 }
 
