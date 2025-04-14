@@ -72,11 +72,7 @@ where
 
         hardware_counter.set_cpu_multiplier(size_of::<TElement>());
 
-        if quantized_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(size_of::<TElement>());
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
+        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_storage.is_on_disk()));
 
         Self {
             query,
@@ -128,11 +124,7 @@ where
 
         hardware_counter.set_cpu_multiplier(size_of::<TElement>());
 
-        if quantized_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(size_of::<TElement>());
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
+        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_storage.is_on_disk()));
 
         Self {
             query,
