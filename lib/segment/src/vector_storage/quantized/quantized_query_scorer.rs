@@ -45,11 +45,7 @@ where
         );
         let query = quantized_data.encode_query(&original_query_prequantized);
 
-        if quantized_data.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(1);
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
+        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
 
         Self {
             query,
@@ -80,11 +76,7 @@ where
 
         let query = quantized_data.encode_query(&query);
 
-        if quantized_data.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(1);
-        } else {
-            hardware_counter.set_vector_io_read_multiplier(0);
-        }
+        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_data.is_on_disk()));
 
         Self {
             query,
