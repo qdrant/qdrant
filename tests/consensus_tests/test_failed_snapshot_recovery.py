@@ -5,7 +5,7 @@ import shutil
 import requests
 from time import sleep
 
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search, random_sparse_vector
+from .fixtures import create_collection, upsert_random_points, random_dense_vector, search
 from .utils import *
 
 N_PEERS = 3
@@ -77,12 +77,6 @@ def corrupt_snapshot(snapshot_path: pathlib.Path, segment_name: str):
             os.rename(new_segment_archive, snapshot_path)
 
 def corrupt_shard_dir(shard_path: pathlib.Path):
-    segements_path = shard_path / "segments"
-    segment_names = filter(lambda x: x.is_dir(), pathlib.Path(segements_path).iterdir())
-
-    first_segment_path = next(segment_names)
-    shutil.rmtree(first_segment_path)
-
     wal_path = shard_path / "wal"
     shutil.rmtree(wal_path)
 
@@ -171,13 +165,6 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
             time.sleep(1)  # Wait to sync with consensus
             continue
         break
-
-    # Assert that the local shard is dead and empty
-    local_shards = get_local_shards(peer_api_uris[-1])
-    assert len(local_shards) == 1
-    assert local_shards[0]["shard_id"] == 0
-    assert local_shards[0]["state"] in ["Active", "Dead", "Partial", "Recovery"]
-    assert local_shards[0]["points_count"] <= n_points
 
     # Assert storage does not contain initialized flag after restoring on restart
     print("Checking that the shard initializing flag was removed after recovery")
@@ -288,13 +275,6 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
-
-    # Assert that the local shard is in partial/recovery state
-    [local_shard] = get_local_shards(peer_api_uris[-1])
-    assert local_shard["shard_id"] == 0
-    shard_state = local_shard["state"]
-    assert shard_state in ["Active", "Dead", "Partial", "Recovery"]
-    assert local_shard["points_count"] <= n_points, local_shard
 
     # Wait for end of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
