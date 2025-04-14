@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::mem;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -15,6 +16,8 @@ use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumn
 /// This might be required to guarantee consistency of the database component.
 /// E.g. copy-on-write implementation should guarantee that data in the `write` component is
 /// persisted before it is removed from the `copy` component.
+///
+/// WARN: this structure is expected to be write-only.
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledDeleteWrapper {
     db: DatabaseColumnWrapper,
@@ -66,29 +69,14 @@ impl DatabaseColumnScheduledDeleteWrapper {
             .contains(key.as_ref())
     }
 
-    /// Removes from `pending_deletes` all results that are flushed.
-    /// If values in `pending_deletes` are changed, do not remove them.
-    fn clear_flushed_deletes(
-        flushed: HashSet<Vec<u8>>,
-        pending_deletes: Arc<Mutex<HashSet<Vec<u8>>>>,
-    ) {
-        let mut pending_deletes = pending_deletes.lock();
-        for id in flushed {
-            pending_deletes.remove(&id);
-        }
-    }
-
     pub fn flusher(&self) -> Flusher {
-        let ids_to_delete = self.deleted_pending_persistence.lock().clone();
+        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
         let wrapper = self.db.clone();
-        let deleted_pending_persistence_arc = self.deleted_pending_persistence.clone();
         Box::new(move || {
-            for id in ids_to_delete.iter() {
+            for id in ids_to_delete {
                 wrapper.remove(id)?;
             }
-            wrapper.flusher()()?;
-            Self::clear_flushed_deletes(ids_to_delete, deleted_pending_persistence_arc);
-            Ok(())
+            wrapper.flusher()()
         })
     }
 
