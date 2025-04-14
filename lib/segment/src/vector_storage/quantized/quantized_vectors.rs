@@ -105,6 +105,25 @@ pub enum QuantizedVectorStorage {
     BinaryMmapMulti(BinaryMmapMulti),
 }
 
+impl QuantizedVectorStorage {
+    pub fn is_on_disk(&self) -> bool {
+        match self {
+            QuantizedVectorStorage::ScalarRam(_) => false,
+            QuantizedVectorStorage::ScalarMmap(_) => true,
+            QuantizedVectorStorage::PQRam(_) => false,
+            QuantizedVectorStorage::PQMmap(_) => true,
+            QuantizedVectorStorage::BinaryRam(_) => false,
+            QuantizedVectorStorage::BinaryMmap(_) => true,
+            QuantizedVectorStorage::ScalarRamMulti(_) => false,
+            QuantizedVectorStorage::ScalarMmapMulti(_) => true,
+            QuantizedVectorStorage::PQRamMulti(_) => false,
+            QuantizedVectorStorage::PQMmapMulti(_) => true,
+            QuantizedVectorStorage::BinaryRamMulti(_) => false,
+            QuantizedVectorStorage::BinaryMmapMulti(_) => true,
+        }
+    }
+}
+
 impl fmt::Debug for QuantizedVectorStorage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_tuple("QuantizedVectorStorage").finish()

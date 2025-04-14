@@ -40,8 +40,10 @@ impl<'a> QuantizedScorerBuilder<'a> {
         vec_deleted: &'a BitSlice,
         distance: &'a Distance,
         datatype: VectorStorageDatatype,
-        hardware_counter: HardwareCounterCell,
+        mut hardware_counter: HardwareCounterCell,
     ) -> Self {
+        hardware_counter.set_vector_io_read_multiplier(usize::from(quantized_storage.is_on_disk()));
+
         Self {
             quantized_storage,
             quantization_config,
