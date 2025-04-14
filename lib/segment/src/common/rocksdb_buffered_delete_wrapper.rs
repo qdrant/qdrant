@@ -1,14 +1,13 @@
 use std::collections::HashSet;
-use std::mem;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 
 use super::rocksdb_wrapper::DatabaseColumnIterator;
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumnWrapper};
+use crate::common::Flusher;
 
 /// Wrapper around `DatabaseColumnWrapper` that ensures, that keys that were removed from the
 /// database are only persisted on flush explicitly.
@@ -67,14 +66,29 @@ impl DatabaseColumnScheduledDeleteWrapper {
             .contains(key.as_ref())
     }
 
+    /// Removes from `pending_deletes` all results that are flushed.
+    /// If values in `pending_deletes` are changed, do not remove them.
+    fn clear_flushed_deletes(
+        flushed: HashSet<Vec<u8>>,
+        pending_deletes: Arc<Mutex<HashSet<Vec<u8>>>>,
+    ) {
+        let mut pending_deletes = pending_deletes.lock();
+        for id in flushed {
+            pending_deletes.remove(&id);
+        }
+    }
+
     pub fn flusher(&self) -> Flusher {
-        let ids_to_delete = mem::take(&mut *self.deleted_pending_persistence.lock());
+        let ids_to_delete = self.deleted_pending_persistence.lock().clone();
         let wrapper = self.db.clone();
+        let deleted_pending_persistence_arc = self.deleted_pending_persistence.clone();
         Box::new(move || {
-            for id in ids_to_delete {
+            for id in ids_to_delete.iter() {
                 wrapper.remove(id)?;
             }
-            wrapper.flusher()()
+            wrapper.flusher()()?;
+            Self::clear_flushed_deletes(ids_to_delete, deleted_pending_persistence_arc);
+            Ok(())
         })
     }
 
