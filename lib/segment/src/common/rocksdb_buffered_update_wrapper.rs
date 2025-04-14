@@ -1,6 +1,7 @@
-use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
