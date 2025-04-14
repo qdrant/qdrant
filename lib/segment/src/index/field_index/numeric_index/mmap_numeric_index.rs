@@ -207,19 +207,20 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         self.deleted.flusher()
     }
 
-    pub(super) fn check_values_any(
+    pub fn check_values_any(
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
     ) -> bool {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        // ToDo: fix that
+        // let hw_counter = self.make_conditioned_counter(hw_counter);
 
         if self.deleted.get(idx as usize) == Some(false) {
             self.point_to_values.check_values_any(
                 idx,
                 |v| check_fn(T::from_referenced(&v)),
-                &hw_counter,
+                // &hw_counter,
             )
         } else {
             false

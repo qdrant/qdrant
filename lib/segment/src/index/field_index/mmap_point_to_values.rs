@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
 use memory::madvise::{AdviceSetting, Madviseable, clear_disk_cache};
@@ -174,6 +173,7 @@ pub struct MmapPointToValues<T: MmapValue + ?Sized> {
 }
 
 /// Memory and IO overhead of accessing mmap index.
+#[allow(dead_code)]
 pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
 
 #[repr(C)]
@@ -284,14 +284,14 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         &self,
         point_id: PointOffsetType,
         check_fn: impl Fn(T::Referenced<'_>) -> bool,
-        hw_counter: &HardwareCounterCell,
+        // hw_counter: &HardwareCounterCell,
     ) -> bool {
-        let mut hw_cell_wb = hw_counter
-            .payload_index_io_read_counter()
-            .write_back_counter();
+        // let mut hw_cell_wb = hw_counter
+        //     .payload_index_io_read_counter()
+        //     .write_back_counter();
 
         // Measure IO overhead of `self.get_range()`
-        hw_cell_wb.incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
+        // hw_cell_wb.incr_delta(MMAP_PTV_ACCESS_OVERHEAD);
 
         self.get_range(point_id)
             .map(|range| {
@@ -300,7 +300,7 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
                     let bytes = self.mmap.get(value_offset..).unwrap();
                     let value = T::read_from_mmap(bytes).unwrap();
                     let mmap_size = T::mmapped_size(value.clone());
-                    hw_cell_wb.incr_delta(mmap_size);
+                    // hw_cell_wb.incr_delta(mmap_size);
                     if check_fn(value) {
                         return true;
                     }

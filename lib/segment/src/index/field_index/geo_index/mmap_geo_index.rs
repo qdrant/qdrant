@@ -247,22 +247,16 @@ impl MmapGeoMapIndex {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
-
-        // Measure self.deleted read.
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<bool>());
 
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)
             .map(|_| {
                 self.point_to_values
-                    .check_values_any(idx, |v| check_fn(&v), &hw_counter)
+                    .check_values_any(idx, |v| check_fn(&v))
             })
             .unwrap_or(false)
     }

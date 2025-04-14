@@ -165,15 +165,15 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
     pub fn check_values_any(
         &self,
         idx: PointOffsetType,
-        hw_counter: &HardwareCounterCell,
+        _hw_counter: &HardwareCounterCell,
         check_fn: impl Fn(&N) -> bool,
     ) -> bool {
-        let hw_counter = self.make_conditioned_counter(hw_counter);
+        // let hw_counter = self.make_conditioned_counter(hw_counter);
 
         // Measure self.deleted access.
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<bool>());
+        // hw_counter
+        //     .payload_index_io_read_counter()
+        //     .incr_delta(size_of::<bool>());
 
         self.deleted
             .get(idx as usize)
@@ -182,7 +182,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 self.point_to_values.check_values_any(
                     idx,
                     |v| check_fn(N::from_referenced(&v)),
-                    &hw_counter,
+                    // &hw_counter,
                 )
             })
     }
