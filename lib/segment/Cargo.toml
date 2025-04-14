@@ -37,7 +37,7 @@ walkdir = "2.5.0"
 rstest = { workspace = true }
 segment = { path = ".", features = ["testing"] }
 proptest = { workspace = true }
-anyhow = "1.0.97"
+anyhow = "1.0.98"
 
 [target.'cfg(not(target_os = "windows"))'.dev-dependencies]
 pprof = { workspace = true }
