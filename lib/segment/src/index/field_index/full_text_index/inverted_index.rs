@@ -280,12 +280,7 @@ mod tests {
 
                 let orig_token = mutable.vocab.get(key).unwrap();
 
-                let orig_posting = mutable
-                    .postings
-                    .get(*orig_token as usize)
-                    .cloned()
-                    .unwrap()
-                    .unwrap();
+                let orig_posting = mutable.postings.get(*orig_token as usize).cloned().unwrap();
 
                 let new_contains_orig = orig_posting
                     .iter()
