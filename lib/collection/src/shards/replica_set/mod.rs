@@ -402,11 +402,6 @@ impl ShardReplicaSet {
         matches!(*local_read, Some(Shard::Dummy(_)))
     }
 
-    pub async fn is_dirty(&self) -> bool {
-        // Is dummy but not in recovery mode
-        self.is_dummy().await && self.shared_storage_config.recovery_mode.is_none()
-    }
-
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {
         self.replica_state.read().peers()
     }
