@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
@@ -69,9 +69,20 @@ jobs:
       - name: Run integration tests - 1 peer
         run: poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
+      - name: Restore pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: pytest-cache-${{ github.ref }}
       - name: Run integration tests - multiple peers - pytest
-        run: poetry -C tests run pytest tests/consensus_tests --durations=10
+        run: poetry -C tests run pytest tests/consensus_tests --durations=10 --failed-first --new-first
         timeout-minutes: 60
+      - name: Save pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-cache-${{ github.ref }}-${{ github.run_id }}
       - name: upload logs in case of failure
         uses: actions/upload-artifact@v4
         if: failure() || cancelled()
@@ -149,7 +160,7 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - name: Set up Docker Buildx
