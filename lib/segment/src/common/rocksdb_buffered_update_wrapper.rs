@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::mem;
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -16,10 +16,10 @@ use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumn
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledUpdateWrapper {
     db: DatabaseColumnWrapper,
-    pending_operations: Mutex<PendingOperations>, // in-flight operations persisted on flush
+    pending_operations: Arc<Mutex<PendingOperations>>, // in-flight operations persisted on flush
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct PendingOperations {
     deleted: HashSet<Vec<u8>>,
     inserted: HashMap<Vec<u8>, Vec<u8>>,
@@ -29,7 +29,7 @@ impl DatabaseColumnScheduledUpdateWrapper {
     pub fn new(db: DatabaseColumnWrapper) -> Self {
         Self {
             db,
-            pending_operations: Mutex::new(PendingOperations::default()),
+            pending_operations: Arc::new(Mutex::new(PendingOperations::default())),
         }
     }
 
@@ -57,22 +57,46 @@ impl DatabaseColumnScheduledUpdateWrapper {
         Ok(())
     }
 
+    /// Removes from `pending_updates` all results that are flushed.
+    /// If values in `pending_updates` are changed, do not remove them.
+    fn clear_flushed_updates(
+        flushed: PendingOperations,
+        pending_operations: Arc<Mutex<PendingOperations>>,
+    ) {
+        let mut pending_guard = pending_operations.lock();
+        for id in flushed.deleted {
+            pending_guard.deleted.remove(&id);
+        }
+        pending_guard
+            .inserted
+            .retain(|point_id, a| flushed.inserted.get(point_id).is_none_or(|b| a != b));
+    }
+
     pub fn flusher(&self) -> Flusher {
-        let PendingOperations { deleted, inserted } =
-            mem::take(&mut *self.pending_operations.lock());
+        let PendingOperations { deleted, inserted } = self.pending_operations.lock().clone();
+
         debug_assert!(
             inserted.keys().all(|key| !deleted.contains(key)),
             "Key to marked for insertion is also marked for deletion!"
         );
         let wrapper = self.db.clone();
+        let pending_operations_arc = self.pending_operations.clone();
+
         Box::new(move || {
-            for id in deleted {
+            for id in deleted.iter() {
                 wrapper.remove(id)?;
             }
-            for (id, value) in inserted {
+            for (id, value) in inserted.iter() {
                 wrapper.put(id, value)?;
             }
-            wrapper.flusher()()
+            wrapper.flusher()()?;
+
+            Self::clear_flushed_updates(
+                PendingOperations { deleted, inserted },
+                pending_operations_arc,
+            );
+
+            Ok(())
         })
     }
 

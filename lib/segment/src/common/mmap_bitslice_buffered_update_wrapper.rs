@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::mem;
 use std::sync::Arc;
 
 use common::ext::BitSliceExt as _;
@@ -15,7 +14,7 @@ use crate::common::Flusher;
 pub struct MmapBitSliceBufferedUpdateWrapper {
     bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
-    pending_updates: Mutex<HashMap<usize, bool>>,
+    pending_updates: Arc<Mutex<HashMap<usize, bool>>>,
 }
 
 impl MmapBitSliceBufferedUpdateWrapper {
@@ -24,7 +23,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
             len,
-            pending_updates: Mutex::new(HashMap::new()),
+            pending_updates: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -56,15 +55,30 @@ impl MmapBitSliceBufferedUpdateWrapper {
         self.len == 0
     }
 
+    /// Removes from `pending_updates` all results that are flushed.
+    /// If values in `pending_updates` are changed, do not remove them.
+    fn clear_flushed_updates(
+        flushed: HashMap<usize, bool>,
+        pending_updates: Arc<Mutex<HashMap<usize, bool>>>,
+    ) {
+        pending_updates
+            .lock()
+            .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
+    }
+
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = mem::take(&mut *self.pending_updates.lock());
+        let pending_updates = self.pending_updates.lock().clone();
         let bitslice = self.bitslice.clone();
+        let pending_updates_arc = self.pending_updates.clone();
+
         Box::new(move || {
             let mut mmap_slice_write = bitslice.write();
-            for (index, value) in pending_updates {
-                mmap_slice_write.set(index, value);
+            for (index, value) in pending_updates.iter() {
+                mmap_slice_write.set(*index, *value);
             }
-            Ok(mmap_slice_write.flusher()()?)
+            mmap_slice_write.flusher()()?;
+            Self::clear_flushed_updates(pending_updates, pending_updates_arc);
+            Ok(())
         })
     }
 }

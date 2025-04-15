@@ -10,6 +10,8 @@ use crate::common::Flusher;
 /// A wrapper around `MmapSlice` that delays writing changes to the underlying file until they get
 /// flushed manually.
 /// This expects the underlying MmapSlice not to grow in size.
+///
+/// WARN: this structure is expected to be write-only.
 #[derive(Debug)]
 pub struct MmapSliceBufferedUpdateWrapper<T>
 where

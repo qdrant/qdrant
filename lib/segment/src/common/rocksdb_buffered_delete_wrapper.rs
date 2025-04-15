@@ -16,6 +16,8 @@ use crate::common::rocksdb_wrapper::{DatabaseColumnWrapper, LockedDatabaseColumn
 /// This might be required to guarantee consistency of the database component.
 /// E.g. copy-on-write implementation should guarantee that data in the `write` component is
 /// persisted before it is removed from the `copy` component.
+///
+/// WARN: this structure is expected to be write-only.
 #[derive(Debug)]
 pub struct DatabaseColumnScheduledDeleteWrapper {
     db: DatabaseColumnWrapper,
