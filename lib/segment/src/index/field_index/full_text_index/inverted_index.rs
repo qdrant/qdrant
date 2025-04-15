@@ -269,8 +269,6 @@ mod tests {
         assert!(immutable.postings.len() < mutable.postings.len());
         assert!(!immutable.vocab.is_empty());
 
-        let hw_counter = HardwareCounterCell::new();
-
         // Check that new vocabulary token ids leads to the same posting lists
         assert!({
             immutable.vocab.iter().all(|(key, new_token)| {
@@ -291,10 +289,10 @@ mod tests {
 
                 let new_contains_orig = orig_posting
                     .iter()
-                    .all(|point_id| new_posting.reader(&hw_counter).contains(point_id));
+                    .all(|point_id| new_posting.reader().contains(point_id));
 
                 let orig_contains_new = new_posting
-                    .iter(&hw_counter)
+                    .iter()
                     .all(|point_id| orig_posting.contains(point_id));
 
                 new_contains_orig && orig_contains_new
@@ -331,7 +329,7 @@ mod tests {
         for (token_id, posting) in immutable.postings.iter().enumerate() {
             let chunk_reader = mmap.postings.get(token_id as u32, &hw_counter).unwrap();
 
-            for point_id in posting.iter(&hw_counter) {
+            for point_id in posting.iter() {
                 assert!(chunk_reader.contains(point_id));
             }
         }

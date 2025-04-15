@@ -55,7 +55,6 @@ pub fn intersect_compressed_postings_iterator<'a>(
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
 
     use super::*;
     use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
@@ -87,15 +86,13 @@ mod tests {
 
         assert_eq!(res, vec![2, 5]);
 
-        let hw_counter = HardwareCounterCell::new();
-
         let p1_compressed = CompressedPostingList::new(&p1.into_vec());
         let p2_compressed = CompressedPostingList::new(&p2.into_vec());
         let p3_compressed = CompressedPostingList::new(&p3.into_vec());
         let compressed_posting_reades = vec![
-            p1_compressed.reader(&hw_counter),
-            p2_compressed.reader(&hw_counter),
-            p3_compressed.reader(&hw_counter),
+            p1_compressed.reader(),
+            p2_compressed.reader(),
+            p3_compressed.reader(),
         ];
         let merged = intersect_compressed_postings_iterator(compressed_posting_reades, |_| true);
 
