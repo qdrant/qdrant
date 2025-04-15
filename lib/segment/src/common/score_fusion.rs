@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::iter;
 
+use ahash::AHashMap;
 use common::types::ScoreType;
 use itertools::{Itertools, MinMaxResult};
 use ordered_float::OrderedFloat;
@@ -73,7 +73,7 @@ pub fn score_fusion(
         })
         // combine to deduplicate
         .fold(
-            HashMap::<PointIdType, ScoredPoint>::new(),
+            AHashMap::<PointIdType, ScoredPoint>::new(),
             |mut acc, point| {
                 acc.entry(point.id)
                     .and_modify(|entry| match method {

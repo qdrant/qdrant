@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 
 use crate::common::Flusher;
@@ -21,8 +21,8 @@ pub struct DatabaseColumnScheduledUpdateWrapper {
 
 #[derive(Debug, Default, Clone)]
 struct PendingOperations {
-    deleted: HashSet<Vec<u8>>,
-    inserted: HashMap<Vec<u8>, Vec<u8>>,
+    deleted: AHashSet<Vec<u8>>,
+    inserted: AHashMap<Vec<u8>, Vec<u8>>,
 }
 
 impl DatabaseColumnScheduledUpdateWrapper {

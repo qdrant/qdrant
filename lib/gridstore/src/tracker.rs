@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use ahash::AHashMap;
 use memmap2::MmapMut;
 use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{
@@ -75,7 +75,7 @@ pub struct Tracker {
     /// Updates that haven't been flushed
     ///
     /// When flushing, these updates get written into the mmap and flushed at once.
-    pending_updates: HashMap<PointOffset, PointerUpdate>,
+    pending_updates: AHashMap<PointOffset, PointerUpdate>,
 
     /// The maximum pointer offset in the tracker (updated in memory).
     next_pointer_offset: PointOffset,
@@ -103,7 +103,7 @@ impl Tracker {
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
             .expect("Failed to open page tracker mmap");
         let header = TrackerHeader::default();
-        let pending_updates = HashMap::new();
+        let pending_updates = AHashMap::new();
         let mut page_tracker = Self {
             path,
             header,
@@ -125,7 +125,7 @@ impl Tracker {
         let mmap = open_write_mmap(&path, AdviceSetting::from(TRACKER_MEM_ADVICE), false)
             .map_err(|err| err.to_string())?;
         let header: &TrackerHeader = transmute_from_u8(&mmap[0..size_of::<TrackerHeader>()]);
-        let pending_updates = HashMap::new();
+        let pending_updates = AHashMap::new();
         Ok(Self {
             next_pointer_offset: header.next_pointer_offset,
             path,
@@ -221,9 +221,7 @@ impl Tracker {
     /// Excludes None values
     #[cfg(test)]
     pub fn mapping_len(&self) -> usize {
-        use std::collections::HashSet;
-
-        let mut pending: HashSet<_> = self
+        let mut pending: ahash::AHashSet<_> = self
             .pending_updates
             .iter()
             .filter_map(|(k, v)| v.is_set().then_some(*k))

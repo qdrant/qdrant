@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-
+use ahash::AHashMap;
 use common::types::PointOffsetType;
 
 use crate::types::Payload;
@@ -8,7 +7,7 @@ use crate::types::Payload;
 /// Warn: for tests only
 #[derive(Debug, Default)]
 pub struct InMemoryPayloadStorage {
-    pub(crate) payload: HashMap<PointOffsetType, Payload>,
+    pub(crate) payload: AHashMap<PointOffsetType, Payload>,
 }
 
 impl InMemoryPayloadStorage {
