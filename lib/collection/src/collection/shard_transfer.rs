@@ -425,18 +425,17 @@ impl Collection {
                 // 2. Shard is dirty (shard initializing flag), and Qdrant automatically triggered a transfer to fix it (note: initializing flag means there must be another replica)
                 //
                 // In both cases, it's safe to drop existing local shard data
-                let was_dirty = replica_set.is_dirty().await;
                 log::debug!(
-                    "Initiating transfer to dummy shard {} with dirty = {}. Initializing empty local shard first",
+                    "Initiating transfer to dummy shard {}. Initializing empty local shard first",
                     replica_set.shard_id,
-                    was_dirty
                 );
                 replica_set.init_empty_local_shard().await?;
 
-                if was_dirty {
-                    // TODO: Shouldn't we do this after we start the transfer?
-                    let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+                let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+
+                if tokio::fs::try_exists(&shard_flag).await.is_ok() {
                     tokio::fs::remove_file(&shard_flag).await?;
+                    log::debug!("Removing shard initializing flag {shard_flag:?}");
                 }
             }
 

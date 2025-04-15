@@ -278,13 +278,15 @@ impl ShardReplicaSet {
         let mut local_load_failure = false;
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
-                Shard::Dummy(DummyShard::new(recovery_reason, false))
+                Shard::Dummy(DummyShard::new(recovery_reason))
             } else if is_dirty_shard {
                 log::error!(
                     "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
                 );
                 // This dummy shard will be replaced only when it rejects an update (marked as dead so recovery process kicks in)
-                Shard::Dummy(DummyShard::new("Shard is dirty", true))
+                Shard::Dummy(DummyShard::new(
+                    "Dirty shard - shard is not fully initialized",
+                ))
             } else {
                 let res = LocalShard::load(
                     shard_id,
@@ -315,10 +317,9 @@ impl ShardReplicaSet {
                              {err}"
                         );
 
-                        Shard::Dummy(DummyShard::new(
-                            format!("Failed to load local shard {shard_path:?}: {err}",),
-                            false,
-                        ))
+                        Shard::Dummy(DummyShard::new(format!(
+                            "Failed to load local shard {shard_path:?}: {err}",
+                        )))
                     }
                 }
             };
@@ -401,16 +402,9 @@ impl ShardReplicaSet {
         matches!(*local_read, Some(Shard::Dummy(_)))
     }
 
-    pub async fn is_recovery(&self) -> bool {
-        self.shared_storage_config.recovery_mode.is_some()
-    }
-
     pub async fn is_dirty(&self) -> bool {
-        let local_read = self.local.read().await;
-        match local_read.as_ref() {
-            Some(Shard::Dummy(dummy_shard)) => dummy_shard.is_dirty(),
-            _ => false,
-        }
+        // Is dummy but not in recovery mode
+        self.is_dummy().await && self.shared_storage_config.recovery_mode.is_none()
     }
 
     pub fn peers(&self) -> HashMap<PeerId, ReplicaState> {

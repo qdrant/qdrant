@@ -338,7 +338,6 @@ impl ShardReplicaSet {
                 // Initialize "dummy" replica
                 local.replace(Shard::Dummy(DummyShard::new(
                     "Failed to restore local replica",
-                    true,
                 )));
 
                 // Mark local replica as Dead since it's dummy and dirty

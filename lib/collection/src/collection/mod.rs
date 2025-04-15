@@ -681,11 +681,14 @@ impl Collection {
                 continue;
             }
 
-            if !(this_peer_state == Some(Dead) && !replica_set.is_recovery().await) {
-                continue; // All good
+            #[allow(clippy::nonminimal_bool)]
+            {
+                if !(this_peer_state == Some(Dead) && replica_set.is_dirty().await) {
+                    continue; // All good
+                }
             }
 
-            // Reaches here only if replica is Dead but not in recovery mode
+            // Reaches here only if replica is Dead OR dirty
 
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
