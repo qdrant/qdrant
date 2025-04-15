@@ -22,7 +22,7 @@ pub struct CollectionTelemetry {
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    #[anonymize(value = HashMap::new())]
+    #[anonymize(false)]
     pub shard_clean_tasks: HashMap<ShardId, ShardCleanStatusTelemetry>,
 }
 

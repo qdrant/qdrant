@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
+use segment::common::anonymize::{Anonymize, anonymize_collection_with_u64_hashable_key};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::ShardKey;
@@ -19,7 +19,7 @@ pub struct ReplicaSetTelemetry {
     pub key: Option<ShardKey>,
     pub local: Option<LocalShardTelemetry>,
     pub remote: Vec<RemoteShardTelemetry>,
-    #[anonymize(value = HashMap::new())]
+    #[anonymize(with = anonymize_collection_with_u64_hashable_key)]
     pub replicate_states: HashMap<PeerId, ReplicaState>,
 }
 

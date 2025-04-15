@@ -17,6 +17,7 @@ use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::rate_limiting::RateLimiter;
 use common::types::TelemetryDetail;
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
@@ -1212,7 +1213,9 @@ impl ReplicaSetState {
 }
 
 /// State of the single shard within a replica set.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy, Anonymize,
+)]
 pub enum ReplicaState {
     // Active and sound
     #[default]
