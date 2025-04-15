@@ -96,6 +96,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         point_id: PointOffsetType,
         _: &HardwareCounterCell,
     ) -> bool {
+        if parsed_query.tokens.is_empty() {
+            return false;
+        }
+
         // check presence of the document
         if self.values_is_empty(point_id) {
             return false;

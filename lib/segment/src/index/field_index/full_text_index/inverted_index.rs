@@ -52,7 +52,6 @@ impl ParsedQuery {
         // Check that all tokens are in document
         self.tokens
             .iter()
-            // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
             .all(|query_token| document.check(query_token))
     }
 }

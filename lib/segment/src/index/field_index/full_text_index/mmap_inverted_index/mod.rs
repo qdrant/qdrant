@@ -255,6 +255,7 @@ impl InvertedIndex for MmapInvertedIndex {
         parsed_query.tokens.iter().all(|query_token| {
             self.postings
                 .get(*query_token, hw_counter)
+                // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
                 .unwrap()
                 .contains(point_id)
         })
