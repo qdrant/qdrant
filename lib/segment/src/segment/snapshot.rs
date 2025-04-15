@@ -149,11 +149,7 @@ impl Segment {
         let all_files = all_files
             .into_iter()
             .map(|path| (path, FileVersion::Unversioned))
-            .chain(
-                versioned_files
-                    .into_iter()
-                    .map(|(path, version)| (path, FileVersion::from(version))),
-            );
+            .chain(versioned_files);
 
         let mut file_versions = HashMap::new();
 
@@ -244,7 +240,7 @@ impl Segment {
         files
     }
 
-    fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         let mut files = Vec::new();
 
         for vector_data in self.vector_data.values() {

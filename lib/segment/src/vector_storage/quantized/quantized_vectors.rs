@@ -20,6 +20,7 @@ use super::quantized_scorer_builder::QuantizedScorerBuilder;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::vector_utils::TrySetCapacityExact;
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::segment_manifest::FileVersion;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::types::{
     BinaryQuantization, BinaryQuantizationConfig, CompressionRatio, Distance, MultiVectorConfig,
@@ -227,7 +228,7 @@ impl QuantizedVectors {
         files
     }
 
-    pub fn versioned_files(&self) -> Vec<(PathBuf, u64)> {
+    pub fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         Vec::new() // TODO
     }
 

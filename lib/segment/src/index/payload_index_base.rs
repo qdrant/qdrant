@@ -8,12 +8,11 @@ use serde_json::Value;
 use super::field_index::FieldIndex;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::segment_manifest::FileVersion;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
-use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, SeqNumberType,
-};
+use crate::types::{Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef};
 
 pub enum BuildIndexResult {
     /// Index was built
@@ -152,7 +151,7 @@ pub trait PayloadIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         Vec::new()
     }
 }

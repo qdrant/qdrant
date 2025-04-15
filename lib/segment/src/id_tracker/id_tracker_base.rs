@@ -11,6 +11,7 @@ use super::in_memory_id_tracker::InMemoryIdTracker;
 use super::mutable_id_tracker::MutableIdTracker;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::data_types::segment_manifest::FileVersion;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::types::{PointIdType, SeqNumberType};
@@ -162,7 +163,7 @@ pub trait IdTracker: fmt::Debug {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         Vec::new()
     }
 }
@@ -396,7 +397,7 @@ impl IdTracker for IdTrackerEnum {
         }
     }
 
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         match self {
             Self::MutableIdTracker(id_tracker) => id_tracker.versioned_files(),
             Self::ImmutableIdTracker(id_tracker) => id_tracker.versioned_files(),

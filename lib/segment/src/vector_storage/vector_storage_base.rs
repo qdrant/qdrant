@@ -20,11 +20,12 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::primitive::PrimitiveVectorElement;
+use crate::data_types::segment_manifest::FileVersion;
 use crate::data_types::vectors::{
     MultiDenseVectorInternal, TypedMultiDenseVectorRef, VectorElementType, VectorElementTypeByte,
     VectorElementTypeHalf, VectorInternal, VectorRef,
 };
-use crate::types::{Distance, MultiVectorConfig, SeqNumberType, VectorStorageDatatype};
+use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
@@ -87,7 +88,7 @@ pub trait VectorStorage {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         Vec::new()
     }
 
