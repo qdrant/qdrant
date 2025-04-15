@@ -454,13 +454,11 @@ impl Collection {
             Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
         );
 
-        // If any of re-sharding replicas are dead, we need to abort re-sharding before marking them as Dead
+        // If *any* of re-sharding replicas are dead, we need to abort re-sharding before marking them as Dead
         if is_resharding && new_state == ReplicaState::Dead {
-            drop(shard_holder);
+            drop(shard_holder); // need to release lock so abort_resharding() can take write lock
 
-            let resharding_state = self.resharding_state().await;
-
-            if let Some(state) = resharding_state {
+            if let Some(state) = self.resharding_state().await {
                 self.abort_resharding(state.key(), false).await?;
             }
 
