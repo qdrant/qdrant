@@ -271,9 +271,22 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         extra_env=extra_env
     )
 
-    # Qdrant loads a dummy shard and marks it as dead to initiate a transfer from other replicas
+    # Qdrant loads a dummy shard. Shorty after the load, `sync_local_state` initiates a transfer from other replicas to recover dirty shard
 
     # Wait for start of shard transfer
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+
+    # Kill again after transfer starts (shard initializing flag has been deleted and shard is empty)
+    p = processes.pop()
+    p.kill()
+
+    # Restart same peer again
+    peer_api_uris[-1] = start_peer(
+        peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri,
+        extra_env=extra_env
+    )
+
+    # We expect transfer to be started again if stopped in between because of node crash
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
     # Wait for end of shard transfer
