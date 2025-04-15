@@ -377,7 +377,7 @@ impl ValueIndexer for MmapBoolIndex {
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        self.set_or_insert(id, has_true, has_false, &hw_counter)?;
+        self.set_or_insert(id, has_true, has_false, hw_counter)?;
 
         Ok(())
     }
