@@ -12,7 +12,7 @@ use segment::types::{Filter, SnapshotFormat};
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
@@ -86,6 +86,26 @@ impl Shard {
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
         telemetry
+    }
+
+    pub fn get_optimization_status(&self) -> OptimizersStatus {
+        match self {
+            Shard::Local(local_shard) => local_shard.get_optimization_status(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status(),
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_optimization_status(),
+            Shard::Dummy(dummy_shard) => dummy_shard.get_optimization_status(),
+        }
+    }
+
+    pub fn count_vectors(&self) -> usize {
+        match self {
+            Shard::Local(local_shard) => local_shard.count_vectors(),
+            Shard::Proxy(proxy_shard) => proxy_shard.count_vectors(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.count_vectors(),
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.count_vectors(),
+            Shard::Dummy(dummy_shard) => dummy_shard.count_vectors(),
+        }
     }
 
     pub async fn create_snapshot(

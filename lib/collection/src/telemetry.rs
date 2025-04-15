@@ -7,7 +7,7 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::config::{CollectionConfigInternal, CollectionParams, WalConfig};
-use crate::operations::types::{ReshardingInfo, ShardTransferInfo};
+use crate::operations::types::{OptimizersStatus, ReshardingInfo, ShardTransferInfo};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::shards::shard::ShardId;
 use crate::shards::telemetry::ReplicaSetTelemetry;
@@ -24,6 +24,13 @@ pub struct CollectionTelemetry {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     #[anonymize(false)]
     pub shard_clean_tasks: HashMap<ShardId, ShardCleanStatusTelemetry>,
+}
+
+#[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
+pub struct CollectionsAggregatedTelemetry {
+    pub vectors: usize,
+    pub optimizers_status: OptimizersStatus,
+    pub params: CollectionParams,
 }
 
 impl CollectionTelemetry {

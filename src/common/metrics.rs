@@ -438,7 +438,7 @@ impl OperationDurationMetricsBuilder {
         ));
         self.duration_histogram_secs.push(histogram(
             stat.count as u64,
-            stat.total_duration_micros as f64 / 1_000_000.0,
+            stat.total_duration_micros.unwrap_or(0) as f64 / 1_000_000.0,
             &stat
                 .duration_micros_histogram
                 .iter()

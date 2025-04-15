@@ -50,5 +50,6 @@ pub struct LocalShardTelemetry {
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,
-    pub log: Vec<TrackerTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log: Option<Vec<TrackerTelemetry>>,
 }

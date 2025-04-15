@@ -26,8 +26,8 @@ use crate::operations::point_ops::{
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
-    UpdateStatus,
+    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, RecordInternal,
+    UpdateResult, UpdateStatus,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::operations::{
@@ -343,6 +343,14 @@ impl ForwardProxyShard {
 
     pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
         self.wrapped_shard.get_telemetry_data(detail)
+    }
+
+    pub fn get_optimization_status(&self) -> OptimizersStatus {
+        self.wrapped_shard.get_optimization_status()
+    }
+
+    pub fn count_vectors(&self) -> usize {
+        self.wrapped_shard.count_vectors()
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {
