@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -91,8 +90,9 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(res)
     }
 
+    #[cfg(test)]
     fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
-        self.payload = HashMap::new();
+        self.payload = ahash::AHashMap::new();
         Ok(())
     }
 
@@ -188,7 +188,7 @@ mod tests {
                 payload.borrow().as_ref().cloned().unwrap()
             }),
             Some(&id_tracker),
-            &HashMap::new(),
+            &std::collections::HashMap::new(),
             &query,
             0,
             &IndexesMap::new(),

@@ -2385,6 +2385,7 @@ dependencies = [
 name = "gridstore"
 version = "0.1.0"
 dependencies = [
+ "ahash",
  "bitvec",
  "bustle",
  "common",
