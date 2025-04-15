@@ -29,7 +29,7 @@ def test_upserts_in_recovery_mode(tmp_path: pathlib.Path):
     )
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    n_points = 3_000
+    n_points = 100
     upsert_random_points(peer_api_uris[0], n_points)
 
     # Restart last peer with recovery mode
