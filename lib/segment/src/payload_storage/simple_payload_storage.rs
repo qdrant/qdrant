@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -15,13 +15,13 @@ use crate::types::Payload;
 /// Persists all changes to disk using `store`, but only uses this storage during the initial load
 #[derive(Debug)]
 pub struct SimplePayloadStorage {
-    pub(crate) payload: HashMap<PointOffsetType, Payload>,
+    pub(crate) payload: AHashMap<PointOffsetType, Payload>,
     pub(crate) db_wrapper: DatabaseColumnScheduledDeleteWrapper,
 }
 
 impl SimplePayloadStorage {
     pub fn open(database: Arc<RwLock<DB>>) -> OperationResult<Self> {
-        let mut payload_map: HashMap<PointOffsetType, Payload> = Default::default();
+        let mut payload_map: AHashMap<PointOffsetType, Payload> = Default::default();
 
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             database,

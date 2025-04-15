@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -99,7 +98,7 @@ impl PayloadStorage for SimplePayloadStorage {
     }
 
     fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
-        self.payload = HashMap::new();
+        self.payload = ahash::AHashMap::new();
         self.db_wrapper.recreate_column_family()
     }
 

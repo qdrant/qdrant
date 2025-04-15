@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
 use memory::mmap_type::MmapBitSlice;
 use parking_lot::{Mutex, RwLock};
@@ -14,7 +14,7 @@ use crate::common::Flusher;
 pub struct MmapBitSliceBufferedUpdateWrapper {
     bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
-    pending_updates: Arc<Mutex<HashMap<usize, bool>>>,
+    pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
 }
 
 impl MmapBitSliceBufferedUpdateWrapper {
@@ -23,7 +23,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
             len,
-            pending_updates: Arc::new(Mutex::new(HashMap::new())),
+            pending_updates: Arc::new(Mutex::new(AHashMap::new())),
         }
     }
 
@@ -58,8 +58,8 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
     fn clear_flushed_updates(
-        flushed: HashMap<usize, bool>,
-        pending_updates: Arc<Mutex<HashMap<usize, bool>>>,
+        flushed: AHashMap<usize, bool>,
+        pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
     ) {
         pending_updates
             .lock()

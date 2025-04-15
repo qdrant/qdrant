@@ -13,6 +13,7 @@ workspace = true
 bench_rocksdb = ["dep:rocksdb"]
 
 [dependencies]
+ahash = { workspace = true }
 memmap2 = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }

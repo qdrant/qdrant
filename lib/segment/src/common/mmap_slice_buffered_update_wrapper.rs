@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 use memory::mmap_type::MmapSlice;
 use parking_lot::{Mutex, RwLock};
 
@@ -19,7 +19,7 @@ where
 {
     mmap_slice: Arc<RwLock<MmapSlice<T>>>,
     len: usize,
-    pending_updates: Mutex<HashMap<usize, T>>,
+    pending_updates: Mutex<AHashMap<usize, T>>,
 }
 
 impl<T> MmapSliceBufferedUpdateWrapper<T>
@@ -31,7 +31,7 @@ where
         Self {
             mmap_slice: Arc::new(RwLock::new(mmap_slice)),
             len,
-            pending_updates: Mutex::new(HashMap::new()),
+            pending_updates: Mutex::new(AHashMap::new()),
         }
     }
 
