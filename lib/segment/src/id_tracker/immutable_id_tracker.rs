@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem::{size_of, size_of_val};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
@@ -17,6 +19,7 @@ use crate::common::Flusher;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
 use crate::common::mmap_slice_buffered_update_wrapper::MmapSliceBufferedUpdateWrapper;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::segment_manifest::FileVersion;
 use crate::id_tracker::IdTracker;
 use crate::id_tracker::compressed::compressed_point_mappings::CompressedPointMappings;
 use crate::id_tracker::compressed::external_to_internal::CompressedExternalToInternal;
@@ -64,6 +67,8 @@ pub struct ImmutableIdTracker {
     internal_to_version_wrapper: MmapSliceBufferedUpdateWrapper<SeqNumberType>,
 
     mappings: CompressedPointMappings,
+
+    version_tracker: FileVersionTracker,
 }
 
 impl ImmutableIdTracker {
@@ -258,6 +263,7 @@ impl ImmutableIdTracker {
             internal_to_version_wrapper,
             internal_to_version,
             mappings,
+            version_tracker: FileVersionTracker::new(),
         })
     }
 
@@ -332,6 +338,7 @@ impl ImmutableIdTracker {
             internal_to_version_wrapper,
             internal_to_version,
             mappings,
+            version_tracker: FileVersionTracker::new(),
         })
     }
 
@@ -369,18 +376,20 @@ impl IdTracker for ImmutableIdTracker {
         internal_id: PointOffsetType,
         version: SeqNumberType,
     ) -> OperationResult<()> {
-        if self.external_id(internal_id).is_some() {
-            let has_version = self.internal_to_version.has(internal_id);
-            debug_assert!(
-                has_version,
-                "Can't extend version list in immutable tracker",
-            );
-            if has_version {
-                self.internal_to_version.set(internal_id, version);
-                self.internal_to_version_wrapper
-                    .set(internal_id as usize, version);
-            }
+        if self.external_id(internal_id).is_none() {
+            return Ok(());
         }
+
+        if !self.internal_to_version.has(internal_id) {
+            debug_assert!(false, "Can't extend version list in immutable tracker");
+            return Ok(()); // TODO: Return error!?
+        }
+
+        self.internal_to_version.set(internal_id, version);
+        self.internal_to_version_wrapper
+            .set(internal_id as usize, version);
+
+        self.version_tracker.bump_pending_to(version);
 
         Ok(())
     }
@@ -437,12 +446,26 @@ impl IdTracker for ImmutableIdTracker {
     /// Creates a flusher function, that writes the deleted points bitvec to disk.
     fn mapping_flusher(&self) -> Flusher {
         // Only flush deletions because mappings are immutable
-        self.deleted_wrapper.flusher()
+        let flusher = self.deleted_wrapper.flusher();
+        let file_version_flusher = self.version_tracker.deleted_flusher();
+
+        Box::new(move || {
+            flusher()?;
+            file_version_flusher();
+            Ok(())
+        })
     }
 
     /// Creates a flusher function, that writes the points versions to disk.
     fn versions_flusher(&self) -> Flusher {
-        self.internal_to_version_wrapper.flusher()
+        let flusher = self.internal_to_version_wrapper.flusher();
+        let file_version_flusher = self.version_tracker.versions_flusher();
+
+        Box::new(move || {
+            flusher()?;
+            file_version_flusher();
+            Ok(())
+        })
     }
 
     fn total_point_count(&self) -> usize {
@@ -496,6 +519,71 @@ impl IdTracker for ImmutableIdTracker {
             Self::mappings_file_path(&self.path),
             Self::version_mapping_file_path(&self.path),
         ]
+    }
+
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
+        vec![
+            (
+                Self::mappings_file_path(&self.path),
+                FileVersion::Version(0), // TODO: Is it safe to assign version `0` to mappings file? 🤔
+            ),
+            (
+                Self::deleted_file_path(&self.path),
+                self.version_tracker.deleted(),
+            ),
+            (
+                Self::version_mapping_file_path(&self.path),
+                self.version_tracker.versions(),
+            ),
+        ]
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FileVersionTracker {
+    pending: FileVersion,
+    deleted: Arc<AtomicU64>,
+    versions: Arc<AtomicU64>,
+}
+
+impl FileVersionTracker {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            pending: FileVersion::Unknown,
+            deleted: Default::default(),
+            versions: Default::default(),
+        }
+    }
+
+    pub fn deleted(&self) -> FileVersion {
+        FileVersion::load(&self.deleted)
+    }
+
+    pub fn versions(&self) -> FileVersion {
+        FileVersion::load(&self.versions)
+    }
+
+    pub fn deleted_flusher(&self) -> impl Fn() + 'static {
+        let pending = self.pending;
+        let deleted = self.deleted.clone();
+
+        move || {
+            FileVersion::store(&deleted, pending);
+        }
+    }
+
+    pub fn versions_flusher(&self) -> impl Fn() + 'static {
+        let pending = self.pending;
+        let versions = self.versions.clone();
+
+        move || {
+            FileVersion::store(&versions, pending);
+        }
+    }
+
+    pub fn bump_pending_to(&mut self, version: SeqNumberType) {
+        self.pending.bump_to(version);
     }
 }
 
