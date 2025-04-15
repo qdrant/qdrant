@@ -1,6 +1,6 @@
-mod immutable_numeric_index;
-mod mmap_numeric_index;
-mod mutable_numeric_index;
+pub mod immutable_numeric_index;
+pub mod mmap_numeric_index;
+pub mod mutable_numeric_index;
 
 #[cfg(test)]
 mod tests;

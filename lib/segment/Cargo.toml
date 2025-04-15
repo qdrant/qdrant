@@ -168,6 +168,10 @@ name = "boolean_filtering"
 harness = false
 
 [[bench]]
+name = "numeric_index_check_values"
+harness = false
+
+[[bench]]
 name = "sparse_index_search"
 harness = false
 

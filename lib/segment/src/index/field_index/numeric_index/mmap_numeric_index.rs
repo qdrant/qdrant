@@ -207,7 +207,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         self.deleted.flusher()
     }
 
-    pub(super) fn check_values_any(
+    pub fn check_values_any(
         &self,
         idx: PointOffsetType,
         check_fn: impl Fn(&T) -> bool,
@@ -252,7 +252,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         self.pairs.len()
     }
 
-    pub(super) fn values_range<'a>(
+    pub fn values_range<'a>(
         &'a self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
