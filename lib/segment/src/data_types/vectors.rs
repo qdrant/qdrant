@@ -16,7 +16,7 @@ use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 
 /// How many dimensions of a sparse vector are considered to be a single unit for cost estimation.
-const SPARSE_VECTOR_COST: usize = 64;
+const SPARSE_DIMS_COST_UNIT: usize = 64;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorInternal {
@@ -30,9 +30,7 @@ impl VectorInternal {
     pub fn similarity_cost(&self) -> usize {
         match self {
             VectorInternal::Dense(_dense) => 1,
-            // TODO(ratelimits): Currently one sparse vector counts as one, regardless of number of dimensions.
-            //                   We should come up with a formula for adjusting its cost.
-            VectorInternal::Sparse(sparse) => sparse.indices.len().div_ceil(SPARSE_VECTOR_COST),
+            VectorInternal::Sparse(sparse) => sparse.indices.len().div_ceil(SPARSE_DIMS_COST_UNIT),
             VectorInternal::MultiDense(multivec) => multivec.len(),
         }
     }
