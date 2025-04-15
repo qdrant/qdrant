@@ -57,9 +57,7 @@ impl<T: Encodable + Numericable + Default> FromIterator<(PointOffsetType, T)>
                     .point_to_values
                     .resize_with(idx as usize + 1, Vec::new)
             }
-
             index.point_to_values[idx as usize].push(value);
-
             let key = Point::new(value, idx);
             InMemoryNumericIndex::add_to_map(&mut index.map, &mut index.histogram, key);
         }
