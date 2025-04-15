@@ -225,6 +225,11 @@ impl FullTextIndex {
     pub fn get_telemetry_data(&self) -> PayloadIndexTelemetry {
         PayloadIndexTelemetry {
             field_name: None,
+            index_type: match self {
+                FullTextIndex::Mutable(_) => "mutable_full_text",
+                FullTextIndex::Immutable(_) => "immutable_full_text",
+                FullTextIndex::Mmap(_) => "mmap_full_text",
+            },
             points_values_count: self.points_count(),
             points_count: self.points_count(),
             histogram_bucket_size: None,

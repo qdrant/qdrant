@@ -12141,6 +12141,7 @@
       "PayloadIndexTelemetry": {
         "type": "object",
         "required": [
+          "index_type",
           "points_count",
           "points_values_count"
         ],
@@ -12148,6 +12149,9 @@
           "field_name": {
             "type": "string",
             "nullable": true
+          },
+          "index_type": {
+            "type": "string"
           },
           "points_values_count": {
             "description": "The amount of values indexed for all points.",

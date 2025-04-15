@@ -275,6 +275,11 @@ impl GeoMapIndex {
             points_count: self.points_count(),
             points_values_count: self.points_values_count(),
             histogram_bucket_size: None,
+            index_type: match self {
+                GeoMapIndex::Mutable(_) => "mutable_geo",
+                GeoMapIndex::Immutable(_) => "immutable_geo",
+                GeoMapIndex::Mmap(_) => "mmap_geo",
+            },
         }
     }
 

@@ -250,6 +250,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             points_count: self.get_indexed_points(),
             points_values_count: self.get_values_count(),
             histogram_bucket_size: None,
+            index_type: match self {
+                MapIndex::Mutable(_) => "mutable_map",
+                MapIndex::Immutable(_) => "immutable_map",
+                MapIndex::Mmap(_) => "mmap_map",
+            },
         }
     }
 

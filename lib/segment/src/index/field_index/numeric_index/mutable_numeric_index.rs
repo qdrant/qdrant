@@ -42,13 +42,13 @@ impl<T: Encodable + Numericable> Default for InMemoryNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
-    pub fn from_iter(
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, T)>>,
-    ) -> OperationResult<Self> {
+impl<T: Encodable + Numericable + Default> FromIterator<(PointOffsetType, T)>
+    for InMemoryNumericIndex<T>
+{
+    fn from_iter<I: IntoIterator<Item = (PointOffsetType, T)>>(iter: I) -> Self {
         let mut index = InMemoryNumericIndex::default();
         for pair in iter {
-            let (idx, value) = pair?;
+            let (idx, value) = pair;
 
             if index.point_to_values.len() <= idx as usize {
                 index
@@ -67,9 +67,11 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
                 index.max_values_per_point = index.max_values_per_point.max(values.len());
             }
         }
-        Ok(index)
+        index
     }
+}
 
+impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&T) -> bool) -> bool {
         self.point_to_values
             .get(idx as usize)
@@ -220,8 +222,11 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             return Ok(false);
         };
 
-        self.in_memory_index = InMemoryNumericIndex::from_iter(
-            self.db_wrapper.lock_db().iter()?.map(|(key, value)| {
+        self.in_memory_index = self
+            .db_wrapper
+            .lock_db()
+            .iter()?
+            .map(|(key, value)| {
                 let value_idx =
                     u32::from_be_bytes(value.as_ref().try_into().map_err(|_| {
                         OperationError::service_error("incorrect numeric index value")
@@ -233,8 +238,8 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
                     ));
                 }
                 Ok((idx, value))
-            }),
-        )?;
+            })
+            .collect::<Result<InMemoryNumericIndex<_>, OperationError>>()?;
 
         Ok(true)
     }
