@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 use common::ext::BitSliceExt as _;
 use memory::mmap_type::MmapBitSlice;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::Flusher;
 
@@ -14,7 +14,37 @@ use crate::common::Flusher;
 pub struct MmapBitSliceBufferedUpdateWrapper {
     bitslice: Arc<RwLock<MmapBitSlice>>,
     len: usize,
-    pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
+    pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
+}
+
+pub struct MmapBitSliceBufferedUpdateReader<'a> {
+    bitslice: RwLockReadGuard<'a, MmapBitSlice>,
+    len: usize,
+    pending_updates: RwLockReadGuard<'a, AHashMap<usize, bool>>,
+}
+
+impl<'a> MmapBitSliceBufferedUpdateReader<'a> {
+    pub fn new(wrapper: &'a MmapBitSliceBufferedUpdateWrapper) -> Self {
+        let bitslice = wrapper.bitslice.read();
+        let len = wrapper.len;
+        let pending_updates = wrapper.pending_updates.read();
+        Self {
+            bitslice,
+            len,
+            pending_updates,
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<bool> {
+        if index >= self.len {
+            return None;
+        }
+        if let Some(value) = self.pending_updates.get(&index) {
+            Some(*value)
+        } else {
+            self.bitslice.get_bit(index)
+        }
+    }
 }
 
 impl MmapBitSliceBufferedUpdateWrapper {
@@ -23,7 +53,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
         Self {
             bitslice: Arc::new(RwLock::new(bitslice)),
             len,
-            pending_updates: Arc::new(Mutex::new(AHashMap::new())),
+            pending_updates: Arc::new(RwLock::new(AHashMap::new())),
         }
     }
 
@@ -33,14 +63,14 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// Panics if the index is out of bounds.
     pub fn set(&self, index: usize, value: bool) {
         assert!(index < self.len, "index {index} out of range: {}", self.len);
-        self.pending_updates.lock().insert(index, value);
+        self.pending_updates.write().insert(index, value);
     }
 
     pub fn get(&self, index: usize) -> Option<bool> {
         if index >= self.len {
             return None;
         }
-        if let Some(value) = self.pending_updates.lock().get(&index) {
+        if let Some(value) = self.pending_updates.read().get(&index) {
             Some(*value)
         } else {
             self.bitslice.read().get_bit(index)
@@ -59,15 +89,15 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// If values in `pending_updates` are changed, do not remove them.
     fn clear_flushed_updates(
         flushed: AHashMap<usize, bool>,
-        pending_updates: Arc<Mutex<AHashMap<usize, bool>>>,
+        pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
     ) {
         pending_updates
-            .lock()
+            .write()
             .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = self.pending_updates.lock().clone();
+        let pending_updates = self.pending_updates.read().clone();
         let bitslice = self.bitslice.clone();
         let pending_updates_arc = self.pending_updates.clone();
 
