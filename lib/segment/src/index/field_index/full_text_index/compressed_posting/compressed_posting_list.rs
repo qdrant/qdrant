@@ -36,13 +36,13 @@ impl CompressedPostingList {
         }
     }
 
-    pub fn reader<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> ChunkReader<'a> {
+    pub fn reader<'a>(&'a self, _hw_counter: &'a HardwareCounterCell) -> ChunkReader<'a> {
         ChunkReader::new(
             self.last_doc_id,
             &self.chunks,
             &self.data,
             &self.remainder_postings,
-            ConditionedCounter::never(hw_counter),
+            ConditionedCounter::never(),
         )
     }
 

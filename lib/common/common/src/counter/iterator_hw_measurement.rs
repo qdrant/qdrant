@@ -1,5 +1,5 @@
 use super::conditioned_counter::ConditionedCounter;
-use super::counter_cell::CounterCell;
+use super::counter_cell::{CounterCell, OptionalCounterCell};
 use super::hardware_accumulator::HwMeasurementAcc;
 use super::hardware_counter::HardwareCounterCell;
 use crate::iterator_ext::on_final_count::OnFinalCount;
@@ -41,7 +41,7 @@ pub trait HwMeasurementIteratorExt: Iterator {
     ) -> OnFinalCount<Self, impl FnMut(usize)>
     where
         Self: Sized,
-        R: FnMut(&HardwareCounterCell) -> &CounterCell,
+        R: for<'a> FnMut(&'a ConditionedCounter<'a>) -> OptionalCounterCell<'a>,
     {
         OnFinalCount::new(self, move |total_count| {
             f(&cc).incr_delta(total_count * multiplier);
