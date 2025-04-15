@@ -57,7 +57,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
 
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
-    fn clear_flushed_updated(
+    fn clear_flushed_updates(
         flushed: HashMap<usize, bool>,
         pending_updates: Arc<Mutex<HashMap<usize, bool>>>,
     ) {
@@ -77,7 +77,7 @@ impl MmapBitSliceBufferedUpdateWrapper {
                 mmap_slice_write.set(*index, *value);
             }
             mmap_slice_write.flusher()()?;
-            Self::clear_flushed_updated(pending_updates, pending_updates_arc);
+            Self::clear_flushed_updates(pending_updates, pending_updates_arc);
             Ok(())
         })
     }
