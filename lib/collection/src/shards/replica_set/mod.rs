@@ -318,7 +318,7 @@ impl ShardReplicaSet {
                         );
 
                         Shard::Dummy(DummyShard::new(format!(
-                            "Failed to load local shard {shard_path:?}: {err}",
+                            "Failed to load local shard {shard_path:?}: {err}"
                         )))
                     }
                 }

@@ -434,6 +434,8 @@ impl Collection {
                 let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
 
                 if tokio::fs::try_exists(&shard_flag).await.is_ok() {
+                    // We can delete initializing flag without waiting for transfer to finish
+                    // because if transfer fails in between, Qdrant will retry it.
                     tokio::fs::remove_file(&shard_flag).await?;
                     log::debug!("Removing shard initializing flag {shard_flag:?}");
                 }

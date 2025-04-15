@@ -681,9 +681,8 @@ impl Collection {
                 continue;
             }
 
-            // Don't recover our replicas if started in recovery mode
-            let is_recovery_mode = self.shared_storage_config.recovery_mode.is_some();
-            if is_recovery_mode {
+            // Don't automatically recover replicas if started in recovery mode
+            if self.shared_storage_config.recovery_mode.is_some() {
                 continue;
             }
 
