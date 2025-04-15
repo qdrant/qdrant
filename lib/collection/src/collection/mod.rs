@@ -454,11 +454,7 @@ impl Collection {
             Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
         );
 
-        // Marks replica as dead
-        replica_set
-            .ensure_replica_with_state(peer_id, new_state)
-            .await?;
-
+        // If any of re-sharding replicas are dead, we need to abort re-sharding before marking them as Dead
         if is_resharding && new_state == ReplicaState::Dead {
             drop(shard_holder);
 
@@ -468,8 +464,25 @@ impl Collection {
                 self.abort_resharding(state.key(), false).await?;
             }
 
+            // Actually mark as Dead
+            {
+                let shard_holder = self.shards_holder.read().await;
+                let replica_set = shard_holder
+                    .get_shard(shard_id)
+                    .ok_or_else(|| shard_not_found_error(shard_id))?;
+
+                replica_set
+                    .ensure_replica_with_state(peer_id, ReplicaState::Dead)
+                    .await?;
+            }
+
             return Ok(());
         }
+
+        // Update replica status
+        replica_set
+            .ensure_replica_with_state(peer_id, new_state)
+            .await?;
 
         if new_state == ReplicaState::Dead {
             // TODO(resharding): Abort all resharding transfers!?
