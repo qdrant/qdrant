@@ -67,13 +67,9 @@ impl DatabaseColumnScheduledUpdateWrapper {
         for id in flushed.deleted {
             pending_guard.deleted.remove(&id);
         }
-        for (id, value) in flushed.inserted {
-            if let Some(pending_value) = pending_guard.inserted.get(&id) {
-                if *pending_value == value {
-                    pending_guard.inserted.remove(&id);
-                }
-            }
-        }
+        pending_guard
+            .inserted
+            .retain(|point_id, a| flushed.inserted.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {

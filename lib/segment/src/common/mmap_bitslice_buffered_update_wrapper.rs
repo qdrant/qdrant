@@ -61,14 +61,9 @@ impl MmapBitSliceBufferedUpdateWrapper {
         flushed: HashMap<usize, bool>,
         pending_updates: Arc<Mutex<HashMap<usize, bool>>>,
     ) {
-        let mut pending_updates = pending_updates.lock();
-        for (index, value) in flushed {
-            if let Some(pending_value) = pending_updates.get(&index) {
-                if *pending_value == value {
-                    pending_updates.remove(&index);
-                }
-            }
-        }
+        pending_updates
+            .lock()
+            .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
