@@ -171,8 +171,8 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
     try:
         wait_for(lambda : not os.path.exists(flag_path))
-    except TimeoutError:
-        assert False, f"Flag {flag_path} still exists after recovery"
+    except Exception as e:
+        raise Exception(f"Flag {flag_path} might still exists after recovery: {e}")
 
     # There are two other replicas, try moving shards into broken state
     local_shards = get_local_shards(peer_api_uris[0])

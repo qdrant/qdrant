@@ -683,7 +683,7 @@ impl Collection {
 
             #[allow(clippy::nonminimal_bool)]
             {
-                if !(this_peer_state == Some(Dead) && replica_set.is_dirty().await) {
+                if !(this_peer_state == Some(Dead) && !replica_set.is_dirty().await) {
                     continue; // All good
                 }
             }
