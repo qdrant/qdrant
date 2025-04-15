@@ -47,7 +47,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
     fn filter<'a>(
         &'a self,
         query: ParsedQuery,
-        hw_counter: &'a HardwareCounterCell,
+        _hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
         let postings_opt: Option<Vec<_>> = query
             .tokens
@@ -72,7 +72,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .iter()
             // We can safely pass hw_counter here because it's not measured.
             // Due to lifetime issues, we can't return a disposable counter.
-            .map(|posting| posting.reader(hw_counter))
+            .map(|posting| posting.reader())
             .collect();
 
         // in case of immutable index, deleted documents are still in the postings
@@ -108,8 +108,6 @@ impl InvertedIndex for ImmutableInvertedIndex {
             return false;
         }
 
-        let disposed_hw = HardwareCounterCell::disposable();
-
         // Check that all tokens are in document
         parsed_query
             .tokens
@@ -117,7 +115,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
             .all(|query_token| {
                 let postings = &self.postings[query_token.unwrap() as usize];
-                postings.reader(&disposed_hw).contains(point_id)
+                postings.reader().contains(point_id)
             })
     }
 

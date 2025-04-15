@@ -140,22 +140,18 @@ impl<'a> CompressedPostingVisitor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use common::counter::hardware_counter::HardwareCounterCell;
 
     use super::*;
     use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
     #[test]
     fn test_compressed_posting_visitor() {
-        let hw_counter = HardwareCounterCell::new();
-
         for build_step in 0..3 {
             let (compressed_posting_list, set) =
                 CompressedPostingList::generate_compressed_posting_list_fixture(build_step);
 
             for search_step in 1..512 {
-                let mut visitor =
-                    CompressedPostingVisitor::new(compressed_posting_list.reader(&hw_counter));
+                let mut visitor = CompressedPostingVisitor::new(compressed_posting_list.reader());
                 for i in 0..build_step * 1000 {
                     if i % search_step == 0 {
                         assert_eq!(visitor.contains_next_and_advance(i), set.contains(&i));
@@ -170,9 +166,7 @@ mod tests {
         let (posting, _all_offsets) =
             CompressedPostingList::generate_compressed_posting_list_fixture(10);
 
-        let hw_counter = HardwareCounterCell::new();
-
-        let reader = posting.reader(&hw_counter);
+        let reader = posting.reader();
 
         assert!(reader.contains(0));
         assert!(reader.contains(10));

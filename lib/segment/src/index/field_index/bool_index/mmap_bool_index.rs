@@ -353,8 +353,7 @@ impl FieldIndexBuilderTrait for MmapBoolIndexBuilder {
         payload: &[&serde_json::Value],
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        let hw_counter = self.0.make_conditioned_counter(hw_counter);
-        self.0.add_point(id, payload, &hw_counter)
+        self.0.add_point(id, payload, hw_counter)
     }
 
     fn finalize(self) -> OperationResult<Self::FieldIndexType> {
@@ -375,12 +374,10 @@ impl ValueIndexer for MmapBoolIndex {
             return Ok(());
         }
 
-        let hw_counter = self.make_conditioned_counter(hw_counter);
-
         let has_true = values.iter().any(|v| *v);
         let has_false = values.iter().any(|v| !*v);
 
-        self.set_or_insert(id, has_true, has_false, &hw_counter)?;
+        self.set_or_insert(id, has_true, has_false, hw_counter)?;
 
         Ok(())
     }
