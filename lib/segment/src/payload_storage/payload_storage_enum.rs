@@ -153,6 +153,7 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
+    #[cfg(test)]
     fn wipe(&mut self, hw_counter: &HardwareCounterCell) -> OperationResult<()> {
         match self {
             #[cfg(feature = "testing")]

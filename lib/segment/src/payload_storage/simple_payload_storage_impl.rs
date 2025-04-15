@@ -97,6 +97,7 @@ impl PayloadStorage for SimplePayloadStorage {
         Ok(res)
     }
 
+    #[cfg(test)]
     fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = ahash::AHashMap::new();
         self.db_wrapper.recreate_column_family()

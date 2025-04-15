@@ -90,6 +90,7 @@ impl PayloadStorage for InMemoryPayloadStorage {
         Ok(res)
     }
 
+    #[cfg(test)]
     fn wipe(&mut self, _: &HardwareCounterCell) -> OperationResult<()> {
         self.payload = ahash::AHashMap::new();
         Ok(())
