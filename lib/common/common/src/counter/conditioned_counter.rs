@@ -35,7 +35,7 @@ impl<'a> ConditionedCounter<'a> {
     where
         C: Fn(&HardwareCounterCell) -> &CounterCell,
     {
-        OptionalCounterCell::new(self.parent.map(|i| c(i)))
+        OptionalCounterCell::new(self.parent.map(c))
     }
 
     #[inline]
