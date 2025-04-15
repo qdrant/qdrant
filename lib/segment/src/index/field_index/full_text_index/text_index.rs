@@ -226,9 +226,9 @@ impl FullTextIndex {
         PayloadIndexTelemetry {
             field_name: None,
             index_type: match self {
-                FullTextIndex::Mutable(_) => "mutable_full_text".to_string(),
-                FullTextIndex::Immutable(_) => "immutable_full_text".to_string(),
-                FullTextIndex::Mmap(_) => "mmap_full_text".to_string(),
+                FullTextIndex::Mutable(_) => "mutable_full_text",
+                FullTextIndex::Immutable(_) => "immutable_full_text",
+                FullTextIndex::Mmap(_) => "mmap_full_text",
             },
             points_values_count: self.points_count(),
             points_count: self.points_count(),

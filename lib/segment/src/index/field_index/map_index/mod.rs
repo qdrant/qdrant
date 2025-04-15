@@ -251,9 +251,9 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             points_values_count: self.get_values_count(),
             histogram_bucket_size: None,
             index_type: match self {
-                MapIndex::Mutable(_) => "mutable_map".to_string(),
-                MapIndex::Immutable(_) => "immutable_map".to_string(),
-                MapIndex::Mmap(_) => "mmap_map".to_string(),
+                MapIndex::Mutable(_) => "mutable_map",
+                MapIndex::Immutable(_) => "immutable_map",
+                MapIndex::Mmap(_) => "mmap_map",
             },
         }
     }

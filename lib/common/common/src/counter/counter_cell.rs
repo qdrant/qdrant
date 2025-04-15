@@ -84,7 +84,7 @@ impl<'a> OptionalCounterCell<'a> {
     /// Returns the current value of the counter.
     #[inline]
     pub fn get(&self) -> usize {
-        self.counter.map(|i| i.get()).unwrap_or(0)
+        self.counter.map_or(0, |i| i.get())
     }
 
     /// Sets the value of the counter to `new_value`.

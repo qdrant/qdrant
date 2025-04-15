@@ -207,7 +207,7 @@ impl MmapBoolIndex {
             points_count: self.indexed_count,
             points_values_count: (self.trues_count + self.falses_count),
             histogram_bucket_size: None,
-            index_type: "mmap_bool".to_string(),
+            index_type: "mmap_bool",
         }
     }
 

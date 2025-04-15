@@ -359,9 +359,9 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             points_values_count: self.get_histogram().get_total_count(),
             histogram_bucket_size: Some(self.get_histogram().current_bucket_size()),
             index_type: match self {
-                NumericIndexInner::Mutable(_) => "mutable_numeric".to_string(),
-                NumericIndexInner::Immutable(_) => "immutable_numeric".to_string(),
-                NumericIndexInner::Mmap(_) => "mmap_numeric".to_string(),
+                NumericIndexInner::Mutable(_) => "mutable_numeric",
+                NumericIndexInner::Immutable(_) => "immutable_numeric",
+                NumericIndexInner::Mmap(_) => "mmap_numeric",
             },
         }
     }

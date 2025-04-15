@@ -18,7 +18,8 @@ pub struct PayloadIndexTelemetry {
     #[anonymize(value = None)]
     pub field_name: Option<String>,
 
-    pub index_type: String,
+    #[anonymize(false)]
+    pub index_type: &'static str,
 
     /// The amount of values indexed for all points.
     pub points_values_count: usize,
