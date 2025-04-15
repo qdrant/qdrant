@@ -16,7 +16,9 @@ use serde::{Deserialize, Serialize};
 use super::Encodable;
 use super::mutable_numeric_index::InMemoryNumericIndex;
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::mmap_bitslice_buffered_update_wrapper::{
+    MmapBitSliceBufferedUpdateReader, MmapBitSliceBufferedUpdateWrapper,
+};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::{MmapPointToValues, MmapValue};
@@ -44,7 +46,7 @@ struct MmapNumericIndexConfig {
 
 pub(super) struct NumericIndexPairsIterator<'a, T: Encodable + Numericable> {
     pairs: &'a [Point<T>],
-    deleted: &'a MmapBitSliceBufferedUpdateWrapper,
+    deleted: MmapBitSliceBufferedUpdateReader<'a>,
     start_index: usize,
     end_index: usize,
 }
@@ -323,7 +325,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
         if start_index >= self.pairs.len() {
             return NumericIndexPairsIterator {
                 pairs: &self.pairs,
-                deleted: &self.deleted,
+                deleted: MmapBitSliceBufferedUpdateReader::new(&self.deleted),
                 start_index: self.pairs.len(),
                 end_index: self.pairs.len(),
             };
@@ -343,7 +345,7 @@ impl<T: Encodable + Numericable + Default + MmapValue> MmapNumericIndex<T> {
 
         NumericIndexPairsIterator {
             pairs: &self.pairs,
-            deleted: &self.deleted,
+            deleted: MmapBitSliceBufferedUpdateReader::new(&self.deleted),
             start_index,
             end_index,
         }

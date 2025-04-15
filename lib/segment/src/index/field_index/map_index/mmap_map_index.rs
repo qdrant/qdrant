@@ -20,7 +20,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{IdIter, MapIndexKey};
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::mmap_bitslice_buffered_update_wrapper::{
+    MmapBitSliceBufferedUpdateReader, MmapBitSliceBufferedUpdateWrapper,
+};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
 
@@ -253,6 +255,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         hw_counter: &HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = &PointOffsetType> + '_> {
         let hw_counter = self.make_conditioned_counter(hw_counter);
+        let deleted = MmapBitSliceBufferedUpdateReader::new(&self.deleted);
 
         match self.value_to_points.get(value) {
             Ok(Some(slice)) => {
@@ -264,7 +267,7 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
                 Box::new(
                     slice
                         .iter()
-                        .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(false)),
+                        .filter(move |idx| !deleted.get(**idx as usize).unwrap_or(false)),
                 )
             }
             Ok(None) => {
@@ -291,9 +294,10 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
 
     pub fn iter_counts_per_value(&self) -> impl Iterator<Item = (&N, usize)> + '_ {
         self.value_to_points.iter().map(|(k, v)| {
+            let deleted = MmapBitSliceBufferedUpdateReader::new(&self.deleted);
             let count = v
                 .iter()
-                .filter(|idx| !self.deleted.get(**idx as usize).unwrap_or(true))
+                .filter(move |idx| !deleted.get(**idx as usize).unwrap_or(true))
                 .unique()
                 .count();
             (k, count)
@@ -310,13 +314,14 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
             hw_counter
                 .payload_index_io_read_counter()
                 .incr_delta(k.write_bytes());
+            let deleted = MmapBitSliceBufferedUpdateReader::new(&self.deleted);
 
             (
                 k,
                 Box::new(
                     v.iter()
                         .copied()
-                        .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true))
+                        .filter(move |idx| !deleted.get(*idx as usize).unwrap_or(true))
                         .measure_hw_with_acc(
                             hw_counter.new_accumulator(),
                             size_of::<PointOffsetType>(),
