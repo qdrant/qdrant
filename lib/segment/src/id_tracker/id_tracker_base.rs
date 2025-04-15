@@ -395,4 +395,13 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.files(),
         }
     }
+
+    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+        match self {
+            Self::MutableIdTracker(id_tracker) => id_tracker.versioned_files(),
+            Self::ImmutableIdTracker(id_tracker) => id_tracker.versioned_files(),
+            Self::InMemoryIdTracker(id_tracker) => id_tracker.versioned_files(),
+            Self::RocksDbIdTracker(id_tracker) => id_tracker.versioned_files(),
+        }
+    }
 }
