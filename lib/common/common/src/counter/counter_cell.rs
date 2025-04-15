@@ -71,6 +71,45 @@ impl CounterCell {
     }
 }
 
+pub struct OptionalCounterCell<'a> {
+    counter: Option<&'a CounterCell>,
+}
+
+impl<'a> OptionalCounterCell<'a> {
+    #[inline]
+    pub fn new(counter: Option<&'a CounterCell>) -> Self {
+        Self { counter }
+    }
+
+    /// Returns the current value of the counter.
+    #[inline]
+    pub fn get(&self) -> usize {
+        self.counter.map_or(0, |i| i.get())
+    }
+
+    /// Sets the value of the counter to `new_value`.
+    #[inline]
+    pub fn set(&self, new_value: usize) {
+        if let Some(counter) = self.counter {
+            counter.set(new_value);
+        }
+    }
+
+    /// Increases the counter by 1.
+    /// If you have mutable access to the counter, prefer `incr_mut` over this method.
+    #[inline]
+    pub fn incr(&self) {
+        self.incr_delta(1);
+    }
+
+    /// Increases the counter by `delta`.
+    /// If you have mutable access to the counter, prefer `incr_delta_mut` over this method.
+    #[inline]
+    pub fn incr_delta(&self, delta: usize) {
+        self.set(self.get() + delta);
+    }
+}
+
 /// Performance optimized counter to measure hot-paths relieably. It accumulates it's current measurements
 /// inside a `usize` and writes the result back into the original counter on drop.
 ///

@@ -251,12 +251,6 @@ impl MmapGeoMapIndex {
         check_fn: impl Fn(&GeoPoint) -> bool,
     ) -> bool {
         let hw_counter = self.make_conditioned_counter(hw_counter);
-
-        // Measure self.deleted read.
-        hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(size_of::<bool>());
-
         self.deleted
             .get(idx as usize)
             .filter(|b| !b)

@@ -1,6 +1,6 @@
-mod immutable_numeric_index;
-mod mmap_numeric_index;
-mod mutable_numeric_index;
+pub mod immutable_numeric_index;
+pub mod mmap_numeric_index;
+pub mod mutable_numeric_index;
 
 #[cfg(test)]
 mod tests;
@@ -358,6 +358,11 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             points_count: self.get_points_count(),
             points_values_count: self.get_histogram().get_total_count(),
             histogram_bucket_size: Some(self.get_histogram().current_bucket_size()),
+            index_type: match self {
+                NumericIndexInner::Mutable(_) => "mutable_numeric",
+                NumericIndexInner::Immutable(_) => "immutable_numeric",
+                NumericIndexInner::Mmap(_) => "mmap_numeric",
+            },
         }
     }
 

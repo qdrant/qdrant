@@ -1,6 +1,5 @@
 use bitpacking::BitPacker;
 use common::counter::conditioned_counter::ConditionedCounter;
-use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
@@ -36,13 +35,13 @@ impl CompressedPostingList {
         }
     }
 
-    pub fn reader<'a>(&'a self, hw_counter: &'a HardwareCounterCell) -> ChunkReader<'a> {
+    pub fn reader(&self) -> ChunkReader {
         ChunkReader::new(
             self.last_doc_id,
             &self.chunks,
             &self.data,
             &self.remainder_postings,
-            ConditionedCounter::never(hw_counter),
+            ConditionedCounter::never(),
         )
     }
 
@@ -52,11 +51,8 @@ impl CompressedPostingList {
 
     #[allow(dead_code)]
     #[cfg(feature = "testing")]
-    pub fn iter<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = PointOffsetType> + 'a {
-        let reader = self.reader(hw_counter);
+    pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> {
+        let reader = self.reader();
         let visitor = CompressedPostingVisitor::new(reader);
         CompressedPostingIterator::new(visitor)
     }
@@ -95,13 +91,12 @@ mod tests {
 
     #[test]
     fn test_compressed_posting_contains() {
-        let hw_counter = HardwareCounterCell::new();
         for step in 0..3 {
             let (compressed_posting_list, set) =
                 CompressedPostingList::generate_compressed_posting_list_fixture(step);
             for i in 0..step * 1000 {
                 assert_eq!(
-                    compressed_posting_list.reader(&hw_counter).contains(i),
+                    compressed_posting_list.reader().contains(i),
                     set.contains(&i)
                 );
             }

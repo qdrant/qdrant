@@ -175,6 +175,7 @@ impl MmapNullIndex {
             points_count: self.has_values_slice.len(),
             points_values_count: self.has_values_slice.len(),
             histogram_bucket_size: None,
+            index_type: "mmap_null_index",
         }
     }
 

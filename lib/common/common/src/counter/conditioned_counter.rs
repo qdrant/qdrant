@@ -1,52 +1,83 @@
-use std::ops::Deref;
-
+use super::counter_cell::{CounterCell, OptionalCounterCell};
+use super::hardware_accumulator::HwMeasurementAcc;
 use super::hardware_counter::HardwareCounterCell;
-use super::hardware_data::HardwareData;
 
 /// A counter that measures or disposes measurements based on a condition.
 /// This is needed in places where we need to decide at runtime whether to measure or not.
-/// Implements `Deref<Target=HardwareCounterCell>` so it can be directly passed to functions
-/// that need a `HardwareCounterCell` as parameter.
+#[derive(Copy, Clone)]
 pub struct ConditionedCounter<'a> {
-    condition: bool,
-    parent: &'a HardwareCounterCell,
-    tmp: HardwareCounterCell,
+    parent: Option<&'a HardwareCounterCell>,
 }
 
 impl<'a> ConditionedCounter<'a> {
     pub fn new(condition: bool, parent: &'a HardwareCounterCell) -> Self {
-        Self {
-            condition,
-            parent,
-            tmp: HardwareCounterCell::disposable(), // We manually accumulate collected values!
+        if condition {
+            Self::always(parent)
+        } else {
+            Self::never()
         }
     }
 
     /// Never measure hardware.
-    pub fn never(parent: &'a HardwareCounterCell) -> Self {
-        Self::new(false, parent)
+    pub fn never() -> Self {
+        Self { parent: None }
     }
 
     /// Always measure hardware.
     pub fn always(parent: &'a HardwareCounterCell) -> Self {
-        Self::new(true, parent)
+        Self {
+            parent: Some(parent),
+        }
     }
-}
 
-impl Deref for ConditionedCounter<'_> {
-    type Target = HardwareCounterCell;
-
-    fn deref(&self) -> &Self::Target {
-        &self.tmp
+    #[inline]
+    fn make_optional_counter<C>(&self, c: C) -> OptionalCounterCell<'_>
+    where
+        C: Fn(&HardwareCounterCell) -> &CounterCell,
+    {
+        OptionalCounterCell::new(self.parent.map(c))
     }
-}
 
-impl Drop for ConditionedCounter<'_> {
-    fn drop(&mut self) {
-        if self.condition {
-            self.parent
-                .accumulator
-                .accumulate(HardwareData::from(&self.tmp));
+    #[inline]
+    pub fn cpu_counter(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.cpu_counter())
+    }
+
+    #[inline]
+    pub fn payload_io_read_counter(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.payload_io_read_counter())
+    }
+
+    #[inline]
+    pub fn payload_index_io_read_counter(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.payload_index_io_read_counter())
+    }
+
+    #[inline]
+    pub fn payload_index_io_write_counter(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.payload_index_io_write_counter())
+    }
+
+    #[inline]
+    pub fn payload_io_write_counter(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.payload_io_write_counter())
+    }
+
+    #[inline]
+    pub fn vector_io_read(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.vector_io_read())
+    }
+
+    #[inline]
+    pub fn vector_io_write_counter(&self) -> OptionalCounterCell<'_> {
+        self.make_optional_counter(|i| i.vector_io_write_counter())
+    }
+
+    #[inline]
+    pub fn new_accumulator(&self) -> HwMeasurementAcc {
+        match self.parent {
+            Some(p) => p.new_accumulator(),
+            None => HwMeasurementAcc::disposable(),
         }
     }
 }
@@ -54,7 +85,6 @@ impl Drop for ConditionedCounter<'_> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::counter::hardware_accumulator::HwMeasurementAcc;
 
     #[test]
     fn test_conditioned_counter_empty() {
@@ -75,13 +105,15 @@ mod test {
         let parent = HardwareCounterCell::new();
 
         {
-            let condition = true;
-            let cc = ConditionedCounter::new(condition, &parent);
+            let cc = ConditionedCounter::always(&parent);
             cc.cpu_counter().incr_delta(5);
         }
 
-        assert_eq!(parent.cpu_counter().get(), 0); // Parents accumulator gets written, not the counter cell!
-        assert_eq!(parent.accumulator.get_cpu(), 5);
+        assert_eq!(parent.cpu_counter().get(), 5);
+
+        let parent_acc = parent.accumulator.clone();
+        drop(parent); // Parents accumulator gets written after `parent` drops.
+        assert_eq!(parent_acc.get_cpu(), 5);
     }
 
     #[test]
@@ -89,8 +121,7 @@ mod test {
         let parent = HardwareCounterCell::new();
 
         {
-            let condition = true;
-            let cc = ConditionedCounter::new(condition, &parent);
+            let cc = ConditionedCounter::always(&parent);
 
             // Indirect counting, a possible scenario.
             cc.new_accumulator() // Cell->Acc
@@ -108,9 +139,8 @@ mod test {
         let parent = HwMeasurementAcc::new();
 
         {
-            let condition = true;
             let cell = parent.get_counter_cell();
-            let cc = ConditionedCounter::new(condition, &cell);
+            let cc = ConditionedCounter::always(&cell);
 
             // Indirect counting, a possible scenario.
             cc.new_accumulator() // Cell->Acc

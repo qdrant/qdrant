@@ -213,6 +213,7 @@ impl SimpleBoolIndex {
             points_count: self.memory.indexed_count(),
             points_values_count: self.memory.trues_count() + self.memory.falses_count(),
             histogram_bucket_size: None,
+            index_type: "simple_bool",
         }
     }
 
