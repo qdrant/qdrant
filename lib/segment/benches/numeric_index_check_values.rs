@@ -32,9 +32,11 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
     let mut group = c.benchmark_group("numeric-check-values");
 
     let payloads: Vec<(PointOffsetType, f64)> = get_random_payloads(&mut rng, NUM_POINTS);
-    let mutable_index: InMemoryNumericIndex<f64> =
-        OperationResult::<InMemoryNumericIndex<_>>::from_iter(payloads.into_iter().map(|x| Ok(x)))
-            .unwrap();
+    let mutable_index: InMemoryNumericIndex<f64> = payloads
+        .into_iter()
+        .map(Ok)
+        .collect::<OperationResult<InMemoryNumericIndex<_>>>()
+        .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 
