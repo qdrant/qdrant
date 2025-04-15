@@ -174,7 +174,6 @@ pub struct MmapPointToValues<T: MmapValue + ?Sized> {
 }
 
 /// Memory and IO overhead of accessing mmap index.
-#[allow(dead_code)]
 pub const MMAP_PTV_ACCESS_OVERHEAD: usize = size_of::<MmapRange>();
 
 #[repr(C)]
