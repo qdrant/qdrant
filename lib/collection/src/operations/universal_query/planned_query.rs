@@ -382,9 +382,7 @@ impl TryFrom<Vec<ShardQueryRequest>> for PlannedQuery {
 
 #[cfg(test)]
 mod tests {
-
-    use std::collections::HashSet;
-
+    use ahash::AHashSet;
     use segment::data_types::vectors::{MultiDenseVectorInternal, NamedQuery, VectorInternal};
     use segment::json_path::JsonPath;
     use segment::types::{
@@ -406,8 +404,9 @@ mod tests {
             "has_oranges".try_into().unwrap(),
             true.into(),
         )));
-        let filter_outer =
-            Filter::new_must(Condition::HasId(HashSet::from([1.into(), 2.into()]).into()));
+        let filter_outer = Filter::new_must(Condition::HasId(
+            AHashSet::from([1.into(), 2.into()]).into(),
+        ));
 
         let request = ShardQueryRequest {
             prefetches: vec![ShardPrefetch {

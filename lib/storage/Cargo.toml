@@ -19,6 +19,7 @@ proptest = { workspace = true }
 env_logger = "0.11"
 
 [dependencies]
+ahash = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 wal = { workspace = true }

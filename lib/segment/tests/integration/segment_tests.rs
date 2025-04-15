@@ -1,7 +1,7 @@
-use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
@@ -43,7 +43,7 @@ fn test_point_exclusion() {
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 
-    let ids: HashSet<_> = HashSet::from_iter([3.into()]);
+    let ids: AHashSet<_> = AHashSet::from_iter([3.into()]);
 
     let frt = Filter::new_must_not(Condition::HasId(ids.into()));
 
@@ -96,7 +96,7 @@ fn test_named_vector_search() {
     let best_match = res.first().expect("Non-empty result");
     assert_eq!(best_match.id, 3.into());
 
-    let ids: HashSet<_> = HashSet::from_iter([3.into()]);
+    let ids: AHashSet<_> = AHashSet::from_iter([3.into()]);
 
     let frt = Filter {
         should: None,

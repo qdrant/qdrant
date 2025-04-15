@@ -13,6 +13,7 @@ publish = false
 workspace = true
 
 [dependencies]
+ahash = { workspace = true }
 delegate = { workspace = true }
 memmap2 = { workspace = true }
 log = { workspace = true }

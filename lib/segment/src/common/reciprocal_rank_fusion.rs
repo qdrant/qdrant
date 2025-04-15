@@ -3,7 +3,7 @@
 
 use std::collections::hash_map::Entry;
 
-use ahash::{HashMap, HashMapExt};
+use ahash::AHashMap;
 use ordered_float::OrderedFloat;
 
 use crate::types::{ExtendedPointId, ScoredPoint};
@@ -24,7 +24,7 @@ fn position_score(position: usize) -> f32 {
 /// Does not break ties.
 pub fn rrf_scoring(responses: impl IntoIterator<Item = Vec<ScoredPoint>>) -> Vec<ScoredPoint> {
     // track scored points by id
-    let mut points_by_id: HashMap<ExtendedPointId, ScoredPoint> = HashMap::new();
+    let mut points_by_id: AHashMap<ExtendedPointId, ScoredPoint> = AHashMap::new();
 
     for response in responses {
         for (pos, mut point) in response.into_iter().enumerate() {

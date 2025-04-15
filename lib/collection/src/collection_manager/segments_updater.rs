@@ -1,8 +1,8 @@
 //! A collection of functions for updating points and payloads stored in segments
 
-use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 
+use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
@@ -27,7 +27,7 @@ use crate::operations::vector_ops::{PointVectorsPersisted, VectorOperations};
 
 pub(crate) fn check_unprocessed_points(
     points: &[PointIdType],
-    processed: &HashSet<PointIdType>,
+    processed: &AHashSet<PointIdType>,
 ) -> CollectionResult<usize> {
     let first_missed_point = points.iter().copied().find(|p| !processed.contains(p));
 
@@ -67,7 +67,7 @@ pub(crate) fn update_vectors(
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
     // Build a map of vectors to update per point, merge updates on same point ID
-    let mut points_map: HashMap<PointIdType, NamedVectors> = HashMap::new();
+    let mut points_map: AHashMap<PointIdType, NamedVectors> = AHashMap::new();
     for point in points {
         let PointVectorsPersisted { id, vector } = point;
         let named_vector = NamedVectors::from(vector);
@@ -409,10 +409,10 @@ pub(crate) fn sync_points(
     points: &[PointStructPersisted],
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<(usize, usize, usize)> {
-    let id_to_point: HashMap<PointIdType, _> = points.iter().map(|p| (p.id, p)).collect();
-    let sync_points: HashSet<_> = points.iter().map(|p| p.id).collect();
+    let id_to_point: AHashMap<PointIdType, _> = points.iter().map(|p| (p.id, p)).collect();
+    let sync_points: AHashSet<_> = points.iter().map(|p| p.id).collect();
     // 1. Retrieve existing points for a range
-    let stored_point_ids: HashSet<_> = segments
+    let stored_point_ids: AHashSet<_> = segments
         .iter()
         .flat_map(|(_, segment)| segment.get().read().read_range(from_id, to_id))
         .collect();
@@ -484,7 +484,7 @@ pub(crate) fn upsert_points<'a, T>(
 where
     T: IntoIterator<Item = &'a PointStructPersisted>,
 {
-    let points_map: HashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
+    let points_map: AHashMap<PointIdType, _> = points.into_iter().map(|p| (p.id, p)).collect();
     let ids: Vec<PointIdType> = points_map.keys().copied().collect();
 
     // Update points in writable segments
@@ -716,7 +716,7 @@ pub(crate) fn delete_points_by_filter(
     let mut total_deleted = 0;
     // we don’t want to cancel this filtered read
     let is_stopped = AtomicBool::new(false);
-    let mut points_to_delete: HashMap<_, _> = segments
+    let mut points_to_delete: AHashMap<_, _> = segments
         .iter()
         .map(|(segment_id, segment)| {
             (

@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::time::Duration;
 
+use ahash::{AHashMap, AHashSet};
 use api::rest::ShardKeySelector;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::Future;
@@ -114,8 +114,8 @@ pub type CollectionName = String;
 ///
 #[derive(Default, Debug)]
 pub struct ReferencedVectors {
-    collection_mapping: HashMap<CollectionName, HashMap<PointIdType, RecordInternal>>,
-    default_mapping: HashMap<PointIdType, RecordInternal>,
+    collection_mapping: AHashMap<CollectionName, AHashMap<PointIdType, RecordInternal>>,
+    default_mapping: AHashMap<PointIdType, RecordInternal>,
 }
 
 impl ReferencedVectors {
@@ -128,7 +128,7 @@ impl ReferencedVectors {
             None => self.default_mapping.extend(mapping),
             Some(collection) => {
                 let entry = self.collection_mapping.entry(collection);
-                let entry_internal: &mut HashMap<_, _> = entry.or_default();
+                let entry_internal: &mut AHashMap<_, _> = entry.or_default();
                 entry_internal.extend(mapping);
             }
         }
@@ -138,7 +138,7 @@ impl ReferencedVectors {
         self.default_mapping.extend(other.default_mapping);
         for (collection_name, points) in other.collection_mapping {
             let entry = self.collection_mapping.entry(collection_name);
-            let entry_internal: &mut HashMap<_, _> = entry.or_default();
+            let entry_internal: &mut AHashMap<_, _> = entry.or_default();
             entry_internal.extend(points);
         }
     }
@@ -177,8 +177,8 @@ impl ReferencedVectors {
 
 #[derive(Default, Debug)]
 pub struct ReferencedPoints<'coll_name> {
-    ids_per_collection: HashMap<Option<&'coll_name String>, HashSet<PointIdType>>,
-    vector_names_per_collection: HashMap<Option<&'coll_name String>, HashSet<VectorNameBuf>>,
+    ids_per_collection: AHashMap<Option<&'coll_name String>, AHashSet<PointIdType>>,
+    vector_names_per_collection: AHashMap<Option<&'coll_name String>, AHashSet<VectorNameBuf>>,
 }
 
 impl<'coll_name> ReferencedPoints<'coll_name> {

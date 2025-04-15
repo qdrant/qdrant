@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::iterator_ext::IteratorExt;
 use common::tar_ext;
@@ -143,8 +143,8 @@ impl From<ProxySegment> for LockedSegment {
 
 #[derive(Debug, Default)]
 pub struct SegmentHolder {
-    appendable_segments: HashMap<SegmentId, LockedSegment>,
-    non_appendable_segments: HashMap<SegmentId, LockedSegment>,
+    appendable_segments: AHashMap<SegmentId, LockedSegment>,
+    non_appendable_segments: AHashMap<SegmentId, LockedSegment>,
 
     update_tracker: UpdateTracker,
 
@@ -741,7 +741,7 @@ impl SegmentHolder {
         mut point_cow_operation: H,
         update_nonappendable: G,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<HashSet<PointIdType>>
+    ) -> OperationResult<AHashSet<PointIdType>>
     where
         F: FnMut(PointIdType, &mut RwLockWriteGuard<dyn SegmentEntry>) -> OperationResult<bool>,
         for<'n, 'o, 'p> H: FnMut(PointIdType, &'n mut NamedVectors<'o>, &'p mut Payload),
@@ -752,7 +752,7 @@ impl SegmentHolder {
         // Choose random appendable segment from this
         let appendable_segments = self.appendable_segments_ids();
 
-        let mut applied_points: HashSet<PointIdType> = Default::default();
+        let mut applied_points: AHashSet<PointIdType> = Default::default();
 
         let _applied_points_count = self.apply_points(
             ids,
@@ -1451,7 +1451,7 @@ impl SegmentHolder {
         Ok(removed_points)
     }
 
-    fn find_duplicated_points(&self) -> HashMap<SegmentId, Vec<PointIdType>> {
+    fn find_duplicated_points(&self) -> AHashMap<SegmentId, Vec<PointIdType>> {
         let segments = self
             .iter()
             .map(|(&segment_id, locked_segment)| (segment_id, locked_segment.get()))
@@ -1479,7 +1479,7 @@ impl SegmentHolder {
         let mut last_point_id_opt = None;
         let mut last_segment_id_opt = None;
         let mut last_point_version_opt = None;
-        let mut points_to_remove: HashMap<SegmentId, Vec<PointIdType>> = Default::default();
+        let mut points_to_remove: AHashMap<SegmentId, Vec<PointIdType>> = Default::default();
 
         while let Some(entry) = heap.pop() {
             let point_id = entry.point_id;
@@ -1540,6 +1540,7 @@ impl SegmentHolder {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::fs::File;
     use std::str::FromStr;
 

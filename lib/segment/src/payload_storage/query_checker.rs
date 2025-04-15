@@ -323,9 +323,9 @@ impl ConditionChecker for SimpleConditionChecker {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
     use std::str::FromStr;
 
+    use ahash::AHashSet;
     use tempfile::Builder;
 
     use super::*;
@@ -648,17 +648,17 @@ mod tests {
         assert!(!payload_checker.check(0, &query));
 
         // id Filter
-        let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(!payload_checker.check(2, &query));
 
-        let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter::new_must_not(Condition::HasId(ids.into()));
         assert!(payload_checker.check(10, &query));
 
-        let ids: HashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
+        let ids: AHashSet<_> = vec![1, 2, 3].into_iter().map(|x| x.into()).collect();
 
         let query = Filter::new_must(Condition::HasId(ids.into()));
         assert!(payload_checker.check(2, &query));

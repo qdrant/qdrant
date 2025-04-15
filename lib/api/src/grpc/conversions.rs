@@ -1,7 +1,8 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr as _;
 use std::time::Instant;
 
+use ahash::AHashSet;
 use chrono::{NaiveDateTime, Timelike};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_data::HardwareData;
@@ -1348,7 +1349,7 @@ impl TryFrom<HasIdCondition> for segment::types::HasIdCondition {
 
     fn try_from(value: HasIdCondition) -> Result<Self, Self::Error> {
         let HasIdCondition { has_id } = value;
-        let set: HashSet<segment::types::PointIdType> = has_id
+        let set: AHashSet<segment::types::PointIdType> = has_id
             .into_iter()
             .map(|p| p.try_into())
             .collect::<Result<_, _>>()?;

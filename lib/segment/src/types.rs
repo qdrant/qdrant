@@ -8,6 +8,7 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use common::types::ScoreType;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
@@ -2572,7 +2573,8 @@ impl From<JsonPath> for IsEmptyCondition {
 /// ID-based filtering condition
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 pub struct HasIdCondition {
-    pub has_id: HashSet<PointIdType>,
+    #[schemars(schema_with = "HashSet::<PointIdType>::json_schema")]
+    pub has_id: AHashSet<PointIdType>,
 }
 
 /// Filter points which have specific vector assigned
@@ -2587,9 +2589,9 @@ impl From<VectorNameBuf> for HasVectorCondition {
     }
 }
 
-impl From<HashSet<PointIdType>> for HasIdCondition {
-    fn from(set: HashSet<PointIdType>) -> Self {
-        HasIdCondition { has_id: set }
+impl From<AHashSet<PointIdType>> for HasIdCondition {
+    fn from(has_id: AHashSet<PointIdType>) -> Self {
+        HasIdCondition { has_id }
     }
 }
 
