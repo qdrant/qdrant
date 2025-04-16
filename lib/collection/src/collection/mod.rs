@@ -436,55 +436,49 @@ impl Collection {
             )));
         }
 
-        // Abort resharding, if resharding shard is marked as `Dead`.
-        //
-        // This branch should only be triggered, if resharding is currently at `MigratingPoints`
-        // stage, because target shard should be marked as `Active`, when all resharding transfers
-        // are successfully completed, and so the check *right above* this one would be triggered.
-        //
-        // So, if resharding reached `ReadHashRingCommitted`, this branch *won't* be triggered,
-        // and resharding *won't* be cancelled. The update request should *fail* with "failed to
-        // update all replicas of a shard" error.
-        //
-        // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
-        // then `Collection::abort_resharding` call should return an error, so no special handling
-        // is needed.
-        let is_resharding = matches!(
-            current_state,
-            Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
-        );
-
-        if is_resharding && new_state == ReplicaState::Dead {
-            drop(shard_holder);
-
-            let resharding_state = self
-                .resharding_state()
-                .await
-                .filter(|state| state.peer_id == peer_id);
-
-            if let Some(state) = resharding_state {
-                self.abort_resharding(state.key(), false).await?;
-            }
-
-            return Ok(());
-        }
-
+        // Update replica status
         replica_set
             .ensure_replica_with_state(peer_id, new_state)
             .await?;
 
         if new_state == ReplicaState::Dead {
-            // TODO(resharding): Abort all resharding transfers!?
-
-            // Terminate transfer if source or target replicas are now dead
+            let resharding_state = shard_holder.resharding_state.read().clone();
             let related_transfers = shard_holder.get_related_transfers(shard_id, peer_id);
 
-            // `abort_shard_transfer` locks `shard_holder`!
+            // Functions below lock `shard_holder`!
             drop(shard_holder);
 
+            let mut abort_resharding_result = CollectionResult::Ok(());
+
+            // Abort resharding, if resharding shard is marked as `Dead`.
+            //
+            // This branch should only be triggered, if resharding is currently at `MigratingPoints`
+            // stage, because target shard should be marked as `Active`, when all resharding transfers
+            // are successfully completed, and so the check *right above* this one would be triggered.
+            //
+            // So, if resharding reached `ReadHashRingCommitted`, this branch *won't* be triggered,
+            // and resharding *won't* be cancelled. The update request should *fail* with "failed to
+            // update all replicas of a shard" error.
+            //
+            // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
+            // then `Collection::abort_resharding` call should return an error, so no special handling
+            // is needed.
+            let is_resharding = current_state
+                .as_ref()
+                .is_some_and(ReplicaState::is_resharding);
+            if is_resharding {
+                if let Some(state) = resharding_state {
+                    abort_resharding_result = self.abort_resharding(state.key(), false).await;
+                }
+            }
+
+            // Terminate transfer if source or target replicas are now dead
             for transfer in related_transfers {
                 self.abort_shard_transfer(transfer.key(), None).await?;
             }
+
+            // Propagate resharding errors now
+            abort_resharding_result?;
         }
 
         // If not initialized yet, we need to check if it was initialized by this call

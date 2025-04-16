@@ -54,6 +54,7 @@ impl Collection {
                         OperationWithClockTag::from(operation.clone()),
                         wait,
                         hw_measurement_acc.clone(),
+                        false,
                     )
                 })
                 .collect();
@@ -103,7 +104,7 @@ impl Collection {
             };
 
             match ordering {
-                WriteOrdering::Weak => shard.update_local(operation, wait, hw_measurement_acc.clone()).await,
+                WriteOrdering::Weak => shard.update_local(operation, wait, hw_measurement_acc.clone(), false).await,
                 WriteOrdering::Medium | WriteOrdering::Strong => {
                     if let Some(clock_tag) = operation.clock_tag {
                         log::warn!(

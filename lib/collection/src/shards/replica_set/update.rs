@@ -24,6 +24,9 @@ const DEFAULT_SHARD_DEACTIVATION_TIMEOUT: Duration = Duration::from_secs(30);
 impl ShardReplicaSet {
     /// Update local shard if any without forwarding to remote shards
     ///
+    /// If `force` is true, the operation will be applied unconditionally no matter the replica
+    /// state. Must only be used internally.
+    ///
     /// # Cancel safety
     ///
     /// This method is *not* cancel safe.
@@ -32,6 +35,7 @@ impl ShardReplicaSet {
         operation: OperationWithClockTag,
         wait: bool,
         mut hw_measurement: HwMeasurementAcc,
+        force: bool,
     ) -> CollectionResult<Option<UpdateResult>> {
         // `ShardOperations::update` is not guaranteed to be cancel safe, so this method is not
         // cancel safe.
@@ -47,7 +51,7 @@ impl ShardReplicaSet {
         };
 
         // Don't measure hw when resharding
-        if state.is_resharding() {
+        if state.is_resharding() && !hw_measurement.is_disposable() {
             hw_measurement = HwMeasurementAcc::disposable();
         }
 
@@ -57,6 +61,9 @@ impl ShardReplicaSet {
                 self.check_operation_write_rate_limiter(&hw_measurement, local, &operation)?;
                 local.get().update(operation, wait, hw_measurement).await
             }
+
+            // Force apply the operation no matter the state
+            _ if force => local.get().update(operation, wait, hw_measurement).await,
 
             ReplicaState::Partial
             | ReplicaState::Initializing
