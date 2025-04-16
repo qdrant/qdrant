@@ -236,6 +236,7 @@ impl ShardReplicaSet {
         shard_key: Option<ShardKey>,
         collection_id: CollectionId,
         shard_path: &Path,
+        is_dirty_shard: bool,
         collection_config: Arc<RwLock<CollectionConfigInternal>>,
         effective_optimizers_config: OptimizersConfig,
         shared_storage_config: Arc<SharedStorageConfig>,
@@ -278,6 +279,14 @@ impl ShardReplicaSet {
         let local = if replica_state.read().is_local {
             let shard = if let Some(recovery_reason) = &shared_storage_config.recovery_mode {
                 Shard::Dummy(DummyShard::new(recovery_reason))
+            } else if is_dirty_shard {
+                log::error!(
+                    "Shard {collection_id}:{shard_id} is not fully initialized - loading as dummy shard"
+                );
+                // This dummy shard will be replaced only when it rejects an update (marked as dead so recovery process kicks in)
+                Shard::Dummy(DummyShard::new(
+                    "Dirty shard - shard is not fully initialized",
+                ))
             } else {
                 let res = LocalShard::load(
                     shard_id,
@@ -514,12 +523,13 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    /// Clears the local shard data and loads an empty local shard
     pub async fn init_empty_local_shard(&self) -> CollectionResult<()> {
         let mut local = self.local.write().await;
 
         let current_shard = local.take();
 
-        // ToDo: Remove shard files here?
+        LocalShard::clear(&self.shard_path).await?;
         let local_shard_res = LocalShard::build(
             self.shard_id,
             self.collection_id.clone(),

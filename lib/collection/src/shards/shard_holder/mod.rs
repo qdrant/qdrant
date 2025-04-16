@@ -40,12 +40,11 @@ use crate::operations::{OperationToShard, SplitByShard};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
-use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::{ReplicaState, ShardReplicaSet};
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_config::ShardConfig;
 use crate::shards::transfer::{ShardTransfer, ShardTransferKey};
-use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path, shard_path};
+use crate::shards::{CollectionId, check_shard_path, shard_initializing_flag_path};
 
 const SHARD_TRANSFERS_FILE: &str = "shard_transfers";
 const RESHARDING_STATE_FILE: &str = "resharding_state.json";
@@ -634,23 +633,9 @@ impl ShardHolder {
             // Check if shard is fully initialized on disk
             // The initialization flag should be absent for a well-formed replica set
             let initializing_flag = shard_initializing_flag_path(collection_path, shard_id);
-            let dirty_shard_data = tokio::fs::try_exists(&initializing_flag)
+            let is_dirty_shard = tokio::fs::try_exists(&initializing_flag)
                 .await
                 .unwrap_or(false);
-
-            if dirty_shard_data {
-                log::error!(
-                    "Shard {collection_id}:{shard_id} is not fully initialized - deleting segments data"
-                );
-                let shard_path = shard_path(collection_path, shard_id);
-                LocalShard::clear(&shard_path).await.unwrap();
-                // Delete the initialized flag now that the shard is clean
-                tokio::fs::remove_file(&initializing_flag)
-                    .await
-                    .unwrap_or_else(|e| {
-                        log::error!("Failed to remove initializing flag for shard {collection_id}:{shard_id}: {e}");
-                    });
-            }
 
             // Validate that shard exists on disk
             let shard_path = check_shard_path(collection_path, shard_id)
@@ -664,6 +649,7 @@ impl ShardHolder {
                 shard_key.cloned(),
                 collection_id.clone(),
                 &shard_path,
+                is_dirty_shard,
                 collection_config.clone(),
                 effective_optimizers_config.clone(),
                 shared_storage_config.clone(),

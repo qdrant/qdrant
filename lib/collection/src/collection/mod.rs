@@ -675,8 +675,15 @@ impl Collection {
                 continue;
             }
 
-            if this_peer_state != Some(Dead) || replica_set.is_dummy().await {
-                continue; // All good
+            // Don't automatically recover replicas if started in recovery mode
+            if self.shared_storage_config.recovery_mode.is_some() {
+                continue;
+            }
+
+            // Don't recover replicas if not dead
+            let is_dead = this_peer_state == Some(Dead);
+            if !is_dead {
+                continue;
             }
 
             // Try to find dead replicas with no active transfers
