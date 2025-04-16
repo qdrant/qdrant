@@ -12,7 +12,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, PointIdType, ScoredPoint, SnapshotFormat, WithPayload,
+    ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
@@ -349,8 +349,8 @@ impl ForwardProxyShard {
         self.wrapped_shard.get_optimization_status()
     }
 
-    pub fn count_vectors(&self) -> usize {
-        self.wrapped_shard.count_vectors()
+    pub fn get_size_stats(&self) -> SizeStats {
+        self.wrapped_shard.get_size_stats()
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

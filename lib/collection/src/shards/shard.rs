@@ -7,7 +7,7 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
-use segment::types::{Filter, SnapshotFormat};
+use segment::types::{Filter, SizeStats, SnapshotFormat};
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
@@ -98,13 +98,13 @@ impl Shard {
         }
     }
 
-    pub fn count_vectors(&self) -> usize {
+    pub fn get_size_stats(&self) -> SizeStats {
         match self {
-            Shard::Local(local_shard) => local_shard.count_vectors(),
-            Shard::Proxy(proxy_shard) => proxy_shard.count_vectors(),
-            Shard::ForwardProxy(proxy_shard) => proxy_shard.count_vectors(),
-            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.count_vectors(),
-            Shard::Dummy(dummy_shard) => dummy_shard.count_vectors(),
+            Shard::Local(local_shard) => local_shard.get_size_stats(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(),
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats(),
+            Shard::Dummy(dummy_shard) => dummy_shard.get_size_stats(),
         }
     }
 

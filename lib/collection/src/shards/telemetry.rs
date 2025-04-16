@@ -40,6 +40,24 @@ pub struct LocalShardTelemetry {
     pub status: Option<ShardStatus>,
     /// Total number of optimized points since the last start.
     pub total_optimized_points: usize,
+    /// An ESTIMATION of effective amount of bytes used for vectors
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vectors_size_bytes: Option<usize>,
+    /// An estimation of the effective amount of bytes used for payloads
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payloads_size_bytes: Option<usize>,
+    /// Sum of segment points
+    /// This is an approximate number
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_points: Option<usize>,
+    /// Sum of numer of vectors in all segments
+    /// This is an approximate number
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_vectors: Option<usize>,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
     #[serde(skip_serializing_if = "Option::is_none")]

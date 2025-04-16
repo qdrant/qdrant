@@ -819,7 +819,7 @@ impl Collection {
 
             shard_optimization_statuses.push(shard_optimization_status);
 
-            vectors += shard.count_vectors().await;
+            vectors += shard.get_size_stats().await.num_vectors;
         }
 
         let optimizers_status = shard_optimization_statuses

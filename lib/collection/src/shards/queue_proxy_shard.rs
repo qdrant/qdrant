@@ -14,8 +14,8 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
-    WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -194,8 +194,8 @@ impl QueueProxyShard {
             .get_optimization_status()
     }
 
-    pub fn count_vectors(&self) -> usize {
-        self.inner_unchecked().wrapped_shard.count_vectors()
+    pub fn get_size_stats(&self) -> SizeStats {
+        self.inner_unchecked().wrapped_shard.get_size_stats()
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

@@ -10,8 +10,8 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
-    WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
@@ -62,6 +62,10 @@ impl DummyShard {
             variant_name: Some("dummy shard".into()),
             status: Some(ShardStatus::Green),
             total_optimized_points: 0,
+            vectors_size_bytes: None,
+            payloads_size_bytes: None,
+            num_points: None,
+            num_vectors: None,
             segments: vec![],
             optimizations: Default::default(),
             async_scorer: None,
@@ -72,8 +76,8 @@ impl DummyShard {
         OptimizersStatus::Ok
     }
 
-    pub fn count_vectors(&self) -> usize {
-        0
+    pub fn get_size_stats(&self) -> SizeStats {
+        SizeStats::default()
     }
 
     pub fn estimate_cardinality(

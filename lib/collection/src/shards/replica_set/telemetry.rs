@@ -1,4 +1,5 @@
 use common::types::TelemetryDetail;
+use segment::types::SizeStats;
 
 use crate::operations::types::OptimizersStatus;
 use crate::shards::replica_set::ShardReplicaSet;
@@ -36,13 +37,13 @@ impl ShardReplicaSet {
         local.map(|local_shard| local_shard.get_optimization_status())
     }
 
-    pub(crate) async fn count_vectors(&self) -> usize {
+    pub(crate) async fn get_size_stats(&self) -> SizeStats {
         let local_shard = self.local.read().await;
         let local = local_shard.as_ref();
 
         match local {
-            Some(local_shard) => local_shard.count_vectors(),
-            None => 0,
+            Some(local_shard) => local_shard.get_size_stats(),
+            None => SizeStats::default(),
         }
     }
 }
