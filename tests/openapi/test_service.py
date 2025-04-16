@@ -41,6 +41,24 @@ def test_telemetry():
     endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
     assert endpoint['200']['count'] > 0
 
+    assert 'avg_duration_micros' in endpoint['200']
+
+def test_telemetry_detailed():
+    response = request_with_validation(
+        api='/telemetry',
+        method="GET",
+        query_params={'details_level': '10'},
+    )
+
+    assert response.ok
+
+    result = response.json()['result']
+
+    assert result['collections']['number_of_collections'] >= 1
+
+    endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
+    assert endpoint['200']['count'] > 0
+
     last_queried = endpoint['200']['last_responded']
     last_queried = datetime.fromisoformat(last_queried)
     # Assert today
