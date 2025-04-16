@@ -418,7 +418,7 @@ impl OperationDurationMetricsBuilder {
     ) {
         self.total.push(counter(stat.count as f64, labels));
         self.fail_total
-            .push(counter(stat.fail_count as f64, labels));
+            .push(counter(stat.fail_count.unwrap_or_default() as f64, labels));
 
         if !add_timings {
             return;

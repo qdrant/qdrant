@@ -20,9 +20,9 @@ const SLIDING_WINDOW_LEN: usize = 8;
 pub struct OperationDurationStatistics {
     pub count: usize,
 
-    #[serde(skip_serializing_if = "num_traits::identities::Zero::is_zero")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub fail_count: usize,
+    pub fail_count: Option<usize>,
 
     /// The average time taken by 128 latest operations, calculated as a weighted mean.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -117,7 +117,12 @@ impl std::ops::Add for OperationDurationStatistics {
     fn add(self, other: Self) -> Self {
         Self {
             count: self.count + other.count,
-            fail_count: self.fail_count + other.fail_count,
+            fail_count: match (self.fail_count, other.fail_count) {
+                (Some(a), Some(b)) => Some(a + b),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            },
             avg_duration_micros: Self::weighted_mean_duration(
                 self.avg_duration_micros,
                 self.count,
@@ -301,7 +306,7 @@ impl OperationDurationsAggregator {
 
         OperationDurationStatistics {
             count: self.ok_count,
-            fail_count: self.fail_count,
+            fail_count: (self.fail_count > 0).then_some(self.fail_count),
             avg_duration_micros: (self.ok_count > 0).then(|| self.calculate_avg()),
             min_duration_micros: detailed.then_some(self.min_value).flatten(),
             max_duration_micros: detailed.then_some(self.max_value).flatten(),

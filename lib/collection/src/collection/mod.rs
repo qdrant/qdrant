@@ -794,6 +794,8 @@ impl Collection {
             )
         };
 
+        let shard_clean_tasks = self.clean_local_shards_statuses();
+
         CollectionTelemetry {
             id: self.name(),
             init_time_ms: self.init_time.as_millis() as u64,
@@ -801,7 +803,7 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
-            shard_clean_tasks: self.clean_local_shards_statuses(),
+            shard_clean_tasks: (!shard_clean_tasks.is_empty()).then_some(shard_clean_tasks),
         }
     }
 

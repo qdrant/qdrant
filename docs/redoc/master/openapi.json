@@ -11403,7 +11403,6 @@
           "id",
           "init_time_ms",
           "resharding",
-          "shard_clean_tasks",
           "shards",
           "transfers"
         ],
@@ -11441,7 +11440,8 @@
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/ShardCleanStatusTelemetry"
-            }
+            },
+            "nullable": true
           }
         }
       },
@@ -12132,7 +12132,8 @@
           "fail_count": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "avg_duration_micros": {
             "description": "The average time taken by 128 latest operations, calculated as a weighted mean.",

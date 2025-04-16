@@ -21,9 +21,9 @@ pub struct CollectionTelemetry {
     pub shards: Vec<ReplicaSetTelemetry>,
     pub transfers: Vec<ShardTransferInfo>,
     pub resharding: Vec<ReshardingInfo>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
-    pub shard_clean_tasks: HashMap<ShardId, ShardCleanStatusTelemetry>,
+    pub shard_clean_tasks: Option<HashMap<ShardId, ShardCleanStatusTelemetry>>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
