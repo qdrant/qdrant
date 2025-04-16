@@ -53,7 +53,7 @@ pub struct LocalShardTelemetry {
     /// Do NOT rely on this number unless you know what you are doing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_points: Option<usize>,
-    /// Sum of numer of vectors in all segments
+    /// Sum of number of vectors in all segments
     /// This is an approximate number
     /// Do NOT rely on this number unless you know what you are doing
     #[serde(skip_serializing_if = "Option::is_none")]
