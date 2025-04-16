@@ -34,6 +34,7 @@ use crate::common::collection_size_stats::{
 };
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfigInternal;
+use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -454,46 +455,36 @@ impl Collection {
             Some(ReplicaState::Resharding | ReplicaState::ReshardingScaleDown)
         );
 
-        // If *any* of re-sharding replicas are dead, we need to abort re-sharding before marking them as Dead
-        if is_resharding && new_state == ReplicaState::Dead {
-            drop(shard_holder); // need to release lock so abort_resharding() can take write lock
-
-            if let Some(state) = self.resharding_state().await {
-                self.abort_resharding(state.key(), false).await?;
-            }
-
-            // Actually mark as Dead
-            {
-                let shard_holder = self.shards_holder.read().await;
-                let replica_set = shard_holder
-                    .get_shard(shard_id)
-                    .ok_or_else(|| shard_not_found_error(shard_id))?;
-
-                replica_set
-                    .ensure_replica_with_state(peer_id, ReplicaState::Dead)
-                    .await?;
-            }
-
-            return Ok(());
-        }
-
         // Update replica status
         replica_set
             .ensure_replica_with_state(peer_id, new_state)
             .await?;
 
         if new_state == ReplicaState::Dead {
-            // TODO(resharding): Abort all resharding transfers!?
-
-            // Terminate transfer if source or target replicas are now dead
+            let resharding_state = shard_holder.resharding_state.read().clone();
             let related_transfers = shard_holder.get_related_transfers(shard_id, peer_id);
 
-            // `abort_shard_transfer` locks `shard_holder`!
+            // Functions below lock `shard_holder`!
             drop(shard_holder);
 
-            for transfer in related_transfers {
-                self.abort_shard_transfer(transfer.key(), None).await?;
+            let mut abort_resharding_result = CollectionResult::Ok(());
+            let mut abort_transfers_result = CollectionResult::Ok(());
+
+            // Terminate resharding if ongoing
+            if is_resharding {
+                if let Some(state) = resharding_state {
+                    abort_resharding_result = self.abort_resharding(state.key(), false).await;
+                }
             }
+
+            // Terminate transfer if source or target replicas are now dead
+            for transfer in related_transfers {
+                abort_transfers_result = self.abort_shard_transfer(transfer.key(), None).await;
+            }
+
+            // Propagate resharding and shard transfer errors now
+            abort_resharding_result?;
+            abort_transfers_result?;
         }
 
         // If not initialized yet, we need to check if it was initialized by this call
