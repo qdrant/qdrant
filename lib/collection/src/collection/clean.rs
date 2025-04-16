@@ -334,7 +334,12 @@ async fn clean_task(
                 crate::operations::point_ops::PointOperations::DeletePoints { ids },
             ));
         if let Err(err) = shard
-            .update_local(delete_operation, last_batch, HwMeasurementAcc::disposable())
+            .update_local(
+                delete_operation,
+                last_batch,
+                HwMeasurementAcc::disposable(),
+                false,
+            )
             .await
         {
             return Err(CollectionError::service_error(format!(

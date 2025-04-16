@@ -315,9 +315,7 @@ impl ShardHolder {
 
                 // Revert replicas in `Resharding` state back into `Active` state
                 for (peer, state) in shard.peers() {
-                    if state == ReplicaState::Resharding
-                        || state == ReplicaState::ReshardingScaleDown
-                    {
+                    if state.is_resharding() {
                         shard.set_replica_state(peer, ReplicaState::Active)?;
                     }
                 }
@@ -328,10 +326,11 @@ impl ShardHolder {
                 }
 
                 // Remove any points that might have been transferred from target shard
+                // Replica may be dead, so we force the delete operation
                 let filter = self.hash_ring_filter(id).expect("hash ring filter");
                 let filter = Filter::new_must_not(Condition::CustomIdChecker(Arc::new(filter)));
                 shard
-                    .delete_local_points(filter, HwMeasurementAcc::disposable()) // Internal operation, no performance tracking needed
+                    .delete_local_points(filter, HwMeasurementAcc::disposable(), true) // Internal operation, no performance tracking needed
                     .await?;
             }
         }
