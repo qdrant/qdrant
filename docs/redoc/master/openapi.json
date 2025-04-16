@@ -11570,6 +11570,34 @@
             "format": "uint",
             "minimum": 0
           },
+          "vectors_size_bytes": {
+            "description": "An ESTIMATION of effective amount of bytes used for vectors Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "payloads_size_bytes": {
+            "description": "An estimation of the effective amount of bytes used for payloads Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_points": {
+            "description": "Sum of segment points This is an approximate number Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_vectors": {
+            "description": "Sum of number of vectors in all segments This is an approximate number Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "segments": {
             "type": "array",
             "items": {
