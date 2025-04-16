@@ -14,7 +14,7 @@ from .assertions import assert_http_ok
 
 
 WAIT_TIME_SEC = 30
-RETRY_INTERVAL_SEC = 0.5
+RETRY_INTERVAL_SEC = 0.2
 
 
 # Tracks processes that need to be killed at the end of the test
