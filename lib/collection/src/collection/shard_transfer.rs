@@ -422,7 +422,7 @@ impl Collection {
             if replica_set.is_dummy().await {
                 // We can reach here because of either of these:
                 // 1. Qdrant is in recovery mode, and user intentionally triggered a transfer
-                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after a an update fails
+                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after an update fails
                 //
                 // In both cases, it's safe to drop existing local shard data
                 log::debug!(
