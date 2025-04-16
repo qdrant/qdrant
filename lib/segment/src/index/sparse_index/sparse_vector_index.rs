@@ -203,6 +203,8 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
         let borrowed_id_tracker = id_tracker.borrow();
         let deleted_bitslice = borrowed_vector_storage.deleted_vector_bitslice();
 
+        let hw_counter = HardwareCounterCell::disposable();
+
         let mut ram_index_builder = InvertedIndexBuilder::new();
         let mut indices_tracker = IndicesTracker::default();
         for id in borrowed_id_tracker.iter_ids_excluding(deleted_bitslice) {
@@ -211,7 +213,7 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
             // Because:
             // - the `id_tracker` is flushed before the `vector_storage`
             // - the sparse index is built *before* recovering the WAL when loading a segment
-            match borrowed_vector_storage.get_vector_opt(id) {
+            match borrowed_vector_storage.get_vector_opt(id, &hw_counter) {
                 None => {
                     // the vector was lost in a crash but will be recovered by the WAL
                     let point_id = borrowed_id_tracker.external_id(id);
@@ -615,7 +617,9 @@ impl<TInvertedIndex: InvertedIndex> VectorIndex for SparseVectorIndex<TInvertedI
     ) -> OperationResult<()> {
         let (old_vector, new_vector) = {
             let mut vector_storage = self.vector_storage.borrow_mut();
-            let old_vector = vector_storage.get_vector_opt(id).map(CowVector::to_owned);
+            let old_vector = vector_storage
+                .get_vector_opt(id, hw_counter)
+                .map(CowVector::to_owned);
             let new_vector = if let Some(vector) = vector {
                 vector_storage.insert_vector(id, vector, hw_counter)?;
                 vector.to_owned()

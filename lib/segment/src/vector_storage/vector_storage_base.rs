@@ -59,10 +59,14 @@ pub trait VectorStorage {
     }
 
     /// Get the vector by the given key
-    fn get_vector(&self, key: PointOffsetType) -> CowVector;
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector;
 
     /// Get the vector by the given key if it exists
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector>;
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector>;
 
     fn insert_vector(
         &mut self,
@@ -143,8 +147,16 @@ pub trait DenseVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
 }
 
 pub trait SparseVectorStorage: VectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector>;
-    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>>;
+    fn get_sparse(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SparseVector>;
+    fn get_sparse_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<SparseVector>>;
 }
 
 pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
@@ -604,59 +616,71 @@ impl VectorStorage for VectorStorageEnum {
         }
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
         match self {
-            VectorStorageEnum::DenseSimple(v) => v.get_vector(key),
-            VectorStorageEnum::DenseSimpleByte(v) => v.get_vector(key),
-            VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vector(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_vector(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector(key),
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector(key),
-            VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
-            VectorStorageEnum::SparseMmap(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.get_vector(key),
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.get_vector(key),
+            VectorStorageEnum::DenseSimple(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseSimpleByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseMemmap(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseMemmapByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::SparseSimple(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::SparseMmap(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.get_vector(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.get_vector(key, hw_counter),
         }
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
         match self {
-            VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseSimpleByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseMemmap(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseMemmapByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector_opt(key),
-            VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key),
-            VectorStorageEnum::SparseMmap(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => v.get_vector_opt(key),
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => v.get_vector_opt(key),
+            VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseSimpleByte(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseMemmap(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseMemmapByte(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseMemmapHalf(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseAppendableMemmap(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseAppendableMemmapByte(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseAppendableMemmapHalf(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::SparseMmap(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::MultiDenseSimple(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableMemmap(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(v) => {
+                v.get_vector_opt(key, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseAppendableMemmapHalf(v) => {
+                v.get_vector_opt(key, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRam(v) => v.get_vector_opt(key, hw_counter),
+            VectorStorageEnum::MultiDenseAppendableInRamByte(v) => {
+                v.get_vector_opt(key, hw_counter)
+            }
+            VectorStorageEnum::MultiDenseAppendableInRamHalf(v) => {
+                v.get_vector_opt(key, hw_counter)
+            }
         }
     }
 

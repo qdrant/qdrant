@@ -141,20 +141,31 @@ impl SimpleSparseVectorStorage {
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
-    fn get_sparse(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+    fn get_sparse(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<SparseVector> {
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
         let data = self.db_wrapper.get(bin_key)?;
+        hw_counter.vector_io_read().incr_delta(data.len());
         let record: StoredSparseVector = bincode::deserialize(&data).map_err(|_| {
             OperationError::service_error("Cannot deserialize sparse vector from db")
         })?;
         Ok(record.vector)
     }
 
-    fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
+    fn get_sparse_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Option<SparseVector>> {
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;
         if let Some(data) = self.db_wrapper.get_opt(bin_key)? {
+            hw_counter.vector_io_read().incr_delta(data.len());
+
             let StoredSparseVector { deleted, vector } =
                 bincode::deserialize(&data).map_err(|_| {
                     OperationError::service_error("Cannot deserialize sparse vector from db")
@@ -186,16 +197,20 @@ impl VectorStorage for SimpleSparseVectorStorage {
         self.total_vector_count
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        let vector = self.get_vector_opt(key);
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        let vector = self.get_vector_opt(key, hw_counter);
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
     /// Get vector by key, if it exists.
     ///
     /// ignore any error
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
-        match self.get_sparse_opt(key) {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
+        match self.get_sparse_opt(key, hw_counter) {
             Ok(Some(vector)) => Some(CowVector::from(vector)),
             _ => None,
         }
@@ -243,15 +258,12 @@ impl VectorStorage for SimpleSparseVectorStorage {
     }
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
+        let hw_counter = HardwareCounterCell::disposable();
+
         let is_deleted = !self.set_deleted(key, true);
         if is_deleted {
-            let old_vector = self.get_sparse_opt(key).ok().flatten();
-            self.update_stored(
-                key,
-                true,
-                old_vector.as_ref(),
-                &HardwareCounterCell::disposable(), // We don't measure deletions
-            )?;
+            let old_vector = self.get_sparse_opt(key, &hw_counter).ok().flatten();
+            self.update_stored(key, true, old_vector.as_ref(), &hw_counter)?;
         }
         Ok(is_deleted)
     }

@@ -349,11 +349,16 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
         self.vectors_metadata.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell, // In memory -> No measurement.
+    ) -> Option<CowVector> {
         self.get_multi_opt(key).map(|multi_dense_vector| {
             CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
                 multi_dense_vector,

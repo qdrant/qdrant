@@ -68,7 +68,7 @@ impl Segment {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {
                             if let Some(vector) =
-                                self.vector_by_offset(vector_name, point_offset)?
+                                self.vector_by_offset(vector_name, point_offset, hw_counter)?
                             {
                                 result.insert(vector_name.clone(), vector);
                             }

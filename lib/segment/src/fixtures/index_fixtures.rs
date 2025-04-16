@@ -58,11 +58,16 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.vectors.len()
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        _hw_counter: &HardwareCounterCell, // Not measuring vector storage for tests.
+    ) -> Option<CowVector> {
         self.vectors.get_opt(key as _).map(|v| v.into())
     }
 

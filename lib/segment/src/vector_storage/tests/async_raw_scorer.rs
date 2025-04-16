@@ -59,6 +59,8 @@ fn test_async_raw_scorer(
 
     let mut storage = open_memmap_vector_storage_with_async_io(dir.path(), dim, distance, true)?;
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut id_tracker = FixtureIdTracker::new(points);
 
     {
@@ -81,7 +83,7 @@ fn test_async_raw_scorer(
 
         let mut iter = (0..points).map(|i| {
             let i = i as PointOffsetType;
-            let vec = mutable_storage.get_vector(i);
+            let vec = mutable_storage.get_vector(i, &hw_counter);
             let deleted = mutable_storage.is_deleted_vector(i);
             (vec, deleted)
         });

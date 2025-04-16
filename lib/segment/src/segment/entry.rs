@@ -304,17 +304,22 @@ impl SegmentEntry for Segment {
         &self,
         vector_name: &VectorName,
         point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let internal_id = self.lookup_internal_id(point_id)?;
-        let vector_opt = self.vector_by_offset(vector_name, internal_id)?;
+        let vector_opt = self.vector_by_offset(vector_name, internal_id, hw_counter)?;
         Ok(vector_opt)
     }
 
-    fn all_vectors(&self, point_id: PointIdType) -> OperationResult<NamedVectors> {
+    fn all_vectors(
+        &self,
+        point_id: PointIdType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<NamedVectors> {
         let mut result = NamedVectors::default();
         for vector_name in self.vector_data.keys() {
-            if let Some(vec) = self.vector(vector_name, point_id)? {
+            if let Some(vec) = self.vector(vector_name, point_id, hw_counter)? {
                 result.insert(vector_name.clone(), vec);
             }
         }

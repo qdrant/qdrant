@@ -217,8 +217,8 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     let hw_counter = HardwareCounterCell::new();
 
     for id in segment.iter_points() {
-        let vectors = segment.all_vectors(id).unwrap();
-        let restored_vectors = restored_segment.all_vectors(id).unwrap();
+        let vectors = segment.all_vectors(id, &hw_counter).unwrap();
+        let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
         assert_eq!(vectors, restored_vectors);
 
         let payload = segment.payload(id, &hw_counter).unwrap();

@@ -328,6 +328,8 @@ impl SegmentBuilder {
 
         let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
+        let hw_counter = HardwareCounterCell::disposable(); // Disposable counter for internal operations.
+
         let mut new_internal_range = None;
         for (vector_name, vector_data) in &mut self.vector_data {
             check_process_stopped(stopped)?;
@@ -353,7 +355,7 @@ impl SegmentBuilder {
             let mut iter = points_to_insert.iter().map(|point_data| {
                 let other_vector_storage =
                     &other_vector_storages[point_data.segment_index.get() as usize];
-                let vec = other_vector_storage.get_vector(point_data.internal_id);
+                let vec = other_vector_storage.get_vector(point_data.internal_id, &hw_counter);
                 let vector_deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
                 (vec, vector_deleted)
             });
@@ -372,8 +374,6 @@ impl SegmentBuilder {
                 None => new_internal_range = Some(internal_range),
             }
         }
-
-        let hw_counter = HardwareCounterCell::disposable(); // Disposable counter for internal operations.
 
         if let Some(new_internal_range) = new_internal_range {
             let internal_id_iter = new_internal_range.zip(points_to_insert.iter());

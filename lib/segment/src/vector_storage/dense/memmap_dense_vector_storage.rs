@@ -179,16 +179,24 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.mmap_store.as_ref().unwrap().num_vectors
     }
 
-    fn get_vector(&self, key: PointOffsetType) -> CowVector {
-        self.get_vector_opt(key).expect("vector not found")
+    fn get_vector(&self, key: PointOffsetType, hw_counter: &HardwareCounterCell) -> CowVector {
+        self.get_vector_opt(key, hw_counter)
+            .expect("vector not found")
     }
 
-    fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
+    fn get_vector_opt(
+        &self,
+        key: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> Option<CowVector> {
         self.mmap_store
             .as_ref()
             .unwrap()
             .get_vector_opt(key)
-            .map(|vector| T::slice_to_float_cow(vector.into()).into())
+            .map(|vector| {
+                hw_counter.vector_io_read().incr_delta(size_of_val(vector));
+                T::slice_to_float_cow(vector.into()).into()
+            })
     }
 
     fn insert_vector(
@@ -361,7 +369,7 @@ mod tests {
             }
             let mut iter = (0..3).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -370,7 +378,7 @@ mod tests {
 
         assert_eq!(storage.total_vector_count(), 3);
 
-        let vector = storage.get_vector(1).to_owned();
+        let vector = storage.get_vector(1, &hw_counter).to_owned();
         let vector: DenseVector = vector.try_into().unwrap();
 
         assert_eq!(points[1], vector);
@@ -398,7 +406,7 @@ mod tests {
             }
             let mut iter = (0..2).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -468,7 +476,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -596,7 +604,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -675,7 +683,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });
@@ -758,7 +766,7 @@ mod tests {
             }
             let mut iter = (0..points.len()).map(|i| {
                 let i = i as PointOffsetType;
-                let vector = storage2.get_vector(i);
+                let vector = storage2.get_vector(i, &hw_counter);
                 let deleted = storage2.is_deleted_vector(i);
                 (vector, deleted)
             });

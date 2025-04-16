@@ -354,6 +354,7 @@ impl Segment {
         &self,
         vector_name: &VectorName,
         point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Option<VectorInternal>> {
         check_vector_name(vector_name, &self.segment_config)?;
         let vector_data = &self.vector_data[vector_name];
@@ -379,7 +380,11 @@ impl Segment {
                     ),
                 })
             } else {
-                Ok(Some(vector_storage.get_vector(point_offset).to_owned()))
+                Ok(Some(
+                    vector_storage
+                        .get_vector(point_offset, hw_counter)
+                        .to_owned(),
+                ))
             }
         } else {
             Ok(None)
@@ -387,6 +392,8 @@ impl Segment {
     }
 
     pub(super) fn all_vectors_by_offset(&self, point_offset: PointOffsetType) -> NamedVectors {
+        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
+
         let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
             let is_vector_deleted = vector_data
@@ -396,7 +403,7 @@ impl Segment {
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let vector = vector_storage
-                    .get_vector(point_offset)
+                    .get_vector(point_offset, &hw_counter)
                     .as_vec_ref()
                     .to_owned();
                 vectors.insert(vector_name.clone(), vector);
@@ -591,6 +598,8 @@ impl Segment {
             }
         }
 
+        let hw_counter = HardwareCounterCell::disposable();
+
         // check that non deleted points exist in vector storage
         let mut has_internal_ids_without_vector = false;
         for internal_id in id_tracker.iter_ids() {
@@ -598,7 +607,7 @@ impl Segment {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let is_vector_deleted_storage = vector_storage.is_deleted_vector(internal_id);
                 let is_vector_deleted_tracker = id_tracker.is_deleted_point(internal_id);
-                let vector_stored = vector_storage.get_vector_opt(internal_id);
+                let vector_stored = vector_storage.get_vector_opt(internal_id, &hw_counter);
                 if !is_vector_deleted_storage
                     && !is_vector_deleted_tracker
                     && vector_stored.is_none()

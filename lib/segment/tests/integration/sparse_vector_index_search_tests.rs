@@ -154,7 +154,7 @@ fn check_index_storage_consistency<T: InvertedIndex>(sparse_vector_index: &Spars
     let hw_counter = HardwareCounterCell::disposable();
     for id in 0..point_count as PointOffsetType {
         // assuming no deleted points
-        let vector = borrowed_vector_storage.get_vector(id);
+        let vector = borrowed_vector_storage.get_vector(id, &hw_counter);
         let vector: &SparseVector = vector.as_vec_ref().try_into().unwrap();
         let remapped_vector = sparse_vector_index
             .indices_tracker()

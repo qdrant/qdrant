@@ -395,11 +395,12 @@ impl HNSWIndex {
             }
 
             let insert_point = |vector_id| {
+                let internal_hardware_counter = HardwareCounterCell::disposable();
+
                 check_process_stopped(stopped)?;
-                let vector = vector_storage_ref.get_vector(vector_id);
+                let vector = vector_storage_ref.get_vector(vector_id, &internal_hardware_counter);
                 let vector = vector.as_vec_ref().into();
                 // No need to accumulate hardware, since this is an internal operation
-                let internal_hardware_counter = HardwareCounterCell::disposable();
 
                 let points_scorer = FilteredScorer::new(
                     vector,
@@ -606,11 +607,11 @@ impl HNSWIndex {
         let insert_points = |block_point_id| {
             check_process_stopped(stopped)?;
 
-            let vector = vector_storage.get_vector(block_point_id);
-            let vector = vector.as_vec_ref().into();
-
             // This hardware counter can be discarded, since it is only used for internal operations
             let internal_hardware_counter = HardwareCounterCell::disposable();
+
+            let vector = vector_storage.get_vector(block_point_id, &internal_hardware_counter);
+            let vector = vector.as_vec_ref().into();
 
             let block_condition_checker = BuildConditionChecker {
                 filter_list: block_filter_list,
@@ -1376,6 +1377,8 @@ impl<'a> OldIndexCandidate<'a> {
             return None;
         }
 
+        let hw_counter = HardwareCounterCell::disposable();
+
         // Build old_to_new mapping.
         let mut valid_points = 0;
         let mut old_to_new = vec![None; old_id_tracker.total_point_count()];
@@ -1411,8 +1414,8 @@ impl<'a> OldIndexCandidate<'a> {
                     return None;
                 }
                 (Some(new_offset), Some(old_offset)) => {
-                    let new_vector = vector_storage.get_vector(new_offset);
-                    let old_vector = old_storage_ref.get_vector(old_offset);
+                    let new_vector = vector_storage.get_vector(new_offset, &hw_counter);
+                    let old_vector = old_storage_ref.get_vector(old_offset, &hw_counter);
                     if old_vector == new_vector {
                         old_to_new[old_offset as usize] = Some(new_offset);
                         valid_points += 1;
