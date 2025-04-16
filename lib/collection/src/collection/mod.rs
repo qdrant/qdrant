@@ -686,12 +686,11 @@ impl Collection {
                 continue;
             }
 
+            // Don't recover replicas if not dead
             let is_dead = this_peer_state == Some(Dead);
-            if !(is_dead || replica_set.is_dummy().await) {
-                continue; // All good
+            if !is_dead {
+                continue;
             }
-
-            // Reaches here only if replica is Dead OR dirty (dummy but not in recovery)
 
             // Try to find dead replicas with no active transfers
             let transfers = shard_holder.get_transfers(|_| true);
