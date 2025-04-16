@@ -449,7 +449,6 @@ impl Collection {
             drop(shard_holder);
 
             let mut abort_resharding_result = CollectionResult::Ok(());
-            let mut abort_transfers_result = CollectionResult::Ok(());
 
             // Abort resharding, if resharding shard is marked as `Dead`.
             //
@@ -475,12 +474,11 @@ impl Collection {
 
             // Terminate transfer if source or target replicas are now dead
             for transfer in related_transfers {
-                abort_transfers_result = self.abort_shard_transfer(transfer.key(), None).await;
+                self.abort_shard_transfer(transfer.key(), None).await?;
             }
 
-            // Propagate resharding and shard transfer errors now
+            // Propagate resharding errors now
             abort_resharding_result?;
-            abort_transfers_result?;
         }
 
         // If not initialized yet, we need to check if it was initialized by this call
