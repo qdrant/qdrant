@@ -6,7 +6,7 @@ use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
-use memory::madvise::clear_disk_cache;
+use memory::fadvise::clear_disk_cache;
 use quantization::encoded_vectors_binary::{EncodedBinVector, EncodedVectorsBin};
 use quantization::{
     EncodedQueryPQ, EncodedQueryU8, EncodedVectors, EncodedVectorsPQ, EncodedVectorsU8,

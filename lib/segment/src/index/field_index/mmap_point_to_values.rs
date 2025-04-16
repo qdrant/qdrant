@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
 use memmap2::Mmap;
-use memory::madvise::{AdviceSetting, Madviseable, clear_disk_cache};
+use memory::fadvise::clear_disk_cache;
+use memory::madvise::{AdviceSetting, Madviseable};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 

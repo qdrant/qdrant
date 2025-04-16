@@ -15,7 +15,7 @@ use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use itertools::EitherOrBoth;
 use log::debug;
-use memory::madvise::clear_disk_cache;
+use memory::fadvise::clear_disk_cache;
 use parking_lot::Mutex;
 use rayon::ThreadPool;
 use rayon::prelude::*;
