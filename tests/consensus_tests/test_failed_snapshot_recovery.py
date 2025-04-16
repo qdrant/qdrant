@@ -271,7 +271,8 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         extra_env=extra_env
     )
 
-    # Qdrant loads a dummy shard. Shorty after the load, `sync_local_state` initiates a transfer from other replicas to recover dirty shard
+    # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
+    upsert_random_points(peer_api_uris[0], 1)
 
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
