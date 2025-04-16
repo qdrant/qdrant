@@ -34,7 +34,6 @@ use crate::common::collection_size_stats::{
 };
 use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfigInternal;
-use crate::operations::cluster_ops::ReshardingDirection;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{CollectionError, CollectionResult, NodeType};
@@ -452,32 +451,26 @@ impl Collection {
             let mut abort_resharding_result = CollectionResult::Ok(());
             let mut abort_transfers_result = CollectionResult::Ok(());
 
-            // Terminate resharding if we kill a related shard
-            let has_resharding_state = current_state
+            // Abort resharding, if resharding shard is marked as `Dead`.
+            //
+            // This branch should only be triggered, if resharding is currently at `MigratingPoints`
+            // stage, because target shard should be marked as `Active`, when all resharding transfers
+            // are successfully completed, and so the check *right above* this one would be triggered.
+            //
+            // So, if resharding reached `ReadHashRingCommitted`, this branch *won't* be triggered,
+            // and resharding *won't* be cancelled. The update request should *fail* with "failed to
+            // update all replicas of a shard" error.
+            //
+            // If resharding reached `ReadHashRingCommitted`, and this branch is triggered *somehow*,
+            // then `Collection::abort_resharding` call should return an error, so no special handling
+            // is needed.
+            let is_resharding = current_state
                 .as_ref()
                 .is_some_and(ReplicaState::is_resharding);
-            match (has_resharding_state, resharding_state) {
-                // Not resharding, nothing to abort
-                (_, None) => {}
-                // If resharding up, abort if replica is in resharding state
-                (true, Some(state)) if state.direction == ReshardingDirection::Up => {
+            if is_resharding {
+                if let Some(state) = resharding_state {
                     abort_resharding_result = self.abort_resharding(state.key(), false).await;
                 }
-                // If resharding up, abort if we kill target shard
-                (_, Some(state))
-                    if state.direction == ReshardingDirection::Up
-                        && state.peer_id == peer_id
-                        && state.shard_id == shard_id =>
-                {
-                    abort_resharding_result = self.abort_resharding(state.key(), false).await;
-                }
-                // If resharding down, abort if replica is in resharding state
-                (true, Some(state)) if state.direction == ReshardingDirection::Down => {
-                    abort_resharding_result = self.abort_resharding(state.key(), false).await;
-                }
-                // Keep resharding running in other cases
-                // Might still be aborted by terminating related transfers below
-                (_, Some(_)) => {}
             }
 
             // Terminate transfer if source or target replicas are now dead
