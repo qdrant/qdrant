@@ -152,20 +152,20 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     peer_api_uris[-1] = start_peer(peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri)
 
     # Assert the node does not crash when starting with data from corrupted snapshot
-    while True:
-        try:
-            res = requests.get(f"{peer_api_uris[-1]}/collections")
-        except requests.exceptions.ConnectionError:
-            time.sleep(1)
-            continue
-        if not res.ok:
-            time.sleep(1)  # Wait to node is up
-            continue
-        collections = set(collection['name'] for collection in res.json()["result"]['collections'])
-        if COLLECTION_NAME not in collections:
-            time.sleep(1)  # Wait to sync with consensus
-            continue
-        break
+    try:
+        def is_qdrant_started() -> bool:
+            try:
+                res = requests.get(f"{peer_api_uris[-1]}/collections")
+            except requests.exceptions.ConnectionError:
+                return False
+            if not res.ok:
+                return False
+            collections = set(collection['name'] for collection in res.json()["result"]['collections'])
+            return COLLECTION_NAME in collections
+
+        wait_for(is_qdrant_started)
+    except Exception as e:
+        raise Exception(f"Qdrant did not start in time after recovering corrupt snapshot, maybe it crashed: {e}")
 
     # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
