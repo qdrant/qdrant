@@ -146,6 +146,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     # Kill last peer
     p = processes.pop()
     p.kill()
+    sleep(1) # Give killed peer time to release WAL lock
 
     # Restart same peer
     peer_api_uris[-1] = start_peer(peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri)
@@ -271,6 +272,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Kill last peer
     p = processes.pop()
     p.kill()
+    sleep(1) # Give killed peer time to release WAL lock
 
     # Restart same peer
     peer_api_uris[-1] = start_peer(
@@ -287,6 +289,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Kill again after transfer starts (shard initializing flag has been deleted and shard is empty)
     p = processes.pop()
     p.kill()
+    sleep(1) # Give killed peer time to release WAL lock
 
     # Restart same peer again
     peer_api_uris[-1] = start_peer(
