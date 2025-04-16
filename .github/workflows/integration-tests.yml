@@ -17,13 +17,15 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - name: Install Protoc
         uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -53,6 +55,8 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
       - name: Install dependencies
         run: sudo apt-get install clang
       - uses: actions/setup-python@v5
@@ -72,9 +76,9 @@ jobs:
       - name: Run integration tests - multiple peers - pytest
         run: poetry -C tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
-      - name: upload logs in case of failure
+      - name: upload logs
         uses: actions/upload-artifact@v4
-        if: failure() || cancelled()
+        if: always()
         with:
           name: consensus-test-logs
           retention-days: 90 # default max value
@@ -149,9 +153,11 @@ jobs:
 
     steps:
       - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable 
+        uses: dtolnay/rust-toolchain@stable
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Install dependencies
@@ -183,17 +189,10 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: sudo apt-get install clang git-lfs jq
+        run: sudo apt-get install git-lfs jq
       - name: Setup git-lfs
         run: git lfs install
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -243,17 +242,10 @@ jobs:
         run: echo $(aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test-bucket)
 
       - name: Install dependencies
-        run: sudo apt-get install clang jq
+        run: sudo apt-get install git-lfs jq
       - name: Setup git-lfs
         run: git lfs install
-      - name: Install minimal stable
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/checkout@v4
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Docker build
@@ -300,6 +292,8 @@ jobs:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
       - uses: actions/checkout@v4
       - name: Install Protoc
         uses: arduino/setup-protoc@v3

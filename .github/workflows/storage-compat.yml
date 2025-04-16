@@ -27,6 +27,8 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: integration-tests
       - name: Run storage compatibility test
         run: ./tests/storage-compat/storage-compatibility.sh
         shell: bash
