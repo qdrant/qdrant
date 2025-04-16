@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::ops::Deref as _;
 use std::path::Path;
 use std::{fs, io};
 
@@ -341,25 +340,10 @@ impl ShardReplicaSet {
                     "Failed to restore local replica",
                 )));
 
-                // Mark this peer as "locally disabled"...
-                //
-                // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
-                let has_other_active_peers = !self.active_remote_shards().is_empty();
-
-                // ...if this peer is *not* the last active replica
-                if has_other_active_peers {
-                    let notify = self
-                        .locally_disabled_peers
-                        .write()
-                        .disable_peer_and_notify_if_elapsed(self.this_peer_id(), None);
-
-                    if notify {
-                        self.notify_peer_failure_cb.deref()(
-                            self.this_peer_id(),
-                            self.shard_id,
-                            None,
-                        );
-                    }
+                // Mark local replica as Dead since it's dummy and dirty
+                {
+                    let replica_state = self.replica_state.read();
+                    self.add_locally_disabled(&replica_state, self.this_peer_id(), None);
                 }
 
                 // Remove inner shard data but keep the shard folder with its configuration files.

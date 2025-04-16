@@ -13,11 +13,11 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::replica_set::ReplicaState;
 use crate::shards::shard::{PeerId, ShardId};
 use crate::shards::shard_holder::ShardHolder;
-use crate::shards::transfer;
 use crate::shards::transfer::transfer_tasks_pool::{TransferTaskItem, TransferTaskProgress};
 use crate::shards::transfer::{
     ShardTransfer, ShardTransferConsensus, ShardTransferKey, ShardTransferMethod,
 };
+use crate::shards::{shard_initializing_flag_path, transfer};
 
 impl Collection {
     pub async fn get_related_transfers(&self, current_peer_id: PeerId) -> Vec<ShardTransfer> {
@@ -396,6 +396,8 @@ impl Collection {
 
         let shards_holder = self.shards_holder.clone();
 
+        let collection_path = self.path.clone();
+
         async move {
             let shards_holder = shards_holder.read_owned().await;
 
@@ -418,7 +420,25 @@ impl Collection {
             }
 
             if replica_set.is_dummy().await {
+                // We can reach here because of either of these:
+                // 1. Qdrant is in recovery mode, and user intentionally triggered a transfer
+                // 2. Shard is dirty (shard initializing flag), and Qdrant triggered a transfer to recover from Dead state after an update fails
+                //
+                // In both cases, it's safe to drop existing local shard data
+                log::debug!(
+                    "Initiating transfer to dummy shard {}. Initializing empty local shard first",
+                    replica_set.shard_id,
+                );
                 replica_set.init_empty_local_shard().await?;
+
+                let shard_flag = shard_initializing_flag_path(&collection_path, shard_id);
+
+                if tokio::fs::try_exists(&shard_flag).await.is_ok() {
+                    // We can delete initializing flag without waiting for transfer to finish
+                    // because if transfer fails in between, Qdrant will retry it.
+                    tokio::fs::remove_file(&shard_flag).await?;
+                    log::debug!("Removing shard initializing flag {shard_flag:?}");
+                }
             }
 
             let this_peer_id = replica_set.this_peer_id();
