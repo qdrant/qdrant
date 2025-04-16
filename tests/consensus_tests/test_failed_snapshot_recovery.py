@@ -166,13 +166,20 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
             continue
         break
 
-    # Assert storage does not contain initialized flag after restoring on restart
+    # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
+    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
+    assert os.path.exists(flag_path)
+
+    # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
+    upsert_random_points(peer_api_uris[-1], 1)
+
+    # Assert storage does not contain initialized flag when transfer is started
     print("Checking that the shard initializing flag was removed after recovery")
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
     try:
         wait_for(lambda : not os.path.exists(flag_path))
     except Exception as e:
-        raise Exception(f"Flag {flag_path} might still exists after recovery: {e}")
+        raise Exception(f"Flag {flag_path} still exists after recovery: {e}")
 
     # There are two other replicas, try moving shards into broken state
     local_shards = get_local_shards(peer_api_uris[0])
