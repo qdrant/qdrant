@@ -128,6 +128,7 @@ impl Collection {
                         OperationWithClockTag::from(create_index_op),
                         true,
                         hw_counter.clone(),
+                        false,
                     ) // TODO: Assign clock tag!? 🤔
                     .await?;
             }
