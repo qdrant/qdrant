@@ -1,8 +1,9 @@
 use std::cmp::max;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
@@ -43,7 +44,7 @@ pub struct InMemoryGeoMapIndex {
         ...
     }
      */
-    pub points_map: BTreeMap<GeoHash, HashSet<PointOffsetType>>,
+    pub points_map: BTreeMap<GeoHash, AHashSet<PointOffsetType>>,
     pub point_to_values: Vec<Vec<GeoPoint>>,
     pub points_count: usize,
     pub points_values_count: usize,
@@ -362,7 +363,7 @@ impl InMemoryGeoMapIndex {
     }
 
     fn increment_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<GeoHash> = Default::default();
+        let mut seen_hashes: AHashSet<GeoHash> = Default::default();
 
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
@@ -403,7 +404,7 @@ impl InMemoryGeoMapIndex {
     }
 
     fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<GeoHash> = Default::default();
+        let mut seen_hashes: AHashSet<GeoHash> = Default::default();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);

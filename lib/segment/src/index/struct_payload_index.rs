@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::create_dir_all;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
@@ -297,7 +298,7 @@ impl StructPayloadIndex {
             }
             Condition::HasId(has_id) => {
                 let id_tracker_ref = self.id_tracker.borrow();
-                let mapped_ids: HashSet<PointOffsetType> = has_id
+                let mapped_ids: AHashSet<PointOffsetType> = has_id
                     .has_id
                     .iter()
                     .filter_map(|external_id| id_tracker_ref.internal_id(*external_id))

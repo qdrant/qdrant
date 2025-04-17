@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::Itertools;
@@ -303,7 +304,7 @@ fn test_delete_all_point_versions() {
     .unwrap();
     assert_eq!(
         retrieved,
-        HashMap::from([(
+        AHashMap::from([(
             point_id,
             RecordInternal {
                 id: point_id,

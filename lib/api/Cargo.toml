@@ -15,6 +15,7 @@ workspace = true
 tracing = ["dep:tracing", "segment/tracing"]
 
 [dependencies]
+ahash = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 prost-wkt-types = { workspace = true }

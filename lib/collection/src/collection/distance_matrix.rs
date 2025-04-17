@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use std::time::Duration;
 
+use ahash::AHashSet;
 use api::rest::{
     SearchMatrixOffsetsResponse, SearchMatrixPair, SearchMatrixPairsResponse,
     SearchMatrixRequestInternal,
@@ -204,7 +204,7 @@ impl Collection {
         // filter to only include the sampled points in the search
         // use the same filter for all requests to leverage batch search
         let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(
-            sampled_point_ids.iter().copied().collect::<HashSet<_>>(),
+            sampled_point_ids.iter().copied().collect::<AHashSet<_>>(),
         )));
 
         // Perform nearest neighbor search for each sampled point

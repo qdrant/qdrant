@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use ahash::AHashSet;
 use common::types::PointOffsetType;
 
 use crate::types::{FieldCondition, VectorNameBuf};
@@ -27,7 +26,7 @@ pub use field_index_base::*;
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrimaryCondition {
     Condition(Box<FieldCondition>),
-    Ids(HashSet<PointOffsetType>),
+    Ids(AHashSet<PointOffsetType>),
     HasVector(VectorNameBuf),
 }
 

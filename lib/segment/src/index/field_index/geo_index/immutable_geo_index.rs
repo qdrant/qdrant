@@ -1,7 +1,8 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
@@ -25,7 +26,7 @@ struct Counts {
 
 pub struct ImmutableGeoMapIndex {
     counts_per_hash: Vec<Counts>,
-    points_map: Vec<(GeoHash, HashSet<PointOffsetType>)>,
+    points_map: Vec<(GeoHash, AHashSet<PointOffsetType>)>,
     point_to_values: ImmutablePointToValues<GeoPoint>,
     points_count: usize,
     points_values_count: usize,
@@ -247,7 +248,7 @@ impl ImmutableGeoMapIndex {
     }
 
     fn decrement_hash_point_counts(&mut self, geo_hashes: &[GeoHash]) {
-        let mut seen_hashes: HashSet<GeoHash> = Default::default();
+        let mut seen_hashes: AHashSet<GeoHash> = Default::default();
         for geo_hash in geo_hashes {
             for i in 0..=geo_hash.len() {
                 let sub_geo_hash = geo_hash.truncate(i);

@@ -1,8 +1,9 @@
+use std::collections::BTreeSet;
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::ScoreType;
 use futures::stream::FuturesUnordered;
@@ -89,7 +90,7 @@ impl SegmentsSearcher {
         further_results: &[Vec<bool>],
     ) -> (
         BatchResultAggregator,
-        HashMap<SegmentOffset, Vec<BatchOffset>>,
+        AHashMap<SegmentOffset, Vec<BatchOffset>>,
     ) {
         let number_segments = search_result.len();
         let batch_size = limits.len();
@@ -132,7 +133,7 @@ impl SegmentsSearcher {
         }
 
         // segment id -> list of batch ids
-        let mut searches_to_rerun: HashMap<SegmentOffset, Vec<BatchOffset>> = HashMap::new();
+        let mut searches_to_rerun: AHashMap<SegmentOffset, Vec<BatchOffset>> = AHashMap::new();
 
         // Check if we want to re-run the search without sampling on some segments
         for (batch_id, required_limit) in limits.into_iter().enumerate() {
@@ -380,7 +381,7 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
         runtime_handle: &Handle,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<HashMap<PointIdType, RecordInternal>> {
+    ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
         let stopping_guard = StoppingGuard::new();
         runtime_handle
             .spawn_blocking({
@@ -411,9 +412,9 @@ impl SegmentsSearcher {
         with_vector: &WithVector,
         is_stopped: &AtomicBool,
         hw_measurement_acc: HwMeasurementAcc,
-    ) -> CollectionResult<HashMap<PointIdType, RecordInternal>> {
-        let mut point_version: HashMap<PointIdType, SeqNumberType> = Default::default();
-        let mut point_records: HashMap<PointIdType, RecordInternal> = Default::default();
+    ) -> CollectionResult<AHashMap<PointIdType, RecordInternal>> {
+        let mut point_version: AHashMap<PointIdType, SeqNumberType> = Default::default();
+        let mut point_records: AHashMap<PointIdType, RecordInternal> = Default::default();
 
         let hw_counter = hw_measurement_acc.get_counter_cell();
 
@@ -771,8 +772,7 @@ fn get_hnsw_ef_construct(config: &SegmentConfig, vector_name: &VectorName) -> Op
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
+    use ahash::AHashSet;
     use api::rest::SearchRequestInternal;
     use common::counter::hardware_counter::HardwareCounterCell;
     use parking_lot::RwLock;
@@ -814,7 +814,7 @@ mod tests {
                     plain_index.is_small_enough_for_unindexed_search(225, None, &hw_counter);
                 assert!(res_2);
 
-                let ids: HashSet<_> = vec![1, 2].into_iter().map(PointIdType::from).collect();
+                let ids: AHashSet<_> = vec![1, 2].into_iter().map(PointIdType::from).collect();
 
                 let ids_filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 

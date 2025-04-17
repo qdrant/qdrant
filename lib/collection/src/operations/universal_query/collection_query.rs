@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use ahash::AHashSet;
 use api::rest::LookupLocation;
 use common::types::ScoreType;
 use itertools::Itertools;
@@ -361,7 +360,7 @@ pub struct CollectionPrefetch {
 
 /// Exclude the referenced ids by editing the filter.
 fn exclude_referenced_ids(ids: Vec<ExtendedPointId>, filter: Option<Filter>) -> Option<Filter> {
-    let ids: HashSet<_> = ids.into_iter().collect();
+    let ids: AHashSet<_> = ids.into_iter().collect();
 
     if ids.is_empty() {
         return filter;

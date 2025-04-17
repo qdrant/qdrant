@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use ahash::AHashSet;
 use segment::data_types::vectors::VectorStructInternal;
 use segment::types::{
     Condition, Distance, Filter, PayloadFieldSchema, PayloadSchemaType, PointIdType,
@@ -116,5 +115,5 @@ pub fn delete_point_operation(idx: u64) -> CollectionUpdateOperations {
 }
 
 pub fn filter_single_id(id: impl Into<PointIdType>) -> Filter {
-    Filter::new_must(Condition::HasId(HashSet::from([id.into()]).into()))
+    Filter::new_must(Condition::HasId(AHashSet::from([id.into()]).into()))
 }

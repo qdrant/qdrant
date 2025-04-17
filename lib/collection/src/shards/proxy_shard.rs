@@ -1,9 +1,9 @@
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
+use ahash::AHashSet;
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -36,7 +36,7 @@ use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
 use crate::update_handler::UpdateSignal;
 
-type ChangedPointsSet = Arc<RwLock<HashSet<PointIdType>>>;
+type ChangedPointsSet = Arc<RwLock<AHashSet<PointIdType>>>;
 
 /// ProxyShard
 ///

@@ -1,9 +1,8 @@
-use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::{TryFutureExt, future};
 use itertools::{Either, Itertools};
@@ -238,7 +237,7 @@ impl Collection {
             )
             .await?;
 
-        let mut records_map: HashMap<ExtendedPointId, RecordInternal> = retrieved_records
+        let mut records_map: AHashMap<ExtendedPointId, RecordInternal> = retrieved_records
             .into_iter()
             .map(|rec| (rec.id, rec))
             .collect();
