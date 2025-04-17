@@ -297,11 +297,13 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         extra_env=extra_env
     )
 
+    wait_for_same_commit(peer_api_uris=peer_api_uris)
+
     # We expect transfer to be started again if stopped in between because of node crash
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
+    wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 1)
 
     # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 0)
 
     # Wait for all replicas to be active on the receiving peer
     wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME)
