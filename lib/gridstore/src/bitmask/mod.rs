@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use bitvec::slice::BitSlice;
 use gaps::{BitmaskGaps, RegionGaps};
 use itertools::Itertools;
-use memory::madvise::{Advice, AdviceSetting, clear_disk_cache};
+use memory::fadvise::clear_disk_cache;
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
 use memory::mmap_type::{self, MmapBitSlice};
 

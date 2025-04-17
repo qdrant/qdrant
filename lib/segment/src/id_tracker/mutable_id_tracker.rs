@@ -8,6 +8,7 @@ use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use common::types::PointOffsetType;
 use itertools::Itertools;
+use memory::fadvise::OneshotFile;
 use parking_lot::Mutex;
 use uuid::Uuid;
 
@@ -405,14 +406,14 @@ fn write_mapping_changes<W: Write>(
 ///
 /// If the file ends with an incomplete entry, it is truncated from the file.
 fn load_mappings(mappings_path: &Path) -> OperationResult<PointMappings> {
-    let file = File::open(mappings_path)?;
+    let file = OneshotFile::open(mappings_path)?;
     let file_len = file.metadata()?.len();
     let mut reader = BufReader::new(file);
 
     let mappings = read_mappings(&mut reader)?;
 
     let read_to = reader.stream_position()?;
-    drop(reader);
+    reader.into_inner().drop_cache()?;
 
     // If reader is not fully exhausted, there's an incomplete entry at the end, truncate the file
     // It can happen on crash while flushing. We must truncate the file here to not corrupt new
