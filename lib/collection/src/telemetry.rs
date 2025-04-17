@@ -15,12 +15,21 @@ use crate::shards::telemetry::ReplicaSetTelemetry;
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 pub struct CollectionTelemetry {
     pub id: String,
+
     #[anonymize(false)]
     pub init_time_ms: u64,
+
     pub config: CollectionConfigTelemetry,
-    pub shards: Vec<ReplicaSetTelemetry>,
-    pub transfers: Vec<ShardTransferInfo>,
-    pub resharding: Vec<ReshardingInfo>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shards: Option<Vec<ReplicaSetTelemetry>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transfers: Option<Vec<ShardTransferInfo>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resharding: Option<Vec<ReshardingInfo>>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
     pub shard_clean_tasks: Option<HashMap<ShardId, ShardCleanStatusTelemetry>>,
@@ -37,6 +46,7 @@ impl CollectionTelemetry {
     pub fn count_vectors(&self) -> usize {
         self.shards
             .iter()
+            .flatten()
             .filter_map(|shard| shard.local.as_ref())
             .flat_map(|x| x.segments.iter())
             .map(|s| s.info.num_vectors)

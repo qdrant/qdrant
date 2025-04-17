@@ -775,23 +775,24 @@ impl Collection {
 
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
         let (shards_telemetry, transfers, resharding) = {
-            let shards_holder = self.shards_holder.read().await;
-            let shards_telemetry = if detail.level >= DetailsLevel::Level3 {
+            if detail.level >= DetailsLevel::Level3 {
+                let shards_holder = self.shards_holder.read().await;
                 let mut shards_telemetry = Vec::new();
                 for shard in shards_holder.all_shards() {
                     shards_telemetry.push(shard.get_telemetry_data(detail).await)
                 }
-                shards_telemetry
+                (
+                    Some(shards_telemetry),
+                    Some(shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await)),
+                    Some(
+                        shards_holder
+                            .get_resharding_operations_info()
+                            .unwrap_or_default(),
+                    ),
+                )
             } else {
-                vec![]
-            };
-            (
-                shards_telemetry,
-                shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await),
-                shards_holder
-                    .get_resharding_operations_info()
-                    .unwrap_or_default(),
-            )
+                (None, None, None)
+            }
         };
 
         let shard_clean_tasks = self.clean_local_shards_statuses();
