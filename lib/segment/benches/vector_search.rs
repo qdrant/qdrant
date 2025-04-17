@@ -12,11 +12,10 @@ use segment::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
+use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::types::Distance;
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
-use segment::vector_storage::{
-    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
-};
+use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 const NUM_VECTORS: usize = 100000;
@@ -67,12 +66,11 @@ fn benchmark_naive(c: &mut Criterion) {
         b.iter(|| {
             let vector = random_vector(DIM);
             let vector = vector.as_slice().into();
-            new_raw_scorer_for_test(
+            FilteredScorer::new_for_test(
                 vector,
                 &storage,
                 borrowed_id_tracker.deleted_point_bitslice(),
             )
-            .unwrap()
             .peek_top_all(10, &DEFAULT_STOPPED)
             .unwrap();
         })
@@ -91,12 +89,11 @@ fn random_access_benchmark(c: &mut Criterion) {
     let vector = random_vector(DIM);
     let vector = vector.as_slice().into();
 
-    let scorer = new_raw_scorer_for_test(
+    let scorer = FilteredScorer::new_for_test(
         vector,
         &storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    )
-    .unwrap();
+    );
 
     let mut total_score = 0.;
     group.bench_function("storage vector search", |b| {

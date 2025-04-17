@@ -102,12 +102,11 @@ mod tests {
     use super::batched_points::BatchedPoints;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::data_types::vectors::DenseVector;
-    use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+    use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::fixtures::payload_fixtures::random_vector;
     use crate::index::hnsw_index::graph_layers::GraphLayers;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
     use crate::index::hnsw_index::graph_links::GraphLinksFormat;
-    use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
@@ -170,10 +169,8 @@ mod tests {
         );
 
         for &idx in &ids {
-            let fake_filter_context = FakeFilterContext {};
             let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let scorer = vector_holder.get_scorer(added_vector);
             graph_layers_builder.link_new_point(idx, scorer);
         }
 
@@ -231,23 +228,13 @@ mod tests {
         let mut total_sames = 0;
         let total_top = top * test.search_vectors.len();
         for search_vector in &test.search_vectors {
-            let fake_filter_context = FakeFilterContext {};
-            let raw_scorer = test
-                .vector_holder
-                .get_raw_scorer(search_vector.clone())
-                .unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let scorer = test.vector_holder.get_scorer(search_vector.clone());
 
             let search_result_gpu = graph
                 .search(top, ef, scorer, None, &DEFAULT_STOPPED)
                 .unwrap();
 
-            let fake_filter_context = FakeFilterContext {};
-            let raw_scorer = test
-                .vector_holder
-                .get_raw_scorer(search_vector.clone())
-                .unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let scorer = test.vector_holder.get_scorer(search_vector.clone());
 
             let search_result_cpu = ref_graph
                 .search(top, ef, scorer, None, &DEFAULT_STOPPED)

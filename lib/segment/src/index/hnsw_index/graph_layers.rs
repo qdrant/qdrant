@@ -82,11 +82,12 @@ pub trait GraphLayersBase {
                 }
             });
 
-            let scores = points_scorer.score_points(&mut points_ids, limit);
-            scores.iter().copied().for_each(|score_point| {
-                searcher.process_candidate(score_point);
-                visited_list.check_and_update_visited(score_point.idx);
-            });
+            points_scorer
+                .score_points(&mut points_ids, limit)
+                .for_each(|score_point| {
+                    searcher.process_candidate(score_point);
+                    visited_list.check_and_update_visited(score_point.idx);
+                });
         }
 
         Ok(())
@@ -144,13 +145,14 @@ pub trait GraphLayersBase {
                     links.push(link);
                 });
 
-                let scores = points_scorer.score_points(&mut links, limit);
-                scores.iter().copied().for_each(|score_point| {
-                    if score_point.score > current_point.score {
-                        changed = true;
-                        current_point = score_point;
-                    }
-                });
+                points_scorer
+                    .score_points(&mut links, limit)
+                    .for_each(|score_point| {
+                        if score_point.score > current_point.score {
+                            changed = true;
+                            current_point = score_point;
+                        }
+                    });
             }
         }
         Ok(current_point)
@@ -180,13 +182,14 @@ pub trait GraphLayersBase {
                 links.push(link);
             });
 
-            let scores = points_scorer.score_points(&mut links, limit);
-            scores.iter().copied().for_each(|score_point| {
-                if score_point.score > current_point.score {
-                    changed = true;
-                    current_point = score_point;
-                }
-            });
+            points_scorer
+                .score_points(&mut links, limit)
+                .for_each(|score_point| {
+                    if score_point.score > current_point.score {
+                        changed = true;
+                        current_point = score_point;
+                    }
+                });
         }
         current_point
     }
@@ -382,9 +385,7 @@ mod tests {
 
     use super::*;
     use crate::data_types::vectors::VectorElementType;
-    use crate::fixtures::index_fixtures::{
-        FakeFilterContext, TestRawScorerProducer, random_vector,
-    };
+    use crate::fixtures::index_fixtures::{TestRawScorerProducer, random_vector};
     use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
     use crate::index::hnsw_index::tests::{
         create_graph_layer_builder_fixture, create_graph_layer_fixture,
@@ -400,10 +401,8 @@ mod tests {
         vector_storage: &TestRawScorerProducer<CosineMetric>,
         graph: &GraphLayers,
     ) -> Vec<ScoredPointOffset> {
-        let fake_filter_context = FakeFilterContext {};
-        let raw_scorer = vector_storage.get_raw_scorer(query.to_owned()).unwrap();
+        let scorer = vector_storage.get_scorer(query.to_owned());
 
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let ef = 16;
         graph
             .search(top, ef, scorer, None, &DEFAULT_STOPPED)
@@ -440,13 +439,11 @@ mod tests {
 
         let linking_idx: PointOffsetType = 7;
 
-        let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder
             .vectors
             .get(linking_idx as VectorOffsetType)
             .to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-        let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+        let mut scorer = vector_holder.get_scorer(added_vector);
 
         let nearest_on_level = graph_layers
             .search_on_level(

@@ -7,8 +7,7 @@ use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::SeedableRng;
 use rand::rngs::StdRng;
-use segment::fixtures::index_fixtures::{FakeFilterContext, random_vector};
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
+use segment::fixtures::index_fixtures::random_vector;
 use segment::spaces::simple::CosineMetric;
 use segment::vector_storage::DEFAULT_STOPPED;
 
@@ -27,8 +26,6 @@ type Metric = CosineMetric;
 fn hnsw_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("hnsw-search-graph");
 
-    let fake_filter_context = FakeFilterContext {};
-
     let (vector_holder, mut graph_layers) =
         fixture::make_cached_graph::<Metric>(NUM_VECTORS, DIM, M, EF_CONSTRUCT, USE_HEURISTIC);
 
@@ -37,8 +34,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let scorer = vector_holder.get_scorer(query);
 
             black_box(
                 graph_layers
@@ -54,8 +50,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let scorer = vector_holder.get_scorer(query);
 
             black_box(
                 graph_layers
@@ -72,12 +67,11 @@ fn hnsw_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let query = random_vector(&mut rng, DIM);
 
-            let raw_scorer = vector_holder.get_raw_scorer(query).unwrap();
-            let mut scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let mut scorer = vector_holder.get_scorer(query);
 
             let mut top_score = 0.;
             let scores = scorer.score_points(&mut plain_search_range, NUM_VECTORS);
-            scores.iter().copied().for_each(|score| {
+            scores.for_each(|score| {
                 if score.score > top_score {
                     top_score = score.score
                 }

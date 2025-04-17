@@ -6,7 +6,8 @@ use rand::seq::IteratorRandom;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::id_tracker::IdTracker;
-use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub type Result<T, E = Error> = result::Result<T, E>;
 pub type Error = Box<dyn error::Error>;
@@ -55,9 +56,8 @@ pub fn delete_random_vectors(
     Ok(())
 }
 
-pub fn score(scorer: &dyn RawScorer, points: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
-    let mut scores = vec![Default::default(); points.len()];
-    let scored = scorer.score_points(points, &mut scores);
-    scores.resize_with(scored, Default::default);
-    scores
+pub fn score(scorer: &mut FilteredScorer, points: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
+    scorer
+        .score_points(&mut points.to_vec(), 0)
+        .collect::<Vec<_>>()
 }

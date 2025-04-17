@@ -3,20 +3,19 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
+use common::types::PointOffsetType;
 use tempfile::Builder;
 
 use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
-use crate::id_tracker::{IdTracker, IdTrackerSS};
+use crate::id_tracker::IdTrackerSS;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::{
-    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
-};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points = [
@@ -57,8 +56,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![0.0, 1.0, 1.1, 1.0];
     let query = vector.as_slice().into();
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
-            .unwrap();
+        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
     let closest = scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
         .unwrap();
@@ -80,8 +78,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
-            .unwrap();
+        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
     let closest = scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
         .unwrap();
@@ -102,8 +99,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let vector = vec![1.0, 0.0, 0.0, 0.0];
     let query = vector.as_slice().into();
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
-            .unwrap();
+        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
     let closest = scorer.peek_top_all(5, &DEFAULT_STOPPED).unwrap();
     assert!(closest.is_empty(), "must have no results, all deleted");
 }
@@ -163,8 +159,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     let query = vector.as_slice().into();
 
     let scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
-            .unwrap();
+        FilteredScorer::new_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice());
     let closest = scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
         .unwrap();
@@ -207,12 +202,11 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
 
     let query: QueryVector = [0.0, 1.0, 1.1, 1.0].into();
 
-    let scorer = new_raw_scorer_for_test(
+    let scorer = FilteredScorer::new_for_test(
         query.clone(),
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    )
-    .unwrap();
+    );
     let closest = scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
         .unwrap();
@@ -230,22 +224,28 @@ fn do_test_score_points(storage: &mut VectorStorageEnum) {
         .drop(PointIdType::NumId(u64::from(top_idx)))
         .unwrap();
 
-    let raw_scorer =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
-            .unwrap();
+    let mut raw_scorer = FilteredScorer::new(
+        query,
+        storage,
+        None,
+        None,
+        borrowed_id_tracker.deleted_point_bitslice(),
+        HardwareCounterCell::new(),
+    )
+    .unwrap();
     let closest = raw_scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 2, &DEFAULT_STOPPED)
         .unwrap();
 
     let query_points = vec![0, 1, 2, 3, 4];
 
-    let mut raw_res1 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
-    let raw_res1_count = raw_scorer.score_points(&query_points, &mut raw_res1);
-    raw_res1.resize(raw_res1_count, ScoredPointOffset { idx: 0, score: 0. });
+    let raw_res1 = raw_scorer
+        .score_points(&mut query_points.clone(), 0)
+        .collect::<Vec<_>>();
 
-    let mut raw_res2 = vec![ScoredPointOffset { idx: 0, score: 0. }; query_points.len()];
-    let raw_res2_count = raw_scorer.score_points(&query_points, &mut raw_res2);
-    raw_res2.resize(raw_res2_count, ScoredPointOffset { idx: 0, score: 0. });
+    let raw_res2 = raw_scorer
+        .score_points(&mut query_points.clone(), 0)
+        .collect::<Vec<_>>();
 
     assert_eq!(raw_res1, raw_res2);
 
@@ -273,8 +273,6 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         vec![1.0, 1.0, 0.0, 1.0],
         vec![1.0, 0.0, 0.0, 0.0],
     ];
-    let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(points.len())));
-    let borrowed_id_tracker = id_tracker.borrow_mut();
 
     let hw_counter = HardwareCounterCell::new();
     for (i, vec) in points.iter().enumerate() {
@@ -301,21 +299,10 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
         QuantizedVectors::create(storage, &config, dir.path(), 1, &stopped).unwrap();
 
     let query: QueryVector = vec![0.5, 0.5, 0.5, 0.5].into();
-    let hardware_counter = HardwareCounterCell::new();
     let scorer_quant = quantized_vectors
-        .raw_scorer(
-            query.clone(),
-            borrowed_id_tracker.deleted_point_bitslice(),
-            storage.deleted_vector_bitslice(),
-            hardware_counter,
-        )
+        .raw_scorer(query.clone(), HardwareCounterCell::new())
         .unwrap();
-    let scorer_orig = new_raw_scorer_for_test(
-        query.clone(),
-        storage,
-        borrowed_id_tracker.deleted_point_bitslice(),
-    )
-    .unwrap();
+    let scorer_orig = new_raw_scorer(query.clone(), storage, HardwareCounterCell::new()).unwrap();
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);
@@ -334,18 +321,10 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
     assert_eq!(files, storage.files());
     assert_eq!(quantization_files, quantized_vectors.files());
 
-    let hardware_counter = HardwareCounterCell::new();
     let scorer_quant = quantized_vectors
-        .raw_scorer(
-            query.clone(),
-            borrowed_id_tracker.deleted_point_bitslice(),
-            storage.deleted_vector_bitslice(),
-            hardware_counter,
-        )
+        .raw_scorer(query.clone(), HardwareCounterCell::new())
         .unwrap();
-    let scorer_orig =
-        new_raw_scorer_for_test(query, storage, borrowed_id_tracker.deleted_point_bitslice())
-            .unwrap();
+    let scorer_orig = new_raw_scorer(query, storage, HardwareCounterCell::new()).unwrap();
     for i in 0..5 {
         let quant = scorer_quant.score_point(i);
         let orig = scorer_orig.score_point(i);

@@ -10,11 +10,10 @@ use segment::data_types::named_vectors::CowVector;
 use segment::data_types::vectors::{DenseVector, QueryVector};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
+use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::types::Distance;
 use segment::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage;
-use segment::vector_storage::{
-    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
-};
+use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
 
 #[cfg(not(target_os = "windows"))]
@@ -64,12 +63,11 @@ fn benchmark_scorer_mmap(c: &mut Criterion) {
         b.iter_batched(
             || QueryVector::from(random_vector(DIM)),
             |vector| {
-                new_raw_scorer_for_test(
+                FilteredScorer::new_for_test(
                     vector,
                     &storage,
                     borrowed_id_tracker.deleted_point_bitslice(),
                 )
-                .unwrap()
                 .peek_top_all(10, &DEFAULT_STOPPED)
                 .unwrap()
             },

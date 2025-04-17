@@ -6,6 +6,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
 use parking_lot::Mutex;
 
+use super::hnsw_index::point_scorer::FilteredScorer;
 use crate::common::BYTES_IN_KB;
 use crate::common::operation_error::OperationResult;
 use crate::common::operation_time_statistics::{
@@ -18,7 +19,7 @@ use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{Filter, SearchParams};
-use crate::vector_storage::{VectorStorage, VectorStorageEnum, new_raw_scorer};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 #[derive(Debug)]
 pub struct PlainVectorIndex {
@@ -109,9 +110,11 @@ impl VectorIndex for PlainVectorIndex {
                 vectors
                     .iter()
                     .map(|&vector| {
-                        new_raw_scorer(
+                        FilteredScorer::new(
                             vector.to_owned(),
                             &vector_storage,
+                            None,
+                            None,
                             deleted_points,
                             query_context.hardware_counter(),
                         )
@@ -135,9 +138,11 @@ impl VectorIndex for PlainVectorIndex {
                 vectors
                     .iter()
                     .map(|&vector| {
-                        new_raw_scorer(
+                        FilteredScorer::new(
                             vector.to_owned(),
                             &vector_storage,
+                            None,
+                            None,
                             deleted_points,
                             query_context.hardware_counter(),
                         )

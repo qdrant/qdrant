@@ -11,8 +11,6 @@ use crate::index::hnsw_index::gpu::gpu_insert_context::GpuInsertContext;
 use crate::index::hnsw_index::gpu::gpu_level_builder::build_level_on_gpu;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
-use crate::payload_storage::FilterContext;
-use crate::vector_storage::RawScorer;
 
 /// Maximum count of point IDs per visited flag.
 static MAX_VISITED_FLAGS_FACTOR: usize = 32;
@@ -36,13 +34,7 @@ pub fn build_hnsw_on_gpu<'a>(
     // In payload blocks we need to use subset of all points.
     ids: Vec<PointOffsetType>,
     // Scorer builder for CPU build.
-    points_scorer_builder: impl Fn(
-        PointOffsetType,
-    ) -> OperationResult<(
-        Box<dyn RawScorer + 'a>,
-        Option<Box<dyn FilterContext + 'a>>,
-    )> + Send
-    + Sync,
+    points_scorer_builder: impl Fn(PointOffsetType) -> OperationResult<FilteredScorer<'a>> + Send + Sync,
     stopped: &AtomicBool,
 ) -> OperationResult<GraphLayersBuilder> {
     let num_vectors = reference_graph.links_layers().len();
@@ -66,8 +58,7 @@ pub fn build_hnsw_on_gpu<'a>(
     for batch in batched_points.iter_batches(0) {
         for point in batch.points {
             check_stopped(stopped)?;
-            let (raw_scorer, filter_context) = points_scorer_builder(point.point_id)?;
-            let points_scorer = FilteredScorer::new(raw_scorer.as_ref(), filter_context.as_deref());
+            let points_scorer = points_scorer_builder(point.point_id)?;
             graph_layers_builder.link_new_point(point.point_id, points_scorer);
             cpu_linked_points_count += 1;
             if cpu_linked_points_count >= cpu_linked_points {
@@ -129,7 +120,6 @@ mod tests {
     use std::borrow::Borrow;
 
     use super::*;
-    use crate::fixtures::index_fixtures::FakeFilterContext;
     use crate::index::hnsw_index::gpu::tests::{
         GpuGraphTestData, check_graph_layers_builders_quality, compare_graph_layers_builders,
         create_gpu_graph_test_data,
@@ -165,17 +155,12 @@ mod tests {
             exact,
             ids,
             |point_id| {
-                let fake_filter_context = FakeFilterContext {};
                 let added_vector = test
                     .vector_holder
                     .vectors
                     .get(point_id as VectorOffsetType)
                     .to_vec();
-                let raw_scorer = test
-                    .vector_holder
-                    .get_raw_scorer(added_vector.clone())
-                    .unwrap();
-                Ok((raw_scorer, Some(Box::new(fake_filter_context))))
+                Ok(test.vector_holder.get_scorer(added_vector.clone()))
             },
             &false.into(),
         )
