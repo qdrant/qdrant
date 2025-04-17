@@ -11401,10 +11401,7 @@
         "required": [
           "config",
           "id",
-          "init_time_ms",
-          "resharding",
-          "shards",
-          "transfers"
+          "init_time_ms"
         ],
         "properties": {
           "id": {
@@ -11422,19 +11419,22 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReplicaSetTelemetry"
-            }
+            },
+            "nullable": true
           },
           "transfers": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardTransferInfo"
-            }
+            },
+            "nullable": true
           },
           "resharding": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
-            }
+            },
+            "nullable": true
           },
           "shard_clean_tasks": {
             "type": "object",
