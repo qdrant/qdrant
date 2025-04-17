@@ -41,9 +41,8 @@ impl ShardReplicaSet {
         let local_shard = self.local.read().await;
         let local = local_shard.as_ref();
 
-        match local {
-            Some(local_shard) => local_shard.get_size_stats(),
-            None => SizeStats::default(),
-        }
+        local
+            .map(|local_shard| local_shard.get_size_stats())
+            .unwrap_or_default()
     }
 }
