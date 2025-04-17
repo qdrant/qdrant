@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use clean::ShardCleanTasks;
 use common::budget::ResourceBudget;
-use common::types::TelemetryDetail;
+use common::types::{DetailsLevel, TelemetryDetail};
 use io::storage_version::StorageVersion;
 use segment::types::ShardKey;
 use semver::Version;
@@ -36,7 +36,7 @@ use crate::common::is_ready::IsReady;
 use crate::config::CollectionConfigInternal;
 use crate::operations::config_diff::{DiffConfig, OptimizersConfigDiff};
 use crate::operations::shared_storage_config::SharedStorageConfig;
-use crate::operations::types::{CollectionError, CollectionResult, NodeType};
+use crate::operations::types::{CollectionError, CollectionResult, NodeType, OptimizersStatus};
 use crate::optimizers_builder::OptimizersConfig;
 use crate::save_on_disk::SaveOnDisk;
 use crate::shards::channel_service::ChannelService;
@@ -53,7 +53,9 @@ use crate::shards::transfer::helpers::check_transfer_conflicts_strict;
 use crate::shards::transfer::transfer_tasks_pool::{TaskResult, TransferTasksPool};
 use crate::shards::transfer::{ShardTransfer, ShardTransferMethod};
 use crate::shards::{CollectionId, replica_set};
-use crate::telemetry::{CollectionConfigTelemetry, CollectionTelemetry};
+use crate::telemetry::{
+    CollectionConfigTelemetry, CollectionTelemetry, CollectionsAggregatedTelemetry,
+};
 
 /// Collection's data is split into several shards.
 pub struct Collection {
@@ -774,19 +776,27 @@ impl Collection {
 
     pub async fn get_telemetry_data(&self, detail: TelemetryDetail) -> CollectionTelemetry {
         let (shards_telemetry, transfers, resharding) = {
-            let mut shards_telemetry = Vec::new();
-            let shards_holder = self.shards_holder.read().await;
-            for shard in shards_holder.all_shards() {
-                shards_telemetry.push(shard.get_telemetry_data(detail).await)
+            if detail.level >= DetailsLevel::Level3 {
+                let shards_holder = self.shards_holder.read().await;
+                let mut shards_telemetry = Vec::new();
+                for shard in shards_holder.all_shards() {
+                    shards_telemetry.push(shard.get_telemetry_data(detail).await)
+                }
+                (
+                    Some(shards_telemetry),
+                    Some(shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await)),
+                    Some(
+                        shards_holder
+                            .get_resharding_operations_info()
+                            .unwrap_or_default(),
+                    ),
+                )
+            } else {
+                (None, None, None)
             }
-            (
-                shards_telemetry,
-                shards_holder.get_shard_transfer_info(&*self.transfer_tasks.lock().await),
-                shards_holder
-                    .get_resharding_operations_info()
-                    .unwrap_or_default(),
-            )
         };
+
+        let shard_clean_tasks = self.clean_local_shards_statuses();
 
         CollectionTelemetry {
             id: self.name(),
@@ -795,7 +805,36 @@ impl Collection {
             shards: shards_telemetry,
             transfers,
             resharding,
-            shard_clean_tasks: self.clean_local_shards_statuses(),
+            shard_clean_tasks: (!shard_clean_tasks.is_empty()).then_some(shard_clean_tasks),
+        }
+    }
+
+    pub async fn get_aggregated_telemetry_data(&self) -> CollectionsAggregatedTelemetry {
+        let shards_holder = self.shards_holder.read().await;
+
+        let mut shard_optimization_statuses = Vec::new();
+        let mut vectors = 0;
+
+        for shard in shards_holder.all_shards() {
+            let shard_optimization_status = shard
+                .get_optimization_status()
+                .await
+                .unwrap_or(OptimizersStatus::Ok);
+
+            shard_optimization_statuses.push(shard_optimization_status);
+
+            vectors += shard.get_size_stats().await.num_vectors;
+        }
+
+        let optimizers_status = shard_optimization_statuses
+            .into_iter()
+            .max()
+            .unwrap_or(OptimizersStatus::Ok);
+
+        CollectionsAggregatedTelemetry {
+            vectors,
+            optimizers_status,
+            params: self.collection_config.read().await.params.clone(),
         }
     }
 

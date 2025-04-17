@@ -92,6 +92,24 @@ where
         .collect()
 }
 
+pub fn hash_u64(value: u64) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    value.hash(&mut hasher);
+    hasher.finish()
+}
+
+pub fn anonymize_collection_with_u64_hashable_key<C, V>(collection: &C) -> C
+where
+    for<'a> &'a C: IntoIterator<Item = (&'a u64, &'a V)>,
+    C: FromIterator<(u64, V)>,
+    V: Anonymize,
+{
+    collection
+        .into_iter()
+        .map(|(k, v)| (hash_u64(*k), v.anonymize()))
+        .collect()
+}
+
 impl Anonymize for String {
     fn anonymize(&self) -> Self {
         let mut hasher = DefaultHasher::new();

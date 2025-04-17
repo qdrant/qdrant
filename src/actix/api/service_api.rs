@@ -79,7 +79,7 @@ async fn metrics(
         .prepare_data(
             &access,
             TelemetryDetail {
-                level: DetailsLevel::Level1,
+                level: DetailsLevel::Level3,
                 histograms: true,
             },
         )

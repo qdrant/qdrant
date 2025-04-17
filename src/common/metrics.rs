@@ -418,7 +418,7 @@ impl OperationDurationMetricsBuilder {
     ) {
         self.total.push(counter(stat.count as f64, labels));
         self.fail_total
-            .push(counter(stat.fail_count as f64, labels));
+            .push(counter(stat.fail_count.unwrap_or_default() as f64, labels));
 
         if !add_timings {
             return;
@@ -438,7 +438,7 @@ impl OperationDurationMetricsBuilder {
         ));
         self.duration_histogram_secs.push(histogram(
             stat.count as u64,
-            stat.total_duration_micros as f64 / 1_000_000.0,
+            stat.total_duration_micros.unwrap_or(0) as f64 / 1_000_000.0,
             &stat
                 .duration_micros_histogram
                 .iter()

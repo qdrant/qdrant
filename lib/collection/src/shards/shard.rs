@@ -7,12 +7,12 @@ use common::tar_ext;
 use common::types::TelemetryDetail;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
-use segment::types::{Filter, SnapshotFormat};
+use segment::types::{Filter, SizeStats, SnapshotFormat};
 
 use super::local_shard::clock_map::RecoveryPoint;
 use super::update_tracker::UpdateTracker;
 use crate::operations::operation_effect::{EstimateOperationEffectArea, OperationEffectArea};
-use crate::operations::types::{CollectionError, CollectionResult};
+use crate::operations::types::{CollectionError, CollectionResult, OptimizersStatus};
 use crate::shards::dummy_shard::DummyShard;
 use crate::shards::forward_proxy_shard::ForwardProxyShard;
 use crate::shards::local_shard::LocalShard;
@@ -86,6 +86,26 @@ impl Shard {
         };
         telemetry.variant_name = Some(self.variant_name().to_string());
         telemetry
+    }
+
+    pub fn get_optimization_status(&self) -> OptimizersStatus {
+        match self {
+            Shard::Local(local_shard) => local_shard.get_optimization_status(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_optimization_status(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_optimization_status(),
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_optimization_status(),
+            Shard::Dummy(dummy_shard) => dummy_shard.get_optimization_status(),
+        }
+    }
+
+    pub fn get_size_stats(&self) -> SizeStats {
+        match self {
+            Shard::Local(local_shard) => local_shard.get_size_stats(),
+            Shard::Proxy(proxy_shard) => proxy_shard.get_size_stats(),
+            Shard::ForwardProxy(proxy_shard) => proxy_shard.get_size_stats(),
+            Shard::QueueProxy(queue_proxy_shard) => queue_proxy_shard.get_size_stats(),
+            Shard::Dummy(dummy_shard) => dummy_shard.get_size_stats(),
+        }
     }
 
     pub async fn create_snapshot(

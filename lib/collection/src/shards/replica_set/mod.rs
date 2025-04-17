@@ -4,6 +4,7 @@ mod locally_disabled_peers;
 mod read_ops;
 mod shard_transfer;
 pub mod snapshots;
+mod telemetry;
 mod update;
 
 use std::collections::{HashMap, HashSet};
@@ -15,8 +16,8 @@ use std::time::Duration;
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::rate_limiting::RateLimiter;
-use common::types::TelemetryDetail;
 use schemars::JsonSchema;
+use segment::common::anonymize::Anonymize;
 use segment::types::{ExtendedPointId, Filter, ShardKey};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
@@ -41,7 +42,6 @@ use crate::shards::dummy_shard::DummyShard;
 use crate::shards::replica_set::clock_set::ClockSet;
 use crate::shards::shard::{PeerId, Shard, ShardId};
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::telemetry::ReplicaSetTelemetry;
 
 //    │    Collection Created
 //    │
@@ -862,30 +862,6 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub(crate) async fn get_telemetry_data(&self, detail: TelemetryDetail) -> ReplicaSetTelemetry {
-        let local_shard = self.local.read().await;
-        let local = local_shard.as_ref();
-
-        let local_telemetry = match local {
-            Some(local_shard) => Some(local_shard.get_telemetry_data(detail).await),
-            None => None,
-        };
-
-        ReplicaSetTelemetry {
-            id: self.shard_id,
-            key: self.shard_key.clone(),
-            local: local_telemetry,
-            remote: self
-                .remotes
-                .read()
-                .await
-                .iter()
-                .map(|remote| remote.get_telemetry_data(detail))
-                .collect(),
-            replicate_states: self.replica_state.read().peers(),
-        }
-    }
-
     pub(crate) async fn health_check(&self, peer_id: PeerId) -> CollectionResult<()> {
         let remotes = self.remotes.read().await;
 
@@ -1223,7 +1199,9 @@ impl ReplicaSetState {
 }
 
 /// State of the single shard within a replica set.
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(
+    Debug, Deserialize, Serialize, JsonSchema, Default, PartialEq, Eq, Hash, Clone, Copy, Anonymize,
+)]
 pub enum ReplicaState {
     // Active and sound
     #[default]

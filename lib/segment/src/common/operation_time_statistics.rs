@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, SubsecRound, Utc};
+use common::types::DetailsLevel::Level1;
 use common::types::TelemetryDetail;
 use is_sorted::IsSorted;
 use itertools::Itertools as _;
@@ -19,9 +20,9 @@ const SLIDING_WINDOW_LEN: usize = 8;
 pub struct OperationDurationStatistics {
     pub count: usize,
 
-    #[serde(skip_serializing_if = "num_traits::identities::Zero::is_zero")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
-    pub fail_count: usize,
+    pub fail_count: Option<usize>,
 
     /// The average time taken by 128 latest operations, calculated as a weighted mean.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,8 +40,9 @@ pub struct OperationDurationStatistics {
     pub max_duration_micros: Option<f32>,
 
     /// The total duration of all operations in microseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[anonymize(false)]
-    pub total_duration_micros: u64,
+    pub total_duration_micros: Option<u64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_responded: Option<DateTime<Utc>>,
@@ -115,7 +117,12 @@ impl std::ops::Add for OperationDurationStatistics {
     fn add(self, other: Self) -> Self {
         Self {
             count: self.count + other.count,
-            fail_count: self.fail_count + other.fail_count,
+            fail_count: match (self.fail_count, other.fail_count) {
+                (Some(a), Some(b)) => Some(a + b),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            },
             avg_duration_micros: Self::weighted_mean_duration(
                 self.avg_duration_micros,
                 self.count,
@@ -132,7 +139,12 @@ impl std::ops::Add for OperationDurationStatistics {
                 other.max_duration_micros,
                 |a, b| a > b,
             ),
-            total_duration_micros: self.total_duration_micros + other.total_duration_micros,
+            total_duration_micros: match (self.total_duration_micros, other.total_duration_micros) {
+                (Some(a), Some(b)) => Some(a + b),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            },
             last_responded: std::cmp::max(self.last_responded, other.last_responded),
             duration_micros_histogram: merge_histograms(
                 &self.duration_micros_histogram,
@@ -290,18 +302,16 @@ impl OperationDurationsAggregator {
             Vec::new()
         };
 
+        let detailed = detail.level >= Level1;
+
         OperationDurationStatistics {
             count: self.ok_count,
-            fail_count: self.fail_count,
-            avg_duration_micros: if self.ok_count > 0 {
-                Some(self.calculate_avg())
-            } else {
-                None
-            },
-            min_duration_micros: self.min_value,
-            max_duration_micros: self.max_value,
-            total_duration_micros: self.total_value,
-            last_responded: self.last_response_date,
+            fail_count: (self.fail_count > 0).then_some(self.fail_count),
+            avg_duration_micros: (self.ok_count > 0).then(|| self.calculate_avg()),
+            min_duration_micros: detailed.then_some(self.min_value).flatten(),
+            max_duration_micros: detailed.then_some(self.max_value).flatten(),
+            total_duration_micros: detailed.then_some(self.total_value),
+            last_responded: detailed.then_some(self.last_response_date).flatten(),
             duration_micros_histogram,
         }
     }

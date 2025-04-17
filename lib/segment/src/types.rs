@@ -419,6 +419,14 @@ pub struct SegmentInfo {
     pub vector_data: HashMap<String, VectorDataInfo>,
 }
 
+#[derive(Debug, Default)]
+pub struct SizeStats {
+    pub num_vectors: usize,
+    pub vectors_size_bytes: usize,
+    pub payloads_size_bytes: usize,
+    pub num_points: usize,
+}
+
 /// Additional parameters of the search
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Validate, Clone, Copy, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
