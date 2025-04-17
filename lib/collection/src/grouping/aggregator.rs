@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 
+use ahash::{AHashMap, AHashSet};
 use itertools::Itertools;
 use segment::data_types::groups::GroupId;
 use segment::json_path::JsonPath;
@@ -11,15 +11,15 @@ use serde_json::Value;
 
 use super::types::{AggregatorError, Group};
 
-type Hits = HashMap<PointIdType, ScoredPoint>;
+type Hits = AHashMap<PointIdType, ScoredPoint>;
 pub(super) struct GroupsAggregator {
-    groups: HashMap<GroupId, Hits>,
+    groups: AHashMap<GroupId, Hits>,
     max_group_size: usize,
     grouped_by: JsonPath,
     max_groups: usize,
-    full_groups: HashSet<GroupId>,
-    group_best_scores: HashMap<GroupId, ScoredPoint>,
-    all_ids: HashSet<ExtendedPointId>,
+    full_groups: AHashSet<GroupId>,
+    group_best_scores: AHashMap<GroupId, ScoredPoint>,
+    all_ids: AHashSet<ExtendedPointId>,
     order: Option<Order>,
 }
 
@@ -31,13 +31,13 @@ impl GroupsAggregator {
         order: Option<Order>,
     ) -> Self {
         Self {
-            groups: HashMap::with_capacity(groups),
+            groups: AHashMap::with_capacity(groups),
             max_group_size: group_size,
             grouped_by,
             max_groups: groups,
-            full_groups: HashSet::with_capacity(groups),
-            group_best_scores: HashMap::with_capacity(groups),
-            all_ids: HashSet::with_capacity(groups * group_size),
+            full_groups: AHashSet::with_capacity(groups),
+            group_best_scores: AHashMap::with_capacity(groups),
+            all_ids: AHashSet::with_capacity(groups * group_size),
             order,
         }
     }
@@ -71,7 +71,7 @@ impl GroupsAggregator {
             let group = self
                 .groups
                 .entry(group_key.clone())
-                .or_insert_with(|| HashMap::with_capacity(self.max_group_size));
+                .or_insert_with(|| AHashMap::with_capacity(self.max_group_size));
 
             let entry = group.entry(point.id);
 
@@ -145,7 +145,7 @@ impl GroupsAggregator {
 
     /// Gets the keys of the groups that have less than the max group size
     pub(super) fn keys_of_unfilled_best_groups(&self) -> Vec<Value> {
-        let best_group_keys: HashSet<_> = self.best_group_keys().into_iter().collect();
+        let best_group_keys: AHashSet<_> = self.best_group_keys().into_iter().collect();
         best_group_keys
             .difference(&self.full_groups)
             .cloned()
@@ -160,12 +160,12 @@ impl GroupsAggregator {
 
     /// Gets the amount of best groups that have reached the max group size
     pub(super) fn len_of_filled_best_groups(&self) -> usize {
-        let best_group_keys: HashSet<_> = self.best_group_keys().into_iter().collect();
+        let best_group_keys: AHashSet<_> = self.best_group_keys().into_iter().collect();
         best_group_keys.intersection(&self.full_groups).count()
     }
 
     /// Gets the ids of the already present points across all the groups
-    pub(super) fn ids(&self) -> &HashSet<ExtendedPointId> {
+    pub(super) fn ids(&self) -> &AHashSet<ExtendedPointId> {
         &self.all_ids
     }
 

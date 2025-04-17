@@ -492,6 +492,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 name = "api"
 version = "1.13.7-dev"
 dependencies = [
+ "ahash",
  "chrono",
  "common",
  "itertools 0.14.0",
@@ -3824,6 +3825,7 @@ dependencies = [
 name = "memory"
 version = "0.0.0"
 dependencies = [
+ "ahash",
  "bitvec",
  "delegate",
  "log",
@@ -6281,6 +6283,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 name = "storage"
 version = "0.2.0"
 dependencies = [
+ "ahash",
  "anyhow",
  "api",
  "async-trait",

@@ -1,6 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 use itertools::Itertools;
@@ -313,7 +314,7 @@ fn sparse_index_hardware_measurement_test() {
     assert_eq!(cpu_usage, 0);
 
     // Some filter so we do plain sparse search
-    let ids: HashSet<PointIdType> = (0..3).map(ExtendedPointId::NumId).collect();
+    let ids: AHashSet<PointIdType> = (0..3).map(ExtendedPointId::NumId).collect();
     let filter = Filter::new_must(Condition::HasId(HasIdCondition::from(ids)));
 
     sparse_index

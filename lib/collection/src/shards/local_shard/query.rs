@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
+use ahash::AHashSet;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use futures::FutureExt;
 use futures::future::BoxFuture;
@@ -414,7 +414,7 @@ impl LocalShard {
 
 /// Extracts point ids from sources, and creates a filter to only include those ids.
 fn filter_with_sources_ids(sources: impl Iterator<Item = Vec<ScoredPoint>>) -> Filter {
-    let mut point_ids = HashSet::new();
+    let mut point_ids = AHashSet::new();
 
     for source in sources {
         for point in source.iter() {

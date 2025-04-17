@@ -1,6 +1,7 @@
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
+
+use ahash::AHashMap;
 
 use crate::madvise::{Advice, AdviceSetting};
 use crate::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
@@ -62,7 +63,7 @@ pub fn read_mmaps<T: Sized>(
     populate: bool,
     advice: AdviceSetting,
 ) -> Result<Vec<UniversalMmapChunk<T>>, MmapError> {
-    let mut mmap_files: HashMap<usize, _> = HashMap::new();
+    let mut mmap_files: AHashMap<usize, _> = AHashMap::new();
     for entry in directory.read_dir()? {
         let entry = entry?;
         let path = entry.path();

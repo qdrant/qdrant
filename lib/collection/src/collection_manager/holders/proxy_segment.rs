@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use ahash::AHashMap;
 use bitvec::prelude::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::tar_ext;
@@ -30,7 +31,7 @@ use segment::types::{
 
 use crate::collection_manager::holders::segment_holder::LockedSegment;
 
-pub type LockedRmSet = Arc<RwLock<HashMap<PointIdType, ProxyDeletedPoint>>>;
+pub type LockedRmSet = Arc<RwLock<AHashMap<PointIdType, ProxyDeletedPoint>>>;
 pub type LockedIndexChanges = Arc<RwLock<ProxyIndexChanges>>;
 
 /// This object is a wrapper around read-only segment.

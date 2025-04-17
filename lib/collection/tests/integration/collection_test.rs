@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 
+use ahash::AHashSet;
 use api::rest::{OrderByInterface, SearchRequestInternal};
 use collection::operations::CollectionUpdateOperations;
 use collection::operations::payload_ops::{PayloadOps, SetPayloadOp};
@@ -650,7 +651,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
             result_desc.points
         );
 
-        let asc_already_seen: HashSet<_> = result_asc.points.iter().map(|x| x.id).collect();
+        let asc_already_seen: AHashSet<_> = result_asc.points.iter().map(|x| x.id).collect();
 
         dbg!(&asc_already_seen);
         let asc_second_page = collection
@@ -689,7 +690,7 @@ async fn test_ordered_scroll_api_with_shards(shard_number: u32) {
         assert_eq!(asc_second_page.points.len(), 5);
         assert!(asc_second_page_points.is_subset(&valid_asc_second_page_points));
 
-        let desc_already_seen: HashSet<_> = result_desc.points.iter().map(|x| x.id).collect();
+        let desc_already_seen: AHashSet<_> = result_desc.points.iter().map(|x| x.id).collect();
 
         dbg!(&desc_already_seen);
 
@@ -819,7 +820,7 @@ async fn test_collection_delete_points_by_filter_with_shards(shard_number: u32) 
     }
 
     // delete points with id (0, 3)
-    let to_be_deleted: HashSet<PointIdType> = vec![0.into(), 3.into()].into_iter().collect();
+    let to_be_deleted: AHashSet<PointIdType> = vec![0.into(), 3.into()].into_iter().collect();
     let delete_filter =
         segment::types::Filter::new_must(Condition::HasId(HasIdCondition::from(to_be_deleted)));
 

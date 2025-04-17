@@ -1,7 +1,7 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::mem::take;
 
+use ahash::AHashSet;
 use api::rest::LookupLocation;
 use collection::collection::distance_matrix::CollectionSearchMatrixRequest;
 use collection::grouping::group_by::{GroupRequest, SourceRequest};
@@ -564,7 +564,7 @@ impl CheckableCollectionOperation for CollectionUpdateOperations {
 
 /// Create a `must` filter from a list of point IDs.
 fn make_filter_from_ids(ids: Vec<ExtendedPointId>) -> Filter {
-    let cond = ids.into_iter().collect::<HashSet<_>>().into();
+    let cond = ids.into_iter().collect::<AHashSet<_>>().into();
     Filter {
         must: Some(vec![Condition::HasId(cond)]),
         ..Default::default()
