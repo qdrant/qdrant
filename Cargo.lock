@@ -3825,6 +3825,7 @@ name = "memory"
 version = "0.0.0"
 dependencies = [
  "bitvec",
+ "delegate",
  "log",
  "memmap2",
  "nix 0.29.0",

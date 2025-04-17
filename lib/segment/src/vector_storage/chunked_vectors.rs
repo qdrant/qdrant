@@ -5,6 +5,8 @@ use std::io::{BufReader, Read, Write};
 use std::mem;
 use std::path::Path;
 
+use memory::fadvise::OneshotFile;
+
 use crate::common::vector_utils::{TrySetCapacity, TrySetCapacityExact};
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::common::CHUNK_SIZE;
@@ -188,7 +190,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
                     format!("Failed to load quantized vectors from file: {err}"),
                 )
             })?;
-        let file = File::open(path)?;
+        let file = OneshotFile::open(path)?;
         let mut reader = BufReader::new(file);
         let mut buffer = vec![0u8; quantized_vector_size];
         while reader.read_exact(&mut buffer).is_ok() {
@@ -199,6 +201,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
                 )
             })?;
         }
+        reader.into_inner().drop_cache()?;
         if vectors.len() == vectors_count {
             Ok(vectors)
         } else {

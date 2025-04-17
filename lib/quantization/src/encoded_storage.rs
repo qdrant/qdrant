@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
+use memory::fadvise::OneshotFile;
+
 pub trait EncodedStorage {
     fn get_vector_data(&self, index: usize, vector_size: usize) -> &[u8];
 
@@ -34,9 +36,10 @@ impl EncodedStorage for Vec<u8> {
         quantized_vector_size: usize,
         vectors_count: usize,
     ) -> std::io::Result<Self> {
-        let mut file = File::open(path)?;
+        let mut file = OneshotFile::open(path)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
+        file.drop_cache()?;
         let expected_size = quantized_vector_size * vectors_count;
         if buffer.len() == expected_size {
             Ok(buffer)

@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 use bitvec::prelude::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use memory::madvise::clear_disk_cache;
+use memory::fadvise::clear_disk_cache;
 use memory::mmap_ops;
 
 use crate::common::Flusher;
