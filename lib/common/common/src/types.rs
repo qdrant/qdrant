@@ -37,9 +37,31 @@ pub struct TelemetryDetail {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DetailsLevel {
+    /// Minimal information level
+    /// - app info
+    /// - minimal telemetry by endpoint
+    /// - cluster status
     Level0,
+    /// Detailed common info level
+    /// - app info details
+    /// - system info
+    ///   - hardware flags
+    ///   - hardware usage per collection
+    ///   - RAM usage
+    /// - cluster basic details
+    /// - collections basic info
     Level1,
+    /// Detailed consensus info - peers info
+    /// Collections:
+    ///  - detailed config
+    ///  - Shards - basic config
     Level2,
+    /// Shards:
+    ///  - detailed config
+    ///  - Optimizers info
+    Level3,
+    /// Segment level telemetry
+    Level4,
 }
 
 impl Default for TelemetryDetail {
@@ -56,7 +78,10 @@ impl From<usize> for DetailsLevel {
         match value {
             0 => DetailsLevel::Level0,
             1 => DetailsLevel::Level1,
-            _ => DetailsLevel::Level2,
+            2 => DetailsLevel::Level2,
+            3 => DetailsLevel::Level3,
+            4 => DetailsLevel::Level4,
+            _ => DetailsLevel::Level4,
         }
     }
 }

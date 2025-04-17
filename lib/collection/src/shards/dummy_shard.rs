@@ -10,16 +10,16 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
-    WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 
 use crate::operations::OperationWithClockTag;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, ShardStatus,
-    UpdateResult,
+    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, RecordInternal,
+    ShardStatus, UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::shard_trait::ShardOperation;
@@ -62,10 +62,22 @@ impl DummyShard {
             variant_name: Some("dummy shard".into()),
             status: Some(ShardStatus::Green),
             total_optimized_points: 0,
+            vectors_size_bytes: None,
+            payloads_size_bytes: None,
+            num_points: None,
+            num_vectors: None,
             segments: vec![],
             optimizations: Default::default(),
             async_scorer: None,
         }
+    }
+
+    pub fn get_optimization_status(&self) -> OptimizersStatus {
+        OptimizersStatus::Ok
+    }
+
+    pub fn get_size_stats(&self) -> SizeStats {
+        SizeStats::default()
     }
 
     pub fn estimate_cardinality(

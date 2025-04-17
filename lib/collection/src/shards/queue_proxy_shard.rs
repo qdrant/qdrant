@@ -14,8 +14,8 @@ use segment::data_types::order_by::OrderBy;
 use segment::data_types::segment_manifest::SegmentManifests;
 use segment::index::field_index::CardinalityEstimation;
 use segment::types::{
-    ExtendedPointId, Filter, ScoredPoint, SnapshotFormat, WithPayload, WithPayloadInterface,
-    WithVector,
+    ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
+    WithPayloadInterface, WithVector,
 };
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
@@ -28,7 +28,8 @@ use crate::operations::OperationWithClockTag;
 use crate::operations::point_ops::WriteOrdering;
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
-    CountRequestInternal, CountResult, PointRequestInternal, RecordInternal, UpdateResult,
+    CountRequestInternal, CountResult, OptimizersStatus, PointRequestInternal, RecordInternal,
+    UpdateResult,
 };
 use crate::operations::universal_query::shard_query::{ShardQueryRequest, ShardQueryResponse};
 use crate::shards::local_shard::LocalShard;
@@ -185,6 +186,16 @@ impl QueueProxyShard {
         self.inner_unchecked()
             .wrapped_shard
             .get_telemetry_data(detail)
+    }
+
+    pub fn get_optimization_status(&self) -> OptimizersStatus {
+        self.inner_unchecked()
+            .wrapped_shard
+            .get_optimization_status()
+    }
+
+    pub fn get_size_stats(&self) -> SizeStats {
+        self.inner_unchecked().wrapped_shard.get_size_stats()
     }
 
     pub fn update_tracker(&self) -> &UpdateTracker {

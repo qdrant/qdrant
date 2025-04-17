@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use schemars::JsonSchema;
-use segment::common::anonymize::Anonymize;
+use segment::common::anonymize::{Anonymize, anonymize_collection_with_u64_hashable_key};
 use segment::common::operation_time_statistics::OperationDurationStatistics;
 use segment::telemetry::SegmentTelemetry;
 use segment::types::ShardKey;
@@ -19,7 +19,7 @@ pub struct ReplicaSetTelemetry {
     pub key: Option<ShardKey>,
     pub local: Option<LocalShardTelemetry>,
     pub remote: Vec<RemoteShardTelemetry>,
-    #[anonymize(value = HashMap::new())]
+    #[anonymize(with = anonymize_collection_with_u64_hashable_key)]
     pub replicate_states: HashMap<PeerId, ReplicaState>,
 }
 
@@ -40,6 +40,24 @@ pub struct LocalShardTelemetry {
     pub status: Option<ShardStatus>,
     /// Total number of optimized points since the last start.
     pub total_optimized_points: usize,
+    /// An ESTIMATION of effective amount of bytes used for vectors
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vectors_size_bytes: Option<usize>,
+    /// An estimation of the effective amount of bytes used for payloads
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payloads_size_bytes: Option<usize>,
+    /// Sum of segment points
+    /// This is an approximate number
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_points: Option<usize>,
+    /// Sum of number of vectors in all segments
+    /// This is an approximate number
+    /// Do NOT rely on this number unless you know what you are doing
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_vectors: Option<usize>,
     pub segments: Vec<SegmentTelemetry>,
     pub optimizations: OptimizerTelemetry,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,5 +68,6 @@ pub struct LocalShardTelemetry {
 pub struct OptimizerTelemetry {
     pub status: OptimizersStatus,
     pub optimizations: OperationDurationStatistics,
-    pub log: Vec<TrackerTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub log: Option<Vec<TrackerTelemetry>>,
 }

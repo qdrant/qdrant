@@ -6,12 +6,13 @@ pub(super) mod query;
 pub(super) mod scroll;
 pub(super) mod search;
 pub(super) mod shard_ops;
+mod telemetry;
 
 use std::collections::{BTreeSet, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -20,7 +21,6 @@ use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::rate_limiting::RateLimiter;
-use common::types::TelemetryDetail;
 use common::{panic, tar_ext};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
@@ -34,7 +34,6 @@ use segment::types::{
     Filter, PayloadIndexInfo, PayloadKeyType, PointIdType, SegmentConfig, SegmentType,
     SnapshotFormat,
 };
-use segment::vector_storage::common::get_async_scorer;
 use tokio::fs::{create_dir_all, remove_dir_all, remove_file};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::Sender;
@@ -64,7 +63,6 @@ use crate::save_on_disk::SaveOnDisk;
 use crate::shards::CollectionId;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_config::ShardConfig;
-use crate::shards::telemetry::{LocalShardTelemetry, OptimizerTelemetry};
 use crate::update_handler::{Optimizer, UpdateHandler, UpdateSignal};
 use crate::wal::SerdeWal;
 use crate::wal_delta::{LockedWal, RecoverableWal};
@@ -1017,45 +1015,6 @@ impl LocalShard {
     ) -> CollectionResult<BTreeSet<PointIdType>> {
         let segments = self.segments.clone();
         SegmentsSearcher::read_filtered(segments, filter, runtime_handle, hw_counter).await
-    }
-
-    pub fn get_telemetry_data(&self, detail: TelemetryDetail) -> LocalShardTelemetry {
-        let segments_read_guard = self.segments.read();
-        let segments: Vec<_> = segments_read_guard
-            .iter()
-            .map(|(_id, segment)| segment.get().read().get_telemetry_data(detail))
-            .collect();
-
-        let optimizer_status = match &segments_read_guard.optimizer_errors {
-            None => OptimizersStatus::Ok,
-            Some(error) => OptimizersStatus::Error(error.to_string()),
-        };
-        drop(segments_read_guard);
-        let optimizations = self
-            .optimizers
-            .iter()
-            .map(|optimizer| {
-                optimizer
-                    .get_telemetry_counter()
-                    .lock()
-                    .get_statistics(detail)
-            })
-            .fold(Default::default(), |acc, x| acc + x);
-
-        let total_optimized_points = self.total_optimized_points.load(Ordering::Relaxed);
-
-        LocalShardTelemetry {
-            variant_name: None,
-            status: None,
-            total_optimized_points,
-            segments,
-            optimizations: OptimizerTelemetry {
-                status: optimizer_status,
-                optimizations,
-                log: self.optimizers_log.lock().to_telemetry(),
-            },
-            async_scorer: Some(get_async_scorer()),
-        }
     }
 
     pub async fn local_shard_status(&self) -> (ShardStatus, OptimizersStatus) {

@@ -26,7 +26,7 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{CollectionId, replica_set};
-use collection::telemetry::CollectionTelemetry;
+use collection::telemetry::{CollectionTelemetry, CollectionsAggregatedTelemetry};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
@@ -471,6 +471,20 @@ impl TableOfContent {
         for collection_pass in &all_collections {
             if let Ok(collection) = self.get_collection(collection_pass).await {
                 result.push(collection.get_telemetry_data(detail).await);
+            }
+        }
+        result
+    }
+
+    pub async fn get_aggregated_telemetry_data(
+        &self,
+        access: &Access,
+    ) -> Vec<CollectionsAggregatedTelemetry> {
+        let mut result = Vec::new();
+        let all_collections = self.all_collections_whole_access(access).await;
+        for collection_pass in &all_collections {
+            if let Ok(collection) = self.get_collection(collection_pass).await {
+                result.push(collection.get_aggregated_telemetry_data().await);
             }
         }
         result

@@ -11401,11 +11401,7 @@
         "required": [
           "config",
           "id",
-          "init_time_ms",
-          "resharding",
-          "shard_clean_tasks",
-          "shards",
-          "transfers"
+          "init_time_ms"
         ],
         "properties": {
           "id": {
@@ -11423,25 +11419,29 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReplicaSetTelemetry"
-            }
+            },
+            "nullable": true
           },
           "transfers": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ShardTransferInfo"
-            }
+            },
+            "nullable": true
           },
           "resharding": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ReshardingInfo"
-            }
+            },
+            "nullable": true
           },
           "shard_clean_tasks": {
             "type": "object",
             "additionalProperties": {
               "$ref": "#/components/schemas/ShardCleanStatusTelemetry"
-            }
+            },
+            "nullable": true
           }
         }
       },
@@ -11569,6 +11569,34 @@
             "type": "integer",
             "format": "uint",
             "minimum": 0
+          },
+          "vectors_size_bytes": {
+            "description": "An ESTIMATION of effective amount of bytes used for vectors Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "payloads_size_bytes": {
+            "description": "An estimation of the effective amount of bytes used for payloads Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_points": {
+            "description": "Sum of segment points This is an approximate number Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
+          "num_vectors": {
+            "description": "Sum of number of vectors in all segments This is an approximate number Do NOT rely on this number unless you know what you are doing",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
           },
           "segments": {
             "type": "array",
@@ -12093,8 +12121,7 @@
       "OperationDurationStatistics": {
         "type": "object",
         "required": [
-          "count",
-          "total_duration_micros"
+          "count"
         ],
         "properties": {
           "count": {
@@ -12105,7 +12132,8 @@
           "fail_count": {
             "type": "integer",
             "format": "uint",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "avg_duration_micros": {
             "description": "The average time taken by 128 latest operations, calculated as a weighted mean.",
@@ -12129,7 +12157,8 @@
             "description": "The total duration of all operations in microseconds.",
             "type": "integer",
             "format": "uint64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true
           },
           "last_responded": {
             "type": "string",
@@ -12176,7 +12205,6 @@
       "OptimizerTelemetry": {
         "type": "object",
         "required": [
-          "log",
           "optimizations",
           "status"
         ],
@@ -12191,7 +12219,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TrackerTelemetry"
-            }
+            },
+            "nullable": true
           }
         }
       },
