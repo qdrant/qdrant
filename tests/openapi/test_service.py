@@ -60,16 +60,20 @@ def test_telemetry_detail(level: int):
 
     endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
     assert endpoint['200']['count'] > 0
-    
+
     if level == 0:
-        'collections' not in result['collections']
+        assert list(result.keys()) == ['id', 'app', 'collections', 'cluster', 'requests']
+        assert list(result['collections'].keys()) == ['number_of_collections']
         return
+    else:
+        assert list(result.keys()) == ['id', 'app', 'collections', 'cluster', 'requests', 'memory', 'hardware']
+        assert list(result['collections'].keys()) == ['number_of_collections', 'collections']
 
     last_queried = endpoint['200']['last_responded']
     last_queried = datetime.fromisoformat(last_queried)
     # Assert today
     assert last_queried.date() == datetime.now().date()
-
+    
     collection = result['collections']['collections'][0]
 
     if level == 1:
@@ -79,7 +83,6 @@ def test_telemetry_detail(level: int):
     elif level >= 3:
         assert list(collection.keys()) == ['id', 'init_time_ms', 'config', 'shards', 'transfers', 'resharding']
 
-    if level >= 3:
         shard = collection['shards'][0]
         assert list(shard.keys()) == ['id', 'key', 'local', 'remote', 'replicate_states']
 
@@ -90,12 +93,11 @@ def test_telemetry_detail(level: int):
                 'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
                 'payloads_size_bytes', 'num_points', 'num_vectors', 'optimizations', 'async_scorer'
             ]
-        elif level > 3:
+        elif level >= 4:
             assert list(local_shard.keys()) == [
                 'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
                 'payloads_size_bytes', 'num_points', 'num_vectors', 'segments', 'optimizations', 'async_scorer'
             ]
 
-    if level >= 4:
-        segment = local_shard['segments'][0]
-        assert list(segment.keys()) == ['info', 'config', 'vector_index_searches', 'payload_field_indices']
+            segment = local_shard['segments'][0]
+            assert list(segment.keys()) == ['info', 'config', 'vector_index_searches', 'payload_field_indices']
