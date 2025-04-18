@@ -54,7 +54,7 @@ impl LocalShard {
             payloads_size_bytes: Some(payloads_size_bytes),
             num_points: Some(num_points),
             num_vectors: Some(num_vectors),
-            segments,
+            segments: (!segments.is_empty()).then_some(segments),
             optimizations: OptimizerTelemetry {
                 status: optimizer_status,
                 optimizations,
