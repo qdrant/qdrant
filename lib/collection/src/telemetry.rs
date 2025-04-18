@@ -48,8 +48,7 @@ impl CollectionTelemetry {
             .iter()
             .flatten()
             .filter_map(|shard| shard.local.as_ref())
-            .flat_map(|x| x.segments.iter())
-            .map(|s| s.info.num_vectors)
+            .map(|x| x.num_vectors.unwrap_or(0))
             .sum()
     }
 }

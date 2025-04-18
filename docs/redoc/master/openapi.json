@@ -11546,7 +11546,6 @@
         "type": "object",
         "required": [
           "optimizations",
-          "segments",
           "total_optimized_points"
         ],
         "properties": {
@@ -11602,7 +11601,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SegmentTelemetry"
-            }
+            },
+            "nullable": true
           },
           "optimizations": {
             "$ref": "#/components/schemas/OptimizerTelemetry"
