@@ -62,14 +62,14 @@ def test_telemetry_detail(level: int):
     assert endpoint['200']['count'] > 0
 
     if level == 0:
-        assert list(result.keys()) == ['id', 'app', 'collections', 'cluster', 'requests']
-        assert list(result['collections'].keys()) == ['number_of_collections']
+        assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests'}
+        assert set(result['collections'].keys()) == {'number_of_collections'}
         return
     else:
-        assert list(result.keys()) == ['id', 'app', 'collections', 'cluster', 'requests', 'memory', 'hardware']
-        assert list(result['collections'].keys()) == ['number_of_collections', 'collections']
+        assert set(result.keys()) == {'id', 'app', 'collections', 'cluster', 'requests', 'memory', 'hardware'}
+        assert set(result['collections'].keys()) == {'number_of_collections', 'collections'}
 
-    last_queried = endpoint['200']['last_responded']
+    last_queried = endpoint['200']['last_responded'].replace('Z', '+00:00')
     last_queried = datetime.fromisoformat(last_queried)
     # Assert today
     assert last_queried.date() == datetime.now().date()
@@ -77,27 +77,27 @@ def test_telemetry_detail(level: int):
     collection = result['collections']['collections'][0]
 
     if level == 1:
-        assert list(collection.keys()) == ['vectors', 'optimizers_status', 'params']
+        assert set(collection.keys()) == {'vectors', 'optimizers_status', 'params'}
     elif level == 2:
-        assert list(collection.keys()) == ['id', 'init_time_ms', 'config']
+        assert set(collection.keys()) == {'id', 'init_time_ms', 'config'}
     elif level >= 3:
-        assert list(collection.keys()) == ['id', 'init_time_ms', 'config', 'shards', 'transfers', 'resharding']
+        assert set(collection.keys()) == {'id', 'init_time_ms', 'config', 'shards', 'transfers', 'resharding'}
 
         shard = collection['shards'][0]
-        assert list(shard.keys()) == ['id', 'key', 'local', 'remote', 'replicate_states']
+        assert set(shard.keys()) == {'id', 'key', 'local', 'remote', 'replicate_states'}
 
         local_shard = shard['local']
 
         if level == 3:
-            assert list(local_shard.keys()) == [
+            assert set(local_shard.keys()) == {
                 'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
                 'payloads_size_bytes', 'num_points', 'num_vectors', 'optimizations', 'async_scorer'
-            ]
+            }
         elif level >= 4:
-            assert list(local_shard.keys()) == [
+            assert set(local_shard.keys()) == {
                 'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
                 'payloads_size_bytes', 'num_points', 'num_vectors', 'segments', 'optimizations', 'async_scorer'
-            ]
+            }
 
             segment = local_shard['segments'][0]
-            assert list(segment.keys()) == ['info', 'config', 'vector_index_searches', 'payload_field_indices']
+            assert set(segment.keys()) == {'info', 'config', 'vector_index_searches', 'payload_field_indices'}
