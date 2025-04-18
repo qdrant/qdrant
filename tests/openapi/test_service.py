@@ -44,11 +44,12 @@ def test_telemetry():
     assert 'avg_duration_micros' in endpoint['200']
 
 
-def test_telemetry_detail_level2():
+@pytest.mark.parametrize("level", [0, 1, 2, 3, 10])
+def test_telemetry_detail(level: int):
     response = request_with_validation(
         api='/telemetry',
         method="GET",
-        query_params={'details_level': '2'},
+        query_params={'details_level': level},
     )
 
     assert response.ok
@@ -59,30 +60,42 @@ def test_telemetry_detail_level2():
 
     endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
     assert endpoint['200']['count'] > 0
+    
+    if level == 0:
+        'collections' not in result['collections']
+        return
 
     last_queried = endpoint['200']['last_responded']
     last_queried = datetime.fromisoformat(last_queried)
     # Assert today
     assert last_queried.date() == datetime.now().date()
 
+    collection = result['collections']['collections'][0]
 
-def test_telemetry_detailed():
-    response = request_with_validation(
-        api='/telemetry',
-        method="GET",
-        query_params={'details_level': '10'},
-    )
+    if level == 1:
+        assert list(collection.keys()) == ['vectors', 'optimizers_status', 'params']
+    elif level == 2:
+        assert list(collection.keys()) == ['id', 'init_time_ms', 'config']
+    elif level >= 3:
+        assert list(collection.keys()) == ['id', 'init_time_ms', 'config', 'shards', 'transfers', 'resharding']
 
-    assert response.ok
+    if level >= 3:
+        shard = collection['shards'][0]
+        assert list(shard.keys()) == ['id', 'key', 'local', 'remote', 'replicate_states']
 
-    result = response.json()['result']
+        local_shard = shard['local']
 
-    assert result['collections']['number_of_collections'] >= 1
+        if level == 3:
+            assert list(local_shard.keys()) == [
+                'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
+                'payloads_size_bytes', 'num_points', 'num_vectors', 'optimizations', 'async_scorer'
+            ]
+        elif level > 3:
+            assert list(local_shard.keys()) == [
+                'variant_name', 'status', 'total_optimized_points', 'vectors_size_bytes',
+                'payloads_size_bytes', 'num_points', 'num_vectors', 'segments', 'optimizations', 'async_scorer'
+            ]
 
-    endpoint = result['requests']['rest']['responses']['PUT /collections/{name}/points']
-    assert endpoint['200']['count'] > 0
-
-    last_queried = endpoint['200']['last_responded']
-    last_queried = datetime.fromisoformat(last_queried)
-    # Assert today
-    assert last_queried.date() == datetime.now().date()
+    if level >= 4:
+        segment = local_shard['segments'][0]
+        assert list(segment.keys()) == ['info', 'config', 'vector_index_searches', 'payload_field_indices']
