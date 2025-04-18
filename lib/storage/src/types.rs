@@ -15,7 +15,7 @@ use collection::shards::shard::PeerId;
 use collection::shards::transfer::ShardTransferMethod;
 use memory::madvise;
 use schemars::JsonSchema;
-use segment::common::anonymize::{Anonymize, anonymize_collection_values};
+use segment::common::anonymize::{Anonymize, anonymize_collection_with_u64_hashable_key};
 use segment::types::{CollectionConfigDefaults, HnswConfig};
 use serde::{Deserialize, Serialize};
 use tonic::transport::Uri;
@@ -204,7 +204,7 @@ pub struct ClusterInfo {
     #[anonymize(false)]
     pub peer_id: PeerId,
     /// Peers composition of the cluster with main information
-    #[anonymize(with = anonymize_collection_values)]
+    #[anonymize(with = anonymize_collection_with_u64_hashable_key)]
     pub peers: HashMap<PeerId, PeerInfo>,
     /// Status of the Raft consensus
     pub raft_info: RaftInfo,

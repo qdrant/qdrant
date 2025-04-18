@@ -58,7 +58,8 @@ pub struct LocalShardTelemetry {
     /// Do NOT rely on this number unless you know what you are doing
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_vectors: Option<usize>,
-    pub segments: Vec<SegmentTelemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub segments: Option<Vec<SegmentTelemetry>>,
     pub optimizations: OptimizerTelemetry,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub async_scorer: Option<bool>,

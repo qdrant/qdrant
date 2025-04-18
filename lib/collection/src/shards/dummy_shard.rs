@@ -66,7 +66,7 @@ impl DummyShard {
             payloads_size_bytes: None,
             num_points: None,
             num_vectors: None,
-            segments: vec![],
+            segments: None,
             optimizations: Default::default(),
             async_scorer: None,
         }

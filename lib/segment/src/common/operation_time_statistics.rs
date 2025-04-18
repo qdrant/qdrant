@@ -119,9 +119,7 @@ impl std::ops::Add for OperationDurationStatistics {
             count: self.count + other.count,
             fail_count: match (self.fail_count, other.fail_count) {
                 (Some(a), Some(b)) => Some(a + b),
-                (Some(a), None) => Some(a),
-                (None, Some(b)) => Some(b),
-                (None, None) => None,
+                _ => self.fail_count.or(other.fail_count),
             },
             avg_duration_micros: Self::weighted_mean_duration(
                 self.avg_duration_micros,
@@ -141,9 +139,7 @@ impl std::ops::Add for OperationDurationStatistics {
             ),
             total_duration_micros: match (self.total_duration_micros, other.total_duration_micros) {
                 (Some(a), Some(b)) => Some(a + b),
-                (Some(a), None) => Some(a),
-                (None, Some(b)) => Some(b),
-                (None, None) => None,
+                _ => self.total_duration_micros.or(other.total_duration_micros),
             },
             last_responded: std::cmp::max(self.last_responded, other.last_responded),
             duration_micros_histogram: merge_histograms(
