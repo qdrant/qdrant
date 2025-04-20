@@ -22,12 +22,6 @@ pub struct FeatureFlags {
     // TODO(1.14): set to true, remove other branches in code, and remove this flag
     pub use_new_shard_key_mapping_format: bool,
 
-    /// Whether to use the new mutable ID tracker without RocksDB.
-    ///
-    /// First implemented in Qdrant 1.13.5
-    // TODO(1.14): set to true, remove other branches in code, and remove this flag
-    pub use_mutable_id_tracker_without_rocksdb: bool,
-
     /// Whether to skip usage of RocksDB in immutable payload indices.
     ///
     /// First implemented in Qdrant 1.13.5
@@ -44,7 +38,6 @@ impl Default for FeatureFlags {
         FeatureFlags {
             all: false,
             use_new_shard_key_mapping_format: false,
-            use_mutable_id_tracker_without_rocksdb: false,
             payload_index_skip_rocksdb: false,
             incremental_hnsw_building: true,
         }
@@ -64,7 +57,6 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
     let FeatureFlags {
         all,
         use_new_shard_key_mapping_format,
-        use_mutable_id_tracker_without_rocksdb,
         payload_index_skip_rocksdb,
         incremental_hnsw_building,
     } = &mut flags;
@@ -72,7 +64,6 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
     // If all is set, explicitly set all feature flags
     if *all {
         *use_new_shard_key_mapping_format = true;
-        *use_mutable_id_tracker_without_rocksdb = true;
         *payload_index_skip_rocksdb = true;
         *incremental_hnsw_building = true;
     }
