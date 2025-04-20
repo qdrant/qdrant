@@ -3177,10 +3177,10 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use rstest::rstest;
     use serde::de::DeserializeOwned;
     use serde_json;
-    use itertools::Itertools;
 
     use super::test_utils::build_polygon_with_interiors;
     use super::*;

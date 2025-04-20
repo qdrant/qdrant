@@ -6,14 +6,13 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::field_index::FieldIndex;
-use crate::common::operation_error::OperationResult;
 use crate::common::Flusher;
+use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
-    SeqNumberType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, SeqNumberType,
 };
 
 pub enum BuildIndexResult {
