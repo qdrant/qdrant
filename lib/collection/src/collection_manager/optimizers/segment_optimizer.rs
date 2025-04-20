@@ -454,6 +454,9 @@ pub trait SegmentOptimizer {
                 ProxyIndexChange::Delete(_) => {
                     segment_builder.remove_indexed_field(field_name);
                 }
+                ProxyIndexChange::DeleteIfIncompatible(_, schema) => {
+                    segment_builder.remove_index_field_if_incompatible(field_name, schema);
+                }
             }
         }
 
@@ -531,6 +534,10 @@ pub trait SegmentOptimizer {
                 }
                 ProxyIndexChange::Delete(version) => {
                     optimized_segment.delete_field_index(*version, field_name)?;
+                }
+                ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
+                    optimized_segment
+                        .delete_field_index_if_incompatible(*version, field_name, schema)?;
                 }
             }
             self.check_cancellation(stopped)?;
@@ -713,6 +720,10 @@ pub trait SegmentOptimizer {
                     }
                     ProxyIndexChange::Delete(version) => {
                         optimized_segment.delete_field_index(*version, field_name)?;
+                    }
+                    ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
+                        optimized_segment
+                            .delete_field_index_if_incompatible(*version, field_name, schema)?;
                     }
                 }
                 self.check_cancellation(stopped)?;

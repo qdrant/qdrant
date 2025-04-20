@@ -9,16 +9,16 @@ use common::types::PointOffsetType;
 use schemars::_serde_json::Value;
 
 use super::field_index::FieldIndex;
-use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
+use crate::common::Flusher;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::PayloadIndex;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::index::payload_config::PayloadConfig;
+use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::{ConditionCheckerSS, FilterContext};
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef,
 };
 
 /// Implementation of `PayloadIndex` which does not really indexes anything.
@@ -80,8 +80,8 @@ impl PayloadIndex for PlainPayloadIndex {
         _field: PayloadKeyTypeRef,
         _payload_schema: &PayloadFieldSchema,
         _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Vec<FieldIndex>>> {
-        Ok(Some(Vec::new()))
+    ) -> OperationResult<BuildIndexResult> {
+        Ok(BuildIndexResult::AlreadyBuilt) // No index to build
     }
 
     fn apply_index(
@@ -105,7 +105,27 @@ impl PayloadIndex for PlainPayloadIndex {
         Ok(())
     }
 
+    fn set_indexed(
+        &mut self,
+        _field: PayloadKeyTypeRef,
+        _payload_schema: impl Into<PayloadFieldSchema>,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        // there are no indexes in the plain index
+        Ok(())
+    }
+
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
+        self.config.indexed_fields.remove(field);
+        self.save_config()
+    }
+
+    fn drop_index_if_incompatible(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        _new_payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<()> {
+        // Just always drop the index, as we don't have any indexes
         self.config.indexed_fields.remove(field);
         self.save_config()
     }
@@ -216,14 +236,6 @@ impl PayloadIndex for PlainPayloadIndex {
     }
 
     fn flusher(&self) -> Flusher {
-        unreachable!()
-    }
-
-    fn infer_payload_type(
-        &self,
-        _key: PayloadKeyTypeRef,
-        _hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<PayloadSchemaType>> {
         unreachable!()
     }
 
