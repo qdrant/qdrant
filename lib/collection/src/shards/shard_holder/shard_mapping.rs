@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::ops;
 
-use common::flags::feature_flags;
 use itertools::Itertools;
 use segment::types::ShardKey;
 use serde::{Deserialize, Serialize};
@@ -106,20 +105,12 @@ enum SerdeHelper {
 
 impl From<ShardKeyMapping> for SerdeHelper {
     fn from(mapping: ShardKeyMapping) -> Self {
-        let number_key_used = mapping.keys().any(|key| matches!(key, ShardKey::Number(_)));
-
-        // TODO(1.14): use new format by default, even if not using shard key numbers
-        if feature_flags().use_new_shard_key_mapping_format || number_key_used {
-            let key_ids_pairs = mapping
-                .shard_key_to_shard_ids
-                .into_iter()
-                .map(KeyIdsPair::from)
-                .collect();
-
-            Self::New(key_ids_pairs)
-        } else {
-            Self::Old(mapping.shard_key_to_shard_ids)
-        }
+        let key_ids_pairs = mapping
+            .shard_key_to_shard_ids
+            .into_iter()
+            .map(KeyIdsPair::from)
+            .collect();
+        Self::New(key_ids_pairs)
     }
 }
 
