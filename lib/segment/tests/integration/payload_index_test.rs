@@ -43,8 +43,8 @@ use segment::types::PayloadSchemaType::{Integer, Keyword};
 use segment::types::{
     AnyVariants, Condition, Distance, FieldCondition, Filter, GeoBoundingBox, GeoLineString,
     GeoPoint, GeoPolygon, GeoRadius, HnswConfig, Indexes, IsEmptyCondition, Match, Payload,
-    PayloadField, PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig, ValueVariants,
-    VectorDataConfig, VectorStorageType, WithPayload,
+    PayloadField, PayloadFieldSchema, PayloadSchemaParams, PayloadSchemaType, Range, SegmentConfig,
+    ValueVariants, VectorDataConfig, VectorStorageType, WithPayload,
 };
 use segment::utils::scored_point_ties::ScoredPointTies;
 use tempfile::{Builder, TempDir};
@@ -133,8 +133,14 @@ impl TestSegments {
                 &hw_counter,
             )
             .unwrap();
+        let int_payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Integer);
         struct_segment
-            .create_field_index(opnum, &JsonPath::new(INT_KEY), None, &hw_counter)
+            .create_field_index(
+                opnum,
+                &JsonPath::new(INT_KEY),
+                Some(&int_payload_schema),
+                &hw_counter,
+            )
             .unwrap();
         struct_segment
             .create_field_index(
