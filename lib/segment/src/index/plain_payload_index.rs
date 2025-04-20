@@ -105,12 +105,12 @@ impl PayloadIndex for PlainPayloadIndex {
 
     fn set_indexed(
         &mut self,
-        _field: PayloadKeyTypeRef,
-        _payload_schema: impl Into<PayloadFieldSchema>,
+        field: PayloadKeyTypeRef,
+        payload_schema: impl Into<PayloadFieldSchema>,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
-        // there are no indexes in the plain index
-        Ok(())
+        // No need to build index, just set the field as indexed
+        self.apply_index(field.clone(), payload_schema.into(), vec![])
     }
 
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
