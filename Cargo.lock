@@ -88,7 +88,7 @@ dependencies = [
  "mime",
  "percent-encoding",
  "pin-project-lite",
- "rand 0.9.0",
+ "rand 0.9.1",
  "sha1",
  "smallvec",
  "tokio",
@@ -500,7 +500,7 @@ dependencies = [
  "prost 0.12.6",
  "prost-build 0.12.6",
  "prost-wkt-types",
- "rand 0.9.0",
+ "rand 0.9.1",
  "schemars",
  "segment",
  "serde",
@@ -1178,7 +1178,7 @@ dependencies = [
  "parking_lot",
  "pprof",
  "proptest",
- "rand 0.9.0",
+ "rand 0.9.1",
  "ringbuffer",
  "rmp-serde",
  "rstest",
@@ -1247,7 +1247,7 @@ dependencies = [
  "num_cpus",
  "ordered-float 5.0.0",
  "ph",
- "rand 0.9.0",
+ "rand 0.9.1",
  "rstest",
  "self_cell",
  "semver",
@@ -2400,7 +2400,7 @@ dependencies = [
  "memory",
  "parking_lot",
  "proptest",
- "rand 0.9.0",
+ "rand 0.9.1",
  "rocksdb",
  "rstest",
  "serde",
@@ -3832,7 +3832,7 @@ dependencies = [
  "memmap2",
  "nix 0.29.0",
  "parking_lot",
- "rand 0.9.0",
+ "rand 0.9.1",
  "serde",
  "tempfile",
  "thiserror 2.0.12",
@@ -4873,7 +4873,7 @@ dependencies = [
  "pyroscope_pprofrs",
  "raft",
  "raft-proto",
- "rand 0.9.0",
+ "rand 0.9.1",
  "reqwest",
  "rstack-self",
  "rustls 0.23.26",
@@ -4921,7 +4921,7 @@ dependencies = [
  "num-traits",
  "num_threads",
  "permutation_iterator",
- "rand 0.9.0",
+ "rand 0.9.1",
  "rayon",
  "serde",
  "serde_json",
@@ -5068,13 +5068,12 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3779b94aeb87e8bd4e834cee3650289ee9e0d5677f976ecdb6d219e5f4f6cd94"
+checksum = "9fbfd9d094a40bf3ae768db9361049ace4c0e04a4fd6b359518bd7b73a73dd97"
 dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.0",
- "zerocopy 0.8.24",
 ]
 
 [[package]]
@@ -5152,7 +5151,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8615d50dcf34fa31f7ab52692afec947c4dd0ab803cc87cb3b0b4570ff7463"
 dependencies = [
  "num-traits",
- "rand 0.9.0",
+ "rand 0.9.1",
 ]
 
 [[package]]
@@ -5871,7 +5870,7 @@ dependencies = [
  "procfs",
  "proptest",
  "quantization",
- "rand 0.9.0",
+ "rand 0.9.1",
  "rand_distr 0.5.1",
  "rayon",
  "rmp-serde",
@@ -6258,7 +6257,7 @@ dependencies = [
  "ordered-float 5.0.0",
  "parking_lot",
  "pprof",
- "rand 0.9.0",
+ "rand 0.9.1",
  "schemars",
  "serde",
  "serde_json",
@@ -6306,7 +6305,7 @@ dependencies = [
  "prost 0.11.9",
  "protobuf",
  "raft",
- "rand 0.9.0",
+ "rand 0.9.1",
  "reqwest",
  "schemars",
  "segment",
