@@ -37,7 +37,7 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 * 🔭 Search and Discovery
   * [ ] Diversity Sampling
   * [ ] Server-side embedding inference
-  * [ ] Built-in score boosting
+  * [x] Built-in score boosting
   * [ ] Advanced text filtering
     * [ ] Phrase queries
     * [ ] Logical operators
@@ -57,5 +57,3 @@ Feeling confident and want to contribute more? - Come to [work with us](https://
 * ⚙️ Performance
   * [ ] Incremental HNSW indexing
   * [ ] Built-in TTL support
-
-
