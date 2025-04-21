@@ -390,13 +390,12 @@ mod tests {
             .zip(imm_parsed_queries.iter().cloned())
         {
             let (Some(mut_query), Some(imm_query)) = queries else {
-                // Both queries must be None
-                assert!(
-                    queries.0.is_none() && queries.1.is_none(),
-                    "Both queries must be parsed or not parsed entirely\nmutable: {:?}\nimmutable: {:?}",
-                    queries.0,
-                    queries.1
-                );
+                // Immutable index can have a smaller vocabulary, since it only contains tokens that have
+                // non-empty posting lists.
+                // Since we removed some documents from the mutable index, it can happen that the immutable
+                // index returns None when parsing the query, even if the mutable index returns Some.
+                //
+                // In this case both queries would filter to an empty set of documents.
                 continue;
             };
             let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
