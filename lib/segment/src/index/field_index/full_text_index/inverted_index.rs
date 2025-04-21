@@ -393,7 +393,9 @@ mod tests {
                 // Both queries must be None
                 assert!(
                     queries.0.is_none() && queries.1.is_none(),
-                    "Both queries must be parsed or not parsed entirely"
+                    "Both queries must be parsed or not parsed entirely\nmutable: {:?}\nimmutable: {:?}",
+                    queries.0,
+                    queries.1
                 );
                 continue;
             };
