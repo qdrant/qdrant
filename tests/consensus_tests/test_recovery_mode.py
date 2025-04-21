@@ -44,6 +44,7 @@ def test_upserts_in_recovery_mode(tmp_path: pathlib.Path):
     )
 
     # Qdrant loads a dummy shard but doesn't try to recover it from other replicas by default
+    wait_peer_added(peer_api_uris[-1], 3)
     wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME)
 
     [local_shard] = get_local_shards(peer_api_uris[-1])
@@ -54,13 +55,12 @@ def test_upserts_in_recovery_mode(tmp_path: pathlib.Path):
     # Upsert 1 vector
     upsert_random_points(peer_api_uris[0], 1)
 
-    # This initiates a transfer to dummy shard and gives it the latest points
-    # Wait for start of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
-    # Wait for end of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
+    # An update marks replicas of the node in recovery mode as Dead
+    # However, Qdrant will not initiate a transfer to such replicas
+    wait_for_same_commit(peer_api_uris)
+    wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 0)
 
     [local_shard] = get_local_shards(peer_api_uris[-1])
     assert local_shard["shard_id"] == 0
-    assert local_shard["state"] == "Active"
-    assert local_shard["points_count"] == n_points
+    assert local_shard["state"] == "Dead" # marked dead
+    assert local_shard["points_count"] == 0
