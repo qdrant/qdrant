@@ -247,6 +247,11 @@ impl InvertedIndex for MmapInvertedIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
+        // check non-empty query
+        if parsed_query.tokens.is_empty() {
+            return false;
+        }
+
         // check presence of the document
         if self.values_is_empty(point_id) {
             return false;
