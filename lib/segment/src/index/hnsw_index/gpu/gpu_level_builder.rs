@@ -130,8 +130,10 @@ mod tests {
         )
         .unwrap();
 
-        let graph_layers_builder =
+        let mut graph_layers_builder =
             create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, 1);
+
+        graph_layers_builder.fill_ready_list();
 
         let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
