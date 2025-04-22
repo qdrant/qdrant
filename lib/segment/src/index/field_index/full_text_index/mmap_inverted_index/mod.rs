@@ -206,11 +206,7 @@ impl InvertedIndex for MmapInvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|&token_id| match token_id {
-                None => None,
-                // if a ParsedQuery token was given an index, then it must exist in the vocabulary
-                Some(idx) => self.postings.get(idx, hw_counter),
-            })
+            .map(|&token_id| self.postings.get(token_id, hw_counter))
             .collect();
         let Some(posting_readers) = postings_opt else {
             // There are unseen tokens -> no matches
@@ -252,24 +248,23 @@ impl InvertedIndex for MmapInvertedIndex {
         point_id: PointOffsetType,
         hw_counter: &HardwareCounterCell,
     ) -> bool {
-        if parsed_query.tokens.contains(&None) {
+        // check non-empty query
+        if parsed_query.tokens.is_empty() {
             return false;
         }
+
         // check presence of the document
         if self.values_is_empty(point_id) {
             return false;
         }
         // Check that all tokens are in document
-        parsed_query
-            .tokens
-            .iter()
-            // unwrap safety: all tokens exist in the vocabulary if it passes the above check
-            .all(|query_token| {
-                self.postings
-                    .get(query_token.unwrap(), hw_counter)
-                    .unwrap()
-                    .contains(point_id)
-            })
+        parsed_query.tokens.iter().all(|query_token| {
+            self.postings
+                .get(*query_token, hw_counter)
+                // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
+                .unwrap()
+                .contains(point_id)
+        })
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {

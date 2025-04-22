@@ -33,27 +33,26 @@ impl Document {
         &self.tokens
     }
 
-    pub fn check(&self, token: TokenId) -> bool {
-        self.tokens.binary_search(&token).is_ok()
+    pub fn check(&self, token: &TokenId) -> bool {
+        self.tokens.binary_search(token).is_ok()
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ParsedQuery {
-    pub tokens: Vec<Option<TokenId>>,
+    pub tokens: Vec<TokenId>,
 }
 
 impl ParsedQuery {
     pub fn check_match(&self, document: &Document) -> bool {
-        if self.tokens.contains(&None) {
+        if self.tokens.is_empty() {
             return false;
         }
 
         // Check that all tokens are in document
         self.tokens
             .iter()
-            // unwrap crash safety: all tokens exist in the vocabulary if it passes the above check
-            .all(|query_token| document.check(query_token.unwrap()))
+            .all(|query_token| document.check(query_token))
     }
 }
 
@@ -108,10 +107,7 @@ pub trait InvertedIndex {
         let posting_lengths: Option<Vec<usize>> = query
             .tokens
             .iter()
-            .map(|&vocab_idx| match vocab_idx {
-                None => None,
-                Some(idx) => self.get_posting_len(idx, hw_counter),
-            })
+            .map(|&vocab_idx| self.get_posting_len(vocab_idx, hw_counter))
             .collect();
         if posting_lengths.is_none() || points_count == 0 {
             // There are unseen tokens -> no matches
@@ -228,12 +224,16 @@ mod tests {
         (0..len).map(|_| generate_word()).collect()
     }
 
+    /// Tries to parse a query. If there is an unknown id to a token, returns `None`
     fn to_parsed_query(
         query: Vec<String>,
         token_to_id: impl Fn(String) -> Option<TokenId>,
-    ) -> ParsedQuery {
-        let tokens: Vec<_> = query.into_iter().map(token_to_id).collect();
-        ParsedQuery { tokens }
+    ) -> Option<ParsedQuery> {
+        let tokens = query
+            .into_iter()
+            .map(token_to_id)
+            .collect::<Option<Vec<_>>>()?;
+        Some(ParsedQuery { tokens })
     }
 
     fn mutable_inverted_index(indexed_count: u32, deleted_count: u32) -> MutableInvertedIndex {
@@ -384,11 +384,20 @@ mod tests {
             })
             .collect();
 
-        for (mut_query, imm_query) in mut_parsed_queries
+        for queries in mut_parsed_queries
             .iter()
             .cloned()
             .zip(imm_parsed_queries.iter().cloned())
         {
+            let (Some(mut_query), Some(imm_query)) = queries else {
+                // Immutable index can have a smaller vocabulary, since it only contains tokens that have
+                // non-empty posting lists.
+                // Since we removed some documents from the mutable index, it can happen that the immutable
+                // index returns None when parsing the query, even if the mutable index returns Some.
+                //
+                // In this case both queries would filter to an empty set of documents.
+                continue;
+            };
             let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
             let imm_filtered = mmap_index
                 .filter(imm_query, &hw_counter)
@@ -410,11 +419,19 @@ mod tests {
 
         // Check congruence after deletion
 
-        for (mut_query, imm_query) in mut_parsed_queries
+        for queries in mut_parsed_queries
             .iter()
             .cloned()
             .zip(imm_parsed_queries.iter().cloned())
         {
+            let (Some(mut_query), Some(imm_query)) = queries else {
+                // Both queries must be None
+                assert!(
+                    queries.0.is_none() && queries.1.is_none(),
+                    "Both queries must be parsed or not parsed entirely"
+                );
+                continue;
+            };
             let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
             let imm_filtered = mmap_index
                 .filter(imm_query, &hw_counter)

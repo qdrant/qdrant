@@ -1,7 +1,8 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use parking_lot::RwLock;
@@ -236,14 +237,14 @@ impl FullTextIndex {
         }
     }
 
-    pub fn parse_query(&self, text: &str, hw_counter: &HardwareCounterCell) -> ParsedQuery {
-        let mut tokens = HashSet::new();
+    /// Tries to parse a query. If there are any unseen tokens, returns `None`
+    pub fn parse_query(&self, text: &str, hw_counter: &HardwareCounterCell) -> Option<ParsedQuery> {
+        let mut tokens = AHashSet::new();
         Tokenizer::tokenize_query(text, self.config(), |token| {
             tokens.insert(self.get_token(token, hw_counter));
         });
-        ParsedQuery {
-            tokens: tokens.into_iter().collect(),
-        }
+        let tokens = tokens.into_iter().collect::<Option<Vec<_>>>()?;
+        Some(ParsedQuery { tokens })
     }
 
     pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> Document {
@@ -262,7 +263,9 @@ impl FullTextIndex {
         query: &'a str,
         hw_counter: &'a HardwareCounterCell,
     ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
-        let parsed_query = self.parse_query(query, hw_counter);
+        let Some(parsed_query) = self.parse_query(query, hw_counter) else {
+            return Box::new(std::iter::empty());
+        };
         self.filter(parsed_query, hw_counter)
     }
 
@@ -398,7 +401,9 @@ impl PayloadFieldIndex for FullTextIndex {
         hw_counter: &'a HardwareCounterCell,
     ) -> Option<Box<dyn Iterator<Item = PointOffsetType> + 'a>> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text, hw_counter);
+            let Some(parsed_query) = self.parse_query(&text_match.text, hw_counter) else {
+                return Some(Box::new(std::iter::empty()));
+            };
             return Some(self.filter(parsed_query, hw_counter));
         }
         None
@@ -410,7 +415,9 @@ impl PayloadFieldIndex for FullTextIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         if let Some(Match::Text(text_match)) = &condition.r#match {
-            let parsed_query = self.parse_query(&text_match.text, hw_counter);
+            let Some(parsed_query) = self.parse_query(&text_match.text, hw_counter) else {
+                return Some(CardinalityEstimation::exact(0));
+            };
             return Some(self.estimate_cardinality(&parsed_query, condition, hw_counter));
         }
         None
