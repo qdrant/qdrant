@@ -328,6 +328,46 @@ async fn test_query_dedup() {
     }
 }
 
+/// Test should match behavior of [`test_scroll_dedup`]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_scroll_dedup() {
+    let collection = fixture().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: None,
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            hw_acc,
+        )
+        .await
+        .expect("failed to scroll");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+}
+
 pub fn dummy_on_replica_failure() -> ChangePeerFromState {
     Arc::new(move |_peer_id, _shard_id, _from_state| {})
 }
