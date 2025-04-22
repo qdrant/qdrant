@@ -157,9 +157,14 @@ impl GraphLayersBuilder {
     }
 
     #[cfg(feature = "gpu")]
-    pub fn clear_ready_list(&mut self) {
+    pub fn fill_ready_list(&mut self) {
         let num_vectors = self.num_points();
         self.ready_list = RwLock::new(BitVec::repeat(true, num_vectors));
+    }
+
+    #[cfg(feature = "gpu")]
+    pub fn set_ready(&mut self, point_id: PointOffsetType) -> bool {
+        self.ready_list.write().replace(point_id as usize, true)
     }
 
     pub fn new_with_params(
@@ -406,7 +411,7 @@ impl GraphLayersBuilder {
             // We can't do much here, so just quit
         }
         let was_ready = self.ready_list.write().replace(point_id as usize, true);
-        debug_assert!(!was_ready);
+        debug_assert!(!was_ready, "Point {point_id} was already marked as ready");
         self.entry_points
             .lock()
             .new_point(point_id, level, |point_id| {
