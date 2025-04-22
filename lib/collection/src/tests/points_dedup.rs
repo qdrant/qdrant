@@ -9,6 +9,7 @@ use rand::{Rng, rng};
 use segment::data_types::vectors::NamedQuery;
 use segment::types::{
     Distance, ExtendedPointId, Payload, PayloadFieldSchema, PayloadSchemaType, SearchParams,
+    WithPayloadInterface, WithVector,
 };
 use serde_json::{Map, Value};
 use tempfile::Builder;
@@ -24,6 +25,7 @@ use crate::operations::shared_storage_config::SharedStorageConfig;
 use crate::operations::types::{
     CoreSearchRequest, PointRequestInternal, ScrollRequestInternal, VectorsConfig,
 };
+use crate::operations::universal_query::shard_query::{ScoringQuery, ShardQueryRequest};
 use crate::operations::vector_params_builder::VectorParamsBuilder;
 use crate::operations::{CollectionUpdateOperations, OperationWithClockTag};
 use crate::optimizers_builder::OptimizersConfig;
@@ -273,6 +275,47 @@ async fn test_search_dedup() {
         )
         .await
         .expect("failed to search");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_query_dedup() {
+    let collection = fixture().await;
+
+    let hw_acc = HwMeasurementAcc::new();
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: Some(ScoringQuery::Vector(QueryEnum::Nearest(
+                    NamedQuery::default_dense(vec![0.1, 0.2, 0.3, 0.4]),
+                ))),
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            hw_acc,
+        )
+        .await
+        .expect("failed to query");
     assert!(!points.is_empty(), "expected some points");
 
     let mut seen = HashSet::new();
