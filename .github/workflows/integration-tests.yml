@@ -79,9 +79,9 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: consensus-test-logs
-          retention-days: 90 # default max value
           path: consensus_test_logs
+          name: consensus-test-logs
+          retention-days: 10
 
   test-consensus-compose:
 
