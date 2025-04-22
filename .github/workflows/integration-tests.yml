@@ -38,9 +38,15 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked
+        run: |
+          export COVERAGE=1
+          if [ "$COVERAGE" == "1" ]; then
+            RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
+          else
+            cargo build --features "service_debug data-consistency-check" --locked;
+          fi
       - name: Run integration tests
-        run: poetry -C tests run ./tests/integration-tests.sh
+        run: COVERAGE=1 poetry -C tests run ./tests/integration-tests.sh
         shell: bash
 
   integration-tests-consensus:
@@ -86,7 +92,10 @@ jobs:
         run: COVERAGE=1 poetry -C tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
       - name: Generate coverage report
-        run: cargo llvm-cov report --lcov --output-path coverage.lcov
+        run: |
+          ls -lah ./target/llvm-cov-target/debug
+          cargo llvm-cov report --lcov --output-path coverage.lcov
+          ls coverage.lcov
       - name: Upload coverage data to Codecov
         uses: codecov/codecov-action@v5
         with:
