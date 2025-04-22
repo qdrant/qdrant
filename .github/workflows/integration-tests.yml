@@ -37,6 +37,8 @@ jobs:
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
         run: |
           export COVERAGE=1
@@ -111,12 +113,6 @@ jobs:
           cargo llvm-cov report --lcov --output-path coverage.lcov
           ls -lah ./target/llvm-cov-target
           ls -lah coverage.lcov
-      # - name: upload qdrant-integration.profraw
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: "*.profdata"
-      #     retention-days: 90 # default max value
-      #     path: target/llvm-cov-target
       - name: Upload coverage data to Codecov
         uses: codecov/codecov-action@v5
         with:
