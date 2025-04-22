@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   POETRY_VERSION: 1.8.5
-  COVERAGE: 1
+  COVERAGE: '1'
 
 jobs:
   integration-tests:
@@ -71,19 +71,19 @@ jobs:
           poetry -C tests install --no-root
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
-        if: env.COVERAGE == '1'
       - name: Build
         run: |
+          export COVERAGE=1
           if [ "$COVERAGE" == "1" ]; then
             RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
           else
             cargo build --features "service_debug data-consistency-check" --locked;
           fi
       - name: Run integration tests - 1 peer
-        run: poetry -C tests run ./tests/integration-tests.sh distributed
+        run: COVERAGE=1 poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: poetry -C tests run pytest tests/consensus_tests --durations=10
+        run: COVERAGE=1 poetry -C tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
       - name: Generate coverage report
         run: cargo llvm-cov report --lcov --output-path coverage.lcov
