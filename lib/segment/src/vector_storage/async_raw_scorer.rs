@@ -78,14 +78,10 @@ impl<'a> AsyncRawScorerBuilder<'a> {
         storage: &'a MemmapDenseVectorStorage<VectorElementType>,
         hardware_counter: HardwareCounterCell,
     ) -> Self {
-        let _points_count = storage.total_vector_count(); // TODO: use it somehow on upper level
-
-        let distance = storage.distance();
-
         Self {
             query,
             storage,
-            distance,
+            distance: storage.distance(),
             hardware_counter,
         }
     }

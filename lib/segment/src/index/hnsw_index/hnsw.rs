@@ -13,7 +13,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::cpu::linux_low_thread_priority;
 use common::ext::BitSliceExt as _;
 use common::types::{PointOffsetType, ScoredPointOffset, TelemetryDetail};
-use itertools::EitherOrBoth;
+use itertools::{EitherOrBoth, Itertools as _};
 use log::debug;
 use memory::fadvise::clear_disk_cache;
 use parking_lot::Mutex;
@@ -1097,7 +1097,9 @@ impl HNSWIndex {
                 hardware_counter,
             )?;
 
-            scorer.rescore_points(&mut search_result);
+            search_result = scorer
+                .score_points(&mut search_result.iter().map(|x| x.idx).collect_vec(), 0)
+                .collect();
             search_result.sort_unstable();
             search_result.reverse();
         }

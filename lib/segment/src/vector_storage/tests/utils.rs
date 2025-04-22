@@ -1,12 +1,10 @@
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
 use rand::seq::IteratorRandom;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::id_tracker::IdTracker;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub type Result<T, E = Error> = result::Result<T, E>;
@@ -54,10 +52,4 @@ pub fn delete_random_vectors(
     }
 
     Ok(())
-}
-
-pub fn score(scorer: &mut FilteredScorer, points: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
-    scorer
-        .score_points(&mut points.to_vec(), 0)
-        .collect::<Vec<_>>()
 }

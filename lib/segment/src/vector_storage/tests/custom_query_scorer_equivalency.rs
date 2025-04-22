@@ -27,7 +27,6 @@ use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 
 const DIMS: usize = 128;
@@ -201,14 +200,16 @@ fn scoring_equivalency(
         let points =
             (0..other_storage.total_vector_count() as _).choose_multiple(&mut rng, SAMPLE_SIZE);
 
-        let raw_scores = score(&mut scorer, &points);
-        let other_scores = score(&mut other_scorer, &points);
+        let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
+        let other_scores = other_scorer
+            .score_points(&mut points.clone(), 0)
+            .collect_vec();
 
         // Compare scores
         if quantized_vectors.is_none() {
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
-                raw_scores, other_scores,
+                scores, other_scores,
                 "Scorer results are not equal, attempt: {i}, query: {query:?}"
             );
         } else {
@@ -218,7 +219,7 @@ fn scoring_equivalency(
 
             let top = SAMPLE_SIZE / 10;
 
-            let raw_top: HashSet<_> = raw_scores
+            let raw_top: HashSet<_> = scores
                 .iter()
                 .sorted()
                 .rev()

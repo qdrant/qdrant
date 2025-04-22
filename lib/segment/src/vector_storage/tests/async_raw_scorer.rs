@@ -7,7 +7,7 @@ use itertools::Itertools;
 use rand::SeedableRng as _;
 use rand::seq::IteratorRandom as _;
 
-use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler, score};
+use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler};
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
@@ -126,8 +126,10 @@ fn test_random_score(
     let points = rng.random_range(1..storage.total_vector_count());
     let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
 
-    let res = score(&mut scorer, &points);
-    let async_res = score(&mut async_scorer, &points);
+    let res = scorer.score_points(&mut points.clone(), 0).collect_vec();
+    let async_res = async_scorer
+        .score_points(&mut points.clone(), 0)
+        .collect_vec();
 
     assert_eq!(res, async_res);
     Ok(())

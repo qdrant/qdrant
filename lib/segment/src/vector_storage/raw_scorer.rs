@@ -26,30 +26,6 @@ use crate::vector_storage::query_scorer::QueryScorer;
 use crate::vector_storage::query_scorer::metric_query_scorer::MetricQueryScorer;
 use crate::vector_storage::query_scorer::multi_metric_query_scorer::MultiMetricQueryScorer;
 
-/// RawScorer composition:
-///
-/// ```plaintext
-///                                              Metric
-///                                             ┌───────────────────┐
-///                                             │  - Cosine         │
-///   RawScorer            QueryScorer          │  - Dot            │
-///  ┌────────────────┐   ┌──────────────┐  ┌───┤  - Euclidean      │
-///  │                │   │              │  │   │                   │
-///  │       ┌─────┐  │   │    ┌─────┐   │  │   └───────────────────┘
-///  │       │     │◄─┼───┤    │     │◄──┼──┘   - Vector Distance
-///  │       └─────┘  │   │    └─────┘   │
-///  │                │   │              │
-///  └────────────────┘   │    ┌─────┐   │        Query
-///   - Access patterns   │    │     │◄──┼───┐   ┌───────────────────┐
-///                       │    └─────┘   │   │   │  - RecoQuery      │
-///                       │              │   │   │  - DiscoveryQuery │
-///                       └──────────────┘   └───┤  - ContextQuery   │
-///                       - Query holding        │                   │
-///                       - Vector storage       └───────────────────┘
-///                                              - Scoring logic
-///                                              - Complex queries
-///
-/// ```
 pub trait RawScorer {
     fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]);
 
@@ -730,17 +706,20 @@ where
     TVector: ?Sized,
     TQueryScorer: QueryScorer<TVector>,
 {
-    fn score_points(&self, mut points: &[PointOffsetType], mut scores: &mut [ScoreType]) {
+    fn score_points(&self, points: &[PointOffsetType], scores: &mut [ScoreType]) {
         assert_eq!(points.len(), scores.len());
 
-        while !points.is_empty() {
-            let chunk_size = points.len().min(VECTOR_READ_BATCH_SIZE);
-            let (chunk_points, rest_points) = points.split_at(chunk_size);
-            let (chunk_scores, rest_scores) = scores.split_at_mut(chunk_size);
+        let (mut remaining_points, mut remaining_scores) = (points, scores);
+        while !remaining_points.is_empty() {
+            let chunk_size = remaining_points.len().min(VECTOR_READ_BATCH_SIZE);
+
+            let (chunk_points, rest_points) = remaining_points.split_at(chunk_size);
+            let (chunk_scores, rest_scores) = remaining_scores.split_at_mut(chunk_size);
+            remaining_points = rest_points;
+            remaining_scores = rest_scores;
+
             self.query_scorer
-                .score_stored_batch(&chunk_points[..chunk_size], &mut chunk_scores[..chunk_size]);
-            points = rest_points;
-            scores = rest_scores;
+                .score_stored_batch(chunk_points, chunk_scores);
         }
     }
 
