@@ -1,6 +1,7 @@
-from retry import retry
-from .helpers import request_with_validation
 from requests.exceptions import ConnectionError
+from retry import retry
+
+from .helpers import request_with_validation
 
 
 @retry(ConnectionError, delay=1, tries=5, backoff=2)

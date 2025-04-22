@@ -37,7 +37,7 @@ def test_vector_storage_strict_mode_upsert(tmp_path: pathlib.Path):
                 assert "Max vector storage size" in res.json()['status']['error']
                 return
 
-    assert False, "Should have blocked upsert but didn't"
+    raise AssertionError("Should have blocked upsert but didn't")
 
 
 def test_vector_storage_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
@@ -80,7 +80,7 @@ def test_vector_storage_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path
             assert not res.ok
             return
 
-    assert False, "Should have blocked upsert but didn't"
+    raise AssertionError("Should have blocked upsert but didn't")
 
 
 def test_vector_storage_strict_mode_upsert_local_shard(tmp_path: pathlib.Path):
@@ -113,7 +113,8 @@ def test_vector_storage_strict_mode_upsert_local_shard(tmp_path: pathlib.Path):
             assert not res.ok
             return
 
-    assert False, "Should have blocked upsert but didn't"
+    raise AssertionError("Should have blocked upsert but didn't")
+
 
 
 def test_payload_strict_mode_upsert(tmp_path: pathlib.Path):
@@ -140,7 +141,8 @@ def test_payload_strict_mode_upsert(tmp_path: pathlib.Path):
                 assert "Max payload storage size" in res.json()['status']['error']
                 return
 
-    assert False, "Should have blocked upsert but didn't"
+    raise AssertionError("Should have blocked upsert but didn't")
+
 
 
 def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
@@ -185,7 +187,8 @@ def test_payload_strict_mode_upsert_no_local_shard(tmp_path: pathlib.Path):
             assert not res.ok
             return
 
-    assert False, "Should have blocked upsert but didn't"
+    raise AssertionError("Should have blocked upsert but didn't")
+
 
 
 def test_write_rate_limiting_across_node(tmp_path: pathlib.Path):
@@ -236,4 +239,4 @@ def test_write_rate_limiting_across_node(tmp_path: pathlib.Path):
             assert 1 <= int(response.headers['Retry-After']) <= 5
             return
 
-    assert False, "rate limiter was never triggered"
+    raise AssertionError("rate limiter was never triggered")

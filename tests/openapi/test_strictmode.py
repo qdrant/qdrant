@@ -1,16 +1,22 @@
 import pytest
+from requests import Response
 
-from .conftest import collection_name
-from .helpers.collection_setup import basic_collection_setup, drop_collection
+from .conftest import collection_name as test_collection_name
+from .helpers.collection_setup import basic_collection_setup, drop_collection, full_collection_setup
 from .helpers.helpers import request_with_validation
 
+@pytest.fixture()
+def collection_name(test_collection_name):
+    basic_collection_setup(collection_name=test_collection_name)
+    yield test_collection_name
+    drop_collection(collection_name=test_collection_name)
 
-@pytest.fixture(autouse=True)
-def setup(collection_name):
-    basic_collection_setup(collection_name=collection_name)
-    yield
-    drop_collection(collection_name=collection_name)
-
+@pytest.fixture()
+def full_collection_name(test_collection_name):
+    coll_name = f"{test_collection_name}_full"
+    full_collection_setup(coll_name)
+    yield coll_name
+    drop_collection(collection_name=coll_name)
 
 def set_strict_mode(collection_name, strict_mode_config):
     request_with_validation(
@@ -1728,3 +1734,78 @@ def test_strict_mode_distance_matrix_limits(collection_name):
     )
     assert not response.ok
     assert "Forbidden: Limit exceeded 20 > 15 for \"limit\"" in response.json()['status']['error']
+
+
+def test_read_rate_limiter_many_vectors(full_collection_name):
+    collection_name = full_collection_name
+
+    def check_response(response: Response, should_succeed: bool):
+        if should_succeed:
+            assert response.ok, response.text
+        else:
+            assert response.status_code == 429
+            assert "request larger than rate limiter capacity" in response.json()['status']['error']
+
+    def check_multivector_query_raw(should_succeed: bool):
+        # query api with vector
+        multivector = [[0.1, 0.2, 0.3, 0.4] for _ in range(3)]
+        search_response = request_with_validation(
+            api='/collections/{collection_name}/points/query',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "query": multivector,
+                "using": "dense-multi",
+                "limit": 5
+            }
+        )
+        check_response(search_response, should_succeed)
+
+    def check_multivector_query_id(should_succeed: bool):
+        # query api with id
+        search_response = request_with_validation(
+            api='/collections/{collection_name}/points/query',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "query": 2, # this point has a multivector of 3 vectors
+                "using": "dense-multi",
+                "limit": 5
+            }
+        )
+        check_response(search_response, should_succeed)
+
+    # check without strict mode
+    check_multivector_query_raw(should_succeed=True)
+    check_multivector_query_id(should_succeed=True)
+
+    # Set strict mode with very low read_rate_limit, it should not succeed
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 2 # multivector has 3 vectors
+    })
+    check_multivector_query_raw(should_succeed=False)
+
+    # reset rate limiter for next request
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 2 # multivector has 3 vectors
+    })
+    check_multivector_query_id(should_succeed=False)
+
+
+    # Set strict mode with just enough read_rate_limit, it should succeed
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 3 # multivector has 3 vectors
+    })
+    check_multivector_query_raw(should_succeed=True)
+
+    # reset rate limiter for next request
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "read_rate_limit": 5 # multivector has 3 vectors
+                             # + 1 of fetching the id
+                             # + 1 of the filter for not including the id
+    })
+    check_multivector_query_id(should_succeed=True)
