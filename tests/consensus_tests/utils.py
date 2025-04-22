@@ -71,6 +71,9 @@ def get_port() -> int:
                 continue
             return allocated_port
 
+def is_coverage_mode() -> bool:
+    return os.getenv("COVERAGE") == "1"
+
 
 def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env = os.environ.copy()
@@ -80,6 +83,10 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     env["QDRANT__LOG_LEVEL"] = "DEBUG,raft::raft=info"
     env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
+
+    if is_coverage_mode():
+        env["LLVM_PROFILE_FILE"] =  get_llvm_profile_file()
+
     return env
 
 
@@ -95,8 +102,16 @@ def assert_project_root():
 
 def get_qdrant_exec() -> str:
     directory_path = os.getcwd()
-    qdrant_exec = directory_path + "/target/debug/qdrant"
+    if is_coverage_mode():
+        qdrant_exec = directory_path + "/target/llvm-cov-target/debug/qdrant"
+    else:
+        qdrant_exec = directory_path + "/target/debug/qdrant"
     return qdrant_exec
+
+def get_llvm_profile_file() -> str:
+    project_root = os.getcwd()
+    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%p-%m.profraw"
+    return llvm_profile_file
 
 
 def get_pytest_current_test_name() -> str:

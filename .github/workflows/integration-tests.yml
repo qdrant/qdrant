@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   POETRY_VERSION: 1.8.5
+  COVERAGE: 1
 
 jobs:
   integration-tests:
@@ -69,13 +70,26 @@ jobs:
           poetry -C tests check --lock
           poetry -C tests install --no-root
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked
+        run: if [ "$COVERAGE" == "1" ]; then
+              RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
+            else
+              cargo build --features "service_debug data-consistency-check" --locked;
+            fi
       - name: Run integration tests - 1 peer
         run: poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
       - name: Run integration tests - multiple peers - pytest
         run: poetry -C tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
+      - name: Generate coverage report
+        run: cargo llvm-cov report --lcov --output-path coverage.lcov; genhtml -o coverage_report/ coverage.lcov
+      - name: Upload coverage data to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.lcov  # FIX: Might need .info file instead of .lcov to work
+          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
       - name: upload logs
         uses: actions/upload-artifact@v4
         if: always()

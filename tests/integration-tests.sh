@@ -9,15 +9,22 @@ cd "$(dirname "$0")/../"
 QDRANT_HOST='localhost:6333'
 export QDRANT__SERVICE__GRPC_PORT="6334"
 
+if [ "$COVERAGE" == "1" ]; then
+  export LLVM_PROFILE_FILE="./target/llvm-cov-target/qdrant-integration.profraw"
+  QDRANT_EXECUTABLE="./target/llvm-cov-target/debug/qdrant"
+else
+  QDRANT_EXECUTABLE="./target/debug/qdrant"
+fi
+
 MODE=$1
 # Enable distributed mode on demand
 if [ "$MODE" == "distributed" ]; then
   export QDRANT__CLUSTER__ENABLED="true"
   # Run in background
-  ./target/debug/qdrant --uri "http://127.0.0.1:6335" &
+  $QDRANT_EXECUTABLE --uri "http://127.0.0.1:6335" &
 else
   # Run in background
-  ./target/debug/qdrant &
+  $QDRANT_EXECUTABLE &
 fi
 
 ## Capture PID of the run
