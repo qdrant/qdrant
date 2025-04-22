@@ -48,6 +48,19 @@ jobs:
       - name: Run integration tests
         run: COVERAGE=1 poetry -C tests run ./tests/integration-tests.sh
         shell: bash
+      - name: Generate coverage report
+        run: |
+          ls -lah ./target/llvm-cov-target
+          cargo llvm-cov report --lcov --output-path coverage.lcov
+          ls -lah ./target/llvm-cov-target
+          ls -lah coverage.lcov
+      - name: Upload coverage data to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.lcov  # FIX: Might need .info file instead of .lcov to work
+          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
 
   integration-tests-consensus:
 
@@ -98,12 +111,12 @@ jobs:
           cargo llvm-cov report --lcov --output-path coverage.lcov
           ls -lah ./target/llvm-cov-target
           ls -lah coverage.lcov
-      - name: upload qdrant-integration.profraw
-        uses: actions/upload-artifact@v4
-        with:
-          name: "*.profdata"
-          retention-days: 90 # default max value
-          path: target/llvm-cov-target
+      # - name: upload qdrant-integration.profraw
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: "*.profdata"
+      #     retention-days: 90 # default max value
+      #     path: target/llvm-cov-target
       - name: Upload coverage data to Codecov
         uses: codecov/codecov-action@v5
         with:
