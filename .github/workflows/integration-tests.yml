@@ -93,9 +93,9 @@ jobs:
         timeout-minutes: 60
       - name: Generate coverage report
         run: |
-          ls -lah ./target/llvm-cov-target/debug
+          ls -lah ./target/llvm-cov-target
           cargo llvm-cov report --lcov --output-path coverage.lcov
-          ls coverage.lcov
+          ls -lah coverage.lcov
       - name: Upload coverage data to Codecov
         uses: codecov/codecov-action@v5
         with:
