@@ -15,11 +15,25 @@ use crate::common::utils::transpose_map_into_named_vector;
 use crate::types::{VectorName, VectorNameBuf};
 use crate::vector_storage::query::{ContextQuery, DiscoveryQuery, RecoQuery, TransformInto};
 
+/// How many dimensions of a sparse vector are considered to be a single unit for cost estimation.
+const SPARSE_DIMS_COST_UNIT: usize = 64;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum VectorInternal {
     Dense(DenseVector),
     Sparse(SparseVector),
     MultiDense(MultiDenseVectorInternal),
+}
+
+impl VectorInternal {
+    /// Returns the estimated cost of using this vector in terms of the number of how many similarity comparisons vector will make against one point.
+    pub fn similarity_cost(&self) -> usize {
+        match self {
+            VectorInternal::Dense(_dense) => 1,
+            VectorInternal::Sparse(sparse) => sparse.indices.len().div_ceil(SPARSE_DIMS_COST_UNIT),
+            VectorInternal::MultiDense(multivec) => multivec.len(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -202,6 +216,11 @@ pub struct TypedMultiDenseVector<T> {
 
 impl<T> TypedMultiDenseVector<T> {
     pub fn try_from_flatten(vectors: Vec<T>, dim: usize) -> Result<Self, OperationError> {
+        if dim == 0 {
+            return Err(OperationError::ValidationError {
+                description: "MultiDenseVector cannot have zero dimension".to_string(),
+            });
+        }
         if vectors.len() % dim != 0 || vectors.is_empty() {
             return Err(OperationError::ValidationError {
                 description: format!(
@@ -225,6 +244,11 @@ impl<T> TypedMultiDenseVector<T> {
             });
         }
         let dim = matrix[0].len();
+        if dim == 0 {
+            return Err(OperationError::ValidationError {
+                description: "MultiDenseVector cannot have zero dimension".to_string(),
+            });
+        }
         // assert all vectors have the same dimension
         if let Some(bad_vec) = matrix.iter().find(|v| v.len() != dim) {
             return Err(OperationError::WrongVectorDimension {
@@ -240,6 +264,10 @@ impl<T> TypedMultiDenseVector<T> {
         };
 
         Ok(multi_dense)
+    }
+
+    pub fn len(&self) -> usize {
+        self.flattened_vectors.len() / self.dim
     }
 }
 
@@ -309,26 +337,7 @@ impl<T: PrimitiveVectorElement> TryFrom<Vec<TypedDenseVector<T>>> for TypedMulti
     type Error = OperationError;
 
     fn try_from(value: Vec<TypedDenseVector<T>>) -> Result<Self, Self::Error> {
-        if value.is_empty() {
-            return Err(OperationError::ValidationError {
-                description: "MultiDenseVector cannot be empty".to_string(),
-            });
-        }
-        let dim = value[0].len();
-        // assert all vectors have the same dimension
-        if let Some(bad_vec) = value.iter().find(|v| v.len() != dim) {
-            Err(OperationError::WrongVectorDimension {
-                expected_dim: dim,
-                received_dim: bad_vec.len(),
-            })
-        } else {
-            let flattened_vectors = value.into_iter().flatten().collect_vec();
-            let multi_dense = TypedMultiDenseVector {
-                flattened_vectors,
-                dim,
-            };
-            Ok(multi_dense)
-        }
+        Self::try_from_matrix(value)
     }
 }
 
