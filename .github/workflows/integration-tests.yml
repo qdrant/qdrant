@@ -69,6 +69,9 @@ jobs:
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov && sudo apt install -y lcov
+        if: env.COVERAGE == '1'
       - name: Build
         run: if [ "$COVERAGE" == "1" ]; then
               RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
@@ -82,7 +85,7 @@ jobs:
         run: poetry -C tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
       - name: Generate coverage report
-        run: cargo llvm-cov report --lcov --output-path coverage.lcov; genhtml -o coverage_report/ coverage.lcov
+        run: cargo llvm-cov report --lcov --output-path coverage.lcov
       - name: Upload coverage data to Codecov
         uses: codecov/codecov-action@v5
         with:
