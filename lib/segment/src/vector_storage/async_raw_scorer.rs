@@ -54,6 +54,10 @@ where
                 scores[idx] = self.query_scorer.score(other_vector);
             })
             .unwrap();
+
+        // ToDo: io_uring is experimental, it can fail if it is not supported.
+        // Instead of silently falling back to the sync implementation, we prefer to panic
+        // and notify the user that they better use the default IO implementation.
     }
 
     fn score_point(&self, point: PointOffsetType) -> ScoreType {
