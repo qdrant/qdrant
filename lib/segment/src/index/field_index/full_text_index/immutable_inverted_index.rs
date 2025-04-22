@@ -141,9 +141,8 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             .postings
             .into_iter()
             .enumerate()
-            .filter_map(|(orig_token, posting)| match posting {
-                Some(posting) if posting.len() > 0 => Some((orig_token, posting)),
-                _ => None,
+            .filter_map(|(orig_token, posting)| {
+                (!posting.is_empty()).then_some((orig_token, posting))
             })
             .enumerate()
             .map(|(new_token, (orig_token, posting))| {

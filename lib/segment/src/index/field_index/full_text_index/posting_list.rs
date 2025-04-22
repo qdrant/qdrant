@@ -6,10 +6,6 @@ pub struct PostingList {
 }
 
 impl PostingList {
-    pub fn new(idx: PointOffsetType) -> Self {
-        Self { list: vec![idx] }
-    }
-
     pub fn insert(&mut self, idx: PointOffsetType) {
         if self.list.is_empty() || idx > *self.list.last().unwrap() {
             self.list.push(idx);
@@ -29,19 +25,28 @@ impl PostingList {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.list.len()
     }
 
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
+    #[inline]
     pub fn contains(&self, val: PointOffsetType) -> bool {
         self.list.binary_search(&val).is_ok()
     }
 
+    #[inline]
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.list.iter().copied()
     }
 
-    pub(crate) fn into_vec(self) -> Vec<PointOffsetType> {
+    #[inline]
+    pub fn into_vec(self) -> Vec<PointOffsetType> {
         self.list
     }
 }

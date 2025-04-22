@@ -12,7 +12,7 @@ use crate::index::field_index::full_text_index::postings_iterator::intersect_pos
 #[cfg_attr(test, derive(Clone))]
 #[derive(Default)]
 pub struct MutableInvertedIndex {
-    pub(in crate::index::field_index::full_text_index) postings: Vec<Option<PostingList>>,
+    pub(in crate::index::field_index::full_text_index) postings: Vec<PostingList>,
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_docs: Vec<Option<Document>>,
     pub(in crate::index::field_index::full_text_index) points_count: usize,
@@ -49,14 +49,11 @@ impl MutableInvertedIndex {
                             .postings
                             .resize_with(*token_idx as usize + 1, Default::default);
                     }
-                    let posting = index
+                    index
                         .postings
                         .get_mut(*token_idx as usize)
-                        .expect("posting must exist even if with None");
-                    match posting {
-                        None => *posting = Some(PostingList::new(idx as PointOffsetType)),
-                        Some(vec) => vec.insert(idx as PointOffsetType),
-                    }
+                        .expect("posting must exist")
+                        .insert(idx as PointOffsetType);
                 }
             }
         }
@@ -105,14 +102,10 @@ impl InvertedIndex for MutableInvertedIndex {
                 self.postings.resize_with(new_len, Default::default);
             }
 
-            let posting = self
-                .postings
+            self.postings
                 .get_mut(token_idx_usize)
-                .expect("posting must exist even if with None");
-            match posting {
-                None => *posting = Some(PostingList::new(point_id)),
-                Some(vec) => vec.insert(point_id),
-            }
+                .expect("posting must exist")
+                .insert(point_id);
 
             hw_cell_wb.incr_delta(size_of_val(&point_id));
         }
@@ -133,11 +126,9 @@ impl InvertedIndex for MutableInvertedIndex {
         self.points_count -= 1;
 
         for removed_token in removed_doc.tokens() {
-            // unwrap safety: posting list exists and contains the document id
+            // unwrap safety: posting list exists and contains the point idx
             let posting = self.postings.get_mut(*removed_token as usize).unwrap();
-            if let Some(vec) = posting {
-                vec.remove(idx);
-            }
+            posting.remove(idx);
         }
         true
     }
@@ -153,15 +144,14 @@ impl InvertedIndex for MutableInvertedIndex {
             .map(|&vocab_idx| {
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
                 // dictionary. Posting list entry can be None but it exists.
-                let postings = self.postings.get(vocab_idx as usize).unwrap().as_ref();
+                let postings = self.postings.get(vocab_idx as usize);
                 postings
             })
             .collect();
-        if postings_opt.is_none() {
+        let Some(postings) = postings_opt else {
             // There are unseen tokens -> no matches
             return Box::new(vec![].into_iter());
-        }
-        let postings = postings_opt.unwrap();
+        };
         if postings.is_empty() {
             // Empty request -> no matches
             return Box::new(vec![].into_iter());
@@ -170,20 +160,14 @@ impl InvertedIndex for MutableInvertedIndex {
     }
 
     fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
-        self.postings
-            .get(token_id as usize)
-            .and_then(|posting| posting.as_ref())
-            .as_ref()
-            .map(|x| x.len())
+        self.postings.get(token_id as usize).map(|x| x.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
         self.vocab.iter().filter_map(|(token, &posting_idx)| {
-            if let Some(Some(postings)) = self.postings.get(posting_idx as usize) {
-                Some((token.as_str(), postings.len()))
-            } else {
-                None
-            }
+            self.postings
+                .get(posting_idx as usize)
+                .map(|postings| (token.as_str(), postings.len()))
         })
     }
 
