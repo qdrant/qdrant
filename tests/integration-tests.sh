@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6333'
 export QDRANT__SERVICE__GRPC_PORT="6334"
-export LLVM_PROFILE_FILE="./target/llvm-cov-target/qdrant-integration-%p.profraw"
+export LLVM_PROFILE_FILE="./target/llvm-cov-target/qdrant-integration.profraw" # Avoiding -%p for now
 
 if [ "$COVERAGE" == "1" ]; then
   QDRANT_EXECUTABLE="./target/llvm-cov-target/debug/qdrant"
@@ -34,7 +34,14 @@ echo $PID
 function clear_after_tests()
 {
   echo "server is going down"
-  kill -9 $PID
+
+  if [ "$COVERAGE" == "1" ]; then
+    kill -2 $PID # interrupt instead of kill to allow graceful shutdown so we can get the coverage
+    wait $PID
+  else
+    kill -9 $PID
+  fi
+
   echo "END"
 }
 

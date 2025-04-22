@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import signal
 from subprocess import Popen
 import time
 from typing import Tuple, Callable, Dict, List
@@ -18,12 +19,12 @@ RETRY_INTERVAL_SEC = 0.2
 
 
 # Tracks processes that need to be killed at the end of the test
-processes = []
+processes: List['PeerProcess'] = []
 busy_ports = {}
 
 
 class PeerProcess:
-    def __init__(self, proc, http_port, grpc_port, p2p_port):
+    def __init__(self, proc: Popen, http_port, grpc_port, p2p_port):
         self.proc = proc
         self.http_port = http_port
         self.grpc_port = grpc_port
@@ -34,6 +35,14 @@ class PeerProcess:
         self.proc.kill()
         # remove allocated ports from the dictionary
         # so they can be used afterwards
+        del busy_ports[self.http_port]
+        del busy_ports[self.grpc_port]
+        del busy_ports[self.p2p_port]
+
+    def interrupt(self):
+        self.proc.send_signal(signal.SIGINT)
+        self.proc.wait()
+
         del busy_ports[self.http_port]
         del busy_ports[self.grpc_port]
         del busy_ports[self.p2p_port]
@@ -50,8 +59,12 @@ def kill_all_processes():
     print()
     while len(processes) > 0:
         p = processes.pop(0)
-        print(f"Killing {p.pid}")
-        p.kill()
+        if is_coverage_mode():
+            print(f"Interrupting {p.pid}")
+            p.interrupt()
+        else:
+            print(f"Killing {p.pid}")
+            p.kill()
 
 
 @pytest.fixture(autouse=True)
@@ -110,7 +123,9 @@ def get_qdrant_exec() -> str:
 
 def get_llvm_profile_file() -> str:
     project_root = os.getcwd()
-    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%p.profraw"
+    # %m: keep merging results from each test into the same file
+    # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
+    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%m.profraw" # Not using -%p since each test will generate a new file
     return llvm_profile_file
 
 
