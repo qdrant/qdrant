@@ -248,6 +248,7 @@ async fn test_retrieve_dedup() {
     }
 }
 
+/// Test should match behavior of [`test_query_dedup`]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_search_dedup() {
     let collection = fixture().await;
