@@ -53,16 +53,14 @@ jobs:
       - name: Generate coverage report
         run: |
           ls -lah ./target/llvm-cov-target
-          cargo llvm-cov report --lcov --output-path coverage.lcov
+          cargo llvm-cov report --lcov --output-path openapi-tests-coverage.lcov
           ls -lah ./target/llvm-cov-target
-          ls -lah coverage.lcov
-      - name: Upload coverage data to Codecov
-        uses: codecov/codecov-action@v5
+          ls -lah openapi-tests-coverage.lcov
+      - name: Upload coverage files to artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: coverage.lcov  # FIX: Might need .info file instead of .lcov to work
-          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
+          name: openapi-tests-coverage
+          path: openapi-tests-coverage.lcov
 
   integration-tests-consensus:
 
@@ -110,16 +108,14 @@ jobs:
       - name: Generate coverage report
         run: |
           ls -lah ./target/llvm-cov-target
-          cargo llvm-cov report --lcov --output-path coverage.lcov
+          cargo llvm-cov report --lcov --output-path consensus-tests-coverage.lcov
           ls -lah ./target/llvm-cov-target
-          ls -lah coverage.lcov
-      - name: Upload coverage data to Codecov
-        uses: codecov/codecov-action@v5
+          ls -lah consensus-tests-coverage.lcov
+      - name: Upload coverage files to artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: coverage.lcov  # FIX: Might need .info file instead of .lcov to work
-          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
+          name: consensus-tests-coverage
+          path: consensus-tests-coverage.lcov
       - name: upload logs
         uses: actions/upload-artifact@v4
         if: always()
@@ -370,3 +366,25 @@ jobs:
           sleep 10
 
           ./tests/shard-snapshot-api.sh test-all
+
+  upload-coverage-reports:
+    runs-on: ubuntu-latest
+    needs: [integration-tests, integration-tests-consensus]
+    steps:
+      - name: Download openapi-tests-coverage.lcov
+        uses: actions/download-artifact@v4
+        with:
+          name: openapi-tests-coverage
+          path: coverage/
+      - name: Download consensus-tests-coverage.lcov
+        uses: actions/download-artifact@v4
+        with:
+          name: consensus-tests-coverage
+          path: coverage/
+      - name: Upload coverage data to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/openapi-tests-coverage.lcov,coverage/consensus-tests-coverage.lcov
+          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
