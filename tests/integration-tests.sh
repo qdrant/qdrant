@@ -8,7 +8,7 @@ cd "$(dirname "$0")/../"
 
 QDRANT_HOST='localhost:6333'
 export QDRANT__SERVICE__GRPC_PORT="6334"
-export LLVM_PROFILE_FILE="./target/llvm-cov-target/qdrant-integration-%p-%m.profraw"
+export LLVM_PROFILE_FILE="./target/llvm-cov-target/qdrant-integration-%p.profraw"
 
 if [ "$COVERAGE" == "1" ]; then
   QDRANT_EXECUTABLE="./target/llvm-cov-target/debug/qdrant"

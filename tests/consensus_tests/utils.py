@@ -85,7 +85,7 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
 
     if is_coverage_mode():
-        env["LLVM_PROFILE_FILE"] =  get_llvm_profile_file()
+        env["LLVM_PROFILE_FILE"] = get_llvm_profile_file()
 
     return env
 
@@ -110,7 +110,7 @@ def get_qdrant_exec() -> str:
 
 def get_llvm_profile_file() -> str:
     project_root = os.getcwd()
-    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%p-%m.profraw"
+    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%p.profraw"
     return llvm_profile_file
 
 

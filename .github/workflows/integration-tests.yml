@@ -81,6 +81,7 @@ jobs:
         run: |
           export COVERAGE=1
           if [ "$COVERAGE" == "1" ]; then
+            echo "Building qdrant binary with coverage"
             RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
           else
             cargo build --features "service_debug data-consistency-check" --locked;
@@ -95,13 +96,14 @@ jobs:
         run: |
           ls -lah ./target/llvm-cov-target
           cargo llvm-cov report --lcov --output-path coverage.lcov
+          ls -lah ./target/llvm-cov-target
           ls -lah coverage.lcov
-      - name: upload coverage.lcov
+      - name: upload qdrant-integration.profraw
         uses: actions/upload-artifact@v4
         with:
-          name: coverage.lcov
+          name: "*.profdata"
           retention-days: 90 # default max value
-          path: .
+          path: target/llvm-cov-target
       - name: Upload coverage data to Codecov
         uses: codecov/codecov-action@v5
         with:
