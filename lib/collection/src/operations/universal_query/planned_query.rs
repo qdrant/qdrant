@@ -93,6 +93,10 @@ impl PlannedQuery {
             with_payload,
             params,
         } = request;
+
+        // Adjust limit so that we have enough results when we cut off the offset at a higher level
+        let limit = limit + offset;
+
         let merge_plan = if !prefetches.is_empty() {
             if depth > MAX_PREFETCH_DEPTH {
                 return Err(CollectionError::bad_request(format!(
@@ -141,14 +145,6 @@ impl PlannedQuery {
                 }
             }
         } else {
-            // Only increase the limit with the offset when there are no prefetches
-            //
-            // Reason for this is because there is no guarantee of stability of results when prefetches and main query are not
-            // strongly correlated.
-            // For example: if prefetch is a knn search, and main query is an `order_by`, propagating the offset for trying to
-            // get a second page will just increase the pool of candidates for `order_by`. The second page in this case will be
-            // invalid because it will cut the offset on a different total ordering.
-            let limit = limit + offset;
             let sources = match query {
                 Some(ScoringQuery::Vector(query)) => {
                     // Everything should come from 1 core search
