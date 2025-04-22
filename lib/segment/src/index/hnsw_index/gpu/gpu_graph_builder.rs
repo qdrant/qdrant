@@ -58,7 +58,7 @@ pub fn build_hnsw_on_gpu<'a>(
         groups_count,
     )?;
 
-    let graph_layers_builder =
+    let mut graph_layers_builder =
         create_graph_layers_builder(&batched_points, num_vectors, m, m0, ef, entry_points_num);
 
     // Link first points on CPU.
@@ -78,6 +78,9 @@ pub fn build_hnsw_on_gpu<'a>(
             break;
         }
     }
+
+    // Mark all points as ready, as GPU will fill layer by layer.
+    graph_layers_builder.fill_ready_list();
 
     // Check if all points are linked on CPU.
     // If there are no batches left, we can return result before gpu resources creation.

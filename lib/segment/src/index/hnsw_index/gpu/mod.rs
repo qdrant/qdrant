@@ -68,9 +68,6 @@ fn create_graph_layers_builder(
     let mut graph_layers_builder =
         GraphLayersBuilder::new(num_vectors, m, m0, ef, entry_points_num, true);
 
-    // mark all vectors as ready
-    graph_layers_builder.clear_ready_list();
-
     if let Some(first_point_id) = batched_points.first_point_id() {
         // set first entry point
         graph_layers_builder.get_entry_points().new_point(
@@ -78,6 +75,8 @@ fn create_graph_layers_builder(
             batched_points.levels_count() - 1,
             |_| true,
         );
+
+        graph_layers_builder.set_ready(first_point_id);
 
         // set levels
         graph_layers_builder.set_levels(first_point_id, batched_points.levels_count() - 1);
