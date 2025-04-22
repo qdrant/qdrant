@@ -123,7 +123,6 @@ pub enum OrderValue {
     Float(FloatPayloadType),
 }
 
-#[cfg(any(test, feature = "testing"))]
 impl std::hash::Hash for OrderValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {

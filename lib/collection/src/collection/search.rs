@@ -269,7 +269,7 @@ impl Collection {
 
         // Merge results from shards in order and deduplicate based on point ID
         let mut top_results: Vec<Vec<ScoredPoint>> = Vec::with_capacity(batch_size);
-        let mut seen_ids = AHashSet::new();
+        let mut seen = AHashSet::new();
 
         for (batch_index, request) in request.searches.iter().enumerate() {
             let order = if request.query.is_distance_scored() {
@@ -290,7 +290,8 @@ impl Collection {
                 Order::LargeBetter => Either::Left(results_from_shards.kmerge_by(|a, b| a > b)),
                 Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),
             }
-            .filter(|point| seen_ids.insert(point.id));
+            // Deduplicate non-consecutive points by specific scored point fields
+            .filter(|point| seen.insert(point.key()));
 
             // Skip `offset` only for client requests
             // to avoid applying `offset` twice in distributed mode.
@@ -305,7 +306,7 @@ impl Collection {
 
             top_results.push(top_res);
 
-            seen_ids.clear();
+            seen.clear();
         }
 
         Ok(top_results)

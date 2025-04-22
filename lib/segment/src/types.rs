@@ -324,6 +324,34 @@ pub struct ScoredPoint {
     pub order_value: Option<OrderValue>,
 }
 
+impl ScoredPoint {
+    /// Get scored point key, used for collection level point deduplication
+    ///
+    /// This key is a unique value per point to deduplicate.
+    ///
+    /// To match our documentation, we explicitly compare the following fields:
+    /// - point ID
+    /// - shard key - collect points multiple times if placed in different shard keys
+    /// - order value - collect points multiple times if having a different order value, appear multiple times if a payload key has multiple values (array)
+    ///
+    /// Docs: https://qdrant.tech/documentation/guides/distributed_deployment/#user-defined-sharding
+    #[inline]
+    pub fn key(&self) -> (PointIdType, Option<ShardKey>, Option<OrderValue>) {
+        let Self {
+            id,
+            shard_key,
+            order_value,
+            version: _,
+            score: _,
+            payload: _,
+            vector: _,
+        } = self;
+
+        // TODO: this is NOT efficient due to clone and may have a significant performance impact
+        (*id, shard_key.clone(), *order_value)
+    }
+}
+
 impl Eq for ScoredPoint {}
 
 impl Ord for ScoredPoint {
