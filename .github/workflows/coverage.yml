@@ -6,7 +6,7 @@ on:
     - cron: "0 0 * * *"
   pull_request:
     branches:
-      - *coverage* # Trigger on branches with "coverage" in the name
+      - "*coverage*" # Trigger on branches with "coverage" in the name
 
 jobs:
     coverage:
