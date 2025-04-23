@@ -4330,7 +4330,7 @@ pub enum ShardKey {
 
 impl From<String> for ShardKey {
     fn from(s: String) -> Self {
-        ShardKey::Keyword(s.into())
+        ShardKey::Keyword(SmolStr::from(s))
     }
 }
 
@@ -4342,7 +4342,7 @@ impl From<SmolStr> for ShardKey {
 
 impl From<&str> for ShardKey {
     fn from(s: &str) -> Self {
-        ShardKey::Keyword(s.into())
+        ShardKey::Keyword(SmolStr::from(s))
     }
 }
 
