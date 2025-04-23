@@ -88,7 +88,11 @@ def request_with_validation(
         headers=qdrant_host_headers()
     )
 
-    operation.validate_response(response)
+    try:
+        operation.validate_response(response)
+    except schemathesis.exceptions.CheckFailed as ex:
+        warnings.warn(f"Failed validation {ex} for response body {response.json()}")
+        raise
 
     return response
 
