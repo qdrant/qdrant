@@ -1,12 +1,11 @@
 use std::{error, result};
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::types::{PointOffsetType, ScoredPointOffset};
 use rand::seq::IteratorRandom;
 
 use crate::data_types::vectors::VectorElementType;
 use crate::id_tracker::IdTracker;
-use crate::vector_storage::{RawScorer, VectorStorage, VectorStorageEnum};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub type Result<T, E = Error> = result::Result<T, E>;
 pub type Error = Box<dyn error::Error>;
@@ -53,11 +52,4 @@ pub fn delete_random_vectors(
     }
 
     Ok(())
-}
-
-pub fn score(scorer: &dyn RawScorer, points: &[PointOffsetType]) -> Vec<ScoredPointOffset> {
-    let mut scores = vec![Default::default(); points.len()];
-    let scored = scorer.score_points(points, &mut scores);
-    scores.resize_with(scored, Default::default);
-    scores
 }

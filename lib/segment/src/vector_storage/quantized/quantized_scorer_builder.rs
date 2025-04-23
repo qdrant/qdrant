@@ -1,4 +1,3 @@
-use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use quantization::EncodedVectors;
 
@@ -23,8 +22,6 @@ pub(super) struct QuantizedScorerBuilder<'a> {
     quantized_storage: &'a QuantizedVectorStorage,
     quantization_config: &'a QuantizationConfig,
     query: QueryVector,
-    point_deleted: &'a BitSlice,
-    vec_deleted: &'a BitSlice,
     distance: &'a Distance,
     datatype: VectorStorageDatatype,
     hardware_counter: HardwareCounterCell,
@@ -36,8 +33,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
         quantized_storage: &'a QuantizedVectorStorage,
         quantization_config: &'a QuantizationConfig,
         query: QueryVector,
-        point_deleted: &'a BitSlice,
-        vec_deleted: &'a BitSlice,
         distance: &'a Distance,
         datatype: VectorStorageDatatype,
         mut hardware_counter: HardwareCounterCell,
@@ -48,8 +43,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
             quantized_storage,
             quantization_config,
             query,
-            point_deleted,
-            vec_deleted,
             distance,
             datatype,
             hardware_counter,
@@ -147,8 +140,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
             quantized_storage: _same_as_quantized_storage_in_args,
             quantization_config,
             query,
-            point_deleted,
-            vec_deleted,
             distance: _,
             datatype: _,
             hardware_counter,
@@ -162,7 +153,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     quantization_config,
                     hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
@@ -172,7 +163,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     quantization_config,
                     hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::RecommendSumScores(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
@@ -182,7 +173,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     quantization_config,
                     hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::Discovery(discovery_query) => {
                 let discovery_query: DiscoveryQuery<DenseVector> =
@@ -193,7 +184,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     quantization_config,
                     hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
@@ -203,7 +194,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     quantization_config,
                     hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
         }
     }
@@ -221,8 +212,6 @@ impl<'a> QuantizedScorerBuilder<'a> {
             quantized_storage: _same_as_quantized_storage_in_args,
             quantization_config,
             query,
-            point_deleted,
-            vec_deleted,
             distance: _,
             datatype: _,
             hardware_counter,
@@ -236,7 +225,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                     quantization_config,
                     hardware_counter,
                 );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
@@ -248,7 +237,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         quantization_config,
                         hardware_counter,
                     );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::RecommendSumScores(reco_query) => {
                 let reco_query: RecoQuery<MultiDenseVectorInternal> =
@@ -260,7 +249,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         quantization_config,
                         hardware_counter,
                     );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::Discovery(discovery_query) => {
                 let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
@@ -272,7 +261,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         quantization_config,
                         hardware_counter,
                     );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<MultiDenseVectorInternal> =
@@ -284,7 +273,7 @@ impl<'a> QuantizedScorerBuilder<'a> {
                         quantization_config,
                         hardware_counter,
                     );
-                raw_scorer_from_query_scorer(query_scorer, point_deleted, vec_deleted)
+                raw_scorer_from_query_scorer(query_scorer)
             }
         }
     }

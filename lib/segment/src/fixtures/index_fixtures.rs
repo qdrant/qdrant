@@ -12,22 +12,14 @@ use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::{DenseVector, VectorElementType, VectorRef};
-use crate::payload_storage::FilterContext;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
 use crate::types::{Distance, VectorStorageDatatype};
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::{DenseVectorStorage, RawScorer, VectorStorage, raw_scorer_impl};
+use crate::vector_storage::{DenseVectorStorage, VectorStorage, raw_scorer_impl};
 
 pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
     (0..size).map(|_| rnd_gen.random_range(-1.0..1.0)).collect()
-}
-
-pub struct FakeFilterContext {}
-
-impl FilterContext for FakeFilterContext {
-    fn check(&self, _point_id: PointOffsetType) -> bool {
-        true
-    }
 }
 
 pub struct TestRawScorerProducer<TMetric: Metric<VectorElementType>> {
@@ -139,13 +131,13 @@ where
         }
     }
 
-    pub fn get_raw_scorer(&self, query: DenseVector) -> OperationResult<Box<dyn RawScorer + '_>> {
+    pub fn get_scorer(&self, query: DenseVector) -> FilteredScorer<'_> {
         let query = TMetric::preprocess(query).into();
-        raw_scorer_impl(
-            query,
-            self,
+        let raw_scorer = raw_scorer_impl(query, self, HardwareCounterCell::new()).unwrap();
+        FilteredScorer::new_from_raw(
+            raw_scorer,
             self.deleted_vector_bitslice(),
-            HardwareCounterCell::new(),
+            &self.deleted_points,
         )
     }
 }
