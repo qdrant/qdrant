@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 pub use macros::Anonymize;
+use smol_str::{SmolStr, format_smolstr};
 use uuid::Uuid;
 
 /// This trait provides a derive macro.
@@ -115,6 +116,14 @@ impl Anonymize for String {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
         hasher.finish().to_string()
+    }
+}
+
+impl Anonymize for SmolStr {
+    fn anonymize(&self) -> Self {
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        format_smolstr!("{}", hasher.finish())
     }
 }
 

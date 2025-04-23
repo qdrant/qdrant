@@ -4318,8 +4318,11 @@ fn shard_key_number_example() -> u64 {
 #[derive(Deserialize, Serialize, JsonSchema, Anonymize, Debug, Clone, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ShardKey {
-    #[schemars(example = "shard_key_string_example")]
-    Keyword(String),
+    #[schemars(
+        schema_with = "String::json_schema",
+        example = "shard_key_string_example"
+    )]
+    Keyword(SmolStr),
     #[schemars(example = "shard_key_number_example")]
     #[anonymize(false)]
     Number(u64),
@@ -4327,13 +4330,19 @@ pub enum ShardKey {
 
 impl From<String> for ShardKey {
     fn from(s: String) -> Self {
+        ShardKey::Keyword(s.into())
+    }
+}
+
+impl From<SmolStr> for ShardKey {
+    fn from(s: SmolStr) -> Self {
         ShardKey::Keyword(s)
     }
 }
 
 impl From<&str> for ShardKey {
     fn from(s: &str) -> Self {
-        ShardKey::Keyword(s.to_owned())
+        ShardKey::Keyword(s.into())
     }
 }
 
