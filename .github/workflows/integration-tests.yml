@@ -39,7 +39,7 @@ jobs:
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked;
+        run: cargo build --features "service_debug data-consistency-check" --locked
       - name: Run integration tests
         run: poetry -C tests run ./tests/integration-tests.sh
         shell: bash
@@ -72,7 +72,7 @@ jobs:
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
-        run: cargo build --features "service_debug data-consistency-check" --locked;
+        run: cargo build --features "service_debug data-consistency-check" --locked
       - name: Run integration tests - 1 peer
         run: poetry -C tests run ./tests/integration-tests.sh distributed
         shell: bash
