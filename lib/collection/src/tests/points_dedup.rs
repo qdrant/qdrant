@@ -101,7 +101,7 @@ async fn fixture() -> Collection {
         .create_payload_index(
             "num".parse().unwrap(),
             PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to create payload index");
@@ -136,7 +136,7 @@ async fn fixture() -> Collection {
             ])),
         ));
         shard
-            .update_local(op, true, HwMeasurementAcc::new(), false)
+            .update_local(op, true, HwMeasurementAcc::disposable(), false)
             .await
             .expect("failed to insert points");
     }
@@ -170,7 +170,7 @@ async fn test_scroll_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -198,7 +198,7 @@ async fn test_scroll_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -233,7 +233,7 @@ async fn test_retrieve_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            HwMeasurementAcc::new(),
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -253,7 +253,7 @@ async fn test_retrieve_dedup() {
 async fn test_search_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = HwMeasurementAcc::disposable();
     let points = collection
         .search(
             CoreSearchRequest {
@@ -291,7 +291,7 @@ async fn test_search_dedup() {
 async fn test_query_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = HwMeasurementAcc::disposable();
     let points = collection
         .query(
             ShardQueryRequest {
@@ -333,7 +333,7 @@ async fn test_query_dedup() {
 async fn test_query_scroll_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = HwMeasurementAcc::new();
+    let hw_acc = HwMeasurementAcc::disposable();
     let points = collection
         .query(
             ShardQueryRequest {
@@ -368,14 +368,14 @@ async fn test_query_scroll_dedup() {
     }
 }
 
-pub fn dummy_on_replica_failure() -> ChangePeerFromState {
+fn dummy_on_replica_failure() -> ChangePeerFromState {
     Arc::new(move |_peer_id, _shard_id, _from_state| {})
 }
 
-pub fn dummy_request_shard_transfer() -> RequestShardTransfer {
+fn dummy_request_shard_transfer() -> RequestShardTransfer {
     Arc::new(move |_transfer| {})
 }
 
-pub fn dummy_abort_shard_transfer() -> AbortShardTransfer {
+fn dummy_abort_shard_transfer() -> AbortShardTransfer {
     Arc::new(|_transfer, _reason| {})
 }

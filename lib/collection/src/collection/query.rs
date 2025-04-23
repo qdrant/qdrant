@@ -597,7 +597,7 @@ impl Collection {
                 }
                 .dedup()
                 // Deduplicate non-consecutive points by specific scored point fields
-                .filter(|point| seen.insert(point.key()))
+                .filter(|point| seen.insert(point.dedup_key()))
                 .take(query_info.take)
                 .collect();
 

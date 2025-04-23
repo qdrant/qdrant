@@ -291,7 +291,7 @@ impl Collection {
                 Order::SmallBetter => Either::Right(results_from_shards.kmerge_by(|a, b| a < b)),
             }
             // Deduplicate non-consecutive points by specific scored point fields
-            .filter(|point| seen.insert(point.key()));
+            .filter(|point| seen.insert(point.dedup_key()));
 
             // Skip `offset` only for client requests
             // to avoid applying `offset` twice in distributed mode.

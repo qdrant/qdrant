@@ -336,7 +336,7 @@ impl ScoredPoint {
     ///
     /// Docs: https://qdrant.tech/documentation/guides/distributed_deployment/#user-defined-sharding
     #[inline]
-    pub fn key(&self) -> (PointIdType, Option<ShardKey>, Option<OrderValue>) {
+    pub fn dedup_key(&self) -> (PointIdType, Option<ShardKey>, Option<OrderValue>) {
         let Self {
             id,
             shard_key,
