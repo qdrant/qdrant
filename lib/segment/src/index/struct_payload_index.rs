@@ -23,7 +23,6 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
 use crate::common::utils::IndexesMap;
 use crate::id_tracker::IdTrackerSS;
-use crate::index::PayloadIndex;
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndex, PayloadBlockCondition, PrimaryCondition,
 };
@@ -32,14 +31,14 @@ use crate::index::query_estimator::estimate_filter;
 use crate::index::query_optimization::payload_provider::PayloadProvider;
 use crate::index::struct_filter_context::StructFilterContext;
 use crate::index::visited_pool::VisitedPool;
+use crate::index::{BuildIndexResult, PayloadIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::payload_storage::{FilterContext, PayloadStorage};
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{
     Condition, FieldCondition, Filter, IsEmptyCondition, IsNullCondition, Payload,
-    PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    VectorNameBuf, infer_collection_value_type, infer_value_type,
+    PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, VectorNameBuf,
 };
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
@@ -483,18 +482,18 @@ impl PayloadIndex for StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Vec<FieldIndex>>> {
+    ) -> OperationResult<BuildIndexResult> {
         if let Some(prev_schema) = self.config.indexed_fields.get(field) {
             // the field is already indexed with the same schema
             // no need to rebuild index and to save the config
-            if prev_schema == payload_schema {
-                return Ok(None);
-            }
+            return if prev_schema == payload_schema {
+                Ok(BuildIndexResult::AlreadyBuilt)
+            } else {
+                Ok(BuildIndexResult::IncompatibleSchema)
+            };
         }
-
         let indexes = self.build_field_indexes(field, payload_schema, hw_counter)?;
-
-        Ok(Some(indexes))
+        Ok(BuildIndexResult::Built(indexes))
     }
 
     fn apply_index(
@@ -512,6 +511,36 @@ impl PayloadIndex for StructPayloadIndex {
         Ok(())
     }
 
+    fn set_indexed(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        payload_schema: impl Into<PayloadFieldSchema>,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        let payload_schema = payload_schema.into();
+
+        self.drop_index_if_incompatible(field, &payload_schema)?;
+
+        let field_index = match self.build_index(field, &payload_schema, hw_counter)? {
+            BuildIndexResult::Built(field_index) => field_index,
+            BuildIndexResult::AlreadyBuilt => {
+                // Index already built, no need to do anything
+                return Ok(());
+            }
+            BuildIndexResult::IncompatibleSchema => {
+                // We should have fixed it by now explicitly
+                // If it is not fixed, it is a bug
+                return Err(OperationError::service_error(format!(
+                    "Incompatible schema for field `{field}`. Please drop the index first."
+                )));
+            }
+        };
+
+        self.apply_index(field.to_owned(), payload_schema, field_index)?;
+
+        Ok(())
+    }
+
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()> {
         self.config.indexed_fields.remove(field);
         let removed_indexes = self.field_indexes.remove(field);
@@ -523,6 +552,21 @@ impl PayloadIndex for StructPayloadIndex {
         }
 
         self.save_config()?;
+        Ok(())
+    }
+
+    fn drop_index_if_incompatible(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        new_payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<()> {
+        if let Some(current_schema) = self.config.indexed_fields.get(field) {
+            // the field is already indexed with the same schema
+            // no need to rebuild index and to save the config
+            if current_schema != new_payload_schema {
+                self.drop_index(field)?;
+            }
+        }
         Ok(())
     }
 
@@ -721,27 +765,6 @@ impl PayloadIndex for StructPayloadIndex {
             }
             Ok(())
         })
-    }
-
-    fn infer_payload_type(
-        &self,
-        key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<PayloadSchemaType>> {
-        let mut schema = None;
-        self.payload.borrow().iter(
-            |_id, payload: &Payload| {
-                let field_value = payload.get_value(key);
-                schema = match field_value.as_slice() {
-                    [] => None,
-                    [single] => infer_value_type(single),
-                    multiple => infer_collection_value_type(multiple.iter().copied()),
-                };
-                Ok(false)
-            },
-            hw_counter,
-        )?;
-        Ok(schema)
     }
 
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()> {

@@ -1,3 +1,4 @@
+pub mod build_index_result;
 pub mod facets;
 pub mod groups;
 pub mod index;
