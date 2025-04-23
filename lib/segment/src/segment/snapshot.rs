@@ -428,8 +428,9 @@ fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<Pa
         }
 
         // 3. if `old` manifest contains this file and file/segment versions in both `old` and `current` manifests are 0
-        //
-        // TODO: Add explanation 🙄
+        //    - we can't distinguish between new/empty segment (version 0)
+        //    - and segment with operation 0 applied (also version 0)
+        //    - so if both files/segments are at version 0, we always include the file into snapshot
         if old_version == 0 && current_version == 0 {
             updated.insert(path.to_path_buf());
         }
