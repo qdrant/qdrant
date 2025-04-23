@@ -67,7 +67,8 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: |
-          curl -sSL https://install.python-poetry.org | python3 - --version $POETRY_VERSION
+          echo "Installing Poetry $POETRY_VERSION"
+          curl -sSL https://install.python-poetry.org | python3 - --version "$POETRY_VERSION"
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
