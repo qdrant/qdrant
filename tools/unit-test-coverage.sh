@@ -39,5 +39,5 @@ for PACKAGE in "${PACKAGES[@]}"; do
 done
 
 if [ -n "$LCOV_COMMAND_ARGS" ]; then
-    lcov $LCOV_COMMAND_ARGS --output-file lcov.info
+    lcov $LCOV_COMMAND_ARGS --output-file unit-test-lcov.info
 fi

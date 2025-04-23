@@ -4,6 +4,9 @@ on:
   workflow_dispatch: # Trigger from UI for selected branch
   schedule:
     - cron: "0 0 * * *"
+  push:
+    branches:
+      - *coverage* # Trigger on branches ending with 'coverage'
 
 jobs:
     coverage:
@@ -27,8 +30,12 @@ jobs:
           uses: taiki-e/install-action@nextest
         - name: Install llvm-cov
           run: cargo install cargo-llvm-cov && sudo apt install -y lcov
-        - name: Run tests with coverage
-          run: RUN_PER_PACKAGE=true tools/coverage.sh
+        - name: Run unit tests with coverage
+          run: RUN_PER_PACKAGE=true tools/unit-test-coverage.sh
+        - name: Run integration tests with coverage
+          run: tools/integration-test-coverage.sh
+        - name: Merge unit and integration coverage
+          run: lcov -a unit-test-lcov.info -a integration-test-coverage.info -o lcov.info
         - name: Upload coverage data to Codecov
           uses: codecov/codecov-action@v5
           with:
