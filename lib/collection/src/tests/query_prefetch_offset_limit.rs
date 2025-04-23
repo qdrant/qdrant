@@ -97,7 +97,7 @@ async fn fixture() -> Collection {
         collection
             .set_shard_replica_state(shard_id, PEER_ID, ReplicaState::Active, None)
             .await
-            .expect("failed to active shard");
+            .expect("failed to activate shard");
     }
 
     // Upsert points
