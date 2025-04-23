@@ -4,7 +4,14 @@
 #
 # If using locally, occasionally run `cargo llvm-cov clean` to avoid bloating `target/llvm-cov-target` dir with .profraw files
 
-# RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
+
+# Check if target/llvm-cov-target/debug/qdrant exists, if not build it:
+if [ ! -f target/llvm-cov-target/debug/qdrant ]; then
+    echo "Building qdrant with LLVM coverage instrumentation..."
+    RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
+else
+    echo "INFO: target/llvm-cov-target/debug/qdrant already exists, skipping build step."
+fi
 
 export COVERAGE=1
 
