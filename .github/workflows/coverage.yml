@@ -5,6 +5,9 @@ on:
   schedule:
     - cron: "0 0 * * *" # Every day at midnight UTC
 
+env:
+  POETRY_VERSION: 1.8.5
+
 jobs:
   unit-coverage:
     runs-on: ubuntu-latest
