@@ -159,6 +159,18 @@ impl SegmentBuilder {
         self.indexed_fields.remove(field);
     }
 
+    pub fn remove_index_field_if_incompatible(
+        &mut self,
+        field: &PayloadKeyType,
+        schema: &PayloadFieldSchema,
+    ) {
+        if let Some(existing_schema) = self.indexed_fields.get(field) {
+            if existing_schema != schema {
+                self.indexed_fields.remove(field);
+            }
+        }
+    }
+
     pub fn add_indexed_field(&mut self, field: PayloadKeyType, schema: PayloadFieldSchema) {
         self.indexed_fields.insert(field, schema);
     }

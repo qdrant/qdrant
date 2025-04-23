@@ -8,9 +8,9 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::TelemetryDetail;
 
 use super::Segment;
-use crate::common::operation_error::OperationError::TypeInferenceError;
 use crate::common::operation_error::{OperationError, OperationResult, SegmentFailedState};
 use crate::common::{check_named_vectors, check_query_vectors, check_stopped, check_vector_name};
+use crate::data_types::build_index_result::BuildFieldIndexResult;
 use crate::data_types::facets::{FacetParams, FacetValue};
 use crate::data_types::named_vectors::NamedVectors;
 use crate::data_types::order_by::{OrderBy, OrderValue};
@@ -18,7 +18,7 @@ use crate::data_types::query_context::{FormulaContext, QueryContext, SegmentQuer
 use crate::data_types::vectors::{QueryVector, VectorInternal};
 use crate::entry::entry_point::SegmentEntry;
 use crate::index::field_index::{CardinalityEstimation, FieldIndex};
-use crate::index::{PayloadIndex, VectorIndex};
+use crate::index::{BuildIndexResult, PayloadIndex, VectorIndex};
 use crate::json_path::JsonPath;
 use crate::payload_storage::PayloadStorage;
 use crate::telemetry::SegmentTelemetry;
@@ -738,45 +738,52 @@ impl SegmentEntry for Segment {
         })
     }
 
+    fn delete_field_index_if_incompatible(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        self.handle_segment_version_and_failure(op_num, |segment| {
+            segment
+                .payload_index
+                .borrow_mut()
+                .drop_index_if_incompatible(key, field_schema)?;
+            Ok(true)
+        })
+    }
+
     fn build_field_index(
         &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
-        field_type: Option<&PayloadFieldSchema>,
+        field_type: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>> {
+    ) -> OperationResult<BuildFieldIndexResult> {
         // Check version without updating it
         if self.version.unwrap_or(0) > op_num {
-            return Ok(None);
+            return Ok(BuildFieldIndexResult::SkippedByVersion);
         }
 
-        match field_type {
-            Some(schema) => {
-                let res = self
-                    .payload_index
-                    .borrow()
-                    .build_index(key, schema, hw_counter)?
-                    .map(|field_index| (schema.to_owned(), field_index));
-
-                Ok(res)
+        let field_index = match self
+            .payload_index
+            .borrow()
+            .build_index(key, field_type, hw_counter)?
+        {
+            BuildIndexResult::Built(indexes) => indexes,
+            BuildIndexResult::AlreadyBuilt => {
+                return Ok(BuildFieldIndexResult::AlreadyExists);
             }
-            None => match self.infer_from_payload_data(key, hw_counter)? {
-                None => Err(TypeInferenceError {
-                    field_name: key.clone(),
-                }),
-                Some(schema_type) => {
-                    let schema = schema_type.into();
+            BuildIndexResult::IncompatibleSchema => {
+                // This function expects that incompatible schema is already removed
+                return Ok(BuildFieldIndexResult::IncompatibleSchema);
+            }
+        };
 
-                    let res = self
-                        .payload_index
-                        .borrow()
-                        .build_index(key, &schema, hw_counter)?
-                        .map(|field_index| (schema, field_index));
-
-                    Ok(res)
-                }
-            },
-        }
+        Ok(BuildFieldIndexResult::Built {
+            indexes: field_index,
+            schema: field_type.clone(),
+        })
     }
 
     fn apply_field_index(

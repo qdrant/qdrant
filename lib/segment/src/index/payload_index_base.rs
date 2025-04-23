@@ -12,9 +12,18 @@ use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition};
 use crate::json_path::JsonPath;
 use crate::payload_storage::FilterContext;
 use crate::types::{
-    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType,
-    SeqNumberType,
+    Filter, Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, SeqNumberType,
 };
+
+pub enum BuildIndexResult {
+    /// Index was built
+    Built(Vec<FieldIndex>),
+    /// Index was already built
+    AlreadyBuilt,
+    /// Field Index already exists, but incompatible schema
+    /// Requires extra actions to remove the old index.
+    IncompatibleSchema,
+}
 
 pub trait PayloadIndex {
     /// Get indexed fields
@@ -26,7 +35,7 @@ pub trait PayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<Vec<FieldIndex>>>;
+    ) -> OperationResult<BuildIndexResult>;
 
     /// Apply already built indexes
     fn apply_index(
@@ -42,20 +51,17 @@ pub trait PayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: impl Into<PayloadFieldSchema>,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<()> {
-        let payload_schema = payload_schema.into();
-
-        let Some(field_index) = self.build_index(field, &payload_schema, hw_counter)? else {
-            return Ok(());
-        };
-
-        self.apply_index(field.to_owned(), payload_schema, field_index)?;
-
-        Ok(())
-    }
+    ) -> OperationResult<()>;
 
     /// Remove index
     fn drop_index(&mut self, field: PayloadKeyTypeRef) -> OperationResult<()>;
+
+    /// Remove index if incompatible with new payload schema
+    fn drop_index_if_incompatible(
+        &mut self,
+        field: PayloadKeyTypeRef,
+        new_payload_schema: &PayloadFieldSchema,
+    ) -> OperationResult<()>;
 
     /// Estimate amount of points (min, max) which satisfies filtering condition.
     ///
@@ -141,13 +147,6 @@ pub trait PayloadIndex {
 
     /// Return function that forces persistence of current storage state.
     fn flusher(&self) -> Flusher;
-
-    /// Infer payload type from existing payload data.
-    fn infer_payload_type(
-        &self,
-        key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<PayloadSchemaType>>;
 
     fn take_database_snapshot(&self, path: &Path) -> OperationResult<()>;
 

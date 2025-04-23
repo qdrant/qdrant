@@ -24,8 +24,8 @@ use crate::entry::entry_point::SegmentEntry;
 use crate::index::struct_payload_index::StructPayloadIndex;
 use crate::index::{PayloadIndex, VectorIndex};
 use crate::types::{
-    Payload, PayloadFieldSchema, PayloadKeyType, PayloadKeyTypeRef, PayloadSchemaType, PointIdType,
-    SegmentState, SeqNumberType, SnapshotFormat, VectorName,
+    Payload, PayloadFieldSchema, PayloadKeyType, PointIdType, SegmentState, SeqNumberType,
+    SnapshotFormat, VectorName,
 };
 use crate::utils;
 use crate::vector_storage::VectorStorage;
@@ -419,15 +419,6 @@ impl Segment {
 
     pub fn save_current_state(&self) -> OperationResult<()> {
         Self::save_state(&self.get_state(), &self.current_path)
-    }
-
-    pub(super) fn infer_from_payload_data(
-        &self,
-        key: PayloadKeyTypeRef,
-        hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<PayloadSchemaType>> {
-        let payload_index = self.payload_index.borrow();
-        payload_index.infer_payload_type(key, hw_counter)
     }
 
     /// Unpacks and restores the segment snapshot in-place. The original

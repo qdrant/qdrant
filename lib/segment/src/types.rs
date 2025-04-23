@@ -13,7 +13,6 @@ use common::types::ScoreType;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
 use indexmap::IndexSet;
-use itertools::Itertools;
 use merge::Merge;
 use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
@@ -1883,25 +1882,6 @@ pub fn value_type(value: &Value) -> Option<PayloadSchemaType> {
     }
 }
 
-pub fn infer_value_type(value: &Value) -> Option<PayloadSchemaType> {
-    match value {
-        Value::Array(array) => infer_collection_value_type(array),
-        _ => value_type(value),
-    }
-}
-
-pub fn infer_collection_value_type<'a, I>(values: I) -> Option<PayloadSchemaType>
-where
-    I: IntoIterator<Item = &'a Value>,
-{
-    let possible_types = values.into_iter().map(value_type).unique().collect_vec();
-    if possible_types.len() != 1 {
-        None // There is an ambiguity or empty array
-    } else {
-        possible_types.into_iter().next().unwrap()
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum ValueVariants {
@@ -3197,6 +3177,7 @@ pub(crate) mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use itertools::Itertools;
     use rstest::rstest;
     use serde::de::DeserializeOwned;
     use serde_json;

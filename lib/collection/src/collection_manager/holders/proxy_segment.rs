@@ -12,6 +12,7 @@ use common::types::{PointOffsetType, TelemetryDetail};
 use itertools::Itertools;
 use parking_lot::{RwLock, RwLockUpgradableReadGuard};
 use segment::common::operation_error::{OperationResult, SegmentFailedState};
+use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::facets::{FacetParams, FacetValue};
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::order_by::OrderValue;
@@ -286,6 +287,11 @@ impl ProxySegment {
                             }
                             ProxyIndexChange::Delete(version) => {
                                 wrapped_segment.delete_field_index(*version, field_name)?;
+                            }
+                            ProxyIndexChange::DeleteIfIncompatible(version, schema) => {
+                                wrapped_segment.delete_field_index_if_incompatible(
+                                    *version, field_name, schema,
+                                )?;
                             }
                         }
                     }
@@ -1169,15 +1175,36 @@ impl SegmentEntry for ProxySegment {
             .delete_field_index(op_num, key)
     }
 
+    fn delete_field_index_if_incompatible(
+        &mut self,
+        op_num: SeqNumberType,
+        key: PayloadKeyTypeRef,
+        field_schema: &PayloadFieldSchema,
+    ) -> OperationResult<bool> {
+        if self.version() > op_num {
+            return Ok(false);
+        }
+
+        self.changed_indexes.write().insert(
+            key.clone(),
+            ProxyIndexChange::DeleteIfIncompatible(op_num, field_schema.clone()),
+        );
+
+        self.write_segment
+            .get()
+            .write()
+            .delete_field_index_if_incompatible(op_num, key, field_schema)
+    }
+
     fn build_field_index(
         &self,
         op_num: SeqNumberType,
         key: PayloadKeyTypeRef,
-        field_type: Option<&PayloadFieldSchema>,
+        field_type: &PayloadFieldSchema,
         hw_counter: &HardwareCounterCell,
-    ) -> OperationResult<Option<(PayloadFieldSchema, Vec<FieldIndex>)>> {
+    ) -> OperationResult<BuildFieldIndexResult> {
         if self.version() > op_num {
-            return Ok(None);
+            return Ok(BuildFieldIndexResult::SkippedByVersion);
         }
 
         self.write_segment
@@ -1224,6 +1251,13 @@ impl SegmentEntry for ProxySegment {
                 }
                 ProxyIndexChange::Delete(_) => {
                     indexed_fields.remove(field_name);
+                }
+                ProxyIndexChange::DeleteIfIncompatible(_, schema) => {
+                    if let Some(existing_schema) = indexed_fields.get(field_name) {
+                        if existing_schema != schema {
+                            indexed_fields.remove(field_name);
+                        }
+                    }
                 }
             }
         }
@@ -1412,6 +1446,7 @@ impl ProxyIndexChanges {
 pub enum ProxyIndexChange {
     Create(PayloadFieldSchema, SeqNumberType),
     Delete(SeqNumberType),
+    DeleteIfIncompatible(SeqNumberType, PayloadFieldSchema),
 }
 
 impl ProxyIndexChange {
@@ -1419,6 +1454,7 @@ impl ProxyIndexChange {
         match self {
             ProxyIndexChange::Create(_, version) => *version,
             ProxyIndexChange::Delete(version) => *version,
+            ProxyIndexChange::DeleteIfIncompatible(version, _) => *version,
         }
     }
 }

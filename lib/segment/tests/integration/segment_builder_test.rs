@@ -17,8 +17,8 @@ use segment::segment::Segment;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment_with_payload_storage;
 use segment::types::{
-    Distance, Indexes, PayloadContainer, PayloadKeyType, PayloadStorageType, SegmentConfig,
-    VectorDataConfig, VectorStorageType,
+    Distance, Indexes, PayloadContainer, PayloadFieldSchema, PayloadKeyType, PayloadSchemaType,
+    PayloadStorageType, SegmentConfig, VectorDataConfig, VectorStorageType,
 };
 use serde_json::Value;
 use sparse::common::sparse_vector::SparseVector;
@@ -107,14 +107,16 @@ fn test_building_new_defragmented_segment() {
 
     let hw_counter = HardwareCounterCell::new();
 
+    let payload_schema = PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword);
+
     let mut segment1 = build_segment_1(dir.path());
     segment1
-        .create_field_index(7, &defragment_key, None, &hw_counter)
+        .create_field_index(7, &defragment_key, Some(&payload_schema), &hw_counter)
         .unwrap();
 
     let mut segment2 = build_segment_2(dir.path());
     segment2
-        .create_field_index(17, &defragment_key, None, &hw_counter)
+        .create_field_index(17, &defragment_key, Some(&payload_schema), &hw_counter)
         .unwrap();
 
     let mut builder =

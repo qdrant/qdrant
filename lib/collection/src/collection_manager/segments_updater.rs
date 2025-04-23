@@ -7,6 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use itertools::iproduct;
 use parking_lot::{RwLock, RwLockWriteGuard};
 use segment::common::operation_error::{OperationError, OperationResult};
+use segment::data_types::build_index_result::BuildFieldIndexResult;
 use segment::data_types::named_vectors::NamedVectors;
 use segment::data_types::vectors::{BatchVectorStructInternal, VectorStructInternal};
 use segment::entry::entry_point::SegmentEntry;
@@ -343,16 +344,42 @@ pub(crate) fn create_field_index(
     field_schema: Option<&PayloadFieldSchema>,
     hw_counter: &HardwareCounterCell,
 ) -> CollectionResult<usize> {
+    let Some(field_schema) = field_schema else {
+        return Err(CollectionError::from(OperationError::TypeInferenceError {
+            field_name: field_name.to_owned(),
+        }));
+    };
+
     segments
         .apply_segments(|write_segment| {
-            let Some((schema, index)) =
-                write_segment.build_field_index(op_num, field_name, field_schema, hw_counter)?
-            else {
-                return Ok(false);
+            write_segment.with_upgraded(|segment| {
+                segment.delete_field_index_if_incompatible(op_num, field_name, field_schema)
+            })?;
+
+            let (schema, indexes) = match write_segment.build_field_index(
+                op_num,
+                field_name,
+                field_schema,
+                hw_counter,
+            )? {
+                BuildFieldIndexResult::SkippedByVersion => {
+                    return Ok(false);
+                }
+                BuildFieldIndexResult::AlreadyExists => {
+                    return Ok(false);
+                }
+                BuildFieldIndexResult::IncompatibleSchema => {
+                    // This is a service error, as we should have just removed the old index
+                    // So it should not be possible to get this error
+                    return Err(OperationError::service_error(format!(
+                        "Incompatible schema for field index on field {field_name}",
+                    )));
+                }
+                BuildFieldIndexResult::Built { schema, indexes } => (schema, indexes),
             };
 
             write_segment.with_upgraded(|segment| {
-                segment.apply_field_index(op_num, field_name.to_owned(), schema, index)
+                segment.apply_field_index(op_num, field_name.to_owned(), schema, indexes)
             })
         })
         .map_err(Into::into)
