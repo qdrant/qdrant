@@ -12,12 +12,11 @@ use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTrackerSS;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
-use crate::vector_storage::{
-    DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer_for_test,
-};
+use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     let points: Vec<SparseVector> = vec![
@@ -79,12 +78,11 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
         negatives: vec![],
     });
     // Because nearest search for raw scorer is incorrect,
-    let scorer = new_raw_scorer_for_test(
+    let scorer = FilteredScorer::new_for_test(
         query_vector,
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    )
-    .unwrap();
+    );
     let closest = scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4].iter().cloned(), 5, &DEFAULT_STOPPED)
         .unwrap();
@@ -175,12 +173,11 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         positives: vec![vector.into()],
         negatives: vec![],
     });
-    let scorer = new_raw_scorer_for_test(
+    let scorer = FilteredScorer::new_for_test(
         query_vector,
         storage,
         borrowed_id_tracker.deleted_point_bitslice(),
-    )
-    .unwrap();
+    );
     let closest = scorer
         .peek_top_iter(&mut [0, 1, 2, 3, 4, 5].iter().cloned(), 5, &DEFAULT_STOPPED)
         .unwrap();

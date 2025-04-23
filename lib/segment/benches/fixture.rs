@@ -5,12 +5,11 @@ use common::types::PointOffsetType;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rayon::iter::{IntoParallelIterator as _, ParallelIterator as _};
-use segment::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+use segment::fixtures::index_fixtures::TestRawScorerProducer;
 use segment::index::hnsw_index::graph_layers::GraphLayers;
 use segment::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use segment::index::hnsw_index::graph_links::GraphLinksFormat;
 use segment::index::hnsw_index::hnsw::SINGLE_THREADED_HNSW_BUILD_THRESHOLD;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
 use segment::spaces::metric::Metric;
 
 /// Generate vectors and HNSW graph to be used in benchmarks.
@@ -39,8 +38,6 @@ where
             METRIC::distance(),
         ));
 
-    let fake_filter_context = FakeFilterContext {};
-
     // Note: make sure that vector generation is deterministic.
     let vector_holder =
         TestRawScorerProducer::<METRIC>::new(dim, num_vectors, &mut StdRng::seed_from_u64(42));
@@ -63,8 +60,7 @@ where
 
         let add_point = |idx| {
             let added_vector = vector_holder.vectors.get(idx).to_vec();
-            let raw_scorer = vector_holder.get_raw_scorer(added_vector).unwrap();
-            let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
+            let scorer = vector_holder.get_scorer(added_vector);
             graph_layers_builder.link_new_point(idx as PointOffsetType, scorer);
         };
 

@@ -27,6 +27,7 @@ use crate::data_types::query_context::VectorQueryContext;
 use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::field_index::CardinalityEstimation;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::query_estimator::adjust_to_available_vectors;
 use crate::index::sparse_index::sparse_index_config::SparseIndexConfig;
 use crate::index::sparse_index::sparse_search_telemetry::SparseSearchesTelemetry;
@@ -35,9 +36,7 @@ use crate::index::{PayloadIndex, VectorIndex};
 use crate::telemetry::VectorIndexSearchesTelemetry;
 use crate::types::{DEFAULT_SPARSE_FULL_SCAN_THRESHOLD, Filter, SearchParams};
 use crate::vector_storage::query::TransformInto;
-use crate::vector_storage::{
-    VectorStorage, VectorStorageEnum, check_deleted_condition, new_raw_scorer,
-};
+use crate::vector_storage::{VectorStorage, VectorStorageEnum, check_deleted_condition};
 
 /// Whether to use the new compressed format.
 pub const USE_COMPRESSED: bool = true;
@@ -300,9 +299,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
 
         let is_stopped = vector_query_context.is_stopped();
 
-        let raw_scorer = new_raw_scorer(
+        let scorer = FilteredScorer::new(
             query_vector.clone(),
             &vector_storage,
+            None,
+            None,
             deleted_point_bitslice,
             vector_query_context.hardware_counter(),
         )?;
@@ -318,11 +319,11 @@ impl<TInvertedIndex: InvertedIndex> SparseVectorIndex<TInvertedIndex> {
                         prefiltered_points.as_ref().unwrap().iter().copied()
                     }
                 };
-                let res = raw_scorer.peek_top_iter(&mut filtered_points, top, &is_stopped)?;
+                let res = scorer.peek_top_iter(&mut filtered_points, top, &is_stopped)?;
                 Ok(res)
             }
             None => {
-                let res = raw_scorer.peek_top_all(top, &is_stopped)?;
+                let res = scorer.peek_top_all(top, &is_stopped)?;
                 Ok(res)
             }
         }

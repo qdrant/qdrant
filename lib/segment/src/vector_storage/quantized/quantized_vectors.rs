@@ -2,7 +2,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use io::file_operations::{atomic_save_json, read_json};
@@ -167,16 +166,12 @@ impl QuantizedVectors {
     pub fn raw_scorer<'a>(
         &'a self,
         query: QueryVector,
-        point_deleted: &'a BitSlice,
-        vec_deleted: &'a BitSlice,
         hardware_counter: HardwareCounterCell,
     ) -> OperationResult<Box<dyn RawScorer + 'a>> {
         QuantizedScorerBuilder::new(
             &self.storage_impl,
             &self.config.quantization_config,
             query,
-            point_deleted,
-            vec_deleted,
             &self.distance,
             self.datatype,
             hardware_counter,

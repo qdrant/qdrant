@@ -6,10 +6,9 @@ use rand::Rng;
 
 use super::graph_links::GraphLinksFormat;
 use crate::data_types::vectors::VectorElementType;
-use crate::fixtures::index_fixtures::{FakeFilterContext, TestRawScorerProducer};
+use crate::fixtures::index_fixtures::TestRawScorerProducer;
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
-use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::spaces::metric::Metric;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 
@@ -38,11 +37,9 @@ where
     );
 
     for idx in 0..(num_vectors as PointOffsetType) {
-        let fake_filter_context = FakeFilterContext {};
         let added_vector = vector_holder.vectors.get(idx as VectorOffsetType).to_vec();
-        let raw_scorer = vector_holder.get_raw_scorer(added_vector.clone()).unwrap();
+        let scorer = vector_holder.get_scorer(added_vector);
 
-        let scorer = FilteredScorer::new(raw_scorer.as_ref(), Some(&fake_filter_context));
         let level = graph_layers_builder.get_random_layer(rng);
         graph_layers_builder.set_levels(idx, level);
         graph_layers_builder.link_new_point(idx, scorer);

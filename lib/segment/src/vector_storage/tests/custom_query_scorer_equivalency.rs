@@ -17,17 +17,17 @@ use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::fixtures::query_fixtures::QueryVariant;
 use crate::id_tracker::id_tracker_base::IdTracker;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{
     BinaryQuantizationConfig, Distance, ProductQuantizationConfig, QuantizationConfig,
     ScalarQuantizationConfig,
 };
+use crate::vector_storage::VectorStorageEnum;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
-use crate::vector_storage::tests::utils::score;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{VectorStorageEnum, new_raw_scorer_for_test};
 
 const DIMS: usize = 128;
 const NUM_POINTS: usize = 600;
@@ -182,41 +182,34 @@ fn scoring_equivalency(
     for i in 0..attempts {
         let query = random_query(&query_variant, &mut rng, &gen_sampler);
 
-        let raw_scorer = new_raw_scorer_for_test(
+        let mut scorer = FilteredScorer::new_for_test(
             query.clone(),
             &raw_storage,
             id_tracker.deleted_point_bitslice(),
-        )
-        .unwrap();
+        );
 
-        let other_scorer = match &quantized_vectors {
-            Some(quantized_storage) => quantized_storage
-                .raw_scorer(
-                    query.clone(),
-                    id_tracker.deleted_point_bitslice(),
-                    other_storage.deleted_vector_bitslice(),
-                    HardwareCounterCell::new(),
-                )
-                .unwrap(),
-            None => new_raw_scorer_for_test(
-                query.clone(),
-                &other_storage,
-                id_tracker.deleted_point_bitslice(),
-            )
-            .unwrap(),
-        };
+        let mut other_scorer = FilteredScorer::new(
+            query.clone(),
+            &other_storage,
+            quantized_vectors.as_ref(),
+            None,
+            id_tracker.deleted_point_bitslice(),
+            HardwareCounterCell::new(),
+        )?;
 
         let points =
             (0..other_storage.total_vector_count() as _).choose_multiple(&mut rng, SAMPLE_SIZE);
 
-        let raw_scores = score(&*raw_scorer, &points);
-        let other_scores = score(&*other_scorer, &points);
+        let scores = scorer.score_points(&mut points.clone(), 0).collect_vec();
+        let other_scores = other_scorer
+            .score_points(&mut points.clone(), 0)
+            .collect_vec();
 
         // Compare scores
         if quantized_vectors.is_none() {
             // both calculations are done on raw vectors, so score should be exactly the same
             assert_eq!(
-                raw_scores, other_scores,
+                scores, other_scores,
                 "Scorer results are not equal, attempt: {i}, query: {query:?}"
             );
         } else {
@@ -226,7 +219,7 @@ fn scoring_equivalency(
 
             let top = SAMPLE_SIZE / 10;
 
-            let raw_top: HashSet<_> = raw_scores
+            let raw_top: HashSet<_> = scores
                 .iter()
                 .sorted()
                 .rev()

@@ -2,7 +2,6 @@
 
 use std::path::Path;
 
-use bitvec::vec::BitVec;
 use common::counter::hardware_counter::HardwareCounterCell;
 use parking_lot::RwLock;
 use rand::rngs::StdRng;
@@ -690,16 +689,15 @@ fn test_gpu_vector_storage_impl(
 
     let gpu_scores = staging_buffer.download_vec(0, num_vectors).unwrap();
 
-    let point_deleted = BitVec::repeat(false, num_vectors);
     let query = QueryVector::Nearest(storage.get_vector(test_point_id).to_owned());
 
     let hardware_counter = HardwareCounterCell::new();
     let scorer: Box<dyn RawScorer> = if let Some(quantized_vectors) = quantized_vectors.as_ref() {
         quantized_vectors
-            .raw_scorer(query, &point_deleted, &point_deleted, hardware_counter)
+            .raw_scorer(query, hardware_counter)
             .unwrap()
     } else {
-        new_raw_scorer_for_test(query, &storage, &point_deleted).unwrap()
+        new_raw_scorer_for_test(query, &storage).unwrap()
     };
 
     for (point_id, gpu_score) in gpu_scores.iter().enumerate() {

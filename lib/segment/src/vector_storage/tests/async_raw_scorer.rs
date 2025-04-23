@@ -7,16 +7,17 @@ use itertools::Itertools;
 use rand::SeedableRng as _;
 use rand::seq::IteratorRandom as _;
 
-use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler, score};
+use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler};
 use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
+use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::Distance;
+use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
-use crate::vector_storage::{VectorStorageEnum, async_raw_scorer, new_raw_scorer_for_test};
 
 #[test]
 fn async_raw_scorer_cosine() -> Result<()> {
@@ -111,19 +112,24 @@ fn test_random_score(
 ) -> Result<()> {
     let query: QueryVector = sampler(&mut rng).take(dim).collect_vec().into();
 
-    let raw_scorer = new_raw_scorer_for_test(query.clone(), storage, deleted_points).unwrap();
+    let mut scorer = FilteredScorer::new_for_test(query.clone(), storage, deleted_points);
 
-    let async_raw_scorer = if let VectorStorageEnum::DenseMemmap(storage) = storage {
-        async_raw_scorer::new(query, storage, deleted_points, HardwareCounterCell::new())?
-    } else {
-        unreachable!();
-    };
+    let mut async_scorer = FilteredScorer::new(
+        query,
+        storage,
+        None,
+        None,
+        deleted_points,
+        HardwareCounterCell::new(),
+    )?;
 
     let points = rng.random_range(1..storage.total_vector_count());
     let points = (0..storage.total_vector_count() as _).choose_multiple(&mut rng, points);
 
-    let res = score(&*raw_scorer, &points);
-    let async_res = score(&*async_raw_scorer, &points);
+    let res = scorer.score_points(&mut points.clone(), 0).collect_vec();
+    let async_res = async_scorer
+        .score_points(&mut points.clone(), 0)
+        .collect_vec();
 
     assert_eq!(res, async_res);
     Ok(())

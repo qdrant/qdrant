@@ -43,6 +43,16 @@ pub trait IteratorExt: Iterator {
     {
         OnFinalCount::new(self, f)
     }
+
+    /// Consume the iterator and call `black_box` on each item, for benchmarking purposes.
+    fn black_box(self)
+    where
+        Self: Sized,
+    {
+        self.for_each(|p| {
+            std::hint::black_box(p);
+        });
+    }
 }
 
 impl<I: Iterator> IteratorExt for I {}
