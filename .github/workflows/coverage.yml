@@ -4,9 +4,9 @@ on:
   workflow_dispatch: # Trigger from UI for selected branch
   schedule:
     - cron: "0 0 * * *"
-  push:
+  pull_request:
     branches:
-      - *coverage* # Trigger on branches ending with 'coverage'
+      - *coverage* # Trigger on branches with "coverage" in the name
 
 jobs:
     coverage:
