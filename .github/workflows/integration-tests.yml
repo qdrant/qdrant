@@ -9,7 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   POETRY_VERSION: 1.8.5
-  COVERAGE: '1'
 
 jobs:
   integration-tests:
@@ -40,8 +39,9 @@ jobs:
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
+        env:
+          COVERAGE: '1'
         run: |
-          export COVERAGE=1
           if [ "$COVERAGE" == "1" ]; then
             RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
           else
@@ -64,8 +64,7 @@ jobs:
 
   integration-tests-consensus:
 
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-latest    
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable
@@ -91,8 +90,9 @@ jobs:
       - name: Install llvm-cov
         run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
+        env:
+          COVERAGE: '1'
         run: |
-          export COVERAGE=1
           if [ "$COVERAGE" == "1" ]; then
             echo "Building qdrant binary with coverage"
             RUSTFLAGS="-C instrument-coverage" cargo build --features "service_debug data-consistency-check" --locked --target-dir target/llvm-cov-target
@@ -123,6 +123,28 @@ jobs:
           name: consensus-test-logs
           retention-days: 90 # default max value
           path: consensus_test_logs
+          
+  upload-coverage-reports:
+    runs-on: ubuntu-latest
+    needs: [integration-tests, integration-tests-consensus]
+    steps:
+      - name: Download openapi-tests-coverage.lcov
+        uses: actions/download-artifact@v4
+        with:
+          name: openapi-tests-coverage
+          path: coverage/
+      - name: Download consensus-tests-coverage.lcov
+        uses: actions/download-artifact@v4
+        with:
+          name: consensus-tests-coverage
+          path: coverage/
+      - name: Upload coverage data to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/openapi-tests-coverage.lcov,coverage/consensus-tests-coverage.lcov
+          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
 
   test-consensus-compose:
 
@@ -366,25 +388,3 @@ jobs:
           sleep 10
 
           ./tests/shard-snapshot-api.sh test-all
-
-  upload-coverage-reports:
-    runs-on: ubuntu-latest
-    needs: [integration-tests, integration-tests-consensus]
-    steps:
-      - name: Download openapi-tests-coverage.lcov
-        uses: actions/download-artifact@v4
-        with:
-          name: openapi-tests-coverage
-          path: coverage/
-      - name: Download consensus-tests-coverage.lcov
-        uses: actions/download-artifact@v4
-        with:
-          name: consensus-tests-coverage
-          path: coverage/
-      - name: Upload coverage data to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: coverage/openapi-tests-coverage.lcov,coverage/consensus-tests-coverage.lcov
-          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
-          token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
