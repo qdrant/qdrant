@@ -214,6 +214,76 @@ async fn test_scroll_dedup() {
         );
         assert!(record.order_value.is_some());
     }
+
+    // Scroll all points using query API
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: None,
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::disposable(),
+        )
+        .await
+        .expect("failed to scroll");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
+
+    // Scroll all points with ordering using query API
+    let points = collection
+        .query(
+            ShardQueryRequest {
+                query: Some(ScoringQuery::OrderBy(
+                    OrderByInterface::Key("num".parse().unwrap()).into(),
+                )),
+                prefetches: vec![],
+                filter: None,
+                params: Some(SearchParams {
+                    exact: true,
+                    ..Default::default()
+                }),
+                limit: 100,
+                offset: 0,
+                with_payload: WithPayloadInterface::Bool(false),
+                with_vector: WithVector::Bool(false),
+                score_threshold: None,
+            },
+            None,
+            ShardSelectorInternal::All,
+            None,
+            HwMeasurementAcc::disposable(),
+        )
+        .await
+        .expect("failed to scroll");
+    assert!(!points.is_empty(), "expected some points");
+
+    let mut seen = HashSet::new();
+    for point_id in points.iter().map(|point| point.id) {
+        assert!(
+            seen.insert(point_id),
+            "got point id {point_id} more than once, they should be deduplicated",
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -248,12 +318,11 @@ async fn test_retrieve_dedup() {
     }
 }
 
-/// Test should match behavior of [`test_query_dedup`]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_search_dedup() {
     let collection = fixture().await;
 
-    let hw_acc = HwMeasurementAcc::disposable();
+    // Search with search API
     let points = collection
         .search(
             CoreSearchRequest {
@@ -272,7 +341,7 @@ async fn test_search_dedup() {
             None,
             &ShardSelectorInternal::All,
             None,
-            hw_acc,
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to search");
@@ -285,13 +354,8 @@ async fn test_search_dedup() {
             "got point id {point_id} more than once, they should be deduplicated",
         );
     }
-}
 
-#[tokio::test(flavor = "multi_thread")]
-async fn test_query_dedup() {
-    let collection = fixture().await;
-
-    let hw_acc = HwMeasurementAcc::disposable();
+    // Search with query API
     let points = collection
         .query(
             ShardQueryRequest {
@@ -313,50 +377,10 @@ async fn test_query_dedup() {
             None,
             ShardSelectorInternal::All,
             None,
-            hw_acc,
+            HwMeasurementAcc::disposable(),
         )
         .await
         .expect("failed to query");
-    assert!(!points.is_empty(), "expected some points");
-
-    let mut seen = HashSet::new();
-    for point_id in points.iter().map(|point| point.id) {
-        assert!(
-            seen.insert(point_id),
-            "got point id {point_id} more than once, they should be deduplicated",
-        );
-    }
-}
-
-/// Test should match behavior of [`test_scroll_dedup`]
-#[tokio::test(flavor = "multi_thread")]
-async fn test_query_scroll_dedup() {
-    let collection = fixture().await;
-
-    let hw_acc = HwMeasurementAcc::disposable();
-    let points = collection
-        .query(
-            ShardQueryRequest {
-                query: None,
-                prefetches: vec![],
-                filter: None,
-                params: Some(SearchParams {
-                    exact: true,
-                    ..Default::default()
-                }),
-                limit: 100,
-                offset: 0,
-                with_payload: WithPayloadInterface::Bool(false),
-                with_vector: WithVector::Bool(false),
-                score_threshold: None,
-            },
-            None,
-            ShardSelectorInternal::All,
-            None,
-            hw_acc,
-        )
-        .await
-        .expect("failed to scroll");
     assert!(!points.is_empty(), "expected some points");
 
     let mut seen = HashSet::new();
