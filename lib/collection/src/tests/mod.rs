@@ -3,6 +3,7 @@ pub mod fixtures;
 mod hw_metrics;
 mod payload;
 mod points_dedup;
+mod query_prefetch_offset_limit;
 mod sha_256_test;
 mod shard_query;
 mod snapshot_test;
