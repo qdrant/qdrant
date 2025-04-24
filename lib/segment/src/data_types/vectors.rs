@@ -1,6 +1,8 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::slice::ChunksExactMut;
 
+use common::cmp::total_cmp_f32_slices;
 use half::f16;
 use itertools::Itertools;
 use schemars::JsonSchema;
@@ -367,6 +369,16 @@ impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
             flattened_vectors: self.flattened_vectors.to_owned(),
             dim: self.dim,
         }
+    }
+}
+
+impl TypedMultiDenseVectorRef<'_, f32> {
+    /// Returns the ordering between this vector and another vector.
+    ///
+    /// The order is arbitrary but consistent.
+    pub fn total_cmp(&self, other: &Self) -> Ordering {
+        Ord::cmp(&self.dim, &other.dim)
+            .then_with(|| total_cmp_f32_slices(self.flattened_vectors, other.flattened_vectors))
     }
 }
 

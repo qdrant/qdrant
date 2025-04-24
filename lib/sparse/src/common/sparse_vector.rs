@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::hash::Hash;
 
+use common::cmp::total_cmp_f32_slices;
 use common::types::ScoreType;
 use gridstore::Blob;
 use itertools::Itertools;
@@ -65,9 +67,9 @@ pub fn score_vectors<T: Ord + Eq>(
     let mut j = 0;
     while i < self_indices.len() && j < other_indices.len() {
         match self_indices[i].cmp(&other_indices[j]) {
-            std::cmp::Ordering::Less => i += 1,
-            std::cmp::Ordering::Greater => j += 1,
-            std::cmp::Ordering::Equal => {
+            Ordering::Less => i += 1,
+            Ordering::Greater => j += 1,
+            Ordering::Equal => {
                 overlap = true;
                 score += self_values[i] * other_values[j];
                 i += 1;
@@ -181,17 +183,17 @@ impl SparseVector {
         let mut j = 0;
         while i < this.indices.len() && j < other.indices.len() {
             match this.indices[i].cmp(&other.indices[j]) {
-                std::cmp::Ordering::Less => {
+                Ordering::Less => {
                     result.indices.push(this.indices[i]);
                     result.values.push(op(this.values[i], 0.0));
                     i += 1;
                 }
-                std::cmp::Ordering::Greater => {
+                Ordering::Greater => {
                     result.indices.push(other.indices[j]);
                     result.values.push(op(0.0, other.values[j]));
                     j += 1;
                 }
-                std::cmp::Ordering::Equal => {
+                Ordering::Equal => {
                     result.indices.push(this.indices[i]);
                     result.values.push(op(this.values[i], other.values[j]));
                     i += 1;
@@ -212,6 +214,16 @@ impl SparseVector {
         debug_assert!(result.is_sorted());
         debug_assert!(result.validate().is_ok());
         result
+    }
+
+    /// Returns the ordering between this vector and another vector.
+    ///
+    /// The order is arbitrary but consistent.
+    pub fn total_cmp(&self, other: &SparseVector) -> Ordering {
+        Ord::cmp(&self.indices.len(), &other.indices.len())
+            .then_with(|| Ord::cmp(&self.values.len(), &other.values.len()))
+            .then_with(|| Ord::cmp(&self.indices, &other.indices))
+            .then_with(|| total_cmp_f32_slices(&self.values, &other.values))
     }
 
     /// Create [RemappedSparseVector] from this vector in a naive way. Only suitable for testing.

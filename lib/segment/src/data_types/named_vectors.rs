@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use common::cmp::total_cmp_f32_slices;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::primitive::PrimitiveVectorElement;
@@ -60,6 +62,27 @@ impl CowVector<'_> {
 
     pub fn estimate_size_in_bytes(&self) -> usize {
         self.dim() * size_of::<VectorElementType>()
+    }
+
+    /// Returns the ordering between this vector and another vector.
+    ///
+    /// The order is arbitrary but consistent.
+    pub fn total_cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (CowVector::Dense(l), CowVector::Dense(r)) => total_cmp_f32_slices(l, r),
+            (CowVector::Dense(_), CowVector::Sparse(_)) => Ordering::Less,
+            (CowVector::Dense(_), CowVector::MultiDense(_)) => Ordering::Less,
+
+            (CowVector::Sparse(_), CowVector::Dense(_)) => Ordering::Greater,
+            (CowVector::Sparse(l), CowVector::Sparse(r)) => l.total_cmp(r),
+            (CowVector::Sparse(_), CowVector::MultiDense(_)) => Ordering::Less,
+
+            (CowVector::MultiDense(_), CowVector::Dense(_)) => Ordering::Greater,
+            (CowVector::MultiDense(_), CowVector::Sparse(_)) => Ordering::Greater,
+            (CowVector::MultiDense(l), CowVector::MultiDense(r)) => {
+                l.as_vec_ref().total_cmp(&r.as_vec_ref())
+            }
+        }
     }
 }
 
