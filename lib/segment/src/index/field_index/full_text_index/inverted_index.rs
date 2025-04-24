@@ -379,6 +379,42 @@ mod tests {
             })
             .collect();
 
+        check_query_congruence(
+            &mut_parsed_queries,
+            &imm_parsed_queries,
+            &mutable,
+            &mmap_index,
+            &hw_counter,
+        );
+
+        // Delete random documents from both indexes
+
+        let points_to_delete: Vec<_> = (0..deleted_count)
+            .map(|_| rand::rng().random_range(0..indexed_count))
+            .collect();
+
+        for point_id in &points_to_delete {
+            mutable.remove_document(*point_id);
+            mmap_index.remove_document(*point_id);
+        }
+
+        // Check congruence after deletion
+        check_query_congruence(
+            &mut_parsed_queries,
+            &imm_parsed_queries,
+            &mutable,
+            &mmap_index,
+            &hw_counter,
+        );
+    }
+
+    fn check_query_congruence(
+        mut_parsed_queries: &[Option<ParsedQuery>],
+        imm_parsed_queries: &[Option<ParsedQuery>],
+        mutable: &MutableInvertedIndex,
+        mmap_index: &MmapInvertedIndex,
+        hw_counter: &HardwareCounterCell,
+    ) {
         for queries in mut_parsed_queries
             .iter()
             .cloned()
@@ -393,44 +429,8 @@ mod tests {
                 // In this case both queries would filter to an empty set of documents.
                 continue;
             };
-            let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
-            let imm_filtered = mmap_index
-                .filter(imm_query, &hw_counter)
-                .collect::<Vec<_>>();
-
-            assert_eq!(mut_filtered, imm_filtered);
-        }
-
-        // Delete random documents from both indexes
-
-        let points_to_delete: Vec<_> = (0..deleted_count)
-            .map(|_| rand::rng().random_range(0..indexed_count))
-            .collect();
-
-        for point_id in &points_to_delete {
-            mutable.remove_document(*point_id);
-            mmap_index.remove_document(*point_id);
-        }
-
-        // Check congruence after deletion
-
-        for queries in mut_parsed_queries
-            .iter()
-            .cloned()
-            .zip(imm_parsed_queries.iter().cloned())
-        {
-            let (Some(mut_query), Some(imm_query)) = queries else {
-                // Both queries must be None
-                assert!(
-                    queries.0.is_none() && queries.1.is_none(),
-                    "Both queries must be parsed or not parsed entirely"
-                );
-                continue;
-            };
-            let mut_filtered = mutable.filter(mut_query, &hw_counter).collect::<Vec<_>>();
-            let imm_filtered = mmap_index
-                .filter(imm_query, &hw_counter)
-                .collect::<Vec<_>>();
+            let mut_filtered = mutable.filter(mut_query, hw_counter).collect::<Vec<_>>();
+            let imm_filtered = mmap_index.filter(imm_query, hw_counter).collect::<Vec<_>>();
 
             assert_eq!(mut_filtered, imm_filtered);
         }
