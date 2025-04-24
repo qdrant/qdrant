@@ -92,7 +92,8 @@ def request_with_validation(
     try:
         operation.validate_response(response)
     except CheckFailed as ex:
-        warnings.warn(f"Failed validation {ex} for response body {response.text}")
+        headers_str = "\n".join(f"{k}: {v}" for k, v in response.headers.items())
+        warnings.warn(f"Failed validation {ex} for response with:\nbody:{response.text}\nheaders:\n{headers_str}")
         raise
 
     return response
