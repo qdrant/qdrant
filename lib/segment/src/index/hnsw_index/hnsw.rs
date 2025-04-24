@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::fs::create_dir_all;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
@@ -246,6 +247,7 @@ impl HNSWIndex {
             total_vector_count,
         );
 
+        let cache = OnceCell::new();
         let old_index = old_indices
             .iter()
             .filter_map(|old_index| {
@@ -255,9 +257,11 @@ impl HNSWIndex {
                     &config,
                     &vector_storage_ref,
                     id_tracker_ref.deref(),
+                    &cache,
                 )
             })
             .max_by_key(|old_index| old_index.valid_points);
+        drop(cache);
 
         // Build main index graph
         let mut rng = rand::rng();
@@ -1351,6 +1355,7 @@ impl<'a> OldIndexCandidate<'a> {
         config: &HnswGraphConfig,
         vector_storage: &VectorStorageEnum,
         id_tracker: &IdTrackerSS,
+        cache: &OnceCell<Vec<PointOffsetType>>,
     ) -> Option<Self> {
         let old_index = AtomicRef::filter_map(old_index.borrow(), |index| match index {
             VectorIndexEnum::Hnsw(old_index) => Some(old_index),
@@ -1370,57 +1375,62 @@ impl<'a> OldIndexCandidate<'a> {
         let new_deleted = vector_storage.deleted_vector_bitslice();
         let old_id_tracker = old_index.id_tracker.borrow();
 
-        if old_id_tracker.deleted_point_count() != 0 {
-            // Old index has deleted points.
-            // FIXME: Not supported yet.
-            return None;
-        }
+        // Even if the old vector is marked as deleted, we might still want to
+        // reuse the graph that was built with this vector. Therefore, we don't
+        // rely on `deleted_vector_bitslice`. Similarly, we don't rely on the
+        // old ID tracker to contain deleted points.
+        //
+        // Instead, we do the following:
+        // - To determine whether a graph was built with a particular ID, we
+        //   check whether this ID has any links at level 0.
+        // - To map old internal IDs to new ones, we search for vector values
+        //   that appear in both the old and new indices. This is done by
+        //   sorting vectors by their values.
 
-        // Build old_to_new mapping.
+        let sorted_old_offsets = (0..old_id_tracker.total_point_count())
+            .map(|id| id as PointOffsetType)
+            .filter(|&id| old_index.graph.links.links(id, 0).next().is_some())
+            .sorted_unstable_by(|a, b| {
+                let a = old_storage_ref.get_vector(*a);
+                let b = old_storage_ref.get_vector(*b);
+                a.total_cmp(&b)
+            });
+
+        let sorted_new_offsets = cache.get_or_init(|| {
+            id_tracker
+                .iter_ids_excluding(new_deleted)
+                .map(|id| id as PointOffsetType)
+                .sorted_unstable_by(|a, b| {
+                    let a = vector_storage.get_vector(*a);
+                    let b = vector_storage.get_vector(*b);
+                    a.total_cmp(&b)
+                })
+                .collect_vec()
+        });
+
         let mut valid_points = 0;
         let mut old_to_new = vec![None; old_id_tracker.total_point_count()];
         for item in itertools::merge_join_by(
-            id_tracker.iter_from(None),
-            old_id_tracker.iter_from(None),
-            |(new_external_id, _), (old_external_id, _)| new_external_id.cmp(old_external_id),
+            sorted_old_offsets,
+            sorted_new_offsets.iter().copied(),
+            |&old_id, &new_id| {
+                let old_vector = old_storage_ref.get_vector(old_id);
+                let new_vector = vector_storage.get_vector(new_id);
+                old_vector.total_cmp(&new_vector)
+            },
         ) {
-            let (new_offset, old_offset): (Option<PointOffsetType>, Option<PointOffsetType>) =
-                match item {
-                    EitherOrBoth::Both((_, new_offset), (_, old_offset)) => {
-                        (Some(new_offset), Some(old_offset))
-                    }
-                    EitherOrBoth::Left((_, new_offset)) => (Some(new_offset), None),
-                    EitherOrBoth::Right((_, old_offset)) => (None, Some(old_offset)),
-                };
-
-            let new_offset =
-                new_offset.filter(|&id| !new_deleted.get_bit(id as usize).unwrap_or(false));
-
-            // Even if the old vector is marked as deleted, we still might want
-            // to reuse the graph built with this vector.
-            // Thus, instead of checking `deleted_vector_bitslice`, we check
-            // that the vector present in the graph, and it's value is the same.
-            let old_offset =
-                old_offset.filter(|&id| old_index.graph.links.links(id, 0).next().is_some());
-
-            match (new_offset, old_offset) {
-                (_, None) => (),
-                (None, Some(_)) => {
+            match item {
+                EitherOrBoth::Both(old_offset, new_offset) => {
+                    old_to_new[old_offset as usize] = Some(new_offset);
+                    valid_points += 1;
+                }
+                EitherOrBoth::Left(_old_offset) => {
                     // Vector was in the old index, but not in the new one.
                     // FIXME: Not supported yet.
                     return None;
                 }
-                (Some(new_offset), Some(old_offset)) => {
-                    let new_vector = vector_storage.get_vector(new_offset);
-                    let old_vector = old_storage_ref.get_vector(old_offset);
-                    if old_vector == new_vector {
-                        old_to_new[old_offset as usize] = Some(new_offset);
-                        valid_points += 1;
-                    } else {
-                        // Vector is changed.
-                        // FIXME: Not supported yet.
-                        return None;
-                    }
+                EitherOrBoth::Right(_new_offset) => {
+                    // Vector only in the new index.
                 }
             }
         }
