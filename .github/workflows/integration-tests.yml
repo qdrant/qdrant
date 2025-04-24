@@ -36,8 +36,6 @@ jobs:
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
-      - name: Install llvm-cov
-        run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
         run: cargo build --features "service_debug data-consistency-check" --locked
       - name: Run integration tests
@@ -69,8 +67,6 @@ jobs:
 
           poetry -C tests check --lock
           poetry -C tests install --no-root
-      - name: Install llvm-cov
-        run: cargo install cargo-llvm-cov && sudo apt install -y lcov
       - name: Build
         run: cargo build --features "service_debug data-consistency-check" --locked
       - name: Run integration tests - 1 peer
