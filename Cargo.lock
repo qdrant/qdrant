@@ -1775,9 +1775,9 @@ dependencies = [
 
 [[package]]
 name = "ecow"
-version = "0.2.4"
+version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef5eeffa816451f3a6a4cce9cd796e3e5ba6018638d3ce5cc7f87b73bababf60"
+checksum = "b92b481eb5d59fd8e80e92ff11d057d1ca8d144b2cd8c66cc8d5bd177a3c0dc5"
 dependencies = [
  "serde",
 ]
@@ -5899,7 +5899,6 @@ dependencies = [
  "serde_variant",
  "sha2",
  "smallvec",
- "smol_str",
  "sparse",
  "strum",
  "sysinfo",
@@ -6204,15 +6203,6 @@ name = "smallvec"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8917285742e9f3e1683f0a9c4e6b57960b7314d0b08d30d1ecd426713ee2eee9"
-
-[[package]]
-name = "smol_str"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9676b89cd56310a87b93dec47b11af744f34d5fc9f367b829474eec0a891350d"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "socket2"

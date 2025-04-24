@@ -9,7 +9,6 @@ use common::types::PointOffsetType;
 use delegate::delegate;
 use parking_lot::RwLock;
 use rocksdb::DB;
-use smol_str::SmolStr;
 
 use super::GeoMapIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -128,7 +127,7 @@ impl MutableGeoMapIndex {
                         |e| OperationError::service_error(format!("Malformed geo points: {e}")),
                     )?;
                 let key = GeoMapIndex::encode_db_key(geo_hash_to_remove, idx);
-                self.db_wrapper.remove(key)?;
+                self.db_wrapper.remove(key.as_bytes())?;
             }
             self.in_memory_index.remove_point(idx)
         } else {
@@ -149,7 +148,7 @@ impl MutableGeoMapIndex {
             let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
             let value = GeoMapIndex::encode_db_value(added_point);
 
-            self.db_wrapper.put(key, value)?;
+            self.db_wrapper.put(key.as_bytes(), value)?;
         }
         self.in_memory_index
             .add_many_geo_points(idx, values, hw_counter)
@@ -270,10 +269,7 @@ impl InMemoryGeoMapIndex {
                 hash_ids.remove(&idx);
                 hash_ids.is_empty()
             } else {
-                log::warn!(
-                    "Geo index error: no points for hash {} was found",
-                    SmolStr::from(removed_geo_hash),
-                );
+                log::warn!("Geo index error: no points for hash {removed_geo_hash} was found");
                 false
             };
 
@@ -391,8 +387,7 @@ impl InMemoryGeoMapIndex {
                 None => {
                     debug_assert!(
                         false,
-                        "Hash value count is not found for hash: {}",
-                        SmolStr::from(sub_geo_hash),
+                        "Hash value count is not found for hash: {sub_geo_hash}",
                     );
                     self.values_per_hash.insert(sub_geo_hash, 0);
                 }
@@ -416,8 +411,7 @@ impl InMemoryGeoMapIndex {
                     None => {
                         debug_assert!(
                             false,
-                            "Hash point count is not found for hash: {}",
-                            SmolStr::from(sub_geo_hash),
+                            "Hash point count is not found for hash: {sub_geo_hash}",
                         );
                         self.points_per_hash.insert(sub_geo_hash, 0);
                     }
