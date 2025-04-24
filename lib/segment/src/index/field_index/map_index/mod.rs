@@ -11,13 +11,13 @@ use ahash::HashMap;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::mmap_hashmap::Key;
 use common::types::PointOffsetType;
+use ecow::EcoString;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
-use smol_str::SmolStr;
 use uuid::Uuid;
 
 use self::immutable_map_index::ImmutableMapIndex;
@@ -53,10 +53,10 @@ pub trait MapIndexKey: Key + MmapValue + Eq + Display + Debug {
 }
 
 impl MapIndexKey for str {
-    type Owned = SmolStr;
+    type Owned = EcoString;
 
     fn to_owned(&self) -> Self::Owned {
-        SmolStr::from(self)
+        EcoString::from(self)
     }
 }
 
@@ -1339,26 +1339,26 @@ mod tests {
     fn test_string_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![
-                SmolStr::from("AABB"),
-                SmolStr::from("UUFF"),
-                SmolStr::from("IIBB"),
+                EcoString::from("AABB"),
+                EcoString::from("UUFF"),
+                EcoString::from("IIBB"),
             ],
             vec![
-                SmolStr::from("PPMM"),
-                SmolStr::from("QQXX"),
-                SmolStr::from("YYBB"),
+                EcoString::from("PPMM"),
+                EcoString::from("QQXX"),
+                EcoString::from("YYBB"),
             ],
             vec![
-                SmolStr::from("FFMM"),
-                SmolStr::from("IICC"),
-                SmolStr::from("IIBB"),
+                EcoString::from("FFMM"),
+                EcoString::from("IICC"),
+                EcoString::from("IIBB"),
             ],
             vec![
-                SmolStr::from("AABB"),
-                SmolStr::from("UUFF"),
-                SmolStr::from("IIBB"),
+                EcoString::from("AABB"),
+                EcoString::from("UUFF"),
+                EcoString::from("IIBB"),
             ],
-            vec![SmolStr::from("PPGG")],
+            vec![EcoString::from("PPGG")],
         ];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
@@ -1380,7 +1380,7 @@ mod tests {
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
     fn test_empty_index(#[case] index_type: IndexType) {
-        let data: Vec<Vec<SmolStr>> = vec![];
+        let data: Vec<Vec<EcoString>> = vec![];
 
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
         save_map_index::<str>(&data, temp_dir.path(), index_type, |v| v.to_string().into());

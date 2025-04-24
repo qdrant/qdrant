@@ -1,9 +1,10 @@
+use std::fmt::Display;
 use std::ops::{Index, Range};
 
+use ecow::EcoString;
 use geo::{Coord, Distance, Haversine, Intersects, LineString, Point, Polygon};
 use geohash::{Direction, GeohashError, decode, decode_bbox, encode};
 use itertools::Itertools;
-use smol_str::SmolStr;
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::{GeoBoundingBox, GeoPoint, GeoPolygon, GeoRadius};
@@ -61,10 +62,10 @@ impl Index<usize> for GeoHash {
     }
 }
 
-impl TryFrom<SmolStr> for GeoHash {
+impl TryFrom<EcoString> for GeoHash {
     type Error = GeohashError;
 
-    fn try_from(hash: SmolStr) -> Result<Self, Self::Error> {
+    fn try_from(hash: EcoString) -> Result<Self, Self::Error> {
         Self::new(hash.as_str())
     }
 }
@@ -77,9 +78,18 @@ impl TryFrom<String> for GeoHash {
     }
 }
 
-impl From<GeoHash> for SmolStr {
+impl From<GeoHash> for EcoString {
     fn from(hash: GeoHash) -> Self {
         hash.iter().collect()
+    }
+}
+
+impl Display for GeoHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for c in self.iter() {
+            write!(f, "{c}")?;
+        }
+        Ok(())
     }
 }
 
@@ -232,7 +242,7 @@ fn sphere_lat(lat: f64) -> f64 {
 
 /// Get neighbour geohash even from the other side of coordinates
 fn sphere_neighbor(hash: GeoHash, direction: Direction) -> Result<GeoHash, GeohashError> {
-    let hash_str = SmolStr::from(hash);
+    let hash_str = EcoString::from(hash);
     let (coord, lon_err, lat_err) = decode(hash_str.as_str())?;
     let (dlat, dlng) = direction.to_tuple();
     let lon = sphere_lon(coord.x + 2f64 * lon_err.abs() * dlng);
@@ -249,7 +259,7 @@ pub fn encode_max_precision(lon: f64, lat: f64) -> Result<GeoHash, GeohashError>
 }
 
 pub fn geo_hash_to_box(geo_hash: GeoHash) -> GeoBoundingBox {
-    let rectangle = decode_bbox(SmolStr::from(geo_hash).as_str()).unwrap();
+    let rectangle = decode_bbox(EcoString::from(geo_hash).as_str()).unwrap();
     let top_left = GeoPoint {
         lon: rectangle.min().x,
         lat: rectangle.max().y,
@@ -414,7 +424,9 @@ pub fn circle_hashes(circle: &GeoRadius, max_regions: usize) -> OperationResult<
             .map(|hashes| {
                 hashes
                     .into_iter()
-                    .filter(|hash| check_circle_intersection(SmolStr::from(*hash).as_str(), circle))
+                    .filter(|hash| {
+                        check_circle_intersection(EcoString::from(*hash).as_str(), circle)
+                    })
                     .collect_vec()
             })
     };
@@ -452,7 +464,7 @@ fn boundary_hashes(boundary: &LineString, max_regions: usize) -> OperationResult
                 hashes
                     .into_iter()
                     .filter(|hash| {
-                        check_polygon_intersection(SmolStr::from(*hash).as_str(), &polygon)
+                        check_polygon_intersection(EcoString::from(*hash).as_str(), &polygon)
                     })
                     .collect_vec()
             })
@@ -501,7 +513,10 @@ pub fn polygon_hashes(polygon: &GeoPolygon, max_regions: usize) -> OperationResu
                 hashes
                     .into_iter()
                     .filter(|hash| {
-                        check_polygon_intersection(SmolStr::from(*hash).as_str(), &polygon_wrapper)
+                        check_polygon_intersection(
+                            EcoString::from(*hash).as_str(),
+                            &polygon_wrapper,
+                        )
                     })
                     .collect_vec()
             })
@@ -631,7 +646,7 @@ mod tests {
         let mut hashes = v.iter().map(|s| GeoHash::new(s).unwrap()).collect_vec();
         hashes.sort_unstable();
         v.sort_unstable();
-        assert_eq!(hashes.iter().map(|h| SmolStr::from(*h)).collect_vec(), v);
+        assert_eq!(hashes.iter().map(|h| EcoString::from(*h)).collect_vec(), v);
 
         // special case for hash which ends with 0
         // "uft56" and "uft560000000" have the same encoded chars, but different length
@@ -1245,44 +1260,44 @@ mod tests {
     #[test]
     fn sphere_neighbor_corner_cases() {
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("z").unwrap(), Direction::NE).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("z").unwrap(), Direction::NE).unwrap()),
             "b"
         );
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("zz").unwrap(), Direction::NE).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("zz").unwrap(), Direction::NE).unwrap()),
             "bp"
         );
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("0").unwrap(), Direction::SW).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("0").unwrap(), Direction::SW).unwrap()),
             "p"
         );
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("00").unwrap(), Direction::SW).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("00").unwrap(), Direction::SW).unwrap()),
             "pb"
         );
 
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("8").unwrap(), Direction::W).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("8").unwrap(), Direction::W).unwrap()),
             "x"
         );
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("8h").unwrap(), Direction::W).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("8h").unwrap(), Direction::W).unwrap()),
             "xu"
         );
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("r").unwrap(), Direction::E).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("r").unwrap(), Direction::E).unwrap()),
             "2"
         );
         assert_eq!(
-            &SmolStr::from(sphere_neighbor(GeoHash::new("ru").unwrap(), Direction::E).unwrap()),
+            &EcoString::from(sphere_neighbor(GeoHash::new("ru").unwrap(), Direction::E).unwrap()),
             "2h"
         );
 
         assert_eq!(
-            SmolStr::from(
+            EcoString::from(
                 sphere_neighbor(GeoHash::new("ww8p1r4t8").unwrap(), Direction::SE).unwrap()
             ),
-            SmolStr::from(&geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap())
+            EcoString::from(&geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap())
         );
     }
 
@@ -1315,7 +1330,7 @@ mod tests {
         ];
 
         let common_prefix = common_hash_prefix(&geo_hashes).unwrap();
-        println!("common_prefix = {:?}", SmolStr::from(common_prefix));
+        println!("common_prefix = {:?}", EcoString::from(common_prefix));
 
         //assert_eq!(common_prefix, GeoHash::new("zbcd").unwrap());
 
@@ -1327,7 +1342,7 @@ mod tests {
         ];
 
         let common_prefix = common_hash_prefix(&geo_hashes).unwrap();
-        println!("common_prefix = {:?}", SmolStr::from(common_prefix));
+        println!("common_prefix = {:?}", EcoString::from(common_prefix));
 
         assert_eq!(common_prefix, GeoHash::new("").unwrap());
     }

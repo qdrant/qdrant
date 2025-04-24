@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use ecow::{EcoString, eco_format};
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
-use smol_str::{SmolStr, format_smolstr};
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mmap_geo_index::MmapGeoMapIndex;
@@ -129,9 +129,8 @@ impl GeoMapIndex {
         format!("{field}_geo")
     }
 
-    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> SmolStr {
-        let value_str = SmolStr::from(value);
-        format_smolstr!("{value_str}/{idx}")
+    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> EcoString {
+        eco_format!("{value}/{idx}")
     }
 
     fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {
