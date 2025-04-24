@@ -92,7 +92,7 @@ def request_with_validation(
     try:
         operation.validate_response(response)
     except CheckFailed as ex:
-        warnings.warn(f"Failed validation {ex} for response body {response.text()}")
+        warnings.warn(f"Failed validation {ex} for response body {response.text}")
         raise
 
     return response
