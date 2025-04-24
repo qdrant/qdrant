@@ -1774,6 +1774,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecow"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef5eeffa816451f3a6a4cce9cd796e3e5ba6018638d3ce5cc7f87b73bababf60"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "either"
 version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5838,6 +5847,7 @@ dependencies = [
  "data-encoding",
  "dataset",
  "delegate",
+ "ecow",
  "env_logger",
  "fnv",
  "fs_extra",

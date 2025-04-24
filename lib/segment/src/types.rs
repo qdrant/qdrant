@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use common::types::ScoreType;
+use ecow::EcoString;
 use fnv::FnvBuildHasher;
 use geo::{Contains, Coord, Distance as GeoDistance, Haversine, LineString, Point, Polygon};
 use indexmap::IndexSet;
@@ -4322,7 +4323,7 @@ pub enum ShardKey {
         schema_with = "String::json_schema",
         example = "shard_key_string_example"
     )]
-    Keyword(SmolStr),
+    Keyword(EcoString),
     #[schemars(example = "shard_key_number_example")]
     #[anonymize(false)]
     Number(u64),
@@ -4330,19 +4331,19 @@ pub enum ShardKey {
 
 impl From<String> for ShardKey {
     fn from(s: String) -> Self {
-        ShardKey::Keyword(SmolStr::from(s))
+        ShardKey::Keyword(EcoString::from(s))
     }
 }
 
-impl From<SmolStr> for ShardKey {
-    fn from(s: SmolStr) -> Self {
+impl From<EcoString> for ShardKey {
+    fn from(s: EcoString) -> Self {
         ShardKey::Keyword(s)
     }
 }
 
 impl From<&str> for ShardKey {
     fn from(s: &str) -> Self {
-        ShardKey::Keyword(SmolStr::from(s))
+        ShardKey::Keyword(EcoString::from(s))
     }
 }
 
