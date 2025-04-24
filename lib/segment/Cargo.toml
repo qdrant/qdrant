@@ -86,6 +86,7 @@ tinyvec = { version = "1.9.0", features = ["alloc", "latest_stable_rust"] }
 validator = { workspace = true }
 chrono = { workspace = true }
 smol_str = { version = "0.3.2", default-features = false, features = ["serde"] }
+ecow = { version = "0.2.4", features = ["serde"] }
 fnv = { workspace = true }
 indexmap = { workspace = true }
 ahash = { workspace = true }

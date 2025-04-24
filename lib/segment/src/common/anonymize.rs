@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
+use ecow::{EcoString, eco_format};
 pub use macros::Anonymize;
-use smol_str::{SmolStr, format_smolstr};
 use uuid::Uuid;
 
 /// This trait provides a derive macro.
@@ -119,11 +119,11 @@ impl Anonymize for String {
     }
 }
 
-impl Anonymize for SmolStr {
+impl Anonymize for EcoString {
     fn anonymize(&self) -> Self {
         let mut hasher = DefaultHasher::new();
         self.hash(&mut hasher);
-        format_smolstr!("{}", hasher.finish())
+        eco_format!("{}", hasher.finish())
     }
 }
 
