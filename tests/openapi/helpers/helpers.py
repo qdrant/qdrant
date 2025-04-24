@@ -92,8 +92,18 @@ def request_with_validation(
     try:
         operation.validate_response(response)
     except CheckFailed as ex:
+        status = response.status_code
         headers_str = "\n".join(f"{k}: {v}" for k, v in response.headers.items())
-        warnings.warn(f"Failed validation {ex} for response with:\nbody:{response.text}\nheaders:\n{headers_str}")
+        body_raw = response.content
+        body_text = response.text.strip()
+        msg = (
+            f"Failed validation {ex} for response:\n"
+            f"Status: {status}\n"
+            f"Headers:\n{headers_str}\n"
+            f"Body (raw bytes): {body_raw!r}\n"
+            f"Body (decoded text):\n{body_text if body_text else '[Empty Body]'}"
+        )
+        warnings.warn(msg)
         raise
 
     return response
