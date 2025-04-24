@@ -7,7 +7,9 @@ use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
 };
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
+use segment::data_types::segment_manifest::SegmentManifests;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
@@ -45,16 +47,24 @@ pub async fn stream_shard_snapshot(
     access: Access,
     collection_name: String,
     shard_id: ShardId,
+    manifest: Option<SegmentManifests>,
 ) -> Result<SnapshotStream, StorageError> {
     let collection_pass = access.check_collection_access(
         &collection_name,
         AccessRequirements::new().write().whole().extras(),
     )?;
-    let collection = toc.get_collection(&collection_pass).await?;
 
-    Ok(collection
-        .stream_shard_snapshot(shard_id, &toc.optional_temp_or_snapshot_temp_path()?)
-        .await?)
+    let snapshot_stream = toc
+        .get_collection(&collection_pass)
+        .await?
+        .stream_shard_snapshot(
+            shard_id,
+            manifest,
+            &toc.optional_temp_or_snapshot_temp_path()?,
+        )
+        .await?;
+
+    Ok(snapshot_stream)
 }
 
 /// # Cancel safety
@@ -189,6 +199,7 @@ pub async fn recover_shard_snapshot(
             shard_id,
             &snapshot_path,
             snapshot_priority,
+            RecoveryType::Full,
             cancel,
         )
         .await;
@@ -214,6 +225,7 @@ pub async fn recover_shard_snapshot_impl(
     shard: ShardId,
     snapshot_path: &std::path::Path,
     priority: SnapshotPriority,
+    recovery_type: RecoveryType,
     cancel: cancel::CancellationToken,
 ) -> Result<(), StorageError> {
     // `Collection::restore_shard_snapshot` and `activate_shard` calls *have to* be executed as a
@@ -227,6 +239,7 @@ pub async fn recover_shard_snapshot_impl(
         .restore_shard_snapshot(
             shard,
             snapshot_path,
+            recovery_type,
             toc.this_peer_id,
             toc.is_distributed(),
             &toc.optional_temp_or_snapshot_temp_path()?,
@@ -256,7 +269,7 @@ pub async fn recover_shard_snapshot_impl(
         })
         .collect();
 
-    if other_active_replicas.is_empty() {
+    if other_active_replicas.is_empty() || recovery_type.is_partial() {
         snapshots::recover::activate_shard(toc, collection, toc.this_peer_id, &shard).await?;
     } else {
         match priority {

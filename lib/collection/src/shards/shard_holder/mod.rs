@@ -13,6 +13,7 @@ use common::tar_ext::BuilderExt;
 use futures::{Future, StreamExt, TryStreamExt as _, stream};
 use itertools::Itertools;
 use segment::common::validate_snapshot_archive::open_snapshot_archive_with_validation;
+use segment::data_types::segment_manifest::SegmentManifests;
 use segment::types::{ShardKey, SnapshotFormat};
 use shard_mapping::ShardKeyMapping;
 use tokio::runtime::Handle;
@@ -858,6 +859,7 @@ impl ShardHolder {
                 snapshot_temp_dir.path(),
                 &tar,
                 SnapshotFormat::Regular,
+                None,
                 false,
             )
             .await?;
@@ -892,6 +894,7 @@ impl ShardHolder {
         shard: OwnedRwLockReadGuard<ShardHolder, ShardReplicaSet>,
         collection_name: &str,
         shard_id: ShardId,
+        manifest: Option<SegmentManifests>,
         temp_dir: &Path,
     ) -> CollectionResult<SnapshotStream> {
         // - `snapshot_temp_dir` and `temp_file` are handled by `tempfile`
@@ -922,6 +925,7 @@ impl ShardHolder {
                     snapshot_temp_dir.path(),
                     &tar,
                     SnapshotFormat::Streamable,
+                    manifest,
                     false,
                 )
                 .await?;
@@ -958,6 +962,7 @@ impl ShardHolder {
     pub async fn restore_shard_snapshot(
         &self,
         snapshot_path: &Path,
+        recovery_type: RecoveryType,
         collection_path: &Path,
         collection_name: &str,
         shard_id: ShardId,
@@ -1018,7 +1023,13 @@ impl ShardHolder {
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
-            .recover_local_shard_from(snapshot_temp_dir.path(), collection_path, shard_id, cancel)
+            .recover_local_shard_from(
+                snapshot_temp_dir.path(),
+                recovery_type,
+                collection_path,
+                shard_id,
+                cancel,
+            )
             .await?;
 
         if !recovered {
@@ -1036,6 +1047,7 @@ impl ShardHolder {
     pub async fn recover_local_shard_from(
         &self,
         snapshot_shard_path: &Path,
+        recovery_type: RecoveryType,
         collection_path: &Path,
         shard_id: ShardId,
         cancel: cancel::CancellationToken,
@@ -1050,12 +1062,7 @@ impl ShardHolder {
 
         // `ShardReplicaSet::restore_local_replica_from` is *not* cancel safe
         let res = replica_set
-            .restore_local_replica_from(
-                snapshot_shard_path,
-                RecoveryType::Full,
-                collection_path,
-                cancel,
-            )
+            .restore_local_replica_from(snapshot_shard_path, recovery_type, collection_path, cancel)
             .await?;
 
         Ok(res)

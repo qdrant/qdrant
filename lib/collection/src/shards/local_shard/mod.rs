@@ -853,6 +853,7 @@ impl LocalShard {
         temp_path: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
+        manifest: Option<SegmentManifests>,
         save_wal: bool,
     ) -> CollectionResult<()> {
         let segments = self.segments.clone();
@@ -884,6 +885,7 @@ impl LocalShard {
                 &temp_path,
                 &tar_c.descend(Path::new(SEGMENTS_PATH))?,
                 format,
+                manifest.as_ref(),
             )?;
 
             if save_wal {

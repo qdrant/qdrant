@@ -5,6 +5,7 @@ use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::ReplicaState;
+use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::{PeerId, ShardId};
 
 use crate::content_manager::collection_meta_ops::{
@@ -217,6 +218,7 @@ async fn _do_recover_from_snapshot(
         let recovered = collection
             .recover_local_shard_from(
                 &snapshot_shard_path,
+                RecoveryType::Full,
                 *shard_id,
                 cancel::CancellationToken::new(),
             )

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::types::SeqNumberType;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[serde(transparent)]
 pub struct SegmentManifests {
     manifests: HashMap<String, SegmentManifest>,
 }
@@ -82,6 +83,20 @@ impl SegmentManifest {
             segment_version: 0,
             file_versions: HashMap::new(),
         }
+    }
+
+    pub fn file_version(&self, file: &Path) -> Option<SeqNumberType> {
+        self.file_versions
+            .get(file)
+            .map(|version| version.or_segment_version(self.segment_version))
+    }
+
+    pub fn file_versions(&self) -> impl Iterator<Item = (&Path, SeqNumberType)> {
+        self.file_versions.iter().map(|(file, version)| {
+            let file = file.as_path();
+            let version = version.or_segment_version(self.segment_version);
+            (file, version)
+        })
     }
 }
 
