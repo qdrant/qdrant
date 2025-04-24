@@ -19,7 +19,6 @@ use ordered_float::OrderedFloat;
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
-use smol_str::SmolStr;
 use strum::EnumIter;
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -2031,8 +2030,8 @@ impl From<String> for Match {
     }
 }
 
-impl From<SmolStr> for Match {
-    fn from(keyword: SmolStr) -> Self {
+impl From<EcoString> for Match {
+    fn from(keyword: EcoString) -> Self {
         Self::Value(MatchValue {
             value: ValueVariants::String(keyword.into()),
         })

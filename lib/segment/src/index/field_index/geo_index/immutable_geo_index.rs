@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use ahash::AHashSet;
 use common::types::PointOffsetType;
+use ecow::EcoString;
 use parking_lot::RwLock;
 use rocksdb::DB;
-use smol_str::SmolStr;
 
 use super::GeoMapIndex;
 use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
@@ -196,7 +196,7 @@ impl ImmutableGeoMapIndex {
             } else {
                 log::warn!(
                     "Geo index error: no points for hash {} was found",
-                    SmolStr::from(removed_geo_hash),
+                    EcoString::from(removed_geo_hash),
                 );
             };
 
@@ -234,14 +234,14 @@ impl ImmutableGeoMapIndex {
                     debug_assert!(
                         false,
                         "Hash value count is already empty: {}",
-                        SmolStr::from(sub_geo_hash),
+                        EcoString::from(sub_geo_hash),
                     );
                 }
             } else {
                 debug_assert!(
                     false,
                     "Hash value count is not found for hash: {}",
-                    SmolStr::from(sub_geo_hash),
+                    EcoString::from(sub_geo_hash),
                 );
             }
         }
@@ -267,14 +267,14 @@ impl ImmutableGeoMapIndex {
                         debug_assert!(
                             false,
                             "Hash point count is already empty: {}",
-                            SmolStr::from(sub_geo_hash),
+                            EcoString::from(sub_geo_hash),
                         );
                     }
                 } else {
                     debug_assert!(
                         false,
                         "Hash point count is not found for hash: {}",
-                        SmolStr::from(sub_geo_hash),
+                        EcoString::from(sub_geo_hash),
                     );
                 };
             }
