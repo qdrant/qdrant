@@ -125,7 +125,8 @@ def get_llvm_profile_file() -> str:
     project_root = os.getcwd()
     # %m: keep merging results from each test into the same file
     # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
-    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%m.profraw" # Not using -%p since each test will generate a new file
+    # Not using -%p since each test will generate a new file
+    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%m.profraw"
     return llvm_profile_file
 
 
