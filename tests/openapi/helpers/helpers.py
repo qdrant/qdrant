@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 import jsonschema
 import requests
 import warnings
+from schemathesis.exceptions import CheckFailed
 from schemathesis.models import APIOperation
 from schemathesis.specs.openapi.references import ConvertingResolver
 from schemathesis.specs.openapi.schemas import OpenApi30
@@ -90,7 +91,7 @@ def request_with_validation(
 
     try:
         operation.validate_response(response)
-    except schemathesis.exceptions.CheckFailed as ex:
+    except CheckFailed as ex:
         warnings.warn(f"Failed validation {ex} for response body {response.text()}")
         raise
 
