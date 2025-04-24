@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::ops::{Index, Range};
 
 use ecow::EcoString;
@@ -80,6 +81,15 @@ impl TryFrom<String> for GeoHash {
 impl From<GeoHash> for EcoString {
     fn from(hash: GeoHash) -> Self {
         hash.iter().collect()
+    }
+}
+
+impl Display for GeoHash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for c in self.iter() {
+            write!(f, "{c}")?;
+        }
+        Ok(())
     }
 }
 

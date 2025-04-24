@@ -130,8 +130,7 @@ impl GeoMapIndex {
     }
 
     fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> EcoString {
-        let value_str = EcoString::from(value);
-        eco_format!("{value_str}/{idx}")
+        eco_format!("{value}/{idx}")
     }
 
     fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {

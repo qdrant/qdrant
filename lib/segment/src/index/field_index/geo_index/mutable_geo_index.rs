@@ -7,7 +7,6 @@ use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use delegate::delegate;
-use ecow::EcoString;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -270,10 +269,7 @@ impl InMemoryGeoMapIndex {
                 hash_ids.remove(&idx);
                 hash_ids.is_empty()
             } else {
-                log::warn!(
-                    "Geo index error: no points for hash {} was found",
-                    EcoString::from(removed_geo_hash),
-                );
+                log::warn!("Geo index error: no points for hash {removed_geo_hash} was found");
                 false
             };
 
@@ -391,8 +387,7 @@ impl InMemoryGeoMapIndex {
                 None => {
                     debug_assert!(
                         false,
-                        "Hash value count is not found for hash: {}",
-                        sub_geo_hash,
+                        "Hash value count is not found for hash: {sub_geo_hash}",
                     );
                     self.values_per_hash.insert(sub_geo_hash, 0);
                 }
@@ -416,8 +411,7 @@ impl InMemoryGeoMapIndex {
                     None => {
                         debug_assert!(
                             false,
-                            "Hash point count is not found for hash: {}",
-                            EcoString::from(sub_geo_hash),
+                            "Hash point count is not found for hash: {sub_geo_hash}",
                         );
                         self.points_per_hash.insert(sub_geo_hash, 0);
                     }
