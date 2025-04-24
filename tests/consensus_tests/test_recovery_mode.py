@@ -1,5 +1,6 @@
 import pathlib
 from .utils import *
+from time import sleep
 from .fixtures import create_collection, upsert_random_points
 
 N_PEERS = 3
@@ -59,6 +60,7 @@ def test_upserts_in_recovery_mode(tmp_path: pathlib.Path):
     # However, Qdrant will not initiate a transfer to such replicas
     wait_for_same_commit(peer_api_uris)
     wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 0)
+    sleep(2)
 
     [local_shard] = get_local_shards(peer_api_uris[-1])
     assert local_shard["shard_id"] == 0
