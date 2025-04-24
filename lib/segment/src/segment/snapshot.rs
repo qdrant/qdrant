@@ -408,12 +408,12 @@ fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<Pa
 
     let mut updated = HashSet::new();
 
-    for (path, &current_version) in &current.file_versions {
+    for (path, current_version) in current.file_versions() {
         // Include file into partial snapshot if:
         //
         // 1. `old` manifest does not contain this file
-        let Some(old_version) = old.file_versions.get(path).copied() else {
-            updated.insert(path.clone());
+        let Some(old_version) = old.file_version(path) else {
+            updated.insert(path.to_path_buf());
             continue;
         };
 
@@ -422,11 +422,17 @@ fn updated_files(old: &SegmentManifest, current: &SegmentManifest) -> HashSet<Pa
         //    - if file is versioned in *one* of the manifests only, compare *file* version against
         //      other *segment* version
         //    - if file is versioned in both manifests, compare file versions
-        let is_updated = old_version.or_segment_version(old.segment_version)
-            < current_version.or_segment_version(current.segment_version);
+        if old_version < current_version {
+            updated.insert(path.to_path_buf());
+            continue;
+        }
 
-        if is_updated {
-            updated.insert(path.clone());
+        // 3. if `old` manifest contains this file and file/segment versions in both `old` and `current` manifests are 0
+        //    - we can't distinguish between new/empty segment (version 0)
+        //    - and segment with operation 0 applied (also version 0)
+        //    - so if both files/segments are at version 0, we always include the file into snapshot
+        if old_version == 0 && current_version == 0 {
+            updated.insert(path.to_path_buf());
         }
     }
 
