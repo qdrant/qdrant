@@ -15,6 +15,7 @@ def setup(on_disk_vectors, collection_name):
         api="/collections/{collection_name}/index",
         method="PUT",
         path_params={"collection_name": collection_name},
+        query_params={"wait": 'true'},
         body={"field_name": "price", "field_schema": "float"},
     )
     assert response.ok
