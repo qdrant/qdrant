@@ -117,6 +117,11 @@ pub struct HnswIndexOpenArgs<'a> {
     pub hnsw_config: HnswConfig,
 }
 
+#[derive(Debug, Default)]
+pub struct HnswIndexBuildStats {
+    pub reused_points: usize,
+}
+
 impl HNSWIndex {
     pub fn open(args: HnswIndexOpenArgs<'_>) -> OperationResult<Self> {
         let HnswIndexOpenArgs {
@@ -191,6 +196,16 @@ impl HNSWIndex {
         open_args: HnswIndexOpenArgs<'_>,
         build_args: VectorIndexBuildArgs<'_>,
     ) -> OperationResult<Self> {
+        let (index, _) = Self::build_with_stats(open_args, build_args)?;
+        Ok(index)
+    }
+
+    pub fn build_with_stats(
+        open_args: HnswIndexOpenArgs<'_>,
+        build_args: VectorIndexBuildArgs<'_>,
+    ) -> OperationResult<(Self, HnswIndexBuildStats)> {
+        let mut build_stats = HnswIndexBuildStats::default();
+
         if HnswGraphConfig::get_config_path(open_args.path).exists()
             || GraphLayers::get_path(open_args.path).exists()
         {
@@ -199,7 +214,8 @@ impl HNSWIndex {
                 open_args.path
             );
             debug_assert!(false);
-            return Self::open(open_args);
+            let index = Self::open(open_args)?;
+            return Ok((index, build_stats));
         }
 
         let HnswIndexOpenArgs {
@@ -386,6 +402,7 @@ impl HNSWIndex {
             if let Some(old_index) = old_index {
                 for vector_id in ids_iter {
                     if let Some(links) = old_index.get_links(vector_id) {
+                        build_stats.reused_points += 1;
                         graph_layers_builder.add_new_point(vector_id, links);
                     } else if first_few_ids.len() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
                         first_few_ids.push(vector_id);
@@ -535,7 +552,7 @@ impl HNSWIndex {
         drop(quantized_vectors_ref);
         drop(payload_index_ref);
 
-        Ok(HNSWIndex {
+        let index = HNSWIndex {
             id_tracker,
             vector_storage,
             quantized_vectors,
@@ -545,7 +562,8 @@ impl HNSWIndex {
             graph,
             searches_telemetry: HNSWSearchesTelemetry::new(),
             is_on_disk,
-        })
+        };
+        Ok((index, build_stats))
     }
 
     #[allow(clippy::too_many_arguments)]
