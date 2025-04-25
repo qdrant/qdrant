@@ -45,7 +45,6 @@ jobs:
   integration-tests-consensus:
 
     runs-on: ubuntu-latest
-
     steps:
       - name: Install minimal stable
         uses: dtolnay/rust-toolchain@stable

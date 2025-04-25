@@ -7,6 +7,9 @@
 # If using locally, occasionally run `cargo llvm-cov clean` to avoid bloating `target/llvm-cov-target` dir with .profraw files
 
 RUN_PER_PACKAGE=${RUN_PER_PACKAGE:-"false"}
+OUTPATH_PATH="unit-test-coverage.lcov"
+
+# TODO: Try building with RUSTFLAG="-C instrument-coverage" instead of llvm-cov and see if that works faster or avoids OOM in CI
 
 if [ "$RUN_PER_PACKAGE" == "false" ]; then
     # Run for the entire workspace in one shot. This assumes that the machine has enough memory
@@ -39,5 +42,5 @@ for PACKAGE in "${PACKAGES[@]}"; do
 done
 
 if [ -n "$LCOV_COMMAND_ARGS" ]; then
-    lcov $LCOV_COMMAND_ARGS --output-file lcov.info
+    lcov $LCOV_COMMAND_ARGS --output-file "$OUTPATH_PATH"
 fi

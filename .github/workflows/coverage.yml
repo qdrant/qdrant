@@ -3,36 +3,107 @@ name: Coverage Report - dev
 on:
   workflow_dispatch: # Trigger from UI for selected branch
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * *" # Every day at midnight UTC
+
+env:
+  POETRY_VERSION: 1.8.5
 
 jobs:
-    coverage:
-        runs-on: ubuntu-latest
-        steps:
-        - name: Install minimal stable
-          uses: dtolnay/rust-toolchain@stable
-          with:
-            components: llvm-tools-preview
-        - uses: actions/checkout@v4
-          with:
-            # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
-            ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
-            fetch-depth: 0
-        - uses: Swatinem/rust-cache@v2
-        - name: Install Protoc
-          uses: arduino/setup-protoc@v3
-          with:
-            repo-token: ${{ secrets.GITHUB_TOKEN }}
-        - name: Install nextest
-          uses: taiki-e/install-action@nextest
-        - name: Install llvm-cov
-          run: cargo install cargo-llvm-cov && sudo apt install -y lcov
-        - name: Run tests with coverage
-          run: RUN_PER_PACKAGE=true tools/coverage.sh
-        - name: Upload coverage data to Codecov
-          uses: codecov/codecov-action@v5
-          with:
-            files: lcov.info
-            override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
-            token: ${{ secrets.CODECOV_TOKEN }}
-            verbose: true
+  unit-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: actions/checkout@v4
+        with:
+          # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov && sudo apt install -y lcov
+      - name: Run unit tests with coverage
+        run: RUN_PER_PACKAGE=true tools/unit-test-coverage.sh
+      - name: Upload unit test coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-coverage
+          path: unit-test-coverage.lcov
+          retention-days: 1
+
+  integration-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install minimal stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: actions/checkout@v4
+        with:
+          # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Install llvm-cov
+        run: cargo install cargo-llvm-cov && sudo apt install -y lcov
+      - name: Install dependencies
+        run: sudo apt-get install clang
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          echo "Installing Poetry $POETRY_VERSION"
+          curl -sSL https://install.python-poetry.org | python3 - --version "$POETRY_VERSION"
+
+          poetry -C tests check --lock
+          poetry -C tests install --no-root
+      - name: Run integration tests with coverage
+        run: tools/integration-test-coverage.sh
+      - name: Upload integration test coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-coverage
+          path: integration-test-coverage.lcov
+          retention-days: 1
+
+  merge-and-upload:
+    needs: [unit-coverage, integration-coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+      - name: Install lcov
+        run: sudo apt install -y lcov
+      - name: Download unit test coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-coverage
+      - name: Download integration test coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-test-coverage
+      - name: Merge coverage reports
+        run: lcov -a unit-test-coverage.lcov -a integration-test-coverage.lcov -o merged.lcov
+      - name: Upload coverage data to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: merged.lcov
+          override_branch: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
