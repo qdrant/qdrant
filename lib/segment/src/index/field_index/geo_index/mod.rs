@@ -1,16 +1,17 @@
 use std::cmp::{max, min};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use ecow::{EcoString, eco_format};
 use itertools::Itertools;
 use mutable_geo_index::InMemoryGeoMapIndex;
 use parking_lot::RwLock;
 use rocksdb::DB;
 use serde_json::Value;
+use smallvec::SmallVec;
 
 use self::immutable_geo_index::ImmutableGeoMapIndex;
 use self::mmap_geo_index::MmapGeoMapIndex;
@@ -129,26 +130,36 @@ impl GeoMapIndex {
         format!("{field}_geo")
     }
 
-    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> EcoString {
-        eco_format!("{value}/{idx}")
+    /// Encode db key
+    ///
+    /// Maximum length is 23 bytes, e.g.: `dr5ruj4477kd/4294967295`
+    fn encode_db_key(value: GeoHash, idx: PointOffsetType) -> SmallVec<[u8; 23]> {
+        let mut result = SmallVec::new();
+        write!(result, "{value}/{idx}").unwrap();
+        result
     }
 
-    fn decode_db_key(s: &str) -> OperationResult<(GeoHash, PointOffsetType)> {
+    fn decode_db_key<K>(s: K) -> OperationResult<(GeoHash, PointOffsetType)>
+    where
+        K: AsRef<[u8]>,
+    {
         const DECODE_ERR: &str = "Index db parsing error: wrong data format";
+        let s = s.as_ref();
         let separator_pos = s
-            .rfind('/')
+            .iter()
+            .rposition(|b| b == &b'/')
             .ok_or_else(|| OperationError::service_error(DECODE_ERR))?;
         if separator_pos == s.len() - 1 {
             return Err(OperationError::service_error(DECODE_ERR));
         }
-        let geohash_str = &s[..separator_pos];
-        let idx_str = &s[separator_pos + 1..];
-        let idx = PointOffsetType::from_str(idx_str)
-            .map_err(|_| OperationError::service_error(DECODE_ERR))?;
-        Ok((
-            GeoHash::new(geohash_str).map_err(OperationError::from)?,
-            idx,
-        ))
+        let geohash = &s[..separator_pos];
+        let idx_bytes = &s[separator_pos + 1..];
+        // Use `from_ascii_radix` here once stabilized instead of intermediate string reference
+        let idx = PointOffsetType::from_str(std::str::from_utf8(idx_bytes).map_err(|_| {
+            OperationError::service_error("Index load error: UTF8 error while DB parsing")
+        })?)
+        .map_err(|_| OperationError::service_error(DECODE_ERR))?;
+        Ok((GeoHash::new(geohash).map_err(OperationError::from)?, idx))
     }
 
     fn decode_db_value<T: AsRef<[u8]>>(value: T) -> OperationResult<GeoPoint> {

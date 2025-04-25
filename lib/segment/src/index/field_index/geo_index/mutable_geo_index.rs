@@ -78,11 +78,7 @@ impl MutableGeoMapIndex {
         let mut points_to_hashes: BTreeMap<PointOffsetType, Vec<GeoHash>> = Default::default();
 
         for (key, value) in self.db_wrapper.lock_db().iter()? {
-            let key_str = std::str::from_utf8(&key).map_err(|_| {
-                OperationError::service_error("Index load error: UTF8 error while DB parsing")
-            })?;
-
-            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key_str)?;
+            let (geo_hash, idx) = GeoMapIndex::decode_db_key(key)?;
             let geo_point = GeoMapIndex::decode_db_value(value)?;
 
             if self.in_memory_index.point_to_values.len() <= idx as usize {
@@ -127,7 +123,7 @@ impl MutableGeoMapIndex {
                         |e| OperationError::service_error(format!("Malformed geo points: {e}")),
                     )?;
                 let key = GeoMapIndex::encode_db_key(geo_hash_to_remove, idx);
-                self.db_wrapper.remove(key.as_bytes())?;
+                self.db_wrapper.remove(&key)?;
             }
             self.in_memory_index.remove_point(idx)
         } else {
@@ -148,7 +144,7 @@ impl MutableGeoMapIndex {
             let key = GeoMapIndex::encode_db_key(added_geo_hash, idx);
             let value = GeoMapIndex::encode_db_value(added_point);
 
-            self.db_wrapper.put(key.as_bytes(), value)?;
+            self.db_wrapper.put(&key, value)?;
         }
         self.in_memory_index
             .add_many_geo_points(idx, values, hw_counter)
