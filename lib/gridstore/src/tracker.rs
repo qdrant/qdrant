@@ -68,7 +68,7 @@ impl PointerUpdates {
     /// Set is Some, Unset is None
     fn latest(&self) -> Option<ValuePointer> {
         if self.latest_is_set {
-            self.history.last().cloned()
+            self.history.last().copied()
         } else {
             None
         }
