@@ -16,6 +16,7 @@ use indexmap::IndexSet;
 use itertools::Itertools;
 use mmap_map_index::MmapMapIndex;
 use parking_lot::RwLock;
+use ram_mmap_map_index::RamMmapMapIndex;
 use rocksdb::DB;
 use serde_json::Value;
 use uuid::Uuid;
@@ -42,6 +43,7 @@ use crate::types::{
 pub mod immutable_map_index;
 pub mod mmap_map_index;
 pub mod mutable_map_index;
+pub mod ram_mmap_map_index;
 
 pub type IdRefIter<'a> = Box<dyn Iterator<Item = &'a PointOffsetType> + 'a>;
 pub type IdIter<'a> = Box<dyn Iterator<Item = PointOffsetType> + 'a>;
@@ -80,6 +82,7 @@ pub enum MapIndex<N: MapIndexKey + ?Sized> {
     Mutable(MutableMapIndex<N>),
     Immutable(ImmutableMapIndex<N>),
     Mmap(Box<MmapMapIndex<N>>),
+    RamMmap(RamMmapMapIndex<N>),
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N> {
@@ -91,10 +94,16 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
+    /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::load(
-            path, is_on_disk,
-        )?)))
+        let mmap_index = MmapMapIndex::load(path, is_on_disk)?;
+
+        if is_on_disk {
+            Ok(MapIndex::Mmap(Box::new(mmap_index)))
+        } else {
+            let ram_mmap_index = RamMmapMapIndex::from_mmap(mmap_index);
+            Ok(MapIndex::RamMmap(ram_mmap_index))
+        }
     }
 
     pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
@@ -114,8 +123,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         match self {
             MapIndex::Mutable(index) => index.load_from_db(),
             MapIndex::Immutable(index) => index.load_from_db(),
-            // mmap index is always loaded
-            MapIndex::Mmap(_) => Ok(true),
+            // Mmap based indices are always loaded
+            MapIndex::Mmap(_) | MapIndex::RamMmap(_) => Ok(true),
         }
     }
 
@@ -129,6 +138,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::Immutable(index) => index.check_values_any(idx, check_fn),
             MapIndex::Mmap(index) => index.check_values_any(idx, hw_counter, check_fn),
+            MapIndex::RamMmap(index) => index.check_values_any(idx, check_fn),
         }
     }
 
@@ -144,6 +154,9 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
                 index.get_values(idx)?.map(|v| N::as_referenced(v)),
             )),
             MapIndex::Mmap(index) => Some(Box::new(index.get_values(idx)?)),
+            MapIndex::RamMmap(index) => Some(Box::new(
+                index.get_values(idx)?.map(|v| N::as_referenced(v)),
+            )),
         }
     }
 
@@ -152,6 +165,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.values_count(idx).unwrap_or_default(),
             MapIndex::Immutable(index) => index.values_count(idx).unwrap_or_default(),
             MapIndex::Mmap(index) => index.values_count(idx).unwrap_or_default(),
+            MapIndex::RamMmap(index) => index.values_count(idx).unwrap_or_default(),
         }
     }
 
@@ -160,6 +174,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_indexed_points(),
             MapIndex::Immutable(index) => index.get_indexed_points(),
             MapIndex::Mmap(index) => index.get_indexed_points(),
+            MapIndex::RamMmap(index) => index.get_indexed_points(),
         }
     }
 
@@ -168,6 +183,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_values_count(),
             MapIndex::Immutable(index) => index.get_values_count(),
             MapIndex::Mmap(index) => index.get_values_count(),
+            MapIndex::RamMmap(index) => index.get_values_count(),
         }
     }
 
@@ -176,6 +192,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_unique_values_count(),
             MapIndex::Immutable(index) => index.get_unique_values_count(),
             MapIndex::Mmap(index) => index.get_unique_values_count(),
+            MapIndex::RamMmap(index) => index.get_unique_values_count(),
         }
     }
 
@@ -184,6 +201,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_count_for_value(value),
             MapIndex::Immutable(index) => index.get_count_for_value(value),
             MapIndex::Mmap(index) => index.get_count_for_value(value, hw_counter),
+            MapIndex::RamMmap(index) => index.get_count_for_value(value),
         }
     }
 
@@ -192,6 +210,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_iterator(value),
             MapIndex::Immutable(index) => index.get_iterator(value),
             MapIndex::Mmap(index) => index.get_iterator(value, hw_counter),
+            MapIndex::RamMmap(index) => index.get_iterator(value),
         }
     }
 
@@ -200,6 +219,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.iter_values(),
             MapIndex::Immutable(index) => index.iter_values(),
             MapIndex::Mmap(index) => index.iter_values(),
+            MapIndex::RamMmap(index) => index.iter_values(),
         }
     }
 
@@ -208,6 +228,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => Box::new(index.iter_counts_per_value()),
             MapIndex::Immutable(index) => Box::new(index.iter_counts_per_value()),
             MapIndex::Mmap(index) => Box::new(index.iter_counts_per_value()),
+            MapIndex::RamMmap(index) => Box::new(index.iter_counts_per_value()),
         }
     }
 
@@ -219,6 +240,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => Box::new(index.iter_values_map()),
             MapIndex::Immutable(index) => Box::new(index.iter_values_map()),
             MapIndex::Mmap(index) => Box::new(index.iter_values_map(hw_cell)),
+            MapIndex::RamMmap(index) => Box::new(index.iter_values_map()),
         }
     }
 
@@ -231,6 +253,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_db_wrapper().flusher(),
             MapIndex::Immutable(index) => index.get_db_wrapper().flusher(),
             MapIndex::Mmap(index) => index.flusher(),
+            MapIndex::RamMmap(index) => index.flusher(),
         }
     }
 
@@ -254,6 +277,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
                 MapIndex::Mutable(_) => "mutable_map",
                 MapIndex::Immutable(_) => "immutable_map",
                 MapIndex::Mmap(_) => "mmap_map",
+                MapIndex::RamMmap(_) => "ram_on_mmap_map",
             },
         }
     }
@@ -288,6 +312,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
             MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
             MapIndex::Mmap(index) => index.clear(),
+            MapIndex::RamMmap(index) => index.clear(),
         }
     }
 
@@ -299,6 +324,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
                 index.remove_point(id);
                 Ok(())
             }
+            MapIndex::RamMmap(index) => {
+                index.remove_point(id);
+                Ok(())
+            }
         }
     }
 
@@ -307,6 +336,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(_) => Vec::new(),
             MapIndex::Immutable(_) => Vec::new(),
             MapIndex::Mmap(index) => index.files(),
+            MapIndex::RamMmap(index) => index.files(),
         }
     }
 
@@ -445,6 +475,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(_) => false,
             MapIndex::Immutable(_) => false,
             MapIndex::Mmap(index) => index.is_on_disk(),
+            MapIndex::RamMmap(_) => false,
         }
     }
 
@@ -455,6 +486,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(_) => {}   // Not a mmap
             MapIndex::Immutable(_) => {} // Not a mmap
             MapIndex::Mmap(index) => index.populate()?,
+            // Has data in RAM, will not populate backing mmap storage
+            MapIndex::RamMmap(_) => {}
         }
         Ok(())
     }
@@ -465,6 +498,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             MapIndex::Mutable(_) => {}   // Not a mmap
             MapIndex::Immutable(_) => {} // Not a mmap
             MapIndex::Mmap(index) => index.clear_cache()?,
+            // Only clears backing mmap storage, not in-memory representation
+            MapIndex::RamMmap(index) => index.clear_cache()?,
         }
         Ok(())
     }
@@ -483,6 +518,7 @@ where
             MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
             MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
             MapIndex::Mmap(_) => unreachable!(),
+            MapIndex::RamMmap(_) => unreachable!(),
         }
     }
 
@@ -1108,6 +1144,9 @@ impl ValueIndexer for MapIndex<str> {
             MapIndex::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap map index",
             )),
+            MapIndex::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap map index",
+            )),
         }
     }
 
@@ -1140,6 +1179,9 @@ impl ValueIndexer for MapIndex<IntPayloadType> {
             MapIndex::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap map index",
             )),
+            MapIndex::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap map index",
+            )),
         }
     }
 
@@ -1171,6 +1213,9 @@ impl ValueIndexer for MapIndex<UuidIntType> {
             )),
             MapIndex::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap map index",
+            )),
+            MapIndex::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap map index",
             )),
         }
     }

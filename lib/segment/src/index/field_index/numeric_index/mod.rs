@@ -165,6 +165,7 @@ pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Default> {
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
     Mmap(MmapNumericIndex<T>),
+    RamMmap(RamMmapNumericIndex<T>),
 }
 
 impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {

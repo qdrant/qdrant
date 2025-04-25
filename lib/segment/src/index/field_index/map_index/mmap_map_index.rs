@@ -31,10 +31,10 @@ const CONFIG_PATH: &str = "mmap_field_index_config.json";
 
 pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
     path: PathBuf,
-    value_to_points: MmapHashMap<N, PointOffsetType>,
+    pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
     point_to_values: MmapPointToValues<N>,
-    deleted: MmapBitSliceBufferedUpdateWrapper,
-    deleted_count: usize,
+    pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
+    pub(super) deleted_count: usize,
     total_key_value_pairs: usize,
     is_on_disk: bool,
 }
