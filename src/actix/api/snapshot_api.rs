@@ -54,6 +54,7 @@ pub struct SnapshottingParam {
 }
 
 #[derive(MultipartForm)]
+#[multipart(deny_unknown_fields)]
 pub struct SnapshottingForm {
     snapshot: TempFile,
 }
