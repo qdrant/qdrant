@@ -277,15 +277,17 @@ pub fn snapshot_files(
     // TODO: Version RocksDB!? 🤯
 
     if include_if(ROCKS_DB_VIRT_FILE.as_ref()) {
-        let db_backup_path = temp_path.join(DB_BACKUP_PATH);
+        if let Some(db) = &segment.database {
+            let db_backup_path = temp_path.join(DB_BACKUP_PATH);
 
-        let db = segment.database.read();
-        crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to create RocksDB backup at {}: {err}",
-                db_backup_path.display()
-            ))
-        })?;
+            let db = db.read();
+            crate::rocksdb_backup::create(&db, &db_backup_path).map_err(|err| {
+                OperationError::service_error(format!(
+                    "failed to create RocksDB backup at {}: {err}",
+                    db_backup_path.display()
+                ))
+            })?;
+        }
     }
 
     if include_if(PAYLOAD_INDEX_ROCKS_DB_VIRT_FILE.as_ref()) {
