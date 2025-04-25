@@ -43,7 +43,7 @@ hashring = "0.3.6"
 tinyvec = { version = "1.9.0", features = ["alloc", "latest_stable_rust"] }
 bitvec = { workspace = true }
 lazy_static = "1.5.0"
-smallvec = "1.15.0"
+smallvec = { workspace = true }
 
 tokio = { workspace = true }
 tokio-util = { workspace = true }
