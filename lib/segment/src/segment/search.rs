@@ -63,7 +63,7 @@ impl Segment {
                 };
                 let vector = match with_vector {
                     WithVector::Bool(false) => None,
-                    WithVector::Bool(true) => Some(self.all_vectors_by_offset(point_offset).into()),
+                    WithVector::Bool(true) => Some(self.all_vectors_by_offset(point_offset, hw_counter).into()),
                     WithVector::Selector(vectors) => {
                         let mut result = NamedVectors::default();
                         for vector_name in vectors {

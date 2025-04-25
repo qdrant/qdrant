@@ -391,9 +391,11 @@ impl Segment {
         }
     }
 
-    pub(super) fn all_vectors_by_offset(&self, point_offset: PointOffsetType) -> NamedVectors {
-        let hw_counter = HardwareCounterCell::disposable(); // TODO(io_measurement): Propagate?
-
+    pub(super) fn all_vectors_by_offset(
+        &self,
+        point_offset: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> NamedVectors {
         let mut vectors = NamedVectors::default();
         for (vector_name, vector_data) in &self.vector_data {
             let is_vector_deleted = vector_data
@@ -403,7 +405,7 @@ impl Segment {
             if !is_vector_deleted {
                 let vector_storage = vector_data.vector_storage.borrow();
                 let vector = vector_storage
-                    .get_vector(point_offset, &hw_counter)
+                    .get_vector(point_offset, hw_counter)
                     .as_vec_ref()
                     .to_owned();
                 vectors.insert(vector_name.clone(), vector);
