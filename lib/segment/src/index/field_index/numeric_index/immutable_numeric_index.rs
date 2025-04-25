@@ -35,12 +35,12 @@ pub(super) struct NumericKeySortedVec<T: Encodable + Numericable> {
 
 pub(super) struct NumericKeySortedVecIterator<'a, T: Encodable + Numericable> {
     set: &'a NumericKeySortedVec<T>,
-    start_index: usize,
-    end_index: usize,
+    pub(super) start_index: usize,
+    pub(super) end_index: usize,
 }
 
 impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
-    fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
+    pub(super) fn from_btree_set(map: BTreeSet<Point<T>>) -> Self {
         Self {
             deleted: BitVec::repeat(false, map.len()),
             data: map.into_iter().collect(),
@@ -48,11 +48,11 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         }
     }
 
-    fn len(&self) -> usize {
+    pub(super) fn len(&self) -> usize {
         self.data.len() - self.deleted_count
     }
 
-    fn remove(&mut self, key: &Point<T>) -> bool {
+    pub(super) fn remove(&mut self, key: &Point<T>) -> bool {
         if let Ok(index) = self.data.binary_search(key) {
             if let Some(is_deleted) = self.deleted.get_mut(index).as_deref_mut() {
                 if !*is_deleted {
@@ -65,7 +65,7 @@ impl<T: Encodable + Numericable> NumericKeySortedVec<T> {
         false
     }
 
-    fn values_range(
+    pub(super) fn values_range(
         &self,
         start_bound: Bound<Point<T>>,
         end_bound: Bound<Point<T>>,
@@ -228,7 +228,6 @@ impl<T: Encodable + Numericable + Default> ImmutableNumericIndex<T> {
             points_count,
             max_values_per_point,
             point_to_values,
-            ..
         } = mutable.into_in_memory_index();
 
         self.map = NumericKeySortedVec::from_btree_set(map);

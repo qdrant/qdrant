@@ -1,6 +1,7 @@
 pub mod immutable_numeric_index;
 pub mod mmap_numeric_index;
 pub mod mutable_numeric_index;
+pub mod ram_mmap_numeric_index;
 
 #[cfg(test)]
 mod tests;
@@ -20,6 +21,7 @@ use delegate::delegate;
 use mmap_numeric_index::MmapNumericIndex;
 use mutable_numeric_index::{InMemoryNumericIndex, MutableNumericIndex};
 use parking_lot::RwLock;
+use ram_mmap_numeric_index::RamMmapNumericIndex;
 use rocksdb::DB;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -174,10 +176,16 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         }
     }
 
+    /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(NumericIndexInner::Mmap(MmapNumericIndex::load(
-            path, is_on_disk,
-        )?))
+        let mmap_index = MmapNumericIndex::load(path, is_on_disk)?;
+
+        if is_on_disk {
+            Ok(NumericIndexInner::Mmap(mmap_index))
+        } else {
+            let ram_mmap_index = RamMmapNumericIndex::from_mmap(mmap_index);
+            Ok(NumericIndexInner::RamMmap(ram_mmap_index))
+        }
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
@@ -185,6 +193,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.get_histogram(),
             NumericIndexInner::Immutable(index) => index.get_histogram(),
             NumericIndexInner::Mmap(index) => index.get_histogram(),
+            NumericIndexInner::RamMmap(index) => index.get_histogram(),
         }
     }
 
@@ -193,6 +202,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.get_points_count(),
             NumericIndexInner::Immutable(index) => index.get_points_count(),
             NumericIndexInner::Mmap(index) => index.get_points_count(),
+            NumericIndexInner::RamMmap(index) => index.get_points_count(),
         }
     }
 
@@ -201,6 +211,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Mmap(index) => index.total_unique_values_count(),
+            NumericIndexInner::RamMmap(index) => index.total_unique_values_count(),
         }
     }
 
@@ -208,10 +219,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         match self {
             NumericIndexInner::Mutable(index) => index.load(),
             NumericIndexInner::Immutable(index) => index.load(),
-            NumericIndexInner::Mmap(_) => {
-                // Mmap index is always loaded
-                Ok(true)
-            }
+            // Mmap based indices are always loaded
+            NumericIndexInner::Mmap(_) | NumericIndexInner::RamMmap(_) => Ok(true),
         }
     }
 
@@ -220,6 +229,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.get_db_wrapper().flusher(),
             NumericIndexInner::Immutable(index) => index.get_db_wrapper().flusher(),
             NumericIndexInner::Mmap(index) => index.flusher(),
+            NumericIndexInner::RamMmap(index) => index.flusher(),
         }
     }
 
@@ -228,6 +238,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(_) => vec![],
             NumericIndexInner::Immutable(_) => vec![],
             NumericIndexInner::Mmap(index) => index.files(),
+            NumericIndexInner::RamMmap(index) => index.files(),
         }
     }
 
@@ -236,6 +247,10 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.remove_point(idx),
             NumericIndexInner::Immutable(index) => index.remove_point(idx),
             NumericIndexInner::Mmap(index) => {
+                index.remove_point(idx);
+                Ok(())
+            }
+            NumericIndexInner::RamMmap(index) => {
                 index.remove_point(idx);
                 Ok(())
             }
@@ -252,6 +267,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.check_values_any(idx, check_fn),
             NumericIndexInner::Immutable(index) => index.check_values_any(idx, check_fn),
             NumericIndexInner::Mmap(index) => index.check_values_any(idx, check_fn, hw_counter),
+            NumericIndexInner::RamMmap(index) => index.check_values_any(idx, check_fn),
         }
     }
 
@@ -260,6 +276,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.get_values(idx),
             NumericIndexInner::Immutable(index) => index.get_values(idx),
             NumericIndexInner::Mmap(index) => index.get_values(idx),
+            NumericIndexInner::RamMmap(index) => index.get_values(idx),
         }
     }
 
@@ -268,6 +285,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.values_count(idx).unwrap_or_default(),
             NumericIndexInner::Immutable(index) => index.values_count(idx).unwrap_or_default(),
             NumericIndexInner::Mmap(index) => index.values_count(idx).unwrap_or_default(),
+            NumericIndexInner::RamMmap(index) => index.values_count(idx).unwrap_or_default(),
         }
     }
 
@@ -281,6 +299,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.get_max_values_per_point(),
             NumericIndexInner::Immutable(index) => index.get_max_values_per_point(),
             NumericIndexInner::Mmap(index) => index.get_max_values_per_point(),
+            NumericIndexInner::RamMmap(index) => index.get_max_values_per_point(),
         }
     }
 
@@ -362,6 +381,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
                 NumericIndexInner::Mutable(_) => "mutable_numeric",
                 NumericIndexInner::Immutable(_) => "immutable_numeric",
                 NumericIndexInner::Mmap(_) => "mmap_numeric",
+                NumericIndexInner::RamMmap(_) => "ram_on_mmap_numeric",
             },
         }
     }
@@ -381,6 +401,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(mutable) => Box::new(mutable.values_range(start, end)),
             NumericIndexInner::Immutable(immutable) => Box::new(immutable.values_range(start, end)),
             NumericIndexInner::Mmap(mmap) => Box::new(mmap.values_range(start, end, hw_counter)),
+            NumericIndexInner::RamMmap(immutable) => Box::new(immutable.values_range(start, end)),
         }
     }
 
@@ -424,6 +445,15 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
                     self.total_unique_values_count() as f32 / self.get_points_count() as f32;
                 (range_size as f32 / avg_values_per_point).max(1.0).round() as usize
             }
+            NumericIndexInner::RamMmap(immutable) => {
+                let range_size = immutable.values_range_size(start, end);
+                if range_size == 0 {
+                    return 0;
+                }
+                let avg_values_per_point =
+                    self.total_unique_values_count() as f32 / self.get_points_count() as f32;
+                (range_size as f32 / avg_values_per_point).max(1.0).round() as usize
+            }
         }
     }
 
@@ -432,6 +462,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(_) => false,
             NumericIndexInner::Immutable(_) => false,
             NumericIndexInner::Mmap(index) => index.is_on_disk(),
+            NumericIndexInner::RamMmap(_) => false,
         }
     }
 
@@ -442,6 +473,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(_) => {}   // Not a mmap
             NumericIndexInner::Immutable(_) => {} // Not a mmap
             NumericIndexInner::Mmap(index) => index.populate()?,
+            // Has data in RAM, will not populate backing mmap storage
+            NumericIndexInner::RamMmap(_) => {}
         }
         Ok(())
     }
@@ -452,6 +485,8 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(_) => {}   // Not a mmap
             NumericIndexInner::Immutable(_) => {} // Not a mmap
             NumericIndexInner::Mmap(index) => index.clear_cache()?,
+            // Only clears backing mmap storage, not in-memory representation
+            NumericIndexInner::RamMmap(index) => index.clear_cache()?,
         }
         Ok(())
     }
@@ -474,6 +509,7 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
         }
     }
 
+    /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         Ok(Self {
             inner: NumericIndexInner::new_mmap(path, is_on_disk)?,
@@ -554,6 +590,7 @@ where
             NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
+            NumericIndexInner::RamMmap(_) => unreachable!(),
         }
     }
 
@@ -690,6 +727,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
             NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
             NumericIndexInner::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
             NumericIndexInner::Mmap(index) => index.clear(),
+            NumericIndexInner::RamMmap(index) => index.clear(),
         }
     }
 
@@ -743,6 +781,9 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
             }
             NumericIndexInner::Mmap(index) => {
                 Box::new(index.values_range(start_bound, end_bound, hw_counter))
+            }
+            NumericIndexInner::RamMmap(index) => {
+                Box::new(index.values_range(start_bound, end_bound))
             }
         })
     }
@@ -867,6 +908,9 @@ impl ValueIndexer for NumericIndex<IntPayloadType, IntPayloadType> {
             NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
             )),
+            NumericIndexInner::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap numeric index",
+            )),
         }
     }
 
@@ -908,6 +952,9 @@ impl ValueIndexer for NumericIndex<IntPayloadType, DateTimePayloadType> {
             NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
             )),
+            NumericIndexInner::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap numeric index",
+            )),
         }
     }
 
@@ -944,6 +991,9 @@ impl ValueIndexer for NumericIndex<FloatPayloadType, FloatPayloadType> {
             )),
             NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
+            )),
+            NumericIndexInner::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap numeric index",
             )),
         }
     }
@@ -984,6 +1034,9 @@ impl ValueIndexer for NumericIndex<UuidIntType, UuidPayloadType> {
             )),
             NumericIndexInner::Mmap(_) => Err(OperationError::service_error(
                 "Can't add values to mmap numeric index",
+            )),
+            NumericIndexInner::RamMmap(_) => Err(OperationError::service_error(
+                "Can't add values to ram mmap numeric index",
             )),
         }
     }
@@ -1035,6 +1088,9 @@ where
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
             NumericIndexInner::Mmap(index) => {
+                Box::new(index.orderable_values_range(start_bound, end_bound))
+            }
+            NumericIndexInner::RamMmap(index) => {
                 Box::new(index.orderable_values_range(start_bound, end_bound))
             }
         }

@@ -8,6 +8,7 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
+use super::mmap_numeric_index::MmapNumericIndex;
 use super::{
     Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION, numeric_index_storage_cf_name,
 };
@@ -15,6 +16,7 @@ use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
+use crate::index::field_index::mmap_point_to_values::MmapValue;
 
 pub struct MutableNumericIndex<T: Encodable + Numericable> {
     db_wrapper: DatabaseColumnScheduledDeleteWrapper,
@@ -68,6 +70,20 @@ impl<T: Encodable + Numericable + Default> FromIterator<(PointOffsetType, T)>
             }
         }
         index
+    }
+}
+
+impl<T: Encodable + Numericable + Default + MmapValue> InMemoryNumericIndex<T> {
+    /// Construct in-memroy index from given mmap index
+    ///
+    /// # Warning
+    ///
+    /// Expensive because this reads the full mmap index.
+    pub(super) fn from_mmap(mmap_index: &MmapNumericIndex<T>) -> Self {
+        (0..mmap_index.point_to_values.len() as PointOffsetType)
+            .filter_map(|idx| mmap_index.get_values(idx).map(|values| (idx, values)))
+            .flat_map(|(idx, values)| values.into_iter().map(move |value| (idx, value)))
+            .collect::<InMemoryNumericIndex<T>>()
     }
 }
 

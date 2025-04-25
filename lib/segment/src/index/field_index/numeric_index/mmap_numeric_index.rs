@@ -34,7 +34,7 @@ pub struct MmapNumericIndex<T: Encodable + Numericable + Default + MmapValue + '
     histogram: Histogram<T>,
     deleted_count: usize,
     max_values_per_point: usize,
-    point_to_values: MmapPointToValues<T>,
+    pub(super) point_to_values: MmapPointToValues<T>,
     is_on_disk: bool,
 }
 
