@@ -731,43 +731,40 @@ mod tests {
     fn test_update_single_payload() {
         let (_dir, mut storage) = empty_storage();
 
-        let mut payload = Payload::default();
-        payload.0.insert(
-            "key".to_string(),
-            serde_json::Value::String("value".to_string()),
-        );
         let hw_counter = HardwareCounterCell::new();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        let put_payload =
+            |storage: &mut Gridstore<Payload>, payload_value: &str, expected_block_offset: u32| {
+                let mut payload = Payload::default();
+                payload.0.insert(
+                    "key".to_string(),
+                    serde_json::Value::String(payload_value.to_string()),
+                );
 
-        storage.put_value(0, &payload, hw_counter_ref).unwrap();
-        assert_eq!(storage.pages.len(), 1);
-        assert_eq!(storage.tracker.read().mapping_len(), 1);
+                storage.put_value(0, &payload, hw_counter_ref).unwrap();
+                assert_eq!(storage.pages.len(), 1);
+                assert_eq!(storage.tracker.read().mapping_len(), 1);
 
-        let page_mapping = storage.get_pointer(0).unwrap();
-        assert_eq!(page_mapping.page_id, 0); // first page
-        assert_eq!(page_mapping.block_offset, 0); // first cell
+                let page_mapping = storage.get_pointer(0).unwrap();
+                assert_eq!(page_mapping.page_id, 0); // first page
+                assert_eq!(page_mapping.block_offset, expected_block_offset);
 
-        let hw_counter = HardwareCounterCell::new();
-        let stored_payload = storage.get_value(0, &hw_counter);
-        assert!(stored_payload.is_some());
-        assert_eq!(stored_payload.unwrap(), payload);
+                let hw_counter = HardwareCounterCell::new();
+                let stored_payload = storage.get_value(0, &hw_counter);
+                assert!(stored_payload.is_some());
+                assert_eq!(stored_payload.unwrap(), payload);
+            };
 
-        // update payload
-        let mut updated_payload = Payload::default();
-        updated_payload.0.insert(
-            "key".to_string(),
-            serde_json::Value::String("updated".to_string()),
-        );
+        put_payload(&mut storage, "value", 0);
 
-        storage
-            .put_value(0, &updated_payload, hw_counter_ref)
-            .unwrap();
-        assert_eq!(storage.pages.len(), 1);
-        assert_eq!(storage.tracker.read().mapping_len(), 1);
+        put_payload(&mut storage, "updated", 1);
 
-        let stored_payload = storage.get_value(0, &hw_counter);
-        assert!(stored_payload.is_some());
-        assert_eq!(stored_payload.unwrap(), updated_payload);
+        put_payload(&mut storage, "updated again", 2);
+
+        storage.flush().unwrap();
+
+        // First block offset should be available again, so we can reuse it
+        put_payload(&mut storage, "updated after flush", 0);
     }
 
     #[test]
