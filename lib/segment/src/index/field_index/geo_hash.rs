@@ -699,14 +699,14 @@ mod tests {
     #[test]
     fn geohash_encode_longitude_first() {
         let center_hash =
-            GeoHash::new(&encode((NYC.lon, NYC.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
+            GeoHash::new(encode((NYC.lon, NYC.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
         assert_eq!(center_hash.ok(), GeoHash::new(b"dr5ru7c02wnv").ok());
-        let center_hash = GeoHash::new(&encode((NYC.lon, NYC.lat).into(), 6).unwrap());
+        let center_hash = GeoHash::new(encode((NYC.lon, NYC.lat).into(), 6).unwrap());
         assert_eq!(center_hash.ok(), GeoHash::new(b"dr5ru7").ok());
         let center_hash =
-            GeoHash::new(&encode((BERLIN.lon, BERLIN.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
+            GeoHash::new(encode((BERLIN.lon, BERLIN.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
         assert_eq!(center_hash.ok(), GeoHash::new(b"u33dc1v0xupz").ok());
-        let center_hash = GeoHash::new(&encode((BERLIN.lon, BERLIN.lat).into(), 6).unwrap());
+        let center_hash = GeoHash::new(encode((BERLIN.lon, BERLIN.lat).into(), 6).unwrap());
         assert_eq!(center_hash.ok(), GeoHash::new(b"u33dc1").ok());
     }
 
