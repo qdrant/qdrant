@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import signal
 from subprocess import Popen
 import time
 from typing import Tuple, Callable, Dict, List
@@ -18,12 +19,12 @@ RETRY_INTERVAL_SEC = 0.2
 
 
 # Tracks processes that need to be killed at the end of the test
-processes = []
+processes: List['PeerProcess'] = []
 busy_ports = {}
 
 
 class PeerProcess:
-    def __init__(self, proc, http_port, grpc_port, p2p_port):
+    def __init__(self, proc: Popen, http_port, grpc_port, p2p_port):
         self.proc = proc
         self.http_port = http_port
         self.grpc_port = grpc_port
@@ -34,6 +35,14 @@ class PeerProcess:
         self.proc.kill()
         # remove allocated ports from the dictionary
         # so they can be used afterwards
+        del busy_ports[self.http_port]
+        del busy_ports[self.grpc_port]
+        del busy_ports[self.p2p_port]
+
+    def interrupt(self):
+        self.proc.send_signal(signal.SIGINT)
+        self.proc.wait()
+
         del busy_ports[self.http_port]
         del busy_ports[self.grpc_port]
         del busy_ports[self.p2p_port]
@@ -50,8 +59,12 @@ def kill_all_processes():
     print()
     while len(processes) > 0:
         p = processes.pop(0)
-        print(f"Killing {p.pid}")
-        p.kill()
+        if is_coverage_mode():
+            print(f"Interrupting {p.pid}")
+            p.interrupt()
+        else:
+            print(f"Killing {p.pid}")
+            p.kill()
 
 
 @pytest.fixture(autouse=True)
@@ -71,6 +84,9 @@ def get_port() -> int:
                 continue
             return allocated_port
 
+def is_coverage_mode() -> bool:
+    return os.getenv("COVERAGE") == "1"
+
 
 def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env = os.environ.copy()
@@ -80,6 +96,10 @@ def get_env(p2p_port: int, grpc_port: int, http_port: int) -> Dict[str, str]:
     env["QDRANT__SERVICE__GRPC_PORT"] = str(grpc_port)
     env["QDRANT__LOG_LEVEL"] = "DEBUG,raft::raft=info"
     env["QDRANT__SERVICE__HARDWARE_REPORTING"] = "true"
+
+    if is_coverage_mode():
+        env["LLVM_PROFILE_FILE"] = get_llvm_profile_file()
+
     return env
 
 
@@ -95,8 +115,19 @@ def assert_project_root():
 
 def get_qdrant_exec() -> str:
     directory_path = os.getcwd()
-    qdrant_exec = directory_path + "/target/debug/qdrant"
+    if is_coverage_mode():
+        qdrant_exec = directory_path + "/target/llvm-cov-target/debug/qdrant"
+    else:
+        qdrant_exec = directory_path + "/target/debug/qdrant"
     return qdrant_exec
+
+def get_llvm_profile_file() -> str:
+    project_root = os.getcwd()
+    # %m: keep merging results from each test into the same file
+    # If you have multiple tests running in parallel, you can use -%p OR -%{thread_count}m to have different files
+    # Not using -%p since each test will generate a new file
+    llvm_profile_file = project_root + "/target/llvm-cov-target/qdrant-consensus-tests-%m.profraw"
+    return llvm_profile_file
 
 
 def get_pytest_current_test_name() -> str:
