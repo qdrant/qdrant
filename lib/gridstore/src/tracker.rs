@@ -38,9 +38,10 @@ impl ValuePointer {
 
 #[derive(Debug, Default)]
 struct PointerUpdates {
-    /// Whether the latest pointer is set (true) or unset (false)
+    /// Whether the latest pointer is set (`true`) or unset (`false`).
+    /// If this is `true`, then history must have at least one element.
     latest_is_set: bool,
-    /// List of pointers where the value was written
+    /// List of pointers where the value has been written
     history: SmallVec<[ValuePointer; 1]>,
 }
 
@@ -75,7 +76,7 @@ impl PointerUpdates {
     }
 
     /// Returns pointers that need to be freed, i.e. They have been written, and are no longer needed
-    fn outdated_pointers(self) -> impl Iterator<Item = ValuePointer> {
+    fn into_outdated_pointers(self) -> impl Iterator<Item = ValuePointer> {
         let take = if self.latest_is_set {
             // all but the latest one
             self.history.len().saturating_sub(1)
@@ -189,7 +190,7 @@ impl Tracker {
                     self.persist_pointer(point_offset, None);
                 }
             }
-            old_pointers.extend(updates.outdated_pointers());
+            old_pointers.extend(updates.into_outdated_pointers());
         }
         // increment header count if necessary
         self.persist_pointer_count();
