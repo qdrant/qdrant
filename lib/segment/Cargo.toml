@@ -91,7 +91,7 @@ indexmap = { workspace = true }
 ahash = { workspace = true }
 self_cell = "1.2.0"
 sha2 = { workspace = true }
-smallvec = "1.15.0"
+smallvec = { workspace = true }
 is_sorted = "0.1.1"
 strum = { workspace = true }
 byteorder = { workspace = true }
