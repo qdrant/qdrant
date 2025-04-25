@@ -633,6 +633,7 @@ where
             NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
+            NumericIndexInner::RamMmap(_) => unreachable!(),
         }
     }
 

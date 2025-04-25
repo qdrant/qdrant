@@ -334,6 +334,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
         NumericIndexInner::Mutable(index) => Some(index.get_db_wrapper().get_database()),
         NumericIndexInner::Immutable(index) => Some(index.get_db_wrapper().get_database()),
         NumericIndexInner::Mmap(_) => None,
+        NumericIndexInner::RamMmap(_) => None,
     };
     drop(index);
 
