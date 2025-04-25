@@ -53,7 +53,10 @@ impl PointerUpdates {
 
     /// Mark this pointer as pending for freeing
     fn unset(&mut self, pointer: ValuePointer) {
-        self.history.push(pointer);
+        // Prevent duplicating pointers to free
+        if self.history.last() != Some(&pointer) {
+            self.history.push(pointer);
+        }
         self.latest_is_set = false;
     }
 
@@ -75,7 +78,7 @@ impl PointerUpdates {
     fn outdated_pointers(self) -> impl Iterator<Item = ValuePointer> {
         let take = if self.latest_is_set {
             // all but the latest one
-            self.history.len() - 1
+            self.history.len().saturating_sub(1)
         } else {
             // all of them
             self.history.len()
