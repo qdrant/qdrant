@@ -6,6 +6,7 @@ use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::{
     create_and_ensure_length, open_write_mmap, transmute_from_u8, transmute_to_u8,
 };
+use smallvec::SmallVec;
 
 pub type PointOffset = u32;
 pub type BlockOffset = u32;
@@ -40,7 +41,7 @@ struct PointerUpdates {
     /// Whether the latest pointer is set (true) or unset (false)
     latest_is_set: bool,
     /// List of pointers where the value was written
-    history: Vec<ValuePointer>,
+    history: SmallVec<[ValuePointer; 1]>,
 }
 
 impl PointerUpdates {
