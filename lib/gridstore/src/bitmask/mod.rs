@@ -361,14 +361,38 @@ impl Bitmask {
         num_blocks: u32,
         used: bool,
     ) {
+        let relative_range = block_offset as usize..(block_offset as usize + num_blocks as usize);
+        self.mark_blocks_batch(page_id, std::iter::once(relative_range), used);
+    }
+
+    /// Marks blocks sharing the same page in batch. First updates all ranges in the bitmask, then updates the region gaps a single time.
+    ///
+    /// # Arguments
+    /// * `page_id` - The ID of the page to mark blocks on.
+    /// * `block_ranges` - An iterator over the ranges of blocks to mark, relative to the page start.
+    /// * `used` - Whether the blocks should be marked as used or free.
+    pub(crate) fn mark_blocks_batch(
+        &mut self,
+        page_id: PageId,
+        relative_block_ranges: impl Iterator<Item = Range<usize>>,
+        used: bool,
+    ) {
         let page_start = self.range_of_page(page_id).start;
 
-        let offset = page_start + block_offset as usize;
-        let blocks_range = offset..offset + num_blocks as usize;
+        let mut lowest_offset = usize::MAX;
+        let mut highest_offset = page_start;
+        for range in relative_block_ranges {
+            let bitmask_range = (range.start + page_start)..(range.end + page_start);
+            self.bitslice[bitmask_range.clone()].fill(used);
 
-        self.bitslice[blocks_range.clone()].fill(used);
+            lowest_offset = lowest_offset.min(bitmask_range.start);
+            highest_offset = highest_offset.max(bitmask_range.end);
+        }
 
-        self.update_region_gaps(blocks_range);
+        // Only update if we actually processed any ranges
+        if lowest_offset != usize::MAX {
+            self.update_region_gaps(lowest_offset..highest_offset);
+        }
     }
 
     fn update_region_gaps(&mut self, blocks_range: Range<usize>) {
