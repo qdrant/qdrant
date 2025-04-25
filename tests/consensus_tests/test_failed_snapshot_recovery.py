@@ -169,7 +169,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
     # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
-    assert os.path.exists(flag_path)
+    assert os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
 
     # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
     upsert_random_points(peer_api_uris[-1], 1)
@@ -314,7 +314,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     assert local_shard["state"] == "Active"
     assert local_shard["points_count"] == n_points
 
-    assert not os.path.exists(flag_path) # shard initializing flag should be dropped after recovery is successful
+    assert not os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text # shard initializing flag should be dropped after recovery is successful
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one
