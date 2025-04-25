@@ -35,27 +35,52 @@ impl ValuePointer {
     }
 }
 
-#[derive(Debug)]
-enum PointerUpdate {
-    Set(ValuePointer),
-    Unset(ValuePointer),
+#[derive(Debug, Default)]
+struct PointerUpdates {
+    /// Whether the latest pointer is set (true) or unset (false)
+    latest_is_set: bool,
+    /// List of pointers where the value was written
+    history: Vec<ValuePointer>,
 }
 
-impl PointerUpdate {
+impl PointerUpdates {
+    /// Set the current latest pointer
+    fn set(&mut self, pointer: ValuePointer) {
+        self.history.push(pointer);
+        self.latest_is_set = true;
+    }
+
+    /// Mark this pointer as pending for freeing
+    fn unset(&mut self, pointer: ValuePointer) {
+        self.history.push(pointer);
+        self.latest_is_set = false;
+    }
+
     #[cfg(test)]
     fn is_set(&self) -> bool {
-        match self {
-            PointerUpdate::Set(_) => true,
-            PointerUpdate::Unset(_) => false,
-        }
+        self.latest_is_set
     }
 
     /// Set is Some, Unset is None
-    fn to_option(&self) -> Option<ValuePointer> {
-        match self {
-            PointerUpdate::Set(pointer) => Some(*pointer),
-            PointerUpdate::Unset(_) => None,
+    fn latest(&self) -> Option<ValuePointer> {
+        if self.latest_is_set {
+            self.history.last().cloned()
+        } else {
+            None
         }
+    }
+
+    /// Returns pointers that need to be freed, i.e. They have been written, and are no longer needed
+    fn outdated_pointers(self) -> impl Iterator<Item = ValuePointer> {
+        let take = if self.latest_is_set {
+            // all but the latest one
+            self.history.len() - 1
+        } else {
+            // all of them
+            self.history.len()
+        };
+
+        self.history.into_iter().take(take)
     }
 }
 
@@ -75,7 +100,7 @@ pub struct Tracker {
     /// Updates that haven't been flushed
     ///
     /// When flushing, these updates get written into the mmap and flushed at once.
-    pending_updates: AHashMap<PointOffset, PointerUpdate>,
+    pending_updates: AHashMap<PointOffset, PointerUpdates>,
 
     /// The maximum pointer offset in the tracker (updated in memory).
     next_pointer_offset: PointOffset,
@@ -143,9 +168,9 @@ impl Tracker {
         // Write pending updates from memory
         let mut pending_updates = std::mem::take(&mut self.pending_updates);
         let mut old_pointers = Vec::new();
-        for (point_offset, update) in pending_updates.drain() {
-            match update {
-                PointerUpdate::Set(new_pointer) => {
+        for (point_offset, updates) in pending_updates.drain() {
+            match updates.latest() {
+                Some(new_pointer) => {
                     if let Some(old_pointer) =
                         self.get_raw(point_offset).and_then(|pointer| *pointer)
                     {
@@ -155,12 +180,12 @@ impl Tracker {
                     // write the new pointer
                     self.persist_pointer(point_offset, Some(new_pointer));
                 }
-                PointerUpdate::Unset(old_pointer) => {
-                    old_pointers.push(old_pointer);
-                    // write the new pointer
+                None => {
+                    // write the new None pointer
                     self.persist_pointer(point_offset, None);
                 }
             }
+            old_pointers.extend(updates.outdated_pointers());
         }
         // increment header count if necessary
         self.persist_pointer_count();
@@ -262,7 +287,7 @@ impl Tracker {
     pub fn get(&self, point_offset: PointOffset) -> Option<ValuePointer> {
         self.pending_updates
             .get(&point_offset)
-            .map(PointerUpdate::to_option)
+            .map(PointerUpdates::latest)
             // if the value is not in the pending updates, check the mmap
             .or_else(|| self.get_raw(point_offset).copied())
             .flatten()
@@ -280,7 +305,9 @@ impl Tracker {
 
     pub fn set(&mut self, point_offset: PointOffset, value_pointer: ValuePointer) {
         self.pending_updates
-            .insert(point_offset, PointerUpdate::Set(value_pointer));
+            .entry(point_offset)
+            .or_default()
+            .set(value_pointer);
         self.next_pointer_offset = self.next_pointer_offset.max(point_offset + 1);
     }
 
@@ -290,7 +317,9 @@ impl Tracker {
 
         if let Some(pointer) = pointer_opt {
             self.pending_updates
-                .insert(point_offset, PointerUpdate::Unset(pointer));
+                .entry(point_offset)
+                .or_default()
+                .unset(pointer);
         }
 
         pointer_opt
