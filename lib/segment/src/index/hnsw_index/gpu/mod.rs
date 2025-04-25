@@ -144,14 +144,11 @@ mod tests {
             &false.into(),
         )
         .unwrap();
+        let hw_counter = HardwareCounterCell::new();
         for idx in 0..num_vectors {
-            let v = vector_holder.get_vector(idx as PointOffsetType);
+            let v = vector_holder.get_vector(idx as PointOffsetType, &hw_counter);
             storage
-                .insert_vector(
-                    idx as PointOffsetType,
-                    v.as_vec_ref(),
-                    &HardwareCounterCell::new(),
-                )
+                .insert_vector(idx as PointOffsetType, v.as_vec_ref(), &hw_counter)
                 .unwrap();
         }
 

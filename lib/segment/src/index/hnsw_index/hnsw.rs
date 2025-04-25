@@ -666,9 +666,11 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let points_scorer_builder = |vector_id| {
-            let vector = vector_storage.get_vector(vector_id);
-            let vector = vector.as_vec_ref().into();
             let hardware_counter = HardwareCounterCell::disposable();
+
+            let vector = vector_storage.get_vector(vector_id, &hardware_counter);
+            let vector = vector.as_vec_ref().into();
+
             FilteredScorer::new(
                 vector,
                 vector_storage,
@@ -702,9 +704,9 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
         let points_scorer_builder = |block_point_id| -> OperationResult<_> {
-            let vector = vector_storage.get_vector(block_point_id);
-            let vector = vector.as_vec_ref().into();
             let hardware_counter = HardwareCounterCell::disposable();
+            let vector = vector_storage.get_vector(block_point_id, &hardware_counter);
+            let vector = vector.as_vec_ref().into();
             let block_condition_checker: Box<dyn FilterContext> = Box::new(BuildConditionChecker {
                 filter_list: block_filter_list,
                 current_point: block_point_id,
