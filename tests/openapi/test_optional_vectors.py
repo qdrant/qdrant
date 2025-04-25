@@ -25,6 +25,7 @@ def test_delete_and_search(collection_name):
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [2, 3],
             "vector": ["text"]
@@ -56,6 +57,7 @@ def test_retrieve_deleted_vector(collection_name):
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [1, 3],
             "vector": ["text"]
@@ -300,6 +302,7 @@ def test_update_empty_vectors(collection_name):
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [1],
             "vector": ["image", "text"]
@@ -581,6 +584,7 @@ def delete_vectors(collection_name):
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [1, 2],
             "vector": ["image"]
@@ -592,6 +596,7 @@ def delete_vectors(collection_name):
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [2, 3],
             "vector": ["text"]
@@ -635,6 +640,7 @@ def test_delete_all_vectors(collection_name):
         api='/collections/{collection_name}/points/vectors/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "filter": {},
             "vector": ["image", "text"]

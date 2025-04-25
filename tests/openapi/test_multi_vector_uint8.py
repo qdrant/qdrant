@@ -121,6 +121,7 @@ def test_multi_vector_uint8_persisted(collection_name):
         api='/collections/{collection_name}/points/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [2]
         }
