@@ -428,6 +428,7 @@ def test_payload_operations(collection_name):
         api='/collections/{collection_name}/points/payload/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "keys": ["key5"],
             "filter": {

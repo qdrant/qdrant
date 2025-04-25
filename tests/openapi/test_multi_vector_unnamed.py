@@ -115,6 +115,7 @@ def test_multi_vector_float_persisted(collection_name):
         api='/collections/{collection_name}/points/delete',
         method="POST",
         path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
         body={
             "points": [2]
         }
