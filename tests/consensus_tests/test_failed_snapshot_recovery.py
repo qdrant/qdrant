@@ -169,7 +169,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
     # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
-    assert os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+    assert os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text # E       AssertionError: {"result":{"peer_id":2074277778752903,"shard_count":1,"local_shards":[{"shard_id":0,"points_count":900,"state":"Partial"}],"remote_shards":[{"shard_id":0,"peer_id":6244789648461877,"state":"Active"},{"shard_id":0,"peer_id":3156602420930446,"state":"Active"}],"shard_transfers":[{"shard_id":0,"from":6244789648461877,"to":2074277778752903,"sync":true,"method":"stream_records"}]},"status":"ok","time":0.015601756}
 
     # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
     upsert_random_points(peer_api_uris[-1], 1)
@@ -219,7 +219,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     new_dense_search_result = search(peer_api_uris[-1], dense_query_vector, query_city)
     assert len(new_dense_search_result) == len(initial_dense_search_result)
     for i in range(len(new_dense_search_result)):
-        assert new_dense_search_result[i]["id"] == initial_dense_search_result[i]["id"]
+        assert new_dense_search_result[i]["id"] == initial_dense_search_result[i]["id"], (new_dense_search_result, initial_dense_search_result)
 
 
 @pytest.mark.parametrize("transfer_method", ["snapshot", "stream_records", "wal_delta"])
@@ -286,6 +286,13 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
+    # check that the flag was removed the when transfer was started
+    # There's a small gap between the moment the "start shard transfer" is acknowledged and the moment the shard transfer is actually initiated
+    # If we check in between, this fails so we add a sleep
+    sleep(1)
+    if transfer_method != "snapshot":
+        assert not os.path.exists(flag_path)
+
     # Kill again after transfer starts (shard initializing flag has been deleted and shard is empty)
     p = processes.pop()
     p.kill()
@@ -293,16 +300,13 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     # Restart same peer again
     peer_api_uris[-1] = start_peer(
-        peer_dirs[-1], f"peer_{N_PEERS}_restarted.log", bootstrap_uri,
+        peer_dirs[-1], f"peer_{N_PEERS}_restarted_again.log", bootstrap_uri,
         extra_env=extra_env
     )
 
     wait_for_same_commit(peer_api_uris=peer_api_uris)
 
-    # We expect transfer to be started again if stopped in between because of node crash
-    wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 1)
-
-    # Wait for end of shard transfer
+    # transfer might have been still in progress when the peer was killed. so we wait for it to finish
     wait_for_collection_shard_transfers_count(peer_api_uris[-1], COLLECTION_NAME, 0)
 
     # Wait for all replicas to be active on the receiving peer
@@ -314,7 +318,14 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     assert local_shard["state"] == "Active"
     assert local_shard["points_count"] == n_points
 
-    assert not os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text # shard initializing flag should be dropped after recovery is successful
+    # shard initializing flag should remain dropped after recovery is successful
+    assert not os.path.exists(flag_path)
+    # print("Checking that the shard initializing flag was removed after recovery")
+    # try:
+    #     wait_for(lambda : )
+    # except Exception as _:
+    #     assert False, requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+    #     # raise Exception(f"Flag {flag_path} still exists after recovery: {e}")
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one
