@@ -74,7 +74,7 @@ jobs:
         run: |
           set +e # ignore errors
           counter=0
-          while poetry -C tests run pytest tests/consensus_tests --durations=10 -k "test_failed_snapshot_recovery"; do
+          while poetry -C tests run pytest -vv tests/consensus_tests --durations=10 -k "test_failed_snapshot_recovery"; do
               counter=$((counter + 1))
               echo "==========Test passed $counter times. Running again...========="
           done

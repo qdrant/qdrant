@@ -218,8 +218,9 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     # Check that 'search' returns the same results after recovery
     new_dense_search_result = search(peer_api_uris[-1], dense_query_vector, query_city)
     assert len(new_dense_search_result) == len(initial_dense_search_result)
-    for i in range(len(new_dense_search_result)):
-        assert new_dense_search_result[i]["id"] == initial_dense_search_result[i]["id"], (new_dense_search_result, initial_dense_search_result)
+    new_ids = [r["id"] for r in new_dense_search_result]
+    initial_ids = [r["id"] for r in initial_dense_search_result]
+    assert new_ids == initial_ids, (new_ids, initial_ids)
 
 
 @pytest.mark.parametrize("transfer_method", ["snapshot", "stream_records", "wal_delta"])
@@ -322,6 +323,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
         print(res)
         print(e)
+        raise e
 
     # shard initializing flag should remain dropped after recovery is successful
     assert not os.path.exists(flag_path)
@@ -348,5 +350,6 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Check that 'search' returns the same results after recovery
     new_dense_search_result = search(peer_api_uris[-1], dense_query_vector, query_city)
     assert len(new_dense_search_result) == len(initial_dense_search_result)
-    for i in range(len(new_dense_search_result)):
-        assert new_dense_search_result[i]["id"] == initial_dense_search_result[i]["id"]
+    new_ids = [r["id"] for r in new_dense_search_result]
+    initial_ids = [r["id"] for r in initial_dense_search_result]
+    assert new_ids == initial_ids, (new_ids, initial_ids)
