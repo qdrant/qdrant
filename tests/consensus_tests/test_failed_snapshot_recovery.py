@@ -313,10 +313,15 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     wait_for_all_replicas_active(peer_api_uris[-1], COLLECTION_NAME)
 
     # Assert that the local shard is active and not empty
-    [local_shard] = get_local_shards(peer_api_uris[-1])
-    assert local_shard["shard_id"] == 0
-    assert local_shard["state"] == "Active"
-    assert local_shard["points_count"] == n_points
+    try:
+        [local_shard] = get_local_shards(peer_api_uris[-1])
+        assert local_shard["shard_id"] == 0
+        assert local_shard["state"] == "Active"
+        assert local_shard["points_count"] == n_points
+    except ValueError as e:
+        res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+        print(res)
+        print(e)
 
     # shard initializing flag should remain dropped after recovery is successful
     assert not os.path.exists(flag_path)
