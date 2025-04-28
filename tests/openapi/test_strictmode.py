@@ -1860,7 +1860,7 @@ def test_strict_mode_group_by_unindexed(collection_name):
     )
 
     assert not response.ok
-    assert "Forbidden: Index required but not found for \"docId\". Help: Create an index for this key." in response.json()['status']['error']
+    assert "Forbidden: Index required but not found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
@@ -1875,9 +1875,53 @@ def test_strict_mode_group_by_unindexed(collection_name):
         },
     )
     assert not response.ok
-    assert "Forbidden: Index required but not found for \"docId\". Help: Create an index for this key." in response.json()['status']['error']
+    assert "Forbidden: Index required but not found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
 
-    # create index
+    # create geo index
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "docId",
+            "field_schema": "geo"
+        }
+    ).raise_for_status()
+
+    # try again with geo index
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/search/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "vector": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+        },
+    )
+
+    assert not response.ok
+    assert "Forbidden: Index of type \"Geo\" found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
+
+    response = request_with_validation(
+        api="/collections/{collection_name}/points/query/groups",
+        method="POST",
+        path_params={"collection_name": collection_name},
+        body={
+            "query": [1.0, 0.0, 0.0, 0.0],
+            "limit": 10,
+            "with_payload": True,
+            "group_by": "docId",
+            "group_size": 3,
+        },
+    )
+    assert not response.ok
+    assert "Forbidden: Index of type \"Geo\" found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
+
+    # create keyword index (supporting match)
     request_with_validation(
         api='/collections/{collection_name}/index',
         method="PUT",

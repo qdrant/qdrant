@@ -97,8 +97,8 @@ impl Collection {
         Ok(result)
     }
 
-    pub fn payload_key_is_indexed(&self, key: &JsonPath) -> bool {
-        self.payload_index_schema.read().schema.contains_key(key)
+    pub fn payload_key_index_schema(&self, key: &JsonPath) -> Option<PayloadFieldSchema> {
+        self.payload_index_schema.read().schema.get(key).cloned()
     }
 
     /// Returns an arbitrary payload key along with acceptable

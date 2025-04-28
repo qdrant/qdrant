@@ -1711,6 +1711,20 @@ impl PayloadSchemaType {
             Self::Uuid => PayloadSchemaParams::Uuid(UuidIndexParams::default()),
         }
     }
+
+    /// Check if this type supports a `match` condition
+    pub fn support_match(&self) -> bool {
+        match self {
+            Self::Keyword => true,
+            Self::Integer => true,
+            Self::Bool => true,
+            Self::Uuid => true,
+            Self::Float => false,
+            Self::Geo => false,
+            Self::Text => false,
+            Self::Datetime => false,
+        }
+    }
 }
 
 /// Payload type with parameters
