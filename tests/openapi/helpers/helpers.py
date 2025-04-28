@@ -1,9 +1,11 @@
 import json
+import time
 from logging import warning
 from typing import Any, Dict, List
 import jsonschema
 import requests
 import warnings
+from schemathesis.exceptions import CheckFailed
 from schemathesis.models import APIOperation
 from schemathesis.specs.openapi.references import ConvertingResolver
 from schemathesis.specs.openapi.schemas import OpenApi30
@@ -81,14 +83,35 @@ def request_with_validation(
         warnings.warn(f"Delete call for {api} missing wait=true param, adding it")
         query_params["wait"] = "true"
 
+    start_time = time.time()
     response = action(
         url=get_api_string(QDRANT_HOST, api, path_params),
         params=query_params,
         json=body,
         headers=qdrant_host_headers()
     )
-
-    operation.validate_response(response)
+    duration = time.time() - start_time
+    try:
+        operation.validate_response(response)
+    except CheckFailed as ex:
+        status = response.status_code
+        headers_str = "\n".join(f"{k}: {v}" for k, v in response.headers.items())
+        body_text = response.text.strip()
+        msg = (
+            f"Failed validation {ex} for response:\n"
+            f"Status: {status}\n"
+            f"Headers:\n{headers_str}\n"
+            f"Body (decoded text):\n{body_text if body_text else '[Empty Body]'}\n"
+            f"Duration: {duration:.2f} seconds\n"
+            f"Request was:\n"
+            f"Method: {method}\n"
+            f"URL: {get_api_string(QDRANT_HOST, api, path_params)}\n"
+            f"Query params: {query_params}\n"
+            f"Headers: {qdrant_host_headers()}\n"
+            f"Body: {body}\n"
+        )
+        warnings.warn(msg)
+        raise
 
     return response
 
