@@ -81,4 +81,9 @@ impl MmapBitSliceBufferedUpdateWrapper {
             Ok(())
         })
     }
+
+    /// Forget pending updates and do not persist them.
+    pub fn forget_pending_updates(&self) {
+        self.pending_updates.lock().clear();
+    }
 }
