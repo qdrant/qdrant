@@ -300,6 +300,8 @@ fn configure_validation(builder: Builder) -> Builder {
             ("ClearPayloadPointsInternal.clear_payload_points", ""),
             ("CreateFieldIndexCollectionInternal.create_field_index_collection", ""),
             ("DeleteFieldIndexCollectionInternal.delete_field_index_collection", ""),
+            ("UpdateOperation.update", ""),
+            ("UpdateBatchInternal.operations", ""),
             ("SearchPointsInternal.search_points", ""),
             ("SearchBatchPointsInternal.collection_name", "length(min = 1, max = 255)"),
             ("SearchBatchPointsInternal.search_points", ""),
