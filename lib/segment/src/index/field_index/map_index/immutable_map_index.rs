@@ -42,9 +42,9 @@ enum Storage<N: MapIndexKey + Key + ?Sized> {
 
 pub(super) struct ContainerSegment {
     /// Range in the container which holds point IDs for the value.
-    pub(super) range: Range<u32>,
+    range: Range<u32>,
     /// Number of available point IDs in the range, excludes number of deleted points.
-    pub(super) count: u32,
+    count: u32,
 }
 
 impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
@@ -146,12 +146,6 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         }
 
         debug_assert_eq!(indexed_points, index.get_indexed_points());
-        // debug_assert_eq!(
-        //     values_count,
-        //     storage
-        //         .get_values_count()
-        //         .saturating_sub(storage.deleted_count)
-        // );
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {

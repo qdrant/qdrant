@@ -34,7 +34,7 @@ pub struct MmapMapIndex<N: MapIndexKey + Key + ?Sized> {
     pub(super) value_to_points: MmapHashMap<N, PointOffsetType>,
     point_to_values: MmapPointToValues<N>,
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
-    pub(super) deleted_count: usize,
+    deleted_count: usize,
     total_key_value_pairs: usize,
     is_on_disk: bool,
 }
