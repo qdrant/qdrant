@@ -83,7 +83,7 @@ pub enum MapIndex<N: MapIndexKey + ?Sized> {
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N> {
-    pub fn new_memory(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
+    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
         } else {
@@ -94,10 +94,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let mmap_index = MmapMapIndex::load(path, is_on_disk)?;
-
         if is_on_disk {
+            // Use on mmap directly
             Ok(MapIndex::Mmap(Box::new(mmap_index)))
         } else {
+            // Load into RAM, use mmap as backing storage
             Ok(MapIndex::Immutable(ImmutableMapIndex::new_mmap(mmap_index)))
         }
     }
@@ -1257,10 +1258,12 @@ mod tests {
         index_type: IndexType,
     ) -> MapIndex<N> {
         let mut index = match index_type {
-            IndexType::Mutable => {
-                MapIndex::<N>::new_memory(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
-            }
-            IndexType::Immutable => MapIndex::<N>::new_memory(
+            IndexType::Mutable => MapIndex::<N>::new_rocksdb(
+                open_db_with_existing_cf(path).unwrap(),
+                FIELD_NAME,
+                true,
+            ),
+            IndexType::Immutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
                 false,

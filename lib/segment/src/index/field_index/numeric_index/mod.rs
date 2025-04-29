@@ -166,7 +166,7 @@ pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Default> {
 }
 
 impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
-    pub fn new_memory(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
             NumericIndexInner::Mutable(MutableNumericIndex::new(db, field))
         } else {
@@ -177,10 +177,11 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         let mmap_index = MmapNumericIndex::load(path, is_on_disk)?;
-
         if is_on_disk {
+            // Use on mmap directly
             Ok(NumericIndexInner::Mmap(mmap_index))
         } else {
+            // Load into RAM, use mmap as backing storage
             Ok(NumericIndexInner::Immutable(
                 ImmutableNumericIndex::new_mmap(mmap_index),
             ))
@@ -475,7 +476,7 @@ pub trait NumericIndexIntoInnerValue<T, P> {
 impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
     pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
-            inner: NumericIndexInner::new_memory(db, field, is_appendable),
+            inner: NumericIndexInner::new_rocksdb(db, field, is_appendable),
             _phantom: PhantomData,
         }
     }
@@ -618,7 +619,7 @@ where
         self.index.inner.flusher()()?;
         drop(self.index);
         let mut inner: NumericIndexInner<T> =
-            NumericIndexInner::new_memory(self.db, &self.field, false);
+            NumericIndexInner::new_rocksdb(self.db, &self.field, false);
         inner.load()?;
         Ok(NumericIndex {
             inner,
