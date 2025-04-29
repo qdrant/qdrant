@@ -24,6 +24,13 @@ pub mod gpu {
         }
     }
 
+    pub mod gpu_insert_context {
+        /// Placeholder for GPU insertion context to process indexing on.
+        pub struct GpuInsertContext<'a> {
+            phantom: std::marker::PhantomData<&'a usize>,
+        }
+    }
+
     pub mod gpu_vector_storage {
         /// Placeholder for GPU vector storage.
         pub struct GpuVectorStorage {}

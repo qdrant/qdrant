@@ -16,6 +16,7 @@ struct GpuVisitedFlagsParamsBuffer {
 
 /// GPU resources for visited flags.
 pub struct GpuVisitedFlags {
+    device: Arc<gpu::Device>,
     params: GpuVisitedFlagsParamsBuffer,
     params_buffer: Arc<gpu::Buffer>,
     params_staging_buffer: Arc<gpu::Buffer>,
@@ -23,7 +24,7 @@ pub struct GpuVisitedFlags {
     descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     descriptor_set: Arc<gpu::DescriptorSet>,
     capacity: usize,
-    remap: bool,
+    remap_buffer: Option<Arc<gpu::Buffer>>,
 }
 
 impl ShaderBuilderParameters for GpuVisitedFlags {
@@ -40,7 +41,7 @@ impl ShaderBuilderParameters for GpuVisitedFlags {
             "VISITED_FLAGS_CAPACITY".to_owned(),
             Some(self.capacity.to_string()),
         );
-        if self.remap {
+        if self.remap_buffer.is_some() {
             defines.insert("VISITED_FLAGS_REMAP".to_owned(), None);
         }
         defines
@@ -51,7 +52,7 @@ impl GpuVisitedFlags {
     pub fn new(
         device: Arc<gpu::Device>,
         groups_count: usize,
-        points_remap: &[PointOffsetType],
+        points_capacity: usize,
         factor_range: std::ops::Range<usize>,
     ) -> OperationResult<Self> {
         let params_buffer = gpu::Buffer::new(
@@ -68,7 +69,7 @@ impl GpuVisitedFlags {
         )?;
 
         let (visited_flags_buffer, remap_buffer, capacity) =
-            Self::create_flags_buffer(device.clone(), groups_count, points_remap, factor_range)?;
+            Self::create_flags_buffer(device.clone(), groups_count, points_capacity, factor_range)?;
 
         let params = GpuVisitedFlagsParamsBuffer { generation: 1 };
         params_staging_buffer.upload(&params, 0)?;
@@ -102,6 +103,7 @@ impl GpuVisitedFlags {
         let descriptor_set = descriptor_set_builder.build()?;
 
         Ok(Self {
+            device,
             params,
             params_buffer,
             params_staging_buffer,
@@ -109,8 +111,48 @@ impl GpuVisitedFlags {
             descriptor_set_layout,
             descriptor_set,
             capacity,
-            remap: remap_buffer.is_some(),
+            remap_buffer,
         })
+    }
+
+    pub fn init(&mut self, points_remap: &[PointOffsetType]) -> OperationResult<()> {
+        let mut context = gpu::Context::new(self.device.clone())?;
+        if let Some(remap_buffer) = self.remap_buffer.clone() {
+            const UPLOAD_REMAP_BUFFER_COUNT: usize = 1024 * 1024;
+            let remap_staging_buffer = gpu::Buffer::new(
+                self.device.clone(),
+                "Visited flags remap staging buffer",
+                gpu::BufferType::CpuToGpu,
+                UPLOAD_REMAP_BUFFER_COUNT * std::mem::size_of::<PointOffsetType>(),
+            )?;
+            for chunk in points_remap.chunks(UPLOAD_REMAP_BUFFER_COUNT) {
+                remap_staging_buffer.upload(chunk, 0)?;
+                context.copy_gpu_buffer(
+                    remap_staging_buffer.clone(),
+                    remap_buffer.clone(),
+                    0,
+                    0,
+                    std::mem::size_of_val(chunk),
+                )?;
+                context.run()?;
+                context.wait_finish(GPU_TIMEOUT)?;
+            }
+        }
+
+        context.clear_buffer(self.visited_flags_buffer.clone())?;
+        self.params.generation = 1;
+        self.params_staging_buffer.upload(&self.params, 0)?;
+        context.copy_gpu_buffer(
+            self.params_staging_buffer.clone(),
+            self.params_buffer.clone(),
+            0,
+            0,
+            std::mem::size_of::<GpuVisitedFlagsParamsBuffer>(),
+        )?;
+        context.run()?;
+        context.wait_finish(GPU_TIMEOUT)?;
+
+        Ok(())
     }
 
     pub fn clear(&mut self, gpu_context: &mut gpu::Context) -> OperationResult<()> {
@@ -147,11 +189,11 @@ impl GpuVisitedFlags {
     fn create_flags_buffer(
         device: Arc<gpu::Device>,
         groups_count: usize,
-        points_remap: &[PointOffsetType],
+        points_capacity: usize,
         factor_range: std::ops::Range<usize>,
     ) -> OperationResult<(Arc<gpu::Buffer>, Option<Arc<gpu::Buffer>>, usize)> {
         let alignment = std::mem::size_of::<u32>();
-        let points_count = points_remap.len().next_multiple_of(alignment);
+        let points_count = points_capacity.next_multiple_of(alignment);
         let flags_size = groups_count * points_count * std::mem::size_of::<u8>();
 
         if flags_size < device.max_buffer_size() && factor_range.start == 1 {
@@ -172,28 +214,8 @@ impl GpuVisitedFlags {
             device.clone(),
             "Visited flags remap buffer",
             gpu::BufferType::Storage,
-            std::mem::size_of_val(points_remap),
+            points_capacity * std::mem::size_of::<u32>(),
         )?;
-        const UPLOAD_REMAP_BUFFER_COUNT: usize = 1024 * 1024;
-        let remap_staging_buffer = gpu::Buffer::new(
-            device.clone(),
-            "Visited flags remap staging buffer",
-            gpu::BufferType::CpuToGpu,
-            UPLOAD_REMAP_BUFFER_COUNT * std::mem::size_of::<PointOffsetType>(),
-        )?;
-        let mut context = gpu::Context::new(device.clone())?;
-        for chunk in points_remap.chunks(UPLOAD_REMAP_BUFFER_COUNT) {
-            remap_staging_buffer.upload(chunk, 0)?;
-            context.copy_gpu_buffer(
-                remap_staging_buffer.clone(),
-                remap_buffer.clone(),
-                0,
-                0,
-                std::mem::size_of_val(chunk),
-            )?;
-            context.run()?;
-            context.wait_finish(GPU_TIMEOUT)?;
-        }
 
         let mut factor = factor_range.start;
         while factor < factor_range.end {
