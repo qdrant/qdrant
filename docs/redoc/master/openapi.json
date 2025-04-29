@@ -6546,10 +6546,10 @@
         "example": {
           "collections": [
             {
-              "name": "arivx-title"
+              "name": "arxiv-title"
             },
             {
-              "name": "arivx-abstract"
+              "name": "arxiv-abstract"
             },
             {
               "name": "medium-title"
