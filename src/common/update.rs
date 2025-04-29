@@ -6,7 +6,7 @@ use collection::operations::conversions::write_ordering_from_proto;
 use collection::operations::payload_ops::*;
 use collection::operations::point_ops::*;
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::types::{CollectionError, UpdateResult};
+use collection::operations::types::{CollectionResult, UpdateResult};
 use collection::operations::vector_ops::*;
 use collection::operations::verification::*;
 use collection::operations::*;
@@ -126,7 +126,7 @@ impl StrictModeVerification for UpdateOperation {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         match self {
             UpdateOperation::Upsert(op) => {
                 op.upsert

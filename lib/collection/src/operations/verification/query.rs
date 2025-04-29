@@ -82,7 +82,7 @@ impl StrictModeVerification for CollectionPrefetch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), crate::operations::types::CollectionError> {
+    ) -> CollectionResult<()> {
         // CollectionPrefetch.prefetch is of type CollectionPrefetch (recursive type)
         for prefetch in &self.prefetch {
             Box::pin(prefetch.check_strict_mode(collection, strict_mode_config)).await?;

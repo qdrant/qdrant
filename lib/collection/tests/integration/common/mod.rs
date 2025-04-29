@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use collection::collection::{Collection, RequestShardTransfer};
 use collection::config::{CollectionConfigInternal, CollectionParams, WalConfig};
-use collection::operations::types::CollectionError;
+use collection::operations::types::CollectionResult;
 use collection::operations::vector_params_builder::VectorParamsBuilder;
 use collection::optimizers_builder::OptimizersConfig;
 use collection::shards::CollectionId;
@@ -87,7 +87,7 @@ pub async fn new_local_collection(
     path: &Path,
     snapshots_path: &Path,
     config: &CollectionConfigInternal,
-) -> Result<Collection, CollectionError> {
+) -> CollectionResult<Collection> {
     let collection = Collection::new(
         id,
         0,

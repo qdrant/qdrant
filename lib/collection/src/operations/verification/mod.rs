@@ -13,7 +13,7 @@ use std::fmt::Display;
 
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
-use super::types::CollectionError;
+use super::types::{CollectionError, CollectionResult};
 use crate::collection::Collection;
 
 // Creates a new `VerificationPass` without actually verifying anything.
@@ -40,7 +40,7 @@ pub trait StrictModeVerification {
         &self,
         _collection: &Collection,
         _strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         Ok(())
     }
 
@@ -62,10 +62,7 @@ pub trait StrictModeVerification {
     fn request_search_params(&self) -> Option<&SearchParams>;
 
     /// Checks the 'exact' parameter.
-    fn check_request_exact(
-        &self,
-        strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    fn check_request_exact(&self, strict_mode_config: &StrictModeConfig) -> CollectionResult<()> {
         check_bool_opt(
             self.request_exact(),
             strict_mode_config.search_allow_exact,
@@ -78,7 +75,7 @@ pub trait StrictModeVerification {
     fn check_request_query_limit(
         &self,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         check_limit_opt(
             self.query_limit(),
             strict_mode_config.max_query_limit,
@@ -92,7 +89,7 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         if let Some(search_params) = self.request_search_params() {
             Box::pin(search_params.check_strict_mode(collection, strict_mode_config)).await?;
         }
@@ -104,10 +101,10 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         let check_filter = |filter: Option<&Filter>,
                             allow_unindexed_filter: Option<bool>|
-         -> Result<(), CollectionError> {
+         -> CollectionResult<()> {
             let Some(filter) = filter else {
                 return Ok(());
             };
@@ -154,7 +151,7 @@ pub trait StrictModeVerification {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         self.check_custom(collection, strict_mode_config).await?;
         self.check_request_query_limit(strict_mode_config)?;
         self.check_request_filter(collection, strict_mode_config)?;
@@ -168,7 +165,7 @@ pub trait StrictModeVerification {
 fn check_filter_limits(
     filter: &Filter,
     strict_mode_config: &StrictModeConfig,
-) -> Result<(), CollectionError> {
+) -> CollectionResult<()> {
     // Filter condition count limit
     if let Some(filter_condition_limit) = strict_mode_config.filter_max_conditions {
         let filter_conditions = filter.total_conditions_count();
@@ -203,7 +200,7 @@ fn check_filter_limits(
 pub fn check_timeout(
     timeout: usize,
     strict_mode_config: &StrictModeConfig,
-) -> Result<(), CollectionError> {
+) -> CollectionResult<()> {
     check_limit_opt(Some(timeout), strict_mode_config.max_timeout, "timeout")
 }
 
@@ -212,7 +209,7 @@ pub(crate) fn check_bool_opt(
     allowed: Option<bool>,
     name: &str,
     parameter: &str,
-) -> Result<(), CollectionError> {
+) -> CollectionResult<()> {
     if allowed != Some(false) || !value.unwrap_or_default() {
         return Ok(());
     }
@@ -227,7 +224,7 @@ pub(crate) fn check_limit_opt<T: PartialOrd + Display>(
     value: Option<T>,
     limit: Option<T>,
     name: &str,
-) -> Result<(), CollectionError> {
+) -> CollectionResult<()> {
     let (Some(limit), Some(value)) = (limit, value) else {
         return Ok(());
     };
@@ -262,7 +259,7 @@ impl StrictModeVerification for SearchParams {
         &self,
         _collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         check_limit_opt(
             self.quantization.and_then(|i| i.oversampling),
             strict_mode_config.search_max_oversampling,
