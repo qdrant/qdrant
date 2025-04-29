@@ -19,8 +19,9 @@ use itertools::Itertools;
 use tempfile::TempDir;
 use uuid::Uuid;
 
+use super::rocksdb_builder::RocksDbBuilder;
 use super::{
-    RocksDbBuilder, create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
+    create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
     get_vector_storage_path, new_segment_path, open_vector_storage,
 };

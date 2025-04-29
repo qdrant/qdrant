@@ -10,13 +10,14 @@ use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use io::storage_version::StorageVersion;
 use log::info;
-use parking_lot::{Mutex, RwLock, RwLockReadGuard};
+use parking_lot::{Mutex, RwLock};
 use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF, check_db_exists, open_db};
+use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
@@ -76,7 +77,7 @@ fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))
 }
 
-fn get_vector_name_with_prefix(prefix: &str, vector_name: &VectorName) -> String {
+pub fn get_vector_name_with_prefix(prefix: &str, vector_name: &VectorName) -> String {
     if !vector_name.is_empty() {
         format!("{prefix}-{vector_name}")
     } else {
@@ -303,82 +304,6 @@ pub(crate) fn open_vector_storage(
                 }
             }
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct RocksDbBuilder {
-    path: PathBuf,
-    column_families: Vec<String>,
-    rocksdb: Option<Arc<RwLock<DB>>>,
-    is_required: bool,
-}
-
-impl RocksDbBuilder {
-    pub fn new(path: impl Into<PathBuf>, config: &SegmentConfig) -> OperationResult<Self> {
-        let path = path.into();
-
-        let vector_cfs = config
-            .vector_data
-            .keys()
-            .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name));
-
-        let sparse_vector_cfs =
-            config
-                .sparse_vector_data
-                .iter()
-                .filter_map(|(vector_name, config)| {
-                    if matches!(config.storage_type, SparseVectorStorageType::OnDisk) {
-                        Some(get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
-                    } else {
-                        None
-                    }
-                });
-
-        let column_families: Vec<_> = vector_cfs.chain(sparse_vector_cfs).collect();
-
-        let rocksdb = if check_db_exists(&path) {
-            Some(Self::open_db(&path, &column_families)?)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            path,
-            column_families,
-            rocksdb,
-            is_required: false,
-        })
-    }
-
-    pub fn read(&self) -> Option<RwLockReadGuard<'_, rocksdb::DB>> {
-        self.rocksdb.as_ref().map(|db| db.read())
-    }
-
-    pub fn require(&mut self) -> OperationResult<Arc<RwLock<rocksdb::DB>>> {
-        let db = match &self.rocksdb {
-            Some(db) => db,
-            None => self
-                .rocksdb
-                .insert(Self::open_db(&self.path, &self.column_families)?),
-        };
-
-        self.is_required = true;
-
-        Ok(db.clone())
-    }
-
-    pub fn build(self) -> Option<Arc<RwLock<rocksdb::DB>>> {
-        self.rocksdb.filter(|_| self.is_required)
-    }
-
-    fn open_db(path: &Path, cfs: &[impl AsRef<str>]) -> OperationResult<Arc<RwLock<rocksdb::DB>>> {
-        open_db(path, cfs).map_err(|err| {
-            OperationError::service_error(format!(
-                "failed to open RocksDB at {}: {err}",
-                path.display(),
-            ))
-        })
     }
 }
 
