@@ -716,6 +716,10 @@ async fn transfer_operations_batch(
     wait: bool,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
+    if batch.is_empty() {
+        return Ok(());
+    }
+
     let supports_update_batching =
         remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
 
