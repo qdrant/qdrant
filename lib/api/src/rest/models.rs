@@ -72,10 +72,10 @@ fn example_collections_response() -> CollectionsResponse {
     CollectionsResponse {
         collections: vec![
             CollectionDescription {
-                name: "arivx-title".to_string(),
+                name: "arxiv-title".to_string(),
             },
             CollectionDescription {
-                name: "arivx-abstract".to_string(),
+                name: "arxiv-abstract".to_string(),
             },
             CollectionDescription {
                 name: "medium-title".to_string(),
