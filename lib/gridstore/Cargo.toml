@@ -55,3 +55,7 @@ harness = false
 [[bench]]
 name = "bustle_bench"
 harness = false
+
+[[bench]]
+name = "flush_bench"
+harness = false

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::referenced_counter::HwMetricRefCounter;
 use io::file_operations::atomic_save_json;
+use itertools::Itertools;
 use lz4_flex::compress_prepend_size;
 use memory::mmap_type;
 use parking_lot::RwLock;
@@ -513,14 +514,19 @@ impl<V> Gridstore<V> {
 
         // update all free blocks in the bitmask
         bitmask_guard.with_upgraded(|guard| {
-            for pointer in old_pointers {
-                // TODO: mark in batch? so that we update the gaps less times.
-                guard.mark_blocks(
-                    pointer.page_id,
-                    pointer.block_offset,
-                    Self::blocks_for_value(pointer.length as usize, self.config.block_size_bytes),
-                    false,
-                );
+            for (page_id, pointer_group) in
+                &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
+            {
+                let local_ranges = pointer_group.map(|pointer| {
+                    let start = pointer.block_offset;
+                    let end = pointer.block_offset
+                        + Self::blocks_for_value(
+                            pointer.length as usize,
+                            self.config.block_size_bytes,
+                        );
+                    start as usize..end as usize
+                });
+                guard.mark_blocks_batch(page_id, local_ranges, false);
             }
         });
         bitmask_guard.flush()?;
