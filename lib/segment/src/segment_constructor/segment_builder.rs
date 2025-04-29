@@ -19,10 +19,11 @@ use itertools::Itertools;
 use tempfile::TempDir;
 use uuid::Uuid;
 
+use super::rocksdb_builder::RocksDbBuilder;
 use super::{
     create_mutable_id_tracker, create_payload_storage, create_sparse_vector_index,
     create_sparse_vector_storage, get_payload_index_path, get_vector_index_path,
-    get_vector_storage_path, new_segment_path, open_segment_db, open_vector_storage,
+    get_vector_storage_path, new_segment_path, open_vector_storage,
 };
 use crate::common::error_logging::LogError;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
@@ -83,23 +84,23 @@ impl SegmentBuilder {
 
         let temp_dir = create_temp_dir(temp_dir)?;
 
-        let database = open_segment_db(temp_dir.path(), segment_config)?;
-
         let id_tracker = if segment_config.is_appendable() {
             IdTrackerEnum::MutableIdTracker(create_mutable_id_tracker(temp_dir.path())?)
         } else {
             IdTrackerEnum::InMemoryIdTracker(InMemoryIdTracker::new())
         };
 
+        let mut db_builder = RocksDbBuilder::new(temp_dir.path(), segment_config)?;
+
         let payload_storage =
-            create_payload_storage(database.clone(), segment_config, temp_dir.path())?;
+            create_payload_storage(&mut db_builder, temp_dir.path(), segment_config)?;
 
         let mut vector_data = HashMap::new();
 
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
             let vector_storage = open_vector_storage(
-                &database,
+                &mut db_builder,
                 vector_config,
                 &stopped,
                 &vector_storage_path,
@@ -119,7 +120,7 @@ impl SegmentBuilder {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
             let vector_storage = create_sparse_vector_storage(
-                database.clone(),
+                &mut db_builder,
                 &vector_storage_path,
                 vector_name,
                 &sparse_vector_config.storage_type,
