@@ -544,6 +544,18 @@ def wait_peer_added(peer_api_uri: str, expected_size: int = 1, headers={}) -> st
     wait_for(leader_is_defined, peer_api_uri, headers=headers)
     return get_leader(peer_api_uri, headers=headers)
 
+def wait_for_collection(peer_api_uri: str, collection_name: str):
+    def is_collection_listed() -> bool:
+        try:
+            res = requests.get(f"{peer_api_uri}/collections")
+            if not res.ok:
+                return False
+            collections = set(collection['name'] for collection in res.json()["result"]['collections'])
+            return collection_name in collections
+        except requests.exceptions.ConnectionError:
+            return False
+
+    wait_for(is_collection_listed)
 
 def wait_collection_green(peer_api_uri: str, collection_name: str):
     try:
