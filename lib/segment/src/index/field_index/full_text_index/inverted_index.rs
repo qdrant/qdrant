@@ -10,12 +10,15 @@ use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub type TokenId = u32;
 
+/// Contains the set of tokens that are in a document.
+///
+/// Internally, it keeps them unique and sorted, so that we can binary-search over them
 #[derive(Default, Serialize, Deserialize, Debug, Clone)]
-pub struct Document {
+pub struct TokenSet {
     tokens: Vec<TokenId>,
 }
 
-impl Document {
+impl TokenSet {
     pub fn new(mut tokens: Vec<TokenId>) -> Self {
         tokens.sort_unstable();
         Self { tokens }
@@ -33,7 +36,7 @@ impl Document {
         &self.tokens
     }
 
-    pub fn check(&self, token: &TokenId) -> bool {
+    pub fn contains(&self, token: &TokenId) -> bool {
         self.tokens.binary_search(token).is_ok()
     }
 }
@@ -44,7 +47,7 @@ pub struct ParsedQuery {
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, document: &Document) -> bool {
+    pub fn check_match(&self, tokens: &TokenSet) -> bool {
         if self.tokens.is_empty() {
             return false;
         }
@@ -52,17 +55,17 @@ impl ParsedQuery {
         // Check that all tokens are in document
         self.tokens
             .iter()
-            .all(|query_token| document.check(query_token))
+            .all(|query_token| tokens.contains(query_token))
     }
 }
 
 pub trait InvertedIndex {
     fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId>;
 
-    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
+    fn token_ids(&mut self, str_tokens: &BTreeSet<String>) -> TokenSet {
         let vocab = self.get_vocab_mut();
-        let mut document_tokens = vec![];
-        for token in tokens {
+        let mut token_ids = vec![];
+        for token in str_tokens {
             // check if in vocab
             let vocab_idx = match vocab.get(token) {
                 Some(&idx) => idx,
@@ -72,16 +75,16 @@ pub trait InvertedIndex {
                     next_token_id
                 }
             };
-            document_tokens.push(vocab_idx);
+            token_ids.push(vocab_idx);
         }
 
-        Document::new(document_tokens)
+        TokenSet::new(token_ids)
     }
 
-    fn index_document(
+    fn index_tokens(
         &mut self,
         idx: PointOffsetType,
-        document: Document,
+        tokens: TokenSet,
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
@@ -245,8 +248,8 @@ mod tests {
             // Generate 10 tot 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
             let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let document = index.document_from_tokens(&tokens);
-            index.index_document(idx, document, &hw_counter).unwrap();
+            let token_ids = index.token_ids(&tokens);
+            index.index_tokens(idx, token_ids, &hw_counter).unwrap();
         }
 
         // Remove some points

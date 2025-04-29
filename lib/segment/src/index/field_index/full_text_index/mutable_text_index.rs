@@ -38,8 +38,8 @@ impl MutableFullTextIndex {
         let db = self.db_wrapper.lock_db();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
-            let tokens = FullTextIndex::deserialize_document(&value)?;
-            Ok((idx, tokens))
+            let str_tokens = FullTextIndex::deserialize_document(&value)?;
+            Ok((idx, str_tokens))
         });
 
         self.inverted_index = MutableInvertedIndex::build_index(iter)?;
@@ -57,20 +57,20 @@ impl MutableFullTextIndex {
             return Ok(());
         }
 
-        let mut tokens: BTreeSet<String> = BTreeSet::new();
+        let mut str_tokens: BTreeSet<String> = BTreeSet::new();
 
         for value in values {
             Tokenizer::tokenize_doc(&value, &self.config, |token| {
-                tokens.insert(token.to_owned());
+                str_tokens.insert(token.to_owned());
             });
         }
 
-        let document = self.inverted_index.document_from_tokens(&tokens);
+        let tokens = self.inverted_index.token_ids(&str_tokens);
         self.inverted_index
-            .index_document(idx, document, hw_counter)?;
+            .index_tokens(idx, tokens, hw_counter)?;
 
         let db_idx = FullTextIndex::store_key(idx);
-        let db_document = FullTextIndex::serialize_document_tokens(tokens)?;
+        let db_document = FullTextIndex::serialize_document_tokens(str_tokens)?;
 
         self.db_wrapper.put(db_idx, db_document)?;
 

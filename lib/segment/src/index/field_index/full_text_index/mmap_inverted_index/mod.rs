@@ -183,10 +183,10 @@ impl InvertedIndex for MmapInvertedIndex {
         unreachable!("MmapInvertedIndex does not support mutable operations")
     }
 
-    fn index_document(
+    fn index_tokens(
         &mut self,
         _idx: PointOffsetType,
-        _document: super::inverted_index::Document,
+        _tokens: super::inverted_index::TokenSet,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(

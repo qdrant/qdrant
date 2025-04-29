@@ -25,10 +25,10 @@ impl InvertedIndex for ImmutableInvertedIndex {
         &mut self.vocab
     }
 
-    fn index_document(
+    fn index_tokens(
         &mut self,
         _idx: PointOffsetType,
-        _document: super::inverted_index::Document,
+        _tokens: super::inverted_index::TokenSet,
         _hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         Err(OperationError::service_error(
@@ -176,7 +176,7 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count: index
-                .point_to_docs
+                .point_to_tokens
                 .iter()
                 .map(|doc| doc.as_ref().map(|doc| doc.len()))
                 .collect(),

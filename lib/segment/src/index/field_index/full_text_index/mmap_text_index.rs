@@ -116,17 +116,17 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             return Ok(());
         }
 
-        let mut tokens: BTreeSet<String> = BTreeSet::new();
+        let mut str_tokens: BTreeSet<String> = BTreeSet::new();
 
         for value in values {
             Tokenizer::tokenize_doc(&value, &self.config, |token| {
-                tokens.insert(token.to_owned());
+                str_tokens.insert(token.to_owned());
             });
         }
 
-        let document = self.mutable_index.document_from_tokens(&tokens);
+        let tokens = self.mutable_index.token_ids(&str_tokens);
         self.mutable_index
-            .index_document(id, document, hw_counter)?;
+            .index_tokens(id, tokens, hw_counter)?;
 
         Ok(())
     }
