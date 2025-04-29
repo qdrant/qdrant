@@ -15,8 +15,9 @@ use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF, open_db};
+use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF};
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
@@ -76,7 +77,7 @@ fn sp<T>(t: T) -> Arc<AtomicRefCell<T>> {
     Arc::new(AtomicRefCell::new(t))
 }
 
-fn get_vector_name_with_prefix(prefix: &str, vector_name: &VectorName) -> String {
+pub fn get_vector_name_with_prefix(prefix: &str, vector_name: &VectorName) -> String {
     if !vector_name.is_empty() {
         format!("{prefix}-{vector_name}")
     } else {
@@ -96,7 +97,7 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
 }
 
 pub(crate) fn open_vector_storage(
-    database: &Arc<RwLock<DB>>,
+    db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
     stopped: &AtomicBool,
     vector_storage_path: &Path,
@@ -112,7 +113,7 @@ pub(crate) fn open_vector_storage(
             if let Some(multi_vec_config) = &vector_config.multivector_config {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage(
-                        database.clone(),
+                        db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
@@ -120,7 +121,7 @@ pub(crate) fn open_vector_storage(
                         stopped,
                     ),
                     VectorStorageDatatype::Uint8 => open_simple_multi_dense_vector_storage_byte(
-                        database.clone(),
+                        db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
@@ -128,7 +129,7 @@ pub(crate) fn open_vector_storage(
                         stopped,
                     ),
                     VectorStorageDatatype::Float16 => open_simple_multi_dense_vector_storage_half(
-                        database.clone(),
+                        db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
@@ -139,21 +140,21 @@ pub(crate) fn open_vector_storage(
             } else {
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
-                        database.clone(),
+                        db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
                         stopped,
                     ),
                     VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
-                        database.clone(),
+                        db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
                         stopped,
                     ),
                     VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
-                        database.clone(),
+                        db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
@@ -306,45 +307,20 @@ pub(crate) fn open_vector_storage(
     }
 }
 
-pub(crate) fn open_segment_db(
+pub(crate) fn create_payload_storage(
+    db_builder: &mut RocksDbBuilder,
     segment_path: &Path,
     config: &SegmentConfig,
-) -> OperationResult<Arc<RwLock<DB>>> {
-    let vector_db_names: Vec<String> = config
-        .vector_data
-        .keys()
-        .map(|vector_name| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name))
-        .chain(
-            config
-                .sparse_vector_data
-                .iter()
-                .filter(|(_, sparse_vector_config)| {
-                    matches!(
-                        sparse_vector_config.storage_type,
-                        SparseVectorStorageType::OnDisk
-                    )
-                })
-                .map(|(vector_name, _)| get_vector_name_with_prefix(DB_VECTOR_CF, vector_name)),
-        )
-        .collect();
-    open_db(segment_path, &vector_db_names)
-        .map_err(|err| OperationError::service_error(format!("RocksDB open error: {err}")))
-}
-
-pub(crate) fn create_payload_storage(
-    database: Arc<RwLock<DB>>,
-    config: &SegmentConfig,
-    path: &Path,
 ) -> OperationResult<PayloadStorageEnum> {
     let payload_storage = match config.payload_storage_type {
         PayloadStorageType::InMemory => {
-            PayloadStorageEnum::from(SimplePayloadStorage::open(database)?)
+            PayloadStorageEnum::from(SimplePayloadStorage::open(db_builder.require()?)?)
         }
         PayloadStorageType::OnDisk => {
-            PayloadStorageEnum::from(OnDiskPayloadStorage::open(database)?)
+            PayloadStorageEnum::from(OnDiskPayloadStorage::open(db_builder.require()?)?)
         }
         PayloadStorageType::Mmap => {
-            PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(path)?)
+            PayloadStorageEnum::from(MmapPayloadStorage::open_or_create(segment_path)?)
         }
     };
     Ok(payload_storage)
@@ -506,7 +482,7 @@ pub(crate) fn create_sparse_vector_index(
 }
 
 pub(crate) fn create_sparse_vector_storage(
-    database: Arc<RwLock<DB>>,
+    db_builder: &mut RocksDbBuilder,
     path: &Path,
     vector_name: &VectorName,
     storage_type: &SparseVectorStorageType,
@@ -515,7 +491,7 @@ pub(crate) fn create_sparse_vector_storage(
     match storage_type {
         SparseVectorStorageType::OnDisk => {
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
-            open_simple_sparse_vector_storage(database, &db_column_name, stopped)
+            open_simple_sparse_vector_storage(db_builder.require()?, &db_column_name, stopped)
         }
         SparseVectorStorageType::Mmap => {
             let mmap_storage = MmapSparseVectorStorage::open_or_create(path)?;
@@ -530,11 +506,12 @@ fn create_segment(
     config: &SegmentConfig,
     stopped: &AtomicBool,
 ) -> OperationResult<Segment> {
-    let database = open_segment_db(segment_path, config)?;
+    let mut db_builder = RocksDbBuilder::new(segment_path, config)?;
+
     let payload_storage = sp(create_payload_storage(
-        database.clone(),
-        config,
+        &mut db_builder,
         segment_path,
+        config,
     )?);
 
     let appendable_flag = config.is_appendable();
@@ -545,25 +522,27 @@ fn create_segment(
     let id_tracker = if mutable_id_tracker {
         // Determine whether we use the new (file based) or old (RocksDB) mutable ID tracker
         // Decide based on the feature flag and state on disk
-        let use_new_mutable_tracker = {
+        let use_new_mutable_tracker = if let Some(db) = db_builder.read() {
             // New ID tracker is enabled by default, but we still use the old tracker if we have
             // any mappings stored in RocksDB
+            //
             // TODO(1.15 or later): remove this check and use new mutable ID tracker unconditionally
-            let db = database.read();
-            match db.cf_handle(DB_MAPPING_CF) {
-                Some(cf_handle) => {
-                    let count = db
-                        .property_int_value_cf(cf_handle, rocksdb::properties::ESTIMATE_NUM_KEYS)
-                        .map_err(|err| {
-                            OperationError::service_error(format!(
-                                "Failed to get estimated number of keys from RocksDB: {err}"
-                            ))
-                        })?
-                        .unwrap_or_default();
-                    count == 0
-                }
-                None => true,
+            if let Some(cf) = db.cf_handle(DB_MAPPING_CF) {
+                let count = db
+                    .property_int_value_cf(cf, rocksdb::properties::ESTIMATE_NUM_KEYS)
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to get estimated number of keys from RocksDB: {err}"
+                        ))
+                    })?
+                    .unwrap_or_default();
+
+                count == 0
+            } else {
+                true
             }
+        } else {
+            true
         };
 
         if use_new_mutable_tracker {
@@ -572,7 +551,7 @@ fn create_segment(
             )?))
         } else {
             sp(IdTrackerEnum::RocksDbIdTracker(create_rocksdb_id_tracker(
-                database.clone(),
+                db_builder.require()?,
             )?))
         }
     } else {
@@ -588,7 +567,7 @@ fn create_segment(
 
         // Select suitable vector storage type based on configuration
         let vector_storage = sp(open_vector_storage(
-            &database,
+            &mut db_builder,
             vector_config,
             stopped,
             &vector_storage_path,
@@ -603,7 +582,7 @@ fn create_segment(
 
         // Select suitable sparse vector storage type based on configuration
         let vector_storage = sp(create_sparse_vector_storage(
-            database.clone(),
+            &mut db_builder,
             &vector_storage_path,
             vector_name,
             &sparse_config.storage_type,
@@ -729,7 +708,7 @@ fn create_segment(
         payload_storage,
         segment_config: config.clone(),
         error_status: None,
-        database,
+        database: db_builder.build(),
         flush_thread: Mutex::new(None),
     })
 }

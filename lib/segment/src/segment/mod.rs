@@ -77,7 +77,7 @@ pub struct Segment {
     /// Last unhandled error
     /// If not None, all update operations will be aborted until original operation is performed properly
     pub error_status: Option<SegmentFailedState>,
-    pub database: Arc<RwLock<DB>>,
+    pub database: Option<Arc<RwLock<DB>>>,
     pub flush_thread: Mutex<Option<JoinHandle<OperationResult<SeqNumberType>>>>,
 }
 
