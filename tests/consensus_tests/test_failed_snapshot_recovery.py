@@ -281,6 +281,17 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
+    print("Checking that the shard initializing flag was removed after transfer was started")
+    try:
+        def check_flag_deleted():
+            res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+            print(res)
+            return not os.path.exists(flag_path)
+
+        wait_for(check_flag_deleted)
+    except Exception as e:
+        raise Exception(f"Flag {flag_path} still exists after recovery: {e}")
+
     # Kill again after transfer starts (shard initializing flag has been deleted and shard is empty)
     p = processes.pop()
     p.kill()
