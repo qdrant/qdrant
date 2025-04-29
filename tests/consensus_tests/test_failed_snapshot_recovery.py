@@ -212,6 +212,8 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     new_ids = [r["id"] for r in new_scroll_result]
     initial_ids = [r["id"] for r in initial_scroll_result]
     if new_ids != initial_ids:
+        res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+        print(res)
         print("IDs are not equal after recovery", new_ids, initial_ids)
     # assert new_ids == initial_ids, (new_ids, initial_ids)
 
@@ -331,5 +333,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     new_ids = [r["id"] for r in new_scroll_result]
     initial_ids = [r["id"] for r in initial_scroll_result]
     if new_ids != initial_ids:
+        res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+        print(res)
         print("IDs are not equal after recovery", new_ids, initial_ids)
     # assert new_ids == initial_ids, (new_ids, initial_ids)
