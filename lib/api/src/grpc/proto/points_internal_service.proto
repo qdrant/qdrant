@@ -17,6 +17,7 @@ service PointsInternal {
   rpc ClearPayload (ClearPayloadPointsInternal) returns (PointsOperationResponseInternal) {}
   rpc CreateFieldIndex (CreateFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
   rpc DeleteFieldIndex (DeleteFieldIndexCollectionInternal) returns (PointsOperationResponseInternal) {}
+  rpc UpdateBatch (UpdateBatchInternal) returns (PointsOperationResponseInternal) {}
   rpc CoreSearchBatch (CoreSearchBatchPointsInternal) returns (SearchBatchResponse) {}
   rpc Scroll (ScrollPointsInternal) returns (ScrollResponse) {}
   rpc Count (CountPointsInternal) returns (CountResponse) {}
@@ -95,6 +96,28 @@ message DeleteFieldIndexCollectionInternal {
   optional uint32 shard_id = 2;
   optional ClockTag clock_tag = 3;
 }
+
+message UpdateOperation {
+    oneof update {
+        SyncPointsInternal sync = 1;
+        UpsertPointsInternal upsert = 2;
+        DeletePointsInternal delete = 3;
+        UpdateVectorsInternal update_vectors = 4;
+        DeleteVectorsInternal delete_vectors = 5;
+        SetPayloadPointsInternal set_payload = 6;
+        SetPayloadPointsInternal overwrite_payload = 7;
+        DeletePayloadPointsInternal delete_payload = 8;
+        ClearPayloadPointsInternal clear_payload = 9;
+        CreateFieldIndexCollectionInternal create_field_index = 10;
+        DeleteFieldIndexCollectionInternal delete_field_index = 11;
+    }
+}
+
+
+message UpdateBatchInternal {
+    repeated UpdateOperation operations = 1;
+}
+
 
 // Has to be backward compatible with `PointsOperationResponse`!
 message PointsOperationResponseInternal {
