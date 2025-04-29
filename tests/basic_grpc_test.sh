@@ -65,6 +65,31 @@ fi
   ]
 }' $QDRANT_HOST qdrant.Points/Upsert
 
+# Update payload for a given point
+"${docker_grpcurl[@]}" -d '{
+  "collection_name": "test_collection",
+  "points": [
+    {
+      "id": { "num": 1 },
+      "vectors": { "vector": { "data": [0.05, 0.61, 0.76, 0.74] }},
+      "payload": {}
+    }
+  ]
+}' $QDRANT_HOST qdrant.Points/Upsert
+
+# Retrieve point by ID
+response=$("${docker_grpcurl[@]}" -d '{
+  "collection_name": "test_collection",
+  "with_payload": {"enable": true},
+  "with_vectors": {"enable": true},
+  "ids": [{ "num": 1 }]
+}' $QDRANT_HOST qdrant.Points/Get) | jq -r '.result[0].payload'
+
+if [[ "$response" != "" ]]; then
+  echo "Payload should be empty."
+  exit 1
+fi
+
 # Insert invalid sparse vector, check that validation error is returned
 "${docker_grpcurl[@]}" -d '{
   "collection_name": "test_collection",
