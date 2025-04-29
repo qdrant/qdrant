@@ -517,7 +517,7 @@ impl<V> Gridstore<V> {
             for (page_id, pointer_group) in
                 &old_pointers.into_iter().chunk_by(|pointer| pointer.page_id)
             {
-                let relative_ranges = pointer_group.map(|pointer| {
+                let local_ranges = pointer_group.map(|pointer| {
                     let start = pointer.block_offset;
                     let end = pointer.block_offset
                         + Self::blocks_for_value(
@@ -526,7 +526,7 @@ impl<V> Gridstore<V> {
                         );
                     start as usize..end as usize
                 });
-                guard.mark_blocks_batch(page_id, relative_ranges, false);
+                guard.mark_blocks_batch(page_id, local_ranges, false);
             }
         });
         bitmask_guard.flush()?;

@@ -374,14 +374,14 @@ impl Bitmask {
     pub(crate) fn mark_blocks_batch(
         &mut self,
         page_id: PageId,
-        relative_block_ranges: impl Iterator<Item = Range<usize>>,
+        local_block_ranges: impl Iterator<Item = Range<usize>>,
         used: bool,
     ) {
         let page_start = self.range_of_page(page_id).start;
 
         let mut lowest_offset = usize::MAX;
         let mut highest_offset = page_start;
-        for range in relative_block_ranges {
+        for range in local_block_ranges {
             let bitmask_range = (range.start + page_start)..(range.end + page_start);
             self.bitslice[bitmask_range.clone()].fill(used);
 
