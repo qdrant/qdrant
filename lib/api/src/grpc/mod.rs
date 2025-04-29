@@ -7,6 +7,7 @@ pub mod dynamic_pool;
 #[rustfmt::skip] // tonic uses `prettyplease` to format its output
 #[path = "grpc.health.v1.rs"]
 pub mod grpc_health_v1;
+pub mod ops;
 pub mod transport_channel_pool;
 pub mod validate;
 

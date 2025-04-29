@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use api::grpc::HardwareUsage;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
@@ -557,6 +558,8 @@ impl PointsInternal for PointsInternalService {
 
         let request_inner = request.into_inner();
 
+        let mut total_usage = HardwareUsage::default();
+
         let mut last_result = None;
         // This API:
         // - Sequentially applies all operations
@@ -605,17 +608,26 @@ impl PointsInternal for PointsInternalService {
                     }
                 },
             };
-            last_result = Some(result)
+            let mut response = result.into_inner();
+
+            if let Some(usage) = response.usage.take() {
+                total_usage.add(usage);
+            }
+
+            last_result = Some(response)
         }
 
-        Ok(last_result.unwrap_or_else(|| {
+        if let Some(mut last_result) = last_result.take() {
+            last_result.usage = Some(total_usage);
+            Ok(Response::new(last_result))
+        } else {
             // This response is possible if there are no operations in the request
-            Response::new(PointsOperationResponseInternal {
+            Ok(Response::new(PointsOperationResponseInternal {
                 result: None,
                 time: 0.0,
                 usage: None,
-            })
-        }))
+            }))
+        }
     }
 
     async fn core_search_batch(
