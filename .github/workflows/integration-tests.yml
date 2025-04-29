@@ -14,7 +14,6 @@ jobs:
   integration-tests:
 
     runs-on: ubuntu-latest
-    if: false
 
     steps:
       - name: Install minimal stable
@@ -70,17 +69,11 @@ jobs:
           poetry -C tests install --no-root
       - name: Build
         run: cargo build --features "service_debug data-consistency-check" --locked
+      - name: Run integration tests - 1 peer
+        run: poetry -C tests run ./tests/integration-tests.sh distributed
+        shell: bash
       - name: Run integration tests - multiple peers - pytest
-        run: |
-          set +e # ignore errors
-          counter=0
-          while poetry -C tests run pytest -vv tests/consensus_tests --durations=10 -k "test_failed_snapshot_recovery"; do
-              counter=$((counter + 1))
-              echo "==========Test passed $counter times. Running again...========="
-          done
-
-          echo "Test failed. Exiting."
-          exit 1
+        run: poetry -C tests run pytest tests/consensus_tests --durations=10
         timeout-minutes: 60
       - name: upload logs
         uses: actions/upload-artifact@v4
