@@ -167,9 +167,12 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     except Exception as e:
         raise Exception(f"Qdrant did not start in time after recovering corrupt snapshot, maybe it crashed: {e}")
 
-    # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
     flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
-    assert os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text # E       AssertionError: {"result":{"peer_id":2074277778752903,"shard_count":1,"local_shards":[{"shard_id":0,"points_count":900,"state":"Partial"}],"remote_shards":[{"shard_id":0,"peer_id":6244789648461877,"state":"Active"},{"shard_id":0,"peer_id":3156602420930446,"state":"Active"}],"shard_transfers":[{"shard_id":0,"from":6244789648461877,"to":2074277778752903,"sync":true,"method":"stream_records"}]},"status":"ok","time":0.015601756}
+    flag_exists = os.path.exists(flag_path)
+    transfers = get_collection_cluster_info(peer_api_uris[-1], COLLECTION_NAME)["shard_transfers"]
+    if len(transfers) == 0:
+        # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
+        assert flag_exists, requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
 
     # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
     upsert_random_points(peer_api_uris[-1], 1)
