@@ -191,7 +191,7 @@ impl<'a> GpuInsertContext<'a> {
         // Required for tests.
         exact: bool,
         // If points count is very big, we share visited flags buffer between multiple points.
-        // This paramater sets a factor how many points can share one visited flag.
+        // This parameter sets a factor how many points can share one visited flag.
         visited_flags_factor_range: std::ops::Range<usize>,
     ) -> OperationResult<Self> {
         let device = gpu_vector_storage.device();
