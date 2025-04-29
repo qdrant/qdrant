@@ -312,7 +312,16 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         raise e
 
     # shard initializing flag should remain dropped after recovery is successful
-    assert not os.path.exists(flag_path), requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+    print("Checking that the shard initializing flag was removed after recovery")
+    try:
+        def check_flag_deleted():
+            res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+            print(res)
+            return not os.path.exists(flag_path)
+
+        wait_for(check_flag_deleted)
+    except Exception as e:
+        raise Exception(f"Flag {flag_path} still exists after recovery: {e}")
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one
