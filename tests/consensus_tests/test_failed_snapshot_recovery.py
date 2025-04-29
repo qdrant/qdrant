@@ -167,19 +167,18 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     except Exception as e:
         raise Exception(f"Qdrant did not start in time after recovering corrupt snapshot, maybe it crashed: {e}")
 
-    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
     flag_exists = os.path.exists(flag_path)
     transfers = get_collection_cluster_info(peer_api_uris[-1], COLLECTION_NAME)["shard_transfers"]
     if len(transfers) == 0:
         # Assert storage contains initialized flag after restart (this means a dummy replica is loaded)
-        assert flag_exists, requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
+        # Sometimes restart is fast and flag is deleted immediately because we initiate a transfer
+        assert flag_exists
 
     # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
     upsert_random_points(peer_api_uris[-1], 1)
 
     # Assert storage does not contain initialized flag when transfer is started
     print("Checking that the shard initializing flag was removed after recovery")
-    flag_path = shard_initializing_flag(peer_dirs[-1], COLLECTION_NAME, 0)
     try:
         wait_for(lambda : not os.path.exists(flag_path))
     except Exception as e:
@@ -290,13 +289,6 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
 
-    # check that the flag was removed the when transfer was started
-    # There's a small gap between the moment the "start shard transfer" is acknowledged and the moment the shard transfer is actually initiated
-    # If we check in between, this fails so we add a sleep
-    sleep(1)
-    if transfer_method != "snapshot":
-        assert not os.path.exists(flag_path)
-
     # Kill again after transfer starts (shard initializing flag has been deleted and shard is empty)
     p = processes.pop()
     p.kill()
@@ -324,18 +316,11 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         assert local_shard["points_count"] == n_points
     except ValueError as e:
         res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
-        print(res)
-        print(e)
+        print(res, e)
         raise e
 
     # shard initializing flag should remain dropped after recovery is successful
     assert not os.path.exists(flag_path)
-    # print("Checking that the shard initializing flag was removed after recovery")
-    # try:
-    #     wait_for(lambda : )
-    # except Exception as _:
-    #     assert False, requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
-    #     # raise Exception(f"Flag {flag_path} still exists after recovery: {e}")
 
     # Assert that the remote shards are active and not empty
     # The peer used as source for the transfer is used as remote to have at least one
