@@ -9331,6 +9331,57 @@ pub struct DeleteFieldIndexCollectionInternal {
     #[prost(message, optional, tag = "3")]
     pub clock_tag: ::core::option::Option<ClockTag>,
 }
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateOperation {
+    #[prost(
+        oneof = "update_operation::Update",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11"
+    )]
+    #[validate(nested)]
+    pub update: ::core::option::Option<update_operation::Update>,
+}
+/// Nested message and enum types in `UpdateOperation`.
+pub mod update_operation {
+    #[derive(serde::Serialize)]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Update {
+        #[prost(message, tag = "1")]
+        Sync(super::SyncPointsInternal),
+        #[prost(message, tag = "2")]
+        Upsert(super::UpsertPointsInternal),
+        #[prost(message, tag = "3")]
+        Delete(super::DeletePointsInternal),
+        #[prost(message, tag = "4")]
+        UpdateVectors(super::UpdateVectorsInternal),
+        #[prost(message, tag = "5")]
+        DeleteVectors(super::DeleteVectorsInternal),
+        #[prost(message, tag = "6")]
+        SetPayload(super::SetPayloadPointsInternal),
+        #[prost(message, tag = "7")]
+        OverwritePayload(super::SetPayloadPointsInternal),
+        #[prost(message, tag = "8")]
+        DeletePayload(super::DeletePayloadPointsInternal),
+        #[prost(message, tag = "9")]
+        ClearPayload(super::ClearPayloadPointsInternal),
+        #[prost(message, tag = "10")]
+        CreateFieldIndex(super::CreateFieldIndexCollectionInternal),
+        #[prost(message, tag = "11")]
+        DeleteFieldIndex(super::DeleteFieldIndexCollectionInternal),
+    }
+}
+#[derive(serde::Serialize)]
+#[derive(validator::Validate)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateBatchInternal {
+    #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
+    pub operations: ::prost::alloc::vec::Vec<UpdateOperation>,
+}
 /// Has to be backward compatible with `PointsOperationResponse`!
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -10200,6 +10251,31 @@ pub mod points_internal_client {
                 .insert(GrpcMethod::new("qdrant.PointsInternal", "DeleteFieldIndex"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn update_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateBatchInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/qdrant.PointsInternal/UpdateBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("qdrant.PointsInternal", "UpdateBatch"));
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn core_search_batch(
             &mut self,
             request: impl tonic::IntoRequest<super::CoreSearchBatchPointsInternal>,
@@ -10447,6 +10523,13 @@ pub mod points_internal_server {
         async fn delete_field_index(
             &self,
             request: tonic::Request<super::DeleteFieldIndexCollectionInternal>,
+        ) -> std::result::Result<
+            tonic::Response<super::PointsOperationResponseInternal>,
+            tonic::Status,
+        >;
+        async fn update_batch(
+            &self,
+            request: tonic::Request<super::UpdateBatchInternal>,
         ) -> std::result::Result<
             tonic::Response<super::PointsOperationResponseInternal>,
             tonic::Status,
@@ -11071,6 +11154,52 @@ pub mod points_internal_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = DeleteFieldIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/qdrant.PointsInternal/UpdateBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateBatchSvc<T: PointsInternal>(pub Arc<T>);
+                    impl<
+                        T: PointsInternal,
+                    > tonic::server::UnaryService<super::UpdateBatchInternal>
+                    for UpdateBatchSvc<T> {
+                        type Response = super::PointsOperationResponseInternal;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateBatchInternal>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PointsInternal>::update_batch(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = UpdateBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

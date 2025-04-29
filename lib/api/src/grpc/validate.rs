@@ -195,6 +195,25 @@ impl Validate for grpc::condition::ConditionOneOf {
     }
 }
 
+impl Validate for grpc::update_operation::Update {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        use grpc::update_operation::Update;
+        match self {
+            Update::Sync(op) => op.validate(),
+            Update::Upsert(op) => op.validate(),
+            Update::Delete(op) => op.validate(),
+            Update::UpdateVectors(op) => op.validate(),
+            Update::DeleteVectors(op) => op.validate(),
+            Update::SetPayload(op) => op.validate(),
+            Update::OverwritePayload(op) => op.validate(),
+            Update::DeletePayload(op) => op.validate(),
+            Update::ClearPayload(op) => op.validate(),
+            Update::CreateFieldIndex(op) => op.validate(),
+            Update::DeleteFieldIndex(op) => op.validate(),
+        }
+    }
+}
+
 impl Validate for grpc::FieldCondition {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let grpc::FieldCondition {

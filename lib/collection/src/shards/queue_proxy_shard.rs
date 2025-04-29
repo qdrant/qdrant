@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -17,6 +17,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -41,6 +42,9 @@ const BATCH_SIZE: usize = 10;
 
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
+
+static MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
 
 /// QueueProxyShard shard
 ///
@@ -507,6 +511,13 @@ impl Inner {
             drop(update_lock.take());
         }
 
+        // If we are transferring the last batch, we need to wait for it to be applied.
+        //  - Why can we not wait? Assuming that order of operations is still enforced by the WAL,
+        //    we should end up in exactly the same state with or without waiting.
+        //  - Why do we need to wait on the last batch? If we switch to ready state before
+        //    updates are actually applied, we might create an inconsistency for read operations.
+        let wait = last_batch;
+
         // Set initial progress on the first batch
         let is_first = transfer_from == self.started_at;
         if is_first {
@@ -517,7 +528,7 @@ impl Inner {
         let last_idx = batch.last().map(|(idx, _)| *idx);
         for remaining_attempts in (0..BATCH_RETRIES).rev() {
             let disposed_hw = HwMeasurementAcc::disposable(); // Internal operation
-            match transfer_operations_batch(&batch, &self.remote_shard, disposed_hw).await {
+            match transfer_operations_batch(&batch, &self.remote_shard, wait, disposed_hw).await {
                 Ok(()) => {
                     if let Some(idx) = last_idx {
                         self.transfer_from.store(idx + 1, Ordering::Relaxed);
@@ -702,9 +713,42 @@ impl ShardOperation for Inner {
 async fn transfer_operations_batch(
     batch: &[(u64, OperationWithClockTag)],
     remote_shard: &RemoteShard,
+    wait: bool,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
-    // TODO: naive transfer approach, transfer batch of points instead
+    if batch.is_empty() {
+        return Ok(());
+    }
+
+    let supports_update_batching =
+        remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
+
+    if supports_update_batching {
+        let mut batch_upd = Vec::with_capacity(batch.len());
+
+        for (_idx, operation) in batch {
+            let mut operation = operation.clone();
+            // Set force flag because operations from WAL may be unordered if another node is sending
+            // new operations at the same time
+            if let Some(clock_tag) = &mut operation.clock_tag {
+                clock_tag.force = true;
+            }
+            batch_upd.push(operation);
+        }
+
+        remote_shard
+            .forward_update_batch(
+                batch_upd,
+                wait,
+                WriteOrdering::Weak,
+                hw_measurement_acc.clone(),
+            )
+            .await?;
+
+        return Ok(());
+    }
+
+    // Fallback to one-by-one transfer, in case the remote shard doesn't support batch updates
     for (_idx, operation) in batch {
         let mut operation = operation.clone();
 
@@ -717,7 +761,7 @@ async fn transfer_operations_batch(
         remote_shard
             .forward_update(
                 operation,
-                true,
+                wait,
                 WriteOrdering::Weak,
                 hw_measurement_acc.clone(),
             )
