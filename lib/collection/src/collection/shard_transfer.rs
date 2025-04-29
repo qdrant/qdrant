@@ -437,7 +437,7 @@ impl Collection {
                     // We can delete initializing flag without waiting for transfer to finish
                     // because if transfer fails in between, Qdrant will retry it.
                     tokio::fs::remove_file(&shard_flag).await?;
-                    log::debug!("Removing shard initializing flag {shard_flag:?}");
+                    log::debug!("Removed shard initializing flag {shard_flag:?}");
                 }
             }
 
