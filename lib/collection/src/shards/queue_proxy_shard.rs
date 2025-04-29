@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -17,6 +17,7 @@ use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -41,6 +42,9 @@ const BATCH_SIZE: usize = 10;
 
 /// Number of times to retry transferring updates batch
 const BATCH_RETRIES: usize = MAX_RETRY_COUNT;
+
+static MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
 
 /// QueueProxyShard shard
 ///
@@ -712,7 +716,35 @@ async fn transfer_operations_batch(
     wait: bool,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> CollectionResult<()> {
-    // TODO: naive transfer approach, transfer batch of points instead
+    let supports_update_batching =
+        remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_WAL_TRANSFER);
+
+    if supports_update_batching {
+        let mut batch_upd = Vec::with_capacity(batch.len());
+
+        for (_idx, operation) in batch {
+            let mut operation = operation.clone();
+            // Set force flag because operations from WAL may be unordered if another node is sending
+            // new operations at the same time
+            if let Some(clock_tag) = &mut operation.clock_tag {
+                clock_tag.force = true;
+            }
+            batch_upd.push(operation);
+        }
+
+        remote_shard
+            .forward_update_batch(
+                batch_upd,
+                wait,
+                WriteOrdering::Weak,
+                hw_measurement_acc.clone(),
+            )
+            .await?;
+
+        return Ok(());
+    }
+
+    // Fallback to one-by-one transfer, in case the remote shard doesn't support batch updates
     for (_idx, operation) in batch {
         let mut operation = operation.clone();
 

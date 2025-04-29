@@ -18,6 +18,8 @@ use api::grpc::qdrant::{
     UpdateShardCutoffPointRequest, WaitForShardStateRequest,
 };
 use api::grpc::transport_channel_pool::{AddTimeout, MAX_GRPC_CHANNEL_TIMEOUT};
+use api::grpc::update_operation::Update;
+use api::grpc::{UpdateBatchInternal, UpdateOperation};
 use async_trait::async_trait;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::types::TelemetryDetail;
@@ -31,6 +33,7 @@ use segment::data_types::order_by::OrderBy;
 use segment::types::{
     ExtendedPointId, Filter, ScoredPoint, WithPayload, WithPayloadInterface, WithVector,
 };
+use semver::Version;
 use tokio::runtime::Handle;
 use tonic::Status;
 use tonic::codegen::InterceptedService;
@@ -97,6 +100,14 @@ impl RemoteShard {
             telemetry_search_durations: OperationDurationsAggregator::new(),
             telemetry_update_durations: OperationDurationsAggregator::new(),
         }
+    }
+
+    /// Checks that remote shard is at least at the given version
+    /// - Returns `true` if we know that the peer is at least at the given version
+    /// - Returns `false` if we know that the peer not at the given version or version is unknown
+    pub fn check_version(&self, version: &Version) -> bool {
+        self.channel_service
+            .peer_is_at_version(self.peer_id, version)
     }
 
     pub fn restore_snapshot(_snapshot_path: &Path) {
@@ -213,6 +224,219 @@ impl RemoteShard {
             .await?
             .into_inner();
         Ok(res)
+    }
+
+    pub async fn forward_update_batch(
+        &self,
+        operations: Vec<OperationWithClockTag>,
+        wait: bool,
+        ordering: WriteOrdering,
+        hw_measurement_acc: HwMeasurementAcc,
+    ) -> CollectionResult<UpdateResult> {
+        let mut updates = Vec::with_capacity(operations.len());
+
+        let shard_id = Some(self.id);
+        let collection_name = &self.collection_id;
+        let ordering = Some(ordering);
+
+        for operation in operations {
+            let update_op = match operation.operation {
+                CollectionUpdateOperations::PointOperation(point_ops) => match point_ops {
+                    PointOperations::UpsertPoints(point_insert_operations) => {
+                        let request = internal_upsert_points(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            point_insert_operations,
+                            wait,
+                            ordering,
+                        )?;
+
+                        Update::Upsert(request)
+                    }
+                    PointOperations::DeletePoints { ids } => {
+                        let request = internal_delete_points(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            ids,
+                            wait,
+                            ordering,
+                        );
+                        Update::Delete(request)
+                    }
+                    PointOperations::DeletePointsByFilter(filter) => {
+                        let request = internal_delete_points_by_filter(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            filter,
+                            wait,
+                            ordering,
+                        );
+                        Update::Delete(request)
+                    }
+                    PointOperations::SyncPoints(operation) => {
+                        let request = internal_sync_points(
+                            shard_id,
+                            None, // TODO!?
+                            collection_name.clone(),
+                            operation,
+                            wait,
+                            ordering,
+                        )?;
+                        Update::Sync(request)
+                    }
+                },
+                CollectionUpdateOperations::VectorOperation(vector_ops) => match vector_ops {
+                    VectorOperations::UpdateVectors(update_operation) => {
+                        let request = internal_update_vectors(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            update_operation,
+                            wait,
+                            ordering,
+                        )?;
+                        Update::UpdateVectors(request)
+                    }
+                    VectorOperations::DeleteVectors(ids, vector_names) => {
+                        let request = internal_delete_vectors(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            ids.points,
+                            vector_names.clone(),
+                            wait,
+                            ordering,
+                        );
+                        Update::DeleteVectors(request)
+                    }
+                    VectorOperations::DeleteVectorsByFilter(filter, vector_names) => {
+                        let request = internal_delete_vectors_by_filter(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            filter,
+                            vector_names.clone(),
+                            wait,
+                            ordering,
+                        );
+                        Update::DeleteVectors(request)
+                    }
+                },
+                CollectionUpdateOperations::PayloadOperation(payload_ops) => match payload_ops {
+                    PayloadOps::SetPayload(set_payload) => {
+                        let request = internal_set_payload(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            set_payload,
+                            wait,
+                            ordering,
+                        );
+                        Update::SetPayload(request)
+                    }
+                    PayloadOps::DeletePayload(delete_payload) => {
+                        let request = internal_delete_payload(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            delete_payload,
+                            wait,
+                            ordering,
+                        );
+                        Update::DeletePayload(request)
+                    }
+                    PayloadOps::ClearPayload { points } => {
+                        let request = internal_clear_payload(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            points,
+                            wait,
+                            ordering,
+                        );
+                        Update::ClearPayload(request)
+                    }
+                    PayloadOps::ClearPayloadByFilter(filter) => {
+                        let request = internal_clear_payload_by_filter(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            filter,
+                            wait,
+                            ordering,
+                        );
+                        Update::ClearPayload(request)
+                    }
+                    PayloadOps::OverwritePayload(set_payload) => {
+                        let request = internal_set_payload(
+                            shard_id,
+                            operation.clock_tag,
+                            collection_name.clone(),
+                            set_payload,
+                            wait,
+                            ordering,
+                        );
+                        Update::OverwritePayload(request)
+                    }
+                },
+                CollectionUpdateOperations::FieldIndexOperation(field_index_op) => {
+                    match field_index_op {
+                        FieldIndexOperations::CreateIndex(create_index) => {
+                            let request = internal_create_index(
+                                shard_id,
+                                operation.clock_tag,
+                                collection_name.clone(),
+                                create_index,
+                                wait,
+                                ordering,
+                            );
+                            Update::CreateFieldIndex(request)
+                        }
+                        FieldIndexOperations::DeleteIndex(delete_index) => {
+                            let request = internal_delete_index(
+                                shard_id,
+                                operation.clock_tag,
+                                collection_name.clone(),
+                                delete_index,
+                                wait,
+                                ordering,
+                            );
+                            Update::DeleteFieldIndex(request)
+                        }
+                    }
+                }
+            };
+            updates.push(UpdateOperation {
+                update: Some(update_op),
+            });
+        }
+
+        let batch_request = &UpdateBatchInternal {
+            operations: updates,
+        };
+
+        let point_operation_response = self
+            .with_points_client(|mut client| async move {
+                client
+                    .update_batch(tonic::Request::new(batch_request.clone()))
+                    .await
+            })
+            .await?
+            .into_inner();
+
+        if let Some(hw_usage) = point_operation_response.usage {
+            hw_measurement_acc.accumulate_request(hw_usage);
+        }
+
+        match point_operation_response.result {
+            None => Err(CollectionError::service_error(
+                "Malformed UpdateResult type".to_string(),
+            )),
+            Some(update_result) => update_result.try_into().map_err(|e: Status| e.into()),
+        }
     }
 
     /// # Cancel safety
