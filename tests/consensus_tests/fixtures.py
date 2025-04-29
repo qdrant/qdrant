@@ -210,6 +210,15 @@ def search(peer_url, vector, city, collection="test_collection"):
     assert_http_ok(r_search)
     return r_search.json()["result"]
 
+def scroll(peer_url, city, collection="test_collection"):
+    q = {
+        "with_vector": False,
+        "with_payload": True,
+        "filter": {"must": [{"key": "city", "match": {"value": city}}]},
+    }
+    r_search = requests.post(f"{peer_url}/collections/{collection}/points/scroll", json=q)
+    assert_http_ok(r_search)
+    return r_search.json()["result"]["points"]
 
 def count_counts(peer_url, collection="test_collection"):
     r_search = requests.post(

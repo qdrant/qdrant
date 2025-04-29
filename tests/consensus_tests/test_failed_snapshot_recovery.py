@@ -5,7 +5,7 @@ import shutil
 import requests
 from time import sleep
 
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search
+from .fixtures import create_collection, upsert_random_points, random_dense_vector, search, scroll
 from .utils import *
 
 N_PEERS = 3
@@ -115,9 +115,8 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
     query_city = "London"
 
-    dense_query_vector = random_dense_vector()
-    initial_dense_search_result = search(peer_api_uris[0], dense_query_vector, query_city)
-    assert len(initial_dense_search_result) > 0
+    initial_scroll_result = scroll(peer_api_uris[0], query_city)
+    assert len(initial_scroll_result) > 0
 
     snapshot_name = create_snapshot(peer_api_uris[-1])
     assert snapshot_name is not None
@@ -153,19 +152,9 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
 
     # Assert the node does not crash when starting with data from corrupted snapshot
     try:
-        def is_qdrant_started() -> bool:
-            try:
-                res = requests.get(f"{peer_api_uris[-1]}/collections")
-            except requests.exceptions.ConnectionError:
-                return False
-            if not res.ok:
-                return False
-            collections = set(collection['name'] for collection in res.json()["result"]['collections'])
-            return COLLECTION_NAME in collections
-
-        wait_for(is_qdrant_started)
+        wait_for_collection(peer_api_uris[-1], COLLECTION_NAME)
     except Exception as e:
-        raise Exception(f"Qdrant did not start in time after recovering corrupt snapshot, maybe it crashed: {e}")
+        raise Exception(f"Qdrant collection did not start in time after recovering corrupt snapshot, maybe Qdrant crashed: {e}")
 
     flag_exists = os.path.exists(flag_path)
     transfers = get_collection_cluster_info(peer_api_uris[-1], COLLECTION_NAME)["shard_transfers"]
@@ -217,11 +206,11 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     for shard in remote_shards:
         assert shard["state"] == "Active"
 
-    # Check that 'search' returns the same results after recovery
-    new_dense_search_result = search(peer_api_uris[-1], dense_query_vector, query_city)
-    assert len(new_dense_search_result) == len(initial_dense_search_result)
-    new_ids = [r["id"] for r in new_dense_search_result]
-    initial_ids = [r["id"] for r in initial_dense_search_result]
+    # Check that 'scroll' returns the same results after recovery
+    new_scroll_result = scroll(peer_api_uris[-1], query_city)
+    assert len(new_scroll_result) == len(initial_scroll_result)
+    new_ids = [r["id"] for r in new_scroll_result]
+    initial_ids = [r["id"] for r in initial_scroll_result]
     assert new_ids == initial_ids, (new_ids, initial_ids)
 
 
@@ -253,11 +242,10 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
 
     query_city = "London"
 
-    dense_query_vector = random_dense_vector()
-    initial_dense_search_result = search(
-        peer_api_uris[0], dense_query_vector, query_city
+    initial_scroll_result = scroll(
+        peer_api_uris[0], query_city
     )
-    assert len(initial_dense_search_result) > 0
+    assert len(initial_scroll_result) > 0
 
     # Simulate killing on snapshot recovery (corrupting shard dir and adding a shard initializing flag)
     # this can happen in practice when a node is killed while shard directory was being moved from /qdrant/snapshots to /qdrant/storage
@@ -335,9 +323,9 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     for shard in remote_shards:
         assert shard["state"] == "Active"
 
-    # Check that 'search' returns the same results after recovery
-    new_dense_search_result = search(peer_api_uris[-1], dense_query_vector, query_city)
-    assert len(new_dense_search_result) == len(initial_dense_search_result)
-    new_ids = [r["id"] for r in new_dense_search_result]
-    initial_ids = [r["id"] for r in initial_dense_search_result]
+    # Check that 'scroll' returns the same results after recovery
+    new_scroll_result = scroll(peer_api_uris[-1], query_city)
+    assert len(new_scroll_result) == len(initial_scroll_result)
+    new_ids = [r["id"] for r in new_scroll_result]
+    initial_ids = [r["id"] for r in initial_scroll_result]
     assert new_ids == initial_ids, (new_ids, initial_ids)
