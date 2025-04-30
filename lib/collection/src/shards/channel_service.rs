@@ -66,7 +66,7 @@ impl ChannelService {
         commit: u64,
         term: u64,
         timeout: Duration,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         let requests = self
             .id_to_address
             .read()
@@ -110,7 +110,7 @@ impl ChannelService {
         commit: u64,
         term: u64,
         timeout: Duration,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         let response = self
             .with_qdrant_client(peer_id, |mut client| async move {
                 let request = WaitOnConsensusCommitRequest {
@@ -141,7 +141,7 @@ impl ChannelService {
         &self,
         peer_id: PeerId,
         f: impl Fn(QdrantInternalClient<InterceptedService<Channel, AddTimeout>>) -> O,
-    ) -> Result<T, CollectionError> {
+    ) -> CollectionResult<T> {
         let address = self
             .id_to_address
             .read()

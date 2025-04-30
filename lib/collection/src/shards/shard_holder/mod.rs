@@ -142,10 +142,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub async fn drop_and_remove_shard(
-        &mut self,
-        shard_id: ShardId,
-    ) -> Result<(), CollectionError> {
+    pub async fn drop_and_remove_shard(&mut self, shard_id: ShardId) -> CollectionResult<()> {
         if let Some(replica_set) = self.shards.remove(&shard_id) {
             let shard_path = replica_set.shard_path.clone();
             drop(replica_set);
@@ -170,7 +167,7 @@ impl ShardHolder {
         &mut self,
         shard_id: ShardId,
         shard_key: &ShardKey,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         self.key_mapping.write_optional(|key_mapping| {
             if !key_mapping.contains_key(shard_key) {
                 return None;
@@ -190,7 +187,7 @@ impl ShardHolder {
         shard_id: ShardId,
         shard: ShardReplicaSet,
         shard_key: Option<ShardKey>,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         self.shards.insert(shard_id, shard);
         self.rings
             .entry(shard_key.clone())
@@ -217,7 +214,7 @@ impl ShardHolder {
         Ok(())
     }
 
-    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> Result<(), CollectionError> {
+    pub async fn remove_shard_key(&mut self, shard_key: &ShardKey) -> CollectionResult<()> {
         let mut remove_shard_ids = Vec::new();
 
         self.key_mapping.write_optional(|key_mapping| {
@@ -275,7 +272,7 @@ impl ShardHolder {
         shard_ids: HashSet<ShardId>,
         shard_key_mapping: ShardKeyMapping,
         extra_shards: HashMap<ShardId, ShardReplicaSet>,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         self.shards.extend(extra_shards.into_iter());
 
         let all_shard_ids = self.shards.keys().cloned().collect::<HashSet<_>>();

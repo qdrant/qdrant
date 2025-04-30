@@ -392,7 +392,7 @@ impl LocalShard {
         fusion: FusionInternal,
         score_threshold: Option<f32>,
         limit: usize,
-    ) -> Result<Vec<ScoredPoint>, CollectionError> {
+    ) -> CollectionResult<Vec<ScoredPoint>> {
         let fused = match fusion {
             FusionInternal::Rrf => rrf_scoring(sources),
             FusionInternal::Dbsf => score_fusion(sources, ScoreFusion::dbsf()),

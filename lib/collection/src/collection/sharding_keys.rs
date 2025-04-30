@@ -5,7 +5,7 @@ use segment::types::ShardKey;
 
 use crate::collection::Collection;
 use crate::config::ShardingMethod;
-use crate::operations::types::CollectionError;
+use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::{
     CollectionUpdateOperations, CreateIndex, FieldIndexOperations, OperationWithClockTag,
 };
@@ -19,7 +19,7 @@ impl Collection {
         shard_key: Option<ShardKey>,
         replicas: &[PeerId],
         init_state: Option<ReplicaState>,
-    ) -> Result<ShardReplicaSet, CollectionError> {
+    ) -> CollectionResult<ShardReplicaSet> {
         let is_local = replicas.contains(&self.this_peer_id);
 
         let peers = replicas
@@ -60,7 +60,7 @@ impl Collection {
         &self,
         shard_key: ShardKey,
         placement: ShardsPlacement,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         let hw_counter = HwMeasurementAcc::disposable(); // Internal operation. No measurement needed.
 
         let state = self.state().await;
@@ -142,7 +142,7 @@ impl Collection {
         Ok(())
     }
 
-    pub async fn drop_shard_key(&self, shard_key: ShardKey) -> Result<(), CollectionError> {
+    pub async fn drop_shard_key(&self, shard_key: ShardKey) -> CollectionResult<()> {
         let state = self.state().await;
 
         match state.config.params.sharding_method.unwrap_or_default() {
