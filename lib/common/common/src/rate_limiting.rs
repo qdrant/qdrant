@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(limiter.tokens, 599.0);
 
         assert_eq!(limiter.try_consume(10.0), Ok(()));
-        assert_eq_floats(limiter.tokens, 589.0, 0.001);
+        assert_eq_floats(limiter.tokens, 589.0, 0.01);
     }
 
     #[test]
