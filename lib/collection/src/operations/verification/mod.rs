@@ -305,8 +305,8 @@ pub fn check_grouping_field(
     if strict_mode_config.unindexed_filtering_retrieve == Some(false) {
         // check the group_by field is indexed and support `match` statement
         if let Some(schema) = collection.payload_key_index_schema(group_by) {
-            let schema_kind = schema.kind();
-            if !schema_kind.support_match() {
+            if !schema.supports_match() {
+                let schema_kind = schema.kind();
                 return Err(CollectionError::strict_mode(
                     format!("Index of type \"{schema_kind:?}\" found for \"{group_by}\""),
                     "Create an index supporting `match` for this key.",

@@ -3,9 +3,7 @@ use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::{StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
-use crate::operations::types::{
-    CollectionError, CollectionResult, CoreSearchRequest, SearchRequestBatch,
-};
+use crate::operations::types::{CollectionResult, CoreSearchRequest, SearchRequestBatch};
 
 impl StrictModeVerification for SearchRequestInternal {
     fn indexed_filter_read(&self) -> Option<&Filter> {
