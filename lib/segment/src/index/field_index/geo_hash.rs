@@ -38,11 +38,11 @@ pub struct GeoHash {
 // code from geohash crate
 // the alphabet for the base32 encoding used in geohashing
 #[rustfmt::skip]
-const BASE32_CODES: [char; 32] = [
-    '0', '1', '2', '3', '4', '5', '6', '7',
-    '8', '9', 'b', 'c', 'd', 'e', 'f', 'g',
-    'h', 'j', 'k', 'm', 'n', 'p', 'q', 'r',
-    's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+const BASE32_CODES: [u8; 32] = [
+    b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7',
+    b'8', b'9', b'b', b'c', b'd', b'e', b'f', b'g',
+    b'h', b'j', b'k', b'm', b'n', b'p', b'q', b'r',
+    b's', b't', b'u', b'v', b'w', b'x', b'y', b'z',
 ];
 
 /// Max size of geo-hash used for indexing. size=12 is about 6cm2
@@ -53,7 +53,7 @@ const LAT_RANGE: Range<f64> = -90.0..90.0;
 const COORD_EPS: f64 = 1e-12;
 
 impl Index<usize> for GeoHash {
-    type Output = char;
+    type Output = u8;
 
     fn index(&self, i: usize) -> &Self::Output {
         assert!(i < self.len());
@@ -66,7 +66,7 @@ impl TryFrom<EcoString> for GeoHash {
     type Error = GeohashError;
 
     fn try_from(hash: EcoString) -> Result<Self, Self::Error> {
-        Self::new(hash.as_str())
+        Self::new(hash.as_bytes())
     }
 }
 
@@ -74,22 +74,19 @@ impl TryFrom<String> for GeoHash {
     type Error = GeohashError;
 
     fn try_from(hash: String) -> Result<Self, Self::Error> {
-        Self::new(hash.as_str())
+        Self::new(hash.as_bytes())
     }
 }
 
 impl From<GeoHash> for EcoString {
     fn from(hash: GeoHash) -> Self {
-        hash.iter().collect()
+        hash.iter().map(char::from).collect()
     }
 }
 
 impl Display for GeoHash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for c in self.iter() {
-            write!(f, "{c}")?;
-        }
-        Ok(())
+        EcoString::from(*self).fmt(f)
     }
 }
 
@@ -98,7 +95,7 @@ pub struct GeoHashIterator {
 }
 
 impl Iterator for GeoHashIterator {
-    type Item = char;
+    type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
         let len = self.packed_chars & 0b1111;
@@ -118,13 +115,17 @@ impl Iterator for GeoHashIterator {
 }
 
 impl GeoHash {
-    pub fn new(s: &str) -> Result<Self, GeohashError> {
+    pub fn new<H>(s: H) -> Result<Self, GeohashError>
+    where
+        H: AsRef<[u8]>,
+    {
+        let s = s.as_ref();
         if s.len() > GEOHASH_MAX_LENGTH {
             return Err(GeohashError::InvalidLength(s.len()));
         }
         let mut packed: u64 = 0;
-        for (i, c) in s.chars().enumerate() {
-            let index = BASE32_CODES.iter().position(|&x| x == c).unwrap() as u64;
+        for (i, c) in s.iter().enumerate() {
+            let index = BASE32_CODES.iter().position(|x| x == c).unwrap() as u64;
             packed |= index << Self::shift_value(i);
         }
         packed |= s.len() as u64;
@@ -630,63 +631,65 @@ mod tests {
 
     #[test]
     fn geohash_ordering() {
-        let mut v = vec![
-            "dr5ru",
-            "uft56",
-            "hhbcd",
-            "uft560000000",
-            "h",
-            "hbcd",
-            "887hh1234567",
-            "",
-            "hwx98",
-            "hbc",
-            "dr5rukz",
+        let mut v: Vec<&[u8]> = vec![
+            b"dr5ru",
+            b"uft56",
+            b"hhbcd",
+            b"uft560000000",
+            b"h",
+            b"hbcd",
+            b"887hh1234567",
+            b"",
+            b"hwx98",
+            b"hbc",
+            b"dr5rukz",
         ];
         let mut hashes = v.iter().map(|s| GeoHash::new(s).unwrap()).collect_vec();
         hashes.sort_unstable();
         v.sort_unstable();
-        assert_eq!(hashes.iter().map(|h| EcoString::from(*h)).collect_vec(), v);
+        for (a, b) in hashes.iter().zip(v) {
+            assert_eq!(a.to_string().as_bytes(), b);
+        }
 
         // special case for hash which ends with 0
         // "uft56" and "uft560000000" have the same encoded chars, but different length
         assert_eq!(
-            GeoHash::new("uft5600")
+            GeoHash::new(b"uft5600")
                 .unwrap()
-                .cmp(&GeoHash::new("uft560000000").unwrap()),
+                .cmp(&GeoHash::new(b"uft560000000").unwrap()),
             "uft5600".cmp("uft560000000"),
         );
         assert_eq!(
-            GeoHash::new("")
+            GeoHash::new(b"")
                 .unwrap()
-                .cmp(&GeoHash::new("000000000000").unwrap()),
+                .cmp(&GeoHash::new(b"000000000000").unwrap()),
             "".cmp("000000000000"),
         );
     }
 
     #[test]
     fn geohash_starts_with() {
-        let samples = [
-            "",
-            "uft5601",
-            "uft560100000",
-            "uft56010000r",
-            "uft5602",
-            "uft560200000",
+        let samples: [&[u8]; 6] = [
+            b"",
+            b"uft5601",
+            b"uft560100000",
+            b"uft56010000r",
+            b"uft5602",
+            b"uft560200000",
         ];
-        for a_str in samples.iter() {
-            let a_hash = GeoHash::new(a_str).unwrap();
-            for b_str in samples.iter() {
-                let b_hash = GeoHash::new(b_str).unwrap();
-                if a_str.starts_with(b_str) {
+        for a in samples.iter() {
+            let a_hash = GeoHash::new(a).unwrap();
+            for b in samples.iter() {
+                let b_hash = GeoHash::new(b).unwrap();
+                if a.starts_with(b) {
                     assert!(
                         a_hash.starts_with(b_hash),
-                        "{a_str:?} expected to start with {b_str:?}",
+                        "{a:?} expected to start with {b:?}",
                     );
                 } else {
                     assert!(
                         !a_hash.starts_with(b_hash),
-                        "{a_str:?} expected to not start with {b_str:?}",
+                        "{a:?} expected to not start with {b:?}",
                     );
                 }
             }
@@ -696,15 +699,15 @@ mod tests {
     #[test]
     fn geohash_encode_longitude_first() {
         let center_hash =
-            GeoHash::new(&encode((NYC.lon, NYC.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
-        assert_eq!(center_hash.ok(), GeoHash::new("dr5ru7c02wnv").ok());
-        let center_hash = GeoHash::new(&encode((NYC.lon, NYC.lat).into(), 6).unwrap());
-        assert_eq!(center_hash.ok(), GeoHash::new("dr5ru7").ok());
+            GeoHash::new(encode((NYC.lon, NYC.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
+        assert_eq!(center_hash.ok(), GeoHash::new(b"dr5ru7c02wnv").ok());
+        let center_hash = GeoHash::new(encode((NYC.lon, NYC.lat).into(), 6).unwrap());
+        assert_eq!(center_hash.ok(), GeoHash::new(b"dr5ru7").ok());
         let center_hash =
-            GeoHash::new(&encode((BERLIN.lon, BERLIN.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
-        assert_eq!(center_hash.ok(), GeoHash::new("u33dc1v0xupz").ok());
-        let center_hash = GeoHash::new(&encode((BERLIN.lon, BERLIN.lat).into(), 6).unwrap());
-        assert_eq!(center_hash.ok(), GeoHash::new("u33dc1").ok());
+            GeoHash::new(encode((BERLIN.lon, BERLIN.lat).into(), GEOHASH_MAX_LENGTH).unwrap());
+        assert_eq!(center_hash.ok(), GeoHash::new(b"u33dc1v0xupz").ok());
+        let center_hash = GeoHash::new(encode((BERLIN.lon, BERLIN.lat).into(), 6).unwrap());
+        assert_eq!(center_hash.ok(), GeoHash::new(b"u33dc1").ok());
     }
 
     #[test]
@@ -717,26 +720,26 @@ mod tests {
 
         let bounding_box = minimum_bounding_rectangle_for_circle(&near_nyc_circle);
         let rectangle: GeohashBoundingBox = bounding_box.into();
-        assert_eq!(rectangle.north_west, GeoHash::new("dr5ruj4477kd").unwrap());
-        assert_eq!(rectangle.south_west, GeoHash::new("dr5ru46ne2ux").unwrap());
-        assert_eq!(rectangle.south_east, GeoHash::new("dr5ru6ryw0cp").unwrap());
-        assert_eq!(rectangle.north_east, GeoHash::new("dr5rumpfq534").unwrap());
+        assert_eq!(rectangle.north_west, GeoHash::new(b"dr5ruj4477kd").unwrap());
+        assert_eq!(rectangle.south_west, GeoHash::new(b"dr5ru46ne2ux").unwrap());
+        assert_eq!(rectangle.south_east, GeoHash::new(b"dr5ru6ryw0cp").unwrap());
+        assert_eq!(rectangle.north_east, GeoHash::new(b"dr5rumpfq534").unwrap());
     }
 
     #[test]
     fn top_level_rectangle_geo_area() {
         let rect = GeohashBoundingBox {
-            north_west: GeoHash::new("u").unwrap(),
-            south_west: GeoHash::new("s").unwrap(),
-            south_east: GeoHash::new("t").unwrap(),
-            north_east: GeoHash::new("v").unwrap(),
+            north_west: GeoHash::new(b"u").unwrap(),
+            south_west: GeoHash::new(b"s").unwrap(),
+            south_east: GeoHash::new(b"t").unwrap(),
+            north_east: GeoHash::new(b"v").unwrap(),
         };
         let mut geo_area = rect.geohash_regions(1, 100).unwrap();
         let mut expected = vec![
-            GeoHash::new("u").unwrap(),
-            GeoHash::new("s").unwrap(),
-            GeoHash::new("v").unwrap(),
-            GeoHash::new("t").unwrap(),
+            GeoHash::new(b"u").unwrap(),
+            GeoHash::new(b"s").unwrap(),
+            GeoHash::new(b"v").unwrap(),
+            GeoHash::new(b"t").unwrap(),
         ];
 
         geo_area.sort_unstable();
@@ -747,10 +750,10 @@ mod tests {
     #[test]
     fn nyc_rectangle_geo_area_high_precision() {
         let rect = GeohashBoundingBox {
-            north_west: GeoHash::new("dr5ruj4477kd").unwrap(),
-            south_west: GeoHash::new("dr5ru46ne2ux").unwrap(),
-            south_east: GeoHash::new("dr5ru6ryw0cp").unwrap(),
-            north_east: GeoHash::new("dr5rumpfq534").unwrap(),
+            north_west: GeoHash::new(b"dr5ruj4477kd").unwrap(),
+            south_west: GeoHash::new(b"dr5ru46ne2ux").unwrap(),
+            south_east: GeoHash::new(b"dr5ru6ryw0cp").unwrap(),
+            north_east: GeoHash::new(b"dr5rumpfq534").unwrap(),
         };
 
         // calling `rect.geohash_regions()` is too expensive
@@ -760,10 +763,10 @@ mod tests {
     #[test]
     fn nyc_rectangle_geo_area_medium_precision() {
         let rect = GeohashBoundingBox {
-            north_west: GeoHash::new("dr5ruj4").unwrap(),
-            south_west: GeoHash::new("dr5ru46").unwrap(),
-            south_east: GeoHash::new("dr5ru6r").unwrap(),
-            north_east: GeoHash::new("dr5rump").unwrap(),
+            north_west: GeoHash::new(b"dr5ruj4").unwrap(),
+            south_west: GeoHash::new(b"dr5ru46").unwrap(),
+            south_east: GeoHash::new(b"dr5ru6r").unwrap(),
+            north_east: GeoHash::new(b"dr5rump").unwrap(),
         };
 
         let geo_area = rect.geohash_regions(7, 1000).unwrap();
@@ -773,22 +776,22 @@ mod tests {
     #[test]
     fn nyc_rectangle_geo_area_low_precision() {
         let rect = GeohashBoundingBox {
-            north_west: GeoHash::new("dr5ruj").unwrap(),
-            south_west: GeoHash::new("dr5ru4").unwrap(),
-            south_east: GeoHash::new("dr5ru6").unwrap(),
-            north_east: GeoHash::new("dr5rum").unwrap(),
+            north_west: GeoHash::new(b"dr5ruj").unwrap(),
+            south_west: GeoHash::new(b"dr5ru4").unwrap(),
+            south_east: GeoHash::new(b"dr5ru6").unwrap(),
+            north_east: GeoHash::new(b"dr5rum").unwrap(),
         };
 
         let mut geo_area = rect.geohash_regions(6, 100).unwrap();
         let mut expected = vec![
-            GeoHash::new("dr5ru4").unwrap(),
-            GeoHash::new("dr5ru5").unwrap(),
-            GeoHash::new("dr5ru6").unwrap(),
-            GeoHash::new("dr5ru7").unwrap(),
-            GeoHash::new("dr5ruh").unwrap(),
-            GeoHash::new("dr5ruj").unwrap(),
-            GeoHash::new("dr5rum").unwrap(),
-            GeoHash::new("dr5ruk").unwrap(),
+            GeoHash::new(b"dr5ru4").unwrap(),
+            GeoHash::new(b"dr5ru5").unwrap(),
+            GeoHash::new(b"dr5ru6").unwrap(),
+            GeoHash::new(b"dr5ru7").unwrap(),
+            GeoHash::new(b"dr5ruh").unwrap(),
+            GeoHash::new(b"dr5ruj").unwrap(),
+            GeoHash::new(b"dr5rum").unwrap(),
+            GeoHash::new(b"dr5ruk").unwrap(),
         ];
 
         expected.sort_unstable();
@@ -824,14 +827,14 @@ mod tests {
         let mut nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 10);
         nyc_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = vec![
-            GeoHash::new("dr5ruj").unwrap(),
-            GeoHash::new("dr5ruh").unwrap(),
-            GeoHash::new("dr5ru5").unwrap(),
-            GeoHash::new("dr5ru4").unwrap(),
-            GeoHash::new("dr5rum").unwrap(),
-            GeoHash::new("dr5ruk").unwrap(),
-            GeoHash::new("dr5ru7").unwrap(),
-            GeoHash::new("dr5ru6").unwrap(),
+            GeoHash::new(b"dr5ruj").unwrap(),
+            GeoHash::new(b"dr5ruh").unwrap(),
+            GeoHash::new(b"dr5ru5").unwrap(),
+            GeoHash::new(b"dr5ru4").unwrap(),
+            GeoHash::new(b"dr5rum").unwrap(),
+            GeoHash::new(b"dr5ruk").unwrap(),
+            GeoHash::new(b"dr5ru7").unwrap(),
+            GeoHash::new(b"dr5ru6").unwrap(),
         ];
         expected.sort_unstable();
 
@@ -855,7 +858,10 @@ mod tests {
 
         // falls back to finest region that encompasses the whole area
         let nyc_hashes_result = rectangle_hashes(&near_nyc_rectangle, 7);
-        assert_eq!(nyc_hashes_result.unwrap(), [GeoHash::new("dr5ru").unwrap()]);
+        assert_eq!(
+            nyc_hashes_result.unwrap(),
+            [GeoHash::new(b"dr5ru").unwrap()],
+        );
     }
 
     #[test]
@@ -886,14 +892,14 @@ mod tests {
         let mut usa_hashes_result = rectangle_hashes(&crossing_usa_rectangle, 10);
         usa_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = vec![
-            GeoHash::new("8").unwrap(),
-            GeoHash::new("9").unwrap(),
-            GeoHash::new("b").unwrap(),
-            GeoHash::new("c").unwrap(),
-            GeoHash::new("d").unwrap(),
-            GeoHash::new("f").unwrap(),
-            GeoHash::new("x").unwrap(),
-            GeoHash::new("z").unwrap(),
+            GeoHash::new(b"8").unwrap(),
+            GeoHash::new(b"9").unwrap(),
+            GeoHash::new(b"b").unwrap(),
+            GeoHash::new(b"c").unwrap(),
+            GeoHash::new(b"d").unwrap(),
+            GeoHash::new(b"f").unwrap(),
+            GeoHash::new(b"x").unwrap(),
+            GeoHash::new(b"z").unwrap(),
         ];
         expected.sort_unstable();
 
@@ -932,14 +938,14 @@ mod tests {
         let mut nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 10);
         nyc_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = vec![
-            GeoHash::new("dr5ruj").unwrap(),
-            GeoHash::new("dr5ruh").unwrap(),
-            GeoHash::new("dr5ru5").unwrap(),
-            GeoHash::new("dr5ru4").unwrap(),
-            GeoHash::new("dr5rum").unwrap(),
-            GeoHash::new("dr5ruk").unwrap(),
-            GeoHash::new("dr5ru7").unwrap(),
-            GeoHash::new("dr5ru6").unwrap(),
+            GeoHash::new(b"dr5ruj").unwrap(),
+            GeoHash::new(b"dr5ruh").unwrap(),
+            GeoHash::new(b"dr5ru5").unwrap(),
+            GeoHash::new(b"dr5ru4").unwrap(),
+            GeoHash::new(b"dr5rum").unwrap(),
+            GeoHash::new(b"dr5ruk").unwrap(),
+            GeoHash::new(b"dr5ru7").unwrap(),
+            GeoHash::new(b"dr5ru6").unwrap(),
         ];
         expected.sort_unstable();
 
@@ -947,7 +953,10 @@ mod tests {
 
         // falls back to finest region that encompasses the whole area
         let nyc_hashes_result = polygon_hashes(&near_nyc_polygon, 7);
-        assert_eq!(nyc_hashes_result.unwrap(), [GeoHash::new("dr5ru").unwrap()]);
+        assert_eq!(
+            nyc_hashes_result.unwrap(),
+            [GeoHash::new(b"dr5ru").unwrap()],
+        );
     }
 
     #[test]
@@ -1094,11 +1103,11 @@ mod tests {
         assert_eq!(
             hashes.unwrap(),
             vec![
-                GeoHash::new("zbp").unwrap(),
-                GeoHash::new("b00").unwrap(),
-                GeoHash::new("xzz").unwrap(),
-                GeoHash::new("8pb").unwrap(),
-            ]
+                GeoHash::new(b"zbp").unwrap(),
+                GeoHash::new(b"b00").unwrap(),
+                GeoHash::new(b"xzz").unwrap(),
+                GeoHash::new(b"8pb").unwrap(),
+            ],
         );
     }
 
@@ -1119,15 +1128,15 @@ mod tests {
         assert_eq!(
             vec,
             [
-                GeoHash::new("b").unwrap(),
-                GeoHash::new("c").unwrap(),
-                GeoHash::new("f").unwrap(),
-                GeoHash::new("g").unwrap(),
-                GeoHash::new("u").unwrap(),
-                GeoHash::new("v").unwrap(),
-                GeoHash::new("y").unwrap(),
-                GeoHash::new("z").unwrap(),
-            ]
+                GeoHash::new(b"b").unwrap(),
+                GeoHash::new(b"c").unwrap(),
+                GeoHash::new(b"f").unwrap(),
+                GeoHash::new(b"g").unwrap(),
+                GeoHash::new(b"u").unwrap(),
+                GeoHash::new(b"v").unwrap(),
+                GeoHash::new(b"y").unwrap(),
+                GeoHash::new(b"z").unwrap(),
+            ],
         );
     }
 
@@ -1148,13 +1157,13 @@ mod tests {
         assert_eq!(
             hashes,
             [
-                GeoHash::new("fz").unwrap(),
-                GeoHash::new("gp").unwrap(),
-                GeoHash::new("gr").unwrap(),
-                GeoHash::new("gx").unwrap(),
-                GeoHash::new("gz").unwrap(),
-                GeoHash::new("up").unwrap(),
-            ]
+                GeoHash::new(b"fz").unwrap(),
+                GeoHash::new(b"gp").unwrap(),
+                GeoHash::new(b"gr").unwrap(),
+                GeoHash::new(b"gx").unwrap(),
+                GeoHash::new(b"gz").unwrap(),
+                GeoHash::new(b"up").unwrap(),
+            ],
         );
     }
 
@@ -1174,11 +1183,11 @@ mod tests {
         assert_eq!(
             hashes,
             [
-                GeoHash::new("p6yd").unwrap(),
-                GeoHash::new("p6yf").unwrap(),
-                GeoHash::new("p6y9").unwrap(),
-                GeoHash::new("p6yc").unwrap(),
-            ]
+                GeoHash::new(b"p6yd").unwrap(),
+                GeoHash::new(b"p6yf").unwrap(),
+                GeoHash::new(b"p6y9").unwrap(),
+                GeoHash::new(b"p6yc").unwrap(),
+            ],
         );
     }
 
@@ -1198,10 +1207,10 @@ mod tests {
         assert_eq!(
             hashes,
             [
-                GeoHash::new("p6ycc").unwrap(),
-                GeoHash::new("p6ycf").unwrap(),
-                GeoHash::new("p6ycg").unwrap(),
-            ]
+                GeoHash::new(b"p6ycc").unwrap(),
+                GeoHash::new(b"p6ycf").unwrap(),
+                GeoHash::new(b"p6ycg").unwrap(),
+            ],
         );
     }
 
@@ -1218,26 +1227,29 @@ mod tests {
         let mut nyc_hashes_result = circle_hashes(&near_nyc_circle, 10);
         nyc_hashes_result.as_mut().unwrap().sort_unstable();
         let mut expected = [
-            GeoHash::new("dr5ruj").unwrap(),
-            GeoHash::new("dr5ruh").unwrap(),
-            GeoHash::new("dr5ru5").unwrap(),
-            GeoHash::new("dr5ru4").unwrap(),
-            GeoHash::new("dr5rum").unwrap(),
-            GeoHash::new("dr5ruk").unwrap(),
-            GeoHash::new("dr5ru7").unwrap(),
-            GeoHash::new("dr5ru6").unwrap(),
+            GeoHash::new(b"dr5ruj").unwrap(),
+            GeoHash::new(b"dr5ruh").unwrap(),
+            GeoHash::new(b"dr5ru5").unwrap(),
+            GeoHash::new(b"dr5ru4").unwrap(),
+            GeoHash::new(b"dr5rum").unwrap(),
+            GeoHash::new(b"dr5ruk").unwrap(),
+            GeoHash::new(b"dr5ru7").unwrap(),
+            GeoHash::new(b"dr5ru6").unwrap(),
         ];
         expected.sort_unstable();
         assert_eq!(nyc_hashes_result.unwrap(), expected);
 
         // falls back to finest region that encompasses the whole area
         let nyc_hashes_result = circle_hashes(&near_nyc_circle, 7);
-        assert_eq!(nyc_hashes_result.unwrap(), [GeoHash::new("dr5ru").unwrap()]);
+        assert_eq!(
+            nyc_hashes_result.unwrap(),
+            [GeoHash::new(b"dr5ru").unwrap()],
+        );
     }
 
     #[test]
     fn go_north() {
-        let mut geohash = sphere_neighbor(GeoHash::new("ww8p").unwrap(), Direction::N).unwrap();
+        let mut geohash = sphere_neighbor(GeoHash::new(b"ww8p").unwrap(), Direction::N).unwrap();
         for _ in 0..1000 {
             geohash = sphere_neighbor(geohash, Direction::N).unwrap();
         }
@@ -1245,7 +1257,7 @@ mod tests {
 
     #[test]
     fn go_west() {
-        let starting_hash = GeoHash::new("ww8").unwrap();
+        let starting_hash = GeoHash::new(b"ww8").unwrap();
         let mut geohash = sphere_neighbor(starting_hash, Direction::W).unwrap();
         let mut is_earth_round = false;
         for _ in 0..1000 {
@@ -1260,44 +1272,44 @@ mod tests {
     #[test]
     fn sphere_neighbor_corner_cases() {
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("z").unwrap(), Direction::NE).unwrap()),
-            "b"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"z").unwrap(), Direction::NE).unwrap()),
+            "b",
         );
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("zz").unwrap(), Direction::NE).unwrap()),
-            "bp"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"zz").unwrap(), Direction::NE).unwrap()),
+            "bp",
         );
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("0").unwrap(), Direction::SW).unwrap()),
-            "p"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"0").unwrap(), Direction::SW).unwrap()),
+            "p",
         );
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("00").unwrap(), Direction::SW).unwrap()),
-            "pb"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"00").unwrap(), Direction::SW).unwrap()),
+            "pb",
         );
 
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("8").unwrap(), Direction::W).unwrap()),
-            "x"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"8").unwrap(), Direction::W).unwrap()),
+            "x",
         );
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("8h").unwrap(), Direction::W).unwrap()),
-            "xu"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"8h").unwrap(), Direction::W).unwrap()),
+            "xu",
         );
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("r").unwrap(), Direction::E).unwrap()),
-            "2"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"r").unwrap(), Direction::E).unwrap()),
+            "2",
         );
         assert_eq!(
-            &EcoString::from(sphere_neighbor(GeoHash::new("ru").unwrap(), Direction::E).unwrap()),
-            "2h"
+            &EcoString::from(sphere_neighbor(GeoHash::new(b"ru").unwrap(), Direction::E).unwrap()),
+            "2h",
         );
 
         assert_eq!(
             EcoString::from(
-                sphere_neighbor(GeoHash::new("ww8p1r4t8").unwrap(), Direction::SE).unwrap()
+                sphere_neighbor(GeoHash::new(b"ww8p1r4t8").unwrap(), Direction::SE).unwrap()
             ),
-            EcoString::from(&geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap())
+            EcoString::from(&geohash::neighbor("ww8p1r4t8", Direction::SE).unwrap()),
         );
     }
 
@@ -1312,7 +1324,7 @@ mod tests {
 
     #[test]
     fn turn_geo_hash_to_box() {
-        let geo_box = geo_hash_to_box(GeoHash::new("dr5ruj4477kd").unwrap());
+        let geo_box = geo_hash_to_box(GeoHash::new(b"dr5ruj4477kd").unwrap());
         let center = GeoPoint {
             lat: 40.76517460,
             lon: -74.00101399,
@@ -1323,10 +1335,10 @@ mod tests {
     #[test]
     fn common_prefix() {
         let geo_hashes = vec![
-            GeoHash::new("zbcd123").unwrap(),
-            GeoHash::new("zbcd2233").unwrap(),
-            GeoHash::new("zbcd3213").unwrap(),
-            GeoHash::new("zbcd533").unwrap(),
+            GeoHash::new(b"zbcd123").unwrap(),
+            GeoHash::new(b"zbcd2233").unwrap(),
+            GeoHash::new(b"zbcd3213").unwrap(),
+            GeoHash::new(b"zbcd533").unwrap(),
         ];
 
         let common_prefix = common_hash_prefix(&geo_hashes).unwrap();
@@ -1335,16 +1347,16 @@ mod tests {
         //assert_eq!(common_prefix, GeoHash::new("zbcd").unwrap());
 
         let geo_hashes = vec![
-            GeoHash::new("zbcd123").unwrap(),
-            GeoHash::new("bbcd2233").unwrap(),
-            GeoHash::new("cbcd3213").unwrap(),
-            GeoHash::new("dbcd533").unwrap(),
+            GeoHash::new(b"zbcd123").unwrap(),
+            GeoHash::new(b"bbcd2233").unwrap(),
+            GeoHash::new(b"cbcd3213").unwrap(),
+            GeoHash::new(b"dbcd533").unwrap(),
         ];
 
         let common_prefix = common_hash_prefix(&geo_hashes).unwrap();
         println!("common_prefix = {:?}", EcoString::from(common_prefix));
 
-        assert_eq!(common_prefix, GeoHash::new("").unwrap());
+        assert_eq!(common_prefix, GeoHash::new(b"").unwrap());
     }
 
     #[test]
