@@ -1,5 +1,5 @@
 use super::counter_cell::CounterCell;
-use super::hardware_accumulator::HwMeasurementAcc;
+use super::hardware_accumulator::{FullHwTracker, HwMeasurementAcc};
 use super::hardware_data::HardwareData;
 
 /// Collection of different types of hardware measurements.
@@ -180,8 +180,27 @@ impl HardwareCounterCell {
         }
     }
 
+    fn full_trackers(&self) -> FullHwTracker {
+        FullHwTracker {
+            cpu: self
+                .cpu_counter
+                .get_tracker()
+                .apply_multiplier(self.cpu_multiplier),
+            payload_io_read: self.payload_io_read_counter.get_tracker(),
+            payload_io_write: self.payload_io_write_counter.get_tracker(),
+            vector_io_read: self
+                .vector_io_read_counter
+                .get_tracker()
+                .apply_multiplier(self.vector_io_read_multiplier),
+            vector_io_write: self.vector_io_write_counter.get_tracker(),
+            payload_index_io_read: self.payload_index_io_read_counter.get_tracker(),
+            payload_index_io_write: self.payload_index_io_write_counter.get_tracker(),
+        }
+    }
+
     fn merge_to_accumulator(&self) {
         self.accumulator.accumulate(self.get_hw_data());
+        self.accumulator.accumulate_tracker(self.full_trackers());
     }
 }
 

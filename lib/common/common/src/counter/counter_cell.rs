@@ -1,11 +1,17 @@
 use std::cell::Cell;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+
+use crate::backtrace_tracker::{BacktraceTracker, Callstack};
+use crate::flags::feature_flags;
 
 /// A simple and efficient counter which doesn't need to be mutable for counting.
 ///
 /// It however cannot be shared across threads safely and thus doesn't implement `Sync` or `Send`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct CounterCell {
     counter: Cell<usize>,
+    tracker: CounterTracker,
 }
 
 impl CounterCell {
@@ -18,7 +24,12 @@ impl CounterCell {
     pub fn new_with(init: usize) -> Self {
         Self {
             counter: Cell::new(init),
+            tracker: CounterTracker::new(),
         }
+    }
+
+    pub fn get_tracker(&self) -> CounterTracker {
+        self.tracker.clone()
     }
 
     /// Returns the current value of the counter.
@@ -44,12 +55,14 @@ impl CounterCell {
     /// If you have mutable access to the counter, prefer `incr_delta_mut` over this method.
     #[inline]
     pub fn incr_delta(&self, delta: usize) {
+        self.tracker.track(delta);
         self.set(self.get() + delta);
     }
 
     /// Multiply the counters value by `amount`.
     #[inline]
     pub fn multiplied(&self, amount: usize) {
+        self.tracker.track(self.get() * (amount.saturating_sub(1)));
         self.set(self.get() * amount)
     }
 
@@ -170,5 +183,87 @@ mod test {
         }
 
         assert_eq!(cell.get(), 4);
+    }
+}
+
+#[derive(Clone)]
+pub struct CounterTracker {
+    bt_tracker: BacktraceTracker,
+    /// Callstack => Count,TotalStacks
+    tracks: Arc<RwLock<HashMap<Callstack, (usize, usize)>>>,
+}
+
+impl CounterTracker {
+    pub fn new() -> CounterTracker {
+        Self::default()
+    }
+
+    #[inline(always)]
+    fn track(&self, count: usize) {
+        let flags = feature_flags();
+        if !flags.hw_counter_backtrace {
+            return;
+        }
+
+        let stack = self.bt_tracker.get_backtraces(9);
+        self.tracks
+            .write()
+            .unwrap()
+            .entry(stack)
+            .or_insert((0, 1))
+            .0 += count;
+    }
+
+    pub fn get_tracks(&self) -> HashMap<Callstack, (usize, usize)> {
+        self.tracks.read().unwrap().clone()
+    }
+
+    pub fn apply_multiplier(self, m: usize) -> Self {
+        for v in self.tracks.write().unwrap().values_mut() {
+            v.0 *= m;
+        }
+        self
+    }
+
+    pub fn apply(&self, other: Self) {
+        let mut tracks = self.tracks.write().unwrap();
+        for (k, v) in other.tracks.read().unwrap().iter() {
+            let entry = tracks.entry(k.to_owned()).or_default();
+            entry.0 += v.0;
+            entry.1 += v.1;
+        }
+    }
+
+    pub fn debug(&self, name: &str) {
+        let tracks = self.get_tracks();
+        if tracks.is_empty() {
+            return;
+        }
+
+        let mut list: Vec<_> = tracks.into_iter().collect();
+        list.sort_by_key(|i| i.1);
+        list.reverse();
+        println!("\n\n{name}:");
+        for (k, v) in list {
+            println!("\n\t{}", k.functions.clone().join("\n\t"));
+            println!("\t==> {} [{} stack(s)]", v.0, v.1);
+        }
+    }
+}
+
+impl std::fmt::Debug for CounterTracker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CounterTracker")
+            .field("tracks", &self.tracks)
+            .finish()
+    }
+}
+
+impl Default for CounterTracker {
+    fn default() -> Self {
+        CounterTracker {
+            bt_tracker: BacktraceTracker::new(),
+            tracks: Arc::new(RwLock::new(HashMap::default())),
+        }
     }
 }

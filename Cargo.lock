@@ -1248,6 +1248,7 @@ dependencies = [
  "ordered-float 5.0.0",
  "ph",
  "rand 0.9.1",
+ "regex",
  "rstest",
  "self_cell",
  "semver",

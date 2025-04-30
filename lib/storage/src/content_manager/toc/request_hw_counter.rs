@@ -63,3 +63,9 @@ impl RequestHwCounter {
         }
     }
 }
+
+impl Drop for RequestHwCounter {
+    fn drop(&mut self) {
+        self.counter.debug_tracks();
+    }
+}

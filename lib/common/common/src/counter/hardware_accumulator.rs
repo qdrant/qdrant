@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::counter_cell::CounterTracker;
 use super::hardware_counter::HardwareCounterCell;
 use super::hardware_data::HardwareData;
 
@@ -104,6 +105,7 @@ pub struct HwMeasurementAcc {
     metrics_drain: HwSharedDrain,
     /// If this is set to true, the accumulator will not accumulate any values.
     disposable: bool,
+    pub(super) counter_tracker: FullHwTracker,
 }
 
 impl HwMeasurementAcc {
@@ -113,6 +115,7 @@ impl HwMeasurementAcc {
             request_drain: HwSharedDrain::default(),
             metrics_drain: HwSharedDrain::default(),
             disposable: false,
+            counter_tracker: FullHwTracker::default(),
         }
     }
 
@@ -124,6 +127,7 @@ impl HwMeasurementAcc {
             request_drain: HwSharedDrain::default(),
             metrics_drain: HwSharedDrain::default(),
             disposable: true,
+            counter_tracker: FullHwTracker::default(),
         }
     }
 
@@ -141,13 +145,44 @@ impl HwMeasurementAcc {
             request_drain: HwSharedDrain::default(),
             metrics_drain,
             disposable: false,
+            counter_tracker: FullHwTracker::default(),
         }
+    }
+
+    pub fn debug_tracks(&self) {
+        self.counter_tracker.debug();
     }
 
     pub fn accumulate<T: Into<HardwareData>>(&self, src: T) {
         let src = src.into();
         self.request_drain.accumulate_from_hw_data(src);
         self.metrics_drain.accumulate_from_hw_data(src);
+    }
+
+    pub fn accumulate_tracker(&self, trackers: FullHwTracker) {
+        let FullHwTracker {
+            cpu,
+            payload_io_read,
+            payload_io_write,
+            vector_io_read,
+            vector_io_write,
+            payload_index_io_read,
+            payload_index_io_write,
+        } = trackers;
+
+        self.counter_tracker.cpu.apply(cpu);
+        self.counter_tracker.payload_io_read.apply(payload_io_read);
+        self.counter_tracker
+            .payload_io_write
+            .apply(payload_io_write);
+        self.counter_tracker.vector_io_read.apply(vector_io_read);
+        self.counter_tracker.vector_io_write.apply(vector_io_write);
+        self.counter_tracker
+            .payload_index_io_read
+            .apply(payload_index_io_read);
+        self.counter_tracker
+            .payload_index_io_write
+            .apply(payload_index_io_write);
     }
 
     /// Accumulate usage values for request drain only.
@@ -222,6 +257,30 @@ impl Clone for HwMeasurementAcc {
             request_drain: self.request_drain.clone(),
             metrics_drain: self.metrics_drain.clone(),
             disposable: self.disposable,
+            counter_tracker: self.counter_tracker.clone(),
         }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct FullHwTracker {
+    pub(super) cpu: CounterTracker,
+    pub(super) payload_io_read: CounterTracker,
+    pub(super) payload_io_write: CounterTracker,
+    pub(super) vector_io_read: CounterTracker,
+    pub(super) vector_io_write: CounterTracker,
+    pub(super) payload_index_io_read: CounterTracker,
+    pub(super) payload_index_io_write: CounterTracker,
+}
+
+impl FullHwTracker {
+    fn debug(&self) {
+        self.cpu.debug("Cpu");
+        self.payload_io_read.debug("Payload IO Read");
+        self.payload_io_write.debug("Payload IO Write");
+        self.vector_io_read.debug("Vector Io Read");
+        self.vector_io_write.debug("Vector IO Write");
+        self.payload_index_io_read.debug("Payload Index Read");
+        self.payload_index_io_write.debug("Payload Index Write");
     }
 }
