@@ -16,6 +16,7 @@ enum IndexType {
     Mutable,
     Immutable,
     Mmap,
+    RamMmap,
 }
 
 enum IndexBuilder {
@@ -64,12 +65,12 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
         >::builder_immutable(
             db, COLUMN_NAME
         )),
-        IndexType::Mmap => IndexBuilder::Mmap(
-            NumericIndex::<FloatPayloadType, FloatPayloadType>::builder_mmap(
-                temp_dir.path(),
-                false,
-            ),
-        ),
+        IndexType::Mmap | IndexType::RamMmap => IndexBuilder::Mmap(NumericIndex::<
+            FloatPayloadType,
+            FloatPayloadType,
+        >::builder_mmap(
+            temp_dir.path(), false
+        )),
     };
     match &mut builder {
         IndexBuilder::Mutable(builder) => builder.init().unwrap(),
@@ -99,7 +100,18 @@ fn random_index(
             .unwrap();
     }
 
-    let index = index_builder.finalize().unwrap();
+    let mut index = index_builder.finalize().unwrap();
+
+    if matches!(index_type, IndexType::RamMmap) {
+        let NumericIndexInner::Mmap(mmap_index) = index.inner else {
+            panic!("Expected mmap index");
+        };
+        index = NumericIndex {
+            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::new_mmap(mmap_index)),
+            _phantom: Default::default(),
+        };
+    }
+
     (temp_dir, index)
 }
 
@@ -155,6 +167,7 @@ fn test_set_empty_payload() {
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_cardinality_exp(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 1, index_type);
 
@@ -228,6 +241,7 @@ fn test_cardinality_exp(#[case] index_type: IndexType) {
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_payload_blocks(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(1000, 2, index_type);
     let threshold = 100;
@@ -267,6 +281,7 @@ fn test_payload_blocks(#[case] index_type: IndexType) {
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_payload_blocks_small(#[case] index_type: IndexType) {
     let (_temp_dir, mut index_builder) = get_index_builder(index_type);
     let threshold = 4;
@@ -304,6 +319,7 @@ fn test_payload_blocks_small(#[case] index_type: IndexType) {
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let (temp_dir, mut index_builder) = get_index_builder(index_type);
 
@@ -345,6 +361,9 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
             NumericIndexInner::<FloatPayloadType>::new_rocksdb(db.unwrap(), COLUMN_NAME, true)
         }
         IndexType::Mmap => {
+            NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), true).unwrap()
+        }
+        IndexType::RamMmap => {
             NumericIndexInner::<FloatPayloadType>::new_mmap(temp_dir.path(), false).unwrap()
         }
     };
@@ -366,6 +385,7 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_numeric_index(#[case] index_type: IndexType) {
     let (_temp_dir, mut index_builder) = get_index_builder(index_type);
 
@@ -465,6 +485,7 @@ fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Defau
 #[case(IndexType::Mutable)]
 #[case(IndexType::Immutable)]
 #[case(IndexType::Mmap)]
+#[case(IndexType::RamMmap)]
 fn test_empty_cardinality(#[case] index_type: IndexType) {
     let (_temp_dir, index) = random_index(0, 1, index_type);
     cardinality_request(
