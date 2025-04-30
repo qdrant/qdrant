@@ -432,9 +432,6 @@ async fn facet_counts_internal(
 impl PointsInternalService {
     /// Generates a new `RequestHwCounter` for the request.
     /// This counter is indented to be used for internal requests.
-    ///
-    /// So, it collects the hardware usage to the collection's counter ONLY if it was not
-    /// converted to a response.
     fn get_request_collection_hw_usage_counter_for_internal(
         &self,
         collection_name: String,
