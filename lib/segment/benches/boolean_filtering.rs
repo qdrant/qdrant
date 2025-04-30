@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -89,6 +90,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
     let seed = 42;
 
     let mut rng = StdRng::seed_from_u64(seed);
+    let feature_flags = feature_flags();
 
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let payload_storage = Arc::new(AtomicRefCell::new(
@@ -103,6 +105,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         id_tracker,
         std::collections::HashMap::new(),
         dir.path(),
+        &feature_flags,
         true,
     )
     .unwrap();

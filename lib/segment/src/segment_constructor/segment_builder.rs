@@ -11,7 +11,7 @@ use atomic_refcell::AtomicRefCell;
 use bitvec::macros::internal::funty::Integral;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::feature_flags;
+use common::flags::{FeatureFlags, feature_flags};
 use common::small_uint::U24;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
@@ -56,6 +56,7 @@ pub struct SegmentBuilder {
     payload_storage: PayloadStorageEnum,
     vector_data: HashMap<VectorNameBuf, VectorData>,
     segment_config: SegmentConfig,
+    feature_flags: FeatureFlags,
 
     // The path, where fully created segment will be moved
     destination_path: PathBuf,
@@ -144,12 +145,17 @@ impl SegmentBuilder {
             payload_storage,
             vector_data,
             segment_config: segment_config.clone(),
+            feature_flags: feature_flags(),
 
             destination_path,
             temp_dir,
             indexed_fields: Default::default(),
             defragment_keys: vec![],
         })
+    }
+
+    pub fn set_feature_flags(&mut self, feature_flags: FeatureFlags) {
+        self.feature_flags = feature_flags;
     }
 
     pub fn set_defragment_keys(&mut self, keys: Vec<PayloadKeyType>) {
@@ -468,6 +474,7 @@ impl SegmentBuilder {
                 payload_storage,
                 mut vector_data,
                 segment_config,
+                feature_flags,
                 destination_path,
                 temp_dir,
                 indexed_fields,
@@ -546,6 +553,7 @@ impl SegmentBuilder {
                 id_tracker_arc.clone(),
                 vector_storages_arc.clone(),
                 &payload_index_path,
+                &feature_flags,
                 appendable_flag,
             )?;
             for (field, payload_schema) in indexed_fields {
@@ -590,7 +598,7 @@ impl SegmentBuilder {
                         old_indices: &old_indices.remove(vector_name).unwrap(),
                         gpu_device: gpu_device.as_ref(),
                         stopped,
-                        feature_flags: feature_flags(),
+                        feature_flags: feature_flags,
                     },
                 )?;
 

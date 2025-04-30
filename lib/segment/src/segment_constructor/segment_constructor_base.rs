@@ -598,6 +598,7 @@ fn create_segment(
         id_tracker.clone(),
         vector_storages.clone(),
         &payload_index_path,
+        &feature_flags(),
         appendable_flag,
     )?);
 

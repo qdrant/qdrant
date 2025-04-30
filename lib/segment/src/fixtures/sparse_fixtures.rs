@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use rand::Rng;
 use sparse::common::sparse_vector::SparseVector;
@@ -47,6 +48,7 @@ pub fn fixture_sparse_index_from_iter<I: InvertedIndex>(
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir,
+        &feature_flags(),
         true,
     )?;
     let wrapped_payload_index = Arc::new(AtomicRefCell::new(payload_index));
