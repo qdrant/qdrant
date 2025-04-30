@@ -2,50 +2,37 @@
 mod prof;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::{FeatureFlags, init_feature_flags};
-use common::types::PointOffsetType;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use itertools::Itertools;
-use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng, rng};
+use common::flags::{FeatureFlags, feature_flags};
+use criterion::measurement::WallTime;
+use criterion::{BenchmarkGroup, Criterion, black_box, criterion_group, criterion_main};
+use rand::rng;
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
-use segment::fixtures::index_fixtures::{FakeFilterContext, random_vector};
+use segment::fixtures::index_fixtures::random_vector;
 use segment::fixtures::payload_fixtures::random_int_payload;
-use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
 use segment::index::hnsw_index::num_rayon_threads;
-use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
 use segment::payload_json;
-use segment::segment_constructor::VectorIndexBuildArgs;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
-use segment::spaces::simple::CosineMetric;
 use segment::types::{
     Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadSchemaType,
     PayloadStorageType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageType,
 };
-use segment::vector_storage::DEFAULT_STOPPED;
 use tempfile::Builder;
 
 mod fixture;
 
-type Metric = CosineMetric;
-
-fn hnsw_benchmark(c: &mut Criterion) {
-    let mut feature_flags = FeatureFlags::default();
-    feature_flags.payload_index_skip_rocksdb = true;
-    init_feature_flags(feature_flags.clone());
-
-    let mut group = c.benchmark_group("hnsw-small-cardinality");
-
+fn filtered_hnsw_benchmark_with_flags(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    test_prefix: &str,
+    feature_flags: FeatureFlags,
+) {
     let stopped = AtomicBool::new(false);
 
     let dim = 8;
@@ -54,8 +41,6 @@ fn hnsw_benchmark(c: &mut Criterion) {
     let ef = 32;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let full_scan_threshold = 16; // KB
-    let indexing_threshold = 500; // num vectors
     let num_payload_values = 5;
 
     let mut rnd = rng();
@@ -128,12 +113,13 @@ fn hnsw_benchmark(c: &mut Criterion) {
         },
     )
     .unwrap();
+    segment_builder.set_feature_flags(feature_flags);
 
     // segment_builder.add_indexed_field(JsonPath::new(int_key), PayloadSchemaType::Integer.into());
     segment_builder.update(&[&segment], &stopped).unwrap();
 
     let segment = segment_builder
-        .build(permit, &stopped, &hw_counter)
+        .build(permit, &stopped, &mut rnd, &hw_counter)
         .unwrap();
 
     let left_range = 1;
@@ -149,7 +135,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
     )));
 
     let top = 5;
-    group.bench_function("hnsw-exact-search", |b| {
+    group.bench_function(format!("{}-exact-search", test_prefix), |b| {
         b.iter(|| {
             let query = random_vector(&mut rnd, dim).into();
 
@@ -173,6 +159,44 @@ fn hnsw_benchmark(c: &mut Criterion) {
         })
     });
 
+    group.bench_function(format!("{}-hnsw-search", test_prefix), |b| {
+        b.iter(|| {
+            let query = random_vector(&mut rnd, dim).into();
+
+            let plain_result = segment
+                .search(
+                    DEFAULT_VECTOR_NAME,
+                    &query,
+                    &Default::default(),
+                    &Default::default(),
+                    Some(&filter),
+                    top,
+                    Some(&SearchParams {
+                        hnsw_ef: Some(ef),
+                        ..Default::default()
+                    }),
+                )
+                .unwrap();
+
+            black_box(plain_result)
+        })
+    });
+}
+
+fn filtered_hnsw_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("filtered-hnsw-segment");
+
+    let mut feature_flags = feature_flags();
+    feature_flags.payload_index_skip_rocksdb = true;
+    filtered_hnsw_benchmark_with_flags(&mut group, "filtered-hnsw-mmap", feature_flags.clone());
+
+    feature_flags.payload_index_skip_rocksdb = false;
+    filtered_hnsw_benchmark_with_flags(
+        &mut group,
+        "filtered-hnsw-immutable",
+        feature_flags.clone(),
+    );
+
     group.finish();
 }
 
@@ -180,7 +204,7 @@ fn hnsw_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = hnsw_benchmark
+    targets = filtered_hnsw_benchmark
 }
 
 #[cfg(target_os = "windows")]
