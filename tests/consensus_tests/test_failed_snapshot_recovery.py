@@ -5,7 +5,7 @@ import shutil
 import requests
 from time import sleep
 
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search, scroll
+from .fixtures import create_collection, upsert_random_points, scroll
 from .utils import *
 
 N_PEERS = 3
