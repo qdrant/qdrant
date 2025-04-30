@@ -2,7 +2,7 @@ use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
-use crate::operations::types::{CollectionError, DiscoverRequestBatch, DiscoverRequestInternal};
+use crate::operations::types::{CollectionResult, DiscoverRequestBatch, DiscoverRequestInternal};
 
 impl StrictModeVerification for DiscoverRequestInternal {
     fn query_limit(&self) -> Option<usize> {
@@ -31,7 +31,7 @@ impl StrictModeVerification for DiscoverRequestBatch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         for i in self.searches.iter() {
             i.discover_request
                 .check_strict_mode(collection, strict_mode_config)

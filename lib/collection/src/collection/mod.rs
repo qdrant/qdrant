@@ -116,7 +116,7 @@ impl Collection {
         update_runtime: Option<Handle>,
         optimizer_resource_budget: ResourceBudget,
         optimizers_overwrite: Option<OptimizersConfigDiff>,
-    ) -> Result<Self, CollectionError> {
+    ) -> CollectionResult<Self> {
         let start_time = std::time::Instant::now();
 
         let mut shard_holder = ShardHolder::new(path)?;

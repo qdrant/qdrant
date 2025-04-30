@@ -3,7 +3,7 @@ use segment::types::{Filter, SearchParams, StrictModeConfig};
 
 use super::StrictModeVerification;
 use crate::collection::Collection;
-use crate::operations::types::{CollectionError, CoreSearchRequest, SearchRequestBatch};
+use crate::operations::types::{CollectionResult, CoreSearchRequest, SearchRequestBatch};
 
 impl StrictModeVerification for SearchRequestInternal {
     fn indexed_filter_read(&self) -> Option<&Filter> {
@@ -54,7 +54,7 @@ impl StrictModeVerification for SearchRequestBatch {
         &self,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
-    ) -> Result<(), CollectionError> {
+    ) -> CollectionResult<()> {
         for search_request in &self.searches {
             search_request
                 .search_request
