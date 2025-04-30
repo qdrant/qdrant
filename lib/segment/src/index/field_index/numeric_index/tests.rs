@@ -410,7 +410,7 @@ fn test_numeric_index(#[case] index_type: IndexType) {
             .add_point(idx as PointOffsetType + 1, &values, &hw_counter)
             .unwrap();
     });
-    let index = index_builder.finalize().unwrap();
+    let mut index = index_builder.finalize().unwrap();
 
     test_cond(
         index.inner(),
@@ -454,6 +454,66 @@ fn test_numeric_index(#[case] index_type: IndexType) {
             lte: Some(2.6),
         },
         vec![1, 2, 3, 4, 5, 6, 7, 8],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(2.0),
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![6, 7, 8],
+    );
+
+    // Remove some points
+    index.remove_point(1).unwrap();
+    index.remove_point(2).unwrap();
+    index.remove_point(5).unwrap();
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: Some(1.0),
+            gte: None,
+            lt: None,
+            lte: None,
+        },
+        vec![6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: Some(1.0),
+            lt: None,
+            lte: None,
+        },
+        vec![2, 3, 4, 6, 7, 8, 9],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: Some(2.6),
+            lte: None,
+        },
+        vec![3, 4, 6, 7],
+    );
+
+    test_cond(
+        index.inner(),
+        Range {
+            gt: None,
+            gte: None,
+            lt: None,
+            lte: Some(2.6),
+        },
+        vec![3, 4, 6, 7, 8],
     );
 
     test_cond(
