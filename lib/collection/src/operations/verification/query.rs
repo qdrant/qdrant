@@ -127,6 +127,15 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
             // check for unindexed fields in formula
             query.check_strict_mode(collection, strict_mode_config)?
         }
+        // check for unindexed fields targeted by group_by
+        if strict_mode_config.unindexed_filtering_retrieve == Some(false)
+            && !collection.payload_key_is_indexed(&self.group_by)
+        {
+            return Err(CollectionError::strict_mode(
+                format!("Index required but not found for \"{}\"", self.group_by,),
+                "Create an index for this key.",
+            ));
+        }
         Ok(())
     }
 
