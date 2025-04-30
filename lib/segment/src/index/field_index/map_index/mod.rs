@@ -1209,6 +1209,7 @@ mod tests {
         Mutable,
         Immutable,
         Mmap,
+        RamMmap,
     }
 
     fn save_map_index<N>(
@@ -1237,7 +1238,7 @@ mod tests {
                 }
                 builder.finalize().unwrap();
             }
-            IndexType::Mmap => {
+            IndexType::Mmap | IndexType::RamMmap => {
                 let mut builder = MapIndex::<N>::mmap_builder(path, false);
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
@@ -1268,7 +1269,8 @@ mod tests {
                 FIELD_NAME,
                 false,
             ),
-            IndexType::Mmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
+            IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap(),
+            IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
         };
         index.load_from_db().unwrap();
         for (idx, values) in data.iter().enumerate() {
@@ -1318,6 +1320,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_int_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![1, 2, 3, 4, 5, 6],
@@ -1333,11 +1336,11 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        // Ensure cardinality is non zero
+        // Ensure cardinality is non-zero
         assert!(
             !index
                 .except_cardinality(vec![].into_iter(), &hw_counter)
-                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+                .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
 
@@ -1345,6 +1348,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_string_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![
@@ -1376,11 +1380,11 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        // Ensure cardinality is non zero
+        // Ensure cardinality is non-zero
         assert!(
             !index
                 .except_cardinality(vec![].into_iter(), &hw_counter)
-                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+                .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
 
@@ -1388,6 +1392,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_empty_index(#[case] index_type: IndexType) {
         let data: Vec<Vec<EcoString>> = vec![];
 
@@ -1401,7 +1406,7 @@ mod tests {
         assert!(
             index
                 .except_cardinality(vec![].into_iter(), &hw_counter)
-                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+                .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
 }

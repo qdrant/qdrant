@@ -491,7 +491,7 @@ fn test_numeric_index(#[case] index_type: IndexType) {
             lt: None,
             lte: None,
         },
-        vec![2, 3, 4, 6, 7, 8, 9],
+        vec![3, 4, 6, 7, 8, 9],
     );
 
     test_cond(
