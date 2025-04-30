@@ -9,7 +9,7 @@ use common::flags::FeatureFlags;
 use itertools::Itertools as _;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom as _;
-use rand::{Rng as _, SeedableRng as _};
+use rand::{Rng, SeedableRng as _};
 use segment::data_types::vectors::{
     DEFAULT_VECTOR_NAME, QueryVector, VectorElementType, only_default_vector,
 };
@@ -42,18 +42,18 @@ fn hnsw_incremental_build() {
         .filter_level(log::LevelFilter::Trace)
         .try_init();
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let dir = Builder::new()
         .prefix("hnsw_incremental_build")
         .tempdir()
         .unwrap();
 
-    let ids = std::iter::repeat_with(|| ExtendedPointId::NumId(rnd.random()))
+    let ids = std::iter::repeat_with(|| ExtendedPointId::NumId(rng.random()))
         .unique()
         .take(NUM_POINTS)
         .collect_vec();
-    let vectors = std::iter::repeat_with(|| random_vector(&mut rnd, DIM))
+    let vectors = std::iter::repeat_with(|| random_vector(&mut rng, DIM))
         .take(NUM_POINTS)
         .collect_vec();
 
@@ -61,7 +61,7 @@ fn hnsw_incremental_build() {
 
     let num_queries = 10;
     let query_vectors: Vec<QueryVector> = (0..num_queries)
-        .map(|_| random_vector(&mut rnd, DIM).into())
+        .map(|_| random_vector(&mut rng, DIM).into())
         .collect();
 
     let mut last_index = None;
@@ -73,7 +73,7 @@ fn hnsw_incremental_build() {
 
         let num_points = i * NUM_POINTS / ITERATIONS;
         let segment = make_segment(
-            &mut rnd,
+            &mut rng,
             &dir.path().join(format!("segment_{i}")),
             &ids[0..num_points],
             &vector_refs[0..num_points],
@@ -84,7 +84,7 @@ fn hnsw_incremental_build() {
             .as_ref()
             .map_or(vec![], |idx| vec![Arc::clone(idx)]);
 
-        let index = build_hnsw_index(&index_path, &segment, &old_indices);
+        let index = build_hnsw_index(&mut rng, &index_path, &segment, &old_indices);
 
         let ef = 64;
         let top = 10;
@@ -95,13 +95,13 @@ fn hnsw_incremental_build() {
 }
 
 fn make_segment(
-    rnd: &mut StdRng,
+    rng: &mut StdRng,
     path: &Path,
     ids: &[ExtendedPointId],
     vectors: &[&[VectorElementType]],
 ) -> Segment {
     let mut sequence = (0..ids.len()).collect_vec();
-    sequence.shuffle(rnd);
+    sequence.shuffle(rng);
 
     let hw_counter = HardwareCounterCell::new();
 
@@ -116,7 +116,8 @@ fn make_segment(
     segment
 }
 
-fn build_hnsw_index(
+fn build_hnsw_index<R: Rng + ?Sized>(
+    rng: &mut R,
     path: &Path,
     segment: &Segment,
     old_indices: &[Arc<AtomicRefCell<VectorIndexEnum>>],
@@ -150,6 +151,7 @@ fn build_hnsw_index(
             permit,
             old_indices,
             gpu_device: None,
+            rng,
             stopped: &AtomicBool::new(false),
             feature_flags: FeatureFlags::default().tap_mut(|flags| {
                 flags.incremental_hnsw_building = true;

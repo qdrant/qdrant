@@ -134,10 +134,12 @@ fn test_on_disk_segment_snapshot(#[case] format: SnapshotFormat) {
     )
     .unwrap();
     segment_builder.update(&[&segment], &false.into()).unwrap();
+    let mut rng = rand::rng();
     let segment = segment_builder
         .build(
             ResourcePermit::dummy(num_rayon_threads(0) as u32),
             &false.into(),
+            &mut rng,
             &HardwareCounterCell::new(),
         )
         .unwrap();

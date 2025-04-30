@@ -31,7 +31,7 @@ fn test_batch_and_single_request_equivalency() {
     let num_payload_values = 2;
     let dim = 8;
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
 
@@ -52,9 +52,9 @@ fn test_batch_and_single_request_equivalency() {
 
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rng, dim);
 
-        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
         segment
@@ -71,10 +71,10 @@ fn test_batch_and_single_request_equivalency() {
     }
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rnd, dim).into();
-        let query_vector_2 = random_vector(&mut rnd, dim).into();
+        let query_vector_1 = random_vector(&mut rng, dim).into();
+        let query_vector_2 = random_vector(&mut rng, dim).into();
 
-        let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
+        let payload_value = random_int_payload(&mut rng, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(int_key),
@@ -162,6 +162,7 @@ fn test_batch_and_single_request_equivalency() {
             permit,
             old_indices: &[],
             gpu_device: None,
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },
@@ -169,10 +170,10 @@ fn test_batch_and_single_request_equivalency() {
     .unwrap();
 
     for _ in 0..10 {
-        let query_vector_1 = random_vector(&mut rnd, dim).into();
-        let query_vector_2 = random_vector(&mut rnd, dim).into();
+        let query_vector_1 = random_vector(&mut rng, dim).into();
+        let query_vector_2 = random_vector(&mut rng, dim).into();
 
-        let payload_value = random_int_payload(&mut rnd, 1..=1).pop().unwrap();
+        let payload_value = random_int_payload(&mut rng, 1..=1).pop().unwrap();
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
             JsonPath::new(int_key),

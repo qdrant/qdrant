@@ -17,6 +17,7 @@ use itertools::{EitherOrBoth, Itertools as _};
 use log::debug;
 use memory::fadvise::clear_disk_cache;
 use parking_lot::Mutex;
+use rand::Rng;
 use rayon::ThreadPool;
 use rayon::prelude::*;
 
@@ -186,9 +187,9 @@ impl HNSWIndex {
         self.quantized_vectors.clone()
     }
 
-    pub fn build(
+    pub fn build<R: Rng + ?Sized>(
         open_args: HnswIndexOpenArgs<'_>,
-        build_args: VectorIndexBuildArgs<'_>,
+        build_args: VectorIndexBuildArgs<'_, R>,
     ) -> OperationResult<Self> {
         if HnswGraphConfig::get_config_path(open_args.path).exists()
             || GraphLayers::get_path(open_args.path).exists()
@@ -213,6 +214,7 @@ impl HNSWIndex {
             permit,
             old_indices,
             gpu_device,
+            rng,
             stopped,
             feature_flags,
         } = build_args;
@@ -260,7 +262,6 @@ impl HNSWIndex {
             .max_by_key(|old_index| old_index.valid_points);
 
         // Build main index graph
-        let mut rng = rand::rng();
         let deleted_bitslice = vector_storage_ref.deleted_vector_bitslice();
 
         #[cfg(feature = "gpu")]
@@ -330,7 +331,7 @@ impl HNSWIndex {
             let level = old_index
                 .as_ref()
                 .and_then(|old_index| old_index.point_level(vector_id))
-                .unwrap_or_else(|| graph_layers_builder.get_random_layer(&mut rng));
+                .unwrap_or_else(|| graph_layers_builder.get_random_layer(rng));
             graph_layers_builder.set_levels(vector_id, level);
         }
 

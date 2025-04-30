@@ -209,7 +209,7 @@ fn test_byte_storage_binary_quantization_hnsw(
     let full_scan_threshold = 16; // KB
     let num_payload_values = 2;
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let dir_byte = Builder::new().prefix("segment_dir_byte").tempdir().unwrap();
     let quantized_data_path = dir_byte.path();
@@ -251,9 +251,9 @@ fn test_byte_storage_binary_quantization_hnsw(
 
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim, storage_data_type);
+        let vector = random_vector(&mut rng, dim, storage_data_type);
 
-        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
         segment_byte
@@ -338,6 +338,7 @@ fn test_byte_storage_binary_quantization_hnsw(
             permit,
             old_indices: &[],
             gpu_device: None,
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },
@@ -348,10 +349,10 @@ fn test_byte_storage_binary_quantization_hnsw(
     let mut sames = 0;
     let attempts = 100;
     for _ in 0..attempts {
-        let query = random_query(&query_variant, &mut rnd, dim, storage_data_type);
+        let query = random_query(&query_variant, &mut rng, dim, storage_data_type);
 
         let range_size = 40;
-        let left_range = rnd.random_range(0..400);
+        let left_range = rng.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
