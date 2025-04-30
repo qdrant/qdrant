@@ -10,7 +10,7 @@ pub fn flush_bench(c: &mut Criterion) {
 
     // Test sequential updates' flushing performance
     for unflushed_updates in [100, 1_000, prepopulation_size].iter() {
-        let bench_name = format!("flush after {} sequential writes", unflushed_updates);
+        let bench_name = format!("flush after {unflushed_updates} sequential writes");
 
         c.bench_function(&bench_name, |b| {
             // Setup: Create a storage with a specified number of records
@@ -48,7 +48,7 @@ pub fn flush_bench(c: &mut Criterion) {
 
     // Test random updates' flushing performance
     for unflushed_updates in [100, 1_000, prepopulation_size].iter() {
-        let bench_name = format!("flush after {} random writes", unflushed_updates);
+        let bench_name = format!("flush after {unflushed_updates} random writes");
 
         c.bench_function(&bench_name, |b| {
             // Setup: Create a storage with a specified number of records
