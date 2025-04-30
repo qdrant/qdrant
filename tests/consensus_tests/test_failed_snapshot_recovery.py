@@ -5,7 +5,7 @@ import shutil
 import requests
 from time import sleep
 
-from .fixtures import create_collection, upsert_random_points, random_dense_vector, search, scroll
+from .fixtures import create_collection, upsert_random_points, scroll
 from .utils import *
 
 N_PEERS = 3
@@ -164,7 +164,8 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
         assert flag_exists
 
     # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
-    upsert_random_points(peer_api_uris[-1], 1)
+    upsert_random_points(peer_api_uris[-1], 1, offset=10000)
+    n_points += 1
 
     # Assert storage does not contain initialized flag when transfer is started
     print("Checking that the shard initializing flag was removed after recovery")
@@ -211,11 +212,7 @@ def test_corrupted_snapshot_recovery(tmp_path: pathlib.Path):
     assert len(new_scroll_result) == len(initial_scroll_result)
     new_ids = [r["id"] for r in new_scroll_result]
     initial_ids = [r["id"] for r in initial_scroll_result]
-    if new_ids != initial_ids:
-        res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
-        print(res)
-        print("IDs are not equal after recovery", new_ids, initial_ids)
-    # assert new_ids == initial_ids, (new_ids, initial_ids)
+    assert new_ids == initial_ids, (new_ids, initial_ids)
 
 
 @pytest.mark.parametrize("transfer_method", ["snapshot", "stream_records", "wal_delta"])
@@ -245,10 +242,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     upsert_random_points(peer_api_uris[0], n_points)
 
     query_city = "London"
-
-    initial_scroll_result = scroll(
-        peer_api_uris[0], query_city
-    )
+    initial_scroll_result = scroll(peer_api_uris[0], query_city)
     assert len(initial_scroll_result) > 0
 
     # Simulate killing on snapshot recovery (corrupting shard dir and adding a shard initializing flag)
@@ -276,7 +270,8 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     )
 
     # Upsert one point to mark dummy replica as dead, that will trigger recovery transfer
-    upsert_random_points(peer_api_uris[0], 1)
+    upsert_random_points(peer_api_uris[0], 1, offset=10000)
+    n_points += 1
 
     # Wait for start of shard transfer
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
@@ -323,7 +318,7 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
         raise e
 
     # shard initializing flag should remain dropped after recovery is successful
-    print("Checking that the shard initializing flag was removed after recovery")
+    print("Checking that the shard initializing flag remains removed after recovery")
     try:
         def check_flag_deleted():
             res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
@@ -352,8 +347,4 @@ def test_dirty_shard_handling_with_active_replicas(tmp_path: pathlib.Path, trans
     assert len(new_scroll_result) == len(initial_scroll_result)
     new_ids = [r["id"] for r in new_scroll_result]
     initial_ids = [r["id"] for r in initial_scroll_result]
-    if new_ids != initial_ids:
-        res = requests.get(f"{peer_api_uris[-1]}/collections/{COLLECTION_NAME}/cluster").text
-        print(res)
-        print("IDs are not equal after recovery", new_ids, initial_ids)
-    # assert new_ids == initial_ids, (new_ids, initial_ids)
+    assert new_ids == initial_ids, (new_ids, initial_ids)
