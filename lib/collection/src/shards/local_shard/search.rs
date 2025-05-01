@@ -37,10 +37,19 @@ impl LocalShard {
             return Ok(vec![]);
         }
 
+        let skip_batching = if core_request.searches.len() <= CHUNK_SIZE {
+            // Don't batch if we have few searches, prevents cloning request
+            true
+        } else if self.segments.read().len() > common::cpu::get_num_cpus() {
+            // Don't batch if we have more segments than CPUs to prevent overhead of many threads
+            true
+        } else {
+            false
+        };
+
         let is_stopped_guard = StoppingGuard::new();
 
-        // Don't batch if we have few searches, prevents cloning request
-        if core_request.searches.len() <= CHUNK_SIZE {
+        if skip_batching {
             return self
                 .do_search_impl(
                     core_request,
