@@ -40,8 +40,10 @@ impl LocalShard {
         let skip_batching = if core_request.searches.len() <= CHUNK_SIZE {
             // Don't batch if we have few searches, prevents cloning request
             true
-        } else if self.segments.read().len() > common::cpu::get_num_cpus() {
-            // Don't batch if we have more segments than CPUs to prevent overhead of many threads
+        } else if self.segments.read().len() > self.shared_storage_config.search_thread_count {
+            // Don't batch if we have more segments than search threads
+            // Not a perfect condition, but it helps to prevent consuming a lot of search threads
+            // if the number of segments is large
             true
         } else {
             false
