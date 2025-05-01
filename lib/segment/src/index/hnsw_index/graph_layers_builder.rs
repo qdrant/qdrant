@@ -4,8 +4,9 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
+use common::ext::BitSliceExt;
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
-use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
+use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::atomic_save_bin;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 use rand::Rng;
@@ -74,6 +75,95 @@ impl GraphLayersBase for GraphLayersBuilder {
 impl GraphLayersBuilder {
     pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
         self.entry_points.lock()
+    }
+
+    /// For a given sub-graph defined by points, returns connectivity estimation.
+    /// How it works:
+    ///  - Select entry point, it would be a point with the highest level. If there are several, pick first one.
+    ///  - Start Breadth-First Search (BFS) from the entry point, on each edge flip a coin to decide if the edge is removed or not.
+    ///  - Count number of nodes reachable from the entry point.
+    ///  - Return the fraction of reachable nodes to the total number of nodes in the sub-graph.
+    ///
+    /// Coin probability `q` is a parameter of this function. By default, it is 0.5.
+    pub fn subgraph_connectivity(&self, points: &[PointOffsetType], layer: usize, q: f32) -> f32 {
+        let mut reached_points = 0;
+
+        if points.is_empty() {
+            return 1.0;
+        }
+
+        let max_point_id = *points.iter().max().unwrap();
+
+        let mut visited: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
+        let mut bitmask: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
+
+        for point_id in points {
+            bitmask.set(*point_id as usize, true);
+        }
+
+        let mut rnd = rand::rng();
+
+        let mut queue = Vec::new();
+
+        // Try to get entry point from the entry points list
+        // If not found, select the point with the highest level
+        let entry_point = self
+            .entry_points
+            .lock()
+            .get_random_entry_point(&mut rnd, |point_id| {
+                bitmask.get_bit(point_id as usize).unwrap_or(false)
+            })
+            .map(|ep| ep.point_id);
+
+        // Select entry point by selecting the point with the highest level
+
+        let entry_point = if let Some(entry_point) = entry_point {
+            // Entry point is found
+            entry_point
+        } else {
+            points
+                .iter()
+                .max_by_key(|point_id| self.links_layers[**point_id as usize].len())
+                .cloned()
+                .unwrap()
+        };
+
+        // Start BFS from the entry point
+
+        queue.push(entry_point);
+
+        let already_visited = visited.replace(entry_point as usize, true);
+        if !already_visited {
+            reached_points += 1;
+        }
+
+        // Do not skip edges on the first point links
+        // to avoid random noise
+        let mut first = true;
+
+        while let Some(current_point) = queue.pop() {
+            let links = self.links_layers[current_point as usize][layer].read();
+
+            for link in links.iter() {
+                // Flip a coin to decide if the edge is removed or not
+                let coin_flip = rnd.random_range(0.0..1.0);
+                if coin_flip < q && !first {
+                    continue;
+                }
+
+                let is_selected = bitmask.get_bit(link as usize).unwrap_or(false);
+                let is_visited = visited.get_bit(link as usize).unwrap_or(false);
+
+                if !is_visited && is_selected {
+                    visited.replace(link as usize, true);
+                    reached_points += 1;
+                    queue.push(link);
+                }
+            }
+            first = false;
+        }
+
+        reached_points as f32 / points.len() as f32
     }
 
     pub fn into_graph_layers(
