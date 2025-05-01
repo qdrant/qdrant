@@ -44,6 +44,9 @@ impl LocalShard {
             // Don't batch if we have more segments than search threads
             // Not a perfect condition, but it helps to prevent consuming a lot of search threads
             // if the number of segments is large
+            // Note: search threads are shared with all other search threads on this Qdrant
+            // instance, and other shards also have segments. For simplicity this only considers
+            // the global search thread count and local segment count.
             // See: <https://github.com/qdrant/qdrant/pull/6478>
             true
         } else {
