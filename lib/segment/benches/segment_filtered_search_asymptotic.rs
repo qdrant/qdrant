@@ -26,8 +26,6 @@ use segment::types::{
 };
 use tempfile::Builder;
 
-mod fixture;
-
 fn segment_filtered_search_benchmark_with_flags(
     group: &mut BenchmarkGroup<'_, WallTime>,
     test_prefix: &str,
