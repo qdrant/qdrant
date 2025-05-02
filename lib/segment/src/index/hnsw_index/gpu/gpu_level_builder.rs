@@ -154,7 +154,7 @@ mod tests {
             m0,
             ef,
             true,
-            visited_flags_factor..32,
+            visited_flags_factor..=32,
         )
         .unwrap();
         gpu_search_context.init(batched_points.remap()).unwrap();

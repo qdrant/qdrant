@@ -581,7 +581,7 @@ mod tests {
             test_data.m,
             test_data.ef,
             true,
-            1..32,
+            1..=32,
         )
         .unwrap();
         gpu_insert_context.init(&point_ids).unwrap();
