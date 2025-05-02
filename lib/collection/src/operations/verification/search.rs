@@ -1,7 +1,7 @@
 use api::rest::{SearchGroupsRequestInternal, SearchRequestInternal};
 use segment::types::{Filter, SearchParams, StrictModeConfig};
 
-use super::StrictModeVerification;
+use super::{StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
 use crate::operations::types::{CollectionResult, CoreSearchRequest, SearchRequestBatch};
 
@@ -86,6 +86,16 @@ impl StrictModeVerification for SearchRequestBatch {
 }
 
 impl StrictModeVerification for SearchGroupsRequestInternal {
+    async fn check_custom(
+        &self,
+        collection: &Collection,
+        strict_mode_config: &StrictModeConfig,
+    ) -> CollectionResult<()> {
+        // check for unindexed fields targeted by group_by
+        check_grouping_field(&self.group_request.group_by, collection, strict_mode_config)?;
+        Ok(())
+    }
+
     fn query_limit(&self) -> Option<usize> {
         Some(self.group_request.limit as usize * self.group_request.group_size as usize)
     }

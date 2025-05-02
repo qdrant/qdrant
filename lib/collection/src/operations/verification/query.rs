@@ -1,6 +1,6 @@
 use segment::types::StrictModeConfig;
 
-use super::StrictModeVerification;
+use super::{StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
 use crate::operations::types::{CollectionError, CollectionResult};
 use crate::operations::universal_query::collection_query::{
@@ -127,6 +127,8 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
             // check for unindexed fields in formula
             query.check_strict_mode(collection, strict_mode_config)?
         }
+        // check for unindexed fields targeted by group_by
+        check_grouping_field(&self.group_by, collection, strict_mode_config)?;
         Ok(())
     }
 

@@ -1826,6 +1826,34 @@ impl PayloadFieldSchema {
             PayloadFieldSchema::FieldParams(p) => p.kind(),
         }
     }
+
+    /// Check if this type supports a `match` condition
+    pub fn supports_match(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(payload_schema_type) => match payload_schema_type {
+                PayloadSchemaType::Keyword => true,
+                PayloadSchemaType::Integer => true,
+                PayloadSchemaType::Uuid => true,
+                PayloadSchemaType::Bool => true,
+                PayloadSchemaType::Float => false,
+                PayloadSchemaType::Geo => false,
+                PayloadSchemaType::Text => false,
+                PayloadSchemaType::Datetime => false,
+            },
+            PayloadFieldSchema::FieldParams(payload_schema_params) => match payload_schema_params {
+                PayloadSchemaParams::Keyword(_) => true,
+                PayloadSchemaParams::Integer(integer_index_params) => {
+                    integer_index_params.lookup == Some(true)
+                }
+                PayloadSchemaParams::Uuid(_) => true,
+                PayloadSchemaParams::Bool(_) => true,
+                PayloadSchemaParams::Float(_) => false,
+                PayloadSchemaParams::Geo(_) => false,
+                PayloadSchemaParams::Text(_) => false,
+                PayloadSchemaParams::Datetime(_) => false,
+            },
+        }
+    }
 }
 
 impl From<PayloadSchemaType> for PayloadFieldSchema {
