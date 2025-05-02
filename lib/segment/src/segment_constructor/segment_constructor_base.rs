@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::flags::FeatureFlags;
+use common::flags::{FeatureFlags, feature_flags};
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
