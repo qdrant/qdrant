@@ -97,6 +97,10 @@ impl Collection {
         Ok(result)
     }
 
+    pub fn payload_key_index_schema(&self, key: &JsonPath) -> Option<PayloadFieldSchema> {
+        self.payload_index_schema.read().schema.get(key).cloned()
+    }
+
     /// Returns an arbitrary payload key along with acceptable
     /// schemas used by `filter` which can be indexed but currently is not.
     /// If this function returns `None` all indexable keys in `filter` are indexed.
