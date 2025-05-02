@@ -28,7 +28,7 @@ use tempfile::Builder;
 
 mod fixture;
 
-fn filtered_hnsw_benchmark_with_flags(
+fn segment_filtered_search_benchmark_with_flags(
     group: &mut BenchmarkGroup<'_, WallTime>,
     test_prefix: &str,
     feature_flags: FeatureFlags,
@@ -37,11 +37,11 @@ fn filtered_hnsw_benchmark_with_flags(
 
     let dim = 8;
     let m = 8;
-    let num_vectors: u64 = 50_000;
+    let num_vectors: u64 = 10_000;
     let ef = 32;
     let ef_construct = 16;
     let distance = Distance::Cosine;
-    let num_payload_values = 5;
+    let num_payload_values = 100;
 
     let mut rnd = rng();
 
@@ -135,7 +135,7 @@ fn filtered_hnsw_benchmark_with_flags(
     )));
 
     let top = 5;
-    group.bench_function(format!("{}-exact-search", test_prefix), |b| {
+    group.bench_function(format!("{}-plain", test_prefix), |b| {
         b.iter(|| {
             let query = random_vector(&mut rnd, dim).into();
 
@@ -159,11 +159,11 @@ fn filtered_hnsw_benchmark_with_flags(
         })
     });
 
-    group.bench_function(format!("{}-hnsw-search", test_prefix), |b| {
+    group.bench_function(format!("{}-hnsw", test_prefix), |b| {
         b.iter(|| {
             let query = random_vector(&mut rnd, dim).into();
 
-            let plain_result = segment
+            let hnsw_result = segment
                 .search(
                     DEFAULT_VECTOR_NAME,
                     &query,
@@ -171,29 +171,30 @@ fn filtered_hnsw_benchmark_with_flags(
                     &Default::default(),
                     Some(&filter),
                     top,
-                    Some(&SearchParams {
-                        hnsw_ef: Some(ef),
-                        ..Default::default()
-                    }),
+                    None,
                 )
                 .unwrap();
 
-            black_box(plain_result)
+            black_box(hnsw_result)
         })
     });
 }
 
-fn filtered_hnsw_benchmark(c: &mut Criterion) {
-    let mut group = c.benchmark_group("filtered-hnsw-segment");
+fn segment_filtered_search_benchmark(c: &mut Criterion) {
+    let mut group = c.benchmark_group("segment-filtered-search-asymptotic");
 
     let mut feature_flags = feature_flags();
     feature_flags.payload_index_skip_rocksdb = true;
-    filtered_hnsw_benchmark_with_flags(&mut group, "filtered-hnsw-mmap", feature_flags.clone());
+    segment_filtered_search_benchmark_with_flags(
+        &mut group,
+        "segment-filtered-search-prefetched-mmap",
+        feature_flags.clone(),
+    );
 
     feature_flags.payload_index_skip_rocksdb = false;
-    filtered_hnsw_benchmark_with_flags(
+    segment_filtered_search_benchmark_with_flags(
         &mut group,
-        "filtered-hnsw-immutable",
+        "segment-filtered-search-prefetched-immutable-ram",
         feature_flags.clone(),
     );
 
@@ -204,7 +205,7 @@ fn filtered_hnsw_benchmark(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = Criterion::default().with_profiler(prof::FlamegraphProfiler::new(100));
-    targets = filtered_hnsw_benchmark
+    targets = segment_filtered_search_benchmark
 }
 
 #[cfg(target_os = "windows")]
