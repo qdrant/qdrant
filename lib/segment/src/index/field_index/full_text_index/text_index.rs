@@ -382,7 +382,7 @@ impl PayloadFieldIndex for FullTextIndex {
     fn flusher(&self) -> Flusher {
         match self {
             Self::Mutable(index) => index.db_wrapper.flusher(),
-            Self::Immutable(index) => index.db_wrapper.flusher(),
+            Self::Immutable(index) => index.flusher(),
             Self::Mmap(index) => index.flusher(),
         }
     }
