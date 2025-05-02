@@ -135,7 +135,7 @@ fn segment_filtered_search_benchmark_with_flags(
     )));
 
     let top = 5;
-    group.bench_function(format!("{}-plain", test_prefix), |b| {
+    group.bench_function(format!("{test_prefix}-plain"), |b| {
         b.iter(|| {
             let query = random_vector(&mut rnd, dim).into();
 
@@ -159,7 +159,7 @@ fn segment_filtered_search_benchmark_with_flags(
         })
     });
 
-    group.bench_function(format!("{}-hnsw", test_prefix), |b| {
+    group.bench_function(format!("{test_prefix}-hnsw"), |b| {
         b.iter(|| {
             let query = random_vector(&mut rnd, dim).into();
 
@@ -188,14 +188,14 @@ fn segment_filtered_search_benchmark(c: &mut Criterion) {
     segment_filtered_search_benchmark_with_flags(
         &mut group,
         "segment-filtered-search-prefetched-mmap",
-        feature_flags.clone(),
+        feature_flags,
     );
 
     feature_flags.payload_index_skip_rocksdb = false;
     segment_filtered_search_benchmark_with_flags(
         &mut group,
         "segment-filtered-search-prefetched-immutable-ram",
-        feature_flags.clone(),
+        feature_flags,
     );
 
     group.finish();
