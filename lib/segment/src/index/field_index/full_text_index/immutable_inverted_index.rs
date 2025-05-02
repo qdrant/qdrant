@@ -36,7 +36,18 @@ impl InvertedIndex for ImmutableInvertedIndex {
         ))
     }
 
-    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+    fn index_document(
+        &mut self,
+        _idx: PointOffsetType,
+        _document: super::inverted_index::Document,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error(
+            "Can't add values to immutable text index",
+        ))
+    }
+
+    fn remove(&mut self, idx: PointOffsetType) -> bool {
         if self.values_is_empty(idx) {
             return false; // Already removed or never actually existed
         }

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::immutable_text_index::ImmutableFullTextIndex;
-use super::inverted_index::{InvertedIndex, TokenSet, ParsedQuery, TokenId};
+use super::inverted_index::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
 use super::mmap_text_index::{FullTextMmapIndexBuilder, MmapFullTextIndex};
 use super::mutable_text_index::MutableFullTextIndex;
 use super::tokenizers::Tokenizer;
@@ -261,10 +261,10 @@ impl FullTextIndex {
     }
 
     pub fn parse_document(&self, text: &str, hw_counter: &HardwareCounterCell) -> TokenSet {
-        let mut document_tokens = vec![];
+        let mut document_tokens = AHashSet::new();
         Tokenizer::tokenize_doc(text, self.config(), |token| {
             if let Some(token_id) = self.get_token(token, hw_counter) {
-                document_tokens.push(token_id);
+                document_tokens.insert(token_id);
             }
         });
         TokenSet::new(document_tokens)

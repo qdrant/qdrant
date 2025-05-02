@@ -111,7 +111,7 @@ impl ImmutableFullTextIndex {
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.inverted_index.remove_document(id) {
+        if self.inverted_index.remove(id) {
             match self.storage {
                 Storage::RocksDb(ref db_wrapper) => {
                     let db_doc_id = FullTextIndex::store_key(id);

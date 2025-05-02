@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::fs::{create_dir_all, remove_dir};
 use std::path::PathBuf;
 
@@ -7,7 +6,7 @@ use common::types::PointOffsetType;
 use serde_json::Value;
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
-use super::inverted_index::InvertedIndex;
+use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::mmap_inverted_index::MmapInvertedIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
@@ -52,7 +51,7 @@ impl MmapFullTextIndex {
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.inverted_index.remove_document(id);
+        self.inverted_index.remove(id);
         Ok(())
     }
 
@@ -116,23 +115,30 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             return Ok(());
         }
 
-        let mut str_tokens: BTreeSet<String> = BTreeSet::new();
+        let mut str_tokens = Vec::new();
 
         for value in values {
             Tokenizer::tokenize_doc(&value, &self.config, |token| {
-                str_tokens.insert(token.to_owned());
+                str_tokens.push(token.to_owned());
             });
         }
 
         let tokens = self.mutable_index.token_ids(&str_tokens);
-        self.mutable_index
-            .index_tokens(id, tokens, hw_counter)?;
+
+        if self.mutable_index.point_to_doc.is_some() {
+            let document = Document::new(tokens.clone());
+            self.mutable_index
+                .index_document(id, document, hw_counter)?;
+        }
+
+        let token_set = TokenSet::from_iter(tokens);
+        self.mutable_index.index_tokens(id, token_set, hw_counter)?;
 
         Ok(())
     }
 
     fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        self.mutable_index.remove_document(id);
+        self.mutable_index.remove(id);
 
         Ok(())
     }

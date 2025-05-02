@@ -1,9 +1,7 @@
-use std::collections::BTreeSet;
-
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
-use super::inverted_index::InvertedIndex;
+use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;
 use super::tokenizers::Tokenizer;
@@ -57,20 +55,30 @@ impl MutableFullTextIndex {
             return Ok(());
         }
 
-        let mut str_tokens: BTreeSet<String> = BTreeSet::new();
+        let mut str_tokens = Vec::new();
 
         for value in values {
             Tokenizer::tokenize_doc(&value, &self.config, |token| {
-                str_tokens.insert(token.to_owned());
+                str_tokens.push(token.to_owned());
             });
         }
 
         let tokens = self.inverted_index.token_ids(&str_tokens);
+
+        if self.inverted_index.point_to_doc.is_some() {
+            let document = Document::new(tokens.clone());
+            self.inverted_index
+                .index_document(idx, document, hw_counter)?;
+        }
+
+        let token_set = TokenSet::from_iter(tokens);
         self.inverted_index
-            .index_tokens(idx, tokens, hw_counter)?;
+            .index_tokens(idx, token_set, hw_counter)?;
 
         let db_idx = FullTextIndex::store_key(idx);
-        let db_document = FullTextIndex::serialize_document_tokens(str_tokens)?;
+
+        let db_document =
+            FullTextIndex::serialize_document_tokens(str_tokens.into_iter().collect())?;
 
         self.db_wrapper.put(db_idx, db_document)?;
 
@@ -78,7 +86,7 @@ impl MutableFullTextIndex {
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.inverted_index.remove_document(id) {
+        if self.inverted_index.remove(id) {
             let db_doc_id = FullTextIndex::store_key(id);
             self.db_wrapper.remove(db_doc_id)?;
         }
