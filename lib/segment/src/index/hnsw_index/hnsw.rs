@@ -37,6 +37,8 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
 #[cfg(feature = "gpu")]
+use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
+#[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
 use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
@@ -456,7 +458,7 @@ impl HNSWIndex {
                     config.payload_m0.unwrap_or(config.m0),
                     config.ef_construct,
                     false,
-                    1..super::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR,
+                    1..=GPU_MAX_VISITED_FLAGS_FACTOR,
                 )?)
             } else {
                 None
@@ -704,7 +706,7 @@ impl HNSWIndex {
                 graph_layers_builder.m0(),
                 graph_layers_builder.ef_construct(),
                 false,
-                1..super::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR,
+                1..=GPU_MAX_VISITED_FLAGS_FACTOR,
             )?)
         } else {
             None
@@ -807,6 +809,9 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GpuVectorStorage>> {
         use crate::index::hnsw_index::gpu::get_gpu_force_half_precision;
+        if vector_storage.total_vector_count() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+            return Ok(None);
+        }
 
         if let Some(gpu_device) = gpu_device {
             let gpu_vectors = GpuVectorStorage::new(

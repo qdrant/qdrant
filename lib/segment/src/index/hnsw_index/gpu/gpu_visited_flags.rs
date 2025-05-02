@@ -8,6 +8,8 @@ use super::GPU_TIMEOUT;
 use super::shader_builder::ShaderBuilderParameters;
 use crate::common::operation_error::{OperationError, OperationResult};
 
+const UPLOAD_REMAP_BUFFER_COUNT: usize = 1024 * 1024;
+
 #[derive(FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
 struct GpuVisitedFlagsParamsBuffer {
@@ -20,6 +22,7 @@ pub struct GpuVisitedFlags {
     params: GpuVisitedFlagsParamsBuffer,
     params_buffer: Arc<gpu::Buffer>,
     params_staging_buffer: Arc<gpu::Buffer>,
+    remap_staging_buffer: Option<Arc<gpu::Buffer>>,
     visited_flags_buffer: Arc<gpu::Buffer>,
     descriptor_set_layout: Arc<gpu::DescriptorSetLayout>,
     descriptor_set: Arc<gpu::DescriptorSet>,
@@ -53,7 +56,7 @@ impl GpuVisitedFlags {
         device: Arc<gpu::Device>,
         groups_count: usize,
         points_capacity: usize,
-        factor_range: std::ops::Range<usize>,
+        factor_range: std::ops::RangeInclusive<usize>,
     ) -> OperationResult<Self> {
         let params_buffer = gpu::Buffer::new(
             device.clone(),
@@ -102,11 +105,23 @@ impl GpuVisitedFlags {
         }
         let descriptor_set = descriptor_set_builder.build()?;
 
+        let remap_staging_buffer = if remap_buffer.is_some() {
+            Some(gpu::Buffer::new(
+                device.clone(),
+                "Visited flags remap staging buffer",
+                gpu::BufferType::CpuToGpu,
+                UPLOAD_REMAP_BUFFER_COUNT * std::mem::size_of::<PointOffsetType>(),
+            )?)
+        } else {
+            None
+        };
+
         Ok(Self {
             device,
             params,
             params_buffer,
             params_staging_buffer,
+            remap_staging_buffer,
             visited_flags_buffer,
             descriptor_set_layout,
             descriptor_set,
@@ -118,13 +133,14 @@ impl GpuVisitedFlags {
     pub fn init(&mut self, points_remap: &[PointOffsetType]) -> OperationResult<()> {
         let mut context = gpu::Context::new(self.device.clone())?;
         if let Some(remap_buffer) = self.remap_buffer.clone() {
-            const UPLOAD_REMAP_BUFFER_COUNT: usize = 1024 * 1024;
-            let remap_staging_buffer = gpu::Buffer::new(
-                self.device.clone(),
-                "Visited flags remap staging buffer",
-                gpu::BufferType::CpuToGpu,
-                UPLOAD_REMAP_BUFFER_COUNT * std::mem::size_of::<PointOffsetType>(),
-            )?;
+            let remap_staging_buffer =
+                if let Some(remap_staging_buffer) = &self.remap_staging_buffer {
+                    remap_staging_buffer
+                } else {
+                    return Err(OperationError::from(gpu::GpuError::Other(
+                        "Remap staging buffer is not initialized".to_string(),
+                    )));
+                };
             for chunk in points_remap.chunks(UPLOAD_REMAP_BUFFER_COUNT) {
                 remap_staging_buffer.upload(chunk, 0)?;
                 context.copy_gpu_buffer(
@@ -190,13 +206,13 @@ impl GpuVisitedFlags {
         device: Arc<gpu::Device>,
         groups_count: usize,
         points_capacity: usize,
-        factor_range: std::ops::Range<usize>,
+        factor_range: std::ops::RangeInclusive<usize>,
     ) -> OperationResult<(Arc<gpu::Buffer>, Option<Arc<gpu::Buffer>>, usize)> {
         let alignment = std::mem::size_of::<u32>();
         let points_count = points_capacity.next_multiple_of(alignment);
         let flags_size = groups_count * points_count * std::mem::size_of::<u8>();
 
-        if flags_size < device.max_buffer_size() && factor_range.start == 1 {
+        if flags_size < device.max_buffer_size() && *factor_range.start() == 1 {
             let visited_flags_buffer_result = gpu::Buffer::new(
                 device.clone(),
                 "Visited flags buffer",
@@ -217,8 +233,8 @@ impl GpuVisitedFlags {
             points_capacity * std::mem::size_of::<u32>(),
         )?;
 
-        let mut factor = factor_range.start;
-        while factor < factor_range.end {
+        let mut factor = *factor_range.start();
+        while factor <= *factor_range.end() {
             let capacity = (points_count / factor).next_multiple_of(alignment);
             if capacity == 0 {
                 break;

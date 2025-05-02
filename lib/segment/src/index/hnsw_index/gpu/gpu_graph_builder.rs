@@ -140,7 +140,7 @@ mod tests {
             test.graph_layers_builder.m0(),
             test.graph_layers_builder.ef_construct(),
             exact,
-            1..GPU_MAX_VISITED_FLAGS_FACTOR,
+            1..=GPU_MAX_VISITED_FLAGS_FACTOR,
         )
         .unwrap();
 

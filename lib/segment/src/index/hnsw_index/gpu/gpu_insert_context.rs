@@ -192,10 +192,11 @@ impl<'a> GpuInsertContext<'a> {
         exact: bool,
         // If points count is very big, we share visited flags buffer between multiple points.
         // This parameter sets a factor how many points can share one visited flag.
-        visited_flags_factor_range: std::ops::Range<usize>,
+        visited_flags_factor_range: std::ops::RangeInclusive<usize>,
     ) -> OperationResult<Self> {
+        debug_assert!(groups_count > 0 && gpu_vector_storage.num_vectors() > 0);
         let device = gpu_vector_storage.device();
-        let points_count = std::cmp::max(1, gpu_vector_storage.num_vectors());
+        let points_count = gpu_vector_storage.num_vectors();
         let insert_resources =
             GpuInsertResources::new(gpu_vector_storage, groups_count, points_count, ef, exact)?;
 
