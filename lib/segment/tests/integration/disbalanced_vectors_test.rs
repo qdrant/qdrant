@@ -86,7 +86,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = segment2.all_vectors(idx.into()).unwrap();
+        let vec = segment2.all_vectors(idx.into(), &hw_counter).unwrap();
         reference.push(vec);
     }
 
@@ -137,7 +137,7 @@ fn test_rebuild_with_removed_vectors() {
             continue;
         }
         let idx = NUM_VECTORS_1 + i;
-        let vec = merged_segment.all_vectors(idx.into()).unwrap();
+        let vec = merged_segment.all_vectors(idx.into(), &hw_counter).unwrap();
         merged_reference.push(vec);
     }
 

@@ -368,6 +368,10 @@ impl<'a, T: PrimitiveVectorElement> TypedMultiDenseVectorRef<'a, T> {
             dim: self.dim,
         }
     }
+
+    pub fn size_bytes(&self) -> usize {
+        size_of_val(self.flattened_vectors)
+    }
 }
 
 impl<'a, T: PrimitiveVectorElement> From<&'a TypedMultiDenseVector<T>>

@@ -264,8 +264,8 @@ fn test_snapshot(#[case] format: SnapshotFormat) {
     );
 
     for id in segment.iter_points() {
-        let vectors = segment.all_vectors(id).unwrap();
-        let restored_vectors = restored_segment.all_vectors(id).unwrap();
+        let vectors = segment.all_vectors(id, &hw_counter).unwrap();
+        let restored_vectors = restored_segment.all_vectors(id, &hw_counter).unwrap();
         assert_eq!(vectors, restored_vectors);
 
         let payload = segment.payload(id, &hw_counter).unwrap();
@@ -343,7 +343,11 @@ fn test_check_consistency() {
     assert_eq!(search_result[0].id, 6.into());
     assert_eq!(search_result[1].id, 4.into());
 
-    assert!(segment.vector(DEFAULT_VECTOR_NAME, 6.into()).is_ok());
+    assert!(
+        segment
+            .vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter)
+            .is_ok()
+    );
 
     let internal_id = segment.lookup_internal_id(6.into()).unwrap();
 
@@ -368,12 +372,12 @@ fn test_check_consistency() {
 
     // querying by external id is broken
     assert!(
-        matches!(segment.vector(DEFAULT_VECTOR_NAME, 6.into()), Err(PointIdError {missed_point_id }) if missed_point_id == 6.into())
+        matches!(segment.vector(DEFAULT_VECTOR_NAME, 6.into(), &hw_counter), Err(PointIdError {missed_point_id }) if missed_point_id == 6.into())
     );
 
     // but querying by internal id still works
     matches!(
-        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
+        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter),
         Ok(Some(_))
     );
 
@@ -382,7 +386,7 @@ fn test_check_consistency() {
 
     // querying by internal id now consistent
     matches!(
-        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id),
+        segment.vector_by_offset(DEFAULT_VECTOR_NAME, internal_id, &hw_counter),
         Ok(None)
     );
 }
@@ -666,14 +670,17 @@ fn test_vector_compatibility_checks() {
         check_vector_name(wrong_name, &segment.segment_config)
             .err()
             .unwrap();
-        segment.vector(wrong_name, point_id).err().unwrap();
+        segment
+            .vector(wrong_name, point_id, &hw_counter)
+            .err()
+            .unwrap();
         segment
             .delete_vector(101, point_id, wrong_name)
             .err()
             .unwrap();
         segment.available_vector_count(wrong_name).err().unwrap();
         segment
-            .vector_by_offset(wrong_name, internal_id)
+            .vector_by_offset(wrong_name, internal_id, &hw_counter)
             .err()
             .unwrap();
     }

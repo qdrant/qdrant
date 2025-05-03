@@ -142,7 +142,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
         }
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector(i, &hw_counter);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });

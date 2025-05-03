@@ -447,23 +447,19 @@ impl SegmentsSearcher {
                         vector: {
                             match with_vector {
                                 WithVector::Bool(true) => {
-                                    let vectors = segment.all_vectors(id)?;
-                                    hw_counter
-                                        .vector_io_read()
-                                        .incr_delta(vectors.estimate_size_in_bytes());
+                                    let vectors = segment.all_vectors(id, &hw_counter)?;
                                     Some(VectorStructInternal::from(vectors))
                                 }
                                 WithVector::Bool(false) => None,
                                 WithVector::Selector(vector_names) => {
                                     let mut selected_vectors = NamedVectors::default();
                                     for vector_name in vector_names {
-                                        if let Some(vector) = segment.vector(vector_name, id)? {
+                                        if let Some(vector) =
+                                            segment.vector(vector_name, id, &hw_counter)?
+                                        {
                                             selected_vectors.insert(vector_name.clone(), vector);
                                         }
                                     }
-                                    hw_counter
-                                        .vector_io_read()
-                                        .incr_delta(selected_vectors.estimate_size_in_bytes());
                                     Some(VectorStructInternal::from(selected_vectors))
                                 }
                             }

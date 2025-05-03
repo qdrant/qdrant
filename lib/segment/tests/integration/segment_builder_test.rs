@@ -414,11 +414,11 @@ fn test_building_new_segment_bug_5614() {
     // Assert correct vectors still belong to the point
     // This was broken before <https://github.com/qdrant/qdrant/pull/5543>
     assert_eq!(
-        merged_segment.all_vectors(100.into()).unwrap(),
+        merged_segment.all_vectors(100.into(), &hw_counter).unwrap(),
         vector_100_high,
     );
     assert_eq!(
-        merged_segment.all_vectors(101.into()).unwrap(),
+        merged_segment.all_vectors(101.into(), &hw_counter).unwrap(),
         vector_101_high,
     );
 }

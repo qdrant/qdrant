@@ -68,7 +68,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     }
     // Check that all points are inserted
     for (i, vec) in points.iter().enumerate() {
-        let stored_vec = storage.get_vector(i as PointOffsetType);
+        let stored_vec = storage.get_vector(i as PointOffsetType, &hw_counter);
         let multi_dense: TypedMultiDenseVectorRef<_> = stored_vec.as_vec_ref().try_into().unwrap();
         assert_eq!(multi_dense.to_owned(), vec.clone());
     }
@@ -213,7 +213,7 @@ fn do_test_update_from_delete_points(
         }
         let mut iter = (0..points.len()).map(|i| {
             let i = i as PointOffsetType;
-            let vec = storage2.get_vector(i);
+            let vec = storage2.get_vector(i, &hw_counter);
             let deleted = storage2.is_deleted_vector(i);
             (vec, deleted)
         });
@@ -304,9 +304,15 @@ fn test_delete_points_in_multi_dense_vector_storage(
         total_vector_count,
         "total vector count must be the same"
     );
+    let hw_counter = HardwareCounterCell::new();
+
     // retrieve all vectors from storage
     for id in 0..total_vector_count {
-        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+        assert!(
+            storage
+                .get_vector_opt(id as PointOffsetType, &hw_counter)
+                .is_some()
+        );
     }
 }
 
@@ -334,9 +340,16 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
         total_vector_count,
         "total vector count must be the same"
     );
+
+    let hw_counter = HardwareCounterCell::new();
+
     // retrieve all vectors from storage
     for id in 0..total_vector_count {
-        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+        assert!(
+            storage
+                .get_vector_opt(id as PointOffsetType, &hw_counter)
+                .is_some()
+        );
     }
 }
 

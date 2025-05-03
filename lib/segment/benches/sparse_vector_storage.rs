@@ -45,7 +45,8 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     group.bench_function("read-rocksdb", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
-                let vec = rocksdb_sparse_vector_storage.get_vector_opt(idx as PointOffsetType);
+                let vec = rocksdb_sparse_vector_storage
+                    .get_vector_opt(idx as PointOffsetType, &hw_counter);
                 assert!(vec.is_some());
             }
         })
@@ -71,7 +72,8 @@ fn sparse_vector_storage_benchmark(c: &mut Criterion) {
     group.bench_function("read-mmap-compression", |b| {
         b.iter(|| {
             for idx in 0..NUM_VECTORS {
-                let vec = mmap_sparse_vector_storage.get_vector_opt(idx as PointOffsetType);
+                let vec =
+                    mmap_sparse_vector_storage.get_vector_opt(idx as PointOffsetType, &hw_counter);
                 assert!(vec.is_some());
             }
         })

@@ -1,7 +1,7 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::{PointOffsetType, ScoreType};
 use sparse::common::sparse_vector::SparseVector;
-use sparse::common::types::{DimId, DimWeight};
+use sparse::common::types::DimWeight;
 
 use crate::vector_storage::SparseVectorStorage;
 use crate::vector_storage::query::{Query, TransformInto};
@@ -37,7 +37,7 @@ impl<
         hardware_counter.set_cpu_multiplier(size_of::<DimWeight>());
 
         if vector_storage.is_on_disk() {
-            hardware_counter.set_vector_io_read_multiplier(size_of::<DimId>());
+            hardware_counter.set_vector_io_read_multiplier(1);
         } else {
             hardware_counter.set_vector_io_read_multiplier(0);
         }
@@ -57,12 +57,8 @@ impl<TVectorStorage: SparseVectorStorage, TQuery: Query<SparseVector>> QueryScor
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
         let stored = self
             .vector_storage
-            .get_sparse(idx)
+            .get_sparse(idx, &self.hardware_counter)
             .expect("Failed to get sparse vector");
-
-        self.hardware_counter
-            .vector_io_read()
-            .incr_delta(stored.indices.len() + stored.values.len());
 
         self.query.score_by(|example| {
             let cpu_units = example.indices.len() + stored.indices.len();

@@ -157,9 +157,11 @@ fn scoring_equivalency(
 
     let mut other_storage = other_storage(other_dir.path());
 
+    let hw_counter = HardwareCounterCell::new();
+
     let mut iter = (0..NUM_POINTS).map(|i| {
         let i = i as PointOffsetType;
-        let vec = raw_storage.get_vector(i);
+        let vec = raw_storage.get_vector(i, &hw_counter);
         let deleted = raw_storage.is_deleted_vector(i);
         (vec, deleted)
     });

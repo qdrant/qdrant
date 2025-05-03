@@ -771,7 +771,8 @@ impl SegmentHolder {
                     self.aloha_random_write(
                         &appendable_segments,
                         |_appendable_idx, appendable_write_segment| {
-                            let mut all_vectors = write_segment.all_vectors(point_id)?;
+                            let mut all_vectors =
+                                write_segment.all_vectors(point_id, hw_counter)?;
                             let mut payload = write_segment.payload(point_id, hw_counter)?;
 
                             point_cow_operation(point_id, &mut all_vectors, &mut payload);
@@ -1795,7 +1796,7 @@ mod tests {
             let read_segment_2 = locked_segment_2.read();
             assert!(read_segment_2.has_point(123.into()));
             let vector = read_segment_2
-                .vector(DEFAULT_VECTOR_NAME, 123.into())
+                .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
                 .unwrap()
                 .unwrap();
             assert_ne!(vector, VectorInternal::Dense(vec![9.0; 4]));
@@ -1831,7 +1832,7 @@ mod tests {
         assert!(read_segment_1.has_point(123.into()));
 
         let new_vector = read_segment_1
-            .vector(DEFAULT_VECTOR_NAME, 123.into())
+            .vector(DEFAULT_VECTOR_NAME, 123.into(), &hw_counter)
             .unwrap()
             .unwrap();
         assert_eq!(new_vector, VectorInternal::Dense(vec![9.0; 4]));
