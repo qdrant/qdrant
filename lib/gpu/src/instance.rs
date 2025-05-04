@@ -114,7 +114,7 @@ impl Instance {
         // It's used to compile GLSL into SPIR-V.
         let compiler = Mutex::new(
             shaderc::Compiler::new()
-                .ok_or_else(|| GpuError::Other("Failed to create shaderc compiler".to_string()))?,
+                .map_err(|_| GpuError::Other("Failed to create shaderc compiler".to_string()))?,
         );
 
         // Create Vulkan API entry point.
@@ -307,9 +307,8 @@ impl Instance {
         defines: Option<&HashMap<String, Option<String>>>,
         includes: Option<&HashMap<String, String>>,
     ) -> GpuResult<Vec<u8>> {
-        let mut options = shaderc::CompileOptions::new().ok_or_else(|| {
-            GpuError::Other("Failed to create shaderc compile options".to_string())
-        })?;
+        let mut options = shaderc::CompileOptions::new()
+            .map_err(|_| GpuError::Other("Failed to create shaderc compile options".to_string()))?;
         options.set_optimization_level(shaderc::OptimizationLevel::Performance);
         options.set_target_env(
             shaderc::TargetEnv::Vulkan,
