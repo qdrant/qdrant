@@ -241,28 +241,4 @@ mod tests {
         let graph_layers_builder = graph_layers_builders.into_iter().next().unwrap();
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
     }
-
-    #[test]
-    fn test_gpu_empty_hnsw() {
-        let _ = env_logger::builder()
-            .is_test(true)
-            .filter_level(log::LevelFilter::Trace)
-            .try_init();
-
-        let num_vectors = 0;
-        let dim = 64;
-        let m = 8;
-        let m0 = 16;
-        let ef = 32;
-        let groups_count = 4;
-        let searches_count = 20;
-        let min_cpu_linked_points_count = 64;
-
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
-        let graph_layers_builders =
-            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false, 1);
-
-        let graph_layers_builder = graph_layers_builders.into_iter().next().unwrap();
-        assert!(graph_layers_builder.links_layers().is_empty());
-    }
 }

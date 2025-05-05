@@ -133,14 +133,11 @@ impl GpuVisitedFlags {
     pub fn init(&mut self, points_remap: &[PointOffsetType]) -> OperationResult<()> {
         let mut context = gpu::Context::new(self.device.clone())?;
         if let Some(remap_buffer) = self.remap_buffer.clone() {
-            let remap_staging_buffer =
-                if let Some(remap_staging_buffer) = &self.remap_staging_buffer {
-                    remap_staging_buffer
-                } else {
-                    return Err(OperationError::from(gpu::GpuError::Other(
-                        "Remap staging buffer is not initialized".to_string(),
-                    )));
-                };
+            let Some(remap_staging_buffer) = &self.remap_staging_buffer else {
+                return Err(OperationError::from(gpu::GpuError::Other(
+                    "Remap staging buffer is not initialized".to_string(),
+                )));
+            };
             for chunk in points_remap.chunks(UPLOAD_REMAP_BUFFER_COUNT) {
                 remap_staging_buffer.upload(chunk, 0)?;
                 context.copy_gpu_buffer(
