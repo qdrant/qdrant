@@ -319,7 +319,7 @@ fn test_byte_storage_binary_quantization_hnsw(
         payload_m: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
     let hnsw_index_byte = HNSWIndex::build(
         HnswIndexOpenArgs {
