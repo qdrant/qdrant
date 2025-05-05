@@ -22,6 +22,8 @@ use rayon::prelude::*;
 
 #[cfg(feature = "gpu")]
 use super::gpu::gpu_devices_manager::LockedGpuDevice;
+use super::gpu::gpu_insert_context::GpuInsertContext;
+#[cfg(feature = "gpu")]
 use super::gpu::gpu_vector_storage::GpuVectorStorage;
 use super::graph_links::GraphLinksFormat;
 use crate::common::BYTES_IN_KB;
@@ -34,6 +36,8 @@ use crate::data_types::vectors::{QueryVector, VectorInternal, VectorRef};
 use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::build_condition_checker::BuildConditionChecker;
 use crate::index::hnsw_index::config::HnswGraphConfig;
+#[cfg(feature = "gpu")]
+use crate::index::hnsw_index::gpu::gpu_graph_builder::GPU_MAX_VISITED_FLAGS_FACTOR;
 #[cfg(feature = "gpu")]
 use crate::index::hnsw_index::gpu::{get_gpu_groups_count, gpu_graph_builder::build_hnsw_on_gpu};
 use crate::index::hnsw_index::graph_layers::GraphLayers;
@@ -369,8 +373,6 @@ impl HNSWIndex {
         } else {
             None
         };
-        #[cfg(not(feature = "gpu"))]
-        let gpu_vectors = None;
 
         if build_main_graph {
             let timer = std::time::Instant::now();
@@ -428,9 +430,6 @@ impl HNSWIndex {
             drop(old_index);
         }
 
-        let visited_pool = VisitedPool::new();
-        let mut block_filter_list = visited_pool.get(total_vector_count);
-
         let payload_m = config.payload_m.unwrap_or(config.m);
 
         if payload_m > 0 {
@@ -446,6 +445,26 @@ impl HNSWIndex {
             } else {
                 BitVec::repeat(false, total_vector_count)
             };
+
+            let visited_pool = VisitedPool::new();
+            let mut block_filter_list = visited_pool.get(total_vector_count);
+
+            #[cfg(feature = "gpu")]
+            let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors.as_ref() {
+                Some(GpuInsertContext::new(
+                    gpu_vectors,
+                    get_gpu_groups_count(),
+                    payload_m,
+                    config.payload_m0.unwrap_or(config.m0),
+                    config.ef_construct,
+                    false,
+                    1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+                )?)
+            } else {
+                None
+            };
+            #[cfg(not(feature = "gpu"))]
+            let mut gpu_insert_context = None;
 
             for (field, _) in payload_index_ref.indexed_fields() {
                 debug!("building additional index for field {}", &field);
@@ -476,11 +495,12 @@ impl HNSWIndex {
                         HNSW_USE_HEURISTIC,
                         false,
                     );
+
                     Self::build_filtered_graph(
                         id_tracker_ref.deref(),
                         &vector_storage_ref,
                         &quantized_vectors_ref,
-                        gpu_vectors.as_ref(),
+                        &mut gpu_insert_context,
                         &payload_index_ref,
                         &pool,
                         stopped,
@@ -551,7 +571,7 @@ impl HNSWIndex {
         id_tracker: &IdTrackerSS,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
-        #[allow(unused_variables)] gpu_vectors: Option<&GpuVectorStorage>,
+        #[allow(unused_variables)] gpu_insert_context: &mut Option<GpuInsertContext<'_>>,
         payload_index: &StructPayloadIndex,
         pool: &ThreadPool,
         stopped: &AtomicBool,
@@ -593,7 +613,7 @@ impl HNSWIndex {
             id_tracker,
             vector_storage,
             quantized_vectors,
-            gpu_vectors,
+            gpu_insert_context.as_mut(),
             graph_layers_builder,
             block_filter_list,
             &points_to_index,
@@ -678,8 +698,22 @@ impl HNSWIndex {
             )
         };
 
+        let mut gpu_insert_context = if let Some(gpu_vectors) = gpu_vectors {
+            Some(GpuInsertContext::new(
+                gpu_vectors,
+                get_gpu_groups_count(),
+                graph_layers_builder.m(),
+                graph_layers_builder.m0(),
+                graph_layers_builder.ef_construct(),
+                false,
+                1..=GPU_MAX_VISITED_FLAGS_FACTOR,
+            )?)
+        } else {
+            None
+        };
+
         Self::build_graph_on_gpu(
-            gpu_vectors,
+            gpu_insert_context.as_mut(),
             graph_layers_builder,
             id_tracker.iter_ids_excluding(deleted_bitslice),
             entry_points_num,
@@ -694,44 +728,43 @@ impl HNSWIndex {
         id_tracker: &IdTrackerSS,
         vector_storage: &VectorStorageEnum,
         quantized_vectors: &Option<QuantizedVectors>,
-        gpu_vectors: Option<&GpuVectorStorage>,
+        gpu_insert_context: Option<&mut GpuInsertContext<'_>>,
         graph_layers_builder: &GraphLayersBuilder,
         block_filter_list: &VisitedListHandle,
         points_to_index: &[PointOffsetType],
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
-        let points_scorer_builder = |block_point_id| -> OperationResult<_> {
-            let vector = vector_storage.get_vector(block_point_id);
-            let vector = vector.as_vec_ref().into();
-            let hardware_counter = HardwareCounterCell::disposable();
-            let block_condition_checker: Box<dyn FilterContext> = Box::new(BuildConditionChecker {
-                filter_list: block_filter_list,
-                current_point: block_point_id,
-            });
-            FilteredScorer::new(
-                vector,
-                vector_storage,
-                quantized_vectors.as_ref(),
-                Some(BoxCow::Boxed(block_condition_checker)),
-                id_tracker.deleted_point_bitslice(),
-                hardware_counter,
-            )
-        };
-
         Self::build_graph_on_gpu(
-            gpu_vectors,
+            gpu_insert_context,
             graph_layers_builder,
             points_to_index.iter().copied(),
             1,
-            points_scorer_builder,
+            |block_point_id| -> OperationResult<_> {
+                let vector = vector_storage.get_vector(block_point_id);
+                let vector = vector.as_vec_ref().into();
+                let hardware_counter = HardwareCounterCell::disposable();
+                let block_condition_checker: Box<dyn FilterContext> =
+                    Box::new(BuildConditionChecker {
+                        filter_list: block_filter_list,
+                        current_point: block_point_id,
+                    });
+                FilteredScorer::new(
+                    vector,
+                    vector_storage,
+                    quantized_vectors.as_ref(),
+                    Some(BoxCow::Boxed(block_condition_checker)),
+                    id_tracker.deleted_point_bitslice(),
+                    hardware_counter,
+                )
+            },
             stopped,
         )
     }
 
     #[cfg(feature = "gpu")]
     #[allow(clippy::too_many_arguments)]
-    fn build_graph_on_gpu<'a>(
-        gpu_vectors: Option<&GpuVectorStorage>,
+    fn build_graph_on_gpu<'a, 'b>(
+        gpu_insert_context: Option<&mut GpuInsertContext<'b>>,
         graph_layers_builder: &GraphLayersBuilder,
         points_to_index: impl Iterator<Item = PointOffsetType>,
         entry_points_num: usize,
@@ -740,14 +773,13 @@ impl HNSWIndex {
         + Sync,
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GraphLayersBuilder>> {
-        if let Some(gpu_vectors) = gpu_vectors {
+        if let Some(gpu_insert_context) = gpu_insert_context {
             let gpu_constructed_graph = build_hnsw_on_gpu(
-                gpu_vectors,
+                gpu_insert_context,
                 graph_layers_builder,
                 get_gpu_groups_count(),
                 entry_points_num,
                 SINGLE_THREADED_HNSW_BUILD_THRESHOLD,
-                false,
                 points_to_index.collect::<Vec<_>>(),
                 points_scorer_builder,
                 stopped,
@@ -777,6 +809,9 @@ impl HNSWIndex {
         stopped: &AtomicBool,
     ) -> OperationResult<Option<GpuVectorStorage>> {
         use crate::index::hnsw_index::gpu::get_gpu_force_half_precision;
+        if vector_storage.total_vector_count() < SINGLE_THREADED_HNSW_BUILD_THRESHOLD {
+            return Ok(None);
+        }
 
         if let Some(gpu_device) = gpu_device {
             let gpu_vectors = GpuVectorStorage::new(

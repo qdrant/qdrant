@@ -99,7 +99,7 @@ impl GpuInsertResources {
     pub fn new(
         gpu_vector_storage: &GpuVectorStorage,
         groups_count: usize,
-        points_remap: &[PointOffsetType],
+        points_capacity: usize,
         ef: usize,
         exact: bool,
     ) -> OperationResult<Self> {
@@ -135,7 +135,7 @@ impl GpuInsertResources {
             device.clone(),
             "Insert atomics buffer",
             gpu::BufferType::Storage,
-            std::mem::size_of_val(points_remap),
+            points_capacity * std::mem::size_of::<u32>(),
         )?;
 
         let greedy_descriptor_set_layout = gpu::DescriptorSetLayout::builder()
@@ -182,25 +182,30 @@ impl<'a> GpuInsertContext<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         gpu_vector_storage: &'a GpuVectorStorage,
+        // Parallel inserts count.
         groups_count: usize,
-        points_remap: &[PointOffsetType],
         m: usize,
         m0: usize,
         ef: usize,
+        // If true, guarantee equality of result with CPU version for both single-threaded case.
+        // Required for tests.
         exact: bool,
-        visited_flags_factor_range: std::ops::Range<usize>,
+        // If points count is very big, we share visited flags buffer between multiple points.
+        // This parameter sets a factor how many points can share one visited flag.
+        visited_flags_factor_range: std::ops::RangeInclusive<usize>,
     ) -> OperationResult<Self> {
+        debug_assert!(groups_count > 0 && gpu_vector_storage.num_vectors() > 0);
         let device = gpu_vector_storage.device();
         let points_count = gpu_vector_storage.num_vectors();
         let insert_resources =
-            GpuInsertResources::new(gpu_vector_storage, groups_count, points_remap, ef, exact)?;
+            GpuInsertResources::new(gpu_vector_storage, groups_count, points_count, ef, exact)?;
 
         let gpu_links = GpuLinks::new(device.clone(), m, m0, points_count)?;
 
         let gpu_visited_flags = GpuVisitedFlags::new(
             device.clone(),
             groups_count,
-            points_remap,
+            points_count,
             visited_flags_factor_range,
         )?;
 
@@ -255,6 +260,14 @@ impl<'a> GpuInsertContext<'a> {
             patches_timer: Default::default(),
             patches_count: 0,
         })
+    }
+
+    pub fn init(&mut self, remap: &[PointOffsetType]) -> OperationResult<()> {
+        self.gpu_visited_flags.init(remap)?;
+        self.gpu_links.clear(&mut self.context)?;
+        self.context
+            .clear_buffer(self.insert_resources.insert_atomics_buffer.clone())?;
+        Ok(())
     }
 
     pub fn download_responses(&mut self, count: usize) -> OperationResult<Vec<PointOffsetType>> {
@@ -564,14 +577,14 @@ mod tests {
         let mut gpu_insert_context = GpuInsertContext::new(
             &test_data.gpu_vector_storage,
             test_data.groups_count,
-            &point_ids,
             test_data.m,
             test_data.m,
             test_data.ef,
             true,
-            1..32,
+            1..=32,
         )
         .unwrap();
+        gpu_insert_context.init(&point_ids).unwrap();
 
         gpu_insert_context
             .upload_links(0, &test_data.graph_layers_builder, &false.into())

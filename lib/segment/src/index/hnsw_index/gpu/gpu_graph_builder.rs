@@ -2,7 +2,6 @@ use std::sync::atomic::AtomicBool;
 
 use common::types::PointOffsetType;
 
-use super::gpu_vector_storage::GpuVectorStorage;
 use crate::common::check_stopped;
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::gpu::batched_points::BatchedPoints;
@@ -13,12 +12,12 @@ use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 
 /// Maximum count of point IDs per visited flag.
-static MAX_VISITED_FLAGS_FACTOR: usize = 32;
+pub static GPU_MAX_VISITED_FLAGS_FACTOR: usize = 32;
 
 /// Build HNSW graph on GPU.
 #[allow(clippy::too_many_arguments)]
-pub fn build_hnsw_on_gpu<'a>(
-    gpu_vector_storage: &GpuVectorStorage,
+pub fn build_hnsw_on_gpu<'a, 'b>(
+    gpu_insert_context: &mut GpuInsertContext<'b>,
     // Graph with all settings like m, ef, levels, etc.
     reference_graph: &GraphLayersBuilder,
     // Parallel inserts count.
@@ -27,9 +26,6 @@ pub fn build_hnsw_on_gpu<'a>(
     entry_points_num: usize,
     // Amount of first points to link on CPU.
     cpu_linked_points: usize,
-    // If true, guarantee equality of result with CPU version for both single-threaded case.
-    // Required for tests.
-    exact: bool,
     // Point IDs to insert.
     // In payload blocks we need to use subset of all points.
     ids: Vec<PointOffsetType>,
@@ -83,34 +79,24 @@ pub fn build_hnsw_on_gpu<'a>(
         return Ok(graph_layers_builder);
     }
 
-    // Create all GPU resources.
-    let mut gpu_search_context = GpuInsertContext::new(
-        gpu_vector_storage,
-        groups_count,
-        batched_points.remap(),
-        m,
-        m0,
-        ef,
-        exact,
-        1..MAX_VISITED_FLAGS_FACTOR,
-    )?;
+    gpu_insert_context.init(batched_points.remap())?;
 
     // Build all levels on GPU level by level.
     for level in (0..batched_points.levels_count()).rev() {
         log::trace!("Starting GPU level {level}");
 
-        gpu_search_context.upload_links(level, &graph_layers_builder, stopped)?;
+        gpu_insert_context.upload_links(level, &graph_layers_builder, stopped)?;
         build_level_on_gpu(
-            &mut gpu_search_context,
+            gpu_insert_context,
             &batched_points,
             cpu_linked_points,
             level,
             stopped,
         )?;
-        gpu_search_context.download_links(level, &graph_layers_builder, stopped)?;
+        gpu_insert_context.download_links(level, &graph_layers_builder, stopped)?;
     }
 
-    gpu_search_context.log_measurements();
+    gpu_insert_context.log_measurements();
 
     Ok(graph_layers_builder)
 }
@@ -120,6 +106,7 @@ mod tests {
     use std::borrow::Borrow;
 
     use super::*;
+    use crate::index::hnsw_index::gpu::gpu_vector_storage::GpuVectorStorage;
     use crate::index::hnsw_index::gpu::tests::{
         GpuGraphTestData, check_graph_layers_builders_quality, compare_graph_layers_builders,
         create_gpu_graph_test_data,
@@ -131,7 +118,8 @@ mod tests {
         groups_count: usize,
         cpu_linked_points_count: usize,
         exact: bool,
-    ) -> GraphLayersBuilder {
+        repeats: usize,
+    ) -> Vec<GraphLayersBuilder> {
         let num_vectors = test.graph_layers_builder.links_layers().len();
         let instance = gpu::GPU_TEST_INSTANCE.clone();
         let device = gpu::Device::new(instance.clone(), &instance.physical_devices()[0]).unwrap();
@@ -145,26 +133,41 @@ mod tests {
         )
         .unwrap();
 
-        let ids = (0..num_vectors as PointOffsetType).collect();
-        build_hnsw_on_gpu(
+        let mut gpu_search_context = GpuInsertContext::new(
             &gpu_vector_storage,
-            &test.graph_layers_builder,
             groups_count,
-            1,
-            cpu_linked_points_count,
+            test.graph_layers_builder.m(),
+            test.graph_layers_builder.m0(),
+            test.graph_layers_builder.ef_construct(),
             exact,
-            ids,
-            |point_id| {
-                let added_vector = test
-                    .vector_holder
-                    .vectors
-                    .get(point_id as VectorOffsetType)
-                    .to_vec();
-                Ok(test.vector_holder.get_scorer(added_vector.clone()))
-            },
-            &false.into(),
+            1..=GPU_MAX_VISITED_FLAGS_FACTOR,
         )
-        .unwrap()
+        .unwrap();
+
+        let ids: Vec<_> = (0..num_vectors as PointOffsetType).collect();
+
+        (0..repeats)
+            .map(|_| {
+                build_hnsw_on_gpu(
+                    &mut gpu_search_context,
+                    &test.graph_layers_builder,
+                    groups_count,
+                    1,
+                    cpu_linked_points_count,
+                    ids.clone(),
+                    |point_id| {
+                        let added_vector = test
+                            .vector_holder
+                            .vectors
+                            .get(point_id as VectorOffsetType)
+                            .to_vec();
+                        Ok(test.vector_holder.get_scorer(added_vector.clone()))
+                    },
+                    &false.into(),
+                )
+                .unwrap()
+            })
+            .collect()
     }
 
     #[test]
@@ -182,9 +185,11 @@ mod tests {
         let min_cpu_linked_points_count = 64;
 
         let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, 0);
-        let graph_layers_builder = build_gpu_graph(&test, 1, min_cpu_linked_points_count, true);
+        let graph_layers_builders = build_gpu_graph(&test, 1, min_cpu_linked_points_count, true, 2);
 
-        compare_graph_layers_builders(&test.graph_layers_builder, &graph_layers_builder);
+        for graph_layers_builder in graph_layers_builders.iter() {
+            compare_graph_layers_builders(&test.graph_layers_builder, graph_layers_builder);
+        }
     }
 
     #[test]
@@ -205,9 +210,10 @@ mod tests {
         let min_cpu_linked_points_count = 64;
 
         let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
-        let graph_layers_builder =
-            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, true);
+        let graph_layers_builders =
+            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, true, 1);
 
+        let graph_layers_builder = graph_layers_builders.into_iter().next().unwrap();
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
     }
 
@@ -229,31 +235,10 @@ mod tests {
         let min_cpu_linked_points_count = 64;
 
         let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
-        let graph_layers_builder =
-            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false);
+        let graph_layers_builders =
+            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false, 1);
 
+        let graph_layers_builder = graph_layers_builders.into_iter().next().unwrap();
         check_graph_layers_builders_quality(graph_layers_builder, test, top, ef, 0.8)
-    }
-
-    #[test]
-    fn test_gpu_empty_hnsw() {
-        let _ = env_logger::builder()
-            .is_test(true)
-            .filter_level(log::LevelFilter::Trace)
-            .try_init();
-
-        let num_vectors = 0;
-        let dim = 64;
-        let m = 8;
-        let m0 = 16;
-        let ef = 32;
-        let groups_count = 4;
-        let searches_count = 20;
-        let min_cpu_linked_points_count = 64;
-
-        let test = create_gpu_graph_test_data(num_vectors, dim, m, m0, ef, searches_count);
-        let graph_layers_builder =
-            build_gpu_graph(&test, groups_count, min_cpu_linked_points_count, false);
-        assert!(graph_layers_builder.links_layers().is_empty());
     }
 }

@@ -150,14 +150,14 @@ mod tests {
         let mut gpu_search_context = GpuInsertContext::new(
             &gpu_vector_storage,
             groups_count,
-            batched_points.remap(),
             m,
             m0,
             ef,
             true,
-            visited_flags_factor..32,
+            visited_flags_factor..=32,
         )
         .unwrap();
+        gpu_search_context.init(batched_points.remap()).unwrap();
 
         for level in (0..batched_points.levels_count()).rev() {
             let level_m = graph_layers_builder.get_m(level);
