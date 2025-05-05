@@ -38,10 +38,14 @@ impl<'a> ChunkReader<'a> {
         let chunks = self.chunks;
         let remainder_postings = self.remainder_postings;
 
+        // Check if in any chunk
         let in_chunks_range = !chunks.is_empty() && val >= chunks[0].initial && val <= last_doc_id;
-        let in_noncompressed_range =
-            !remainder_postings.is_empty() && val >= remainder_postings[0] && val <= last_doc_id;
-        in_chunks_range || in_noncompressed_range
+        if in_chunks_range {
+            return true;
+        }
+
+        // Check if in uncompressed range
+        !remainder_postings.is_empty() && val >= remainder_postings[0] && val <= last_doc_id
     }
 
     pub fn contains(&self, val: PointOffsetType) -> bool {
