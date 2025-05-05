@@ -1962,3 +1962,110 @@ def test_strict_mode_group_by_unindexed(collection_name):
     )
     assert response.ok
 
+
+def test_strict_mode_full_scan(full_collection_name):
+    collection_name = full_collection_name
+
+    # disable HNSW index
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "dense-multi": {
+                    "hnsw_config": {
+                        "m": 0,
+                    },
+                },
+            }
+        }
+    )
+    assert response.ok
+
+    # full scan allowed
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": 2,
+            "using": "dense-multi",
+            "limit": 5
+        }
+    )
+    assert response.ok
+
+    # enable strict mode with search_allow_exact
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "search_allow_exact": False
+    })
+
+    # full scan not allowed
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": 2,
+            "using": "dense-multi",
+            "limit": 5
+        }
+    )
+    assert not response.ok
+    assert "Fullscan forbidden on 'dense-multi' – vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
+
+    # sparse vector still works
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": 2,
+            "using": "sparse-text",
+            "limit": 5
+        }
+    )
+    assert response.ok
+
+    # Disabled HNSW is Ok for rescoring
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": 2,
+                    "using": "sparse-text",
+                    "limit": 50
+                }
+            ],
+            "query": 2,
+            "using": "dense-multi",
+            "limit": 5
+        }
+    )
+    assert response.ok
+
+    # Disabled HNSW forbidden prefetch
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "prefetch": [
+                {
+                    "query": 2,
+                    "using": "dense-multi",
+                    "limit": 50
+                }
+            ],
+            "query": 2,
+            "using": "sparse-text",
+            "limit": 5
+        }
+    )
+    assert not response.ok
+    assert "Fullscan forbidden on 'dense-multi' – vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
