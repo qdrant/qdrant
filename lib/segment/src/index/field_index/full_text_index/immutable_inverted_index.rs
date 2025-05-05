@@ -61,7 +61,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         let postings = match postings_opt {
             // All tokens must have postings and query must not be empty
             Some(postings) if !postings.is_empty() => postings,
-            _ => return Box::new(vec![].into_iter()),
+            _ => return Box::new(std::iter::empty()),
         };
 
         let posting_readers: Vec<_> = postings

@@ -210,12 +210,12 @@ impl InvertedIndex for MmapInvertedIndex {
             .collect();
         let Some(posting_readers) = postings_opt else {
             // There are unseen tokens -> no matches
-            return Box::new(vec![].into_iter());
+            return Box::new(std::iter::empty());
         };
 
         if posting_readers.is_empty() {
             // Empty request -> no matches
-            return Box::new(vec![].into_iter());
+            return Box::new(std::iter::empty());
         }
 
         // in case of mmap immutable index, deleted points are still in the postings
