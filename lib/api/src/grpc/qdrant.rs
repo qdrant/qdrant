@@ -5349,12 +5349,14 @@ pub mod query {
         Formula(super::Formula),
     }
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PrefetchQuery {
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
     /// Query to perform. If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "2")]
@@ -5364,15 +5366,18 @@ pub struct PrefetchQuery {
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[prost(message, optional, tag = "4")]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Search params for when there is no prefetch.
     #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// Return points with scores better than this threshold.
     #[prost(float, optional, tag = "6")]
     pub score_threshold: ::core::option::Option<f32>,
     /// Max number of points. Default is 10
     #[prost(uint64, optional, tag = "7")]
+    #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
     /// The location to use for IDs lookup, if not specified - use the current collection and the 'using' vector
     #[prost(message, optional, tag = "8")]
@@ -5389,6 +5394,7 @@ pub struct QueryPoints {
     pub collection_name: ::prost::alloc::string::String,
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "2")]
+    #[validate(nested)]
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
     /// Query to perform. If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "3")]
@@ -5453,15 +5459,18 @@ pub struct QueryBatchPoints {
     #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct QueryPointGroups {
     /// Name of the collection
     #[prost(string, tag = "1")]
+    #[validate(length(min = 1, max = 255))]
     pub collection_name: ::prost::alloc::string::String,
     /// Sub-requests to perform first. If present, the query will be performed on the results of the prefetches.
     #[prost(message, repeated, tag = "2")]
+    #[validate(nested)]
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
     /// Query to perform. If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "3")]
@@ -5471,9 +5480,11 @@ pub struct QueryPointGroups {
     pub using: ::core::option::Option<::prost::alloc::string::String>,
     /// Filter conditions - return only those points that satisfy the specified conditions.
     #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
     pub filter: ::core::option::Option<Filter>,
     /// Search params for when there is no prefetch.
     #[prost(message, optional, tag = "6")]
+    #[validate(nested)]
     pub params: ::core::option::Option<SearchParams>,
     /// Return points with scores better than this threshold.
     #[prost(float, optional, tag = "7")]
@@ -5489,12 +5500,15 @@ pub struct QueryPointGroups {
     pub lookup_from: ::core::option::Option<LookupLocation>,
     /// Max number of points. Default is 3.
     #[prost(uint64, optional, tag = "11")]
+    #[validate(range(min = 1))]
     pub limit: ::core::option::Option<u64>,
     /// Maximum amount of points to return per group. Default to 10.
     #[prost(uint64, optional, tag = "12")]
+    #[validate(range(min = 1))]
     pub group_size: ::core::option::Option<u64>,
     /// Payload field to group by, must be a string or number field. If there are multiple values for the field, all of them will be used. One point can be in multiple groups.
     #[prost(string, tag = "13")]
+    #[validate(length(min = 1))]
     pub group_by: ::prost::alloc::string::String,
     /// Options for specifying read consistency guarantees
     #[prost(message, optional, tag = "14")]
@@ -5504,6 +5518,7 @@ pub struct QueryPointGroups {
     pub with_lookup: ::core::option::Option<WithLookup>,
     /// If set, overrides global timeout setting for this request. Unit is seconds.
     #[prost(uint64, optional, tag = "16")]
+    #[validate(range(min = 1))]
     pub timeout: ::core::option::Option<u64>,
     /// Specify in which shards to look for the points, if not specified - look in all shards
     #[prost(message, optional, tag = "17")]
