@@ -116,24 +116,26 @@ pub trait InvertedIndex {
     /// The order of the tokens is preserved.
     fn register_tokens<'a>(
         &mut self,
-        str_tokens: impl IntoIterator<Item = &'a str> + 'a,
+        str_tokens: impl IntoIterator<Item = impl AsRef<str>> + 'a,
     ) -> Vec<TokenId> {
-        let vocab = self.get_vocab_mut();
-        let mut token_ids = vec![];
-        for token in str_tokens {
-            // check if in vocab
-            let vocab_idx = match vocab.get(token) {
-                Some(&idx) => idx,
-                None => {
-                    let next_token_id = vocab.len() as TokenId;
-                    vocab.insert(token.to_string(), next_token_id);
-                    next_token_id
-                }
-            };
-            token_ids.push(vocab_idx);
-        }
+        str_tokens
+            .into_iter()
+            .map(|token| self.register_token(token.as_ref()))
+            .collect()
+    }
 
-        token_ids
+    /// Translate the string tokens into token ids.
+    /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
+    fn register_token(&mut self, token_str: &str) -> TokenId {
+        let vocab = self.get_vocab_mut();
+        match vocab.get(token_str) {
+            Some(&idx) => idx,
+            None => {
+                let next_token_id = vocab.len() as TokenId;
+                vocab.insert(token_str.to_string(), next_token_id);
+                next_token_id
+            }
+        }
     }
 
     fn index_tokens(
@@ -322,8 +324,8 @@ mod tests {
         for idx in 0..indexed_count {
             // Generate 10 to 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
-            let str_tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let token_ids = index.register_tokens(str_tokens.iter().map(String::as_str));
+            let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
+            let token_ids = index.register_tokens(&tokens);
             let token_set = TokenSet::from_iter(token_ids);
             index.index_tokens(idx, token_set, &hw_counter).unwrap();
         }

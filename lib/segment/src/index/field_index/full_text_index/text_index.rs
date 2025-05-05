@@ -226,10 +226,33 @@ impl FullTextIndex {
         bincode::deserialize(data).unwrap()
     }
 
-    pub(super) fn serialize_document_tokens(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+    pub(super) fn serialize_token_set(tokens: BTreeSet<String>) -> OperationResult<Vec<u8>> {
+        #[derive(Serialize)]
+        struct StoredTokens {
+            tokens: BTreeSet<String>,
+        }
+        let doc = StoredTokens { tokens };
+        serde_cbor::to_vec(&doc).map_err(|e| {
+            OperationError::service_error(format!("Failed to serialize document: {e}"))
+        })
+    }
+
+    pub(super) fn deserialize_token_set(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+        #[derive(Deserialize)]
+        struct StoredTokens {
+            tokens: BTreeSet<String>,
+        }
+        serde_cbor::from_slice::<StoredTokens>(data)
+            .map_err(|e| {
+                OperationError::service_error(format!("Failed to deserialize document: {e}"))
+            })
+            .map(|doc| doc.tokens)
+    }
+
+    pub(super) fn serialize_document(tokens: Vec<String>) -> OperationResult<Vec<u8>> {
         #[derive(Serialize)]
         struct StoredDocument {
-            tokens: BTreeSet<String>,
+            tokens: Vec<String>,
         }
         let doc = StoredDocument { tokens };
         serde_cbor::to_vec(&doc).map_err(|e| {
@@ -237,10 +260,10 @@ impl FullTextIndex {
         })
     }
 
-    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<BTreeSet<String>> {
+    pub(super) fn deserialize_document(data: &[u8]) -> OperationResult<Vec<String>> {
         #[derive(Deserialize)]
         struct StoredDocument {
-            tokens: BTreeSet<String>,
+            tokens: Vec<String>,
         }
         serde_cbor::from_slice::<StoredDocument>(data)
             .map_err(|e| {

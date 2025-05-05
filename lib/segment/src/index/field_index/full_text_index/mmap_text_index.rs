@@ -125,9 +125,7 @@ impl ValueIndexer for FullTextMmapIndexBuilder {
             });
         }
 
-        let tokens = self
-            .mutable_index
-            .register_tokens(str_tokens.iter().map(String::as_str));
+        let tokens = self.mutable_index.register_tokens(&str_tokens);
 
         if self.mutable_index.point_to_doc.is_some() {
             let document = Document::new(tokens.clone());

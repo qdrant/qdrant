@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -25,10 +25,10 @@ pub struct MutableInvertedIndex {
 
 impl MutableInvertedIndex {
     pub fn build_index(
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
-        // TODO(phrase-index): add param for including phrase field
+        iter: impl Iterator<Item = OperationResult<(PointOffsetType, impl Iterator<Item = String>)>>,
+        phrase_matching: bool,
     ) -> OperationResult<Self> {
-        let mut builder = MutableInvertedIndexBuilder::default();
+        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
         builder.add_iter(iter)?;
         Ok(builder.build())
     }

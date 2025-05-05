@@ -5,6 +5,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use gridstore::Gridstore;
 use gridstore::config::StorageOptions;
+use itertools::Either;
 use parking_lot::RwLock;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
@@ -91,13 +92,20 @@ impl MutableFullTextIndex {
         };
 
         let db = db_wrapper.lock_db();
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
-            let str_tokens = FullTextIndex::deserialize_document(&value)?;
+
+            let str_tokens = if phrase_matching {
+                Either::Left(FullTextIndex::deserialize_document(&value)?.into_iter())
+            } else {
+                Either::Right(FullTextIndex::deserialize_token_set(&value)?.into_iter())
+            };
+
             Ok((idx, str_tokens))
         });
 
-        self.inverted_index = MutableInvertedIndex::build_index(iter)?;
+        self.inverted_index = MutableInvertedIndex::build_index(iter, phrase_matching)?;
 
         Ok(true)
     }
@@ -115,13 +123,19 @@ impl MutableFullTextIndex {
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_index_io_write_counter();
 
-        let mut builder = MutableInvertedIndexBuilder::default();
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+        let mut builder = MutableInvertedIndexBuilder::new(phrase_matching);
+
         store
             .read()
             .iter::<_, OperationError>(
                 |idx, value| {
-                    let tokens = FullTextIndex::deserialize_document(value)?;
-                    builder.add(idx, tokens);
+                    let str_tokens = if phrase_matching {
+                        Either::Left(FullTextIndex::deserialize_document(&value)?.into_iter())
+                    } else {
+                        Either::Right(FullTextIndex::deserialize_token_set(&value)?.into_iter())
+                    };
+                    builder.add(idx, str_tokens);
                     Ok(true)
                 },
                 hw_counter_ref,
@@ -218,9 +232,7 @@ impl MutableFullTextIndex {
             });
         }
 
-        let tokens = self
-            .inverted_index
-            .register_tokens(str_tokens.iter().map(String::as_str));
+        let tokens = self.inverted_index.register_tokens(&str_tokens);
 
         if self.inverted_index.point_to_doc.is_some() {
             let document = Document::new(tokens.clone());
@@ -234,8 +246,13 @@ impl MutableFullTextIndex {
 
         let db_idx = FullTextIndex::store_key(idx);
 
-        let db_document =
-            FullTextIndex::serialize_document_tokens(str_tokens.into_iter().collect())?;
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+
+        let db_document = if phrase_matching {
+            FullTextIndex::serialize_document(str_tokens)?
+        } else {
+            FullTextIndex::serialize_token_set(str_tokens.into_iter().collect())?
+        };
 
         // Update persisted storage
         match &self.storage {
@@ -331,8 +348,8 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: None,
-            on_disk: None,
             phrase_matching: None,
+            on_disk: None,
         };
 
         {
