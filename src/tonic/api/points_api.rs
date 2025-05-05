@@ -644,6 +644,7 @@ impl Points for PointsService {
         &self,
         mut request: Request<QueryPointGroups>,
     ) -> Result<Response<QueryGroupsResponse>, Status> {
+        validate(request.get_ref())?;
         let access = extract_access(&mut request);
         let inference_token = extract_token(&request);
         let collection_name = request.get_ref().collection_name.clone();
