@@ -4,7 +4,6 @@ use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use itertools::Itertools;
-use serde::{Deserialize, Serialize};
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
@@ -15,7 +14,7 @@ pub type TokenId = u32;
 /// Contains the set of tokens that are in a document.
 ///
 /// Internally, it keeps them unique and sorted, so that we can binary-search over them
-#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct TokenSet(Vec<TokenId>);
 
 impl TokenSet {
