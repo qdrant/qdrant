@@ -468,13 +468,13 @@ async fn upload_shard_snapshot(
     // - `recover_shard_snapshot_impl` is *not* cancel safe
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
         // TODO: Run this check before the multipart blob is uploaded
         let collection_pass = access
             .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);
 
-        let future = async {
+        let cancel_safe = async {
             if let Some(checksum) = checksum {
                 let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
                 if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
@@ -488,10 +488,10 @@ async fn upload_shard_snapshot(
                 .await?;
             collection.assert_shard_exists(shard).await?;
 
-            Result::<_, StorageError>::Ok(collection)
+            Ok(collection)
         };
 
-        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+        let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
@@ -507,7 +507,7 @@ async fn upload_shard_snapshot(
 
         Ok(())
     })
-    .map(|x| x.map_err(Into::into).and_then(|x| x));
+    .map(|res| res.map_err(Into::into).and_then(|res| res));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
@@ -609,13 +609,13 @@ async fn recover_partial_snapshot(
     // nothing to verify.
     let pass = new_unchecked_verification_pass();
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
         // TODO: Run this check before the multipart blob is uploaded
         let collection_pass = access
             .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);
 
-        let future = async {
+        let cancel_safe = async {
             if let Some(checksum) = checksum {
                 let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
                 if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
@@ -629,10 +629,10 @@ async fn recover_partial_snapshot(
                 .await?;
             collection.assert_shard_exists(shard).await?;
 
-            Result::<_, StorageError>::Ok(collection)
+            Ok(collection)
         };
 
-        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+        let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
@@ -648,7 +648,7 @@ async fn recover_partial_snapshot(
 
         Ok(())
     })
-    .map(|x| x.map_err(Into::into).and_then(|x| x));
+    .map(|res| res.map_err(Into::into).and_then(|res| res));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }

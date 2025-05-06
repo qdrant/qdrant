@@ -135,8 +135,8 @@ pub async fn recover_shard_snapshot(
     // - `recover_shard_snapshot_impl` is *not* cancel safe
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
-    cancel::future::spawn_cancel_on_drop(move |cancel| async move {
-        let future = async {
+    cancel::future::spawn_cancel_on_drop(async move |cancel| {
+        let cancel_safe = async {
             let collection = toc.get_collection(&collection_pass).await?;
             collection.assert_shard_exists(shard_id).await?;
 
@@ -186,11 +186,11 @@ pub async fn recover_shard_snapshot(
                 }
             }
 
-            Result::<_, StorageError>::Ok((collection, snapshot_path))
+            Ok((collection, snapshot_path))
         };
 
         let (collection, snapshot_path) =
-            cancel::future::cancel_on_token(cancel.clone(), future).await??;
+            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         let result = recover_shard_snapshot_impl(
