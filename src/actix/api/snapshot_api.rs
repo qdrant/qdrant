@@ -615,6 +615,7 @@ async fn recover_partial_snapshot(
             .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);
 
+        let future = async {
         if let Some(checksum) = checksum {
             let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
             if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
@@ -622,7 +623,6 @@ async fn recover_partial_snapshot(
             }
         }
 
-        let future = async {
             let collection = dispatcher
                 .toc(&access, &pass)
                 .get_collection(&collection_pass)
