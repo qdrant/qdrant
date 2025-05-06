@@ -53,7 +53,6 @@ fn test_byte_storage_hnsw(
     #[case] max_failures: usize, // out of 100
 ) {
     use common::counter::hardware_counter::HardwareCounterCell;
-    use segment::index::hnsw_index::num_rayon_threads;
     use segment::json_path::JsonPath;
     use segment::payload_json;
     use segment::segment_constructor::VectorIndexBuildArgs;
