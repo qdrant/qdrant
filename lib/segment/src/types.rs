@@ -1774,11 +1774,39 @@ impl PayloadSchemaParams {
     }
 }
 
+impl Validate for PayloadSchemaParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            PayloadSchemaParams::Keyword(keyword_index_params) => keyword_index_params.validate(),
+            PayloadSchemaParams::Integer(integer_index_params) => integer_index_params.validate(),
+            PayloadSchemaParams::Float(float_index_params) => float_index_params.validate(),
+            PayloadSchemaParams::Geo(geo_index_params) => geo_index_params.validate(),
+            PayloadSchemaParams::Text(text_index_params) => text_index_params.validate(),
+            PayloadSchemaParams::Bool(bool_index_params) => bool_index_params.validate(),
+            PayloadSchemaParams::Datetime(datetime_index_params) => {
+                datetime_index_params.validate()
+            }
+            PayloadSchemaParams::Uuid(uuid_index_params) => uuid_index_params.validate(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl Validate for PayloadFieldSchema {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            PayloadFieldSchema::FieldType(_) => Ok(()), // nothing to validate
+            PayloadFieldSchema::FieldParams(payload_schema_params) => {
+                payload_schema_params.validate()
+            }
+        }
+    }
 }
 
 impl Display for PayloadFieldSchema {

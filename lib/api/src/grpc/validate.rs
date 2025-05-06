@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use common::validation::{validate_range_generic, validate_shard_different_peers};
+use segment::data_types::index::validate_integer_index_params;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::qdrant as grpc;
@@ -381,6 +382,35 @@ pub fn validate_timestamp(ts: &prost_wkt_types::Timestamp) -> Result<(), Validat
     )?;
     validate_range_generic(ts.nanos, Some(0), Some(999_999_999))?;
     Ok(())
+}
+
+impl Validate for super::qdrant::payload_index_params::IndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::payload_index_params::IndexParams::KeywordIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::IntegerIndexParams(integer_index_params) => {
+                integer_index_params.validate()
+            }
+            grpc::payload_index_params::IndexParams::FloatIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::GeoIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::TextIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::BoolIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::DatetimeIndexParams(_) => Ok(()),
+            grpc::payload_index_params::IndexParams::UuidIndexParams(_) => Ok(()),
+        }
+    }
+}
+
+impl Validate for super::qdrant::IntegerIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let super::qdrant::IntegerIndexParams {
+            lookup,
+            range,
+            is_principal: _,
+            on_disk: _,
+        } = &self;
+        validate_integer_index_params(lookup, range)
+    }
 }
 
 #[cfg(test)]

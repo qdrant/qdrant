@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 // Keyword
 
@@ -10,7 +11,9 @@ pub enum KeywordIndexType {
     Keyword,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct KeywordIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -55,6 +58,33 @@ pub struct IntegerIndexParams {
     pub on_disk: Option<bool>,
 }
 
+impl Validate for IntegerIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let IntegerIndexParams {
+            r#type: _,
+            lookup,
+            range,
+            is_principal: _,
+            on_disk: _,
+        } = &self;
+        validate_integer_index_params(lookup, range)
+    }
+}
+
+pub fn validate_integer_index_params(
+    lookup: &Option<bool>,
+    range: &Option<bool>,
+) -> Result<(), ValidationErrors> {
+    if lookup == &Some(false) && range == &Some(false) {
+        let mut errors = ValidationErrors::new();
+        let error =
+            ValidationError::new("the 'lookup' and 'range' capabilities can't be both disabled");
+        errors.add("lookup", error);
+        return Err(errors);
+    }
+    Ok(())
+}
+
 // UUID
 
 #[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, Copy, PartialEq, Hash, Eq)]
@@ -64,7 +94,9 @@ pub enum UuidIndexType {
     Uuid,
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct UuidIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -88,7 +120,9 @@ pub enum FloatIndexType {
     Float,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct FloatIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -112,7 +146,9 @@ pub enum GeoIndexType {
     Geo,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -142,7 +178,9 @@ pub enum TokenizerType {
     Multilingual,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct TextIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -177,7 +215,9 @@ pub enum BoolIndexType {
     Bool,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct BoolIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -197,7 +237,9 @@ pub enum DatetimeIndexType {
     Datetime,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
+#[derive(
+    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
+)]
 #[serde(rename_all = "snake_case")]
 pub struct DatetimeIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
