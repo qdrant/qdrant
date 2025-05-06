@@ -208,9 +208,9 @@ impl<'a> ChunkReaderIter<'a> {
         if self.pending_remainder {
             self.pending_remainder = false;
             self.buffer
-                .copy_from_slice(self.chunk_reader.remainder_postings);
-            self.buffer
                 .truncate(self.chunk_reader.remainder_postings.len());
+            self.buffer
+                .copy_from_slice(self.chunk_reader.remainder_postings);
             self.buffer_position = 0;
             return Some(());
         }
