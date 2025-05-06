@@ -22,11 +22,23 @@ enum Storage {
 }
 
 impl ImmutableFullTextIndex {
-    pub fn new(db_wrapper: DatabaseColumnScheduledDeleteWrapper, config: TextIndexParams) -> Self {
+    pub fn new_rocksdb(
+        db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+        config: TextIndexParams,
+    ) -> Self {
         Self {
             inverted_index: Default::default(),
             config,
             storage: Storage::RocksDb(db_wrapper),
+        }
+    }
+
+    pub fn new_mmap(index: MmapFullTextIndex) -> Self {
+        let inverted_index = ImmutableInvertedIndex::from(&index.inverted_index);
+        Self {
+            inverted_index,
+            config: index.config.clone(),
+            storage: Storage::Mmap(Box::new(index)),
         }
     }
 

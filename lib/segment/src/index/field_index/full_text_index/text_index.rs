@@ -48,7 +48,7 @@ impl FullTextIndex {
         if is_appendable {
             Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
         } else {
-            Self::Immutable(ImmutableFullTextIndex::new(db_wrapper, config))
+            Self::Immutable(ImmutableFullTextIndex::new_rocksdb(db_wrapper, config))
         }
     }
 
