@@ -1,4 +1,4 @@
-use segment::types::StrictModeConfig;
+use segment::types::{Filter, StrictModeConfig};
 
 use super::{StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
@@ -40,6 +40,7 @@ impl Query {
     async fn check_fullscan(
         &self,
         using: &str,
+        filter: Option<&Filter>,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
@@ -69,15 +70,36 @@ impl Query {
                         .and_then(|param| param.hnsw_config.as_ref());
 
                     let vector_hnsw_m = vector_hnsw_config.and_then(|hnsw| hnsw.m);
-                    // TODO(strict-mode) check also payload_m if if there is a filter by tenant/principal
-                    if vector_hnsw_m == Some(0) {
-                        return Err(CollectionError::strict_mode(
-                            format!(
-                                "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
-                            ),
-                            "Enable vector indexing or use a prefetch query before rescoring",
-                        ));
+                    let vector_hnsw_payload_m = vector_hnsw_config.and_then(|hnsw| hnsw.payload_m);
+
+                    let is_hnsw_disabled =
+                        vector_hnsw_m == Some(0) && vector_hnsw_payload_m.unwrap_or(0) == 0;
+                    if !is_hnsw_disabled {
+                        // fast path when no additional checks required
+                        return Ok(());
                     }
+
+                    // allow querying without HNSW if there is a filtering condition on a multitenant indexed payload key
+                    if let Some(filter) = filter {
+                        let uses_multitenant_filter = filter
+                            .iter_conditions()
+                            .filter_map(|c| c.targeted_key())
+                            .filter_map(|key| collection.payload_key_index_schema(&key))
+                            .any(|index_schema| index_schema.is_tenant());
+
+                        if uses_multitenant_filter {
+                            // no need for HNSW
+                            return Ok(());
+                        }
+                    };
+
+                    // HNSW disabled AND no multitenant filter to leverage
+                    return Err(CollectionError::strict_mode(
+                        format!(
+                            "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
+                        ),
+                        "Enable vector indexing or use a prefetch query before rescoring",
+                    ));
                 }
             }
         }
@@ -102,7 +124,12 @@ impl StrictModeVerification for CollectionQueryRequest {
             // check query can perform fullscan when not rescoring
             if self.prefetch.is_empty() {
                 query
-                    .check_fullscan(&self.using, collection, strict_mode_config)
+                    .check_fullscan(
+                        &self.using,
+                        self.filter.as_ref(),
+                        collection,
+                        strict_mode_config,
+                    )
                     .await?;
             }
             // check for unindexed fields in formula
@@ -149,7 +176,12 @@ impl StrictModeVerification for CollectionPrefetch {
         if let Some(query) = self.query.as_ref() {
             // check if prefetch can perform a fullscan
             query
-                .check_fullscan(&self.using, collection, strict_mode_config)
+                .check_fullscan(
+                    &self.using,
+                    self.filter.as_ref(),
+                    collection,
+                    strict_mode_config,
+                )
                 .await?;
             // check for unindexed fields in formula
             query
@@ -191,7 +223,12 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
             // check query can perform fullscan when not rescoring
             if self.prefetch.is_empty() {
                 query
-                    .check_fullscan(&self.using, collection, strict_mode_config)
+                    .check_fullscan(
+                        &self.using,
+                        self.filter.as_ref(),
+                        collection,
+                        strict_mode_config,
+                    )
                     .await?;
             }
             // check for unindexed fields in formula
