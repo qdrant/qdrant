@@ -303,30 +303,43 @@ mod tests {
     #[case(10, 2)]
     #[case(0, 0)]
     #[test]
-    fn test_immutable_to_mmap(#[case] indexed_count: u32, #[case] deleted_count: u32) {
+    fn test_immutable_to_mmap_to_immutable(#[case] indexed_count: u32, #[case] deleted_count: u32) {
+        use std::collections::HashSet;
+
         let mutable = mutable_inverted_index(indexed_count, deleted_count);
         let immutable = ImmutableInvertedIndex::from(mutable);
 
-        let path = tempfile::tempdir().unwrap().into_path();
-
-        MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
+        let mmap_dir = tempfile::tempdir().unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mmap = MmapInvertedIndex::open(path, false).unwrap();
+        MmapInvertedIndex::create(mmap_dir.path().into(), immutable.clone()).unwrap();
+        let mmap = MmapInvertedIndex::open(mmap_dir.path().into(), false).unwrap();
+
+        let imm_mmap = ImmutableInvertedIndex::from(&mmap);
 
         // Check same vocabulary
         for (token, token_id) in immutable.vocab.iter() {
             assert_eq!(mmap.get_token_id(token, &hw_counter), Some(*token_id));
+            assert_eq!(imm_mmap.get_token_id(token, &hw_counter), Some(*token_id));
         }
 
         // Check same postings
         for (token_id, posting) in immutable.postings.iter().enumerate() {
-            let chunk_reader = mmap.postings.get(token_id as u32, &hw_counter).unwrap();
+            let mutable_ids = posting.iter().collect::<HashSet<_>>();
 
-            for point_id in posting.iter() {
-                assert!(chunk_reader.contains(point_id));
-            }
+            // Check mutable vs mmap
+            let mmap_ids = mmap
+                .postings
+                .get(token_id as u32, &hw_counter)
+                .unwrap()
+                .iter()
+                .collect();
+            assert_eq!(mutable_ids, mmap_ids);
+
+            // Check mutable vs immutable mmap
+            let imm_mmap_ids = imm_mmap.postings[token_id].iter().collect();
+            assert_eq!(mutable_ids, imm_mmap_ids);
         }
 
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
@@ -334,7 +347,7 @@ mod tests {
             assert_eq!(
                 mmap.deleted_points.get(point_id).unwrap(),
                 count.is_none(),
-                "point_id: {point_id}"
+                "point_id: {point_id}",
             );
 
             // Check same count
@@ -342,10 +355,12 @@ mod tests {
                 *mmap.point_to_tokens_count.get(point_id).unwrap(),
                 count.unwrap_or(0)
             );
+            assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
         }
 
         // Check same points count
-        assert_eq!(mmap.active_points_count, immutable.points_count);
+        assert_eq!(immutable.points_count, mmap.active_points_count);
+        assert_eq!(immutable.points_count, imm_mmap.points_count);
     }
 
     #[test]
@@ -355,22 +370,14 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
         let mmap_dir = tempfile::tempdir().unwrap();
-        let imm_mmap_dir = tempfile::tempdir().unwrap();
 
         let mut mut_index = mutable_inverted_index(indexed_count, deleted_count);
 
-        let mut mmap_index = {
-            let immutable = ImmutableInvertedIndex::from(mut_index.clone());
-            MmapInvertedIndex::create(mmap_dir.path().into(), immutable).unwrap();
-            MmapInvertedIndex::open(mmap_dir.path().into(), false).unwrap()
-        };
+        let immutable = ImmutableInvertedIndex::from(mut_index.clone());
+        MmapInvertedIndex::create(mmap_dir.path().into(), immutable).unwrap();
+        let mut mmap_index = MmapInvertedIndex::open(mmap_dir.path().into(), false).unwrap();
 
-        let mut imm_mmap_index = {
-            let immutable = ImmutableInvertedIndex::from(mut_index.clone());
-            MmapInvertedIndex::create(imm_mmap_dir.path().into(), immutable).unwrap();
-            let mmap_index = MmapInvertedIndex::open(imm_mmap_dir.path().into(), false).unwrap();
-            ImmutableInvertedIndex::from(&mmap_index)
-        };
+        let mut imm_mmap_index = ImmutableInvertedIndex::from(&mmap_index);
 
         let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
 
