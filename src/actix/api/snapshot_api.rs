@@ -675,7 +675,31 @@ async fn recover_partial_snapshot_from(
     // nothing to verify
     let pass = new_unchecked_verification_pass();
 
+    let take_recovery_lock_future = async {
+        let collection_pass = access
+            .check_global_access(AccessRequirements::new().manage())?
+            .issue_pass(&collection_name);
+
+        let recovery_lock = dispatcher
+            .toc(&access, &pass)
+            .get_collection(&collection_pass)
+            .await?
+            .take_partial_snapshot_lock(shard_id, RecoveryType::Partial)
+            .await?;
+
+        Ok(recovery_lock)
+    };
+
+    let recovery_lock = match take_recovery_lock_future.await {
+        Ok(recovery_lock) => recovery_lock,
+        Err(err) => {
+            return helpers::process_response_error(err, tokio::time::Instant::now(), None);
+        }
+    };
+
     let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
+        let _recovery_lock = recovery_lock;
+
         let cancel_safe = async {
             let toc = dispatcher.toc(&access, &pass);
 
