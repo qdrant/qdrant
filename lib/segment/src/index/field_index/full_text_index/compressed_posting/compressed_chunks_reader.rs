@@ -132,6 +132,10 @@ impl<'a> ChunkReader<'a> {
         self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.chunks.is_empty() && self.remainder_postings.is_empty()
+    }
+
     pub fn chunks_len(&self) -> usize {
         self.chunks.len()
     }

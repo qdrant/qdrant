@@ -185,13 +185,31 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
     fn from(index: &MmapInvertedIndex) -> Self {
         let hw_counter = HardwareCounterCell::disposable();
 
+        // Keep only tokens that have non-empty postings
+        let (postings, orig_to_new_token): (Vec<_>, HashMap<_, _>) = index
+            .iter_postings(&hw_counter)
+            .enumerate()
+            .filter_map(|(orig_token, posting)| {
+                (!posting.is_empty()).then_some((orig_token, posting))
+            })
+            .enumerate()
+            .map(|(new_token, (orig_token, posting))| {
+                (posting, (orig_token as TokenId, new_token as TokenId))
+            })
+            .unzip();
+
+        // Update vocab entries
         let mut vocab: HashMap<String, TokenId> = index
             .iter_vocab()
-            .map(|(k, &v)| (k.to_owned(), v))
+            .filter_map(|(key, orig_token)| {
+                orig_to_new_token
+                    .get(orig_token)
+                    .map(|new_token| (key.to_string(), *new_token))
+            })
             .collect();
 
-        let postings: Vec<CompressedPostingList> = index
-            .iter_postings(&hw_counter)
+        let postings: Vec<CompressedPostingList> = postings
+            .into_iter()
             .map(|postings| CompressedPostingList::new(&postings.to_vec()))
             .collect();
         vocab.shrink_to_fit();
