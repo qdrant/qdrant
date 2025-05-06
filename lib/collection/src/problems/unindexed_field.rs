@@ -309,6 +309,8 @@ impl<'a> IssueExtractor<'a> {
 pub struct Extractor<'a> {
     payload_schema: &'a HashMap<PayloadKeyType, PayloadFieldSchema>,
     unindexed_schema: HashMap<PayloadKeyType, Vec<PayloadFieldSchema>>,
+    needs_match_index: bool,
+    needs_range_index: bool,
 }
 
 impl<'a> Extractor<'a> {
@@ -320,6 +322,8 @@ impl<'a> Extractor<'a> {
         let mut extractor = Self {
             payload_schema,
             unindexed_schema: HashMap::new(),
+            needs_match_index: false,
+            needs_range_index: false,
         };
 
         extractor.update_from_filter(None, filter);
@@ -332,6 +336,8 @@ impl<'a> Extractor<'a> {
         Self {
             payload_schema,
             unindexed_schema: HashMap::new(),
+            needs_match_index: false,
+            needs_range_index: false,
         }
     }
 
@@ -364,6 +370,8 @@ impl<'a> Extractor<'a> {
         match condition {
             Condition::Field(field_condition) => {
                 key = &field_condition.key;
+                self.update_needs_match(field_condition.r#match.is_some());
+                self.update_needs_range(field_condition.range.is_some());
                 inferred = infer_schema_from_field_condition(field_condition);
             }
             Condition::Filter(filter) => {
@@ -402,25 +410,36 @@ impl<'a> Extractor<'a> {
         }
     }
 
+    /// Capture that an index with Match capability is required.
+    /// Does not toggle off if has been set once already.
+    fn update_needs_match(&mut self, is_match: bool) {
+        if !self.needs_match_index {
+            self.needs_match_index = is_match
+        }
+    }
+
+    /// Capture that an index with Match capability is required.
+    /// Does not toggle off if has been set once already.
+    fn update_needs_range(&mut self, is_range: bool) {
+        if !self.needs_range_index {
+            self.needs_range_index = is_range
+        }
+    }
+
     fn needs_index(&self, key: &JsonPath, inferred: &[PayloadFieldSchema]) -> bool {
         match self.payload_schema.get(key) {
             Some(index_info) => {
-                let index_info_kind = index_info.kind();
+                if self.needs_match_index && !index_info.supports_match() {
+                    return true;
+                }
 
+                if self.needs_range_index && !index_info.supports_range() {
+                    return true;
+                }
+
+                let index_info_kind = index_info.kind();
                 let already_indexed = inferred
                     .iter()
-                    // TODO(strict-mode):
-                    // Use better comparisons for parametrized indexes. An idea is to make the inferring step
-                    // also output valid parametrized indexes and compare those instead of just the kind (index type)
-                    //
-                    // The only reason why it would be needed is because integer index can be parametrized
-                    // with just lookup or just range, so it is possible to make a false negative here. E.g.
-                    //
-                    // condition: MatchValue
-                    // inferred: FieldType(Integer)
-                    // index_info: FieldParams(IntegerIndex(range))
-                    //
-                    // In this case, we would assume that the field is indexed correctly when it is not
                     .map(PayloadFieldSchema::kind)
                     .any(|inferred| inferred == index_info_kind);
 

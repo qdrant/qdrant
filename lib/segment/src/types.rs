@@ -1898,6 +1898,34 @@ impl PayloadFieldSchema {
             },
         }
     }
+
+    /// Check if this type supports a `range` condition
+    pub fn supports_range(&self) -> bool {
+        match self {
+            PayloadFieldSchema::FieldType(payload_schema_type) => match payload_schema_type {
+                PayloadSchemaType::Float => true,
+                PayloadSchemaType::Integer => true,
+                PayloadSchemaType::Keyword => false,
+                PayloadSchemaType::Uuid => false,
+                PayloadSchemaType::Bool => false,
+                PayloadSchemaType::Geo => false,
+                PayloadSchemaType::Text => false,
+                PayloadSchemaType::Datetime => false,
+            },
+            PayloadFieldSchema::FieldParams(payload_schema_params) => match payload_schema_params {
+                PayloadSchemaParams::Float(_) => true,
+                PayloadSchemaParams::Integer(integer_index_params) => {
+                    integer_index_params.range == Some(true)
+                }
+                PayloadSchemaParams::Keyword(_) => false,
+                PayloadSchemaParams::Uuid(_) => false,
+                PayloadSchemaParams::Bool(_) => false,
+                PayloadSchemaParams::Geo(_) => false,
+                PayloadSchemaParams::Text(_) => false,
+                PayloadSchemaParams::Datetime(_) => false,
+            },
+        }
+    }
 }
 
 impl From<PayloadSchemaType> for PayloadFieldSchema {

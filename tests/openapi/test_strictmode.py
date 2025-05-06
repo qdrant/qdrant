@@ -162,7 +162,7 @@ def test_strict_mode_timeout_validation(collection_name):
     assert not search_fail.ok
 
 
-def test_strict_mode_unindexed_filter_read_validation(collection_name):
+def test_strict_mode_unindexed_filter_keyword_read_validation(collection_name):
     def search_request_with_filter():
         return request_with_validation(
             api='/collections/{collection_name}/points/search',
@@ -216,6 +216,84 @@ def test_strict_mode_unindexed_filter_read_validation(collection_name):
     # We created an index on this field so it should work now
     search_request_with_filter().raise_for_status()
 
+
+def test_strict_mode_unindexed_filter_integer_read_validation(collection_name):
+    def search_request_with_filter():
+        return request_with_validation(
+            api='/collections/{collection_name}/points/search',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "vector": [0.2, 0.1, 0.9, 0.7],
+                "limit": 3,
+                "filter": {
+                    "must": [
+                        {
+                            "key": "count",
+                            "match": {
+                                "value": 1
+                            }
+                        }
+                    ]
+                },
+            }
+        )
+
+    search_request_with_filter().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "unindexed_filtering_retrieve": True,
+    })
+
+    search_request_with_filter().raise_for_status()
+
+    set_strict_mode(collection_name, {
+        "unindexed_filtering_retrieve": False,
+    })
+
+    search_fail = search_request_with_filter()
+
+    assert "count" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "count",
+            "field_schema": {
+                "type": "integer",
+                "lookup": False,
+                "range": True,
+            }
+        }
+    ).raise_for_status()
+
+    # the integer index does not support `lookup` on our match condition
+    assert "count" in search_fail.json()['status']['error']
+    assert not search_fail.ok
+
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "count",
+            "field_schema": {
+                "type": "integer",
+                "lookup": True,
+                "range": True,
+            }
+        }
+    ).raise_for_status()
+    
+    # We created an index with `lookup` on this field so it should work now
+    search_request_with_filter().raise_for_status()
+ 
 
 def test_strict_mode_unindexed_filter_write_validation(collection_name):
     def update_request_with_filter():
@@ -1013,7 +1091,7 @@ def test_strict_mode_max_collection_point_count_upsert_batch(collection_name):
     })
 
     for i in range(32):
-        print(upsert_points([3, 4]).json())
+        upsert_points([3, 4]).json()
 
     # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
     for i in range(32):
@@ -1367,6 +1445,26 @@ def test_strict_mode_formula_expression(collection_name):
     assert not query_fail.ok
     assert "discount_price" in query_fail.json()['status']['error']
     assert "formula expression" in query_fail.json()['status']['error']
+
+    # Create index on `discount_price`
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "discount_price",
+            "field_schema": {
+                "type": "integer",
+                "lookup": True,
+                "range": False,
+            }
+        }
+    ).raise_for_status()
+
+    # Query succeeds with the index
+    query_ok = query_request()
+    assert query_ok.ok
 
 
 def test_strict_mode_read_rate_limiting_small_replenish(collection_name):
