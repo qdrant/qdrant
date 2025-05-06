@@ -196,7 +196,7 @@ async fn upload_snapshot(
 
         if let Some(checksum) = &params.checksum {
             let snapshot_checksum = sha_256::hash_file(snapshot.file.path()).await?;
-            if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
+            if !sha_256::hashes_equal(&snapshot_checksum, checksum) {
                 return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
             }
         }
