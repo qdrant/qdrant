@@ -475,12 +475,12 @@ async fn upload_shard_snapshot(
             .issue_pass(&collection);
 
         let future = async {
-        if let Some(checksum) = checksum {
-            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
-            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
-                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+            if let Some(checksum) = checksum {
+                let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
+                if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                    return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+                }
             }
-        }
 
             let collection = dispatcher
                 .toc(&access, &pass)
@@ -616,12 +616,12 @@ async fn recover_partial_snapshot(
             .issue_pass(&collection);
 
         let future = async {
-        if let Some(checksum) = checksum {
-            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
-            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
-                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+            if let Some(checksum) = checksum {
+                let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
+                if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                    return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+                }
             }
-        }
 
             let collection = dispatcher
                 .toc(&access, &pass)
