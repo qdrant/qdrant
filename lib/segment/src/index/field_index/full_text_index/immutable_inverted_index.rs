@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::inverted_index::InvertedIndex;
+use super::mmap_inverted_index::MmapInvertedIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
@@ -176,6 +177,41 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
                 .map(|doc| doc.as_ref().map(|doc| doc.len()))
                 .collect(),
             points_count: index.points_count,
+        }
+    }
+}
+
+impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
+    fn from(index: &MmapInvertedIndex) -> Self {
+        let hw_counter = HardwareCounterCell::disposable();
+
+        let mut vocab: HashMap<String, TokenId> = index
+            .iter_vocab()
+            .map(|(k, &v)| (k.to_owned(), v))
+            .collect();
+
+        let postings: Vec<CompressedPostingList> = index
+            .iter_postings(&hw_counter)
+            .map(|postings| CompressedPostingList::new(&postings.to_vec()))
+            .collect();
+        vocab.shrink_to_fit();
+
+        debug_assert!(
+            postings.len() == vocab.len(),
+            "postings and vocab must be the same size",
+        );
+
+        let point_to_tokens_count = index
+            .point_to_tokens_count
+            .iter()
+            .map(|&n| Some(n))
+            .collect();
+
+        ImmutableInvertedIndex {
+            postings,
+            vocab,
+            point_to_tokens_count,
+            points_count: index.points_count(),
         }
     }
 }

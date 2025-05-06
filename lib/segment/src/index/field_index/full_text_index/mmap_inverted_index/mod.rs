@@ -11,6 +11,7 @@ use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
 
+use super::compressed_posting::compressed_chunks_reader::ChunkReader;
 use super::inverted_index::{InvertedIndex, ParsedQuery};
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
@@ -117,9 +118,18 @@ impl MmapInvertedIndex {
         })
     }
 
-    fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> {
+    pub(super) fn iter_vocab(&self) -> impl Iterator<Item = (&str, &TokenId)> {
         // unwrap safety: we know that each token points to a token id.
         self.vocab.iter().map(|(k, v)| (k, v.first().unwrap()))
+    }
+
+    /// Iterate over posting lists, returning chunk reader for each
+    #[inline]
+    pub(super) fn iter_postings<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = ChunkReader<'a>> {
+        self.postings.iter_postings(hw_counter)
     }
 
     /// Returns whether the point id is valid and active.
