@@ -222,7 +222,7 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
         let point_to_tokens_count = index
             .point_to_tokens_count
             .iter()
-            .map(|&n| Some(n))
+            .map(|&n| if n > 0 { Some(n) } else { None })
             .collect();
 
         ImmutableInvertedIndex {
