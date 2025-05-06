@@ -5,7 +5,7 @@ use actix_multipart::form::tempfile::TempFile;
 use actix_web::{Responder, Result, delete, get, post, put, web};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
-use collection::common::sha_256::{hash_file, hashes_equal};
+use collection::common::sha_256;
 use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
@@ -195,8 +195,8 @@ async fn upload_snapshot(
         access.check_global_access(AccessRequirements::new().manage())?;
 
         if let Some(checksum) = &params.checksum {
-            let snapshot_checksum = hash_file(snapshot.file.path()).await?;
-            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+            let snapshot_checksum = sha_256::hash_file(snapshot.file.path()).await?;
+            if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
                 return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
             }
         }
@@ -476,8 +476,8 @@ async fn upload_shard_snapshot(
 
         let future = async {
             if let Some(checksum) = checksum {
-                let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
-                if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
+                if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
                     return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
                 }
             }
@@ -617,8 +617,8 @@ async fn recover_partial_snapshot(
 
         let future = async {
             if let Some(checksum) = checksum {
-                let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
-                if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+                let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
+                if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
                     return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
                 }
             }
