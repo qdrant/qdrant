@@ -222,7 +222,14 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
         let point_to_tokens_count = index
             .point_to_tokens_count
             .iter()
-            .map(|&n| if n > 0 { Some(n) } else { None })
+            .enumerate()
+            .map(|(i, &n)| {
+                debug_assert!(
+                    index.is_active(i as u32) || n == 0,
+                    "deleted point index {i} has {n} tokens, expected zero",
+                );
+                (n > 0).then_some(n)
+            })
             .collect();
 
         ImmutableInvertedIndex {

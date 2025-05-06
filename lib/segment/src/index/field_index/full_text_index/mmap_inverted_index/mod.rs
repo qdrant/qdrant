@@ -133,7 +133,7 @@ impl MmapInvertedIndex {
     }
 
     /// Returns whether the point id is valid and active.
-    fn is_active(&self, point_id: PointOffsetType) -> bool {
+    pub fn is_active(&self, point_id: PointOffsetType) -> bool {
         let is_deleted = self.deleted_points.get(point_id as usize).unwrap_or(true);
 
         !is_deleted
