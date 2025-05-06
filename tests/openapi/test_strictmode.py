@@ -1898,7 +1898,6 @@ def test_read_rate_limiter_many_vectors(full_collection_name):
     })
     check_multivector_query_id(should_succeed=False)
 
-
     # Set strict mode with just enough read_rate_limit, it should succeed
     set_strict_mode(collection_name, {
         "enabled": True,
@@ -2174,3 +2173,95 @@ def test_strict_mode_full_scan(full_collection_name):
     )
     assert not response.ok
     assert "Fullscan forbidden on 'dense-multi' – vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
+
+
+def test_strict_mode_multitenant_full_scan(full_collection_name):
+    collection_name = full_collection_name
+
+    def filtered_query():
+        return request_with_validation(
+            api='/collections/{collection_name}/points/query',
+            method="POST",
+            path_params={'collection_name': collection_name},
+            body={
+                "query": 2,
+                "filter": {
+                    "must": [
+                        {
+                            "key": "city",
+                            "match": {
+                                "value": "Berlin"
+                            }
+                        }
+                    ]
+                },
+                "using": "dense-multi",
+                "limit": 5
+            }
+        )
+
+    # disable HNSW index
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "dense-multi": {
+                    "hnsw_config": {
+                        "m": 0,
+                    },
+                },
+            }
+        }
+    )
+    assert response.ok
+
+    # filtered search allowed
+    filtered_query().raise_for_status()
+
+    # enable strict mode with search_allow_exact
+    set_strict_mode(collection_name, {
+        "enabled": True,
+        "search_allow_exact": False
+    })
+
+    # filtered search not allowed anymore because no HNSW index
+    response = filtered_query()
+    assert not response.ok
+    assert "Fullscan forbidden on 'dense-multi'" in response.json()['status']['error']
+
+    # add payload index
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "city",
+            "field_schema": "keyword"
+        }
+    ).raise_for_status()
+
+    # still not allowed although we have payload index for the filter
+    response = filtered_query()
+    assert not response.ok
+    assert "Fullscan forbidden on 'dense-multi'" in response.json()['status']['error']
+
+    # add multitenant payload index
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "city",
+            "field_schema": {
+                "type": "keyword",
+                "is_tenant": True,
+            }
+        }
+    ).raise_for_status()
+
+    # search allowed through multitenant payload index
+    filtered_query().raise_for_status()
