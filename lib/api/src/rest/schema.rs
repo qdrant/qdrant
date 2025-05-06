@@ -472,39 +472,45 @@ pub enum Query {
     Sample(SampleQuery),
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct NearestQuery {
+    #[validate(nested)]
     pub nearest: VectorInput,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct RecommendQuery {
+    #[validate(nested)]
     pub recommend: RecommendInput,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct DiscoverQuery {
+    #[validate(nested)]
     pub discover: DiscoverInput,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct ContextQuery {
+    #[validate(nested)]
     pub context: ContextInput,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct OrderByQuery {
+    #[validate(nested)]
     pub order_by: OrderByInterface,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct FusionQuery {
+    #[validate(nested)]
     pub fusion: Fusion,
 }
 
@@ -516,9 +522,10 @@ pub struct FormulaQuery {
     pub defaults: HashMap<String, Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 #[serde(rename_all = "snake_case")]
 pub struct SampleQuery {
+    #[validate(nested)]
     pub sample: Sample,
 }
 
@@ -685,89 +692,107 @@ pub struct DatetimeKeyExpression {
     pub datetime_key: JsonPath,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct MultExpression {
+    #[validate(nested)]
     pub mult: Vec<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct SumExpression {
+    #[validate(nested)]
     pub sum: Vec<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct NegExpression {
+    #[validate(nested)]
     pub neg: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct AbsExpression {
+    #[validate(nested)]
     pub abs: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct DivExpression {
+    #[validate(nested)]
     pub div: DivParams,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct DivParams {
+    #[validate(nested)]
     pub left: Box<Expression>,
+    #[validate(nested)]
     pub right: Box<Expression>,
     pub by_zero_default: Option<ScoreType>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct SqrtExpression {
+    #[validate(nested)]
     pub sqrt: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct PowExpression {
     pub pow: PowParams,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct PowParams {
+    #[validate(nested)]
     pub base: Box<Expression>,
+    #[validate(nested)]
     pub exponent: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ExpExpression {
+    #[validate(nested)]
     pub exp: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct Log10Expression {
+    #[validate(nested)]
     pub log10: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct LnExpression {
+    #[validate(nested)]
     pub ln: Box<Expression>,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct LinDecayExpression {
+    #[validate(nested)]
     pub lin_decay: DecayParamsExpression,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct ExpDecayExpression {
+    #[validate(nested)]
     pub exp_decay: DecayParamsExpression,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct GaussDecayExpression {
+    #[validate(nested)]
     pub gauss_decay: DecayParamsExpression,
 }
 
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, Validate)]
 pub struct DecayParamsExpression {
     /// The variable to decay.
+    #[validate(nested)]
     pub x: Box<Expression>,
     /// The target value to start decaying from. Defaults to 0.
+    #[validate(nested)]
     pub target: Option<Box<Expression>>,
     /// The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
     pub scale: Option<f32>,
