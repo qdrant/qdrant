@@ -1777,16 +1777,14 @@ impl PayloadSchemaParams {
 impl Validate for PayloadSchemaParams {
     fn validate(&self) -> Result<(), ValidationErrors> {
         match self {
-            PayloadSchemaParams::Keyword(keyword_index_params) => keyword_index_params.validate(),
+            PayloadSchemaParams::Keyword(_) => Ok(()),
             PayloadSchemaParams::Integer(integer_index_params) => integer_index_params.validate(),
-            PayloadSchemaParams::Float(float_index_params) => float_index_params.validate(),
-            PayloadSchemaParams::Geo(geo_index_params) => geo_index_params.validate(),
-            PayloadSchemaParams::Text(text_index_params) => text_index_params.validate(),
-            PayloadSchemaParams::Bool(bool_index_params) => bool_index_params.validate(),
-            PayloadSchemaParams::Datetime(datetime_index_params) => {
-                datetime_index_params.validate()
-            }
-            PayloadSchemaParams::Uuid(uuid_index_params) => uuid_index_params.validate(),
+            PayloadSchemaParams::Float(_) => Ok(()),
+            PayloadSchemaParams::Geo(_) => Ok(()),
+            PayloadSchemaParams::Text(_) => Ok(()),
+            PayloadSchemaParams::Bool(_) => Ok(()),
+            PayloadSchemaParams::Datetime(_) => Ok(()),
+            PayloadSchemaParams::Uuid(_) => Ok(()),
         }
     }
 }

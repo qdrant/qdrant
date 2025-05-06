@@ -11,9 +11,7 @@ pub enum KeywordIndexType {
     Keyword,
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct KeywordIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -94,9 +92,7 @@ pub enum UuidIndexType {
     Uuid,
 }
 
-#[derive(
-    Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Default, Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct UuidIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -120,9 +116,7 @@ pub enum FloatIndexType {
     Float,
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct FloatIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -146,9 +140,7 @@ pub enum GeoIndexType {
     Geo,
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct GeoIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -178,9 +170,7 @@ pub enum TokenizerType {
     Multilingual,
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct TextIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -215,9 +205,7 @@ pub enum BoolIndexType {
     Bool,
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct BoolIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
@@ -237,9 +225,7 @@ pub enum DatetimeIndexType {
     Datetime,
 }
 
-#[derive(
-    Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq, Validate,
-)]
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(rename_all = "snake_case")]
 pub struct DatetimeIndexParams {
     // Required for OpenAPI schema without anonymous types, versus #[serde(tag = "type")]
