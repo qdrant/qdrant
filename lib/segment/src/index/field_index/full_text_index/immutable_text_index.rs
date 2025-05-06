@@ -1,6 +1,7 @@
 use common::types::PointOffsetType;
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
+use super::inverted_index::InvertedIndex;
 use super::mmap_text_index::MmapFullTextIndex;
 use super::mutable_inverted_index::MutableInvertedIndex;
 use super::text_index::FullTextIndex;

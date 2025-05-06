@@ -34,7 +34,7 @@ pub enum FullTextIndex {
 }
 
 impl FullTextIndex {
-    pub fn new_memory(
+    pub fn new_rocksdb(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
         field: &str,
@@ -77,12 +77,12 @@ impl FullTextIndex {
         }
     }
 
-    pub fn builder(
+    pub fn builder_rocksdb(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
         field: &str,
     ) -> FullTextIndexBuilder {
-        FullTextIndexBuilder(Self::new_memory(db, config, field, true))
+        FullTextIndexBuilder(Self::new_rocksdb(db, config, field, true))
     }
 
     pub fn builder_mmap(
