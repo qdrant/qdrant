@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use collection::collection::Collection;
-use collection::common::sha_256::hash_file;
+use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
@@ -179,7 +179,7 @@ pub async fn recover_shard_snapshot(
 
             if let Some(checksum) = checksum {
                 let snapshot_checksum = hash_file(&snapshot_path).await?;
-                if snapshot_checksum != checksum {
+                if !hashes_equal(&snapshot_checksum, &checksum) {
                     return Err(StorageError::bad_input(format!(
                         "Snapshot checksum mismatch: expected {checksum}, got {snapshot_checksum}"
                     )));
