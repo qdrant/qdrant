@@ -57,9 +57,16 @@ impl FullTextIndex {
         config: TextIndexParams,
         is_on_disk: bool,
     ) -> OperationResult<Self> {
-        Ok(Self::Mmap(Box::new(MmapFullTextIndex::open(
-            path, config, is_on_disk,
-        )?)))
+        let mmap_index = MmapFullTextIndex::open(path, config, is_on_disk)?;
+        if is_on_disk {
+            // Use on mmap directly
+            Ok(Self::Mmap(Box::new(mmap_index)))
+        } else {
+            // Load into RAM, use mmap as backing storage
+            Ok(Self::Immutable(ImmutableFullTextIndex::new_mmap(
+                mmap_index,
+            )))
+        }
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
