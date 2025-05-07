@@ -70,10 +70,11 @@ impl Query {
                         .and_then(|param| param.hnsw_config.as_ref());
 
                     let vector_hnsw_m = vector_hnsw_config.and_then(|hnsw| hnsw.m);
-                    let vector_hnsw_payload_m = vector_hnsw_config.and_then(|hnsw| hnsw.payload_m);
+                    let vector_hnsw_payload_m = vector_hnsw_config
+                        .and_then(|hnsw| hnsw.payload_m)
+                        .unwrap_or(0);
 
-                    let is_hnsw_disabled =
-                        vector_hnsw_m == Some(0) && vector_hnsw_payload_m.unwrap_or(0) == 0;
+                    let is_hnsw_disabled = vector_hnsw_m == Some(0) && vector_hnsw_payload_m == 0;
                     if !is_hnsw_disabled {
                         // fast path when no additional checks required
                         return Ok(());
@@ -87,15 +88,13 @@ impl Query {
                             .filter_map(|key| collection.payload_key_index_schema(&key))
                             .any(|index_schema| index_schema.is_tenant());
 
-                        if uses_multitenant_filter {
-                            // no need for HNSW
+                        if uses_multitenant_filter && vector_hnsw_payload_m != 0 {
+                            // allow multitenant query
                             return Ok(());
                         } else {
                             return Err(CollectionError::strict_mode(
-                                format!(
-                                    "Fullscan forbidden on '{using}' while filtering on non multitenant key"
-                                ),
-                                "Filter by multitenant indexed payload key or enable vector indexing",
+                                format!("Filtered scan forbidden on '{using}'"),
+                                "Filter by multitenant aware indexed payload key and enable vector indexing (hnsw_config.payload._m)",
                             ));
                         }
                     };
