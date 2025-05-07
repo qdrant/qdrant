@@ -12,7 +12,7 @@ use rand::distr::Uniform;
 
 use super::graph_layers::GraphLayerData;
 use super::graph_links::{GraphLinks, GraphLinksFormat};
-use super::links_container::LinksContainer;
+use super::links_container::{ItemsBuffer, LinksContainer};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
 use crate::index::hnsw_index::graph_layers::{GraphLayers, GraphLayersBase};
@@ -437,10 +437,11 @@ impl GraphLayersBuilder {
             existing_links.links().to_vec()
         };
 
+        let mut items = ItemsBuffer::default();
         for &other_point in &selected_nearest {
             self.links_layers[other_point as usize][curr_level]
                 .write()
-                .connect_with_heuristic(point_id, other_point, level_m, scorer);
+                .connect_with_heuristic(point_id, other_point, level_m, scorer, &mut items);
         }
     }
 

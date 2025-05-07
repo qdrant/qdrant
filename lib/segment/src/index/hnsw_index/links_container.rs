@@ -1,16 +1,22 @@
-use std::collections::BinaryHeap;
+use std::cell::Cell;
 use std::iter::Copied;
+use std::num::NonZeroU32;
 
 use common::types::{PointOffsetType, ScoreType, ScoredPointOffset};
 
+use crate::common::vector_utils::TrySetCapacityExact as _;
+
 pub struct LinksContainer {
     links: Vec<PointOffsetType>,
+    /// Amount of links that processed by the heuristic.
+    processed_by_heuristic: u32,
 }
 
 impl LinksContainer {
     pub fn with_capacity(m: usize) -> Self {
         Self {
             links: Vec::with_capacity(m),
+            processed_by_heuristic: 0,
         }
     }
 
@@ -30,23 +36,41 @@ impl LinksContainer {
         self.links
     }
 
+    /// Put points into the container.
     pub fn fill_from(&mut self, points: impl Iterator<Item = PointOffsetType>) {
         self.links.clear();
         self.links.extend(points);
+        self.processed_by_heuristic = 0;
     }
 
+    /// Put `m` candidates selected by the heuristic into the container.
     pub fn fill_from_sorted_with_heuristic(
         &mut self,
         candidates: impl Iterator<Item = ScoredPointOffset>,
         level_m: usize,
-        score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
+        mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     ) {
         self.links.clear();
-        let selected = select_candidate_with_heuristic_from_sorted(candidates, level_m, score);
-        self.links.clone_from(&selected);
+        if level_m == 0 {
+            // Unlikely.
+            self.processed_by_heuristic = 0;
+            return;
+        }
+        'outer: for candidate in candidates {
+            for &existing in &self.links {
+                if score(candidate.idx, existing) > candidate.score {
+                    continue 'outer;
+                }
+            }
+            self.links.push(candidate.idx);
+            if self.links.len() >= level_m {
+                return;
+            }
+        }
+        self.processed_by_heuristic = self.links.len() as u32;
     }
 
-    /// Connect new point to links, so that links contains only closest points
+    /// Connect new point to links, so that links contains only closest points.
     pub fn connect(
         &mut self,
         new_point_id: PointOffsetType,
@@ -54,6 +78,9 @@ impl LinksContainer {
         level_m: usize,
         mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     ) {
+        // Invalidate assumptions about the heuristic eagerly.
+        self.processed_by_heuristic = 0;
+
         // ToDo: binary search here ? (most likely does not worth it)
         let new_to_target = score(target_point_id, new_point_id);
 
@@ -74,66 +101,135 @@ impl LinksContainer {
         }
     }
 
-    pub fn connect_with_heuristic(
+    /// Append one point to the container. If the container is full, run the heuristic.
+    ///
+    /// This is a reference implementation for testing.
+    #[cfg(test)]
+    fn connect_with_heuristic_simple(
         &mut self,
-        point_id: PointOffsetType,
-        other_point: PointOffsetType,
+        new_point_id: PointOffsetType,
+        target_point_id: PointOffsetType,
         level_m: usize,
         mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
     ) {
         if self.links.len() < level_m {
-            // If linked point is lack of neighbours
-            self.links.push(point_id);
+            self.links.push(new_point_id);
         } else {
-            let mut candidates = BinaryHeap::with_capacity(level_m + 1);
-            candidates.push(ScoredPointOffset {
-                idx: point_id,
-                score: score(point_id, other_point),
-            });
-            for other_point_link in self.links.iter().take(level_m).copied() {
+            let mut candidates = Vec::with_capacity(level_m + 1);
+            for &idx in &self.links {
                 candidates.push(ScoredPointOffset {
-                    idx: other_point_link,
-                    score: score(other_point_link, other_point),
+                    idx,
+                    score: score(target_point_id, idx),
                 });
             }
-            let selected_candidates = select_candidate_with_heuristic_from_sorted(
-                candidates.into_sorted_vec().into_iter().rev(),
-                level_m,
-                score,
-            );
-            self.links.clear(); // this do not free memory, which is good
-            for selected in selected_candidates.iter().copied() {
-                self.links.push(selected);
-            }
+            candidates.push(ScoredPointOffset {
+                idx: new_point_id,
+                score: score(target_point_id, new_point_id),
+            });
+            candidates.sort_unstable_by(|a, b| b.score.total_cmp(&a.score));
+            self.fill_from_sorted_with_heuristic(candidates.into_iter(), level_m, score);
         }
     }
-}
 
-/// <https://github.com/nmslib/hnswlib/issues/99>
-fn select_candidate_with_heuristic_from_sorted(
-    candidates: impl Iterator<Item = ScoredPointOffset>,
-    m: usize,
-    mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
-) -> Vec<PointOffsetType> {
-    let mut result_list = Vec::with_capacity(m);
-    for current_closest in candidates {
-        if result_list.len() >= m {
-            break;
+    /// Append one point to the container. If the container is full, run the heuristic.
+    ///
+    /// The result is exactly the same as [`Self::connect_with_heuristic_simple`],
+    /// but this implementation cuts some corners given that some of the links
+    /// are already processed by the heuristic.
+    pub fn connect_with_heuristic(
+        &mut self,
+        new_point_id: PointOffsetType,
+        target_point_id: PointOffsetType,
+        level_m: usize,
+        mut score: impl FnMut(PointOffsetType, PointOffsetType) -> ScoreType,
+        items: &mut ItemsBuffer,
+    ) {
+        if level_m == 0 {
+            // Unlikely.
+            return;
         }
-        let mut is_good = true;
-        for &selected_point in &result_list {
-            let dist_to_already_selected = score(current_closest.idx, selected_point);
-            if dist_to_already_selected > current_closest.score {
-                is_good = false;
+
+        if self.links.len() < level_m {
+            self.links.push(new_point_id);
+            return;
+        }
+
+        items.0.clear();
+        items.0.try_set_capacity_exact(level_m + 1).unwrap();
+        for (order, &link) in self.links.iter().enumerate() {
+            items.0.push(Item {
+                idx: link,
+                score: Cell::new(None),
+                order: if order < self.processed_by_heuristic as usize {
+                    NonZeroU32::new(order as u32)
+                } else {
+                    None
+                },
+            });
+        }
+        items.0.push(Item {
+            idx: new_point_id,
+            score: Cell::new(None),
+            order: None,
+        });
+        items.0.sort_unstable_by(|a, b| {
+            if a.order.is_some() && b.order.is_some() {
+                return a.order.unwrap().cmp(&b.order.unwrap());
+            }
+            b.score(target_point_id, &mut score)
+                .total_cmp(&a.score(target_point_id, &mut score))
+        });
+
+        self.links.clear();
+
+        let mut write = 0;
+        'outer: for read in 0..items.0.len() {
+            let candidate = items.0[read].clone();
+            for existing in &items.0[0..write] {
+                if candidate.order.is_some() && existing.order.is_some() {
+                    continue;
+                }
+                if score(candidate.idx, existing.idx) > candidate.score(target_point_id, &mut score)
+                {
+                    continue 'outer;
+                }
+            }
+
+            self.links.push(candidate.idx);
+            items.0[write] = candidate;
+            write += 1;
+            if write >= level_m {
                 break;
             }
         }
-        if is_good {
-            result_list.push(current_closest.idx);
+        self.processed_by_heuristic = self.links.len() as u32;
+    }
+}
+
+/// Internal buffer to avoid allocations.
+#[derive(Default)]
+pub struct ItemsBuffer(Vec<Item>);
+
+#[derive(Debug, Clone)]
+struct Item {
+    idx: PointOffsetType,
+    score: Cell<Option<ScoreType>>,
+    order: Option<NonZeroU32>,
+}
+
+impl Item {
+    fn score<F>(&self, query: PointOffsetType, score: F) -> ScoreType
+    where
+        F: FnOnce(PointOffsetType, PointOffsetType) -> ScoreType,
+    {
+        if let Some(score) = self.score.get() {
+            score
+        } else {
+            let score = score(query, self.idx);
+            self.score.set(Some(score));
+            score
         }
     }
-
-    result_list
 }
 
 #[cfg(test)]
@@ -180,11 +276,13 @@ mod tests {
             eprintln!("sorted_candidates = ({}, {})", x.idx, x.score);
         }
 
-        let mut container = LinksContainer::with_capacity(M);
-        container.fill_from_sorted_with_heuristic(candidates.into_iter_sorted(), M, |a, b| {
-            scorer.score_internal(a, b)
-        });
-        let selected_candidates = container.links().to_vec();
+        let mut links_container = LinksContainer::with_capacity(M);
+        links_container.fill_from_sorted_with_heuristic(
+            candidates.into_iter_sorted(),
+            M,
+            |a, b| scorer.score_internal(a, b),
+        );
+        let selected_candidates = links_container.links().to_vec();
 
         for x in selected_candidates.iter() {
             eprintln!("selected_candidates = {x}");
@@ -239,5 +337,66 @@ mod tests {
             links_container.connect(id, 0, m, scorer);
         }
         assert_eq!(links_container.links(), &vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn test_connect_new_point_with_heuristic() {
+        let mut rng = StdRng::seed_from_u64(42);
+
+        const NUM_VECTORS: usize = 20;
+        const DIM: usize = 128;
+        const M: usize = 5;
+
+        for _ in 0..1000 {
+            let vector_holder =
+                TestRawScorerProducer::<EuclidMetric>::new(DIM, NUM_VECTORS, &mut rng);
+            let scorer = vector_holder.get_scorer(random_vector(&mut rng, DIM));
+
+            let mut candidate_indices: Vec<_> = (0..NUM_VECTORS as u32).collect();
+            candidate_indices.shuffle(&mut rng);
+
+            let query_idx = candidate_indices.pop().unwrap();
+            let score = |a: u32, b: u32| scorer.score_internal(a, b);
+            let scored_offfset = |idx: u32| ScoredPointOffset {
+                idx,
+                score: score(query_idx, idx),
+            };
+
+            let mut container = LinksContainer::with_capacity(M);
+            container.fill_from_sorted_with_heuristic(
+                candidate_indices
+                    .iter()
+                    .copied()
+                    .map(scored_offfset)
+                    .take(5)
+                    .sorted_by(|a, b| b.score.total_cmp(&a.score)),
+                M,
+                score,
+            );
+
+            let mut reference_container = LinksContainer::with_capacity(M);
+            reference_container.fill_from_sorted_with_heuristic(
+                candidate_indices
+                    .iter()
+                    .copied()
+                    .map(scored_offfset)
+                    .take(5)
+                    .sorted_by(|a, b| b.score.total_cmp(&a.score)),
+                M,
+                score,
+            );
+
+            let mut items = ItemsBuffer::default();
+            for &candidate_idx in candidate_indices.iter().skip(5) {
+                container.connect_with_heuristic(candidate_idx, query_idx, M, score, &mut items);
+                reference_container.connect_with_heuristic_simple(
+                    candidate_idx,
+                    query_idx,
+                    M,
+                    score,
+                );
+                assert_eq!(container.links, reference_container.links);
+            }
+        }
     }
 }
