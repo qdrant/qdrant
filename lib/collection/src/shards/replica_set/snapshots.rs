@@ -90,9 +90,10 @@ impl ShardReplicaSet {
         if read_operation_permits > 0 {
             Ok(())
         } else {
-            Err(CollectionError::service_error(
-                "partial snapshot recovery is already in progress",
-            ))
+            Err(CollectionError::ServiceError {
+                error: "shard unavailable, partial snapshot recovery is in progress".into(),
+                backtrace: None,
+            })
         }
     }
 
