@@ -1100,7 +1100,7 @@ impl ShardHolder {
                 let lock = self
                     .get_shard(shard_id)
                     .ok_or_else(|| shard_not_found_error(shard_id))?
-                    .take_partial_snapshot_read_operation_lock()?;
+                    .take_partial_snapshot_read_lock()?;
 
                 Ok(Some(lock))
             }

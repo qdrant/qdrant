@@ -71,10 +71,10 @@ impl ShardReplicaSet {
             })
     }
 
-    pub fn take_partial_snapshot_read_operation_lock(
+    pub fn take_partial_snapshot_read_lock(
         &self,
     ) -> CollectionResult<tokio::sync::OwnedSemaphorePermit> {
-        self.partial_snapshot_read_operation_lock
+        self.partial_snapshot_read_lock
             .clone()
             .try_acquire_owned()
             .map_err(|_| {
@@ -83,9 +83,7 @@ impl ShardReplicaSet {
     }
 
     pub fn check_partial_snapshot_read_lock(&self) -> CollectionResult<()> {
-        let read_operation_permits = self
-            .partial_snapshot_read_operation_lock
-            .available_permits();
+        let read_operation_permits = self.partial_snapshot_read_lock.available_permits();
 
         if read_operation_permits > 0 {
             Ok(())
