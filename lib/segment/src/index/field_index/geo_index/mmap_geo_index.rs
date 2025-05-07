@@ -70,7 +70,7 @@ pub struct MmapGeoMapIndex {
     pub(super) point_to_values: MmapPointToValues<GeoPoint>,
     /// Deleted flags for each PointOffsetType
     pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
-    deleted_count: usize,
+    pub(super) deleted_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
     is_on_disk: bool,

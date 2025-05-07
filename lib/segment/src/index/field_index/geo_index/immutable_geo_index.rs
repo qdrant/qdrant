@@ -169,12 +169,17 @@ impl ImmutableGeoMapIndex {
             return false;
         };
 
+        self.points_count = index.points_count();
+        self.points_values_count = index.points_values_count();
+        self.max_values_per_point = index.max_values_per_point();
         self.counts_per_hash = index
             .counts_per_hash
             .iter()
             .copied()
             .map(Counts::from)
             .collect();
+
+        // Get points per geo hash and filter deleted points
         self.points_map = index
             .points_map
             .iter()
@@ -196,25 +201,52 @@ impl ImmutableGeoMapIndex {
                 )
             })
             .collect();
+
+        // Get point values and filter deleted points
+        // Track deleted points to adjust point and value counts after loading
+        let mut deleted_points: Vec<(PointOffsetType, Vec<GeoPoint>)> =
+            Vec::with_capacity(index.deleted_count);
         self.point_to_values = ImmutablePointToValues::new(
             index
                 .point_to_values
                 .iter()
                 .map(|(id, values)| {
-                    values
-                        // Filter deleted points
-                        .filter(|_| !index.deleted.get(id as usize).unwrap_or_default())
-                        .map_or(vec![], |values| values.into_iter().collect())
+                    let is_deleted = index.deleted.get(id as usize).unwrap_or_default();
+                    match (is_deleted, values) {
+                        (false, Some(values)) => values.into_iter().collect(),
+                        (false, None) => vec![],
+                        (true, Some(values)) => {
+                            let geo_points: Vec<GeoPoint> = values.collect();
+                            deleted_points.push((id, geo_points));
+                            vec![]
+                        }
+                        (true, None) => {
+                            deleted_points.push((id, vec![]));
+                            vec![]
+                        }
+                    }
                 })
                 .collect(),
         );
-        self.points_count = index.points_count();
-        self.points_values_count = index.points_values_count();
-        self.max_values_per_point = index.max_values_per_point();
 
         // Index is now loaded into memory, clear cache of backing mmap storage
         if let Err(err) = index.clear_cache() {
             log::warn!("Failed to clear mmap cache of ram mmap geo index: {err}");
+        }
+        let _ = index;
+
+        // Update point and value counts based on deleted points
+        for (_idx, removed_geo_points) in deleted_points {
+            self.points_values_count -= removed_geo_points.len();
+
+            let removed_geo_hashes: Vec<_> = removed_geo_points
+                .into_iter()
+                .map(|geo_point| encode_max_precision(geo_point.lon, geo_point.lat).unwrap())
+                .collect();
+            for removed_geo_hash in &removed_geo_hashes {
+                self.decrement_hash_value_counts(removed_geo_hash);
+            }
+            self.decrement_hash_point_counts(&removed_geo_hashes);
         }
 
         true
@@ -337,7 +369,7 @@ impl ImmutableGeoMapIndex {
             {
                 self.points_map[index].1.remove(&idx);
             } else {
-                log::warn!("Geo index error: no points for hash {removed_geo_hash} was found");
+                log::warn!("Geo index error: no points for hash {removed_geo_hash} were found");
             };
 
             self.decrement_hash_value_counts(&removed_geo_hash);
