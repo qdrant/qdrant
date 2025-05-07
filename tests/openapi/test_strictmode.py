@@ -2210,6 +2210,7 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
                 "dense-multi": {
                     "hnsw_config": {
                         "m": 0,
+                        "payload_m": 0
                     },
                 },
             }
@@ -2229,7 +2230,7 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
     # filtered search not allowed anymore because no HNSW index
     response = filtered_query()
     assert not response.ok
-    assert "Fullscan forbidden on 'dense-multi'" in response.json()['status']['error']
+    assert "Filtered scan forbidden on 'dense-multi'" in response.json()['status']['error']
 
     # add payload index
     request_with_validation(
@@ -2246,7 +2247,7 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
     # still not allowed although we have payload index for the filter
     response = filtered_query()
     assert not response.ok
-    assert "Fullscan forbidden on 'dense-multi'" in response.json()['status']['error']
+    assert "Filtered scan forbidden on 'dense-multi'" in response.json()['status']['error']
 
     # add multitenant payload index
     request_with_validation(
@@ -2263,5 +2264,28 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
         }
     ).raise_for_status()
 
-    # search allowed through multitenant payload index
+    # still not allowed although we have a multitenant payload index for the filter
+    response = filtered_query()
+    assert not response.ok
+    assert "Filtered scan forbidden on 'dense-multi'" in response.json()['status']['error']
+
+    # enabled HNSW payload based index
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "vectors": {
+                "dense-multi": {
+                    "hnsw_config": {
+                        "m": 0,
+                        "payload_m": 1
+                    },
+                },
+            }
+        }
+    )
+    assert response.ok
+
+    # finally allowed
     filtered_query().raise_for_status()
