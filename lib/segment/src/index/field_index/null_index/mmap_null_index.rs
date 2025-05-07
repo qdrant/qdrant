@@ -79,7 +79,10 @@ impl MmapNullIndex {
         })
     }
 
-    pub fn open_if_exists(path: &Path, max_point_offset: PointOffsetType) -> OperationResult<Option<Self>> {
+    pub fn open_if_exists(
+        path: &Path,
+        max_point_offset: PointOffsetType,
+    ) -> OperationResult<Option<Self>> {
         if !path.is_dir() {
             return Ok(None);
         }

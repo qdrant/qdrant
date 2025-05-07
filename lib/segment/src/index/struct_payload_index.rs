@@ -143,7 +143,9 @@ impl StructPayloadIndex {
             .saturating_sub(1) as PointOffsetType;
 
         // Special null index complements every index.
-        if let Some(null_index) = IndexSelector::new_null_index(&self.path, field, max_point_offset)? {
+        if let Some(null_index) =
+            IndexSelector::new_null_index(&self.path, field, max_point_offset)?
+        {
             // todo: This means that null index will not be built if it is not loaded here.
             //       Maybe we should set `is_loaded` to false to trigger index building.
             indexes.push(null_index);
