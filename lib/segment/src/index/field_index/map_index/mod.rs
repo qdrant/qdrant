@@ -236,7 +236,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn flusher(&self) -> Flusher {
         match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper().flusher(),
+            MapIndex::Mutable(index) => index.db_wrapper().flusher(),
             MapIndex::Immutable(index) => index.flusher(),
             MapIndex::Mmap(index) => index.flusher(),
         }
@@ -293,7 +293,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn clear(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper().remove_column_family(),
+            MapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
             MapIndex::Immutable(index) => index.clear(),
             MapIndex::Mmap(index) => index.clear(),
         }
@@ -489,7 +489,7 @@ where
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0 {
-            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Mutable(index) => index.db_wrapper().recreate_column_family(),
             MapIndex::Immutable(_) => unreachable!(),
             MapIndex::Mmap(_) => unreachable!(),
         }

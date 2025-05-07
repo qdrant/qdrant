@@ -223,7 +223,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
 
     pub fn flusher(&self) -> Flusher {
         match self {
-            NumericIndexInner::Mutable(index) => index.get_db_wrapper().flusher(),
+            NumericIndexInner::Mutable(index) => index.db_wrapper().flusher(),
             NumericIndexInner::Immutable(index) => index.flusher(),
             NumericIndexInner::Mmap(index) => index.flusher(),
         }
@@ -562,7 +562,7 @@ where
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0.inner {
-            NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
         }
@@ -603,7 +603,7 @@ where
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.index.inner {
-            NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
         }
@@ -698,7 +698,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
 
     fn cleanup(self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
             NumericIndexInner::Immutable(index) => index.clear(),
             NumericIndexInner::Mmap(index) => index.clear(),
         }
