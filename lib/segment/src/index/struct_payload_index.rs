@@ -132,9 +132,11 @@ impl StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
+        let max_point_offset = self.id_tracker.borrow().total_point_count().saturating_sub(1) as PointOffsetType;
+
         let mut indexes = self
             .selector(payload_schema)
-            .new_index(field, payload_schema)?;
+            .new_index(field, payload_schema, max_point_offset)?;
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {

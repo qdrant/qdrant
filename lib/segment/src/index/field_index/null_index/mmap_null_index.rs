@@ -27,6 +27,7 @@ pub struct MmapNullIndex {
     has_values_slice: DynamicMmapFlags,
     /// If true, then payload field contains null value.
     is_null_slice: DynamicMmapFlags,
+    max_point_offset: PointOffsetType,
 }
 
 /// Don't populate null index as it is not essential
@@ -35,7 +36,7 @@ const POPULATE_NULL_INDEX: bool = false;
 
 impl MmapNullIndex {
     pub fn builder(path: &Path) -> OperationResult<MmapNullIndexBuilder> {
-        Ok(MmapNullIndexBuilder(Self::open_or_create(path)?))
+        Ok(MmapNullIndexBuilder(Self::open_or_create(path, 0)?))
     }
 
     /// Creates a new null index at the given path.
@@ -43,21 +44,21 @@ impl MmapNullIndex {
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path, max_point_offset: PointOffsetType) -> OperationResult<Self> {
         let has_values_dir = path.join(HAS_VALUES_DIRNAME);
         if has_values_dir.is_dir() {
-            Self::open(path)
+            Self::open(path, max_point_offset)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create null-index directory: {err}, path: {path:?}"
                 ))
             })?;
-            Self::open(path)
+            Self::open(path, max_point_offset)
         }
     }
 
-    fn open(path: &Path) -> OperationResult<Self> {
+    fn open(path: &Path, max_point_offset: PointOffsetType) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
                 "Path is not a directory {path:?}"
@@ -74,10 +75,11 @@ impl MmapNullIndex {
             base_dir: path.to_path_buf(),
             has_values_slice,
             is_null_slice,
+            max_point_offset,
         })
     }
 
-    pub fn open_if_exists(path: &Path) -> OperationResult<Option<Self>> {
+    pub fn open_if_exists(path: &Path, max_point_offset: PointOffsetType) -> OperationResult<Option<Self>> {
         if !path.is_dir() {
             return Ok(None);
         }
@@ -92,6 +94,7 @@ impl MmapNullIndex {
                 base_dir: path.to_path_buf(),
                 has_values_slice,
                 is_null_slice,
+                max_point_offset,
             }))
         } else {
             Ok(None)
@@ -143,6 +146,9 @@ impl MmapNullIndex {
             .set_with_resize(id, has_values, hw_counter_ref)?;
         self.is_null_slice
             .set_with_resize(id, is_null, hw_counter_ref)?;
+
+        // Update max_point_offset to track the highest point offset seen
+        self.max_point_offset = std::cmp::max(self.max_point_offset, id);
 
         Ok(())
     }
@@ -220,6 +226,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             base_dir: _,
             has_values_slice,
             is_null_slice,
+            max_point_offset: _,
         } = self;
 
         let is_empty_flusher = has_values_slice.flusher();
@@ -237,6 +244,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             base_dir: _,
             has_values_slice,
             is_null_slice,
+            max_point_offset: _,
         } = self;
 
         let mut files = has_values_slice.files();
@@ -262,36 +270,42 @@ impl PayloadFieldIndex for MmapNullIndex {
         } = condition;
 
         if let Some(is_empty) = is_empty {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
+
             if *is_empty {
-                // If we want to iterate over all empty values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
-            } else {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
-                // But we can iterate over all non-empty values, as all of them should
-                // register in the index
-                let iter = (0..self.has_values_slice.len() as PointOffsetType)
-                    .filter(move |&id| self.has_values_slice.get(id))
+                // Iterate over all tracked values, but filter out those which have a value
+                let iter = (0..self.max_point_offset)
+                    .filter(move |&id| !self.has_values_slice.get(id))
                     .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                Some(Box::new(iter))
+            } else {
+                // Non-empty values are registered in the index explicitly
+                let iter =
+                    self.has_values_slice
+                        .iter_trues()
+                        .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
             if *is_null {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
                 // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
-                let iter = (0..self.is_null_slice.len() as PointOffsetType)
-                    .filter(move |&id| self.is_null_slice.get(id))
-                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                let iter =
+                    self.is_null_slice
+                        .iter_trues()
+                        .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             } else {
-                // If we want to iterate over all non-null values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
+                // Iterate over all tracked values, but filter out those which are null
+                let iter = (0..self.max_point_offset)
+                    .filter(move |&id| !self.is_null_slice.get(id))
+                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                Some(Box::new(iter))
             }
         } else {
             None
@@ -316,34 +330,43 @@ impl PayloadFieldIndex for MmapNullIndex {
         } = condition;
 
         if let Some(is_empty) = is_empty {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
             if *is_empty {
-                // If we want to iterate over all empty values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
+                // We can derive the empty values from the total number of values
+
+                // This number will be off by one if we have 0 points, since we initialize the max offset as 0
+                let total_points = (self.max_point_offset + 1) as usize;
+
+                Some(CardinalityEstimation::exact(
+                    total_points.saturating_sub(self.has_values_slice.count_flags()),
+                ))
             } else {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
-                // But we can iterate over all non-empty values, as all of them should
-                // register in the index
+                // All non-empty values are explicitly marked in the index
                 Some(CardinalityEstimation::exact(
                     self.has_values_slice.count_flags(),
                 ))
             }
         } else if let Some(is_null) = is_null {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
+
             if *is_null {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
-                // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
                 Some(CardinalityEstimation::exact(
                     self.is_null_slice.count_flags(),
                 ))
             } else {
-                // If we want to iterate over all non-null values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
+                // We can derive the non-null values from the total number of values
+
+                // This number will be off by one if we have 0 points, since we initialize the max offset as 0
+                let total_points = (self.max_point_offset + 1) as usize;
+
+                Some(CardinalityEstimation::exact(
+                    total_points.saturating_sub(self.is_null_slice.count_flags()),
+                ))
             }
         } else {
             None

@@ -248,9 +248,9 @@ pub fn invert_estimation(
 ) -> CardinalityEstimation {
     CardinalityEstimation {
         primary_clauses: vec![],
-        min: total - estimation.max,
-        exp: total - estimation.exp,
-        max: total - estimation.min,
+        min: total.saturating_sub(estimation.max),
+        exp: total.saturating_sub(estimation.exp),
+        max: total.saturating_sub(estimation.min),
     }
 }
 
