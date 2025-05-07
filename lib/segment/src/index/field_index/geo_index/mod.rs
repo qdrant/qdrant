@@ -187,7 +187,7 @@ impl GeoMapIndex {
     pub fn flusher(&self) -> Flusher {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper().flusher(),
-            GeoMapIndex::Immutable(index) => index.db_wrapper().flusher(),
+            GeoMapIndex::Immutable(index) => index.flusher(),
             GeoMapIndex::Mmap(index) => index.flusher(),
         }
     }
@@ -559,7 +559,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     fn cleanup(self) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
-            GeoMapIndex::Immutable(index) => index.db_wrapper().remove_column_family(),
+            GeoMapIndex::Immutable(index) => index.clear(),
             GeoMapIndex::Mmap(index) => index.clear(),
         }
     }

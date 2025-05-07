@@ -8,7 +8,9 @@ use parking_lot::RwLock;
 use rocksdb::DB;
 
 use super::GeoMapIndex;
+use super::mmap_geo_index::MmapGeoMapIndex;
 use super::mutable_geo_index::{InMemoryGeoMapIndex, MutableGeoMapIndex};
+use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
@@ -30,7 +32,13 @@ pub struct ImmutableGeoMapIndex {
     points_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
-    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+    // Backing s torage, source of state, persists deletions
+    storage: Storage,
+}
+
+enum Storage {
+    RocksDb(DatabaseColumnScheduledDeleteWrapper),
+    Mmap(Box<MmapGeoMapIndex>),
 }
 
 impl ImmutableGeoMapIndex {
@@ -46,16 +54,37 @@ impl ImmutableGeoMapIndex {
             points_count: 0,
             points_values_count: 0,
             max_values_per_point: 0,
-            db_wrapper,
+            storage: Storage::RocksDb(db_wrapper),
         }
     }
 
-    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        &self.db_wrapper
+    #[cfg(test)]
+    pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
+            Storage::Mmap(_) => None,
+        }
     }
 
     pub fn files(&self) -> Vec<PathBuf> {
-        Default::default()
+        match self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Mmap(ref index) => index.files(),
+        }
+    }
+
+    pub fn clear(self) -> OperationResult<()> {
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => db_wrapper.remove_column_family(),
+            Storage::Mmap(index) => index.clear(),
+        }
+    }
+
+    pub fn flusher(&self) -> Flusher {
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
+            Storage::Mmap(ref index) => index.flusher(),
+        }
     }
 
     pub fn points_count(&self) -> usize {
@@ -116,10 +145,12 @@ impl ImmutableGeoMapIndex {
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {
-        let mut mutable_geo_index = MutableGeoMapIndex::new(
-            self.db_wrapper.get_database(),
-            self.db_wrapper.get_column_name(),
-        );
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Ok(false);
+        };
+
+        let mut mutable_geo_index =
+            MutableGeoMapIndex::new(db_wrapper.get_database(), db_wrapper.get_column_name());
         let result = mutable_geo_index.load()?;
 
         let InMemoryGeoMapIndex {
@@ -184,8 +215,15 @@ impl ImmutableGeoMapIndex {
                 encode_max_precision(removed_geo_point.lon, removed_geo_point.lat).unwrap();
             removed_geo_hashes.push(removed_geo_hash);
 
-            let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
-            self.db_wrapper.remove(&key)?;
+            match self.storage {
+                Storage::RocksDb(ref db_wrapper) => {
+                    let key = GeoMapIndex::encode_db_key(removed_geo_hash, idx);
+                    db_wrapper.remove(&key)?;
+                }
+                Storage::Mmap(ref mut index) => {
+                    index.remove_point(idx);
+                }
+            }
 
             if let Ok(index) = self
                 .points_map
