@@ -59,7 +59,7 @@ impl ResourceBudget {
     }
 
     fn min_io_permits(&self, desired_io: usize) -> usize {
-        desired_io.min(self.io_budget) // Use as much IO as requested, not less
+        desired_io.min(self.io_budget).div_ceil(2)
     }
 
     fn try_acquire_cpu(
