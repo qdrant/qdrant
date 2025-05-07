@@ -18,28 +18,10 @@ pub struct LocksOption {
 }
 
 pub fn create_search_runtime(max_search_threads: usize) -> io::Result<Runtime> {
-    let mut search_threads = max_search_threads;
-
-    if search_threads == 0 {
-        let num_cpu = common::cpu::get_num_cpus();
-        // At least one thread, but not more than number of CPUs - 1 if there are more than 2 CPU
-        // Example:
-        // Num CPU = 1 -> 1 thread
-        // Num CPU = 2 -> 2 thread - if we use one thread with 2 cpus, its too much un-utilized resources
-        // Num CPU = 3 -> 2 thread
-        // Num CPU = 4 -> 3 thread
-        // Num CPU = 5 -> 4 thread
-        search_threads = match num_cpu {
-            0 => 1,
-            1 => 1,
-            2 => 2,
-            _ => num_cpu - 1,
-        };
-    }
-
+    let num_threads = common::defaults::search_thread_count(max_search_threads);
     runtime::Builder::new_multi_thread()
-        .worker_threads(search_threads)
-        .max_blocking_threads(search_threads)
+        .worker_threads(num_threads)
+        .max_blocking_threads(num_threads)
         .enable_all()
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
