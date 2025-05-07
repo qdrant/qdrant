@@ -37,10 +37,25 @@ impl LocalShard {
             return Ok(vec![]);
         }
 
+        let skip_batching = if core_request.searches.len() <= CHUNK_SIZE {
+            // Don't batch if we have few searches, prevents cloning request
+            true
+        } else if self.segments.read().len() > self.shared_storage_config.search_thread_count {
+            // Don't batch if we have more segments than search threads
+            // Not a perfect condition, but it helps to prevent consuming a lot of search threads
+            // if the number of segments is large
+            // Note: search threads are shared with all other search threads on this Qdrant
+            // instance, and other shards also have segments. For simplicity this only considers
+            // the global search thread count and local segment count.
+            // See: <https://github.com/qdrant/qdrant/pull/6478>
+            true
+        } else {
+            false
+        };
+
         let is_stopped_guard = StoppingGuard::new();
 
-        // Don't batch if we have few searches, prevents cloning request
-        if core_request.searches.len() <= CHUNK_SIZE {
+        if skip_batching {
             return self
                 .do_search_impl(
                     core_request,

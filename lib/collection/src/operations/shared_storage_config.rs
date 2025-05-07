@@ -31,6 +31,7 @@ pub struct SharedStorageConfig {
     pub outgoing_shard_transfers_limit: Option<usize>,
     pub snapshots_path: String,
     pub snapshots_config: SnapshotsConfig,
+    pub search_thread_count: usize,
 }
 
 impl Default for SharedStorageConfig {
@@ -48,6 +49,7 @@ impl Default for SharedStorageConfig {
             outgoing_shard_transfers_limit: DEFAULT_IO_SHARD_TRANSFER_LIMIT,
             snapshots_path: DEFAULT_SNAPSHOTS_PATH.to_string(),
             snapshots_config: default::Default::default(),
+            search_thread_count: common::defaults::search_thread_count(common::cpu::get_num_cpus()),
         }
     }
 }
@@ -67,6 +69,7 @@ impl SharedStorageConfig {
         outgoing_shard_transfers_limit: Option<usize>,
         snapshots_path: String,
         snapshots_config: SnapshotsConfig,
+        search_thread_count: usize,
     ) -> Self {
         let update_queue_size = update_queue_size.unwrap_or(match node_type {
             NodeType::Normal => DEFAULT_UPDATE_QUEUE_SIZE,
@@ -85,6 +88,7 @@ impl SharedStorageConfig {
             outgoing_shard_transfers_limit,
             snapshots_path,
             snapshots_config,
+            search_thread_count,
         }
     }
 }

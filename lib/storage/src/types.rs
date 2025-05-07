@@ -123,6 +123,7 @@ impl StorageConfig {
             self.performance.outgoing_shard_transfers_limit,
             self.snapshots_path.clone(),
             self.snapshots_config.clone(),
+            common::defaults::search_thread_count(self.performance.max_search_threads),
         )
     }
 }
