@@ -55,9 +55,14 @@ impl GeoMapIndex {
     }
 
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::load(
-            path, is_on_disk,
-        )?)))
+        let mmap_index = MmapGeoMapIndex::load(path, is_on_disk)?;
+        if is_on_disk {
+            Ok(GeoMapIndex::Mmap(Box::new(mmap_index)))
+        } else {
+            Ok(GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                mmap_index,
+            )))
+        }
     }
 
     pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
