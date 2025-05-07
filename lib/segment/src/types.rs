@@ -1774,11 +1774,37 @@ impl PayloadSchemaParams {
     }
 }
 
+impl Validate for PayloadSchemaParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            PayloadSchemaParams::Keyword(_) => Ok(()),
+            PayloadSchemaParams::Integer(integer_index_params) => integer_index_params.validate(),
+            PayloadSchemaParams::Float(_) => Ok(()),
+            PayloadSchemaParams::Geo(_) => Ok(()),
+            PayloadSchemaParams::Text(_) => Ok(()),
+            PayloadSchemaParams::Bool(_) => Ok(()),
+            PayloadSchemaParams::Datetime(_) => Ok(()),
+            PayloadSchemaParams::Uuid(_) => Ok(()),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Clone, PartialEq, Hash, Eq)]
 #[serde(untagged, rename_all = "snake_case")]
 pub enum PayloadFieldSchema {
     FieldType(PayloadSchemaType),
     FieldParams(PayloadSchemaParams),
+}
+
+impl Validate for PayloadFieldSchema {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            PayloadFieldSchema::FieldType(_) => Ok(()), // nothing to validate
+            PayloadFieldSchema::FieldParams(payload_schema_params) => {
+                payload_schema_params.validate()
+            }
+        }
+    }
 }
 
 impl Display for PayloadFieldSchema {

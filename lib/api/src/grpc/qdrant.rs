@@ -865,6 +865,7 @@ pub struct UuidIndexParams {
     #[prost(bool, optional, tag = "2")]
     pub on_disk: ::core::option::Option<bool>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -873,6 +874,7 @@ pub struct PayloadIndexParams {
         oneof = "payload_index_params::IndexParams",
         tags = "3, 2, 4, 5, 1, 6, 7, 8"
     )]
+    #[validate(nested)]
     pub index_params: ::core::option::Option<payload_index_params::IndexParams>,
 }
 /// Nested message and enum types in `PayloadIndexParams`.
@@ -4389,6 +4391,7 @@ pub struct CreateFieldIndexCollection {
     pub field_type: ::core::option::Option<i32>,
     /// Payload index params.
     #[prost(message, optional, tag = "5")]
+    #[validate(nested)]
     pub field_index_params: ::core::option::Option<PayloadIndexParams>,
     /// Write ordering guarantees
     #[prost(message, optional, tag = "6")]

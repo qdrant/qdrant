@@ -10,6 +10,23 @@ def setup(collection_name):
     yield
     drop_collection(collection_name=collection_name)
 
+def test_payload_indexing_validation(collection_name):
+    response = request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "test_payload",
+            "field_schema": {
+              "type": "integer",
+              "lookup": False,
+              "range": False,
+            }
+        }
+    )
+    assert response.status_code == 422
+    assert "Validation error: the 'lookup' and 'range' capabilities can't be both disabled" in response.json()["status"]["error"]
 
 def test_payload_indexing_operations(collection_name):
     # create payload

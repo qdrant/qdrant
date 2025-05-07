@@ -224,6 +224,7 @@ pub struct DeleteVectorsOperation {
 pub struct CreateFieldIndex {
     pub field_name: PayloadKeyType,
     #[serde(alias = "field_type")]
+    #[validate(nested)]
     pub field_schema: Option<PayloadFieldSchema>,
 }
 
