@@ -505,8 +505,9 @@ pub trait SegmentOptimizer {
                 description: "optimization cancelled while waiting for budget".to_string(),
             })?;
 
+        let mut rng = rand::rng();
         let mut optimized_segment: Segment =
-            segment_builder.build(indexing_permit, stopped, hw_counter)?;
+            segment_builder.build(indexing_permit, stopped, &mut rng, hw_counter)?;
 
         // Delete points
         let deleted_points_snapshot = proxy_deleted_points

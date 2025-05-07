@@ -58,7 +58,7 @@ fn hnsw_quantized_search_test(
     let top = 10;
     let attempts = 10;
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
     let mut op_num = 0;
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
@@ -69,7 +69,7 @@ fn hnsw_quantized_search_test(
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rng, dim);
         segment
             .upsert_point(op_num, idx, only_default_vector(&vector), &hw_counter)
             .unwrap();
@@ -115,7 +115,7 @@ fn hnsw_quantized_search_test(
         payload_m: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let hnsw_index = HNSWIndex::build(
@@ -135,6 +135,7 @@ fn hnsw_quantized_search_test(
             permit,
             old_indices: &[],
             gpu_device: None,
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },
@@ -142,7 +143,7 @@ fn hnsw_quantized_search_test(
     .unwrap();
 
     let query_vectors = (0..attempts)
-        .map(|_| random_vector(&mut rnd, dim).into())
+        .map(|_| random_vector(&mut rng, dim).into())
         .collect::<Vec<_>>();
     let filter = Filter::new_must(Condition::Field(FieldCondition::new_match(
         JsonPath::new(STR_KEY),
@@ -396,6 +397,7 @@ fn test_build_hnsw_using_quantization() {
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let temp_dir = Builder::new().prefix("segment_temp_dir").tempdir().unwrap();
 
+    let mut rng = rand::rng();
     let stopped = AtomicBool::new(false);
 
     let segment1 = build_segment_1(dir.path());
@@ -426,7 +428,9 @@ fn test_build_hnsw_using_quantization() {
 
     builder.update(&[&segment1], &stopped).unwrap();
 
-    let built_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
+    let built_segment: Segment = builder
+        .build(permit, &stopped, &mut rng, &hw_counter)
+        .unwrap();
 
     // check if built segment has quantization and index
     assert!(

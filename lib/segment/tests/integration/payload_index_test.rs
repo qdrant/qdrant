@@ -80,7 +80,7 @@ impl TestSegments {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mut rnd = StdRng::seed_from_u64(42);
+        let mut rng = StdRng::seed_from_u64(42);
 
         let config = Self::make_simple_config(true);
 
@@ -106,8 +106,8 @@ impl TestSegments {
         opnum += 1;
         for n in 0..num_points {
             let idx = n.into();
-            let vector = random_vector(&mut rnd, DIM);
-            let payload: Payload = generate_diverse_payload(&mut rnd);
+            let vector = random_vector(&mut rng, DIM);
+            let payload: Payload = generate_diverse_payload(&mut rng);
 
             plain_segment
                 .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter)
@@ -201,11 +201,11 @@ impl TestSegments {
 
         // Make mmap segment after inserting the points, but before deleting some of them
         let mut mmap_segment =
-            Self::make_mmap_segment(&base_dir.path().join("mmap"), &plain_segment);
+            Self::make_mmap_segment(&mut rng, &base_dir.path().join("mmap"), &plain_segment);
 
         for _ in 0..points_to_clear {
             opnum += 1;
-            let idx_to_remove = rnd.random_range(0..num_points);
+            let idx_to_remove = rng.random_range(0..num_points);
             plain_segment
                 .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
@@ -219,7 +219,7 @@ impl TestSegments {
 
         for _ in 0..points_to_delete {
             opnum += 1;
-            let idx_to_remove = rnd.random_range(0..num_points);
+            let idx_to_remove = rng.random_range(0..num_points);
             plain_segment
                 .delete_point(opnum, idx_to_remove.into(), &hw_counter)
                 .unwrap();
@@ -276,7 +276,7 @@ impl TestSegments {
         conf
     }
 
-    fn make_mmap_segment(path: &Path, plain_segment: &Segment) -> Segment {
+    fn make_mmap_segment(rng: &mut StdRng, path: &Path, plain_segment: &Segment) -> Segment {
         let stopped = AtomicBool::new(false);
         create_dir(path).unwrap();
 
@@ -291,7 +291,7 @@ impl TestSegments {
         let permit = ResourcePermit::dummy(1);
         let hw_counter = HardwareCounterCell::new();
 
-        let mut segment = builder.build(permit, &stopped, &hw_counter).unwrap();
+        let mut segment = builder.build(permit, &stopped, rng, &hw_counter).unwrap();
         let opnum = segment.version() + 1;
 
         segment
@@ -386,7 +386,7 @@ impl TestSegments {
 }
 
 fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> (Segment, Segment) {
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let mut plain_segment = build_simple_segment(path_plain, DIM, Distance::Dot).unwrap();
     let mut struct_segment = build_simple_segment(path_struct, DIM, Distance::Dot).unwrap();
@@ -434,8 +434,8 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
     opnum += 1;
     for n in 0..num_points {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, DIM);
-        let payload: Payload = generate_diverse_nested_payload(&mut rnd);
+        let vector = random_vector(&mut rng, DIM);
+        let payload: Payload = generate_diverse_nested_payload(&mut rng);
 
         plain_segment
             .upsert_point(opnum, idx, only_default_vector(&vector), &hw_counter)
@@ -455,7 +455,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for _ in 0..points_to_clear {
         opnum += 1;
-        let idx_to_remove = rnd.random_range(0..num_points);
+        let idx_to_remove = rng.random_range(0..num_points);
         plain_segment
             .clear_payload(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
@@ -466,7 +466,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for _ in 0..points_to_delete {
         opnum += 1;
-        let idx_to_remove = rnd.random_range(0..num_points);
+        let idx_to_remove = rng.random_range(0..num_points);
         plain_segment
             .delete_point(opnum, idx_to_remove.into(), &hw_counter)
             .unwrap();
@@ -489,10 +489,10 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 }
 
 fn validate_geo_filter(test_segments: &TestSegments, query_filter: Filter) -> Result<()> {
-    let mut rnd = rand::rng();
+    let mut rng = rand::rng();
 
     for _i in 0..ATTEMPTS {
-        let query = random_vector(&mut rnd, DIM).into();
+        let query = random_vector(&mut rng, DIM).into();
         let plain_result = test_segments
             .plain_segment
             .search(
@@ -875,11 +875,11 @@ fn test_nesting_nested_array_filter_cardinality_estimation() {
 
 /// Compare search with plain, struct, and mmap indices.
 fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
-    let mut rnd = rand::rng();
+    let mut rng = rand::rng();
 
     for _i in 0..ATTEMPTS {
-        let query_vector = random_vector(&mut rnd, DIM).into();
-        let query_filter = random_filter(&mut rnd, 3);
+        let query_vector = random_vector(&mut rng, DIM).into();
+        let query_filter = random_filter(&mut rng, 3);
 
         let plain_result = test_segments
             .plain_segment
@@ -997,16 +997,16 @@ fn test_struct_payload_index(test_segments: &TestSegments) -> Result<()> {
 }
 
 fn test_struct_payload_geo_boundingbox_index(test_segments: &TestSegments) -> Result<()> {
-    let mut rnd = rand::rng();
+    let mut rng = rand::rng();
 
     let geo_bbox = GeoBoundingBox {
         top_left: GeoPoint {
-            lon: rnd.random_range(LON_RANGE),
-            lat: rnd.random_range(LAT_RANGE),
+            lon: rng.random_range(LON_RANGE),
+            lat: rng.random_range(LAT_RANGE),
         },
         bottom_right: GeoPoint {
-            lon: rnd.random_range(LON_RANGE),
-            lat: rnd.random_range(LAT_RANGE),
+            lon: rng.random_range(LON_RANGE),
+            lat: rng.random_range(LAT_RANGE),
         },
     };
 
@@ -1021,13 +1021,13 @@ fn test_struct_payload_geo_boundingbox_index(test_segments: &TestSegments) -> Re
 }
 
 fn test_struct_payload_geo_radius_index(test_segments: &TestSegments) -> Result<()> {
-    let mut rnd = rand::rng();
+    let mut rng = rand::rng();
 
-    let r_meters = rnd.random_range(1.0..10000.0);
+    let r_meters = rng.random_range(1.0..10000.0);
     let geo_radius = GeoRadius {
         center: GeoPoint {
-            lon: rnd.random_range(LON_RANGE),
-            lat: rnd.random_range(LAT_RANGE),
+            lon: rng.random_range(LON_RANGE),
+            lat: rng.random_range(LAT_RANGE),
         },
         radius: r_meters,
     };
@@ -1047,12 +1047,12 @@ fn test_struct_payload_geo_polygon_index(test_segments: &TestSegments) -> Result
     let interiors_num = 3;
 
     fn generate_ring(polygon_edge: i32) -> GeoLineString {
-        let mut rnd = rand::rng();
+        let mut rng = rand::rng();
         let mut line = GeoLineString {
             points: (0..polygon_edge)
                 .map(|_| GeoPoint {
-                    lon: rnd.random_range(LON_RANGE),
-                    lat: rnd.random_range(LAT_RANGE),
+                    lon: rng.random_range(LON_RANGE),
+                    lat: rng.random_range(LAT_RANGE),
                 })
                 .collect(),
         };
@@ -1088,15 +1088,15 @@ fn test_struct_payload_index_nested_fields() {
     let dir1 = Builder::new().prefix("segment1_dir").tempdir().unwrap();
     let dir2 = Builder::new().prefix("segment2_dir").tempdir().unwrap();
 
-    let mut rnd = rand::rng();
+    let mut rng = rand::rng();
 
     let (struct_segment, plain_segment) =
         build_test_segments_nested_payload(dir1.path(), dir2.path());
 
     let attempts = 100;
     for _i in 0..attempts {
-        let query_vector = random_vector(&mut rnd, DIM).into();
-        let query_filter = random_nested_filter(&mut rnd);
+        let query_vector = random_vector(&mut rng, DIM).into();
+        let query_filter = random_nested_filter(&mut rng);
         let plain_result = plain_segment
             .search(
                 DEFAULT_VECTOR_NAME,

@@ -99,7 +99,11 @@ fn test_rebuild_with_removed_vectors() {
     let permit = ResourcePermit::dummy(permit_cpu_count as u32);
     let hw_counter = HardwareCounterCell::new();
 
-    let merged_segment: Segment = builder.build(permit, &stopped, &hw_counter).unwrap();
+    let mut rng = rand::rng();
+
+    let merged_segment: Segment = builder
+        .build(permit, &stopped, &mut rng, &hw_counter)
+        .unwrap();
 
     let merged_points_count = merged_segment.available_point_count();
 

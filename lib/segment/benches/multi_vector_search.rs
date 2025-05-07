@@ -66,7 +66,7 @@ fn multi_vector_search_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-fn make_segment_index<R: Rng + ?Sized>(rnd: &mut R, distance: Distance) -> HNSWIndex {
+fn make_segment_index<R: Rng + ?Sized>(rng: &mut R, distance: Distance) -> HNSWIndex {
     let stopped = AtomicBool::new(false);
     let segment_dir = Builder::new().prefix("data_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -93,7 +93,7 @@ fn make_segment_index<R: Rng + ?Sized>(rnd: &mut R, distance: Distance) -> HNSWI
     let mut segment = build_segment(segment_dir.path(), &segment_config, true).unwrap();
     for n in 0..NUM_POINTS {
         let idx = (n as u64).into();
-        let multi_vec = random_multi_vector(rnd, VECTOR_DIM, NUM_VECTORS_PER_POINT);
+        let multi_vec = random_multi_vector(rng, VECTOR_DIM, NUM_VECTORS_PER_POINT);
         let named_vectors = only_default_multi_vector(&multi_vec);
         segment
             .upsert_point(n as SeqNumberType, idx, named_vectors, &hw_counter)
@@ -127,6 +127,7 @@ fn make_segment_index<R: Rng + ?Sized>(rnd: &mut R, distance: Distance) -> HNSWI
             old_indices: &[],
             gpu_device: None,
             stopped: &stopped,
+            rng,
             feature_flags: FeatureFlags::default(),
         },
     )
