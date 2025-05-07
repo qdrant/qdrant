@@ -4125,11 +4125,13 @@ pub struct MultiDenseVector {
     pub vectors: ::prost::alloc::vec::Vec<DenseVector>,
 }
 /// Vector type to be used in queries. Ids will be substituted with their corresponding vectors from the collection.
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct VectorInput {
     #[prost(oneof = "vector_input::Variant", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[validate(nested)]
     pub variant: ::core::option::Option<vector_input::Variant>,
 }
 /// Nested message and enum types in `VectorInput`.
@@ -5126,59 +5128,73 @@ pub struct CountPoints {
     #[prost(uint64, optional, tag = "6")]
     pub timeout: ::core::option::Option<u64>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RecommendInput {
     /// Look for vectors closest to the vectors from these points
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub positive: ::prost::alloc::vec::Vec<VectorInput>,
     /// Try to avoid vectors like the vector from these points
     #[prost(message, repeated, tag = "2")]
+    #[validate(nested)]
     pub negative: ::prost::alloc::vec::Vec<VectorInput>,
     /// How to use the provided vectors to find the results
     #[prost(enumeration = "RecommendStrategy", optional, tag = "3")]
     pub strategy: ::core::option::Option<i32>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextInputPair {
     /// A positive vector
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub positive: ::core::option::Option<VectorInput>,
     /// Repel from this vector
     #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
     pub negative: ::core::option::Option<VectorInput>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DiscoverInput {
     /// Use this as the primary search objective
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub target: ::core::option::Option<VectorInput>,
     /// Search space will be constrained by these pairs of vectors
     #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
     pub context: ::core::option::Option<ContextInput>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ContextInput {
     /// Search space will be constrained by these pairs of vectors
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub pairs: ::prost::alloc::vec::Vec<ContextInputPair>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Formula {
     #[prost(message, optional, tag = "1")]
+    #[validate(nested)]
     pub expression: ::core::option::Option<Expression>,
     #[prost(map = "string, message", tag = "2")]
     pub defaults: ::std::collections::HashMap<::prost::alloc::string::String, Value>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -5187,6 +5203,7 @@ pub struct Expression {
         oneof = "expression::Variant",
         tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19"
     )]
+    #[validate(nested)]
     pub variant: ::core::option::Option<expression::Variant>,
 }
 /// Nested message and enum types in `Expression`.
@@ -5262,49 +5279,62 @@ pub struct GeoDistance {
     #[prost(string, tag = "2")]
     pub to: ::prost::alloc::string::String,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MultExpression {
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub mult: ::prost::alloc::vec::Vec<Expression>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SumExpression {
     #[prost(message, repeated, tag = "1")]
+    #[validate(nested)]
     pub sum: ::prost::alloc::vec::Vec<Expression>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DivExpression {
     #[prost(message, optional, boxed, tag = "1")]
+    #[validate(nested)]
     pub left: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     #[prost(message, optional, boxed, tag = "2")]
+    #[validate(nested)]
     pub right: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     #[prost(float, optional, tag = "3")]
     pub by_zero_default: ::core::option::Option<f32>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PowExpression {
     #[prost(message, optional, boxed, tag = "1")]
+    #[validate(nested)]
     pub base: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     #[prost(message, optional, boxed, tag = "2")]
+    #[validate(nested)]
     pub exponent: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DecayParamsExpression {
     /// The variable to decay
     #[prost(message, optional, boxed, tag = "1")]
+    #[validate(nested)]
     pub x: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     /// The target value to start decaying from. Defaults to 0.
     #[prost(message, optional, boxed, tag = "2")]
+    #[validate(nested)]
     pub target: ::core::option::Option<::prost::alloc::boxed::Box<Expression>>,
     /// The scale factor of the decay, in terms of `x`. Defaults to 1.0. Must be a non-zero positive number.
     #[prost(float, optional, tag = "3")]
@@ -5313,11 +5343,13 @@ pub struct DecayParamsExpression {
     #[prost(float, optional, tag = "4")]
     pub midpoint: ::core::option::Option<f32>,
 }
+#[derive(validator::Validate)]
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Query {
     #[prost(oneof = "query::Variant", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[validate(nested)]
     pub variant: ::core::option::Option<query::Variant>,
 }
 /// Nested message and enum types in `Query`.
@@ -5363,6 +5395,7 @@ pub struct PrefetchQuery {
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
     /// Query to perform. If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "2")]
+    #[validate(nested)]
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying. If missing, the default vector is is used.
     #[prost(string, optional, tag = "3")]
@@ -5401,6 +5434,7 @@ pub struct QueryPoints {
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
     /// Query to perform. If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying. If missing, the default vector is used.
     #[prost(string, optional, tag = "4")]
@@ -5477,6 +5511,7 @@ pub struct QueryPointGroups {
     pub prefetch: ::prost::alloc::vec::Vec<PrefetchQuery>,
     /// Query to perform. If missing, returns points ordered by their IDs.
     #[prost(message, optional, tag = "3")]
+    #[validate(nested)]
     pub query: ::core::option::Option<Query>,
     /// Define which vector to use for querying. If missing, the default vector is used.
     #[prost(string, optional, tag = "4")]
@@ -9751,6 +9786,7 @@ pub struct QueryShardPoints {
 }
 /// Nested message and enum types in `QueryShardPoints`.
 pub mod query_shard_points {
+    #[derive(validator::Validate)]
     #[derive(serde::Serialize)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Message)]
