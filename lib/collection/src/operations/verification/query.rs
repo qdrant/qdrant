@@ -90,10 +90,17 @@ impl Query {
                         if uses_multitenant_filter {
                             // no need for HNSW
                             return Ok(());
+                        } else {
+                            return Err(CollectionError::strict_mode(
+                                format!(
+                                    "Fullscan forbidden on '{using}' while filtering on non multitenant key"
+                                ),
+                                "Filter by multitenant indexed payload key or enable vector indexing",
+                            ));
                         }
                     };
 
-                    // HNSW disabled AND no multitenant filter to leverage
+                    // HNSW disabled AND no filters
                     return Err(CollectionError::strict_mode(
                         format!(
                             "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
