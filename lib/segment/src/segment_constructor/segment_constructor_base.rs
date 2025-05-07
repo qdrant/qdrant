@@ -11,6 +11,7 @@ use common::flags::FeatureFlags;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::{Mutex, RwLock};
+use rand::Rng;
 use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -354,12 +355,13 @@ pub(crate) struct VectorIndexOpenArgs<'a> {
     pub quantized_vectors: Arc<AtomicRefCell<Option<QuantizedVectors>>>,
 }
 
-pub struct VectorIndexBuildArgs<'a> {
+pub struct VectorIndexBuildArgs<'a, R: Rng + ?Sized> {
     pub permit: Arc<ResourcePermit>,
     /// Vector indices from other segments, used to speed up index building.
     /// May or may not contain the same vectors.
     pub old_indices: &'a [Arc<AtomicRefCell<VectorIndexEnum>>],
     pub gpu_device: Option<&'a LockedGpuDevice<'a>>,
+    pub rng: &'a mut R,
     pub stopped: &'a AtomicBool,
     pub feature_flags: FeatureFlags,
 }
@@ -392,10 +394,10 @@ pub(crate) fn open_vector_index(
     })
 }
 
-pub(crate) fn build_vector_index(
+pub(crate) fn build_vector_index<R: Rng + ?Sized>(
     vector_config: &VectorDataConfig,
     open_args: VectorIndexOpenArgs,
-    build_args: VectorIndexBuildArgs,
+    build_args: VectorIndexBuildArgs<R>,
 ) -> OperationResult<VectorIndexEnum> {
     let VectorIndexOpenArgs {
         path,

@@ -16,6 +16,7 @@ use common::small_uint::U24;
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
+use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -455,10 +456,11 @@ impl SegmentBuilder {
         Ok(true)
     }
 
-    pub fn build(
+    pub fn build<R: Rng + ?Sized>(
         self,
         permit: ResourcePermit,
         stopped: &AtomicBool,
+        rng: &mut R,
         hw_counter: &HardwareCounterCell,
     ) -> Result<Segment, OperationError> {
         let (temp_dir, destination_path) = {
@@ -590,6 +592,7 @@ impl SegmentBuilder {
                         old_indices: &old_indices.remove(vector_name).unwrap(),
                         gpu_device: gpu_device.as_ref(),
                         stopped,
+                        rng,
                         feature_flags: feature_flags(),
                     },
                 )?;

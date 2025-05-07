@@ -67,7 +67,7 @@ fn test_gpu_filterable_hnsw() {
     let full_scan_threshold = 32; // KB
     let num_payload_values = 2;
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -79,9 +79,9 @@ fn test_gpu_filterable_hnsw() {
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rng, dim);
 
-        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
         segment
@@ -141,6 +141,7 @@ fn test_gpu_filterable_hnsw() {
             permit,
             old_indices: &[],
             gpu_device: Some(&locked_device), // enable GPU
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },
@@ -151,10 +152,10 @@ fn test_gpu_filterable_hnsw() {
     let mut hits = 0;
     let attempts = 100;
     for i in 0..attempts {
-        let query = random_vector(&mut rnd, dim).into();
+        let query = random_vector(&mut rng, dim).into();
 
         let range_size = 40;
-        let left_range = rnd.random_range(0..400);
+        let left_range = rng.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

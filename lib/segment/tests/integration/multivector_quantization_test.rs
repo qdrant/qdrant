@@ -17,7 +17,6 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
 use segment::fixtures::query_fixtures::QueryVariant;
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::json_path::JsonPath;
 use segment::segment_constructor::build_segment;
@@ -38,9 +37,9 @@ enum QuantizationVariant {
     Binary,
 }
 
-fn random_vector<R: Rng + ?Sized>(rnd: &mut R, dim: usize) -> MultiDenseVectorInternal {
-    let count = rnd.random_range(1..=MAX_VECTORS_COUNT);
-    let mut vector = random_multi_vector(rnd, dim, count);
+fn random_vector<R: Rng + ?Sized>(rng: &mut R, dim: usize) -> MultiDenseVectorInternal {
+    let count = rng.random_range(1..=MAX_VECTORS_COUNT);
+    let mut vector = random_multi_vector(rng, dim, count);
     // for BQ change range to [-0.5; 0.5]
     vector.flattened_vectors.iter_mut().for_each(|x| *x -= 0.5);
     vector
@@ -189,7 +188,7 @@ fn test_multivector_quantization_hnsw(
     let full_scan_threshold = 16; // KB
     let num_payload_values = 2;
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let quantized_data_path = dir.path();
@@ -225,9 +224,9 @@ fn test_multivector_quantization_hnsw(
 
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rng, dim);
 
-        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
         segment
@@ -299,7 +298,7 @@ fn test_multivector_quantization_hnsw(
         payload_m: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
     let hnsw_index = HNSWIndex::build(
         HnswIndexOpenArgs {
@@ -318,6 +317,7 @@ fn test_multivector_quantization_hnsw(
             permit,
             old_indices: &[],
             gpu_device: None,
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },
@@ -328,10 +328,10 @@ fn test_multivector_quantization_hnsw(
     let mut sames = 0;
     let attempts = 100;
     for _ in 0..attempts {
-        let query = random_query(&query_variant, &mut rnd, dim);
+        let query = random_query(&query_variant, &mut rng, dim);
 
         let range_size = 40;
-        let left_range = rnd.random_range(0..400);
+        let left_range = rng.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(

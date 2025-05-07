@@ -28,7 +28,7 @@ fn test_graph_connectivity() {
     let distance = Distance::Cosine;
     let full_scan_threshold = 10_000;
 
-    let mut rnd = rng();
+    let mut rng = rng();
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -38,7 +38,7 @@ fn test_graph_connectivity() {
     let mut segment = build_simple_segment(dir.path(), dim, distance).unwrap();
     for n in 0..num_vectors {
         let idx = n.into();
-        let vector = random_vector(&mut rnd, dim);
+        let vector = random_vector(&mut rng, dim);
 
         segment
             .upsert_point(
@@ -79,6 +79,7 @@ fn test_graph_connectivity() {
             permit,
             old_indices: &[],
             gpu_device: None,
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },

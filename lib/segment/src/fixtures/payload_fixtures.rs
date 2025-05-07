@@ -118,8 +118,8 @@ pub fn random_bool_payload<R: Rng + ?Sized>(
         .collect_vec()
 }
 
-pub fn random_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
-    (0..size).map(|_| rnd_gen.random()).collect()
+pub fn random_vector<R: Rng + ?Sized>(rng: &mut R, size: usize) -> DenseVector {
+    (0..size).map(|_| rng.random()).collect()
 }
 
 pub fn random_dense_byte_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -> DenseVector {
@@ -133,13 +133,13 @@ pub fn random_dense_byte_vector<R: Rng + ?Sized>(rnd_gen: &mut R, size: usize) -
 }
 
 pub fn random_multi_vector<R: Rng + ?Sized>(
-    rnd_gen: &mut R,
+    rng: &mut R,
     vector_size: usize,
     num_vector_per_points: usize,
 ) -> MultiDenseVectorInternal {
     let mut vectors = vec![];
     for _ in 0..num_vector_per_points {
-        let vec = random_vector(rnd_gen, vector_size);
+        let vec = random_vector(rng, vector_size);
         vectors.extend(vec);
     }
     MultiDenseVectorInternal::new(vectors, vector_size)

@@ -13,7 +13,6 @@ use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::payload_fixtures::{random_int_payload, random_multi_vector};
 use segment::fixtures::query_fixtures::{QueryVariant, random_multi_vec_query};
 use segment::index::hnsw_index::hnsw::{HNSWIndex, HnswIndexOpenArgs};
-use segment::index::hnsw_index::num_rayon_threads;
 use segment::index::{PayloadIndex, VectorIndex};
 use segment::segment_constructor::build_segment;
 use segment::types::{
@@ -55,7 +54,7 @@ fn test_multi_filterable_hnsw(
     let full_scan_threshold = 8; // KB
     let num_payload_values = 2;
 
-    let mut rnd = StdRng::seed_from_u64(42);
+    let mut rng = StdRng::seed_from_u64(42);
 
     let dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
     let hnsw_dir = Builder::new().prefix("hnsw_dir").tempdir().unwrap();
@@ -85,10 +84,10 @@ fn test_multi_filterable_hnsw(
     for n in 0..num_points {
         let idx = n.into();
         // Random number of vectors per multivec point
-        let num_vector_for_point = rnd.random_range(1..=max_num_vector_per_points);
-        let multi_vec = random_multi_vector(&mut rnd, vector_dim, num_vector_for_point);
+        let num_vector_for_point = rng.random_range(1..=max_num_vector_per_points);
+        let multi_vec = random_multi_vector(&mut rng, vector_dim, num_vector_for_point);
 
-        let int_payload = random_int_payload(&mut rnd, num_payload_values..=num_payload_values);
+        let int_payload = random_int_payload(&mut rng, num_payload_values..=num_payload_values);
         let payload = payload_json! {int_key: int_payload};
 
         let named_vectors = only_default_multi_vector(&multi_vec);
@@ -126,7 +125,7 @@ fn test_multi_filterable_hnsw(
         payload_m: None,
     };
 
-    let permit_cpu_count = num_rayon_threads(hnsw_config.max_indexing_threads);
+    let permit_cpu_count = 1; // single-threaded for deterministic build
     let permit = Arc::new(ResourcePermit::dummy(permit_cpu_count as u32));
 
     let vector_storage = &segment.vector_data[DEFAULT_VECTOR_NAME].vector_storage;
@@ -144,6 +143,7 @@ fn test_multi_filterable_hnsw(
             permit,
             old_indices: &[],
             gpu_device: None,
+            rng: &mut rng,
             stopped: &stopped,
             feature_flags: FeatureFlags::default(),
         },
@@ -155,12 +155,12 @@ fn test_multi_filterable_hnsw(
     let attempts = 100;
     for i in 0..attempts {
         // Random number of vectors per multivec query
-        let num_vector_for_query = rnd.random_range(1..=max_num_vector_per_points);
+        let num_vector_for_query = rng.random_range(1..=max_num_vector_per_points);
         let query =
-            random_multi_vec_query(&query_variant, &mut rnd, vector_dim, num_vector_for_query);
+            random_multi_vec_query(&query_variant, &mut rng, vector_dim, num_vector_for_query);
 
         let range_size = 40;
-        let left_range = rnd.random_range(0..400);
+        let left_range = rng.random_range(0..400);
         let right_range = left_range + range_size;
 
         let filter = Filter::new_must(Condition::Field(FieldCondition::new_range(
