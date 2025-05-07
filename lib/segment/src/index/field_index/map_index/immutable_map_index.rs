@@ -184,22 +184,17 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         };
 
         // Construct intermediate values to points map from backing storage
-        let map = index
-            .value_to_points
-            .iter()
-            .map(|(value, ids)| {
+        let mapping = || {
+            index.value_to_points.iter().map(|(value, ids)| {
                 (
                     value,
-                    ids.iter()
-                        .copied()
-                        .filter(|idx| {
-                            let is_deleted = index.deleted.get(*idx as usize).unwrap_or(false);
-                            !is_deleted
-                        })
-                        .collect(),
+                    ids.iter().copied().filter(|idx| {
+                        let is_deleted = index.deleted.get(*idx as usize).unwrap_or(false);
+                        !is_deleted
+                    }),
                 )
             })
-            .collect::<HashMap<_, Vec<PointOffsetType>>>();
+        };
 
         self.indexed_points = 0;
         self.values_count = 0;
@@ -208,8 +203,8 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
 
         // Create points to values mapping
         let mut point_to_values: Vec<Vec<N::Owned>> = vec![];
-        for (&value, ids) in &map {
-            for &idx in ids {
+        for (value, ids) in mapping() {
+            for idx in ids {
                 if point_to_values.len() <= idx as usize {
                     point_to_values.resize_with(idx as usize + 1, Vec::new)
                 }
@@ -229,7 +224,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
         self.value_to_points_container.clear();
         self.value_to_points_container
             .reserve_exact(self.values_count);
-        for (value, points) in map {
+        for (value, points) in mapping() {
             let points = points.into_iter().collect::<Vec<_>>();
             let container_len = self.value_to_points_container.len() as u32;
             let range = container_len..container_len + points.len() as u32;
