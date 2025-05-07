@@ -51,9 +51,8 @@ impl IndexSelector<'_> {
         &self,
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
-        max_point_offset: PointOffsetType,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let mut indexes = match payload_schema.expand().as_ref() {
+        let indexes = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(_) => vec![FieldIndex::KeywordIndex(self.map_new(field)?)],
             PayloadSchemaParams::Integer(integer_params) => itertools::chain(
                 integer_params
@@ -86,10 +85,6 @@ impl IndexSelector<'_> {
             }
         };
 
-        if let Some(null_index) = self.new_null_index(field, max_point_offset)? {
-            indexes.push(null_index);
-        }
-
         Ok(indexes)
     }
 
@@ -99,7 +94,7 @@ impl IndexSelector<'_> {
         field: &JsonPath,
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndexBuilder>> {
-        let mut builders = match payload_schema.expand().as_ref() {
+        let builders = match payload_schema.expand().as_ref() {
             PayloadSchemaParams::Keyword(_) => {
                 vec![self.map_builder(
                     field,
@@ -159,10 +154,6 @@ impl IndexSelector<'_> {
                 )]
             }
         };
-
-        if let Some(null_builder) = self.null_builder(field)? {
-            builders.push(null_builder);
-        }
 
         Ok(builders)
     }
@@ -239,24 +230,23 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn null_builder(&self, field: &JsonPath) -> OperationResult<Option<FieldIndexBuilder>> {
-        Ok(match self {
-            IndexSelector::RocksDb(IndexSelectorRocksDb { .. }) => None, // there is no rocksdb null index
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => Some(
-                // null index is always on disk, and it is appendable
-                FieldIndexBuilder::NullIndex(MmapNullIndex::builder(&null_dir(dir, field))?),
-            ),
-        })
+    pub fn null_builder(dir: &Path, field: &JsonPath) -> OperationResult<FieldIndexBuilder> {
+        // null index is always on disk and appendable
+        Ok(FieldIndexBuilder::NullIndex(MmapNullIndex::builder(
+            &null_dir(dir, field),
+        )?))
     }
 
-    fn new_null_index(&self, field: &JsonPath, max_point_offset: PointOffsetType) -> OperationResult<Option<FieldIndex>> {
-        Ok(match self {
-            IndexSelector::RocksDb(IndexSelectorRocksDb { .. }) => None, // there is no rocksdb null index
-            IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk: _ }) => {
-                // null index is always on disk and is appendable
-                MmapNullIndex::open_if_exists(&null_dir(dir, field), max_point_offset)?.map(FieldIndex::NullIndex)
-            }
-        })
+    pub fn new_null_index(
+        dir: &Path,
+        field: &JsonPath,
+        max_point_offset: PointOffsetType,
+    ) -> OperationResult<Option<FieldIndex>> {
+        // null index is always on disk and is appendable
+        Ok(
+            MmapNullIndex::open_if_exists(&null_dir(dir, field), max_point_offset)?
+                .map(FieldIndex::NullIndex),
+        )
     }
 
     fn geo_builder(

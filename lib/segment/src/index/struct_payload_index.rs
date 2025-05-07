@@ -132,11 +132,22 @@ impl StructPayloadIndex {
         field: PayloadKeyTypeRef,
         payload_schema: &PayloadFieldSchema,
     ) -> OperationResult<Vec<FieldIndex>> {
-        let max_point_offset = self.id_tracker.borrow().total_point_count().saturating_sub(1) as PointOffsetType;
-
         let mut indexes = self
             .selector(payload_schema)
-            .new_index(field, payload_schema, max_point_offset)?;
+            .new_index(field, payload_schema)?;
+
+        let max_point_offset = self
+            .id_tracker
+            .borrow()
+            .total_point_count()
+            .saturating_sub(1) as PointOffsetType;
+
+        // Special null index complements every index.
+        if let Some(null_index) = IndexSelector::new_null_index(&self.path, field, max_point_offset)? {
+            // todo: This means that null index will not be built if it is not loaded here.
+            //       Maybe we should set `is_loaded` to false to trigger index building.
+            indexes.push(null_index);
+        }
 
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
@@ -225,6 +236,10 @@ impl StructPayloadIndex {
         let mut builders = self
             .selector(payload_schema)
             .index_builder(field, payload_schema)?;
+
+        // Special null index complements every index.
+        let null_index = IndexSelector::null_builder(&self.path, field)?;
+        builders.push(null_index);
 
         for index in &mut builders {
             index.init()?;
