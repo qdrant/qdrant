@@ -335,6 +335,69 @@ impl Validate for super::qdrant::query_enum::Query {
     }
 }
 
+impl Validate for super::qdrant::query::Variant {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::query::Variant::Nearest(q) => q.validate(),
+            grpc::query::Variant::Recommend(q) => q.validate(),
+            grpc::query::Variant::Discover(q) => q.validate(),
+            grpc::query::Variant::Context(q) => q.validate(),
+            grpc::query::Variant::Formula(q) => q.validate(),
+            grpc::query::Variant::Sample(_)
+            | grpc::query::Variant::Fusion(_)
+            | grpc::query::Variant::OrderBy(_) => Ok(()),
+        }
+    }
+}
+
+impl Validate for super::qdrant::vector_input::Variant {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::vector_input::Variant::Id(_)
+            | grpc::vector_input::Variant::Dense(_)
+            | grpc::vector_input::Variant::Document(_)
+            | grpc::vector_input::Variant::Image(_)
+            | grpc::vector_input::Variant::Object(_) => Ok(()),
+            grpc::vector_input::Variant::Sparse(sparse_vector) => sparse_vector.validate(),
+            grpc::vector_input::Variant::MultiDense(multi_dense_vector) => {
+                multi_dense_vector.validate()
+            }
+        }
+    }
+}
+
+impl Validate for super::qdrant::expression::Variant {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            grpc::expression::Variant::Constant(_) => Ok(()),
+            grpc::expression::Variant::Variable(_) => Ok(()),
+            grpc::expression::Variant::Condition(condition) => condition.validate(),
+            grpc::expression::Variant::GeoDistance(_) => Ok(()),
+            grpc::expression::Variant::Datetime(_) => Ok(()),
+            grpc::expression::Variant::DatetimeKey(_) => Ok(()),
+            grpc::expression::Variant::Mult(mult_expression) => mult_expression.validate(),
+            grpc::expression::Variant::Sum(sum_expression) => sum_expression.validate(),
+            grpc::expression::Variant::Div(div_expression) => div_expression.validate(),
+            grpc::expression::Variant::Neg(expression) => expression.validate(),
+            grpc::expression::Variant::Abs(expression) => expression.validate(),
+            grpc::expression::Variant::Sqrt(expression) => expression.validate(),
+            grpc::expression::Variant::Pow(pow_expression) => pow_expression.validate(),
+            grpc::expression::Variant::Exp(expression) => expression.validate(),
+            grpc::expression::Variant::Log10(expression) => expression.validate(),
+            grpc::expression::Variant::Ln(expression) => expression.validate(),
+            grpc::expression::Variant::ExpDecay(decay_params_expression) => {
+                decay_params_expression.validate()
+            }
+            grpc::expression::Variant::GaussDecay(decay_params_expression) => {
+                decay_params_expression.validate()
+            }
+            grpc::expression::Variant::LinDecay(decay_params_expression) => {
+                decay_params_expression.validate()
+            }
+        }
+    }
+}
+
 /// Validate that GeoLineString has at least 4 points and is closed.
 pub fn validate_geo_polygon_line_helper(line: &grpc::GeoLineString) -> Result<(), ValidationError> {
     let points = &line.points;

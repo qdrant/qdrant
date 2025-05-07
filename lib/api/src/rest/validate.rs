@@ -6,7 +6,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::schema::BatchVectorStruct;
 use super::{
-    Batch, ContextInput, FormulaQuery, Fusion, OrderByInterface, PointVectors, Query,
+    Batch, ContextInput, Expression, FormulaQuery, Fusion, OrderByInterface, PointVectors, Query,
     QueryInterface, RecommendInput, Sample, VectorInput,
 };
 use crate::rest::NamedVectorStruct;
@@ -33,14 +33,14 @@ impl Validate for QueryInterface {
 impl Validate for Query {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
         match self {
-            Query::Nearest(vector) => vector.nearest.validate(),
-            Query::Recommend(recommend) => recommend.recommend.validate(),
-            Query::Discover(discover) => discover.discover.validate(),
-            Query::Context(context) => context.context.validate(),
-            Query::Fusion(fusion) => fusion.fusion.validate(),
+            Query::Nearest(vector) => vector.validate(),
+            Query::Recommend(recommend) => recommend.validate(),
+            Query::Discover(discover) => discover.validate(),
+            Query::Context(context) => context.validate(),
+            Query::Fusion(fusion) => fusion.validate(),
             Query::Formula(formula) => formula.validate(),
-            Query::OrderBy(order_by) => order_by.order_by.validate(),
-            Query::Sample(sample) => sample.sample.validate(),
+            Query::OrderBy(order_by) => order_by.validate(),
+            Query::Sample(sample) => sample.validate(),
         }
     }
 }
@@ -103,12 +103,10 @@ impl Validate for Fusion {
 
 impl Validate for FormulaQuery {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
-        let Self {
-            // Formula validation will happen when parsing
-            formula: _formula,
-            defaults,
-        } = self;
+        let Self { formula, defaults } = self;
 
+        // validate formula Expression
+        formula.validate()?;
         let mut errors = validator::ValidationErrors::new();
 
         for (key, value) in defaults.iter() {
@@ -245,6 +243,32 @@ impl Validate for PointVectors {
             Err(errors)
         } else {
             self.vector.validate()
+        }
+    }
+}
+
+impl Validate for Expression {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        match self {
+            Expression::Constant(_) => Ok(()),
+            Expression::Variable(_) => Ok(()),
+            Expression::Condition(condition) => condition.validate(),
+            Expression::GeoDistance(_) => Ok(()),
+            Expression::Datetime(_) => Ok(()),
+            Expression::DatetimeKey(_) => Ok(()),
+            Expression::Mult(mult_expression) => mult_expression.validate(),
+            Expression::Sum(sum_expression) => sum_expression.validate(),
+            Expression::Neg(neg_expression) => neg_expression.validate(),
+            Expression::Abs(abs_expression) => abs_expression.validate(),
+            Expression::Div(div_expression) => div_expression.validate(),
+            Expression::Sqrt(sqrt_expression) => sqrt_expression.validate(),
+            Expression::Pow(pow_expression) => pow_expression.validate(),
+            Expression::Exp(exp_expression) => exp_expression.validate(),
+            Expression::Log10(log10_expression) => log10_expression.validate(),
+            Expression::Ln(ln_expression) => ln_expression.validate(),
+            Expression::LinDecay(lin_decay_expression) => lin_decay_expression.validate(),
+            Expression::ExpDecay(exp_decay_expression) => exp_decay_expression.validate(),
+            Expression::GaussDecay(gauss_decay_expression) => gauss_decay_expression.validate(),
         }
     }
 }
