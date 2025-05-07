@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 // Keyword
 
@@ -53,6 +54,33 @@ pub struct IntegerIndexParams {
     /// If true, store the index on disk. Default: false.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_disk: Option<bool>,
+}
+
+impl Validate for IntegerIndexParams {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let IntegerIndexParams {
+            r#type: _,
+            lookup,
+            range,
+            is_principal: _,
+            on_disk: _,
+        } = &self;
+        validate_integer_index_params(lookup, range)
+    }
+}
+
+pub fn validate_integer_index_params(
+    lookup: &Option<bool>,
+    range: &Option<bool>,
+) -> Result<(), ValidationErrors> {
+    if lookup == &Some(false) && range == &Some(false) {
+        let mut errors = ValidationErrors::new();
+        let error =
+            ValidationError::new("the 'lookup' and 'range' capabilities can't be both disabled");
+        errors.add("lookup", error);
+        return Err(errors);
+    }
+    Ok(())
 }
 
 // UUID
