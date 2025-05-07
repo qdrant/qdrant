@@ -469,6 +469,7 @@ message TextIndexParams {
   optional uint64 min_token_len = 3; // Minimal token length
   optional uint64 max_token_len = 4; // Maximal token length
   optional bool on_disk = 5; // If true - store index on disk.
+  optional bool phrase_matching = 6; // If true - support phrase matching.
 }
 
 message BoolIndexParams {

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -24,12 +24,16 @@ pub struct MutableInvertedIndex {
 
 impl MutableInvertedIndex {
     pub fn build_index(
-        iter: impl Iterator<Item = OperationResult<(PointOffsetType, BTreeSet<String>)>>,
-        // TODO: add param for including phrase field.
+        iter: impl Iterator<Item = OperationResult<(PointOffsetType, impl Iterator<Item = String>)>>,
+        phrase_matching: bool,
     ) -> OperationResult<Self> {
         let mut index = Self::default();
 
-        // update point_to_docs
+        if phrase_matching {
+            index.point_to_doc = Some(Default::default());
+        }
+
+        // update point_to_doc and point_to_tokens
         for item in iter {
             index.points_count += 1;
             let (idx, str_tokens) = item?;
@@ -40,7 +44,12 @@ impl MutableInvertedIndex {
                     .resize_with(idx as usize + 1, Default::default);
             }
 
-            let tokens = index.token_ids(&str_tokens);
+            let tokens = str_tokens.map(|s| index.token_id(&s)).collect::<Vec<_>>();
+
+            if let Some(point_to_doc) = &mut index.point_to_doc {
+                point_to_doc[idx as usize] = Some(Document::new(tokens.clone()));
+            }
+
             let tokens_set = TokenSet::from_iter(tokens);
             index.point_to_tokens[idx as usize] = Some(tokens_set);
         }

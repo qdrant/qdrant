@@ -1,5 +1,6 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use itertools::Either;
 
 use super::inverted_index::{Document, InvertedIndex, TokenSet};
 use super::mutable_inverted_index::MutableInvertedIndex;
@@ -33,14 +34,21 @@ impl MutableFullTextIndex {
             return Ok(false);
         };
 
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
         let db = self.db_wrapper.lock_db();
         let iter = db.iter()?.map(|(key, value)| {
             let idx = FullTextIndex::restore_key(&key);
-            let str_tokens = FullTextIndex::deserialize_document(&value)?;
+
+            let str_tokens = if phrase_matching {
+                Either::Left(FullTextIndex::deserialize_document(&value)?.into_iter())
+            } else {
+                Either::Right(FullTextIndex::deserialize_token_set(&value)?.into_iter())
+            };
+
             Ok((idx, str_tokens))
         });
 
-        self.inverted_index = MutableInvertedIndex::build_index(iter)?;
+        self.inverted_index = MutableInvertedIndex::build_index(iter, phrase_matching)?;
 
         Ok(true)
     }
@@ -63,7 +71,7 @@ impl MutableFullTextIndex {
             });
         }
 
-        let tokens = self.inverted_index.token_ids(&str_tokens);
+        let tokens = self.inverted_index.collect_token_ids(&str_tokens);
 
         if self.inverted_index.point_to_doc.is_some() {
             let document = Document::new(tokens.clone());
@@ -77,8 +85,13 @@ impl MutableFullTextIndex {
 
         let db_idx = FullTextIndex::store_key(idx);
 
-        let db_document =
-            FullTextIndex::serialize_document_tokens(str_tokens.into_iter().collect())?;
+        let phrase_matching = self.config.phrase_matching.unwrap_or_default();
+
+        let db_document = if phrase_matching {
+            FullTextIndex::serialize_document(str_tokens)?
+        } else {
+            FullTextIndex::serialize_token_set(str_tokens.into_iter().collect())?
+        };
 
         self.db_wrapper.put(db_idx, db_document)?;
 
@@ -148,6 +161,7 @@ mod tests {
             min_token_len: None,
             max_token_len: None,
             lowercase: None,
+            phrase_matching: None,
             on_disk: None,
         };
 

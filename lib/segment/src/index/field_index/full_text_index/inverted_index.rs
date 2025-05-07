@@ -97,26 +97,30 @@ pub trait InvertedIndex {
     /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
     ///
     /// The order of the tokens is preserved.
-    fn token_ids<'a>(
+    fn collect_token_ids<'a>(
         &mut self,
         str_tokens: impl IntoIterator<Item = &'a String> + 'a,
     ) -> Vec<TokenId> {
-        let vocab = self.get_vocab_mut();
         let mut token_ids = vec![];
         for token in str_tokens {
-            // check if in vocab
-            let vocab_idx = match vocab.get(token) {
-                Some(&idx) => idx,
-                None => {
-                    let next_token_id = vocab.len() as TokenId;
-                    vocab.insert(token.to_string(), next_token_id);
-                    next_token_id
-                }
-            };
-            token_ids.push(vocab_idx);
+            token_ids.push(self.token_id(token));
         }
 
         token_ids
+    }
+
+    /// Translate the string tokens into token ids.
+    /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
+    fn token_id(&mut self, token_str: &str) -> TokenId {
+        let vocab = self.get_vocab_mut();
+        match vocab.get(token_str) {
+            Some(&idx) => idx,
+            None => {
+                let next_token_id = vocab.len() as TokenId;
+                vocab.insert(token_str.to_string(), next_token_id);
+                next_token_id
+            }
+        }
     }
 
     fn index_tokens(
@@ -293,7 +297,7 @@ mod tests {
             // Generate 10 tot 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
             let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let token_ids = index.token_ids(&tokens);
+            let token_ids = index.collect_token_ids(&tokens);
             let token_set = TokenSet::from_iter(token_ids);
             index.index_tokens(idx, token_set, &hw_counter).unwrap();
         }

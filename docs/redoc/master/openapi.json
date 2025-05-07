@@ -7635,6 +7635,11 @@
             "type": "boolean",
             "nullable": true
           },
+          "phrase_matching": {
+            "description": "If true, support phrase matching. Default: false.",
+            "type": "boolean",
+            "nullable": true
+          },
           "on_disk": {
             "description": "If true, store the index on disk. Default: false.",
             "type": "boolean",

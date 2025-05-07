@@ -163,6 +163,7 @@ fn test_prefix_search(#[case] immutable: bool) {
         min_token_len: None,
         max_token_len: None,
         lowercase: None,
+        phrase_matching: None,
         on_disk: None,
     };
 
