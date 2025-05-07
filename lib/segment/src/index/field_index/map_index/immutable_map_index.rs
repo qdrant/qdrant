@@ -97,11 +97,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     ///
     /// Loads in-memory index from RocksDB storage.
     fn load_rocksdb(&mut self) -> OperationResult<bool> {
-        let db_wrapper = match &self.storage {
-            Storage::RocksDb(db_wrapper) => Some(db_wrapper.clone()),
-            Storage::Mmap(_) => None,
-        };
-        let Some(db_wrapper) = db_wrapper else {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Ok(false);
         };
 
@@ -175,11 +171,7 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     ///
     /// Loads in-memory index from mmap storage.
     fn load_mmap(&mut self) -> bool {
-        let index = match &self.storage {
-            Storage::RocksDb(_) => None,
-            Storage::Mmap(index) => Some(index.as_ref()),
-        };
-        let Some(index) = index else {
+        let Storage::Mmap(index) = &self.storage else {
             return false;
         };
 
