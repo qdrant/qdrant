@@ -398,10 +398,10 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     }
 
     #[inline]
-    pub(super) fn clear(&mut self) -> OperationResult<()> {
+    pub(super) fn clear(self) -> OperationResult<()> {
         match self.storage {
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Mmap(ref mut index) => index.clear(),
+            Storage::RocksDb(db_wrapper) => db_wrapper.recreate_column_family(),
+            Storage::Mmap(index) => index.clear(),
         }
     }
 

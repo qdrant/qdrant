@@ -293,9 +293,9 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn clear(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(mut index) => index.clear(),
-            MapIndex::Mmap(mut index) => index.clear(),
+            MapIndex::Mutable(index) => index.get_db_wrapper().remove_column_family(),
+            MapIndex::Immutable(index) => index.clear(),
+            MapIndex::Mmap(index) => index.clear(),
         }
     }
 
@@ -490,7 +490,7 @@ where
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0 {
             MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(index) => index.clear(),
+            MapIndex::Immutable(_) => unreachable!(),
             MapIndex::Mmap(_) => unreachable!(),
         }
     }

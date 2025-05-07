@@ -133,14 +133,13 @@ impl<N: MapIndexKey + Key + ?Sized> MmapMapIndex<N> {
         self.deleted.flusher()
     }
 
-    pub fn clear(&mut self) -> OperationResult<()> {
+    pub fn clear(self) -> OperationResult<()> {
         let files = self.files();
         let Self { path, .. } = self;
         for file in files {
             std::fs::remove_file(file)?;
         }
         let _ = remove_dir(path);
-        self.deleted.forget_pending_updates();
         Ok(())
     }
 
