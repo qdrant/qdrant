@@ -72,7 +72,7 @@ impl FullTextIndex {
     pub fn init(&mut self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.init(),
-            Self::Immutable(index) => index.init(),
+            Self::Immutable(_) => unreachable!("not applicable for immutable index"),
             Self::Mmap(_) => unreachable!("not applicable for mmap immutable index"),
         }
     }

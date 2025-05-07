@@ -41,18 +41,6 @@ impl MmapFullTextIndex {
         &self.inverted_index.path
     }
 
-    pub fn init(&mut self) -> OperationResult<()> {
-        self.inverted_index.deleted_points.forget_pending_updates();
-
-        let files = self.files();
-        let path = self.path();
-        for file in files {
-            std::fs::remove_file(file)?;
-        }
-        let _ = remove_dir(path);
-        Ok(())
-    }
-
     pub fn clear(self) -> OperationResult<()> {
         let files = self.files();
         let path = self.path();

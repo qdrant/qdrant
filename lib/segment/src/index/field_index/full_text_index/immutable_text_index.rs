@@ -48,13 +48,6 @@ impl ImmutableFullTextIndex {
         }
     }
 
-    pub fn init(&mut self) -> OperationResult<()> {
-        match self.storage {
-            Storage::RocksDb(ref db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Mmap(ref mut index) => index.init(),
-        }
-    }
-
     /// Load storage
     ///
     /// Loads in-memory index from backing RocksDB or mmap storage.
