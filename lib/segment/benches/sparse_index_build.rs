@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use criterion::{Criterion, criterion_group, criterion_main};
 use half::f16;
@@ -38,6 +39,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("sparse-vector-build-group");
 
     let stopped = AtomicBool::new(false);
+    let feature_flags = feature_flags();
     let mut rnd = StdRng::seed_from_u64(42);
 
     let payload_dir = Builder::new().prefix("payload_dir").tempdir().unwrap();
@@ -53,6 +55,7 @@ fn sparse_vector_index_build_benchmark(c: &mut Criterion) {
         id_tracker.clone(),
         std::collections::HashMap::new(),
         payload_dir.path(),
+        &feature_flags,
         true,
     )
     .unwrap();

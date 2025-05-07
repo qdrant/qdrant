@@ -7,7 +7,7 @@ use ahash::AHashSet;
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::counter::iterator_hw_measurement::HwMeasurementIteratorExt;
-use common::flags::feature_flags;
+use common::flags::FeatureFlags;
 use common::types::PointOffsetType;
 use itertools::Either;
 use log::debug;
@@ -162,6 +162,7 @@ impl StructPayloadIndex {
         id_tracker: Arc<AtomicRefCell<IdTrackerSS>>,
         vector_storages: HashMap<VectorNameBuf, Arc<AtomicRefCell<VectorStorageEnum>>>,
         path: &Path,
+        feature_flags: &FeatureFlags,
         is_appendable: bool,
     ) -> OperationResult<Self> {
         create_dir_all(path)?;
@@ -170,7 +171,7 @@ impl StructPayloadIndex {
             PayloadConfig::load(&config_path)?
         } else {
             let mut new_config = PayloadConfig::default();
-            if feature_flags().payload_index_skip_rocksdb && !is_appendable {
+            if feature_flags.payload_index_skip_rocksdb && !is_appendable {
                 new_config.skip_rocksdb = Some(true);
             }
             new_config
