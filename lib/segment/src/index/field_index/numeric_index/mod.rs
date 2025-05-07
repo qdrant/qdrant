@@ -170,7 +170,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         if is_appendable {
             NumericIndexInner::Mutable(MutableNumericIndex::new(db, field))
         } else {
-            NumericIndexInner::Immutable(ImmutableNumericIndex::new_rocksdb(db, field))
+            NumericIndexInner::Immutable(ImmutableNumericIndex::open_rocksdb(db, field))
         }
     }
 
@@ -183,8 +183,17 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         } else {
             // Load into RAM, use mmap as backing storage
             Ok(NumericIndexInner::Immutable(
-                ImmutableNumericIndex::new_mmap(mmap_index),
+                ImmutableNumericIndex::open_mmap(mmap_index),
             ))
+        }
+    }
+
+    pub fn load(&mut self) -> OperationResult<bool> {
+        match self {
+            NumericIndexInner::Mutable(index) => index.load(),
+            NumericIndexInner::Immutable(index) => index.load(),
+            // Mmap based index is always loaded
+            NumericIndexInner::Mmap(_) => Ok(true),
         }
     }
 
@@ -209,15 +218,6 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
             NumericIndexInner::Mutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Immutable(index) => index.total_unique_values_count(),
             NumericIndexInner::Mmap(index) => index.total_unique_values_count(),
-        }
-    }
-
-    pub fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            NumericIndexInner::Mutable(index) => index.load(),
-            NumericIndexInner::Immutable(index) => index.load(),
-            // Mmap based index is always loaded
-            NumericIndexInner::Mmap(_) => Ok(true),
         }
     }
 
@@ -474,7 +474,7 @@ pub trait NumericIndexIntoInnerValue<T, P> {
 }
 
 impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
             inner: NumericIndexInner::new_rocksdb(db, field, is_appendable),
             _phantom: PhantomData,
@@ -489,20 +489,23 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
         })
     }
 
-    pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
+    pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P>,
     {
-        NumericIndexBuilder(Self::new(db, field, true))
+        NumericIndexBuilder(Self::new_rocksdb(db, field, true))
     }
 
     #[cfg(test)]
-    pub fn builder_immutable(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexImmutableBuilder<T, P>
+    pub fn builder_rocksdb_immutable(
+        db: Arc<RwLock<DB>>,
+        field: &str,
+    ) -> NumericIndexImmutableBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P>,
     {
         NumericIndexImmutableBuilder {
-            index: Self::new(db.clone(), field, true),
+            index: Self::new_rocksdb(db.clone(), field, true),
             field: field.to_owned(),
             db,
         }

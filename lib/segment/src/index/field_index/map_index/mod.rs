@@ -87,7 +87,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
         } else {
-            MapIndex::Immutable(ImmutableMapIndex::new_rocksdb(db, field_name))
+            MapIndex::Immutable(ImmutableMapIndex::open_rocksdb(db, field_name))
         }
     }
 
@@ -99,15 +99,17 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
             Ok(MapIndex::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Ok(MapIndex::Immutable(ImmutableMapIndex::new_mmap(mmap_index)))
+            Ok(MapIndex::Immutable(ImmutableMapIndex::open_mmap(
+                mmap_index,
+            )))
         }
     }
 
-    pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
+    pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
         MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
     }
 
-    pub fn mmap_builder(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
+    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
         MapIndexMmapBuilder {
             path: path.to_owned(),
             point_to_values: Default::default(),
@@ -116,10 +118,10 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn load_from_db(&mut self) -> OperationResult<bool> {
+    fn load(&mut self) -> OperationResult<bool> {
         match self {
-            MapIndex::Mutable(index) => index.load_from_db(),
-            MapIndex::Immutable(index) => index.load_from_db(),
+            MapIndex::Mutable(index) => index.load(),
+            MapIndex::Immutable(index) => index.load(),
             // Mmap based index is always loaded
             MapIndex::Mmap(_) => Ok(true),
         }
@@ -579,7 +581,7 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        self.load_from_db()
+        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -729,7 +731,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        self.load_from_db()
+        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -920,7 +922,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        self.load_from_db()
+        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1226,8 +1228,10 @@ mod tests {
 
         match index_type {
             IndexType::Mutable | IndexType::Immutable => {
-                let mut builder =
-                    MapIndex::<N>::builder(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+                let mut builder = MapIndex::<N>::builder_rocksdb(
+                    open_db_with_existing_cf(path).unwrap(),
+                    FIELD_NAME,
+                );
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1239,7 +1243,7 @@ mod tests {
                 builder.finalize().unwrap();
             }
             IndexType::Mmap | IndexType::RamMmap => {
-                let mut builder = MapIndex::<N>::mmap_builder(path, false);
+                let mut builder = MapIndex::<N>::builder_mmap(path, false);
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1272,7 +1276,7 @@ mod tests {
             IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap(),
             IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
         };
-        index.load_from_db().unwrap();
+        index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N::Owned> = index
                 .get_values(idx as PointOffsetType)
@@ -1290,7 +1294,7 @@ mod tests {
     #[test]
     fn test_index_non_ascending_insertion() {
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(temp_dir.path(), false);
+        let mut builder = MapIndex::<IntPayloadType>::builder_mmap(temp_dir.path(), false);
         builder.init().unwrap();
 
         let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];

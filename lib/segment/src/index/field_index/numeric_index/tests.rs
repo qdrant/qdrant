@@ -58,11 +58,11 @@ fn get_index_builder(index_type: IndexType) -> (TempDir, IndexBuilder) {
         IndexType::Mutable => IndexBuilder::Mutable(NumericIndex::<
             FloatPayloadType,
             FloatPayloadType,
-        >::builder(db, COLUMN_NAME)),
+        >::builder_rocksdb(db, COLUMN_NAME)),
         IndexType::Immutable => IndexBuilder::Immutable(NumericIndex::<
             FloatPayloadType,
             FloatPayloadType,
-        >::builder_immutable(
+        >::builder_rocksdb_immutable(
             db, COLUMN_NAME
         )),
         IndexType::Mmap | IndexType::RamMmap => IndexBuilder::Mmap(NumericIndex::<
@@ -107,7 +107,7 @@ fn random_index(
             panic!("Expected mmap index");
         };
         index = NumericIndex {
-            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::new_mmap(mmap_index)),
+            inner: NumericIndexInner::Immutable(ImmutableNumericIndex::open_mmap(mmap_index)),
             _phantom: Default::default(),
         };
     }
