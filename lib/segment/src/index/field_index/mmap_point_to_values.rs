@@ -378,6 +378,17 @@ impl<T: MmapValue + ?Sized> MmapPointToValues<T> {
         clear_disk_cache(&self.file_name)?;
         Ok(())
     }
+
+    pub fn iter(
+        &self,
+    ) -> impl Iterator<
+        Item = (
+            PointOffsetType,
+            Option<impl Iterator<Item = T::Referenced<'_>> + '_>,
+        ),
+    > + Clone {
+        (0..self.len() as PointOffsetType).map(|idx| (idx, self.get_values(idx)))
+    }
 }
 
 #[cfg(test)]

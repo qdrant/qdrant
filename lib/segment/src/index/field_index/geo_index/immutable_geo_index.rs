@@ -18,11 +18,27 @@ use crate::index::field_index::geo_hash::{GeoHash, encode_max_precision};
 use crate::index::field_index::immutable_point_to_values::ImmutablePointToValues;
 use crate::types::GeoPoint;
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 struct Counts {
     hash: GeoHash,
     points: u32,
     values: u32,
+}
+
+impl From<super::mmap_geo_index::Counts> for Counts {
+    #[inline]
+    fn from(counts: super::mmap_geo_index::Counts) -> Self {
+        let super::mmap_geo_index::Counts {
+            hash,
+            points,
+            values,
+        } = counts;
+        Self {
+            hash,
+            points,
+            values,
+        }
+    }
 }
 
 pub struct ImmutableGeoMapIndex {
@@ -42,7 +58,10 @@ enum Storage {
 }
 
 impl ImmutableGeoMapIndex {
-    pub fn new(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
+    /// Open immutable geo index from RocksDB storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_rocksdb(db: Arc<RwLock<DB>>, store_cf_name: &str) -> Self {
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             store_cf_name,
@@ -56,6 +75,144 @@ impl ImmutableGeoMapIndex {
             max_values_per_point: 0,
             storage: Storage::RocksDb(db_wrapper),
         }
+    }
+
+    /// Open immutable geo index from mmap storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_mmap(index: MmapGeoMapIndex) -> Self {
+        Self {
+            counts_per_hash: Default::default(),
+            points_map: Default::default(),
+            point_to_values: Default::default(),
+            points_count: 0,
+            points_values_count: 0,
+            max_values_per_point: 0,
+            storage: Storage::Mmap(Box::new(index)),
+        }
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or mmap storage.
+    pub fn load(&mut self) -> OperationResult<bool> {
+        match self.storage {
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Mmap(_) => Ok(self.load_mmap()),
+        }
+    }
+
+    /// Load from RocksDB storage
+    ///
+    /// Loads in-memory index from RocksDB storage.
+    fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Ok(false);
+        };
+
+        let mut mutable_geo_index =
+            MutableGeoMapIndex::new(db_wrapper.get_database(), db_wrapper.get_column_name());
+        let result = mutable_geo_index.load()?;
+
+        let InMemoryGeoMapIndex {
+            points_per_hash,
+            values_per_hash,
+            points_map,
+            point_to_values,
+            points_count,
+            points_values_count,
+            max_values_per_point,
+            ..
+        } = mutable_geo_index.into_in_memory_index();
+
+        let mut counts_per_hash: BTreeMap<GeoHash, Counts> = Default::default();
+        for (hash, points) in points_per_hash {
+            counts_per_hash.insert(
+                hash,
+                Counts {
+                    hash,
+                    points: points as u32,
+                    values: 0,
+                },
+            );
+        }
+        for (hash, values) in values_per_hash {
+            if let Some(counts) = counts_per_hash.get_mut(&hash) {
+                counts.values = values as u32;
+            } else {
+                counts_per_hash.insert(
+                    hash,
+                    Counts {
+                        hash,
+                        points: 0,
+                        values: values as u32,
+                    },
+                );
+            }
+        }
+
+        self.counts_per_hash = counts_per_hash.values().cloned().collect();
+        self.points_map = points_map.iter().map(|(k, v)| (*k, v.clone())).collect();
+        self.point_to_values = ImmutablePointToValues::new(point_to_values);
+        self.points_count = points_count;
+        self.points_values_count = points_values_count;
+        self.max_values_per_point = max_values_per_point;
+
+        Ok(result)
+    }
+
+    /// Load from mmap storage
+    ///
+    /// Loads in-memory index fmmap RocksDB storage.
+    fn load_mmap(&mut self) -> bool {
+        let Storage::Mmap(index) = &self.storage else {
+            return false;
+        };
+
+        self.counts_per_hash = index
+            .counts_per_hash
+            .iter()
+            .copied()
+            .map(Counts::from)
+            .collect();
+        self.points_map = index
+            .points_map
+            .iter()
+            .copied()
+            .map(|item| {
+                let super::mmap_geo_index::PointKeyValue {
+                    hash,
+                    ids_start,
+                    ids_end,
+                } = item;
+                (
+                    hash,
+                    index.points_map_ids[ids_start as usize..ids_end as usize]
+                        .iter()
+                        .copied()
+                        // Filter deleted points
+                        .filter(|id| !index.deleted.get(*id as usize).unwrap_or_default())
+                        .collect(),
+                )
+            })
+            .collect();
+        self.point_to_values = ImmutablePointToValues::new(
+            index
+                .point_to_values
+                .iter()
+                .map(|(id, values)| {
+                    values
+                        // Filter deleted points
+                        .filter(|_| !index.deleted.get(id as usize).unwrap_or_default())
+                        .map_or(vec![], |values| values.into_iter().collect())
+                })
+                .collect(),
+        );
+        self.points_count = index.points_count();
+        self.points_values_count = index.points_values_count();
+        self.max_values_per_point = index.max_values_per_point();
+
+        true
     }
 
     #[cfg(test)]
@@ -142,62 +299,6 @@ impl ImmutableGeoMapIndex {
         } else {
             0
         }
-    }
-
-    pub fn load(&mut self) -> OperationResult<bool> {
-        let Storage::RocksDb(db_wrapper) = &self.storage else {
-            return Ok(false);
-        };
-
-        let mut mutable_geo_index =
-            MutableGeoMapIndex::new(db_wrapper.get_database(), db_wrapper.get_column_name());
-        let result = mutable_geo_index.load()?;
-
-        let InMemoryGeoMapIndex {
-            points_per_hash,
-            values_per_hash,
-            points_map,
-            point_to_values,
-            points_count,
-            points_values_count,
-            max_values_per_point,
-            ..
-        } = mutable_geo_index.into_in_memory_index();
-
-        let mut counts_per_hash: BTreeMap<GeoHash, Counts> = Default::default();
-        for (hash, points) in points_per_hash {
-            counts_per_hash.insert(
-                hash,
-                Counts {
-                    hash,
-                    points: points as u32,
-                    values: 0,
-                },
-            );
-        }
-        for (hash, values) in values_per_hash {
-            if let Some(counts) = counts_per_hash.get_mut(&hash) {
-                counts.values = values as u32;
-            } else {
-                counts_per_hash.insert(
-                    hash,
-                    Counts {
-                        hash,
-                        points: 0,
-                        values: values as u32,
-                    },
-                );
-            }
-        }
-
-        self.counts_per_hash = counts_per_hash.values().cloned().collect();
-        self.points_map = points_map.iter().map(|(k, v)| (*k, v.clone())).collect();
-        self.point_to_values = ImmutablePointToValues::new(point_to_values);
-        self.points_count = points_count;
-        self.points_values_count = points_values_count;
-        self.max_values_per_point = max_values_per_point;
-
-        Ok(result)
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
