@@ -50,7 +50,7 @@ impl GeoMapIndex {
         if is_appendable {
             GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, &store_cf_name))
         } else {
-            GeoMapIndex::Immutable(ImmutableGeoMapIndex::new(db, &store_cf_name))
+            GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_rocksdb(db, &store_cf_name))
         }
     }
 
