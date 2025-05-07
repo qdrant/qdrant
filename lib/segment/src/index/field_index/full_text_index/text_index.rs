@@ -48,7 +48,7 @@ impl FullTextIndex {
         if is_appendable {
             Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
         } else {
-            Self::Immutable(ImmutableFullTextIndex::new_rocksdb(db_wrapper, config))
+            Self::Immutable(ImmutableFullTextIndex::open_rocksdb(db_wrapper, config))
         }
     }
 
@@ -63,7 +63,7 @@ impl FullTextIndex {
             Ok(Self::Mmap(Box::new(mmap_index)))
         } else {
             // Load into RAM, use mmap as backing storage
-            Ok(Self::Immutable(ImmutableFullTextIndex::new_mmap(
+            Ok(Self::Immutable(ImmutableFullTextIndex::open_mmap(
                 mmap_index,
             )))
         }
@@ -372,8 +372,8 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn load(&mut self) -> OperationResult<bool> {
         match self {
-            Self::Mutable(index) => index.load_from_db(),
-            Self::Immutable(index) => index.load_from_db(),
+            Self::Mutable(index) => index.load(),
+            Self::Immutable(index) => index.load(),
             Self::Mmap(_index) => Ok(true), // mmap index is always loaded
         }
     }

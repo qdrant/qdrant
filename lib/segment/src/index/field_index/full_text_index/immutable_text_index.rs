@@ -23,7 +23,10 @@ enum Storage {
 }
 
 impl ImmutableFullTextIndex {
-    pub fn new_rocksdb(
+    /// Open immutable full text index from RocksDB storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_rocksdb(
         db_wrapper: DatabaseColumnScheduledDeleteWrapper,
         config: TextIndexParams,
     ) -> Self {
@@ -34,10 +37,12 @@ impl ImmutableFullTextIndex {
         }
     }
 
-    pub fn new_mmap(index: MmapFullTextIndex) -> Self {
-        let inverted_index = ImmutableInvertedIndex::from(&index.inverted_index);
+    /// Open immutable full text index from mmap storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_mmap(index: MmapFullTextIndex) -> Self {
         Self {
-            inverted_index,
+            inverted_index: Default::default(),
             config: index.config.clone(),
             storage: Storage::Mmap(Box::new(index)),
         }
@@ -50,13 +55,22 @@ impl ImmutableFullTextIndex {
         }
     }
 
-    pub fn load_from_db(&mut self) -> OperationResult<bool> {
-        let db_wrapper = match &self.storage {
-            Storage::RocksDb(db_wrapper) => Some(db_wrapper.clone()),
-            Storage::Mmap(_) => None,
-        };
-        let Some(db_wrapper) = db_wrapper else {
-            return Ok(true);
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or mmap storage.
+    pub fn load(&mut self) -> OperationResult<bool> {
+        match self.storage {
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Mmap(_) => Ok(self.load_mmap()),
+        }
+    }
+
+    /// Load from RocksDB storage
+    ///
+    /// Loads in-memory index from RocksDB storage.
+    fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
+            return Ok(false);
         };
 
         if !db_wrapper.has_column_family()? {
@@ -73,8 +87,18 @@ impl ImmutableFullTextIndex {
         let mutable = MutableInvertedIndex::build_index(iter)?;
 
         self.inverted_index = ImmutableInvertedIndex::from(mutable);
-
         Ok(true)
+    }
+
+    /// Load from mmap storage
+    ///
+    /// Loads in-memory index from mmap storage.
+    fn load_mmap(&mut self) -> bool {
+        let Storage::Mmap(index) = &self.storage else {
+            return false;
+        };
+        self.inverted_index = ImmutableInvertedIndex::from(&index.inverted_index);
+        true
     }
 
     #[cfg(test)]

@@ -30,7 +30,7 @@ impl MutableFullTextIndex {
         self.db_wrapper.recreate_column_family()
     }
 
-    pub fn load_from_db(&mut self) -> OperationResult<bool> {
+    pub fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
