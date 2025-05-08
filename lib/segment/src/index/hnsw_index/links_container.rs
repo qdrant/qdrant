@@ -8,7 +8,7 @@ use crate::common::vector_utils::TrySetCapacityExact as _;
 
 pub struct LinksContainer {
     links: Vec<PointOffsetType>,
-    /// Amount of links that processed by the heuristic.
+    /// Number of links that have been processed by the heuristic.
     processed_by_heuristic: u32,
 }
 
@@ -64,7 +64,7 @@ impl LinksContainer {
             }
             self.links.push(candidate.idx);
             if self.links.len() >= level_m {
-                return;
+                break;
             }
         }
         self.processed_by_heuristic = self.links.len() as u32;
@@ -173,8 +173,8 @@ impl LinksContainer {
             order: None,
         });
         items.0.sort_unstable_by(|a, b| {
-            if a.order.is_some() && b.order.is_some() {
-                return a.order.unwrap().cmp(&b.order.unwrap());
+            if let (Some(a_order), Some(b_order)) = (a.order, b.order) {
+                return a_order.cmp(&b_order);
             }
             b.score(target_point_id, &mut score)
                 .total_cmp(&a.score(target_point_id, &mut score))
