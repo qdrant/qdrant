@@ -79,6 +79,12 @@ fn remove_peer(
             });
         }
 
+        // If we reach here, either there are no shards or force removal is requested
+        if has_shards {
+            log::warn!("Aborting peer transfers for peer {peer_id} before force removal");
+            toc.abort_peer_transfers(peer_id).await?;
+        }
+
         match dispatcher.consensus_state() {
             Some(consensus_state) => {
                 consensus_state
