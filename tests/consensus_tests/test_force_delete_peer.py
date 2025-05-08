@@ -5,8 +5,6 @@ from time import sleep
 
 COLLECTION_NAME = "test_collection"
 N_PEERS = 3
-N_REPLICAS = 3
-N_SHARDS = 2
 
 def force_delete_peer(peer_api_uri: str, peer_id: int):
     response = requests.delete(
@@ -25,7 +23,7 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
 
     peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
-    create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICAS)
+    create_collection(peer_api_uris[0], shard_number=2, replication_factor=3)
     wait_collection_exists_and_active_on_all_peers(
         collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
     )
@@ -63,16 +61,8 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     assert transfers[0]["to"] == list(peer_id_to_url.keys())[-1] # last peer was restarted
     from_peer_id = transfers[0]["from"]
 
-    # Stop the 'source' node to simulate an unreachable node
-    source_peer_url = peer_id_to_url[from_peer_id]
-    peer_idx = peer_api_uris.index(source_peer_url)
-    p = processes.pop(peer_idx)
-    url = peer_api_uris.pop(peer_idx)
-
     # Force delete 'from' peer ID by requesting remaining peers to do so
     force_delete_peer(peer_api_uris[0], from_peer_id)
-
-    sleep(1)
 
     # We expect transfers to be aborted
     wait_for_collection_shard_transfers_count(
