@@ -190,7 +190,9 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
             .iter_postings(&hw_counter)
             .enumerate()
             .filter_map(|(orig_token, posting)| {
-                (!posting.is_empty()).then_some((orig_token, posting))
+                posting
+                    .filter(|posting| !posting.is_empty())
+                    .map(|posting| (orig_token, posting))
             })
             .enumerate()
             .map(|(new_token, (orig_token, posting))| {

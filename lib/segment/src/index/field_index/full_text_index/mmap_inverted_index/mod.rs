@@ -128,7 +128,7 @@ impl MmapInvertedIndex {
     pub(super) fn iter_postings<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = ChunkReader<'a>> {
+    ) -> impl Iterator<Item = Option<ChunkReader<'a>>> {
         self.postings.iter_postings(hw_counter)
     }
 

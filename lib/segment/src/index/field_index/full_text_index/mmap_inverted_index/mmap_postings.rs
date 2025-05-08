@@ -245,8 +245,7 @@ impl MmapPostings {
     pub fn iter_postings<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = ChunkReader<'a>> {
-        (0..self.header.posting_count as u32)
-            .map(|posting_idx| self.get(posting_idx, hw_counter).unwrap())
+    ) -> impl Iterator<Item = Option<ChunkReader<'a>>> {
+        (0..self.header.posting_count as u32).map(|posting_idx| self.get(posting_idx, hw_counter))
     }
 }
