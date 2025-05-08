@@ -204,6 +204,15 @@ pub trait SegmentOptimizer {
         let threshold_is_indexed = maximal_vector_store_size_bytes
             >= thresholds.indexing_threshold_kb.saturating_mul(BYTES_IN_KB);
 
+        // The logic that we want:
+        //
+        // | on_disk | mmap_threshold | is_indexed | storage_type |
+        // |   true  |      20k       |    true    |     mmap     |
+        // |   true  |      None      |    true    |     mmap     |
+        // |   None  |      20k       |    true    |     mmap     |
+        // |   None  |      None      |    true    |     InRam    |
+        // |   false |      20k       |    true    |     mmap     |
+        // |   false |      None      |    true    |     InRam    |
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
@@ -237,8 +246,10 @@ pub trait SegmentOptimizer {
             });
         }
 
-        // If storing on disk, set storage type in current segment (not in collection config)
-        if threshold_is_on_disk {
+        // We want to use single-file mmap in the following cases:
+        // - It is explicitly configured by `mmap_threshold` -> threshold_is_on_disk=true
+        // - The segment is indexed and configured on disk -> threshold_is_indexed=true && config_on_disk=Some(true)
+        if threshold_is_on_disk || threshold_is_indexed {
             vector_data.iter_mut().for_each(|(vector_name, config)| {
                 // Check whether on_disk is explicitly configured, if not, set it to true
                 let config_on_disk = collection_params
@@ -249,7 +260,7 @@ pub trait SegmentOptimizer {
                 match config_on_disk {
                     Some(true) => config.storage_type = VectorStorageType::Mmap, // Both agree, but prefer mmap storage type
                     Some(false) => {} // on_disk=false wins, do nothing
-                    None => config.storage_type = VectorStorageType::Mmap, // Mmap threshold wins
+                    None => if threshold_is_on_disk { config.storage_type = VectorStorageType::Mmap }, // Mmap threshold wins
                 }
 
                 // If we explicitly configure on_disk, but the segment storage type uses something
