@@ -293,19 +293,51 @@ mod tests {
     fn test_connect_new_point() {
         let m = 6;
 
-        // See illustration in docs
+        // ○ 10 K
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //
+        //                 ○ 9 H
+        //
+        //
+        //
+        //
+        //
+        //           ○ 7 I
+        //                        ● 6 G
+        //
+        //
+        //           ○ 8 J                                         ○ 4 E
+        //
+        //
+        //                                                          ● 3 D
+        //
+        //
+        //                                            ◉ Target             ○ 5 F
+        //   Y
+        //   ▲
+        //   │                                  ● 1 B
+        //   └──▶ X
+        //                                         ○ 2 C
         let points: Vec<DenseVector> = vec![
-            vec![21.79, 7.18],  // Target
-            vec![20.58, 5.46],  // 1  B - yes
-            vec![21.19, 4.51],  // 2  C
-            vec![24.73, 8.24],  // 3  D - yes
-            vec![24.55, 9.98],  // 4  E
-            vec![26.11, 6.85],  // 5  F
-            vec![17.64, 11.14], // 6  G - yes
-            vec![14.97, 11.52], // 7  I
-            vec![14.97, 9.60],  // 8  J
-            vec![16.23, 14.32], // 9  H
-            vec![12.69, 19.13], // 10 K
+            vec![21.79, 07.18], //   Target
+            vec![20.58, 05.46], // + 1 B
+            vec![21.19, 04.51], //   2 C   closer to B than to the target
+            vec![24.73, 08.24], // + 3 D
+            vec![24.55, 09.98], //   4 E   closer to D than to the target
+            vec![26.11, 06.85], //   5 F   closer to D than to the target
+            vec![17.64, 11.14], // + 6 G
+            vec![14.97, 11.52], //   7 I   closer to G than to the target
+            vec![14.97, 09.60], //   8 J   closer to B and G than to the target
+            vec![16.23, 14.32], //   9 H   closer to G than to the target
+            vec![12.69, 19.13], //  10 K   closer to G than to the target
         ];
 
         let scorer = |a: PointOffsetType, b: PointOffsetType| {
