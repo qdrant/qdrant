@@ -8,7 +8,8 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition,
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    PrimaryCondition,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -79,10 +80,7 @@ impl MmapNullIndex {
         })
     }
 
-    pub fn open_if_exists(
-        path: &Path,
-        total_point_count: usize,
-    ) -> OperationResult<Option<Self>> {
+    pub fn open_if_exists(path: &Path, total_point_count: usize) -> OperationResult<Option<Self>> {
         if !path.is_dir() {
             return Ok(None);
         }
@@ -211,7 +209,7 @@ impl MmapNullIndex {
 
 impl PayloadFieldIndex for MmapNullIndex {
     fn count_indexed_points(&self) -> usize {
-        self.has_values_slice.len()
+        self.has_values_slice.count_flags()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
@@ -321,7 +319,7 @@ impl PayloadFieldIndex for MmapNullIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         let FieldCondition {
-            key: _,
+            key,
             r#match: _,
             range: _,
             geo_bounding_box: _,
@@ -338,19 +336,28 @@ impl PayloadFieldIndex for MmapNullIndex {
                 .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
             if *is_empty {
                 // We can estimate using the total_point_count, but not exactly since we don't know which are deleted
-                let estimated = self.total_point_count.saturating_sub(self.has_values_slice.count_flags());
+                let estimated = self
+                    .total_point_count
+                    .saturating_sub(self.has_values_slice.count_flags());
 
                 Some(CardinalityEstimation {
                     min: 0,
                     exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
                     max: estimated,
-                    primary_clauses: vec![PrimaryCondition::from(condition.clone())],
+                    primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_empty(
+                        key.clone(),
+                        true,
+                    ))],
                 })
             } else {
                 // All non-empty values are explicitly marked in the index
-                Some(CardinalityEstimation::exact(
-                    self.has_values_slice.count_flags(),
-                ).with_primary_clause(PrimaryCondition::from(condition.clone())))
+                Some(
+                    CardinalityEstimation::exact(self.has_values_slice.count_flags())
+                        .with_primary_clause(PrimaryCondition::from(FieldCondition::new_is_empty(
+                            key.clone(),
+                            false,
+                        ))),
+                )
             }
         } else if let Some(is_null) = is_null {
             hw_counter
@@ -359,18 +366,27 @@ impl PayloadFieldIndex for MmapNullIndex {
 
             if *is_null {
                 // Null values are explicitly marked in the index
-                Some(CardinalityEstimation::exact(
-                    self.is_null_slice.count_flags(),
-                ))
+                Some(
+                    CardinalityEstimation::exact(self.is_null_slice.count_flags())
+                        .with_primary_clause(PrimaryCondition::from(FieldCondition::new_is_null(
+                            key.clone(),
+                            true,
+                        ))),
+                )
             } else {
                 // We can estimate the non-null values from the total number of values
-                let estimated = self.total_point_count.saturating_sub(self.is_null_slice.count_flags());
+                let estimated = self
+                    .total_point_count
+                    .saturating_sub(self.is_null_slice.count_flags());
 
                 Some(CardinalityEstimation {
-                    min: 0, // assuming all points are deleted
+                    min: 0,                 // assuming all points are deleted
                     exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
                     max: estimated,
-                    primary_clauses: vec![PrimaryCondition::from(condition.clone())],
+                    primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_null(
+                        key.clone(),
+                        false,
+                    ))],
                 })
             }
         } else {
@@ -451,7 +467,7 @@ mod tests {
         let null_index = builder.finalize().unwrap();
         let key = JsonPath::new("test");
 
-        let filter_is_null = FieldCondition::new_is_null(key.clone());
+        let filter_is_null = FieldCondition::new_is_null(key.clone(), true);
 
         let filter_is_not_empty = FieldCondition {
             key: key.clone(),

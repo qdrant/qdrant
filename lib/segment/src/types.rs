@@ -2508,7 +2508,7 @@ impl FieldCondition {
         }
     }
 
-    pub fn new_is_empty(key: PayloadKeyType) -> Self {
+    pub fn new_is_empty(key: PayloadKeyType, is_empty: bool) -> Self {
         Self {
             key,
             r#match: None,
@@ -2517,12 +2517,12 @@ impl FieldCondition {
             geo_radius: None,
             geo_polygon: None,
             values_count: None,
-            is_empty: Some(true),
+            is_empty: Some(is_empty),
             is_null: None,
         }
     }
 
-    pub fn new_is_null(key: PayloadKeyType) -> Self {
+    pub fn new_is_null(key: PayloadKeyType, is_null: bool) -> Self {
         Self {
             key,
             r#match: None,
@@ -2532,7 +2532,7 @@ impl FieldCondition {
             geo_polygon: None,
             values_count: None,
             is_empty: None,
-            is_null: Some(true),
+            is_null: Some(is_null),
         }
     }
 

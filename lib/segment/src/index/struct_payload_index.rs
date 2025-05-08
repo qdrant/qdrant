@@ -136,10 +136,7 @@ impl StructPayloadIndex {
             .selector(payload_schema)
             .new_index(field, payload_schema)?;
 
-        let total_point_count = self
-            .id_tracker
-            .borrow()
-            .total_point_count();
+        let total_point_count = self.id_tracker.borrow().total_point_count();
 
         // Special null index complements every index.
         if let Some(null_index) =
@@ -302,14 +299,14 @@ impl StructPayloadIndex {
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
-                let condition = FieldCondition::new_is_empty(field.key.clone());
+                let condition = FieldCondition::new_is_empty(field.key.clone(), true);
 
                 self.estimate_field_condition(&condition, nested_path, hw_counter)
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
-                let condition = FieldCondition::new_is_null(field.key.clone());
+                let condition = FieldCondition::new_is_null(field.key.clone(), true);
 
                 self.estimate_field_condition(&condition, nested_path, hw_counter)
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
