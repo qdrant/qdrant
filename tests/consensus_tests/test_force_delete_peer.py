@@ -23,8 +23,7 @@ def get_peer_id(peer_api_uri: str) -> int:
 def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     assert_project_root()
 
-    # seed port to reuse the same port for the restarted nodes
-    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS, 20000)
+    peer_api_uris, peer_dirs, bootstrap_uri = start_cluster(tmp_path, N_PEERS)
 
     create_collection(peer_api_uris[0], shard_number=N_SHARDS, replication_factor=N_REPLICAS)
     wait_collection_exists_and_active_on_all_peers(
