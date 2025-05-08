@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -240,11 +239,11 @@ impl IndexSelector<'_> {
     pub fn new_null_index(
         dir: &Path,
         field: &JsonPath,
-        max_point_offset: PointOffsetType,
+        total_point_count: usize,
     ) -> OperationResult<Option<FieldIndex>> {
         // null index is always on disk and is appendable
         Ok(
-            MmapNullIndex::open_if_exists(&null_dir(dir, field), max_point_offset)?
+            MmapNullIndex::open_if_exists(&null_dir(dir, field), total_point_count)?
                 .map(FieldIndex::NullIndex),
         )
     }

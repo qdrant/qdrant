@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
-    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex, PrimaryCondition,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -27,7 +27,7 @@ pub struct MmapNullIndex {
     has_values_slice: DynamicMmapFlags,
     /// If true, then payload field contains null value.
     is_null_slice: DynamicMmapFlags,
-    max_point_offset: PointOffsetType,
+    total_point_count: usize,
 }
 
 /// Don't populate null index as it is not essential
@@ -44,21 +44,21 @@ impl MmapNullIndex {
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path, max_point_offset: PointOffsetType) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
         let has_values_dir = path.join(HAS_VALUES_DIRNAME);
         if has_values_dir.is_dir() {
-            Self::open(path, max_point_offset)
+            Self::open(path, total_point_count)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create null-index directory: {err}, path: {path:?}"
                 ))
             })?;
-            Self::open(path, max_point_offset)
+            Self::open(path, total_point_count)
         }
     }
 
-    fn open(path: &Path, max_point_offset: PointOffsetType) -> OperationResult<Self> {
+    fn open(path: &Path, total_point_count: usize) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
                 "Path is not a directory {path:?}"
@@ -75,13 +75,13 @@ impl MmapNullIndex {
             base_dir: path.to_path_buf(),
             has_values_slice,
             is_null_slice,
-            max_point_offset,
+            total_point_count,
         })
     }
 
     pub fn open_if_exists(
         path: &Path,
-        max_point_offset: PointOffsetType,
+        total_point_count: usize,
     ) -> OperationResult<Option<Self>> {
         if !path.is_dir() {
             return Ok(None);
@@ -97,7 +97,7 @@ impl MmapNullIndex {
                 base_dir: path.to_path_buf(),
                 has_values_slice,
                 is_null_slice,
-                max_point_offset,
+                total_point_count,
             }))
         } else {
             Ok(None)
@@ -150,8 +150,8 @@ impl MmapNullIndex {
         self.is_null_slice
             .set_with_resize(id, is_null, hw_counter_ref)?;
 
-        // Update max_point_offset to track the highest point offset seen
-        self.max_point_offset = std::cmp::max(self.max_point_offset, id);
+        // Update total_points to track the highest point offset seen
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         Ok(())
     }
@@ -229,7 +229,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             base_dir: _,
             has_values_slice,
             is_null_slice,
-            max_point_offset: _,
+            total_point_count: _,
         } = self;
 
         let is_empty_flusher = has_values_slice.flusher();
@@ -247,7 +247,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             base_dir: _,
             has_values_slice,
             is_null_slice,
-            max_point_offset: _,
+            total_point_count: _,
         } = self;
 
         let mut files = has_values_slice.files();
@@ -279,7 +279,7 @@ impl PayloadFieldIndex for MmapNullIndex {
 
             if *is_empty {
                 // Iterate over all tracked values, but filter out those which have a value
-                let iter = (0..self.max_point_offset)
+                let iter = (0..self.total_point_count as PointOffsetType)
                     .filter(move |&id| !self.has_values_slice.get(id))
                     .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
@@ -305,7 +305,7 @@ impl PayloadFieldIndex for MmapNullIndex {
                 Some(Box::new(iter))
             } else {
                 // Iterate over all tracked values, but filter out those which are null
-                let iter = (0..self.max_point_offset)
+                let iter = (0..self.total_point_count as PointOffsetType)
                     .filter(move |&id| !self.is_null_slice.get(id))
                     .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
@@ -337,19 +337,20 @@ impl PayloadFieldIndex for MmapNullIndex {
                 .payload_index_io_read_counter()
                 .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
             if *is_empty {
-                // We can derive the empty values from the total number of values
+                // We can estimate using the total_point_count, but not exactly since we don't know which are deleted
+                let estimated = self.total_point_count.saturating_sub(self.has_values_slice.count_flags());
 
-                // This number will be off by one if we have 0 points, since we initialize the max offset as 0
-                let total_points = (self.max_point_offset + 1) as usize;
-
-                Some(CardinalityEstimation::exact(
-                    total_points.saturating_sub(self.has_values_slice.count_flags()),
-                ))
+                Some(CardinalityEstimation {
+                    min: 0,
+                    exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
+                    max: estimated,
+                    primary_clauses: vec![PrimaryCondition::from(condition.clone())],
+                })
             } else {
                 // All non-empty values are explicitly marked in the index
                 Some(CardinalityEstimation::exact(
                     self.has_values_slice.count_flags(),
-                ))
+                ).with_primary_clause(PrimaryCondition::from(condition.clone())))
             }
         } else if let Some(is_null) = is_null {
             hw_counter
@@ -362,14 +363,15 @@ impl PayloadFieldIndex for MmapNullIndex {
                     self.is_null_slice.count_flags(),
                 ))
             } else {
-                // We can derive the non-null values from the total number of values
+                // We can estimate the non-null values from the total number of values
+                let estimated = self.total_point_count.saturating_sub(self.is_null_slice.count_flags());
 
-                // This number will be off by one if we have 0 points, since we initialize the max offset as 0
-                let total_points = (self.max_point_offset + 1) as usize;
-
-                Some(CardinalityEstimation::exact(
-                    total_points.saturating_sub(self.is_null_slice.count_flags()),
-                ))
+                Some(CardinalityEstimation {
+                    min: 0, // assuming all points are deleted
+                    exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
+                    max: estimated,
+                    primary_clauses: vec![PrimaryCondition::from(condition.clone())],
+                })
             }
         } else {
             None

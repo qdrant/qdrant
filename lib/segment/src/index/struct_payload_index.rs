@@ -136,15 +136,14 @@ impl StructPayloadIndex {
             .selector(payload_schema)
             .new_index(field, payload_schema)?;
 
-        let max_point_offset = self
+        let total_point_count = self
             .id_tracker
             .borrow()
-            .total_point_count()
-            .saturating_sub(1) as PointOffsetType;
+            .total_point_count();
 
         // Special null index complements every index.
         if let Some(null_index) =
-            IndexSelector::new_null_index(&self.path, field, max_point_offset)?
+            IndexSelector::new_null_index(&self.path, field, total_point_count)?
         {
             // todo: This means that null index will not be built if it is not loaded here.
             //       Maybe we should set `is_loaded` to false to trigger index building.
@@ -382,6 +381,7 @@ impl StructPayloadIndex {
         &self.config
     }
 
+    // Iterates over points which satisfy the filter and are not deleted.
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
@@ -416,8 +416,11 @@ impl StructPayloadIndex {
                         ))
                     })
                 })
-                .filter(move |&id| !visited_list.check_and_update_visited(id))
-                .filter(move |&i| struct_filtered_context.check(i));
+                .filter(move |&id| {
+                    !visited_list.check_and_update_visited(id)
+                        && struct_filtered_context.check(id)
+                        && !id_tracker.is_deleted_point(id)
+                });
 
             Either::Right(iter)
         }
