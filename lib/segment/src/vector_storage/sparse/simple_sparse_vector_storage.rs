@@ -191,6 +191,11 @@ impl VectorStorage for SimpleSparseVectorStorage {
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        // In memory, so no sequential read optimization.
+        self.get_vector(key)
+    }
+
     /// Get vector by key, if it exists.
     ///
     /// ignore any error

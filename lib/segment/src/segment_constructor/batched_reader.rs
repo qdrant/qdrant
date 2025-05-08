@@ -30,9 +30,7 @@ pub struct BatchedVectorReader<'a> {
     points_to_insert: &'a [PointData],
     source_vector_storages: &'a [AtomicRef<'a, VectorStorageEnum>],
     buffer: Vec<(CowVector<'a>, bool)>,
-    /// Offset in the buffer.
-    /// From 0 to `BATCH_SIZE`.
-    buffer_offset: usize,
+    seg_to_points_buffer: AHashMap<U24, Vec<(&'a PointData, usize)>>,
     /// Global position of the iterator.
     /// From 0 to `points_to_insert.len()`.
     position: usize,
@@ -43,26 +41,18 @@ impl<'a> BatchedVectorReader<'a> {
         points_to_insert: &'a [PointData],
         source_vector_storages: &'a [AtomicRef<'a, VectorStorageEnum>],
     ) -> BatchedVectorReader<'a> {
-        let buffer = (0..BATCH_SIZE)
-            .map(|_| {
-                // We need to allocate the buffer with the size of the batch,
-                // but we don't know the size of the vectors.
-                // So we use a placeholder vector with size 0.
-                (CowVector::default(), false)
-            })
-            .collect();
+        // We need to allocate the buffer with the size of the batch,
+        // but we don't know the size of the vectors.
+        // So we use a placeholder vector with size 0.
+        let buffer = vec![(CowVector::default(), false); BATCH_SIZE];
 
-        let mut res = BatchedVectorReader {
+        BatchedVectorReader {
             points_to_insert,
             source_vector_storages,
             buffer,
-            buffer_offset: 0,
+            seg_to_points_buffer: AHashMap::default(),
             position: 0,
-        };
-
-        res.refill_buffer();
-
-        res
+        }
     }
 
     /// Fills the buffer with the next batch of points.
@@ -76,29 +66,34 @@ impl<'a> BatchedVectorReader<'a> {
     ///  (vec, vector_deleted)
     /// ```
     fn refill_buffer(&mut self) {
-        let from = self.position;
-        let to = min(self.position + BATCH_SIZE, self.points_to_insert.len());
+        let start_pos = self.position;
+        let end_pos = min(self.position + BATCH_SIZE, self.points_to_insert.len());
+
         // Read by segments, as we want to localize reads as much as possible.
-        let mut segment_to_points: AHashMap<U24, Vec<(&PointData, usize)>> = Default::default();
+        for pos in start_pos..end_pos {
+            let point_data = &self.points_to_insert[pos];
+            let offset_in_batch = pos - start_pos;
 
-        for i in from..to {
-            let point_data = &self.points_to_insert[i];
-            let offset_in_batch = i - from;
-
-            let segment_index = point_data.segment_index;
-            let points = segment_to_points.entry(segment_index).or_default();
-            points.push((point_data, offset_in_batch));
+            self.seg_to_points_buffer
+                .entry(point_data.segment_index)
+                .or_default()
+                .push((point_data, offset_in_batch))
         }
 
-        for (segment_index, points) in segment_to_points {
+        for (segment_index, points) in self.seg_to_points_buffer.drain() {
             let source_vector_storage = &self.source_vector_storages[segment_index.get() as usize];
-            // ToDo: Introduce batch operation for reading vectors
             for (point_data, offset_in_batch) in points {
-                let vec = source_vector_storage.get_vector(point_data.internal_id);
+                let vec = source_vector_storage.get_vector_sequential(point_data.internal_id);
                 let vector_deleted =
                     source_vector_storage.is_deleted_vector(point_data.internal_id);
                 self.buffer[offset_in_batch] = (vec, vector_deleted);
             }
+        }
+    }
+
+    fn refill_buffer_if_needed(&mut self) {
+        if self.position % BATCH_SIZE == 0 {
+            self.refill_buffer();
         }
     }
 }
@@ -111,13 +106,9 @@ impl<'a> Iterator for BatchedVectorReader<'a> {
             return None;
         }
 
-        if self.buffer_offset == BATCH_SIZE {
-            self.refill_buffer();
-            self.buffer_offset = 0;
-        }
+        self.refill_buffer_if_needed();
 
-        let item = self.buffer[self.buffer_offset].clone();
-        self.buffer_offset += 1;
+        let item = self.buffer[self.position % BATCH_SIZE].clone();
         self.position += 1;
 
         Some(item)

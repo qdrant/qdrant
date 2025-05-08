@@ -18,6 +18,8 @@ pub trait ChunkedVectorStorage<T> {
 
     fn get(&self, key: VectorOffsetType) -> Option<&[T]>;
 
+    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]>;
+
     fn files(&self) -> Vec<PathBuf>;
 
     fn flusher(&self) -> Flusher;

@@ -310,6 +310,14 @@ impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVector
         })
     }
 
+    fn get_multi_opt_sequential(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<TypedMultiDenseVectorRef<T>> {
+        // No sequential optimizations available for in memory storage.
+        self.get_multi_opt(key)
+    }
+
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let metadata = &self.vectors_metadata[key];
@@ -351,6 +359,10 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleMultiDenseVectorStorage<
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_vector_opt(key).expect("vector not found")
+    }
+
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        self.get_vector(key)
     }
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {

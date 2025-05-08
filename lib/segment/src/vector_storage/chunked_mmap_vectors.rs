@@ -357,6 +357,10 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
         ChunkedMmapVectors::get(self, key, false)
     }
 
+    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]> {
+        ChunkedMmapVectors::get(self, key, true)
+    }
+
     #[inline]
     fn files(&self) -> Vec<PathBuf> {
         ChunkedMmapVectors::files(self)

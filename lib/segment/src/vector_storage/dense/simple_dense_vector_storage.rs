@@ -220,6 +220,11 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         self.get_vector_opt(key).expect("vector not found")
     }
 
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        // In memory so no optimization to be done here.
+        self.get_vector(key)
+    }
+
     /// Get vector by key, if it exists.
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         self.vectors
