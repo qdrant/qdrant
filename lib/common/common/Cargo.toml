@@ -61,3 +61,7 @@ harness = false
 [[bench]]
 name = "mmap_hashmap"
 harness = false
+
+[[bench]]
+name = "hw_counter"
+harness = false

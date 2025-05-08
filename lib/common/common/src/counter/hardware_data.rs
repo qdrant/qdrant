@@ -1,7 +1,7 @@
 use std::ops::Add;
 
 /// Contains all hardware metrics. Only serves as value holding structure without any semantics.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct HardwareData {
     pub cpu: usize,
     pub payload_io_read: usize,
