@@ -168,7 +168,7 @@ impl IndexSelector<'_> {
     fn map_new<N: MapIndexKey + ?Sized>(&self, field: &JsonPath) -> OperationResult<MapIndex<N>> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                MapIndex::new_memory(Arc::clone(db), &field.to_string(), *is_appendable)
+                MapIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 MapIndex::new_mmap(&map_dir(dir, field), *is_on_disk)?
@@ -183,11 +183,11 @@ impl IndexSelector<'_> {
         make_mmap: fn(MapIndexMmapBuilder<N>) -> FieldIndexBuilder,
     ) -> FieldIndexBuilder {
         match self {
-            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => {
-                make_rocksdb(MapIndex::builder(Arc::clone(db), &field.to_string()))
-            }
+            IndexSelector::RocksDb(IndexSelectorRocksDb { db, .. }) => make_rocksdb(
+                MapIndex::builder_rocksdb(Arc::clone(db), &field.to_string()),
+            ),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
-                make_mmap(MapIndex::mmap_builder(&map_dir(dir, field), *is_on_disk))
+                make_mmap(MapIndex::builder_mmap(&map_dir(dir, field), *is_on_disk))
             }
         }
     }
@@ -198,7 +198,7 @@ impl IndexSelector<'_> {
     ) -> OperationResult<NumericIndex<T, P>> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                NumericIndex::new(Arc::clone(db), &field.to_string(), *is_appendable)
+                NumericIndex::new_rocksdb(Arc::clone(db), &field.to_string(), *is_appendable)
             }
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => {
                 NumericIndex::new_mmap(&numeric_dir(dir, field), *is_on_disk)?
@@ -219,7 +219,10 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
-            }) => make_rocksdb(NumericIndex::builder(Arc::clone(db), &field.to_string())),
+            }) => make_rocksdb(NumericIndex::builder_rocksdb(
+                Arc::clone(db),
+                &field.to_string(),
+            )),
             IndexSelector::Mmap(IndexSelectorMmap { dir, is_on_disk }) => make_mmap(
                 NumericIndex::builder_mmap(&numeric_dir(dir, field), *is_on_disk),
             ),

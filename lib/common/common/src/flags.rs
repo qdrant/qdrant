@@ -15,9 +15,8 @@ pub struct FeatureFlags {
 
     /// Whether to skip usage of RocksDB in immutable payload indices.
     ///
-    /// First implemented in Qdrant 1.13.5
-    // TODO(1.14): remove for release
-    // ToDo(mmap-payload-index): remove for release
+    /// First implemented in Qdrant 1.13.5.
+    // TODO(1.15): enable by default
     pub payload_index_skip_rocksdb: bool,
 
     /// Whether to use incremental HNSW building.

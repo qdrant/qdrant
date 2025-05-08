@@ -100,7 +100,7 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         &self.db_wrapper
     }
 
-    pub fn load_from_db(&mut self) -> OperationResult<bool> {
+    pub fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         }
