@@ -461,6 +461,26 @@ impl TableOfContent {
         false
     }
 
+    pub async fn abort_peer_transfers(&self, peer_id: PeerId) -> CollectionResult<()> {
+        for collection in self.collections.read().await.values() {
+            let related_transfers = collection
+                .shards_holder()
+                .read()
+                .await
+                .get_transfers(|transfer| transfer.from == peer_id);
+
+            for transfer in related_transfers {
+                collection
+                    .shards_holder()
+                    .write()
+                    .await
+                    .register_abort_transfer(&transfer.key())?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn get_telemetry_data(
         &self,
         detail: TelemetryDetail,
