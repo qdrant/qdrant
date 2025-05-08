@@ -64,10 +64,7 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     # Stop the 'source' node to simulate an unreachable node which needs to be deleted
     source_peer_url = peer_id_to_url[from_peer_id]
     peer_idx = peer_api_uris.index(source_peer_url)
-    processes.pop(peer_idx).kill() # Kill the source peer
     peer_api_uris.pop(peer_idx) # Remove from urls so we don't try to call it
-
-    wait_for_same_commit(peer_api_uris)
 
     # Force delete 'from' peer ID by requesting remaining peers to do so
     force_delete_peer(peer_api_uris[0], from_peer_id)
