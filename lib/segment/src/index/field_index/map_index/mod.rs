@@ -83,25 +83,33 @@ pub enum MapIndex<N: MapIndexKey + ?Sized> {
 }
 
 impl<N: MapIndexKey + ?Sized> MapIndex<N> {
-    pub fn new_memory(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
+    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field_name: &str, is_appendable: bool) -> Self {
         if is_appendable {
             MapIndex::Mutable(MutableMapIndex::new(db, field_name))
         } else {
-            MapIndex::Immutable(ImmutableMapIndex::new(db, field_name))
+            MapIndex::Immutable(ImmutableMapIndex::open_rocksdb(db, field_name))
         }
     }
 
+    /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(MapIndex::Mmap(Box::new(MmapMapIndex::load(
-            path, is_on_disk,
-        )?)))
+        let mmap_index = MmapMapIndex::load(path, is_on_disk)?;
+        if is_on_disk {
+            // Use on mmap directly
+            Ok(MapIndex::Mmap(Box::new(mmap_index)))
+        } else {
+            // Load into RAM, use mmap as backing storage
+            Ok(MapIndex::Immutable(ImmutableMapIndex::open_mmap(
+                mmap_index,
+            )))
+        }
     }
 
-    pub fn builder(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
+    pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field_name: &str) -> MapIndexBuilder<N> {
         MapIndexBuilder(MapIndex::Mutable(MutableMapIndex::new(db, field_name)))
     }
 
-    pub fn mmap_builder(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
+    pub fn builder_mmap(path: &Path, is_on_disk: bool) -> MapIndexMmapBuilder<N> {
         MapIndexMmapBuilder {
             path: path.to_owned(),
             point_to_values: Default::default(),
@@ -110,11 +118,11 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
         }
     }
 
-    fn load_from_db(&mut self) -> OperationResult<bool> {
+    fn load(&mut self) -> OperationResult<bool> {
         match self {
-            MapIndex::Mutable(index) => index.load_from_db(),
-            MapIndex::Immutable(index) => index.load_from_db(),
-            // mmap index is always loaded
+            MapIndex::Mutable(index) => index.load(),
+            MapIndex::Immutable(index) => index.load(),
+            // Mmap based index is always loaded
             MapIndex::Mmap(_) => Ok(true),
         }
     }
@@ -229,7 +237,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     fn flusher(&self) -> Flusher {
         match self {
             MapIndex::Mutable(index) => index.get_db_wrapper().flusher(),
-            MapIndex::Immutable(index) => index.get_db_wrapper().flusher(),
+            MapIndex::Immutable(index) => index.flusher(),
             MapIndex::Mmap(index) => index.flusher(),
         }
     }
@@ -285,8 +293,8 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn clear(self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Mutable(index) => index.get_db_wrapper().remove_column_family(),
+            MapIndex::Immutable(index) => index.clear(),
             MapIndex::Mmap(index) => index.clear(),
         }
     }
@@ -305,7 +313,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     fn files(&self) -> Vec<PathBuf> {
         match self {
             MapIndex::Mutable(_) => Vec::new(),
-            MapIndex::Immutable(_) => Vec::new(),
+            MapIndex::Immutable(index) => index.files(),
             MapIndex::Mmap(index) => index.files(),
         }
     }
@@ -462,8 +470,9 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            MapIndex::Mutable(_) => {}   // Not a mmap
-            MapIndex::Immutable(_) => {} // Not a mmap
+            MapIndex::Mutable(_) => {} // Not a mmap
+            // Only clears backing mmap storage if used, not in-memory representation
+            MapIndex::Immutable(index) => index.clear_cache()?,
             MapIndex::Mmap(index) => index.clear_cache()?,
         }
         Ok(())
@@ -481,7 +490,7 @@ where
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.0 {
             MapIndex::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            MapIndex::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+            MapIndex::Immutable(_) => unreachable!(),
             MapIndex::Mmap(_) => unreachable!(),
         }
     }
@@ -572,7 +581,7 @@ impl PayloadFieldIndex for MapIndex<str> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        self.load_from_db()
+        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -722,7 +731,7 @@ impl PayloadFieldIndex for MapIndex<UuidIntType> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        self.load_from_db()
+        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -913,7 +922,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
     }
 
     fn load(&mut self) -> OperationResult<bool> {
-        self.load_from_db()
+        self.load()
     }
 
     fn cleanup(self) -> OperationResult<()> {
@@ -1202,6 +1211,7 @@ mod tests {
         Mutable,
         Immutable,
         Mmap,
+        RamMmap,
     }
 
     fn save_map_index<N>(
@@ -1218,8 +1228,10 @@ mod tests {
 
         match index_type {
             IndexType::Mutable | IndexType::Immutable => {
-                let mut builder =
-                    MapIndex::<N>::builder(open_db_with_existing_cf(path).unwrap(), FIELD_NAME);
+                let mut builder = MapIndex::<N>::builder_rocksdb(
+                    open_db_with_existing_cf(path).unwrap(),
+                    FIELD_NAME,
+                );
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1230,8 +1242,8 @@ mod tests {
                 }
                 builder.finalize().unwrap();
             }
-            IndexType::Mmap => {
-                let mut builder = MapIndex::<N>::mmap_builder(path, false);
+            IndexType::Mmap | IndexType::RamMmap => {
+                let mut builder = MapIndex::<N>::builder_mmap(path, false);
                 builder.init().unwrap();
                 for (idx, values) in data.iter().enumerate() {
                     let values: Vec<Value> = values.iter().map(&into_value).collect();
@@ -1251,17 +1263,20 @@ mod tests {
         index_type: IndexType,
     ) -> MapIndex<N> {
         let mut index = match index_type {
-            IndexType::Mutable => {
-                MapIndex::<N>::new_memory(open_db_with_existing_cf(path).unwrap(), FIELD_NAME, true)
-            }
-            IndexType::Immutable => MapIndex::<N>::new_memory(
+            IndexType::Mutable => MapIndex::<N>::new_rocksdb(
+                open_db_with_existing_cf(path).unwrap(),
+                FIELD_NAME,
+                true,
+            ),
+            IndexType::Immutable => MapIndex::<N>::new_rocksdb(
                 open_db_with_existing_cf(path).unwrap(),
                 FIELD_NAME,
                 false,
             ),
-            IndexType::Mmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
+            IndexType::Mmap => MapIndex::<N>::new_mmap(path, true).unwrap(),
+            IndexType::RamMmap => MapIndex::<N>::new_mmap(path, false).unwrap(),
         };
-        index.load_from_db().unwrap();
+        index.load().unwrap();
         for (idx, values) in data.iter().enumerate() {
             let index_values: HashSet<N::Owned> = index
                 .get_values(idx as PointOffsetType)
@@ -1279,7 +1294,7 @@ mod tests {
     #[test]
     fn test_index_non_ascending_insertion() {
         let temp_dir = Builder::new().prefix("store_dir").tempdir().unwrap();
-        let mut builder = MapIndex::<IntPayloadType>::mmap_builder(temp_dir.path(), false);
+        let mut builder = MapIndex::<IntPayloadType>::builder_mmap(temp_dir.path(), false);
         builder.init().unwrap();
 
         let data = [vec![1, 2, 3, 4, 5, 6], vec![25], vec![10, 11]];
@@ -1309,6 +1324,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_int_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![1, 2, 3, 4, 5, 6],
@@ -1324,11 +1340,11 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        // Ensure cardinality is non zero
+        // Ensure cardinality is non-zero
         assert!(
             !index
                 .except_cardinality(vec![].into_iter(), &hw_counter)
-                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+                .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
 
@@ -1336,6 +1352,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_string_disk_map_index(#[case] index_type: IndexType) {
         let data = vec![
             vec![
@@ -1367,11 +1384,11 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        // Ensure cardinality is non zero
+        // Ensure cardinality is non-zero
         assert!(
             !index
                 .except_cardinality(vec![].into_iter(), &hw_counter)
-                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+                .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
 
@@ -1379,6 +1396,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_empty_index(#[case] index_type: IndexType) {
         let data: Vec<Vec<EcoString>> = vec![];
 
@@ -1392,7 +1410,7 @@ mod tests {
         assert!(
             index
                 .except_cardinality(vec![].into_iter(), &hw_counter)
-                .equals_min_exp_max(&CardinalityEstimation::exact(0)),
+                .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
 }

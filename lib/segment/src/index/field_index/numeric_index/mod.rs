@@ -166,18 +166,35 @@ pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Default> {
 }
 
 impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
-    pub fn new_memory(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
             NumericIndexInner::Mutable(MutableNumericIndex::new(db, field))
         } else {
-            NumericIndexInner::Immutable(ImmutableNumericIndex::new(db, field))
+            NumericIndexInner::Immutable(ImmutableNumericIndex::open_rocksdb(db, field))
         }
     }
 
+    /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(NumericIndexInner::Mmap(MmapNumericIndex::load(
-            path, is_on_disk,
-        )?))
+        let mmap_index = MmapNumericIndex::load(path, is_on_disk)?;
+        if is_on_disk {
+            // Use on mmap directly
+            Ok(NumericIndexInner::Mmap(mmap_index))
+        } else {
+            // Load into RAM, use mmap as backing storage
+            Ok(NumericIndexInner::Immutable(
+                ImmutableNumericIndex::open_mmap(mmap_index),
+            ))
+        }
+    }
+
+    pub fn load(&mut self) -> OperationResult<bool> {
+        match self {
+            NumericIndexInner::Mutable(index) => index.load(),
+            NumericIndexInner::Immutable(index) => index.load(),
+            // Mmap based index is always loaded
+            NumericIndexInner::Mmap(_) => Ok(true),
+        }
     }
 
     fn get_histogram(&self) -> &Histogram<T> {
@@ -204,21 +221,10 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
         }
     }
 
-    pub fn load(&mut self) -> OperationResult<bool> {
-        match self {
-            NumericIndexInner::Mutable(index) => index.load(),
-            NumericIndexInner::Immutable(index) => index.load(),
-            NumericIndexInner::Mmap(_) => {
-                // Mmap index is always loaded
-                Ok(true)
-            }
-        }
-    }
-
     pub fn flusher(&self) -> Flusher {
         match self {
             NumericIndexInner::Mutable(index) => index.get_db_wrapper().flusher(),
-            NumericIndexInner::Immutable(index) => index.get_db_wrapper().flusher(),
+            NumericIndexInner::Immutable(index) => index.flusher(),
             NumericIndexInner::Mmap(index) => index.flusher(),
         }
     }
@@ -226,7 +232,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     pub fn files(&self) -> Vec<PathBuf> {
         match self {
             NumericIndexInner::Mutable(_) => vec![],
-            NumericIndexInner::Immutable(_) => vec![],
+            NumericIndexInner::Immutable(index) => index.files(),
             NumericIndexInner::Mmap(index) => index.files(),
         }
     }
@@ -449,8 +455,9 @@ impl<T: Encodable + Numericable + MmapValue + Default> NumericIndexInner<T> {
     /// Drop disk cache.
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
-            NumericIndexInner::Mutable(_) => {}   // Not a mmap
-            NumericIndexInner::Immutable(_) => {} // Not a mmap
+            NumericIndexInner::Mutable(_) => {} // Not a mmap
+            // Only clears backing mmap storage if used, not in-memory representation
+            NumericIndexInner::Immutable(index) => index.clear_cache()?,
             NumericIndexInner::Mmap(index) => index.clear_cache()?,
         }
         Ok(())
@@ -467,13 +474,14 @@ pub trait NumericIndexIntoInnerValue<T, P> {
 }
 
 impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
-    pub fn new(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
+    pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
-            inner: NumericIndexInner::new_memory(db, field, is_appendable),
+            inner: NumericIndexInner::new_rocksdb(db, field, is_appendable),
             _phantom: PhantomData,
         }
     }
 
+    /// Load immutable mmap based index, either in RAM or on disk
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
         Ok(Self {
             inner: NumericIndexInner::new_mmap(path, is_on_disk)?,
@@ -481,20 +489,23 @@ impl<T: Encodable + Numericable + MmapValue + Default, P> NumericIndex<T, P> {
         })
     }
 
-    pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
+    pub fn builder_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P>,
     {
-        NumericIndexBuilder(Self::new(db, field, true))
+        NumericIndexBuilder(Self::new_rocksdb(db, field, true))
     }
 
     #[cfg(test)]
-    pub fn builder_immutable(db: Arc<RwLock<DB>>, field: &str) -> NumericIndexImmutableBuilder<T, P>
+    pub fn builder_rocksdb_immutable(
+        db: Arc<RwLock<DB>>,
+        field: &str,
+    ) -> NumericIndexImmutableBuilder<T, P>
     where
         Self: ValueIndexer<ValueType = P>,
     {
         NumericIndexImmutableBuilder {
-            index: Self::new(db.clone(), field, true),
+            index: Self::new_rocksdb(db.clone(), field, true),
             field: field.to_owned(),
             db,
         }
@@ -611,7 +622,7 @@ where
         self.index.inner.flusher()()?;
         drop(self.index);
         let mut inner: NumericIndexInner<T> =
-            NumericIndexInner::new_memory(self.db, &self.field, false);
+            NumericIndexInner::new_rocksdb(self.db, &self.field, false);
         inner.load()?;
         Ok(NumericIndex {
             inner,
@@ -688,7 +699,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> PayloadFieldIndex for Num
     fn cleanup(self) -> OperationResult<()> {
         match self {
             NumericIndexInner::Mutable(index) => index.get_db_wrapper().recreate_column_family(),
-            NumericIndexInner::Immutable(index) => index.get_db_wrapper().recreate_column_family(),
+            NumericIndexInner::Immutable(index) => index.clear(),
             NumericIndexInner::Mmap(index) => index.clear(),
         }
     }
