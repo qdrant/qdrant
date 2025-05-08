@@ -36,9 +36,8 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
         peer_id_to_url[peer_id] = peer_api_uri
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 1000)
+    upsert_random_points(peer_api_uris[0], 3000)
 
-    # Now
     # Kill last peer
     p = processes.pop()
     p.kill()
@@ -69,7 +68,6 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     peer_idx = peer_api_uris.index(source_peer_url)
     p = processes.pop(peer_idx)
     url = peer_api_uris.pop(peer_idx)
-    sleep(1)  # Give killed peer time to release WAL lock
 
     # Force delete 'from' peer ID by requesting remaining peers to do so
     force_delete_peer(peer_api_uris[0], from_peer_id)
@@ -77,7 +75,6 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     sleep(1)
 
     # We expect transfers to be aborted
-    transfers = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)[
-        "shard_transfers"
-    ]
-    assert len(transfers) == 0
+    wait_for_collection_shard_transfers_count(
+        peer_api_uris[0], COLLECTION_NAME, 0
+    )
