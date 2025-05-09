@@ -261,7 +261,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
     }
 
     #[cfg(test)]
-    pub(super) fn get_db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
+    pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match self.storage {
             Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
             Storage::Mmap(_) => None,

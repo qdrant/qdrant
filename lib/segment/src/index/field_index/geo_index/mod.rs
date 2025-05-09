@@ -50,14 +50,19 @@ impl GeoMapIndex {
         if is_appendable {
             GeoMapIndex::Mutable(MutableGeoMapIndex::new(db, &store_cf_name))
         } else {
-            GeoMapIndex::Immutable(ImmutableGeoMapIndex::new(db, &store_cf_name))
+            GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_rocksdb(db, &store_cf_name))
         }
     }
 
     pub fn new_mmap(path: &Path, is_on_disk: bool) -> OperationResult<Self> {
-        Ok(GeoMapIndex::Mmap(Box::new(MmapGeoMapIndex::load(
-            path, is_on_disk,
-        )?)))
+        let mmap_index = MmapGeoMapIndex::load(path, is_on_disk)?;
+        if is_on_disk {
+            Ok(GeoMapIndex::Mmap(Box::new(mmap_index)))
+        } else {
+            Ok(GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                mmap_index,
+            )))
+        }
     }
 
     pub fn builder(db: Arc<RwLock<DB>>, field: &str) -> GeoMapIndexBuilder {
@@ -187,7 +192,7 @@ impl GeoMapIndex {
     pub fn flusher(&self) -> Flusher {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper().flusher(),
-            GeoMapIndex::Immutable(index) => index.db_wrapper().flusher(),
+            GeoMapIndex::Immutable(index) => index.flusher(),
             GeoMapIndex::Mmap(index) => index.flusher(),
         }
     }
@@ -559,7 +564,7 @@ impl PayloadFieldIndex for GeoMapIndex {
     fn cleanup(self) -> OperationResult<()> {
         match self {
             GeoMapIndex::Mutable(index) => index.db_wrapper().remove_column_family(),
-            GeoMapIndex::Immutable(index) => index.db_wrapper().remove_column_family(),
+            GeoMapIndex::Immutable(index) => index.clear(),
             GeoMapIndex::Mmap(index) => index.clear(),
         }
     }
@@ -708,12 +713,14 @@ mod tests {
         Mutable,
         Immutable,
         Mmap,
+        RamMmap,
     }
 
     enum IndexBuilder {
         Mutable(GeoMapIndexBuilder),
         Immutable(GeoMapImmutableIndexBuilder),
         Mmap(GeoMapIndexMmapBuilder),
+        RamMmap(GeoMapIndexMmapBuilder),
     }
 
     impl IndexBuilder {
@@ -727,6 +734,7 @@ mod tests {
                 IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
                 IndexBuilder::Mmap(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::RamMmap(builder) => builder.add_point(id, payload, hw_counter),
             }
         }
 
@@ -735,6 +743,14 @@ mod tests {
                 IndexBuilder::Mutable(builder) => builder.finalize(),
                 IndexBuilder::Immutable(builder) => builder.finalize(),
                 IndexBuilder::Mmap(builder) => builder.finalize(),
+                IndexBuilder::RamMmap(builder) => {
+                    let GeoMapIndex::Mmap(index) = builder.finalize()? else {
+                        panic!("expected mmap index");
+                    };
+                    Ok(GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                        *index,
+                    )))
+                }
             }
         }
     }
@@ -789,14 +805,16 @@ mod tests {
             IndexType::Immutable => {
                 IndexBuilder::Immutable(GeoMapIndex::builder_immutable(db.clone(), FIELD_NAME))
             }
-            IndexType::Mmap => {
-                IndexBuilder::Mmap(GeoMapIndex::mmap_builder(temp_dir.path(), false))
+            IndexType::Mmap => IndexBuilder::Mmap(GeoMapIndex::mmap_builder(temp_dir.path(), true)),
+            IndexType::RamMmap => {
+                IndexBuilder::RamMmap(GeoMapIndex::mmap_builder(temp_dir.path(), false))
             }
         };
         match &mut builder {
             IndexBuilder::Mutable(builder) => builder.init().unwrap(),
             IndexBuilder::Immutable(builder) => builder.init().unwrap(),
             IndexBuilder::Mmap(builder) => builder.init().unwrap(),
+            IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
         }
         (builder, temp_dir, db)
     }
@@ -872,6 +890,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_polygon_with_exclusion(#[case] index_type: IndexType) {
         fn check_cardinality_match(
             hashes: Vec<GeoHash>,
@@ -1013,6 +1032,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn match_cardinality(#[case] index_type: IndexType) {
         fn check_cardinality_match(
             hashes: Vec<GeoHash>,
@@ -1065,6 +1085,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn geo_indexed_filtering(#[case] index_type: IndexType) {
         fn check_geo_indexed_filtering<F>(
             field_condition: FieldCondition,
@@ -1130,6 +1151,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
         let (field_index, _, _) = build_random_index(1000, 5, index_type);
         let hw_counter = HardwareCounterCell::new();
@@ -1161,6 +1183,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_far_geo_payload(#[case] index_type: IndexType) {
         let (mut builder, _, _) = create_builder(index_type);
 
@@ -1247,6 +1270,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn match_cardinality_point_with_multi_close_geo_payload(#[case] index_type: IndexType) {
         let (mut builder, _, _) = create_builder(index_type);
         let geo_values = json!([
@@ -1292,6 +1316,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn load_from_disk(#[case] index_type: IndexType) {
         let temp_dir = {
             let (mut builder, temp_dir, _) = create_builder(index_type);
@@ -1317,6 +1342,9 @@ mod tests {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
+            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                MmapGeoMapIndex::load(temp_dir.path(), false).unwrap(),
+            )),
         };
         new_index.load().unwrap();
 
@@ -1351,6 +1379,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn same_geo_index_between_points_test(#[case] index_type: IndexType) {
         let temp_dir = {
             let (mut builder, temp_dir, _) = create_builder(index_type);
@@ -1387,6 +1416,9 @@ mod tests {
             IndexType::Mutable => GeoMapIndex::new_memory(db, FIELD_NAME, true),
             IndexType::Immutable => GeoMapIndex::new_memory(db, FIELD_NAME, false),
             IndexType::Mmap => GeoMapIndex::new_mmap(temp_dir.path(), false).unwrap(),
+            IndexType::RamMmap => GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
+                MmapGeoMapIndex::load(temp_dir.path(), false).unwrap(),
+            )),
         };
         new_index.load().unwrap();
         assert_eq!(new_index.points_count(), 1);
@@ -1399,6 +1431,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn test_empty_index_cardinality(#[case] index_type: IndexType) {
         let polygon = GeoPolygon {
             exterior: GeoLineString {
@@ -1493,6 +1526,7 @@ mod tests {
     #[case(IndexType::Mutable)]
     #[case(IndexType::Immutable)]
     #[case(IndexType::Mmap)]
+    #[case(IndexType::RamMmap)]
     fn query_across_antimeridian(#[case] index_type: IndexType) {
         let (mut builder, _, _) = create_builder(index_type);
         // Index BERLIN

@@ -96,7 +96,7 @@ impl<N: MapIndexKey + ?Sized> MutableMapIndex<N> {
         Ok(())
     }
 
-    pub fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
+    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 

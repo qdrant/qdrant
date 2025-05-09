@@ -217,7 +217,7 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         self.in_memory_index
     }
 
-    pub fn get_db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
+    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
     }
 

@@ -347,8 +347,8 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let index = index_builder.finalize().unwrap();
 
     let db = match index.inner() {
-        NumericIndexInner::Mutable(index) => Some(index.get_db_wrapper().get_database()),
-        NumericIndexInner::Immutable(index) => index.get_db_wrapper().map(|db| db.get_database()),
+        NumericIndexInner::Mutable(index) => Some(index.db_wrapper().get_database()),
+        NumericIndexInner::Immutable(index) => index.db_wrapper().map(|db| db.get_database()),
         NumericIndexInner::Mmap(_) => None,
     };
     drop(index);

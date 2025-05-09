@@ -27,24 +27,23 @@ const POINTS_MAP_IDS: &str = "points_map_ids.bin";
 const STATS_PATH: &str = "mmap_field_index_stats.json";
 
 #[repr(C)]
-#[derive(Clone, Debug)]
-struct Counts {
-    hash: GeoHash,
-    points: u32,
-    values: u32,
+#[derive(Copy, Clone, Debug)]
+pub(super) struct Counts {
+    pub hash: GeoHash,
+    pub points: u32,
+    pub values: u32,
 }
 
 #[repr(C)]
-#[derive(Clone, Debug)]
-struct PointKeyValue {
-    hash: GeoHash,
-    ids_start: u32,
-    ids_end: u32,
+#[derive(Copy, Clone, Debug)]
+pub(super) struct PointKeyValue {
+    pub hash: GeoHash,
+    pub ids_start: u32,
+    pub ids_end: u32,
 }
 
 ///
 ///   points_map
-///
 ///  ┌─────────────────────────────────────────┐
 ///  │ (ABC, 10, 20)|(ABD, 20, 40)             │
 ///  └────────┬──┬──────────┬───┬──────────────┘
@@ -61,17 +60,17 @@ pub struct MmapGeoMapIndex {
     path: PathBuf,
     /// Stores GeoHash, points count and values count.
     /// Sorted by geohash, so we binary search the region.
-    counts_per_hash: MmapSlice<Counts>,
+    pub(super) counts_per_hash: MmapSlice<Counts>,
     /// Stores GeoHash and associated range of offsets in the points_map_ids.
     /// Sorted by geohash, so we binary search the region.
-    points_map: MmapSlice<PointKeyValue>,
+    pub(super) points_map: MmapSlice<PointKeyValue>,
     /// A storage of associations between geo-hashes and point ids. (See the diagram above)
-    points_map_ids: MmapSlice<PointOffsetType>,
+    pub(super) points_map_ids: MmapSlice<PointOffsetType>,
     /// One-to-many mapping of the PointOffsetType to the GeoPoint.
-    point_to_values: MmapPointToValues<GeoPoint>,
+    pub(super) point_to_values: MmapPointToValues<GeoPoint>,
     /// Deleted flags for each PointOffsetType
-    deleted: MmapBitSliceBufferedUpdateWrapper,
-    deleted_count: usize,
+    pub(super) deleted: MmapBitSliceBufferedUpdateWrapper,
+    pub(super) deleted_count: usize,
     points_values_count: usize,
     max_values_per_point: usize,
     is_on_disk: bool,
