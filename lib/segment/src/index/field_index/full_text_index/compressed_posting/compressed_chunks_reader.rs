@@ -163,6 +163,7 @@ impl<'a> ChunkReader<'a> {
 }
 
 /// Iterate over all points in a chunk reader.
+#[derive(Clone)]
 pub struct ChunkReaderIter<'a> {
     chunk_reader: &'a ChunkReader<'a>,
     /// Indices for chunks that still need to be read into the iteration buffer.
@@ -173,21 +174,21 @@ pub struct ChunkReaderIter<'a> {
     buffer: Vec<PointOffsetType>,
     /// Cursor position in buffer for the next item to iterate over.
     buffer_position: usize,
+    remaining_len: usize,
     bitpacker: BitPackerImpl,
 }
 
 impl<'a> ChunkReaderIter<'a> {
     pub fn new(chunk_reader: &'a ChunkReader) -> Self {
-        let mut iter = Self {
+        Self {
             pending_chunks: (0..chunk_reader.chunks.len()),
             pending_remainder: !chunk_reader.remainder_postings.is_empty(),
             buffer: vec![0; BitPackerImpl::BLOCK_LEN],
             buffer_position: usize::MAX,
+            remaining_len: chunk_reader.len(),
             chunk_reader,
             bitpacker: BitPackerImpl::new(),
-        };
-        let _ = iter.next_chunk();
-        iter
+        }
     }
 
     #[must_use]
@@ -233,8 +234,13 @@ impl Iterator for ChunkReaderIter<'_> {
 
         let item = self.buffer[self.buffer_position];
         self.buffer_position += 1;
+        self.remaining_len -= 1;
 
         Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining_len, Some(self.remaining_len))
     }
 }
 
@@ -242,6 +248,6 @@ impl FusedIterator for ChunkReaderIter<'_> {}
 
 impl ExactSizeIterator for ChunkReaderIter<'_> {
     fn len(&self) -> usize {
-        self.chunk_reader.len()
+        self.remaining_len
     }
 }
