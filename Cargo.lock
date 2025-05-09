@@ -3923,6 +3923,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmap_posting_list"
+version = "0.0.0"
+dependencies = [
+ "ahash",
+ "bitpacking",
+ "common",
+ "log",
+ "memmap2",
+ "rand 0.9.1",
+ "serde",
+ "tempfile",
+]
+
+[[package]]
 name = "multimap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

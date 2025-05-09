@@ -1,0 +1,22 @@
+[package]
+name = "mmap_posting_list"
+version = "0.0.0"
+authors = ["Qdrant Team <info@qdrant.tech>"]
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+ahash = { workspace = true }
+memmap2 = { workspace = true }
+common = { path = "../common" }
+log = { workspace = true }
+bitpacking = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+tempfile = { workspace = true }
