@@ -201,10 +201,12 @@ mod tests {
             for level in (0..levels_a + 1).rev() {
                 let links_a = graph_a.links_layers()[point_id as usize][level]
                     .read()
-                    .clone();
+                    .links()
+                    .to_vec();
                 let links_b = graph_b.links_layers()[point_id as usize][level]
                     .read()
-                    .clone();
+                    .links()
+                    .to_vec();
                 if links_a != links_b {
                     log::error!("Wrong links point_id={point_id} at level {level}");
                 }
