@@ -174,22 +174,38 @@ impl LinksContainer {
         });
         items.0.sort_unstable_by(|a, b| {
             if let (Some(a_order), Some(b_order)) = (a.order, b.order) {
+                // Both items processed by the heuristic, compare their order
+                // to avoid recomputing the score.
                 return a_order.cmp(&b_order);
             }
-            b.score(target_point_id, &mut score)
-                .total_cmp(&a.score(target_point_id, &mut score))
+            b.cached_score(target_point_id, &mut score)
+                .total_cmp(&a.cached_score(target_point_id, &mut score))
         });
 
         self.links.clear();
 
+        // The code below is similar to `fill_from_sorted_with_heuristic` with
+        // two notable differences:
+        //
+        // (A) If both items have already been processed by the heuristic, the
+        // score check is skipped as it is known to pass.
+        //
+        // (B) Instead of having separate input iterator (`candidates`) and
+        // intermediate vector for the processed items (`self.links`), this
+        // implementation reads and updates the same vector in-place:
+        // - `items[read]` is the next candidate to be processed.
+        // - `items[0..write]` are already processed items.
+        // Since `read` ≤ `write`, there are no collisions, so this approach is
+        // sound.
         let mut write = 0;
         'outer: for read in 0..items.0.len() {
             let candidate = items.0[read].clone();
             for existing in &items.0[0..write] {
                 if candidate.order.is_some() && existing.order.is_some() {
-                    continue;
+                    continue; // See (A).
                 }
-                if score(candidate.idx, existing.idx) > candidate.score(target_point_id, &mut score)
+                if score(candidate.idx, existing.idx)
+                    > candidate.cached_score(target_point_id, &mut score)
                 {
                     continue 'outer;
                 }
@@ -214,11 +230,13 @@ pub struct ItemsBuffer(Vec<Item>);
 struct Item {
     idx: PointOffsetType,
     score: Cell<Option<ScoreType>>,
+    /// Order is used to avoid recomputing the score for items known be sorted.
     order: Option<NonZeroU32>,
 }
 
 impl Item {
-    fn score<F>(&self, query: PointOffsetType, score: F) -> ScoreType
+    /// Get the score. This value is lazy/cached: it's computed no more than once.
+    fn cached_score<F>(&self, query: PointOffsetType, score: F) -> ScoreType
     where
         F: FnOnce(PointOffsetType, PointOffsetType) -> ScoreType,
     {
