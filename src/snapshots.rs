@@ -1,4 +1,5 @@
-use std::fs::{self, remove_dir_all, rename};
+use std::fs::{self, File, remove_dir_all, rename};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use collection::collection::Collection;
@@ -100,7 +101,7 @@ pub fn recover_full_snapshot(
 
     // Read configuration file with snapshot-to-collection mapping
     let config_path = snapshot_temp_path.join("config.json");
-    let config_file = fs::File::open(config_path).unwrap();
+    let config_file = BufReader::new(File::open(config_path).unwrap());
     let config_json: SnapshotConfig = serde_json::from_reader(config_file).unwrap();
 
     // Create mapping from the configuration file

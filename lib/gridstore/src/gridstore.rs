@@ -1,3 +1,5 @@
+use std::fs::File;
+use std::io::BufReader;
 use std::ops::ControlFlow;
 use std::path::PathBuf;
 
@@ -159,7 +161,7 @@ impl<V: Blob> Gridstore<V> {
 
         // read config file first
         let config_path = path.join(CONFIG_FILENAME);
-        let config_file = std::fs::File::open(&config_path).map_err(|err| err.to_string())?;
+        let config_file = BufReader::new(File::open(&config_path).map_err(|err| err.to_string())?);
         let config: StorageConfig =
             serde_json::from_reader(config_file).map_err(|err| err.to_string())?;
 
@@ -1001,7 +1003,7 @@ mod tests {
                 .download()
                 .expect("download should succeed");
 
-            let csv_file = File::open(csv_path).expect("file should open");
+            let csv_file = BufReader::new(File::open(csv_path).expect("file should open"));
 
             let hw_counter = HardwareCounterCell::new();
             let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
@@ -1034,7 +1036,7 @@ mod tests {
                 .download()
                 .expect("download should succeed");
 
-            let csv_file = File::open(csv_path).expect("file should open");
+            let csv_file = BufReader::new(File::open(csv_path).expect("file should open"));
             let hw_counter = HardwareCounterCell::new();
 
             let mut rdr = csv::Reader::from_reader(csv_file);
