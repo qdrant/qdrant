@@ -20,7 +20,7 @@ const CHUNK_SIZE: usize = BitPackerImpl::BLOCK_LEN;
 
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CompressedPostingList<W: Weight> {
-    /// Compressed ids data. Chunks refer to subslies of this data.
+    /// Compressed ids data. Chunks refer to subslices of this data.
     id_data: Vec<u8>,
 
     /// Fixed-size chunks.
@@ -365,35 +365,36 @@ impl CompressedPostingBuilder {
         let bitpacker = BitPackerImpl::new();
         let mut chunks = Vec::with_capacity(self.elements.len() / CHUNK_SIZE);
         let mut data_size = 0;
-        let mut remainders = Vec::with_capacity(self.elements.len() % CHUNK_SIZE);
-        for chunk in self.elements.chunks(CHUNK_SIZE) {
-            if chunk.len() == CHUNK_SIZE {
-                this_chunk.clear();
-                this_chunk.extend(chunk.iter().map(|e| e.record_id));
 
-                let initial = this_chunk[0];
-                let chunk_bits =
-                    bitpacker.num_bits_strictly_sorted(initial.checked_sub(1), &this_chunk);
-                let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
-                chunks.push(CompressedPostingChunk {
-                    initial,
-                    offset: data_size as u32,
-                    weights: chunk
-                        .iter()
-                        .map(|e| Weight::from_f32(quantization_params, e.weight))
-                        .collect::<Vec<_>>()
-                        .try_into()
-                        .expect("Invalid chunk size"),
-                });
-                data_size += chunk_size;
-            } else {
-                for e in chunk {
-                    remainders.push(GenericPostingElement {
-                        record_id: e.record_id,
-                        weight: Weight::from_f32(quantization_params, e.weight),
-                    });
-                }
-            }
+        // process full chunks
+        let mut chunk_iter = self.elements.chunks_exact(CHUNK_SIZE);
+        while let Some(chunk) = chunk_iter.next() {
+            this_chunk.clear();
+            this_chunk.extend(chunk.iter().map(|e| e.record_id));
+
+            let initial = this_chunk[0];
+            let chunk_bits =
+                bitpacker.num_bits_strictly_sorted(initial.checked_sub(1), &this_chunk);
+            let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
+            chunks.push(CompressedPostingChunk {
+                initial,
+                offset: data_size as u32,
+                weights: chunk
+                    .iter()
+                    .map(|e| Weight::from_f32(quantization_params, e.weight))
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("Invalid chunk size"),
+            });
+            data_size += chunk_size;
+        }
+        // process remainders
+        let mut remainders = Vec::with_capacity(self.elements.len() % CHUNK_SIZE);
+        for e in chunk_iter.remainder() {
+            remainders.push(GenericPostingElement {
+                record_id: e.record_id,
+                weight: Weight::from_f32(quantization_params, e.weight),
+            });
         }
 
         let mut id_data = vec![0u8; data_size];
