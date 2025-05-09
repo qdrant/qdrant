@@ -88,7 +88,9 @@ impl HardwareCounterCell {
     }
 
     pub fn new_accumulator(&self) -> HwMeasurementAcc {
-        self.accumulator.clone().unwrap_or_default()
+        self.accumulator
+            .clone()
+            .unwrap_or_else(HwMeasurementAcc::disposable)
     }
 
     /// Create a copy of the current counter cell with the same accumulator and config,
