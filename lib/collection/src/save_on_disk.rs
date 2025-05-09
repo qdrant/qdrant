@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufReader, BufWriter};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -45,8 +45,8 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     pub fn load_or_init(path: impl Into<PathBuf>, init: impl FnOnce() -> T) -> Result<Self, Error> {
         let path: PathBuf = path.into();
         let data = if path.exists() {
-            let file = File::open(&path)?;
-            serde_json::from_reader(&file)?
+            let file = BufReader::new(File::open(&path)?);
+            serde_json::from_reader(file)?
         } else {
             init()
         };

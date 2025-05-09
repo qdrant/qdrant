@@ -1,7 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
 use std::fs::{File, create_dir_all};
-use std::io::BufWriter;
+use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -353,15 +353,15 @@ impl Persistent {
     }
 
     fn load(path: PathBuf) -> Result<Self, StorageError> {
-        let file = File::open(&path)?;
-        let mut state: Self = serde_cbor::from_reader(&file)?;
+        let reader = BufReader::new(File::open(&path)?);
+        let mut state: Self = serde_cbor::from_reader(reader)?;
         state.path = path;
         Ok(state)
     }
 
     fn load_json(path: PathBuf) -> Result<Self, StorageError> {
-        let file = File::open(&path)?;
-        let mut state: Self = serde_json::from_reader(&file)?;
+        let reader = BufReader::new(File::open(&path)?);
+        let mut state: Self = serde_json::from_reader(reader)?;
         state.path = path;
         Ok(state)
     }
