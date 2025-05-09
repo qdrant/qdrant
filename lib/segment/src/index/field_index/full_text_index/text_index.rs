@@ -72,8 +72,14 @@ impl FullTextIndex {
     pub fn init(&mut self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.init(),
-            Self::Immutable(_) => unreachable!("not applicable for immutable index"),
-            Self::Mmap(_) => unreachable!("not applicable for mmap immutable index"),
+            Self::Immutable(_) => {
+                debug_assert!(false, "Immutable index should be initialized before use");
+                Ok(())
+            }
+            Self::Mmap(_) => {
+                debug_assert!(false, "Mmap index should be initialized before use");
+                Ok(())
+            }
         }
     }
 
