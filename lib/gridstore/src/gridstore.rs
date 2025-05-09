@@ -198,41 +198,50 @@ impl<V: Blob> Gridstore<V> {
     fn read_from_pages(
         &self,
         start_page_id: PageId,
-        mut block_offset: BlockOffset,
-        mut length: u32,
+        block_offset: BlockOffset,
+        length: u32,
     ) -> Vec<u8> {
-        let mut raw_sections = Vec::with_capacity(length as usize);
-
-        for page_id in start_page_id.. {
-            let page = &self.pages[page_id as usize];
-            let (raw, unread_bytes) =
-                page.read_value(block_offset, length, self.config.block_size_bytes);
-            raw_sections.extend(raw);
-
-            if unread_bytes == 0 {
-                break;
-            }
-
-            block_offset = 0;
-            length = unread_bytes as u32;
-        }
-
-        raw_sections
+        self.read_from_pages_with_read_fn(
+            start_page_id,
+            block_offset,
+            length,
+            |page, block_offset: BlockOffset, length: u32, block_size_bytes: usize| {
+                page.read_value(block_offset, length, block_size_bytes)
+            },
+        )
     }
 
     /// Read raw value from the pages. Considering that they can span more than one page.
     fn read_from_pages_sequential(
         &self,
         start_page_id: PageId,
+        block_offset: BlockOffset,
+        length: u32,
+    ) -> Vec<u8> {
+        self.read_from_pages_with_read_fn(
+            start_page_id,
+            block_offset,
+            length,
+            |page, block_offset: BlockOffset, length: u32, block_size_bytes: usize| {
+                page.read_value_sequential(block_offset, length, block_size_bytes)
+            },
+        )
+    }
+
+    fn read_from_pages_with_read_fn(
+        &self,
+        start_page_id: PageId,
         mut block_offset: BlockOffset,
         mut length: u32,
+        read_fn: impl Fn(&Page, BlockOffset, u32, usize) -> (&[u8], usize),
     ) -> Vec<u8> {
         let mut raw_sections = Vec::with_capacity(length as usize);
 
         for page_id in start_page_id.. {
             let page = &self.pages[page_id as usize];
             let (raw, unread_bytes) =
-                page.read_value_sequential(block_offset, length, self.config.block_size_bytes);
+                read_fn(page, block_offset, length, self.config.block_size_bytes);
+
             raw_sections.extend(raw);
 
             if unread_bytes == 0 {
