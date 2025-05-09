@@ -228,6 +228,11 @@ impl VectorStorage for MmapSparseVectorStorage {
         vector.unwrap_or_else(CowVector::default_sparse)
     }
 
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        // No optimizations available for gridstore (yet).
+        self.get_vector(key)
+    }
+
     /// Get vector by key, if it exists.
     ///
     /// Ignore any error

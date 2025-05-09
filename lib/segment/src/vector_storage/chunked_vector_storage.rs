@@ -18,6 +18,8 @@ pub trait ChunkedVectorStorage<T> {
 
     fn get(&self, key: VectorOffsetType) -> Option<&[T]>;
 
+    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]>;
+
     fn files(&self) -> Vec<PathBuf>;
 
     fn flusher(&self) -> Flusher;
@@ -45,6 +47,9 @@ pub trait ChunkedVectorStorage<T> {
 
     /// Returns `count` flattened vectors starting from key. if chunk boundary is crossed, returns None
     fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
+
+    /// Returns `count` flattened vectors starting from key. if chunk boundary is crossed, returns None
+    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]>;
 
     /// Returns batch of vectors by keys.
     /// Underlying storage might apply some optimizations to prefetch vectors.

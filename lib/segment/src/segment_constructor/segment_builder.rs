@@ -40,6 +40,7 @@ use crate::index::{PayloadIndex, VectorIndexEnum};
 use crate::payload_storage::PayloadStorage;
 use crate::payload_storage::payload_storage_enum::PayloadStorageEnum;
 use crate::segment::{Segment, SegmentVersion};
+use crate::segment_constructor::batched_reader::{BatchedVectorReader, PointData};
 use crate::segment_constructor::{
     VectorIndexBuildArgs, VectorIndexOpenArgs, build_vector_index, load_segment,
 };
@@ -276,16 +277,6 @@ impl SegmentBuilder {
             return Ok(true);
         }
 
-        struct PointData {
-            external_id: CompactExtendedPointId,
-            /// [`CompactExtendedPointId`] is 17 bytes, we reduce
-            /// `segment_index` to 3 bytes to avoid paddings and align nicely.
-            segment_index: U24,
-            internal_id: PointOffsetType,
-            version: u64,
-            ordering: u64,
-        }
-
         if segments.len() > U24::MAX as usize {
             return Err(OperationError::service_error("Too many segments to update"));
         }
@@ -352,15 +343,12 @@ impl SegmentBuilder {
                 })
                 .collect::<Result<Vec<_>, OperationError>>()?;
 
-            let mut iter = points_to_insert.iter().map(|point_data| {
-                let other_vector_storage =
-                    &other_vector_storages[point_data.segment_index.get() as usize];
-                let vec = other_vector_storage.get_vector(point_data.internal_id);
-                let vector_deleted = other_vector_storage.is_deleted_vector(point_data.internal_id);
-                (vec, vector_deleted)
-            });
+            let mut vectors_iter: BatchedVectorReader =
+                BatchedVectorReader::new(&points_to_insert, &other_vector_storages);
 
-            let internal_range = vector_data.vector_storage.update_from(&mut iter, stopped)?;
+            let internal_range = vector_data
+                .vector_storage
+                .update_from(&mut vectors_iter, stopped)?;
 
             match &new_internal_range {
                 Some(new_internal_range) => {

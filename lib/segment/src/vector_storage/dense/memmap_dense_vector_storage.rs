@@ -183,6 +183,15 @@ impl<T: PrimitiveVectorElement> VectorStorage for MemmapDenseVectorStorage<T> {
         self.get_vector_opt(key).expect("vector not found")
     }
 
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        self.mmap_store
+            .as_ref()
+            .unwrap()
+            .get_vector_opt_sequential(key)
+            .map(|vector| T::slice_to_float_cow(vector.into()).into())
+            .expect("Vector not found")
+    }
+
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         self.mmap_store
             .as_ref()
