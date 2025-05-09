@@ -119,6 +119,26 @@ impl<
             })
     }
 
+    /// Returns None if key is not found
+    fn get_multi_opt_sequential(
+        &self,
+        key: PointOffsetType,
+    ) -> Option<TypedMultiDenseVectorRef<T>> {
+        self.offsets
+            .get_sequential(key as VectorOffsetType)
+            .and_then(|mmap_offset| {
+                let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
+                self.vectors.get_many_sequential(
+                    mmap_offset.offset as VectorOffsetType,
+                    mmap_offset.count as usize,
+                )
+            })
+            .map(|flattened_vectors| TypedMultiDenseVectorRef {
+                flattened_vectors,
+                dim: self.vectors.dim(),
+            })
+    }
+
     fn iterate_inner_vectors(&self) -> impl Iterator<Item = &[T]> + Clone + Send {
         (0..self.total_vector_count()).flat_map(|key| {
             let mmap_offset = self
@@ -174,6 +194,16 @@ impl<
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         self.get_vector_opt(key).expect("vector not found")
+    }
+
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        self.get_multi_opt_sequential(key)
+            .map(|multi_dense_vector| {
+                CowVector::MultiDense(T::into_float_multivector(CowMultiVector::Borrowed(
+                    multi_dense_vector,
+                )))
+            })
+            .expect("vector not found")
     }
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {

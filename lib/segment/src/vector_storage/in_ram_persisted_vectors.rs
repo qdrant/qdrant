@@ -45,6 +45,10 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
         self.mmap_storage.get(key)
     }
 
+    fn get_sequential(&self, key: VectorOffsetType) -> Option<&[T]> {
+        self.mmap_storage.get_sequential(key)
+    }
+
     #[inline]
     fn files(&self) -> Vec<PathBuf> {
         self.mmap_storage.files()
@@ -89,6 +93,11 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
     #[inline]
     fn get_many(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
         self.mmap_storage.get_many(key, count)
+    }
+
+    #[inline]
+    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+        self.mmap_storage.get_many_sequential(key, count)
     }
 
     #[inline]
