@@ -248,9 +248,9 @@ pub fn invert_estimation(
 ) -> CardinalityEstimation {
     CardinalityEstimation {
         primary_clauses: vec![],
-        min: total - estimation.max,
-        exp: total - estimation.exp,
-        max: total - estimation.min,
+        min: total.saturating_sub(estimation.max),
+        exp: total.saturating_sub(estimation.exp),
+        max: total.saturating_sub(estimation.min),
     }
 }
 
@@ -329,7 +329,7 @@ mod tests {
             },
             Condition::IsEmpty(condition) => CardinalityEstimation {
                 primary_clauses: vec![PrimaryCondition::Condition(Box::new(
-                    FieldCondition::new_is_empty(condition.is_empty.key.clone()),
+                    FieldCondition::new_is_empty(condition.is_empty.key.clone(), true),
                 ))],
                 min: 0,
                 exp: TOTAL / 2,
@@ -337,7 +337,7 @@ mod tests {
             },
             Condition::IsNull(condition) => CardinalityEstimation {
                 primary_clauses: vec![PrimaryCondition::Condition(Box::new(
-                    FieldCondition::new_is_null(condition.is_null.key.clone()),
+                    FieldCondition::new_is_null(condition.is_null.key.clone(), true),
                 ))],
                 min: 0,
                 exp: TOTAL / 2,

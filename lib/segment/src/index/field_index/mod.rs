@@ -30,6 +30,12 @@ pub enum PrimaryCondition {
     HasVector(VectorNameBuf),
 }
 
+impl From<FieldCondition> for PrimaryCondition {
+    fn from(condition: FieldCondition) -> Self {
+        PrimaryCondition::Condition(Box::new(condition))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PayloadBlockCondition {
     pub condition: FieldCondition,
