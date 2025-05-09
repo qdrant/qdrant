@@ -407,6 +407,11 @@ impl<T: Sized + Copy + 'static> ChunkedVectorStorage<T> for ChunkedMmapVectors<T
     }
 
     #[inline]
+    fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
+        ChunkedMmapVectors::get_many(self, key, count, true)
+    }
+
+    #[inline]
     fn get_batch<'a>(
         &'a self,
         keys: &[VectorOffsetType],

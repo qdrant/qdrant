@@ -128,7 +128,7 @@ impl<
             .get_sequential(key as VectorOffsetType)
             .and_then(|mmap_offset| {
                 let mmap_offset = mmap_offset.first().expect("mmap_offset must not be empty");
-                self.vectors.get_many(
+                self.vectors.get_many_sequential(
                     mmap_offset.offset as VectorOffsetType,
                     mmap_offset.count as usize,
                 )
