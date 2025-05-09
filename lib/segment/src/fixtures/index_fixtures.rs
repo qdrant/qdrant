@@ -62,6 +62,10 @@ impl<TMetric: Metric<VectorElementType>> VectorStorage for TestRawScorerProducer
         self.get_vector_opt(key).expect("vector not found")
     }
 
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        self.get_vector(key)
+    }
+
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         self.vectors.get_opt(key as _).map(|v| v.into())
     }

@@ -123,6 +123,13 @@ impl<T: PrimitiveVectorElement, S: ChunkedVectorStorage<T>> VectorStorage
         self.get_vector_opt(key).expect("vector not found")
     }
 
+    fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
+        self.vectors
+            .get_sequential(key as VectorOffsetType)
+            .map(|slice| CowVector::from(T::slice_to_float_cow(slice.into())))
+            .expect("Vector not found")
+    }
+
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         self.vectors
             .get(key as VectorOffsetType)
