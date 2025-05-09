@@ -18,7 +18,7 @@ pub struct HardwareCounterCell {
     pub(super) payload_index_io_write_counter: CounterCell,
     pub(super) vector_io_read_counter: CounterCell,
     pub(super) vector_io_write_counter: CounterCell,
-    pub(super) accumulator: HwMeasurementAcc,
+    pub(super) accumulator: Option<HwMeasurementAcc>,
 }
 
 #[cfg(feature = "testing")]
@@ -50,7 +50,7 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
-            accumulator: HwMeasurementAcc::new(),
+            accumulator: Some(HwMeasurementAcc::new()),
         }
     }
 
@@ -68,7 +68,7 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
-            accumulator: HwMeasurementAcc::disposable(),
+            accumulator: None,
         }
     }
 
@@ -83,12 +83,14 @@ impl HardwareCounterCell {
             payload_index_io_write_counter: CounterCell::new(),
             vector_io_read_counter: CounterCell::new(),
             vector_io_write_counter: CounterCell::new(),
-            accumulator,
+            accumulator: Some(accumulator),
         }
     }
 
     pub fn new_accumulator(&self) -> HwMeasurementAcc {
-        self.accumulator.clone()
+        self.accumulator
+            .clone()
+            .unwrap_or_else(HwMeasurementAcc::disposable)
     }
 
     /// Create a copy of the current counter cell with the same accumulator and config,
@@ -181,7 +183,9 @@ impl HardwareCounterCell {
     }
 
     fn merge_to_accumulator(&self) {
-        self.accumulator.accumulate(self.get_hw_data());
+        if let Some(accumulator) = &self.accumulator {
+            accumulator.accumulate(self.get_hw_data());
+        }
     }
 }
 
@@ -201,7 +205,11 @@ impl Drop for HardwareCounterCell {
 impl From<&HardwareCounterCell> for HardwareData {
     fn from(value: &HardwareCounterCell) -> Self {
         let counter_values = value.get_hw_data();
-        let acc_values = value.accumulator.hw_data();
+        let acc_values = value
+            .accumulator
+            .as_ref()
+            .map(|i| i.hw_data())
+            .unwrap_or_default();
         counter_values + acc_values
     }
 }

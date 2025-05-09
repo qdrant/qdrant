@@ -97,7 +97,7 @@ mod test {
         }
 
         assert_eq!(parent.cpu_counter().get(), 0);
-        assert_eq!(parent.accumulator.get_cpu(), 0);
+        assert_eq!(parent.accumulator.as_ref().unwrap().get_cpu(), 0);
     }
 
     #[test]
@@ -111,7 +111,7 @@ mod test {
 
         assert_eq!(parent.cpu_counter().get(), 5);
 
-        let parent_acc = parent.accumulator.clone();
+        let parent_acc = parent.new_accumulator();
         drop(parent); // Parents accumulator gets written after `parent` drops.
         assert_eq!(parent_acc.get_cpu(), 5);
     }
@@ -131,7 +131,7 @@ mod test {
         }
 
         assert_eq!(parent.cpu_counter().get(), 0); // Parents accumulator gets written, not the counter cell!
-        assert_eq!(parent.accumulator.get_cpu(), 5);
+        assert_eq!(parent.accumulator.as_ref().unwrap().get_cpu(), 5);
     }
 
     #[test]
