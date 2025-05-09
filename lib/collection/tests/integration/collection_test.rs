@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
+use std::io::{BufReader, BufWriter};
 
 use ahash::AHashSet;
 use api::rest::{OrderByInterface, SearchRequestInternal};
@@ -876,7 +877,7 @@ async fn test_collection_local_load_initializing_not_stuck() {
     // this situation through our collection interface
     {
         let replica_state_path = collection_dir.path().join("0/replica_state.json");
-        let replica_state_file = File::open(&replica_state_path).unwrap();
+        let replica_state_file = BufReader::new(File::open(&replica_state_path).unwrap());
         let mut replica_set_state: ReplicaSetState =
             serde_json::from_reader(replica_state_file).unwrap();
 
@@ -884,7 +885,7 @@ async fn test_collection_local_load_initializing_not_stuck() {
             replica_set_state.set_peer_state(peer_id, ReplicaState::Initializing);
         }
 
-        let replica_state_file = File::create(&replica_state_path).unwrap();
+        let replica_state_file = BufWriter::new(File::create(&replica_state_path).unwrap());
         serde_json::to_writer(replica_state_file, &replica_set_state).unwrap();
     }
 
