@@ -47,7 +47,7 @@ impl ImmutableFullTextIndex {
     }
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
-        if self.inverted_index.remove_document(id) {
+        if self.inverted_index.remove(id) {
             let db_doc_id = FullTextIndex::store_key(id);
             self.db_wrapper.remove(db_doc_id)?;
         }
