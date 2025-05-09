@@ -204,15 +204,6 @@ pub trait SegmentOptimizer {
         let threshold_is_indexed = maximal_vector_store_size_bytes
             >= thresholds.indexing_threshold_kb.saturating_mul(BYTES_IN_KB);
 
-        // The logic that we want:
-        //
-        // | on_disk | mmap_threshold | is_indexed | storage_type |
-        // |   true  |      20k       |    true    |     mmap     |
-        // |   true  |      None      |    true    |     mmap     |
-        // |   None  |      20k       |    true    |     mmap     |
-        // |   None  |      None      |    true    |     InRam    |
-        // |   false |      20k       |    true    |     mmap     |
-        // |   false |      None      |    true    |     InRam    |
         let threshold_is_on_disk = maximal_vector_store_size_bytes
             >= thresholds.memmap_threshold_kb.saturating_mul(BYTES_IN_KB);
 
