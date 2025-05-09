@@ -157,7 +157,9 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
             }
         }
 
+        bufw.flush()?;
         drop(bufw);
+
         file.as_file().sync_all()?;
         file.persist(path)?;
 
