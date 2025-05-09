@@ -42,6 +42,12 @@ pub trait PayloadStorage {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
     /// Delete payload by point_id and key
     fn delete(
         &mut self,

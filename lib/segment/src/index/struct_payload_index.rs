@@ -713,6 +713,14 @@ impl PayloadIndex for StructPayloadIndex {
         self.payload.borrow().get(point_id, hw_counter)
     }
 
+    fn get_payload_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        self.payload.borrow().get_sequential(point_id, hw_counter)
+    }
+
     fn delete_payload(
         &mut self,
         point_id: PointOffsetType,

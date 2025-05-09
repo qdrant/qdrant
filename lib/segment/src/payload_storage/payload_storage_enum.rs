@@ -124,6 +124,20 @@ impl PayloadStorage for PayloadStorageEnum {
         }
     }
 
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        match self {
+            #[cfg(feature = "testing")]
+            PayloadStorageEnum::InMemoryPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            PayloadStorageEnum::SimplePayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            PayloadStorageEnum::OnDiskPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+            PayloadStorageEnum::MmapPayloadStorage(s) => s.get_sequential(point_id, hw_counter),
+        }
+    }
+
     fn delete(
         &mut self,
         point_id: PointOffsetType,

@@ -66,6 +66,15 @@ impl PayloadStorage for InMemoryPayloadStorage {
         }
     }
 
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        // In memory => No optimizations available.
+        self.get(point_id, hw_counter)
+    }
+
     fn delete(
         &mut self,
         point_id: PointOffsetType,

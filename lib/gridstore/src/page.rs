@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use memmap2::MmapMut;
+use memmap2::{Mmap, MmapMut};
 use memory::fadvise::clear_disk_cache;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
-use memory::mmap_ops::{create_and_ensure_length, open_write_mmap};
+use memory::mmap_ops::{create_and_ensure_length, open_read_mmap, open_write_mmap};
 
 use crate::tracker::BlockOffset;
 
@@ -11,6 +11,7 @@ use crate::tracker::BlockOffset;
 pub(crate) struct Page {
     path: PathBuf,
     mmap: MmapMut,
+    mmap_seq: Mmap,
 }
 
 impl Page {
@@ -22,10 +23,16 @@ impl Page {
     /// Create a new page at the given path
     pub fn new(path: &Path, size: usize) -> Result<Page, String> {
         create_and_ensure_length(path, size).map_err(|err| err.to_string())?;
-        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Normal), false)
+        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
+            .map_err(|err| err.to_string())?;
+        let mmap_seq = open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
             .map_err(|err| err.to_string())?;
         let path = path.to_path_buf();
-        Ok(Page { path, mmap })
+        Ok(Page {
+            path,
+            mmap,
+            mmap_seq,
+        })
     }
 
     /// Open an existing page at the given path
@@ -34,10 +41,16 @@ impl Page {
         if !path.exists() {
             return Err(format!("Page file does not exist: {}", path.display()));
         }
-        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Normal), false)
+        let mmap = open_write_mmap(path, AdviceSetting::from(Advice::Random), false)
+            .map_err(|err| err.to_string())?;
+        let mmap_seq = open_read_mmap(path, AdviceSetting::from(Advice::Sequential), false)
             .map_err(|err| err.to_string())?;
         let path = path.to_path_buf();
-        Ok(Page { path, mmap })
+        Ok(Page {
+            path,
+            mmap,
+            mmap_seq,
+        })
     }
 
     /// Write a value into the page
@@ -90,9 +103,34 @@ impl Page {
         length: u32,
         block_size_bytes: usize,
     ) -> (&[u8], usize) {
+        Self::read_value_with_generic_storage(&self.mmap, block_offset, length, block_size_bytes)
+    }
+
+    /// Read a value from the page, similar to `read_value` but with optimizations for
+    /// sequential reads (i.e reading multiple pages ahead).
+    pub fn read_value_sequential(
+        &self,
+        block_offset: BlockOffset,
+        length: u32,
+        block_size_bytes: usize,
+    ) -> (&[u8], usize) {
+        Self::read_value_with_generic_storage(
+            &self.mmap_seq,
+            block_offset,
+            length,
+            block_size_bytes,
+        )
+    }
+
+    fn read_value_with_generic_storage(
+        mmap: &[u8],
+        block_offset: BlockOffset,
+        length: u32,
+        block_size_bytes: usize,
+    ) -> (&[u8], usize) {
         let value_start = block_offset as usize * block_size_bytes;
 
-        let mmap_len = self.mmap.len();
+        let mmap_len = mmap.len();
 
         assert!(value_start < mmap_len);
 
@@ -101,10 +139,7 @@ impl Page {
         let unread_tail = value_end.saturating_sub(mmap_len);
 
         // read value region
-        (
-            &self.mmap[value_start..value_end - unread_tail],
-            unread_tail,
-        )
+        (&mmap[value_start..value_end - unread_tail], unread_tail)
     }
 
     /// Delete the page from the filesystem.
