@@ -97,8 +97,7 @@ impl<T: Sized + Copy + Clone + Default + 'static> ChunkedVectorStorage<T>
 
     #[inline]
     fn get_many_sequential(&self, key: VectorOffsetType, count: usize) -> Option<&[T]> {
-        // No optimization for sequential access
-        self.mmap_storage.get_many(key, count)
+        self.mmap_storage.get_many_sequential(key, count)
     }
 
     #[inline]
