@@ -150,11 +150,11 @@ impl InvertedIndex for MutableInvertedIndex {
             .collect();
         let Some(postings) = postings_opt else {
             // There are unseen tokens -> no matches
-            return Box::new(vec![].into_iter());
+            return Box::new(std::iter::empty());
         };
         if postings.is_empty() {
             // Empty request -> no matches
-            return Box::new(vec![].into_iter());
+            return Box::new(std::iter::empty());
         }
         intersect_postings_iterator(postings)
     }

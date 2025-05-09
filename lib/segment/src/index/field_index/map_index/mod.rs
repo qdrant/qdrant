@@ -953,7 +953,7 @@ impl PayloadFieldIndex for MapIndex<IntPayloadType> {
             Some(Match::Any(MatchAny { any: any_variant })) => match any_variant {
                 AnyVariants::Strings(keywords) => {
                     if keywords.is_empty() {
-                        Some(Box::new(vec![].into_iter()))
+                        Some(Box::new(std::iter::empty()))
                     } else {
                         None
                     }
@@ -1343,7 +1343,7 @@ mod tests {
         // Ensure cardinality is non-zero
         assert!(
             !index
-                .except_cardinality(vec![].into_iter(), &hw_counter)
+                .except_cardinality(std::iter::empty(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }
@@ -1409,7 +1409,7 @@ mod tests {
         // Ensure cardinality is zero
         assert!(
             index
-                .except_cardinality(vec![].into_iter(), &hw_counter)
+                .except_cardinality(std::iter::empty(), &hw_counter)
                 .equals_min_exp_max(&CardinalityEstimation::exact(0))
         );
     }

@@ -30,7 +30,7 @@ impl MutableFullTextIndex {
         self.db_wrapper.recreate_column_family()
     }
 
-    pub fn load_from_db(&mut self) -> OperationResult<bool> {
+    pub fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);
         };
@@ -146,7 +146,7 @@ mod tests {
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
 
-            let mut index = FullTextIndex::builder(db, config.clone(), "text")
+            let mut index = FullTextIndex::builder_rocksdb(db, config.clone(), "text")
                 .make_empty()
                 .unwrap();
 
@@ -216,7 +216,7 @@ mod tests {
 
         {
             let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-            let mut index = FullTextIndex::new_memory(db, config, "text", immutable);
+            let mut index = FullTextIndex::new_rocksdb(db, config, "text", immutable);
             let loaded = index.load().unwrap();
             assert!(loaded);
 

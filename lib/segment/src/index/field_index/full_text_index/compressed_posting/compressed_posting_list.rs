@@ -102,4 +102,31 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_chunk_reader_iter_len() {
+        for step in 0..3 {
+            let (compressed_posting_list, _set) =
+                CompressedPostingList::generate_compressed_posting_list_fixture(step);
+
+            let reader = compressed_posting_list.reader();
+            let len = reader.len();
+
+            // Ensure chunk reader iterator length correctness
+            let mut iter = reader.iter();
+            assert_eq!(iter.len(), len);
+            assert_eq!(iter.size_hint(), (len, Some(len)));
+            assert_eq!(iter.clone().count(), len);
+
+            // Consume two iterator items
+            let _ = iter.next();
+            let _ = iter.next();
+
+            // Assert adjusted size
+            let len = len - 2;
+            assert_eq!(iter.len(), len);
+            assert_eq!(iter.size_hint(), (len, Some(len)));
+            assert_eq!(iter.count(), len);
+        }
+    }
 }

@@ -634,7 +634,7 @@ impl PayloadIndex for StructPayloadIndex {
         threshold: usize,
     ) -> Box<dyn Iterator<Item = PayloadBlockCondition> + '_> {
         match self.field_indexes.get(field) {
-            None => Box::new(vec![].into_iter()),
+            None => Box::new(std::iter::empty()),
             Some(indexes) => {
                 let field_clone = field.to_owned();
                 Box::new(indexes.iter().flat_map(move |field_index| {

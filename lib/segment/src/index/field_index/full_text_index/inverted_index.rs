@@ -303,30 +303,43 @@ mod tests {
     #[case(10, 2)]
     #[case(0, 0)]
     #[test]
-    fn test_immutable_to_mmap(#[case] indexed_count: u32, #[case] deleted_count: u32) {
+    fn test_immutable_to_mmap_to_immutable(#[case] indexed_count: u32, #[case] deleted_count: u32) {
+        use std::collections::HashSet;
+
         let mutable = mutable_inverted_index(indexed_count, deleted_count);
         let immutable = ImmutableInvertedIndex::from(mutable);
 
-        let path = tempfile::tempdir().unwrap().into_path();
-
-        MmapInvertedIndex::create(path.clone(), immutable.clone()).unwrap();
+        let mmap_dir = tempfile::tempdir().unwrap();
 
         let hw_counter = HardwareCounterCell::new();
 
-        let mmap = MmapInvertedIndex::open(path, false).unwrap();
+        MmapInvertedIndex::create(mmap_dir.path().into(), immutable.clone()).unwrap();
+        let mmap = MmapInvertedIndex::open(mmap_dir.path().into(), false).unwrap();
+
+        let imm_mmap = ImmutableInvertedIndex::from(&mmap);
 
         // Check same vocabulary
         for (token, token_id) in immutable.vocab.iter() {
             assert_eq!(mmap.get_token_id(token, &hw_counter), Some(*token_id));
+            assert_eq!(imm_mmap.get_token_id(token, &hw_counter), Some(*token_id));
         }
 
         // Check same postings
         for (token_id, posting) in immutable.postings.iter().enumerate() {
-            let chunk_reader = mmap.postings.get(token_id as u32, &hw_counter).unwrap();
+            let mutable_ids = posting.iter().collect::<HashSet<_>>();
 
-            for point_id in posting.iter() {
-                assert!(chunk_reader.contains(point_id));
-            }
+            // Check mutable vs mmap
+            let mmap_ids = mmap
+                .postings
+                .get(token_id as u32, &hw_counter)
+                .unwrap()
+                .iter()
+                .collect();
+            assert_eq!(mutable_ids, mmap_ids);
+
+            // Check mutable vs immutable mmap
+            let imm_mmap_ids = imm_mmap.postings[token_id].iter().collect();
+            assert_eq!(mutable_ids, imm_mmap_ids);
         }
 
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {
@@ -334,7 +347,7 @@ mod tests {
             assert_eq!(
                 mmap.deleted_points.get(point_id).unwrap(),
                 count.is_none(),
-                "point_id: {point_id}"
+                "point_id: {point_id}",
             );
 
             // Check same count
@@ -342,10 +355,12 @@ mod tests {
                 *mmap.point_to_tokens_count.get(point_id).unwrap(),
                 count.unwrap_or(0)
             );
+            assert_eq!(imm_mmap.point_to_tokens_count[point_id], *count);
         }
 
         // Check same points count
-        assert_eq!(mmap.active_points_count, immutable.points_count);
+        assert_eq!(immutable.points_count, mmap.active_points_count);
+        assert_eq!(immutable.points_count, imm_mmap.points_count);
     }
 
     #[test]
@@ -353,74 +368,88 @@ mod tests {
         let indexed_count = 10000;
         let deleted_count = 500;
 
-        let mut mutable = mutable_inverted_index(indexed_count, deleted_count);
-        let immutable = ImmutableInvertedIndex::from(mutable.clone());
+        let hw_counter = HardwareCounterCell::new();
+        let mmap_dir = tempfile::tempdir().unwrap();
 
-        let path = tempfile::tempdir().unwrap().into_path();
+        let mut mut_index = mutable_inverted_index(indexed_count, deleted_count);
 
-        MmapInvertedIndex::create(path.clone(), immutable).unwrap();
+        let immutable = ImmutableInvertedIndex::from(mut_index.clone());
+        MmapInvertedIndex::create(mmap_dir.path().into(), immutable).unwrap();
+        let mut mmap_index = MmapInvertedIndex::open(mmap_dir.path().into(), false).unwrap();
 
-        let mut mmap_index = MmapInvertedIndex::open(path, false).unwrap();
+        let mut imm_mmap_index = ImmutableInvertedIndex::from(&mmap_index);
 
         let queries: Vec<_> = (0..100).map(|_| generate_query()).collect();
 
         let mut_parsed_queries: Vec<_> = queries
-            .clone()
-            .into_iter()
-            .map(|query| to_parsed_query(query, |token| mutable.vocab.get(&token).copied()))
+            .iter()
+            .cloned()
+            .map(|query| to_parsed_query(query, |token| mut_index.vocab.get(&token).copied()))
             .collect();
-
-        let hw_counter = HardwareCounterCell::new();
-
-        let imm_parsed_queries: Vec<_> = queries
-            .into_iter()
+        let mmap_parsed_queries: Vec<_> = queries
+            .iter()
+            .cloned()
             .map(|query| {
                 to_parsed_query(query, |token| mmap_index.get_token_id(&token, &hw_counter))
+            })
+            .collect();
+        let imm_mmap_parsed_queries: Vec<_> = queries
+            .into_iter()
+            .map(|query| {
+                to_parsed_query(query, |token| {
+                    imm_mmap_index.get_token_id(&token, &hw_counter)
+                })
             })
             .collect();
 
         check_query_congruence(
             &mut_parsed_queries,
-            &imm_parsed_queries,
-            &mutable,
+            &mmap_parsed_queries,
+            &imm_mmap_parsed_queries,
+            &mut_index,
             &mmap_index,
+            &imm_mmap_index,
             &hw_counter,
         );
 
         // Delete random documents from both indexes
-
         let points_to_delete: Vec<_> = (0..deleted_count)
             .map(|_| rand::rng().random_range(0..indexed_count))
             .collect();
-
         for point_id in &points_to_delete {
-            mutable.remove_document(*point_id);
+            mut_index.remove_document(*point_id);
             mmap_index.remove_document(*point_id);
+            imm_mmap_index.remove_document(*point_id);
         }
 
         // Check congruence after deletion
         check_query_congruence(
             &mut_parsed_queries,
-            &imm_parsed_queries,
-            &mutable,
+            &mmap_parsed_queries,
+            &imm_mmap_parsed_queries,
+            &mut_index,
             &mmap_index,
+            &imm_mmap_index,
             &hw_counter,
         );
     }
 
     fn check_query_congruence(
         mut_parsed_queries: &[Option<ParsedQuery>],
-        imm_parsed_queries: &[Option<ParsedQuery>],
-        mutable: &MutableInvertedIndex,
+        mmap_parsed_queries: &[Option<ParsedQuery>],
+        imm_mmap_parsed_queries: &[Option<ParsedQuery>],
+        mut_index: &MutableInvertedIndex,
         mmap_index: &MmapInvertedIndex,
+        imm_mmap_index: &ImmutableInvertedIndex,
         hw_counter: &HardwareCounterCell,
     ) {
-        for queries in mut_parsed_queries
-            .iter()
-            .cloned()
-            .zip(imm_parsed_queries.iter().cloned())
-        {
-            let (Some(mut_query), Some(imm_query)) = queries else {
+        for queries in mut_parsed_queries.iter().cloned().zip(
+            mmap_parsed_queries
+                .iter()
+                .cloned()
+                .zip(imm_mmap_parsed_queries.iter().cloned()),
+        ) {
+            let (Some(mut_query), (Some(imm_query), Some(imm_mmap_query))) = queries else {
                 // Immutable index can have a smaller vocabulary, since it only contains tokens that have
                 // non-empty posting lists.
                 // Since we removed some documents from the mutable index, it can happen that the immutable
@@ -429,10 +458,14 @@ mod tests {
                 // In this case both queries would filter to an empty set of documents.
                 continue;
             };
-            let mut_filtered = mutable.filter(mut_query, hw_counter).collect::<Vec<_>>();
+            let mut_filtered = mut_index.filter(mut_query, hw_counter).collect::<Vec<_>>();
             let imm_filtered = mmap_index.filter(imm_query, hw_counter).collect::<Vec<_>>();
+            let imm_mmap_filtered = imm_mmap_index
+                .filter(imm_mmap_query, hw_counter)
+                .collect::<Vec<_>>();
 
             assert_eq!(mut_filtered, imm_filtered);
+            assert_eq!(imm_filtered, imm_mmap_filtered);
         }
     }
 }
