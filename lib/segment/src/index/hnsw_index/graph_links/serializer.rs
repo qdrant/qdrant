@@ -218,6 +218,7 @@ impl GraphLinksSerializer {
         let file = File::create(temp_path.as_path())?;
         let mut buf = std::io::BufWriter::new(&file);
         self.serialize_to_writer(&mut buf)?;
+        buf.flush()?;
         file.sync_all()?;
         std::fs::rename(temp_path, path)?;
         Ok(())

@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -135,8 +135,9 @@ impl<T: Serialize + for<'de> Deserialize<'de> + Clone> SaveOnDisk<T> {
     fn save_data_to(path: impl Into<PathBuf>, data: &T) -> Result<(), Error> {
         let path: PathBuf = path.into();
         AtomicFile::new(path, AllowOverwrite).write(|file| {
-            let writer = BufWriter::new(file);
-            serde_json::to_writer(writer, data)
+            let mut writer = BufWriter::new(file);
+            serde_json::to_writer(&mut writer, data)?;
+            writer.flush().map_err(serde_json::Error::io)
         })?;
         Ok(())
     }
