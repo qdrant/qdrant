@@ -255,7 +255,7 @@ impl<V: Blob> Gridstore<V> {
         raw_sections
     }
 
-    /// Get the value for a given point offset
+    /// Get the value for a given point offset, from the random mmap
     pub fn get_value(
         &self,
         point_offset: PointOffset,
@@ -277,7 +277,7 @@ impl<V: Blob> Gridstore<V> {
         Some(value)
     }
 
-    /// Get the value for a given point offset
+    /// Get the value for a given point offset, from the sequential mmap
     pub fn get_value_sequential(
         &self,
         point_offset: PointOffset,
@@ -542,7 +542,7 @@ impl<V: Blob> Gridstore<V> {
                      block_offset,
                      length,
                  }| {
-                    let raw = self.read_from_pages(page_id, block_offset, length);
+                    let raw = self.read_from_pages_sequential(page_id, block_offset, length);
                     let decompressed = self.decompress(raw);
                     V::from_bytes(&decompressed)
                 },
