@@ -1,7 +1,7 @@
 use std::cmp::max;
 use std::collections::TryReserveError;
 use std::fs::File;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 use std::mem;
 use std::path::Path;
 
@@ -216,11 +216,13 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
     }
 
     fn save_to_file(&self, path: &Path) -> std::io::Result<()> {
-        let mut buffer = File::create(path)?;
+        let mut buffer = BufWriter::new(File::create(path)?);
         for i in 0..self.len() {
             buffer.write_all(self.get(i))?;
         }
-        buffer.sync_all()?;
+        buffer.flush()?;
+        let file = buffer.into_inner().unwrap();
+        file.sync_all()?;
         Ok(())
     }
 
