@@ -487,6 +487,7 @@ mod tests {
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::index::hnsw_index::graph_layers::GraphLayersBase;
     use crate::index::hnsw_index::graph_layers_builder::GraphLayersBuilder;
+    use crate::index::hnsw_index::links_container::LinksContainer;
     use crate::spaces::simple::DotProductMetric;
     use crate::types::Distance;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
@@ -986,10 +987,14 @@ mod tests {
 
             let scorer_fn = |a, b| scorer.score_internal(a, b);
 
-            let heuristic =
-                GraphLayersBuilder::select_candidates_with_heuristic(search_result, m, scorer_fn);
+            let mut heuristic = LinksContainer::with_capacity(m);
+            heuristic.fill_from_sorted_with_heuristic(
+                search_result.into_iter_sorted(),
+                m,
+                scorer_fn,
+            );
 
-            for (&cpu, gpu) in heuristic.iter().zip(gpu_group_result.iter()) {
+            for (cpu, gpu) in heuristic.iter().zip(gpu_group_result.iter()) {
                 assert_eq!(cpu, gpu.idx);
             }
         }

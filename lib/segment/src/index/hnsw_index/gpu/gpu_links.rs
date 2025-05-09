@@ -187,6 +187,7 @@ impl GpuLinks {
             .filter(|&point_id| {
                 !graph_layers_builder.links_layers()[point_id][level]
                     .read()
+                    .links()
                     .is_empty()
             })
             .collect();
@@ -196,7 +197,7 @@ impl GpuLinks {
 
             for &point_id in points_slice {
                 let links = graph_layers_builder.links_layers()[point_id][level].read();
-                self.set_links(point_id as PointOffsetType, &links)?;
+                self.set_links(point_id as PointOffsetType, links.links())?;
             }
             self.apply_gpu_patches(gpu_context)?;
             gpu_context.run()?;
@@ -259,8 +260,7 @@ impl GpuLinks {
                 let links_count = chunk[0] as usize;
                 let links = &chunk[1..=links_count];
                 let mut dst = graph_layers_builder.links_layers()[point_id][level].write();
-                dst.clear();
-                dst.extend(links.iter().copied().filter(|&other_point_id| {
+                dst.fill_from(links.iter().copied().filter(|&other_point_id| {
                     let is_correct_link =
                         level < graph_layers_builder.links_layers()[other_point_id as usize].len();
                     if !is_correct_link {
