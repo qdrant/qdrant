@@ -698,12 +698,8 @@ impl TryFrom<PointStruct> for rest::PointStruct {
             payload,
         } = value;
 
-        // empty payload means None in PointStruct
-        let converted_payload = if payload.is_empty() {
-            None
-        } else {
-            Some(json::proto_to_payloads(payload)?)
-        };
+        // empty payload is propagated as Some(empty)
+        let converted_payload = Some(json::proto_to_payloads(payload)?);
 
         let vector_struct = match vectors {
             None => return Err(Status::invalid_argument("Expected some vectors")),
