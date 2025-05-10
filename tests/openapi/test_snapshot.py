@@ -131,6 +131,28 @@ def test_collection_snapshot_operations(http_server, collection_name):
     )
     assert response.status_code == 400
 
+    # try to upload the snapshot with malformed multipart
+    boundary = '----WebKitFormBoundary7MA4YWxkTrZu0gW'
+    headers = {
+        'Content-Type': f'multipart/form-data; boundary={boundary}',
+    }
+
+    # Manually build the multipart body
+    with open(srv_dir / "snapshot.tar", 'rb') as f:
+        snapshot_content = f.read()
+
+    # empty name
+    body = (
+       f'--{boundary}\r\n'
+       f'Content-Disposition: form-data; name=""\r\n\r\n'
+    ).encode('utf-8') + snapshot_content + f'\r\n--{boundary}--\r\n'.encode('utf-8')
+
+    response = requests.post(
+        f"{QDRANT_HOST}/collections/{collection_name}/snapshots/upload",
+        headers=headers,
+        data=body)
+    assert response.status_code == 400
+
     # validate that the collection is not recovered
     response = request_with_validation(
         api='/collections/{collection_name}/points/scroll',
