@@ -972,6 +972,9 @@ impl ShardHolder {
             return Err(shard_not_found_error(shard_id));
         }
 
+        let _partial_snapshot_lock =
+            self.take_partial_snapshot_recovery_lock(shard_id, recovery_type)?;
+
         if !temp_dir.exists() {
             std::fs::create_dir_all(temp_dir)?;
         }
@@ -1016,6 +1019,9 @@ impl ShardHolder {
         };
 
         task.await??;
+
+        let _partial_snapshot_read_operation_lock =
+            self.take_partial_snapshot_read_operation_lock(shard_id, recovery_type)?;
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
@@ -1063,6 +1069,42 @@ impl ShardHolder {
             .await?;
 
         Ok(res)
+    }
+
+    fn take_partial_snapshot_recovery_lock(
+        &self,
+        shard_id: ShardId,
+        recovery_type: RecoveryType,
+    ) -> CollectionResult<Option<tokio::sync::OwnedMutexGuard<()>>> {
+        match recovery_type {
+            RecoveryType::Full => Ok(None),
+            RecoveryType::Partial => {
+                let lock = self
+                    .get_shard(shard_id)
+                    .ok_or_else(|| shard_not_found_error(shard_id))?
+                    .take_partial_snapshot_recovery_lock()?;
+
+                Ok(Some(lock))
+            }
+        }
+    }
+
+    fn take_partial_snapshot_read_operation_lock(
+        &self,
+        shard_id: ShardId,
+        recovery_type: RecoveryType,
+    ) -> CollectionResult<Option<tokio::sync::OwnedSemaphorePermit>> {
+        match recovery_type {
+            RecoveryType::Full => Ok(None),
+            RecoveryType::Partial => {
+                let lock = self
+                    .get_shard(shard_id)
+                    .ok_or_else(|| shard_not_found_error(shard_id))?
+                    .take_partial_snapshot_read_lock()?;
+
+                Ok(Some(lock))
+            }
+        }
     }
 
     /// # Cancel safety
