@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Seek, Write};
 use std::mem;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use byteorder::{ReadBytesExt, WriteBytesExt};
@@ -15,6 +17,7 @@ use uuid::Uuid;
 use super::point_mappings::FileEndianess;
 use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
+use crate::data_types::segment_manifest::FileVersion;
 use crate::id_tracker::IdTracker;
 use crate::id_tracker::point_mappings::PointMappings;
 use crate::types::{PointIdType, SeqNumberType};
@@ -105,6 +108,8 @@ pub struct MutableIdTracker {
 
     /// List of point mappings pending to be persisted, will be persisted on flush
     pending_mappings: Mutex<Vec<MappingChange>>,
+
+    version_tracker: FileVersionTracker,
 }
 
 impl MutableIdTracker {
@@ -169,6 +174,7 @@ impl MutableIdTracker {
             mappings,
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
+            version_tracker: FileVersionTracker::new(),
         })
     }
 }
@@ -198,6 +204,9 @@ impl IdTracker for MutableIdTracker {
         }
         self.internal_to_version[internal_id as usize] = version;
         self.pending_versions.lock().insert(internal_id, version);
+
+        self.version_tracker.bump_pending_to(version);
+
         Ok(())
     }
 
@@ -278,12 +287,17 @@ impl IdTracker for MutableIdTracker {
             mem::replace(&mut *pending_mappings, Vec::with_capacity(count))
         };
 
+        let version_tracker_flusher = self.version_tracker.mappings_flusher();
+
         Box::new(move || {
             if pending_mappings.is_empty() {
                 return Ok(());
             }
 
-            store_mapping_changes(&mappings_path, pending_mappings)
+            store_mapping_changes(&mappings_path, pending_mappings)?;
+            version_tracker_flusher();
+
+            Ok(())
         })
     }
 
@@ -294,12 +308,17 @@ impl IdTracker for MutableIdTracker {
         let versions_path = versions_path(&self.segment_path);
         let pending_versions = mem::take(&mut *self.pending_versions.lock());
 
+        let version_tracker_flusher = self.version_tracker.versions_flusher();
+
         Box::new(move || {
             if pending_versions.is_empty() {
                 return Ok(());
             }
 
-            store_version_changes(&versions_path, pending_versions)
+            store_version_changes(&versions_path, pending_versions)?;
+            version_tracker_flusher();
+
+            Ok(())
         })
     }
 
@@ -344,6 +363,70 @@ impl IdTracker for MutableIdTracker {
         .into_iter()
         .filter(|path| path.is_file())
         .collect()
+    }
+
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
+        [
+            (
+                mappings_path(&self.segment_path),
+                self.version_tracker.mappings(),
+            ),
+            (
+                versions_path(&self.segment_path),
+                self.version_tracker.versions(),
+            ),
+        ]
+        .into_iter()
+        .filter(|(path, _)| path.is_file())
+        .collect()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FileVersionTracker {
+    pending: FileVersion,
+    mappings: Arc<AtomicU64>,
+    versions: Arc<AtomicU64>,
+}
+
+impl FileVersionTracker {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        Self {
+            pending: FileVersion::Unknown,
+            mappings: Default::default(),
+            versions: Default::default(),
+        }
+    }
+
+    pub fn mappings(&self) -> FileVersion {
+        FileVersion::load(&self.mappings)
+    }
+
+    pub fn versions(&self) -> FileVersion {
+        FileVersion::load(&self.versions)
+    }
+
+    pub fn mappings_flusher(&self) -> impl Fn() + 'static {
+        let pending = self.pending;
+        let mappings = self.mappings.clone();
+
+        move || {
+            FileVersion::store(&mappings, pending);
+        }
+    }
+
+    pub fn versions_flusher(&self) -> impl Fn() + 'static {
+        let pending = self.pending;
+        let versions = self.versions.clone();
+
+        move || {
+            FileVersion::store(&versions, pending);
+        }
+    }
+
+    pub fn bump_pending_to(&mut self, version: SeqNumberType) {
+        self.pending.bump_to(version);
     }
 }
 

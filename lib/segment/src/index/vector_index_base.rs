@@ -17,9 +17,10 @@ use super::plain_vector_index::PlainVectorIndex;
 use super::sparse_index::sparse_vector_index::SparseVectorIndex;
 use crate::common::operation_error::OperationResult;
 use crate::data_types::query_context::VectorQueryContext;
+use crate::data_types::segment_manifest::FileVersion;
 use crate::data_types::vectors::{QueryVector, VectorRef};
 use crate::telemetry::VectorIndexSearchesTelemetry;
-use crate::types::{Filter, SearchParams, SeqNumberType};
+use crate::types::{Filter, SearchParams};
 
 /// Trait for vector searching
 pub trait VectorIndex {
@@ -37,7 +38,7 @@ pub trait VectorIndex {
 
     fn files(&self) -> Vec<PathBuf>;
 
-    fn versioned_files(&self) -> Vec<(PathBuf, SeqNumberType)> {
+    fn versioned_files(&self) -> Vec<(PathBuf, FileVersion)> {
         Vec::new()
     }
 
