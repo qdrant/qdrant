@@ -747,9 +747,11 @@ mod tests {
                     let GeoMapIndex::Mmap(index) = builder.finalize()? else {
                         panic!("expected mmap index");
                     };
-                    Ok(GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(
-                        *index,
-                    )))
+
+                    // Load index from mmap
+                    let mut index = GeoMapIndex::Immutable(ImmutableGeoMapIndex::open_mmap(*index));
+                    index.load()?;
+                    Ok(index)
                 }
             }
         }
