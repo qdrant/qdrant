@@ -163,7 +163,6 @@ impl ConfigMismatchOptimizer {
                             let target_quantization = target_quantization_vector
                                 .as_ref()
                                 .or(target_quantization_collection);
-                            
 
                             vector_data
                                 .quantization_config

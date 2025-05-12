@@ -286,9 +286,7 @@ impl Settings {
     }
 
     pub fn tls_config_is_undefined_error() -> io::Error {
-        io::Error::other(
-            "TLS config is not defined in the Qdrant config file",
-        )
+        io::Error::other("TLS config is not defined in the Qdrant config file")
     }
 
     pub fn validate_and_warn(&self) {

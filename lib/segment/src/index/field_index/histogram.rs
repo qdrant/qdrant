@@ -308,8 +308,6 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
             return (0, 0, 0);
         }
 
-        
-
         left_border
             .into_iter()
             .chain(self.borders.range((from_, to_)))

@@ -63,9 +63,7 @@ impl<W: Write> Write for FusedWriteSeek<W> {
         if !self.enabled.load(Ordering::Acquire) {
             // This error shouldn't be observable. It might appear only in
             // `tar::Builder::drop`, and will be ignored there.
-            return Err(io::Error::other(
-                "Using WriteBox after it is disabled",
-            ));
+            return Err(io::Error::other("Using WriteBox after it is disabled"));
         }
         self.output.write(buf)
     }
@@ -213,9 +211,7 @@ impl<W: Write + Seek> BuilderExt<W> {
     pub fn blocking_finish(self) -> io::Result<()> {
         let mut bb: BlowFuseOnDrop<_> = Arc::try_unwrap(self.tar)
             .map_err(|_| {
-                io::Error::other(
-                    "finish called with multiple references to the tar builder",
-                )
+                io::Error::other("finish called with multiple references to the tar builder")
             })?
             .into_inner();
 
@@ -314,9 +310,7 @@ mod tests {
     impl Write for DummyBridgeWriter {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             if self.0 {
-                return Err(io::Error::other(
-                    "Forced error in write",
-                ));
+                return Err(io::Error::other("Forced error in write"));
             }
             self.1.blocking_lock().extend_from_slice(buf); // panics in async
             Ok(buf.len())
@@ -324,9 +318,7 @@ mod tests {
 
         fn flush(&mut self) -> io::Result<()> {
             if self.0 {
-                return Err(io::Error::other(
-                    "Forced error in flush",
-                ));
+                return Err(io::Error::other("Forced error in flush"));
             }
             let _ = self.1.blocking_lock(); // panics in async
             Ok(())
