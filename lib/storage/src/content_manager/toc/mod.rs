@@ -36,6 +36,7 @@ use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
 
 use self::dispatcher::TocDispatcher;
+use super::collection_meta_ops::{CollectionMetaOperations, ShardTransferOperations};
 use crate::ConsensusOperations;
 use crate::content_manager::alias_mapping::AliasPersistence;
 use crate::content_manager::collection_meta_ops::CreateCollectionOperation;
@@ -46,8 +47,6 @@ use crate::content_manager::shard_distribution::ShardDistributionProposal;
 use crate::dispatcher::Dispatcher;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::StorageConfig;
-
-use super::collection_meta_ops::{CollectionMetaOperations, ShardTransferOperations};
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
