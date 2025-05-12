@@ -144,8 +144,8 @@ impl InvertedIndex for MutableInvertedIndex {
             .map(|&vocab_idx| {
                 // if a ParsedQuery token was given an index, then it must exist in the vocabulary
                 // dictionary. Posting list entry can be None but it exists.
-                let postings = self.postings.get(vocab_idx as usize);
-                postings
+
+                self.postings.get(vocab_idx as usize)
             })
             .collect();
         let Some(postings) = postings_opt else {

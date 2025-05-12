@@ -53,10 +53,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         let postings_opt: Option<Vec<_>> = query
             .tokens
             .iter()
-            .map(|&token_id| {
-                let postings = self.postings.get(token_id as usize);
-                postings
-            })
+            .map(|&token_id| self.postings.get(token_id as usize))
             .collect();
 
         let postings = match postings_opt {

@@ -435,13 +435,11 @@ impl<N: MapIndexKey + ?Sized> ImmutableMapIndex<N> {
     pub fn check_values_any(&self, idx: PointOffsetType, check_fn: impl Fn(&N) -> bool) -> bool {
         let mut hw_count_val = 0;
 
-        let res = self.point_to_values.check_values_any(idx, |v| {
+        self.point_to_values.check_values_any(idx, |v| {
             let v = v.borrow();
             hw_count_val += <N as MmapValue>::mmapped_size(v.as_referenced());
             check_fn(v)
-        });
-
-        res
+        })
     }
 
     pub fn get_values(&self, idx: PointOffsetType) -> Option<impl Iterator<Item = &N> + '_> {
