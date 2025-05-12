@@ -9,7 +9,7 @@ use storage::rbac::Access;
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
 #[serde(untagged)]
 pub enum CollectionTelemetryEnum {
-    Full(CollectionTelemetry),
+    Full(Box<CollectionTelemetry>),
     Aggregated(CollectionsAggregatedTelemetry),
 }
 
@@ -29,7 +29,7 @@ impl CollectionsTelemetry {
                 toc.get_telemetry_data(detail, access)
                     .await
                     .into_iter()
-                    .map(CollectionTelemetryEnum::Full)
+                    .map(|t| CollectionTelemetryEnum::Full(Box::new(t)))
                     .collect()
             } else {
                 toc.get_aggregated_telemetry_data(access)
