@@ -2,6 +2,7 @@ pub mod download;
 pub mod recover;
 
 use std::collections::HashMap;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use collection::operations::snapshot_ops::SnapshotDescription;
@@ -191,15 +192,19 @@ async fn _do_create_full_snapshot(
     let full_snapshot_path_clone = temp_full_snapshot_path.clone();
     let archiving = tokio::task::spawn_blocking(move || {
         // have to use std here, cause TarBuilder is not async
-        let file = std::fs::File::create(&full_snapshot_path_clone)?;
-        let mut builder = TarBuilder::new(file);
+        let mut file = BufWriter::new(std::fs::File::create(&full_snapshot_path_clone)?);
+        let mut builder = TarBuilder::new(&mut file);
         builder.sparse(true);
         for (temp_file, snapshot_name) in temp_collection_snapshots {
             builder.append_path_with_name(&temp_file, &snapshot_name)?;
         }
         builder.append_path_with_name(&config_path_clone, "config.json")?;
-
         builder.finish()?;
+
+        // Explicitly flush write buffer so we can catch IO errors
+        drop(builder);
+        file.flush()?;
+
         Ok::<(), StorageError>(())
     });
     archiving.await??;

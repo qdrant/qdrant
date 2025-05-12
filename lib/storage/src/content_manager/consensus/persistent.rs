@@ -1,7 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
 use std::fs::{File, create_dir_all};
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -368,8 +368,9 @@ impl Persistent {
 
     pub fn save(&self) -> Result<(), StorageError> {
         let result = AtomicFile::new(&self.path, AllowOverwrite).write(|file| {
-            let writer = BufWriter::new(file);
-            serde_json::to_writer(writer, self)
+            let mut writer = BufWriter::new(file);
+            serde_json::to_writer(&mut writer, self)?;
+            writer.flush()
         });
         log::trace!("Saved state: {self:?}");
         self.dirty.store(result.is_err(), Ordering::Relaxed);

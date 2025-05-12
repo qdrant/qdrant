@@ -372,6 +372,7 @@ fn store_mapping_changes(mappings_path: &Path, changes: Vec<MappingChange>) -> O
     })?;
 
     // Explicitly fsync file contents to ensure durability
+    writer.flush()?;
     let file = writer.into_inner().unwrap();
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point mappings: {err}"))
@@ -719,12 +720,12 @@ fn store_version_changes(
     })?;
 
     // Explicitly fsync file contents to ensure durability
-    let file = writer.into_inner().map_err(|err| {
+    writer.flush().map_err(|err| {
         OperationError::service_error(format!(
-            "Failed to close ID tracker point versions write buffer: {}",
-            err.into_error()
+            "Failed to flush ID tracker point versions write buffer: {err}",
         ))
     })?;
+    let file = writer.into_inner().map_err(|err| err.into_error())?;
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point versions: {err}"))
     })?;
