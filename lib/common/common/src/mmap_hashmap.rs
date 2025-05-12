@@ -157,7 +157,10 @@ impl<K: Key + ?Sized, V: Sized + FromBytes + Immutable + IntoBytes + KnownLayout
             }
         }
 
+        // Explicitly flush write buffer so we can catch IO errors
+        bufw.flush()?;
         drop(bufw);
+
         file.as_file().sync_all()?;
         file.persist(path)?;
 

@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
+use std::io::{self, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::result;
 
@@ -9,13 +9,21 @@ use serde::de::DeserializeOwned;
 
 pub fn atomic_save_bin<T: Serialize>(path: &Path, object: &T) -> Result<()> {
     let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
-    af.write(|f| bincode::serialize_into(BufWriter::new(f), object))?;
+    af.write(|f| {
+        let mut writer = BufWriter::new(f);
+        bincode::serialize_into(&mut writer, object)?;
+        writer.flush().map_err(bincode::Error::from)
+    })?;
     Ok(())
 }
 
 pub fn atomic_save_json<T: Serialize>(path: &Path, object: &T) -> Result<()> {
     let af = AtomicFile::new(path, OverwriteBehavior::AllowOverwrite);
-    af.write(|f| serde_json::to_writer(BufWriter::new(f), object))?;
+    af.write(|f| {
+        let mut writer = BufWriter::new(f);
+        serde_json::to_writer(&mut writer, object)?;
+        writer.flush()
+    })?;
     Ok(())
 }
 
