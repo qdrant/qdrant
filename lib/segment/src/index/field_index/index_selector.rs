@@ -283,7 +283,7 @@ impl IndexSelector<'_> {
     ) -> OperationResult<FullTextIndex> {
         Ok(match self {
             IndexSelector::RocksDb(IndexSelectorRocksDb { db, is_appendable }) => {
-                FullTextIndex::new_memory(
+                FullTextIndex::new_rocksdb(
                     Arc::clone(db),
                     config,
                     &field.to_string(),
@@ -301,7 +301,7 @@ impl IndexSelector<'_> {
             IndexSelector::RocksDb(IndexSelectorRocksDb {
                 db,
                 is_appendable: _,
-            }) => FieldIndexBuilder::FullTextIndex(FullTextIndex::builder(
+            }) => FieldIndexBuilder::FullTextIndex(FullTextIndex::builder_rocksdb(
                 Arc::clone(db),
                 config,
                 &field.to_string(),

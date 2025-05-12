@@ -53,7 +53,6 @@ impl MmapFullTextIndex {
 
     pub fn remove_point(&mut self, id: PointOffsetType) -> OperationResult<()> {
         self.inverted_index.remove_document(id);
-
         Ok(())
     }
 

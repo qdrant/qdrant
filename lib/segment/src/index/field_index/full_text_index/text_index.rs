@@ -34,7 +34,7 @@ pub enum FullTextIndex {
 }
 
 impl FullTextIndex {
-    pub fn new_memory(
+    pub fn new_rocksdb(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
         field: &str,
@@ -48,7 +48,7 @@ impl FullTextIndex {
         if is_appendable {
             Self::Mutable(MutableFullTextIndex::new(db_wrapper, config))
         } else {
-            Self::Immutable(ImmutableFullTextIndex::new(db_wrapper, config))
+            Self::Immutable(ImmutableFullTextIndex::open_rocksdb(db_wrapper, config))
         }
     }
 
@@ -57,25 +57,38 @@ impl FullTextIndex {
         config: TextIndexParams,
         is_on_disk: bool,
     ) -> OperationResult<Self> {
-        Ok(Self::Mmap(Box::new(MmapFullTextIndex::open(
-            path, config, is_on_disk,
-        )?)))
+        let mmap_index = MmapFullTextIndex::open(path, config, is_on_disk)?;
+        if is_on_disk {
+            // Use on mmap directly
+            Ok(Self::Mmap(Box::new(mmap_index)))
+        } else {
+            // Load into RAM, use mmap as backing storage
+            Ok(Self::Immutable(ImmutableFullTextIndex::open_mmap(
+                mmap_index,
+            )))
+        }
     }
 
     pub fn init(&mut self) -> OperationResult<()> {
         match self {
             Self::Mutable(index) => index.init(),
-            Self::Immutable(index) => index.init(),
-            Self::Mmap(_) => unreachable!("not applicable for mmap immutable index"),
+            Self::Immutable(_) => {
+                debug_assert!(false, "Immutable index should be initialized before use");
+                Ok(())
+            }
+            Self::Mmap(_) => {
+                debug_assert!(false, "Mmap index should be initialized before use");
+                Ok(())
+            }
         }
     }
 
-    pub fn builder(
+    pub fn builder_rocksdb(
         db: Arc<RwLock<DB>>,
         config: TextIndexParams,
         field: &str,
     ) -> FullTextIndexBuilder {
-        FullTextIndexBuilder(Self::new_memory(db, config, field, true))
+        FullTextIndexBuilder(Self::new_rocksdb(db, config, field, true))
     }
 
     pub fn builder_mmap(
@@ -365,8 +378,8 @@ impl PayloadFieldIndex for FullTextIndex {
 
     fn load(&mut self) -> OperationResult<bool> {
         match self {
-            Self::Mutable(index) => index.load_from_db(),
-            Self::Immutable(index) => index.load_from_db(),
+            Self::Mutable(index) => index.load(),
+            Self::Immutable(index) => index.load(),
             Self::Mmap(_index) => Ok(true), // mmap index is always loaded
         }
     }
@@ -382,7 +395,7 @@ impl PayloadFieldIndex for FullTextIndex {
     fn flusher(&self) -> Flusher {
         match self {
             Self::Mutable(index) => index.db_wrapper.flusher(),
-            Self::Immutable(index) => index.db_wrapper.flusher(),
+            Self::Immutable(index) => index.flusher(),
             Self::Mmap(index) => index.flusher(),
         }
     }

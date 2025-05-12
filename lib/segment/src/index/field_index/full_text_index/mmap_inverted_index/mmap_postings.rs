@@ -240,4 +240,12 @@ impl MmapPostings {
     pub fn populate(&self) {
         self.mmap.populate();
     }
+
+    /// Iterate over posting lists, returning chunk reader for each
+    pub fn iter_postings<'a>(
+        &'a self,
+        hw_counter: &'a HardwareCounterCell,
+    ) -> impl Iterator<Item = Option<ChunkReader<'a>>> {
+        (0..self.header.posting_count as u32).map(|posting_idx| self.get(posting_idx, hw_counter))
+    }
 }

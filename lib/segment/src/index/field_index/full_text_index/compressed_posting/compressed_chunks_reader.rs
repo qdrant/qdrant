@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use bitpacking::BitPacker;
 use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
@@ -36,10 +38,14 @@ impl<'a> ChunkReader<'a> {
         let chunks = self.chunks;
         let remainder_postings = self.remainder_postings;
 
+        // Check if in any chunk
         let in_chunks_range = !chunks.is_empty() && val >= chunks[0].initial && val <= last_doc_id;
-        let in_noncompressed_range =
-            !remainder_postings.is_empty() && val >= remainder_postings[0] && val <= last_doc_id;
-        in_chunks_range || in_noncompressed_range
+        if in_chunks_range {
+            return true;
+        }
+
+        // Check if in uncompressed range
+        !remainder_postings.is_empty() && val >= remainder_postings[0] && val <= last_doc_id
     }
 
     pub fn contains(&self, val: PointOffsetType) -> bool {
@@ -111,8 +117,23 @@ impl<'a> ChunkReader<'a> {
         );
     }
 
+    pub fn iter(&self) -> ChunkReaderIter<'_> {
+        ChunkReaderIter::new(self)
+    }
+
+    pub fn to_vec(&self) -> Vec<PointOffsetType> {
+        let postings: Vec<PointOffsetType> = self.iter().collect();
+        debug_assert!(postings.is_sorted());
+        debug_assert_eq!(postings.len(), self.len());
+        postings
+    }
+
     pub fn len(&self) -> usize {
         self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.chunks.is_empty() && self.remainder_postings.is_empty()
     }
 
     pub fn chunks_len(&self) -> usize {
@@ -138,5 +159,95 @@ impl<'a> ChunkReader<'a> {
             .payload_index_io_read_counter()
             .incr_delta(size_of_val(self.remainder_postings));
         self.remainder_postings.binary_search(&val).is_ok()
+    }
+}
+
+/// Iterate over all points in a chunk reader.
+#[derive(Clone)]
+pub struct ChunkReaderIter<'a> {
+    chunk_reader: &'a ChunkReader<'a>,
+    /// Indices for chunks that still need to be read into the iteration buffer.
+    pending_chunks: std::ops::Range<usize>,
+    /// If we still need to put the remainder into the iteration buffer.
+    pending_remainder: bool,
+    /// Buffer of point IDs we currently iterate over.
+    buffer: Vec<PointOffsetType>,
+    /// Cursor position in buffer for the next item to iterate over.
+    buffer_position: usize,
+    remaining_len: usize,
+    bitpacker: BitPackerImpl,
+}
+
+impl<'a> ChunkReaderIter<'a> {
+    pub fn new(chunk_reader: &'a ChunkReader) -> Self {
+        Self {
+            pending_chunks: (0..chunk_reader.chunks.len()),
+            pending_remainder: !chunk_reader.remainder_postings.is_empty(),
+            buffer: vec![0; BitPackerImpl::BLOCK_LEN],
+            buffer_position: usize::MAX,
+            remaining_len: chunk_reader.len(),
+            chunk_reader,
+            bitpacker: BitPackerImpl::new(),
+        }
+    }
+
+    #[must_use]
+    fn next_chunk(&mut self) -> Option<()> {
+        // Take each compressed chunk
+        let chunk_index = self.pending_chunks.next();
+        if let Some(chunk_index) = chunk_index {
+            self.chunk_reader.decompress_chunk(
+                &self.bitpacker,
+                chunk_index,
+                self.buffer.as_mut_slice(),
+            );
+            self.buffer_position = 0;
+            return Some(());
+        }
+
+        // Lastly take uncompressed remainder
+        if self.pending_remainder {
+            self.pending_remainder = false;
+            self.buffer
+                .truncate(self.chunk_reader.remainder_postings.len());
+            self.buffer
+                .copy_from_slice(self.chunk_reader.remainder_postings);
+            self.buffer_position = 0;
+            return Some(());
+        }
+
+        // Nothing left
+        self.buffer.clear();
+        self.buffer_position = 0;
+        None
+    }
+}
+
+impl Iterator for ChunkReaderIter<'_> {
+    type Item = PointOffsetType;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // Take next chunk if we exhausted the current one
+        if self.buffer_position >= self.buffer.len() {
+            self.next_chunk()?;
+        }
+
+        let item = self.buffer[self.buffer_position];
+        self.buffer_position += 1;
+        self.remaining_len -= 1;
+
+        Some(item)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining_len, Some(self.remaining_len))
+    }
+}
+
+impl FusedIterator for ChunkReaderIter<'_> {}
+
+impl ExactSizeIterator for ChunkReaderIter<'_> {
+    fn len(&self) -> usize {
+        self.remaining_len
     }
 }
