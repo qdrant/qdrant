@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use parking_lot::Mutex;
+use semver::Version;
+use std::sync::LazyLock;
 
 use super::transfer_tasks_pool::TransferTaskProgress;
 use crate::operations::types::{CollectionError, CollectionResult, CountRequestInternal};
@@ -10,7 +12,13 @@ use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard::ShardId;
 use crate::shards::shard_holder::LockedShardHolder;
 
+// Default batch size for older nodes
 pub(super) const TRANSFER_BATCH_SIZE: usize = 100;
+// Larger batch size for newer nodes supporting batch updates
+pub(super) const TRANSFER_BATCH_SIZE_LARGE: usize = 1000;
+
+static MINIMAL_VERSION_FOR_BATCH_TRANSFER: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
 
 /// Orchestrate shard transfer by streaming records
 ///
@@ -77,6 +85,20 @@ pub(super) async fn transfer_stream_records(
     // Transfer contents batch by batch
     log::trace!("Transferring points to shard {shard_id} by streaming records");
 
+    // Check if the remote supports batch updates and adjust batch size accordingly
+    let supports_batch_transfer = remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_TRANSFER);
+    let batch_size = if supports_batch_transfer {
+        TRANSFER_BATCH_SIZE_LARGE
+    } else {
+        TRANSFER_BATCH_SIZE
+    };
+    
+    log::debug!(
+        "Using batch size of {} for transfer to peer {}",
+        batch_size,
+        remote_peer_id
+    );
+    
     let mut offset = None;
 
     loop {
@@ -91,7 +113,7 @@ pub(super) async fn transfer_stream_records(
         };
 
         let (new_offset, count) = replica_set
-            .transfer_batch(offset, TRANSFER_BATCH_SIZE, None, false)
+            .transfer_batch(offset, batch_size, None, false)
             .await?;
 
         offset = new_offset;

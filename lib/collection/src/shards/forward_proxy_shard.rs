@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,6 +16,7 @@ use segment::types::{
     ExtendedPointId, Filter, PointIdType, ScoredPoint, SizeStats, SnapshotFormat, WithPayload,
     WithPayloadInterface, WithVector,
 };
+use semver::Version;
 use tokio::runtime::Handle;
 use tokio::sync::Mutex;
 
@@ -23,6 +25,7 @@ use super::update_tracker::UpdateTracker;
 use crate::hash_ring::HashRingRouter;
 use crate::operations::point_ops::{
     PointInsertOperationsInternal, PointOperations, PointStructPersisted, PointSyncOperation,
+    WriteOrdering,
 };
 use crate::operations::types::{
     CollectionError, CollectionInfo, CollectionResult, CoreSearchRequestBatch,
@@ -38,6 +41,9 @@ use crate::shards::local_shard::LocalShard;
 use crate::shards::remote_shard::RemoteShard;
 use crate::shards::shard_trait::ShardOperation;
 use crate::shards::telemetry::LocalShardTelemetry;
+
+static MINIMAL_VERSION_FOR_BATCH_TRANSFER: LazyLock<Version> =
+    LazyLock::new(|| Version::parse("1.14.1-dev").unwrap());
 
 /// ForwardProxyShard
 ///
@@ -63,7 +69,6 @@ impl ForwardProxyShard {
         resharding_hash_ring: Option<HashRingRouter>,
     ) -> Self {
         // Validate that `ForwardProxyShard` initialized correctly
-
         debug_assert!({
             let is_regular = shard_id == remote_shard.id && resharding_hash_ring.is_none();
             let is_resharding = shard_id != remote_shard.id && resharding_hash_ring.is_some();
@@ -144,6 +149,14 @@ impl ForwardProxyShard {
         let wait = next_page_offset.is_none();
         let count = points.len();
 
+        // If there are no points, return early
+        if count == 0 {
+            return Ok((next_page_offset, count));
+        }
+
+        // Check if we can use batch update API
+        let supports_batch_transfer = self.remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_TRANSFER);
+
         // Use sync API to leverage potentially existing points
         // Normally use SyncPoints, to completely replace everything in the target shard
         // For resharding we need to merge points from multiple transfers, requiring a different operation
@@ -157,14 +170,28 @@ impl ForwardProxyShard {
             PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
         };
         let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
+        let operation = OperationWithClockTag::from(insert_points_operation);
 
-        self.remote_shard
-            .update(
-                OperationWithClockTag::from(insert_points_operation),
-                wait,
-                HwMeasurementAcc::disposable(), // Internal operation
-            ) // TODO: Assign clock tag!? 🤔
-            .await?;
+        if supports_batch_transfer {
+            // Use batch API
+            self.remote_shard
+                .forward_update_batch(
+                    vec![operation],
+                    wait,
+                    WriteOrdering::Weak,
+                    HwMeasurementAcc::disposable(), // Internal operation
+                )
+                .await?;
+        } else {
+            // Use regular API
+            self.remote_shard
+                .update(
+                    operation,
+                    wait,
+                    HwMeasurementAcc::disposable(), // Internal operation
+                )
+                .await?;
+        }
 
         Ok((next_page_offset, count))
     }
