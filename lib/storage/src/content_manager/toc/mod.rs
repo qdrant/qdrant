@@ -43,8 +43,11 @@ use crate::content_manager::collections_ops::{Checker, Collections};
 use crate::content_manager::consensus::operation_sender::OperationSender;
 use crate::content_manager::errors::StorageError;
 use crate::content_manager::shard_distribution::ShardDistributionProposal;
+use crate::dispatcher::Dispatcher;
 use crate::rbac::{Access, AccessRequirements, CollectionPass};
 use crate::types::StorageConfig;
+
+use super::collection_meta_ops::{CollectionMetaOperations, ShardTransferOperations};
 
 pub const ALIASES_PATH: &str = "aliases";
 pub const COLLECTIONS_DIR: &str = "collections";
@@ -461,20 +464,41 @@ impl TableOfContent {
         false
     }
 
-    pub async fn abort_peer_transfers(&self, peer_id: PeerId) -> CollectionResult<()> {
+    /// Aborts transfers related (from + to) to the given peer
+    pub async fn abort_peer_transfers(
+        &self,
+        dispatcher: Arc<Dispatcher>,
+        access: Access,
+        peer_id: PeerId,
+    ) -> CollectionResult<()> {
         for collection in self.collections.read().await.values() {
             let related_transfers = collection
                 .shards_holder()
                 .read()
                 .await
-                .get_transfers(|transfer| transfer.from == peer_id);
+                .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
 
             for transfer in related_transfers {
-                collection
-                    .shards_holder()
-                    .write()
-                    .await
-                    .register_abort_transfer(&transfer.key())?;
+                dispatcher
+                    .submit_collection_meta_op(
+                        CollectionMetaOperations::TransferShard(
+                            collection.name(),
+                            ShardTransferOperations::Abort {
+                                transfer: transfer.key(),
+                                reason: "Peer removed".to_string(),
+                            },
+                        ),
+                        access.clone(),
+                        None,
+                    )
+                    .await.map_err(|err| {
+                        CollectionError::service_error(
+                            format!(
+                                "Failed to abort transfer {transfer:?} for collection {} before force deleting peer: {err}",
+                                collection.name()
+                            )
+                        )
+                    })?;
             }
         }
 
