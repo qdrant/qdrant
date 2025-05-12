@@ -223,7 +223,7 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
 
         // Explicitly flush write buffer so we can catch IO errors
         buffer.flush()?;
-        buffer.into_inner().unwrap().sync_all()?;
+        buffer.into_inner()?.sync_all()?;
         Ok(())
     }
 

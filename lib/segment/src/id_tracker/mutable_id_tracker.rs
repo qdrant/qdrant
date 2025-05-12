@@ -725,7 +725,7 @@ fn store_version_changes(
             "Failed to flush ID tracker point versions write buffer: {err}",
         ))
     })?;
-    let file = writer.into_inner().unwrap();
+    let file = writer.into_inner().map_err(|err| err.into_error())?;
     file.sync_all().map_err(|err| {
         OperationError::service_error(format!("Failed to fsync ID tracker point versions: {err}"))
     })?;
