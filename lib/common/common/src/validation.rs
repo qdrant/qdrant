@@ -165,7 +165,7 @@ pub fn validate_multi_vector_by_length(multivec_length: &[usize]) -> Result<(), 
     }
 
     // check all individual vectors non-empty
-    if multivec_length.iter().any(|v| *v == 0) {
+    if multivec_length.contains(&0) {
         let mut errors = ValidationErrors::default();
         let mut err = ValidationError::new("empty_vector");
         err.add_param(Cow::from("message"), &"all vectors must be non-empty");

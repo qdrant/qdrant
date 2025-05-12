@@ -324,11 +324,7 @@ impl OperationDurationsAggregator {
 
         let mut sliding_window_avg = vec![0.; data.len()];
         for i in 0..data.len() {
-            let from = if i < SLIDING_WINDOW_LEN {
-                0
-            } else {
-                i - SLIDING_WINDOW_LEN
-            };
+            let from = i.saturating_sub(SLIDING_WINDOW_LEN);
             sliding_window_avg[i] = Self::simple_moving_average(&data[from..i + 1]);
         }
 

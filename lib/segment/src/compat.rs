@@ -49,9 +49,11 @@ impl From<SegmentConfigV5> for SegmentConfig {
                         .as_ref()
                         .and(old_data.quantization_config),
                     // Mmap if explicitly on disk, otherwise convert old storage type
-                    storage_type: (old_data.on_disk == Some(true))
-                        .then_some(VectorStorageType::Mmap)
-                        .unwrap_or_else(|| old_segment.storage_type.into()),
+                    storage_type: if old_data.on_disk == Some(true) {
+                        VectorStorageType::Mmap
+                    } else {
+                        old_segment.storage_type.into()
+                    },
                     multivector_config: None,
                     datatype: None,
                 };

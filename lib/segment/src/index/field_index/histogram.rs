@@ -308,7 +308,7 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
             return (0, 0, 0);
         }
 
-        let estimation = left_border
+        left_border
             .into_iter()
             .chain(self.borders.range((from_, to_)))
             .chain(right_border)
@@ -344,9 +344,7 @@ impl<T: Numericable + Serialize + DeserializeOwned> Histogram<T> {
                 },
             )
             .reduce(|a, b| (a.0 + b.0, a.1 + b.1, a.2 + b.2))
-            .unwrap_or((0, 0, 0));
-
-        estimation
+            .unwrap_or((0, 0, 0))
     }
 
     pub fn remove<F, G>(&mut self, val: &Point<T>, left_neighbour: F, right_neighbour: G)

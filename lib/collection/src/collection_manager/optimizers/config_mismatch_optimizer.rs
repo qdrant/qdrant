@@ -163,7 +163,8 @@ impl ConfigMismatchOptimizer {
                             let target_quantization = target_quantization_vector
                                 .as_ref()
                                 .or(target_quantization_collection);
-                            let quantization_mismatch = vector_data
+
+                            vector_data
                                 .quantization_config
                                 .as_ref()
                                 .zip(target_quantization)
@@ -174,9 +175,7 @@ impl ConfigMismatchOptimizer {
                                     vector_data.index.is_indexed()
                                         && (vector_data.quantization_config.is_some()
                                             != target_quantization.is_some())
-                                });
-
-                            quantization_mismatch
+                                })
                         });
 
                 // Determine whether dense data in segment has mismatch

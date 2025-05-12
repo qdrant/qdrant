@@ -44,13 +44,10 @@ impl EncodedStorage for Vec<u8> {
         if buffer.len() == expected_size {
             Ok(buffer)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Loaded storage size {} is not equal to expected size {expected_size}",
-                    buffer.len()
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "Loaded storage size {} is not equal to expected size {expected_size}",
+                buffer.len()
+            )))
         }
     }
 

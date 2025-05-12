@@ -205,13 +205,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         if vectors.len() == vectors_count {
             Ok(vectors)
         } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "Loaded vectors count {} is not equal to expected count {vectors_count}",
-                    vectors.len(),
-                ),
-            ))
+            Err(std::io::Error::other(format!(
+                "Loaded vectors count {} is not equal to expected count {vectors_count}",
+                vectors.len(),
+            )))
         }
     }
 

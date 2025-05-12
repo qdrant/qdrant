@@ -220,8 +220,7 @@ impl PayloadStorage for MmapPayloadStorage {
             |point_id, payload| {
                 callback(point_id, payload).map_err(|e|
                     // TODO return proper error
-                    std::io::Error::new(
-                        std::io::ErrorKind::Other,
+                    std::io::Error::other(
                         e.to_string(),
                     ))
             },
