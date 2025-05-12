@@ -61,6 +61,7 @@ pub struct OperationData {
 
 /// Signal, used to inform Updater process
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum UpdateSignal {
     /// Requested operation to perform
     Operation(OperationData),
