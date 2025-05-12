@@ -1,8 +1,9 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
+use ahash::AHashSet;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use serde::{Deserialize, Serialize};
+use itertools::Itertools;
 
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::{CardinalityEstimation, PayloadBlockCondition, PrimaryCondition};
@@ -10,31 +11,64 @@ use crate::types::{FieldCondition, Match, PayloadKeyType};
 
 pub type TokenId = u32;
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone)]
-pub struct Document {
-    tokens: Vec<TokenId>,
-}
+/// Contains the set of tokens that are in a document.
+///
+/// Internally, it keeps them unique and sorted, so that we can binary-search over them
+#[derive(Default, Debug, Clone)]
+pub struct TokenSet(Vec<TokenId>);
 
-impl Document {
-    pub fn new(mut tokens: Vec<TokenId>) -> Self {
-        tokens.sort_unstable();
-        Self { tokens }
+impl TokenSet {
+    pub fn new(tokens: AHashSet<TokenId>) -> Self {
+        let sorted_unique = tokens.into_iter().sorted_unstable().collect();
+
+        Self(sorted_unique)
     }
 
     pub fn len(&self) -> usize {
-        self.tokens.len()
+        self.0.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.tokens.is_empty()
+        self.0.is_empty()
     }
 
     pub fn tokens(&self) -> &[TokenId] {
-        &self.tokens
+        &self.0
     }
 
-    pub fn check(&self, token: &TokenId) -> bool {
-        self.tokens.binary_search(token).is_ok()
+    pub fn contains(&self, token: &TokenId) -> bool {
+        self.0.binary_search(token).is_ok()
+    }
+}
+
+impl FromIterator<TokenId> for TokenSet {
+    fn from_iter<T: IntoIterator<Item = TokenId>>(iter: T) -> Self {
+        let tokens = iter
+            .into_iter()
+            .sorted_unstable()
+            .dedup()
+            .collect::<Vec<_>>();
+
+        Self(tokens)
+    }
+}
+
+/// Contains the token ids that make up a document, in the same order that appear in the document.
+#[derive(Clone, Debug)]
+pub struct Document(Vec<TokenId>);
+
+impl Document {
+    pub fn new(tokens: Vec<TokenId>) -> Self {
+        Self(tokens)
+    }
+}
+
+impl IntoIterator for Document {
+    type Item = TokenId;
+    type IntoIter = std::vec::IntoIter<TokenId>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -44,7 +78,7 @@ pub struct ParsedQuery {
 }
 
 impl ParsedQuery {
-    pub fn check_match(&self, document: &Document) -> bool {
+    pub fn check_match(&self, tokens: &TokenSet) -> bool {
         if self.tokens.is_empty() {
             return false;
         }
@@ -52,17 +86,24 @@ impl ParsedQuery {
         // Check that all tokens are in document
         self.tokens
             .iter()
-            .all(|query_token| document.check(query_token))
+            .all(|query_token| tokens.contains(query_token))
     }
 }
 
 pub trait InvertedIndex {
     fn get_vocab_mut(&mut self) -> &mut HashMap<String, TokenId>;
 
-    fn document_from_tokens(&mut self, tokens: &BTreeSet<String>) -> Document {
+    /// Translate the string tokens into token ids.
+    /// If it is an unseen token, it is added to the vocabulary and a new token id is generated.
+    ///
+    /// The order of the tokens is preserved.
+    fn token_ids<'a>(
+        &mut self,
+        str_tokens: impl IntoIterator<Item = &'a String> + 'a,
+    ) -> Vec<TokenId> {
         let vocab = self.get_vocab_mut();
-        let mut document_tokens = vec![];
-        for token in tokens {
+        let mut token_ids = vec![];
+        for token in str_tokens {
             // check if in vocab
             let vocab_idx = match vocab.get(token) {
                 Some(&idx) => idx,
@@ -72,11 +113,18 @@ pub trait InvertedIndex {
                     next_token_id
                 }
             };
-            document_tokens.push(vocab_idx);
+            token_ids.push(vocab_idx);
         }
 
-        Document::new(document_tokens)
+        token_ids
     }
+
+    fn index_tokens(
+        &mut self,
+        idx: PointOffsetType,
+        tokens: TokenSet,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()>;
 
     fn index_document(
         &mut self,
@@ -85,7 +133,7 @@ pub trait InvertedIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()>;
 
-    fn remove_document(&mut self, idx: PointOffsetType) -> bool;
+    fn remove(&mut self, idx: PointOffsetType) -> bool;
 
     fn filter<'a>(
         &'a self,
@@ -202,7 +250,7 @@ mod tests {
     use rand::seq::SliceRandom;
     use rstest::rstest;
 
-    use super::{InvertedIndex, ParsedQuery, TokenId};
+    use super::{InvertedIndex, ParsedQuery, TokenId, TokenSet};
     use crate::index::field_index::full_text_index::immutable_inverted_index::ImmutableInvertedIndex;
     use crate::index::field_index::full_text_index::mmap_inverted_index::MmapInvertedIndex;
     use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
@@ -245,15 +293,16 @@ mod tests {
             // Generate 10 tot 30-word documents
             let doc_len = rand::rng().random_range(10..=30);
             let tokens: BTreeSet<String> = (0..doc_len).map(|_| generate_word()).collect();
-            let document = index.document_from_tokens(&tokens);
-            index.index_document(idx, document, &hw_counter).unwrap();
+            let token_ids = index.token_ids(&tokens);
+            let token_set = TokenSet::from_iter(token_ids);
+            index.index_tokens(idx, token_set, &hw_counter).unwrap();
         }
 
         // Remove some points
         let mut points_to_delete = (0..indexed_count).collect::<Vec<_>>();
         points_to_delete.shuffle(&mut rand::rng());
         for idx in &points_to_delete[..deleted_count as usize] {
-            index.remove_document(*idx);
+            index.remove(*idx);
         }
 
         index
@@ -394,8 +443,8 @@ mod tests {
             .collect();
 
         for point_id in &points_to_delete {
-            mutable.remove_document(*point_id);
-            mmap_index.remove_document(*point_id);
+            mutable.remove(*point_id);
+            mmap_index.remove(*point_id);
         }
 
         // Check congruence after deletion

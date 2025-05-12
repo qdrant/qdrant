@@ -26,14 +26,13 @@ const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
 const DELETED_POINTS_FILE: &str = "deleted_points.dat";
 
 pub struct MmapInvertedIndex {
-    pub(in crate::index::field_index::full_text_index) path: PathBuf,
-    pub(in crate::index::field_index::full_text_index) postings: MmapPostings,
-    pub(in crate::index::field_index::full_text_index) vocab: MmapHashMap<str, TokenId>,
-    pub(in crate::index::field_index::full_text_index) point_to_tokens_count: MmapSlice<usize>,
-    pub(in crate::index::field_index::full_text_index) deleted_points:
-        MmapBitSliceBufferedUpdateWrapper,
+    pub(super) path: PathBuf,
+    pub(super) postings: MmapPostings,
+    pub(super) vocab: MmapHashMap<str, TokenId>,
+    pub(super) point_to_tokens_count: MmapSlice<usize>,
+    pub(super) deleted_points: MmapBitSliceBufferedUpdateWrapper,
     /// Number of points which are not deleted
-    pub(in crate::index::field_index::full_text_index) active_points_count: usize,
+    pub(super) active_points_count: usize,
     is_on_disk: bool,
 }
 
@@ -43,6 +42,7 @@ impl MmapInvertedIndex {
             postings,
             vocab,
             point_to_tokens_count,
+            point_to_doc,
             points_count: _,
         } = inverted_index;
 
@@ -61,6 +61,10 @@ impl MmapInvertedIndex {
             &vocab_path,
             vocab.iter().map(|(k, v)| (k.as_str(), std::iter::once(*v))),
         )?;
+
+        if let Some(_point_to_doc) = point_to_doc {
+            // TODO(phrase match): use point_to_doc
+        }
 
         // Save point_to_tokens_count, separated into a bitslice for None values and a slice for actual values
         //
@@ -167,6 +171,17 @@ impl InvertedIndex for MmapInvertedIndex {
         unreachable!("MmapInvertedIndex does not support mutable operations")
     }
 
+    fn index_tokens(
+        &mut self,
+        _idx: PointOffsetType,
+        _tokens: super::inverted_index::TokenSet,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<()> {
+        Err(OperationError::service_error(
+            "Can't add values to mmap immutable text index",
+        ))
+    }
+
     fn index_document(
         &mut self,
         _idx: PointOffsetType,
@@ -178,7 +193,7 @@ impl InvertedIndex for MmapInvertedIndex {
         ))
     }
 
-    fn remove_document(&mut self, idx: PointOffsetType) -> bool {
+    fn remove(&mut self, idx: PointOffsetType) -> bool {
         let Some(is_deleted) = self.deleted_points.get(idx as usize) else {
             return false; // Never existed
         };
