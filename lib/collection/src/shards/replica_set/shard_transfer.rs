@@ -365,6 +365,42 @@ impl ShardReplicaSet {
             .await
     }
 
+    /// Custom operation for transferring multiple batches of data in a single API call
+    /// 
+    /// Returns final point offset and total transferred count
+    /// 
+    /// # Cancel safety
+    /// 
+    /// This method is cancel safe.
+    pub async fn transfer_multiple_batches(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        batch_count: usize,
+        hashring_filter: Option<&HashRingRouter>,
+        merge_points: bool,
+    ) -> CollectionResult<(Option<PointIdType>, usize)> {
+        let local = self.local.read().await;
+
+        let Some(Shard::ForwardProxy(proxy)) = local.deref() else {
+            return Err(CollectionError::service_error(format!(
+                "Cannot transfer batch from shard {} because it is not proxified",
+                self.shard_id
+            )));
+        };
+
+        proxy
+            .transfer_multiple_batches(
+                offset,
+                batch_size,
+                batch_count,
+                hashring_filter,
+                merge_points,
+                &self.search_runtime,
+            )
+            .await
+    }
+
     /// Custom operation for transferring indexes from one shard to another during transfer
     ///
     /// # Cancel safety

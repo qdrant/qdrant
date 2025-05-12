@@ -154,9 +154,6 @@ impl ForwardProxyShard {
             return Ok((next_page_offset, count));
         }
 
-        // Check if we can use batch update API
-        let supports_batch_transfer = self.remote_shard.check_version(&MINIMAL_VERSION_FOR_BATCH_TRANSFER);
-
         // Use sync API to leverage potentially existing points
         // Normally use SyncPoints, to completely replace everything in the target shard
         // For resharding we need to merge points from multiple transfers, requiring a different operation
@@ -172,28 +169,112 @@ impl ForwardProxyShard {
         let insert_points_operation = CollectionUpdateOperations::PointOperation(point_operation);
         let operation = OperationWithClockTag::from(insert_points_operation);
 
-        if supports_batch_transfer {
-            // Use batch API
-            self.remote_shard
-                .forward_update_batch(
-                    vec![operation],
-                    wait,
-                    WriteOrdering::Weak,
-                    HwMeasurementAcc::disposable(), // Internal operation
-                )
-                .await?;
-        } else {
-            // Use regular API
-            self.remote_shard
-                .update(
-                    operation,
-                    wait,
-                    HwMeasurementAcc::disposable(), // Internal operation
-                )
-                .await?;
-        }
+        // Use regular API
+        self.remote_shard
+            .update(
+                operation,
+                wait,
+                HwMeasurementAcc::disposable(), // Internal operation
+            )
+            .await?;
 
         Ok((next_page_offset, count))
+    }
+
+    /// Move multiple batches of points to the remote shard in a single API call
+    ///
+    /// This method collects multiple batches of points and sends them all in 
+    /// one batch API call, reducing network overhead for large transfers.
+    ///
+    /// Returns the final point offset and total number of transferred points.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn transfer_multiple_batches(
+        &self,
+        offset: Option<PointIdType>,
+        batch_size: usize,
+        batch_count: usize,  // Number of batches to collect
+        hashring_filter: Option<&HashRingRouter>,
+        merge_points: bool,
+        runtime_handle: &Handle,
+    ) -> CollectionResult<(Option<PointIdType>, usize)> {
+        debug_assert!(batch_size > 0);
+        debug_assert!(batch_count > 0);
+        
+        let _update_lock = self.update_lock.lock().await;
+        
+        // Collect multiple batches into operations
+        let mut operations = Vec::with_capacity(batch_count);
+        let mut current_offset = offset;
+        let mut total_count = 0;
+        let mut final_next_offset = None;
+        
+        for i in 0..batch_count {
+            if current_offset.is_none() && i > 0 {
+                // We've reached the end of data in a previous batch
+                break;
+            }
+            
+            let (points, next_offset) = match hashring_filter {
+                Some(filter) => {
+                    self.read_batch_with_hashring(
+                        current_offset,
+                        batch_size,
+                        filter,
+                        runtime_handle
+                    ).await?
+                },
+                None => self.read_batch(current_offset, batch_size, runtime_handle).await?,
+            };
+            
+            // If batch is empty, we're done
+            if points.is_empty() {
+                break;
+            }
+            
+            total_count += points.len();
+            final_next_offset = next_offset;
+            
+            // Create operation for this batch
+            let point_operation = if !merge_points {
+                PointOperations::SyncPoints(PointSyncOperation {
+                    from_id: current_offset,
+                    to_id: next_offset,
+                    points,
+                })
+            } else {
+                PointOperations::UpsertPoints(PointInsertOperationsInternal::PointsList(points))
+            };
+            
+            operations.push(OperationWithClockTag::from(
+                CollectionUpdateOperations::PointOperation(point_operation)
+            ));
+            
+            // Update offset for next batch
+            current_offset = next_offset;
+        }
+        
+        // If no operations collected, return early
+        if operations.is_empty() {
+            return Ok((final_next_offset, 0));
+        }
+        
+        // Only wait on last batch (when we've reached the end of data)
+        let wait = final_next_offset.is_none();
+        
+        // Send all operations in a single batch API call - we know batch API is supported at this point
+        self.remote_shard
+            .forward_update_batch(
+                operations,
+                wait,
+                WriteOrdering::Weak,
+                HwMeasurementAcc::disposable(), // Internal operation
+            )
+            .await?;
+        
+        Ok((final_next_offset, total_count))
     }
 
     /// Read a batch of points to transfer to the remote shard
