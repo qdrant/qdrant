@@ -54,8 +54,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .tokens
             .iter()
             .map(|&token_id| {
-                let postings = self.postings.get(token_id as usize);
-                postings
+                
+                self.postings.get(token_id as usize)
             })
             .collect();
 

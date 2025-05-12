@@ -106,7 +106,7 @@ fn load_ca_certificate(tls_config: &TlsConfig) -> io::Result<Certificate> {
 }
 
 pub fn tonic_error_to_io_error(err: tonic::transport::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, err)
+    io::Error::other(err)
 }
 
 #[cfg(test)]
