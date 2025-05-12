@@ -7,7 +7,7 @@ use serde_json::Value;
 #[serde(rename_all = "snake_case")]
 pub enum Solution {
     /// A solution that can be applied immediately
-    Immediate(ImmediateSolution),
+    Immediate(Box<ImmediateSolution>),
 
     /// Two or more solutions to choose from
     ImmediateChoice(Vec<ImmediateSolution>),

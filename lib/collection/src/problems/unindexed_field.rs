@@ -155,7 +155,7 @@ impl Issue for UnindexedField {
             0 => unreachable!(
                 "Cannot create a solution without a field schema, protected by try_new()"
             ),
-            1 => Solution::Immediate(solutions.pop().unwrap()),
+            1 => Solution::Immediate(Box::new(solutions.pop().unwrap())),
             _ => Solution::ImmediateChoice(solutions),
         }
     }
