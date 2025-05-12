@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use bitpacking::BitPacker;
+use common::types::PointOffsetType;
 
 use crate::posting_list::{PostingChunk, PostingElement, PostingList};
 use crate::value_handler::ValueHandler;
@@ -11,6 +12,16 @@ pub struct PostingBuilder<V> {
 }
 
 impl<V> PostingBuilder<V> {
+    fn new() -> Self {
+        PostingBuilder {
+            elements: Vec::new(),
+        }
+    }
+
+    fn add(&mut self, id: PointOffsetType, value: V) {
+        self.elements.push(PostingElement { id, value });
+    }
+
     /// Unified implementation that works for both fixed-size and variable-size values
     ///
     /// This method uses the `ValueHandler::process_values` trait function to abstract the
