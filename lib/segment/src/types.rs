@@ -1510,6 +1510,24 @@ impl From<GeoPoint> for geo::Point {
     }
 }
 
+/// Geo point that implements `PartialOrd`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord)]
+#[cfg(test)]
+pub struct OrderedGeoPoint {
+    pub lon: OrderedFloat<f64>,
+    pub lat: OrderedFloat<f64>,
+}
+
+#[cfg(test)]
+impl From<GeoPoint> for OrderedGeoPoint {
+    fn from(geo_point: GeoPoint) -> Self {
+        OrderedGeoPoint {
+            lon: OrderedFloat(geo_point.lon),
+            lat: OrderedFloat(geo_point.lat),
+        }
+    }
+}
+
 pub trait PayloadContainer {
     /// Return value from payload by path.
     /// If value is not present in the payload, returns empty vector.

@@ -691,6 +691,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeSet, HashSet};
     use std::ops::Range;
 
     use common::counter::hardware_accumulator::HwMeasurementAcc;
@@ -706,7 +707,7 @@ mod tests {
     use crate::fixtures::payload_fixtures::random_geo_payload;
     use crate::json_path::JsonPath;
     use crate::types::test_utils::build_polygon;
-    use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius};
+    use crate::types::{GeoBoundingBox, GeoLineString, GeoPolygon, GeoRadius, OrderedGeoPoint};
 
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum IndexType {
@@ -1586,5 +1587,109 @@ mod tests {
             .collect_vec();
         // Only LOS_ANGELES is in the bounding box
         assert_eq!(point_offsets, vec![2]);
+    }
+
+    #[rstest]
+    fn test_congruence() {
+        const POINT_COUNT: usize = 500;
+        const TYPES: &[IndexType] = &[
+            IndexType::Mutable,
+            IndexType::Immutable,
+            IndexType::Mmap,
+            IndexType::RamMmap,
+        ];
+
+        let (indices, _data): (Vec<_>, Vec<_>) = TYPES
+            .iter()
+            .copied()
+            .map(|index_type| {
+                let (index, temp_dir, db) = build_random_index(POINT_COUNT, 20, index_type);
+                (index, (temp_dir, db))
+            })
+            .unzip();
+
+        let polygon = GeoPolygon {
+            exterior: GeoLineString {
+                points: vec![
+                    GeoPoint {
+                        lon: 19.415558242000287,
+                        lat: 69.18533258102943,
+                    },
+                    GeoPoint {
+                        lon: 2.4664944437317615,
+                        lat: 61.852748225727254,
+                    },
+                    GeoPoint {
+                        lon: 2.713789718828849,
+                        lat: 51.80793869181895,
+                    },
+                    GeoPoint {
+                        lon: 19.415558242000287,
+                        lat: 69.18533258102943,
+                    },
+                ],
+            },
+            interiors: None,
+        };
+        let hashes = polygon_hashes(&polygon, GEO_QUERY_MAX_REGION).unwrap();
+
+        for index in &indices[1..] {
+            assert_eq!(indices[0].points_count(), index.points_count());
+            assert_eq!(
+                indices[0].points_values_count(),
+                index.points_values_count(),
+            );
+            assert_eq!(
+                indices[0].max_values_per_point(),
+                index.max_values_per_point(),
+            );
+            let hw_counter = HardwareCounterCell::disposable();
+            for hash in &hashes {
+                assert_eq!(
+                    indices[0].points_of_hash(hash, &hw_counter),
+                    index.points_of_hash(hash, &hw_counter),
+                );
+                assert_eq!(
+                    indices[0].values_of_hash(hash, &hw_counter),
+                    index.values_of_hash(hash, &hw_counter),
+                );
+            }
+            assert_eq!(
+                indices[0]
+                    .large_hashes(20)
+                    .map(|(hash, _)| hash)
+                    .collect::<BTreeSet<_>>(),
+                index
+                    .large_hashes(20)
+                    .map(|(hash, _)| hash)
+                    .collect::<BTreeSet<_>>(),
+            );
+            assert_eq!(
+                indices[0].iterator(hashes.to_vec()).collect::<HashSet<_>>(),
+                index.iterator(hashes.to_vec()).collect::<HashSet<_>>(),
+            );
+            for point_id in 0..POINT_COUNT {
+                assert_eq!(
+                    indices[0].values_count(point_id as PointOffsetType),
+                    index.values_count(point_id as PointOffsetType),
+                );
+                assert_eq!(
+                    indices[0]
+                        .get_values(point_id as PointOffsetType)
+                        .unwrap()
+                        .map(OrderedGeoPoint::from)
+                        .collect::<BTreeSet<_>>(),
+                    index
+                        .get_values(point_id as PointOffsetType)
+                        .unwrap()
+                        .map(OrderedGeoPoint::from)
+                        .collect::<BTreeSet<_>>(),
+                );
+                assert_eq!(
+                    indices[0].values_is_empty(point_id as PointOffsetType),
+                    index.values_is_empty(point_id as PointOffsetType),
+                );
+            }
+        }
     }
 }
