@@ -4,7 +4,9 @@ use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
 
 use super::batch_processing::BatchAccum;
-use super::service::{InferenceData, InferenceInput, InferenceService, InferenceType};
+use super::service::{
+    InferenceData, InferenceInput, InferenceRequest, InferenceService, InferenceType,
+};
 use crate::common::inference::InferenceToken;
 
 pub struct BatchAccumInferred {
@@ -42,8 +44,19 @@ impl BatchAccumInferred {
             .map(InferenceInput::from)
             .collect();
 
+        let inference_request_token = inference_token
+            .0
+            .or(service.config.token.clone())
+            .unwrap_or_default();
+
+        let request = InferenceRequest {
+            inputs: inference_inputs,
+            inference: Some(inference_type),
+            token: inference_request_token,
+        };
+
         let vectors = service
-            .infer(inference_inputs, inference_type, inference_token)
+            .infer(request)
             .await
             .map_err(|e| StorageError::service_error(
                 format!("Inference request failed. Check if inference service is running and properly configured: {e}")
@@ -53,6 +66,14 @@ impl BatchAccumInferred {
             return Err(StorageError::service_error(
                 "Inference service returned no vectors. Check if models are properly loaded.",
             ));
+        }
+
+        if vectors.len() != objects_serialized.len() {
+            return Err(StorageError::service_error(format!(
+                "Inference service returned unexpected number of vectors. Expected {}, got {}",
+                objects_serialized.len(),
+                vectors.len()
+            )));
         }
 
         let objects = objects_serialized.into_iter().zip(vectors).collect();

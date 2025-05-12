@@ -504,7 +504,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
     } else {
-        log::info!("Inference service is not configured.");
+        log::warn!("Inference service is not configured.");
     }
 
     //
