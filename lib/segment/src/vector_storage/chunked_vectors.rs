@@ -220,9 +220,10 @@ impl quantization::EncodedStorage for ChunkedVectors<u8> {
         for i in 0..self.len() {
             buffer.write_all(self.get(i))?;
         }
+
+        // Explicitly flush write buffer so we can catch IO errors
         buffer.flush()?;
-        let file = buffer.into_inner().unwrap();
-        file.sync_all()?;
+        buffer.into_inner().unwrap().sync_all()?;
         Ok(())
     }
 

@@ -199,10 +199,12 @@ async fn _do_create_full_snapshot(
             builder.append_path_with_name(&temp_file, &snapshot_name)?;
         }
         builder.append_path_with_name(&config_path_clone, "config.json")?;
-
         builder.finish()?;
+
+        // Explicitly flush write buffer so we can catch IO errors
         drop(builder);
         file.flush()?;
+
         Ok::<(), StorageError>(())
     });
     archiving.await??;

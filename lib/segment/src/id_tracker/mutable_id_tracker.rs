@@ -722,7 +722,7 @@ fn store_version_changes(
     // Explicitly fsync file contents to ensure durability
     writer.flush().map_err(|err| {
         OperationError::service_error(format!(
-            "Failed to close ID tracker point versions write buffer: {err}",
+            "Failed to flush ID tracker point versions write buffer: {err}",
         ))
     })?;
     let file = writer.into_inner().unwrap();

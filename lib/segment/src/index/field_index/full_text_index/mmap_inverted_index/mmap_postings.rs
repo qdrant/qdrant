@@ -208,7 +208,7 @@ impl MmapPostings {
             }
         }
 
-        // Dropping will flush the buffer to the file
+        // Explicitly flush write buffer so we can catch IO errors
         bufw.flush()?;
         drop(bufw);
 
