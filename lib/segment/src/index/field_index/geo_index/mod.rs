@@ -1590,16 +1590,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_congruence() {
+    #[case(&[IndexType::Mutable, IndexType::Immutable, IndexType::Mmap, IndexType::RamMmap], false)]
+    #[case(&[IndexType::Mutable, IndexType::Immutable, IndexType::RamMmap], true)]
+    fn test_congruence(#[case] types: &[IndexType], #[case] deleted: bool) {
         const POINT_COUNT: usize = 500;
-        const TYPES: &[IndexType] = &[
-            IndexType::Mutable,
-            IndexType::Immutable,
-            IndexType::Mmap,
-            IndexType::RamMmap,
-        ];
 
-        let (indices, _data): (Vec<_>, Vec<_>) = TYPES
+        let (mut indices, _data): (Vec<_>, Vec<_>) = types
             .iter()
             .copied()
             .map(|index_type| {
@@ -1633,12 +1629,24 @@ mod tests {
         };
         let hashes = polygon_hashes(&polygon, GEO_QUERY_MAX_REGION).unwrap();
 
+        if deleted {
+            for index in indices.iter_mut() {
+                index.remove_point(10).unwrap();
+                index.remove_point(11).unwrap();
+                index.remove_point(12).unwrap();
+                index.remove_point(100).unwrap();
+                index.remove_point(150).unwrap();
+            }
+        }
+
         for index in &indices[1..] {
             assert_eq!(indices[0].points_count(), index.points_count());
-            assert_eq!(
-                indices[0].points_values_count(),
-                index.points_values_count(),
-            );
+            if !deleted {
+                assert_eq!(
+                    indices[0].points_values_count(),
+                    index.points_values_count(),
+                );
+            }
             assert_eq!(
                 indices[0].max_values_per_point(),
                 index.max_values_per_point(),
@@ -1673,18 +1681,20 @@ mod tests {
                     indices[0].values_count(point_id as PointOffsetType),
                     index.values_count(point_id as PointOffsetType),
                 );
-                assert_eq!(
-                    indices[0]
-                        .get_values(point_id as PointOffsetType)
-                        .unwrap()
-                        .map(OrderedGeoPoint::from)
-                        .collect::<BTreeSet<_>>(),
-                    index
-                        .get_values(point_id as PointOffsetType)
-                        .unwrap()
-                        .map(OrderedGeoPoint::from)
-                        .collect::<BTreeSet<_>>(),
-                );
+                if !deleted {
+                    assert_eq!(
+                        indices[0]
+                            .get_values(point_id as PointOffsetType)
+                            .unwrap()
+                            .map(OrderedGeoPoint::from)
+                            .collect::<BTreeSet<_>>(),
+                        index
+                            .get_values(point_id as PointOffsetType)
+                            .unwrap()
+                            .map(OrderedGeoPoint::from)
+                            .collect::<BTreeSet<_>>(),
+                    );
+                }
                 assert_eq!(
                     indices[0].values_is_empty(point_id as PointOffsetType),
                     index.values_is_empty(point_id as PointOffsetType),
