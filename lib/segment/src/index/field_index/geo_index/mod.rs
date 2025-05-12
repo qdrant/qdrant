@@ -1673,8 +1673,8 @@ mod tests {
                     .collect::<BTreeSet<_>>(),
             );
             assert_eq!(
-                indices[0].iterator(hashes.to_vec()).collect::<HashSet<_>>(),
-                index.iterator(hashes.to_vec()).collect::<HashSet<_>>(),
+                indices[0].iterator(hashes.clone()).collect::<HashSet<_>>(),
+                index.iterator(hashes.clone()).collect::<HashSet<_>>(),
             );
             for point_id in 0..POINT_COUNT {
                 assert_eq!(
