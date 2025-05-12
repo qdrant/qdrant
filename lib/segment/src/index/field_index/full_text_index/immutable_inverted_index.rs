@@ -4,6 +4,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 
 use super::inverted_index::InvertedIndex;
+use super::mmap_inverted_index::MmapInvertedIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
@@ -61,7 +62,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
         let postings = match postings_opt {
             // All tokens must have postings and query must not be empty
             Some(postings) if !postings.is_empty() => postings,
-            _ => return Box::new(vec![].into_iter()),
+            _ => return Box::new(std::iter::empty()),
         };
 
         let posting_readers: Vec<_> = postings
@@ -176,6 +177,68 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
                 .map(|doc| doc.as_ref().map(|doc| doc.len()))
                 .collect(),
             points_count: index.points_count,
+        }
+    }
+}
+
+impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
+    fn from(index: &MmapInvertedIndex) -> Self {
+        let hw_counter = HardwareCounterCell::disposable();
+
+        // Keep only tokens that have non-empty postings
+        let (postings, orig_to_new_token): (Vec<_>, HashMap<_, _>) = index
+            .iter_postings(&hw_counter)
+            .enumerate()
+            .filter_map(|(orig_token, posting)| {
+                posting
+                    .filter(|posting| !posting.is_empty())
+                    .map(|posting| (orig_token, posting))
+            })
+            .enumerate()
+            .map(|(new_token, (orig_token, posting))| {
+                (posting, (orig_token as TokenId, new_token as TokenId))
+            })
+            .unzip();
+
+        // Update vocab entries
+        let mut vocab: HashMap<String, TokenId> = index
+            .iter_vocab()
+            .filter_map(|(key, orig_token)| {
+                orig_to_new_token
+                    .get(orig_token)
+                    .map(|new_token| (key.to_string(), *new_token))
+            })
+            .collect();
+
+        let postings: Vec<CompressedPostingList> = postings
+            .into_iter()
+            .map(|postings| CompressedPostingList::new(&postings.to_vec()))
+            .collect();
+        vocab.shrink_to_fit();
+
+        debug_assert!(
+            postings.len() == vocab.len(),
+            "postings and vocab must be the same size",
+        );
+
+        let point_to_tokens_count = index
+            .point_to_tokens_count
+            .iter()
+            .enumerate()
+            .map(|(i, &n)| {
+                debug_assert!(
+                    index.is_active(i as u32) || n == 0,
+                    "deleted point index {i} has {n} tokens, expected zero",
+                );
+                (n > 0).then_some(n)
+            })
+            .collect();
+
+        ImmutableInvertedIndex {
+            postings,
+            vocab,
+            point_to_tokens_count,
+            points_count: index.points_count(),
         }
     }
 }

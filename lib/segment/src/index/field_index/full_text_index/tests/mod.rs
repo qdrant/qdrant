@@ -167,7 +167,7 @@ fn test_prefix_search(#[case] immutable: bool) {
     };
 
     let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
-    let mut index = FullTextIndex::builder(db.clone(), config.clone(), "text")
+    let mut index = FullTextIndex::builder_rocksdb(db.clone(), config.clone(), "text")
         .make_empty()
         .unwrap();
 
@@ -182,7 +182,7 @@ fn test_prefix_search(#[case] immutable: bool) {
     }
 
     if immutable {
-        index = FullTextIndex::new_memory(db, config, "text", false);
+        index = FullTextIndex::new_rocksdb(db, config, "text", false);
         index.load().unwrap();
     }
 
