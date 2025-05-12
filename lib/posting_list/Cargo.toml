@@ -1,5 +1,5 @@
 [package]
-name = "mmap_posting_list"
+name = "posting_list"
 version = "0.0.0"
 authors = ["Qdrant Team <info@qdrant.tech>"]
 license = "Apache-2.0"
@@ -12,7 +12,7 @@ workspace = true
 [dependencies]
 ahash = { workspace = true }
 memmap2 = { workspace = true }
-common = { path = "../common" }
+common = { path = "../common/common" }
 log = { workspace = true }
 bitpacking = { workspace = true }
 serde = { workspace = true }

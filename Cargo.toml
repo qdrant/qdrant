@@ -260,6 +260,7 @@ members = [
     "lib/collection",
     "lib/common/*",
     "lib/macros",
+    "lib/posting_list",
     "lib/segment",
     "lib/sparse",
     "lib/storage",

@@ -1,0 +1,88 @@
+use std::marker::PhantomData;
+
+use bitpacking::BitPacker;
+
+use crate::posting_list::{PostingChunk, PostingElement, PostingList};
+use crate::value_handler::ValueHandler;
+use crate::{BitPackerImpl, CHUNK_SIZE};
+
+pub struct PostingBuilder<V> {
+    elements: Vec<PostingElement<V>>,
+}
+
+impl<V> PostingBuilder<V> {
+    /// Unified implementation that works for both fixed-size and variable-size values
+    ///
+    /// This method uses the `ValueHandler::process_values` trait function to abstract the
+    /// differences between the two implementations, allowing us to share the common logic.
+    pub(crate) fn build_generic<H, S>(mut self) -> PostingList<V, S>
+    where
+        H: ValueHandler<V, S>,
+        S: Sized + Copy,
+        V: Clone,
+    {
+        self.elements.sort_unstable_by_key(|e| e.id);
+
+        let num_elements = self.elements.len();
+
+        // extract ids and values into separate lists
+        let (ids, values): (Vec<_>, Vec<_>) =
+            self.elements.into_iter().map(|e| (e.id, e.value)).unzip();
+
+        // process values
+        let (sized_values, var_sized_data) = H::process_values(values);
+
+        let bitpacker = BitPackerImpl::new();
+        let mut chunks = Vec::with_capacity(ids.len() / CHUNK_SIZE);
+        let mut id_data_size = 0;
+
+        // process full chunks
+        let ids_chunks_iter = ids.chunks_exact(CHUNK_SIZE);
+        let values_chunks_iter = sized_values.chunks_exact(CHUNK_SIZE);
+        let remainder_ids = ids_chunks_iter.remainder();
+        let remainder_values = values_chunks_iter.remainder();
+
+        for (chunk_ids, chunk_values) in ids_chunks_iter.zip(values_chunks_iter) {
+            let initial = chunk_ids[0];
+            let chunk_bits = bitpacker.num_bits_strictly_sorted(initial.checked_sub(1), &chunk_ids);
+            let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
+
+            chunks.push(PostingChunk {
+                initial,
+                offset: id_data_size as u32,
+                sized_values: chunk_values
+                    .try_into()
+                    .expect("should be a valid chunk size"),
+            });
+            id_data_size += chunk_size;
+        }
+
+        // now process remainders
+        let mut remainders = Vec::with_capacity(num_elements % CHUNK_SIZE);
+        for (&id, &value) in remainder_ids.iter().zip(remainder_values) {
+            remainders.push(PostingElement { id, value });
+        }
+
+        // compress id_data
+        let mut id_data = vec![0u8; id_data_size];
+        for (chunk_index, chunk_ids) in ids.chunks_exact(CHUNK_SIZE).enumerate() {
+            let chunk = &chunks[chunk_index];
+            let chunk_size = PostingChunk::calculate_ids_chunk_size(&chunks, &id_data, chunk_index);
+            let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
+            bitpacker.compress_strictly_sorted(
+                chunk.initial.checked_sub(1),
+                &chunk_ids,
+                &mut id_data[chunk.offset as usize..chunk.offset as usize + chunk_size],
+                chunk_bits as u8,
+            );
+        }
+
+        PostingList {
+            id_data,
+            var_sized_data,
+            chunks,
+            remainders,
+            _phantom: PhantomData,
+        }
+    }
+}
