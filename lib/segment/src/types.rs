@@ -961,7 +961,6 @@ pub struct StrictModeConfig {
     /// Max size of a collections payload storage in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
     #[merge(strategy = merge::option::overwrite_none)]
-    #[merge(strategy = merge::option::overwrite_none)]
     pub max_collection_payload_size_bytes: Option<usize>,
 
     /// Max number of points estimated in a collection

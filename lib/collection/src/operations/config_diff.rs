@@ -482,4 +482,30 @@ mod tests {
         let new_config = update.update(&base_config).unwrap();
         assert_eq!(new_config.wal_segments_ahead, 2)
     }
+
+    #[test]
+    fn test_none_value_does_not_overwrite() {
+        let base_config = HnswConfig {
+            m: 16,
+            ef_construct: 100,
+            ..HnswConfig::default()
+        };
+
+        let diff = HnswConfigDiff {
+            m: None,                 // This should not overwrite the existing value
+            ef_construct: Some(200), // This should overwrite
+            full_scan_threshold: None,
+            max_indexing_threads: None,
+            on_disk: None,
+            payload_m: None,
+        };
+
+        // Merge the diff into the base config
+        let merged = diff.update(&base_config).unwrap();
+
+        // The m value should not be changed
+        assert_eq!(merged.m, 16);
+        // The ef_construct value should be updated
+        assert_eq!(merged.ef_construct, 200);
+    }
 }
