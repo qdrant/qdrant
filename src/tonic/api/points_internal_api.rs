@@ -3,7 +3,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::HardwareUsage;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
@@ -16,6 +15,7 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdateBatchInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use api::grpc::update_operation::Update;
+use api::grpc::{HardwareUsage, Usage};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
@@ -605,9 +605,9 @@ impl PointsInternal for PointsInternalService {
                     }
                 },
             };
-            let mut response = result.into_inner();
+            let response = result.into_inner();
 
-            if let Some(usage) = response.usage.take() {
+            if let Some(usage) = response.clone().usage.unwrap_or_default().hardware.take() {
                 total_usage.add(usage);
             }
 
@@ -615,7 +615,9 @@ impl PointsInternal for PointsInternalService {
         }
 
         if let Some(mut last_result) = last_result.take() {
-            last_result.usage = Some(total_usage);
+            last_result.usage = Some(Usage {
+                hardware: Some(total_usage),
+            });
             Ok(Response::new(last_result))
         } else {
             // This response is possible if there are no operations in the request

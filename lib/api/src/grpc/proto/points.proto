@@ -830,7 +830,7 @@ message UpdateBatchPoints {
 message PointsOperationResponse {
   UpdateResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message UpdateResult {
@@ -887,25 +887,25 @@ message GroupsResult {
 message SearchResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message QueryResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message QueryBatchResponse {
   repeated BatchResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message QueryGroupsResponse {
   GroupsResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message BatchResult {
@@ -915,26 +915,26 @@ message BatchResult {
 message SearchBatchResponse {
   repeated BatchResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message SearchGroupsResponse {
   GroupsResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message CountResponse {
   CountResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message ScrollResponse {
   optional PointId next_page_offset = 1; // Use this offset for the next query
   repeated RetrievedPoint result = 2;
   double time = 3; // Time spent to process
-  optional HardwareUsage usage = 4;
+  optional Usage usage = 4;
 }
 
 message CountResult {
@@ -953,37 +953,37 @@ message RetrievedPoint {
 message GetResponse {
   repeated RetrievedPoint result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message RecommendResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message RecommendBatchResponse {
   repeated BatchResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message DiscoverResponse {
   repeated ScoredPoint result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message DiscoverBatchResponse {
   repeated BatchResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message RecommendGroupsResponse {
   GroupsResult result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message UpdateBatchResponse {
@@ -999,13 +999,13 @@ message FacetResponse {
 message SearchMatrixPairsResponse {
   SearchMatrixPairs result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 message SearchMatrixOffsetsResponse {
   SearchMatrixOffsets result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional Usage usage = 3;
 }
 
 // ---------------------------------------------
@@ -1165,6 +1165,14 @@ message GeoPoint {
   double lon = 1;
   double lat = 2;
 }
+
+// ---------------------------------------------
+// ----------- Measurements collector ----------
+// ---------------------------------------------
+message Usage {
+  optional HardwareUsage hardware = 1;
+}
+
 
 // ---------------------------------------------
 // ------------ Hardware measurements ----------
