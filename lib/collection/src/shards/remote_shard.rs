@@ -1201,7 +1201,9 @@ impl ShardOperation for RemoteShard {
         } = batch_response;
 
         if let Some(hw_usage) = usage {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            if let Some(hardware) = hw_usage.hardware {
+                hw_measurement_acc.accumulate_request(hardware);
+            }
         }
 
         let result = results
@@ -1271,7 +1273,9 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = response.usage {
-            hw_measurement_acc.accumulate_request(hw_usage);
+            if let Some(hardware) = hw_usage.hardware {
+                hw_measurement_acc.accumulate_request(hardware);
+            }
         }
 
         let hits = response

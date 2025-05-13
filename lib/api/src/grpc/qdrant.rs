@@ -9887,7 +9887,7 @@ pub struct QueryBatchResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "5")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
@@ -9953,7 +9953,7 @@ pub struct FacetResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 /// Generated client implementations.
 pub mod points_internal_client {

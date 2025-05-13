@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use api::rest::models::{CollectionsResponse, HardwareUsage, VersionInfo};
+use api::rest::models::{CollectionsResponse, Usage, VersionInfo};
 use api::rest::schema::PointInsertOperations;
 use api::rest::{
     FacetRequest, FacetResponse, QueryGroupsRequest, QueryRequest, QueryRequestBatch,
@@ -97,7 +97,7 @@ struct AllDefinitions {
     bk: SearchMatrixPairsResponse,
     bl: FacetRequest,
     bm: FacetResponse,
-    bn: HardwareUsage,
+    bn: Usage,
 }
 
 fn save_schema<T: JsonSchema>() {

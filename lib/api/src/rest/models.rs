@@ -45,7 +45,16 @@ pub struct ApiResponse<D> {
     pub status: ApiStatus,
     pub time: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<HardwareUsage>,
+    pub usage: Option<Usage>,
+}
+
+/// Usage of the hardware resources, spent to process the request
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct Usage {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hardware: Option<HardwareUsage>,
 }
 
 /// Usage of the hardware resources, spent to process the request
