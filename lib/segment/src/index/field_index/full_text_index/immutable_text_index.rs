@@ -101,7 +101,7 @@ impl ImmutableFullTextIndex {
     }
 
     #[cfg(test)]
-    pub fn get_db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
+    pub fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match self.storage {
             Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
             Storage::Mmap(_) => None,
