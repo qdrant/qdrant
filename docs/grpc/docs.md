@@ -3057,6 +3057,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | hardware                 | [HardwareUsage](#qdrant-HardwareUsage) |  |  |
 
 
+<a name="qdrant-HardwareUsage"></a>
 ### HardwareUsage
 
 
