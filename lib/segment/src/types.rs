@@ -771,6 +771,7 @@ impl From<BinaryQuantizationConfig> for QuantizationConfig {
 pub struct StrictModeSparse {
     /// Max length of sparse vector
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub max_length: Option<usize>,
 }
@@ -832,6 +833,7 @@ impl From<StrictModeSparse> for StrictModeSparseOutput {
 pub struct StrictModeMultivector {
     /// Max number of vectors in a multivector
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub max_vectors: Option<usize>,
 }
@@ -893,81 +895,100 @@ pub struct StrictModeConfig {
     // Global
     /// Whether strict mode is enabled for a collection or not.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub enabled: Option<bool>,
 
     /// Max allowed `limit` parameter for all APIs that don't have their own max limit.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub max_query_limit: Option<usize>,
 
     /// Max allowed `timeout` parameter.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub max_timeout: Option<usize>,
 
     /// Allow usage of unindexed fields in retrieval based (e.g. search) filters.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub unindexed_filtering_retrieve: Option<bool>,
 
     /// Allow usage of unindexed fields in filtered updates (e.g. delete by payload).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub unindexed_filtering_update: Option<bool>,
 
     // Search
     /// Max HNSW value allowed in search parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub search_max_hnsw_ef: Option<usize>,
 
     /// Whether exact search is allowed or not.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub search_allow_exact: Option<bool>,
 
     /// Max oversampling value allowed in search.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub search_max_oversampling: Option<f64>,
 
     /// Max batchsize when upserting
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub upsert_max_batchsize: Option<usize>,
 
     /// Max size of a collections vector storage in bytes, ignoring replicas.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub max_collection_vector_size_bytes: Option<usize>,
 
     /// Max number of read operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub read_rate_limit: Option<usize>,
 
     /// Max number of write operations per minute per replica
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub write_rate_limit: Option<usize>,
 
     /// Max size of a collections payload storage in bytes
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub max_collection_payload_size_bytes: Option<usize>,
 
     /// Max number of points estimated in a collection
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(range(min = 1))]
     pub max_points_count: Option<usize>,
 
     /// Max conditions a filter can have.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub filter_max_conditions: Option<usize>,
 
     /// Max size of a condition, eg. items in `MatchAny`.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub condition_max_size: Option<usize>,
 
     /// Multivector configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(nested)]
     pub multivector_config: Option<StrictModeMultivectorConfig>,
 
     /// Sparse vector configuration
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(nested)]
     pub sparse_config: Option<StrictModeSparseConfig>,
 }

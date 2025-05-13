@@ -225,7 +225,7 @@ thiserror = "2.0.12"
 libc = "0.2"
 bitvec = "1.0.1"
 smallvec = { version = "1.15.0", features = ["write"] }
-merge = "0.1.0"
+merge = "0.2.0"
 dashmap = "6.1"
 
 [[bin]]

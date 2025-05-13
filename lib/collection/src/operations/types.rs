@@ -1908,6 +1908,7 @@ impl From<&segment::types::VectorDataConfig> for VectorParamsBase {
 pub struct VectorParamsDiff {
     /// Update params for HNSW index. If empty object - it will be unset.
     #[serde(default, skip_serializing_if = "is_hnsw_diff_empty")]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(nested)]
     pub hnsw_config: Option<HnswConfigDiff>,
     /// Update params for quantization. If none - it is left unchanged.
@@ -1916,10 +1917,12 @@ pub struct VectorParamsDiff {
         alias = "quantization",
         skip_serializing_if = "Option::is_none"
     )]
+    #[merge(strategy = merge::option::overwrite_none)]
     #[validate(nested)]
     pub quantization_config: Option<QuantizationConfigDiff>,
     /// If true, vectors are served from disk, improving RAM usage at the cost of latency
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[merge(strategy = merge::option::overwrite_none)]
     pub on_disk: Option<bool>,
 }
 
