@@ -463,47 +463,6 @@ impl TableOfContent {
         false
     }
 
-    /// Aborts transfers related (from + to) to the given peer
-    pub async fn abort_peer_transfers(
-        &self,
-        dispatcher: Arc<Dispatcher>,
-        access: Access,
-        peer_id: PeerId,
-    ) -> CollectionResult<()> {
-        for collection in self.collections.read().await.values() {
-            let related_transfers = collection
-                .shards_holder()
-                .read()
-                .await
-                .get_transfers(|transfer| transfer.from == peer_id || transfer.to == peer_id);
-
-            for transfer in related_transfers {
-                dispatcher
-                    .submit_collection_meta_op(
-                        CollectionMetaOperations::TransferShard(
-                            collection.name(),
-                            ShardTransferOperations::Abort {
-                                transfer: transfer.key(),
-                                reason: "Peer removed".to_string(),
-                            },
-                        ),
-                        access.clone(),
-                        None,
-                    )
-                    .await.map_err(|err| {
-                        CollectionError::service_error(
-                            format!(
-                                "Failed to abort transfer {transfer:?} for collection {} before force deleting peer: {err}",
-                                collection.name()
-                            )
-                        )
-                    })?;
-            }
-        }
-
-        Ok(())
-    }
-
     pub async fn get_telemetry_data(
         &self,
         detail: TelemetryDetail,
