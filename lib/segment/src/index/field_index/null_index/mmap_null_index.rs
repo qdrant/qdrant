@@ -209,7 +209,7 @@ impl MmapNullIndex {
 
 impl PayloadFieldIndex for MmapNullIndex {
     fn count_indexed_points(&self) -> usize {
-        self.has_values_slice.count_flags()
+        self.has_values_slice.len()
     }
 
     fn load(&mut self) -> OperationResult<bool> {
