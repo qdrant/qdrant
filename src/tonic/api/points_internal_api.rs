@@ -375,7 +375,9 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: request_hw_data.to_grpc_api(),
+        usage: Option::from(Usage {
+            hardware: request_hw_data.to_grpc_api(),
+        }),
     };
 
     Ok(Response::new(response))
@@ -423,7 +425,9 @@ async fn facet_counts_internal(
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
         time: timing.elapsed().as_secs_f64(),
-        usage: request_hw_data.to_grpc_api(),
+        usage: Option::from(Usage {
+            hardware: request_hw_data.to_grpc_api(),
+        }),
     };
 
     Ok(Response::new(response))
