@@ -659,7 +659,7 @@ impl SegmentBuilder {
         };
 
         // Move fully constructed segment into collection directory and load back to RAM
-        std::fs::rename(temp_dir.into_path(), &destination_path)
+        std::fs::rename(temp_dir.keep(), &destination_path)
             .describe("Moving segment data after optimization")?;
 
         let loaded_segment = load_segment(&destination_path, stopped)?.ok_or_else(|| {
