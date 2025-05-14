@@ -588,3 +588,96 @@ def test_payload_index_overwrite(collection_name):
     )
     assert response.ok
     assert len(response.json()["result"]["points"]) == 1
+
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 3
+
+    # check point payload upsert cleared if empty
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": [1, 2, 3, 4],
+                    "payload": { },
+                },
+            ]
+        },
+    )
+    assert response.ok
+
+    # payload cleared
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 0
+
+    # check point payload upsert overwrite
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": [1, 2, 3, 4],
+                    "payload": {
+                        "key": {
+                            "nested": 1
+                        },
+                    },
+                },
+            ]
+        },
+    )
+    assert response.ok
+
+    # payload overwritten
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 1
+    assert response.json()['result']['payload']["key"] == {"nested": 1}
+
+    # check point payload upsert cleared if missing
+    response = request_with_validation(
+        api="/collections/{collection_name}/points",
+        method="PUT",
+        path_params={"collection_name": collection_name},
+        query_params={"wait": "true"},
+        body={
+            "points": [
+                {
+                    "id": 1,
+                    "vector": [1, 2, 3, 4]
+                },
+            ]
+        },
+    )
+    assert response.ok
+
+    # payload cleared
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/{id}',
+        method="GET",
+        path_params={'collection_name': collection_name, 'id': 1},
+    )
+    assert response.ok
+    assert len(response.json()['result']['payload']) == 0
