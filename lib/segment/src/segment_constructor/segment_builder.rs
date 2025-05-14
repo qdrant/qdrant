@@ -374,7 +374,7 @@ impl SegmentBuilder {
                 let old_internal_id = point_data.internal_id;
 
                 let other_payload = payloads[point_data.segment_index.get() as usize]
-                    .get_payload(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
+                    .get_payload_sequential(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
 
                 match self
                     .id_tracker
