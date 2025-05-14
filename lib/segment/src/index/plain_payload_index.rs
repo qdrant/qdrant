@@ -216,6 +216,14 @@ impl PayloadIndex for PlainPayloadIndex {
         unreachable!()
     }
 
+    fn get_payload_sequential(
+        &self,
+        _point_id: PointOffsetType,
+        _hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        unreachable!()
+    }
+
     fn delete_payload(
         &mut self,
         _point_id: PointOffsetType,

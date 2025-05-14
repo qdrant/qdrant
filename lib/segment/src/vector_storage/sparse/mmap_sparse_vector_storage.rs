@@ -204,6 +204,15 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
             .map(SparseVector::try_from)
             .transpose()
     }
+
+    fn get_sparse_sequential(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+        let stored_sparse = self
+            .storage
+            .read()
+            .get_value_sequential(key, &HardwareCounterCell::disposable())
+            .ok_or_else(|| OperationError::service_error(format!("Key {key} not found")))?;
+        SparseVector::try_from(stored_sparse)
+    }
 }
 
 impl VectorStorage for MmapSparseVectorStorage {
@@ -229,8 +238,9 @@ impl VectorStorage for MmapSparseVectorStorage {
     }
 
     fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
-        // No optimizations available for gridstore (yet).
-        self.get_vector(key)
+        self.get_sparse_sequential(key)
+            .map(CowVector::from)
+            .unwrap_or_else(|_| CowVector::default_sparse())
     }
 
     /// Get vector by key, if it exists.

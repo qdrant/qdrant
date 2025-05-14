@@ -151,6 +151,11 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
         Ok(record.vector)
     }
 
+    fn get_sparse_sequential(&self, key: PointOffsetType) -> OperationResult<SparseVector> {
+        // Already in memory, so no sequential optimizations available.
+        self.get_sparse(key)
+    }
+
     fn get_sparse_opt(&self, key: PointOffsetType) -> OperationResult<Option<SparseVector>> {
         let bin_key = bincode::serialize(&key)
             .map_err(|_| OperationError::service_error("Cannot serialize sparse vector key"))?;

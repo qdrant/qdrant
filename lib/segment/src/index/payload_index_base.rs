@@ -130,6 +130,13 @@ pub trait PayloadIndex {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<Payload>;
 
+    /// Get payload for point with potential optimization for sequential access.
+    fn get_payload_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload>;
+
     /// Delete payload by key
     fn delete_payload(
         &mut self,
