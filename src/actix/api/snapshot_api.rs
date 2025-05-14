@@ -709,7 +709,9 @@ async fn recover_partial_snapshot_from(
                 .await?
                 .error_for_status()?;
 
-            let mut partial_snapshot_file = tokio::fs::File::from_std(partial_snapshot_file);
+            let mut partial_snapshot_file =
+                tokio::io::BufWriter::new(tokio::fs::File::from_std(partial_snapshot_file));
+
             let mut partial_snapshot_stream = response.bytes_stream();
 
             while let Some(chunk) = partial_snapshot_stream.next().await {
