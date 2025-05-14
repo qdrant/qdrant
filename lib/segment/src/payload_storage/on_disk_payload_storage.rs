@@ -133,6 +133,15 @@ impl PayloadStorage for OnDiskPayloadStorage {
         }
     }
 
+    fn get_sequential(
+        &self,
+        point_id: PointOffsetType,
+        hw_counter: &HardwareCounterCell,
+    ) -> OperationResult<Payload> {
+        // No sequential access optimizations for rocksdb.
+        self.get(point_id, hw_counter)
+    }
+
     fn delete(
         &mut self,
         point_id: PointOffsetType,
