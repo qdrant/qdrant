@@ -447,7 +447,6 @@ impl PayloadFieldIndex for MmapBoolIndex {
     fn files(&self) -> Vec<std::path::PathBuf> {
         let mut files = self.trues_slice.files();
         files.extend(self.falses_slice.files());
-
         files
     }
 
