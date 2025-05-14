@@ -1,19 +1,22 @@
+use std::marker::PhantomData;
+
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::posting_builder::PostingBuilder;
-use crate::value_handler::{FixedSizeHandler, ValueHandler, VarSizeHandler};
+use crate::value_handler::{ValueHandler, VarSized};
 use crate::{BitPackerImpl, CHUNK_SIZE, CompressedPostingList, FixedSizedValue, VarSizedValue};
 
 /// V is the value we are interested to store along with the id.
 /// S is the type of value we store within the chunk, should be small like an int. For
-/// variable-sized values, this acts as a pointer into var_sized_data
-pub struct PostingList<V, S = V> {
+/// variable-sized values, this acts as a pointer into var_size_data
+pub struct PostingList<V, S> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<S>>,
     pub(crate) remainders: Vec<PostingElement<S>>,
-    pub(crate) var_sized_data: Vec<u8>,
-    pub(crate) _phantom: std::marker::PhantomData<V>,
+    pub(crate) var_size_data: Vec<u8>,
+    pub(crate) last_id: Option<PointOffsetType>,
+    pub(crate) _phantom: PhantomData<V>,
 }
 
 #[derive(Clone, Debug)]
@@ -53,39 +56,56 @@ impl<S: Sized> PostingChunk<S> {
 
 // Fixed-sized value implementation
 // For fixed-size values, we store them directly in the PostingChunk
-impl<V: FixedSizedValue + Copy + Default> CompressedPostingList<V> for PostingList<V> {
-    type Fixed = V;
-    type Var = ();
-
+impl<V: FixedSizedValue + Copy + Default> CompressedPostingList<V> for PostingList<V, V> {
     fn from_builder(builder: PostingBuilder<V>) -> Self {
-        builder.build_generic::<FixedSizeHandler, _>()
+        builder.build_generic::<V>()
     }
 }
 
 // Variable-sized value implementation.
 // For variable-size values, we store offsets in the PostingChunk that point to
-// the actual values stored in var_sized_data.
-// Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_sized_values`
+// the actual values stored in var_size_data.
+// Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_size_data`
 impl<V: VarSizedValue + Clone> CompressedPostingList<V> for PostingList<V, u32> {
-    type Fixed = u32;
-    type Var = V;
-
     fn from_builder(builder: PostingBuilder<V>) -> Self {
-        builder.build_generic::<VarSizeHandler, _>()
+        builder.build_generic::<VarSized<V>>()
     }
 }
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug, Clone)]
-pub struct PostingListView<'a, S> {
+pub struct PostingListView<'a, V, S> {
     id_data: &'a [u8],
-    var_size_data: &'a [u8],
     chunks: &'a [PostingChunk<S>],
+    var_size_data: &'a [u8],
     remainders: &'a [PostingElement<S>],
     last_id: Option<PointOffsetType>,
+    _phantom: PhantomData<V>,
 }
 
-impl<'a, S> PostingListView<'a, S> {
+impl<V, S> PostingList<V, S> {
+    fn view(&self) -> PostingListView<V, S> {
+        let PostingList {
+            id_data,
+            chunks,
+            remainders,
+            var_size_data,
+            last_id,
+            _phantom,
+        } = self;
+
+        PostingListView {
+            id_data,
+            chunks,
+            var_size_data,
+            remainders,
+            last_id: *last_id,
+            _phantom: *_phantom,
+        }
+    }
+}
+
+impl<'a, V, S> PostingListView<'a, V, S> {
     fn decompress_chunk(
         &self,
         chunk_index: usize,
@@ -115,8 +135,8 @@ struct IteratorPosition {
     point_id: Option<PointOffsetType>,
 }
 
-pub struct PostingListIterator<'a, S> {
-    list: PostingListView<'a, S>,
+pub struct PostingListIterator<'a, V, S> {
+    list: PostingListView<'a, V, S>,
 
     /// Determines whether the decommpressed chunk contains valid data for the position
     unpacked: bool,
@@ -128,8 +148,8 @@ pub struct PostingListIterator<'a, S> {
     pos: IteratorPosition,
 }
 
-impl<'a, S: Copy> PostingListIterator<'a, S> {
-    fn new(list: PostingListView<'a, S>) -> Self {
+impl<'a, S: Copy, V: ValueHandler<V, Sized = S>> PostingListIterator<'a, V, S> {
+    fn new(list: PostingListView<'a, V, S>) -> Self {
         Self {
             list,
             unpacked: false,
@@ -150,10 +170,7 @@ impl<'a, S: Copy> PostingListIterator<'a, S> {
         &self.decompressed_chunk
     }
 
-    fn current<V, H>(&mut self) -> Option<PostingElement<V>>
-    where
-        H: ValueHandler<V, S>,
-    {
+    fn current(&mut self) -> Option<PostingElement<V>> {
         let global_idx = self.pos.idx;
         let chunk_idx = global_idx / CHUNK_SIZE;
         let local_idx = global_idx % CHUNK_SIZE;
@@ -166,14 +183,14 @@ impl<'a, S: Copy> PostingListIterator<'a, S> {
                 .sized_values(chunk_idx)
                 .get(local_idx + 1)
                 .copied();
-            let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
+            let value = V::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
             Some(PostingElement { id, value })
         } else {
             self.list.remainders.get(local_idx).map(|e| {
                 let id = e.id;
                 let next_sized_value = self.list.remainders.get(local_idx + 1).map(|r| r.value);
-                let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
+                let value = V::get_value(e.value, next_sized_value, self.list.var_size_data);
 
                 PostingElement { id, value }
             })

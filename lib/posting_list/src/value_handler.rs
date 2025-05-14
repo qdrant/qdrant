@@ -5,29 +5,29 @@ use crate::{FixedSizedValue, VarSizedValue};
 /// This trait handles the differences between fixed-size and variable-size value
 /// implementations, allowing us to have a unified implementation of `from_builder`.
 ///
-/// - For fixed-size values, the storage type S is the same as the value type V
-/// - For variable-size values, S is a pointer/offset (u32) into the var_sized_data
-pub(crate) trait ValueHandler<V, S: Sized + Copy> {
+/// - For fixed-size values, the associated type [`ValueHandler::Fixed`] is the same as the generic type V
+/// - For variable-size values, [`ValueHandler::Fixed`] is an offset (u32) into the var_sized_data
+pub(crate) trait ValueHandler<V> {
+    /// The value to store within each chunk, or alongside each id.
+    type Sized: Sized + Copy;
+
     /// Process values before storage and return the necessary var_sized_data
     ///
     /// For fixed-size values, this returns the values themselves and an empty var_sized_data
     /// For variable-size values, this returns offsets and the actual serialized data
-    fn process_values(values: Vec<V>) -> (Vec<S>, Vec<u8>);
+    fn process_values(values: Vec<V>) -> (Vec<Self::Sized>, Vec<u8>);
 
     /// Retrieve a value.
     ///
     /// For sized values it returns the first argument.
     /// For variable-size values it returns the value between the two sized values in var_data.
-    fn get_value(sized_value: S, next_sized_value: Option<S>, var_data: &[u8]) -> V;
+    fn get_value(sized_value: Self::Sized, next_sized_value: Option<Self::Sized>, var_data: &[u8]) -> V;
 }
 
-/// Handler for fixed-sized values
-pub(crate) struct FixedSizeHandler;
+/// Fixed-size value handler
+impl<V: FixedSizedValue + Copy + Default> ValueHandler<V> for V {
+    type Sized = V;
 
-/// Handler for variable-sized values
-pub(crate) struct VarSizeHandler;
-
-impl<V: FixedSizedValue + Copy + Default> ValueHandler<V, V> for FixedSizeHandler {
     fn process_values(values: Vec<V>) -> (Vec<V>, Vec<u8>) {
         (values, Vec::new())
     }
@@ -37,7 +37,13 @@ impl<V: FixedSizedValue + Copy + Default> ValueHandler<V, V> for FixedSizeHandle
     }
 }
 
-impl<V: VarSizedValue + Clone> ValueHandler<V, u32> for VarSizeHandler {
+/// Wrapper to specify the implementation of ValueHandler for variable-size values
+pub(crate) struct VarSized<V: VarSizedValue>(V);
+
+/// Var-size value handler
+impl<V: VarSizedValue> ValueHandler<V> for VarSized<V> {
+    type Sized = u32;
+
     fn process_values(values: Vec<V>) -> (Vec<u32>, Vec<u8>) {
         let mut var_sized_data = Vec::new();
         let mut offsets = Vec::with_capacity(values.len());

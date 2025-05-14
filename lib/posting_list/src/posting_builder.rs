@@ -26,11 +26,9 @@ impl<V> PostingBuilder<V> {
     ///
     /// This method uses the `ValueHandler::process_values` trait function to abstract the
     /// differences between the two implementations, allowing us to share the common logic.
-    pub(crate) fn build_generic<H, S>(mut self) -> PostingList<V, S>
+    pub(crate) fn build_generic<H>(mut self) -> PostingList<V, H::Sized>
     where
-        H: ValueHandler<V, S>,
-        S: Sized + Copy,
-        V: Clone,
+        H: ValueHandler<V>,
     {
         self.elements.sort_unstable_by_key(|e| e.id);
 
@@ -41,7 +39,7 @@ impl<V> PostingBuilder<V> {
             self.elements.into_iter().map(|e| (e.id, e.value)).unzip();
 
         // process values
-        let (sized_values, var_sized_data) = H::process_values(values);
+        let (sized_values, var_size_data) = H::process_values(values);
 
         let bitpacker = BitPackerImpl::new();
         let mut chunks = Vec::with_capacity(ids.len() / CHUNK_SIZE);
@@ -88,11 +86,14 @@ impl<V> PostingBuilder<V> {
             );
         }
 
+        let last_id = ids.last().copied();
+
         PostingList {
             id_data,
-            var_sized_data,
+            var_size_data,
             chunks,
             remainders,
+            last_id,
             _phantom: PhantomData,
         }
     }
