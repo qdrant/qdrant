@@ -12,13 +12,13 @@ pub struct PostingBuilder<V> {
 }
 
 impl<V> PostingBuilder<V> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         PostingBuilder {
             elements: Vec::new(),
         }
     }
 
-    fn add(&mut self, id: PointOffsetType, value: V) {
+    pub fn add(&mut self, id: PointOffsetType, value: V) {
         self.elements.push(PostingElement { id, value });
     }
 
@@ -76,12 +76,12 @@ impl<V> PostingBuilder<V> {
         let mut id_data = vec![0u8; id_data_size];
         for (chunk_index, chunk_ids) in ids.chunks_exact(CHUNK_SIZE).enumerate() {
             let chunk = &chunks[chunk_index];
-            let chunk_size = PostingChunk::calculate_ids_chunk_size(&chunks, &id_data, chunk_index);
-            let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
+            let compressed_size = PostingChunk::get_compressed_size(&chunks, &id_data, chunk_index);
+            let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_SIZE;
             bitpacker.compress_strictly_sorted(
                 chunk.initial.checked_sub(1),
                 &chunk_ids,
-                &mut id_data[chunk.offset as usize..chunk.offset as usize + chunk_size],
+                &mut id_data[chunk.offset as usize..chunk.offset as usize + compressed_size],
                 chunk_bits as u8,
             );
         }

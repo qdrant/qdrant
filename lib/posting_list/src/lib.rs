@@ -1,9 +1,9 @@
-mod posting_builder;
+mod builder;
 mod posting_list;
 mod value_handler;
+mod visitor;
 
 use bitpacking::BitPacker;
-use posting_builder::PostingBuilder;
 
 type BitPackerImpl = bitpacking::BitPacker4x;
 
@@ -18,6 +18,10 @@ pub trait VarSizedValue {
     fn from_bytes(data: &[u8]) -> Self;
 }
 
-trait CompressedPostingList<V> {
+pub trait CompressedPostingList<V> {
     fn from_builder(builder: PostingBuilder<V>) -> Self;
 }
+
+pub use builder::PostingBuilder;
+pub use posting_list::{PostingList, PostingElement, PostingChunk};
+pub use visitor::{PostingListView, PostingVisitor};
