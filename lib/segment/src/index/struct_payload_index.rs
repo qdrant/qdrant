@@ -136,6 +136,17 @@ impl StructPayloadIndex {
             .selector(payload_schema)
             .new_index(field, payload_schema)?;
 
+        let total_point_count = self.id_tracker.borrow().total_point_count();
+
+        // Special null index complements every index.
+        if let Some(null_index) =
+            IndexSelector::new_null_index(&self.path, field, total_point_count)?
+        {
+            // todo: This means that null index will not be built if it is not loaded here.
+            //       Maybe we should set `is_loaded` to false to trigger index building.
+            indexes.push(null_index);
+        }
+
         let mut is_loaded = true;
         for ref mut index in indexes.iter_mut() {
             if !index.load()? {
@@ -224,6 +235,10 @@ impl StructPayloadIndex {
             .selector(payload_schema)
             .index_builder(field, payload_schema)?;
 
+        // Special null index complements every index.
+        let null_index = IndexSelector::null_builder(&self.path, field)?;
+        builders.push(null_index);
+
         for index in &mut builders {
             index.init()?;
         }
@@ -284,14 +299,14 @@ impl StructPayloadIndex {
             }
             Condition::IsEmpty(IsEmptyCondition { is_empty: field }) => {
                 let available_points = self.available_point_count();
-                let condition = FieldCondition::new_is_empty(field.key.clone());
+                let condition = FieldCondition::new_is_empty(field.key.clone(), true);
 
                 self.estimate_field_condition(&condition, nested_path, hw_counter)
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
             }
             Condition::IsNull(IsNullCondition { is_null: field }) => {
                 let available_points = self.available_point_count();
-                let condition = FieldCondition::new_is_null(field.key.clone());
+                let condition = FieldCondition::new_is_null(field.key.clone(), true);
 
                 self.estimate_field_condition(&condition, nested_path, hw_counter)
                     .unwrap_or_else(|| CardinalityEstimation::unknown(available_points))
@@ -363,6 +378,7 @@ impl StructPayloadIndex {
         &self.config
     }
 
+    // Iterates over points which satisfy the filter. Might include already deleted points.
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,
@@ -397,8 +413,9 @@ impl StructPayloadIndex {
                         ))
                     })
                 })
-                .filter(move |&id| !visited_list.check_and_update_visited(id))
-                .filter(move |&i| struct_filtered_context.check(i));
+                .filter(move |&id| {
+                    !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
+                });
 
             Either::Right(iter)
         }
