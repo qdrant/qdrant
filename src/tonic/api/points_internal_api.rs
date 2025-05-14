@@ -609,9 +609,10 @@ impl PointsInternal for PointsInternalService {
                     }
                 },
             };
-            let response = result.into_inner();
+            let mut response = result.into_inner();
 
-            if let Some(usage) = response.clone().usage.unwrap_or_default().hardware.take() {
+            let mut usage = response.usage.take();
+            if let Some(usage) = usage.as_mut().and_then(|i| i.hardware.take()) {
                 total_usage.add(usage);
             }
 
