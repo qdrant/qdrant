@@ -1,6 +1,5 @@
 use std::cmp::max;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use ahash::AHashSet;
@@ -64,10 +63,6 @@ impl MutableGeoMapIndex {
 
     pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
         &self.db_wrapper
-    }
-
-    pub fn files(&self) -> Vec<PathBuf> {
-        Default::default()
     }
 
     pub fn load(&mut self) -> OperationResult<bool> {

@@ -403,7 +403,7 @@ impl PayloadFieldIndex for FullTextIndex {
     fn files(&self) -> Vec<PathBuf> {
         match self {
             Self::Mutable(_) => vec![],
-            Self::Immutable(_) => vec![],
+            Self::Immutable(index) => index.files(),
             Self::Mmap(index) => index.files(),
         }
     }
