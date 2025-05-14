@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use common::types::PointOffsetType;
 
 use super::immutable_inverted_index::ImmutableInvertedIndex;
@@ -127,6 +129,13 @@ impl ImmutableFullTextIndex {
         match self.storage {
             Storage::RocksDb(db_wrapper) => db_wrapper.remove_column_family(),
             Storage::Mmap(index) => index.clear(),
+        }
+    }
+
+    pub fn files(&self) -> Vec<PathBuf> {
+        match self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Mmap(ref index) => index.files(),
         }
     }
 
