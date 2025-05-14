@@ -7,7 +7,7 @@ use crate::{FixedSizedValue, VarSizedValue};
 ///
 /// - For fixed-size values, the associated type [`ValueHandler::Fixed`] is the same as the generic type V
 /// - For variable-size values, [`ValueHandler::Fixed`] is an offset (u32) into the var_sized_data
-pub(crate) trait ValueHandler<V> {
+pub trait ValueHandler<V> {
     /// The value to store within each chunk, or alongside each id.
     type Sized: Sized + Copy;
 
@@ -21,7 +21,11 @@ pub(crate) trait ValueHandler<V> {
     ///
     /// For sized values it returns the first argument.
     /// For variable-size values it returns the value between the two sized values in var_data.
-    fn get_value(sized_value: Self::Sized, next_sized_value: Option<Self::Sized>, var_data: &[u8]) -> V;
+    fn get_value(
+        sized_value: Self::Sized,
+        next_sized_value: Option<Self::Sized>,
+        var_data: &[u8],
+    ) -> V;
 }
 
 /// Fixed-size value handler

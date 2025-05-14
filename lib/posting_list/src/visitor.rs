@@ -3,11 +3,9 @@ use std::marker::PhantomData;
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::{
-    BitPackerImpl, CHUNK_SIZE,
-    posting_list::{PostingChunk, PostingElement, PostingList},
-    value_handler::ValueHandler,
-};
+use crate::posting_list::{PostingChunk, PostingElement, PostingList};
+use crate::value_handler::ValueHandler;
+use crate::{BitPackerImpl, CHUNK_SIZE};
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug, Clone)]
@@ -37,7 +35,7 @@ impl<V: ValueHandler<V, Sized = S>, S: Copy> PostingList<V, S> {
             var_size_data,
             remainders,
             last_id: *last_id,
-            _phantom: *_phantom,
+            _phantom: PhantomData,
         }
     }
 
@@ -47,7 +45,7 @@ impl<V: ValueHandler<V, Sized = S>, S: Copy> PostingList<V, S> {
     }
 }
 
-impl<'a, V, S> PostingListView<'a, V, S> {
+impl<V, S> PostingListView<'_, V, S> {
     fn decompress_chunk(
         &self,
         chunk_index: usize,
@@ -74,20 +72,67 @@ impl<'a, V, S> PostingListView<'a, V, S> {
             return false;
         };
 
-        let chunks = self.chunks;
+        let Some(initial_id) = self
+            .chunks
+            .first()
+            .map(|chunk| chunk.initial_id)
+            .or_else(|| self.remainders.first().map(|elem| elem.id))
+        else {
+            return false;
+        };
+
+        id >= initial_id && id <= last_id
+    }
+
+    /// Find the chunk that may contain the id.
+    /// Assumes the id is in the posting list range.
+    pub fn find_chunk(&self, id: PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
         let remainders = self.remainders;
+        let chunks = self.chunks;
 
-        let in_chunks_range = !chunks.is_empty() && id >= chunks[0].initial_id && id <= last_id;
+        if remainders
+            .first()
+            .map(|elem| id >= elem.id)
+            .unwrap_or(false)
+        {
+            // id is in the remainders list
+            return None;
+        }
 
-        let in_remainder_range =
-            || !remainders.is_empty() && id >= remainders[0].id && id <= last_id;
+        if chunks.is_empty() {
+            return None;
+        }
 
-        in_chunks_range || in_remainder_range()
+        let start_chunk = start_chunk.unwrap_or(0);
+        match chunks[start_chunk..].binary_search_by(|chunk| chunk.initial_id.cmp(&id)) {
+            // id is the initial value of the chunk with index idx
+            Ok(idx) => Some(start_chunk + idx),
+            // chunk idx has larger initial value than id
+            // so we need the previous chunk
+            Err(idx) if idx > 0 => Some(start_chunk + idx - 1),
+            Err(_) => None,
+        }
+    }
+
+    fn search_in_remainders(&self, id: PointOffsetType) -> Option<usize> {
+        self.remainders
+            .binary_search_by(|elem| elem.id.cmp(&id))
+            .ok()
+    }
+
+    /// The total number of elements in the posting list.
+    pub fn len(&self) -> usize {
+        self.chunks.len() * CHUNK_SIZE + self.remainders.len()
+    }
+
+    /// Checks if there are no elements in the posting list.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
 pub(crate) struct PostingVisitor<'a, V, S> {
-    list: PostingListView<'a, V, S>,
+    pub(crate) list: PostingListView<'a, V, S>,
 
     /// Index of the decompressed chunk.
     /// It is used to shorten the search range of chunk index for the next value.
@@ -116,6 +161,26 @@ impl<'a, S: Copy, V: ValueHandler<V, Sized = S>> PostingVisitor<'a, V, S> {
         &self.decompressed_chunk
     }
 
+    pub fn contains(&mut self, id: PointOffsetType) -> bool {
+        if !self.list.is_in_range(id) {
+            return false;
+        }
+
+        // Find the chunk that may contain the id and check if the id is in the chunk
+        let chunk_index = self.list.find_chunk(id, None);
+        if let Some(chunk_index) = chunk_index {
+            if self.list.chunks[chunk_index].initial_id == id {
+                return true;
+            }
+
+            self.decompressed_chunk(chunk_index)
+                .binary_search(&id)
+                .is_ok()
+        } else {
+            self.list.search_in_remainders(id).is_some()
+        }
+    }
+
     pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<V>> {
         let chunk_idx = offset / CHUNK_SIZE;
         let local_offset = offset % CHUNK_SIZE;
@@ -131,7 +196,7 @@ impl<'a, S: Copy, V: ValueHandler<V, Sized = S>> PostingVisitor<'a, V, S> {
                 .copied();
             let value = V::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
-            return Some(PostingElement { id, value })
+            return Some(PostingElement { id, value });
         }
 
         // else, get from remainder

@@ -368,7 +368,7 @@ impl CompressedPostingBuilder {
 
         // process full chunks
         let mut chunk_iter = self.elements.chunks_exact(CHUNK_SIZE);
-        while let Some(chunk) = chunk_iter.next() {
+        for chunk in chunk_iter.by_ref() {
             this_chunk.clear();
             this_chunk.extend(chunk.iter().map(|e| e.record_id));
 
