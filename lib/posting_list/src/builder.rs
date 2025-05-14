@@ -57,7 +57,7 @@ impl<V> PostingBuilder<V> {
             let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
 
             chunks.push(PostingChunk {
-                initial,
+                initial_id: initial,
                 offset: id_data_size as u32,
                 sized_values: chunk_values
                     .try_into()
@@ -79,7 +79,7 @@ impl<V> PostingBuilder<V> {
             let compressed_size = PostingChunk::get_compressed_size(&chunks, &id_data, chunk_index);
             let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_SIZE;
             bitpacker.compress_strictly_sorted(
-                chunk.initial.checked_sub(1),
+                chunk.initial_id.checked_sub(1),
                 &chunk_ids,
                 &mut id_data[chunk.offset as usize..chunk.offset as usize + compressed_size],
                 chunk_bits as u8,

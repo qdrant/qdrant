@@ -1,6 +1,7 @@
 mod builder;
 mod posting_list;
 mod value_handler;
+mod iterator;
 mod visitor;
 
 use bitpacking::BitPacker;
@@ -24,4 +25,4 @@ pub trait CompressedPostingList<V> {
 
 pub use builder::PostingBuilder;
 pub use posting_list::{PostingList, PostingElement, PostingChunk};
-pub use visitor::{PostingListView, PostingVisitor};
+pub use visitor::{PostingListView};

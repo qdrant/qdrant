@@ -28,7 +28,7 @@ pub struct PostingElement<S> {
 #[repr(C)]
 pub struct PostingChunk<S: Sized> {
     /// Initial data point id. Used for decompression.
-    pub initial: PointOffsetType,
+    pub initial_id: PointOffsetType,
 
     /// An offset within id_data
     pub offset: u32,
