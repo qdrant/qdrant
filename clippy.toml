@@ -1,1 +1,2 @@
+# For Rust 1.87 until fixed: <https://github.com/hyperium/tonic/issues/2253>
 large-error-threshold = 256
