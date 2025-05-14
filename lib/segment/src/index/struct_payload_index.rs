@@ -414,9 +414,7 @@ impl StructPayloadIndex {
                     })
                 })
                 .filter(move |&id| {
-                    !visited_list.check_and_update_visited(id)
-                        && struct_filtered_context.check(id)
-                        && !id_tracker.is_deleted_point(id)
+                    !visited_list.check_and_update_visited(id) && struct_filtered_context.check(id)
                 });
 
             Either::Right(iter)
