@@ -378,7 +378,7 @@ impl StructPayloadIndex {
         &self.config
     }
 
-    // Iterates over points which satisfy the filter and are not deleted.
+    // Iterates over points which satisfy the filter. Might include already deleted points.
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,

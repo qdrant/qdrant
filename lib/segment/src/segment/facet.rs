@@ -53,8 +53,8 @@ impl Segment {
                 // aka. read from other indexes
                 let iter = payload_index
                     .iter_filtered_points(filter, &*id_tracker, &filter_cardinality, hw_counter)
-                    .filter(|internal_id| !id_tracker.is_deleted_point(*internal_id))
                     .check_stop_every(STOP_CHECK_INTERVAL, || is_stopped.load(Ordering::Relaxed))
+                    .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                     .fold(HashMap::new(), |mut map, point_id| {
                         facet_index
                             .get_point_values(point_id)
@@ -128,8 +128,8 @@ impl Segment {
 
             payload_index
                 .iter_filtered_points(filter, &*id_tracker, &filter_cardinality, hw_counter)
-                .filter(|internal_id| !id_tracker.is_deleted_point(*internal_id))
                 .check_stop(|| is_stopped.load(Ordering::Relaxed))
+                .filter(|point_id| !id_tracker.is_deleted_point(*point_id))
                 .fold(BTreeSet::new(), |mut set, point_id| {
                     set.extend(facet_index.get_point_values(point_id));
                     set
