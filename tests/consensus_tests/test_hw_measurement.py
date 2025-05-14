@@ -93,8 +93,8 @@ def test_measuring_hw_for_updates(tmp_path: pathlib.Path):
     total_vector_io_write_old = sum([x["vector_io_write"] for x in peer_hw_infos])
 
     # Update 20 points
-    update_payload_hw_data = update_points_payload(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]
-    update_vectors_hw_data = update_points_vector(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]
+    update_payload_hw_data = update_points_payload(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]["hardware"]
+    update_vectors_hw_data = update_points_vector(peer_urls[0], collection_name=COLLECTION_NAME, points=[x for x in range(N_PEERS*20)])["usage"]["hardware"]
 
     total_payload_io_write = 0
     total_vector_io_write = 0
@@ -194,7 +194,7 @@ def test_payload_io_read_is_within_limit(tmp_path: pathlib.Path, test_item):
         f"{peer_api_uris[0]}/collections/test_collection/points/{test_item.get('path')}",
         json=test_item.get('json')
     )
-    print(res.json().get('usage'))
-    payload_io_read = res.json().get('usage', {}).get('payload_io_read')
-    assert payload_io_read is not None, "payload_io_read is not found in usage"
+    print(res.json().get('usage', {}).get('hardware'))
+    payload_io_read = res.json().get('usage', {}).get('hardware', {}).get('payload_io_read')
+    assert payload_io_read is not None, "payload_io_read is not found in usage.hardware"
     assert payload_io_read < 300, f"payload_io_read={payload_io_read} is not within limit"

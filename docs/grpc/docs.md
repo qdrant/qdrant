@@ -266,6 +266,7 @@
     - [UpdatePointVectors](#qdrant-UpdatePointVectors)
     - [UpdateResult](#qdrant-UpdateResult)
     - [UpsertPoints](#qdrant-UpsertPoints)
+    - [Usage](#qdrant-Usage)
     - [ValuesCount](#qdrant-ValuesCount)
     - [Vector](#qdrant-Vector)
     - [VectorExample](#qdrant-VectorExample)
@@ -2387,7 +2388,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [CountResult](#qdrant-CountResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -2585,7 +2586,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [BatchResult](#qdrant-BatchResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -2646,7 +2647,7 @@ The JSON representation for `Value` is a JSON value.
 | ----- | ---- | ----- | ----------- |
 | result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -3008,7 +3009,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | result | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -3527,7 +3528,7 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | result | [UpdateResult](#qdrant-UpdateResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -3849,7 +3850,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [BatchResult](#qdrant-BatchResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -3866,7 +3867,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [GroupsResult](#qdrant-GroupsResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -3943,7 +3944,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4012,7 +4013,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [BatchResult](#qdrant-BatchResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4029,7 +4030,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [GroupsResult](#qdrant-GroupsResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4129,7 +4130,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4273,7 +4274,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | next_page_offset | [PointId](#qdrant-PointId) | optional | Use this offset for the next query |
 | result | [RetrievedPoint](#qdrant-RetrievedPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4308,7 +4309,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [BatchResult](#qdrant-BatchResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4325,7 +4326,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [GroupsResult](#qdrant-GroupsResult) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4360,7 +4361,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [SearchMatrixOffsets](#qdrant-SearchMatrixOffsets) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4409,7 +4410,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [SearchMatrixPairs](#qdrant-SearchMatrixPairs) |  |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4524,7 +4525,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [ScoredPoint](#qdrant-ScoredPoint) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
-| usage | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 
@@ -4744,6 +4745,23 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+
+
+
+
+
+
+<a name="qdrant-Usage"></a>
+
+### Usage
+---------------------------------------------
+----------- Measurements collector ----------
+---------------------------------------------
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hardware | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
 
 
 

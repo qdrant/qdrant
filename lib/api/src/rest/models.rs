@@ -44,8 +44,28 @@ pub struct ApiResponse<D> {
     pub result: Option<D>,
     pub status: ApiStatus,
     pub time: f64,
+    #[serde(skip_serializing_if = "is_usage_none_or_empty")]
+    pub usage: Option<Usage>,
+}
+
+/// Usage of the hardware resources, spent to process the request
+#[derive(Debug, Serialize, JsonSchema, Anonymize, Clone)]
+#[serde(rename_all = "snake_case")]
+#[anonymize(false)]
+pub struct Usage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<HardwareUsage>,
+    pub hardware: Option<HardwareUsage>,
+}
+
+impl Usage {
+    pub fn is_empty(&self) -> bool {
+        let Usage { hardware } = self;
+        hardware.is_none()
+    }
+}
+
+fn is_usage_none_or_empty(u: &Option<Usage>) -> bool {
+    u.as_ref().is_none_or(|usage| usage.is_empty())
 }
 
 /// Usage of the hardware resources, spent to process the request

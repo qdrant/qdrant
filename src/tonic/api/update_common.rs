@@ -850,12 +850,12 @@ pub async fn sync(
 pub fn points_operation_response_internal(
     timing: Instant,
     update_result: collection::operations::types::UpdateResult,
-    usage: Option<HardwareUsage>,
+    usage_hardware: Option<HardwareUsage>,
 ) -> PointsOperationResponseInternal {
     PointsOperationResponseInternal {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage,
+        usage: usage_hardware,
         // usage: Some(hw_measurement_acc.api)
     }
 }

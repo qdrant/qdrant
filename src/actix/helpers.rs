@@ -5,7 +5,7 @@ use actix_web::http::header;
 use actix_web::http::header::HeaderMap;
 use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, ResponseError, http};
-use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage};
+use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, Usage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;
@@ -33,7 +33,9 @@ pub fn accepted_response(timing: Instant, hardware_usage: Option<HardwareUsage>)
         result: None,
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
-        usage: hardware_usage,
+        usage: Some(Usage {
+            hardware: hardware_usage,
+        }),
     })
 }
 
@@ -50,7 +52,9 @@ where
             result: Some(res),
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
-            usage: hardware_usage,
+            usage: Some(Usage {
+                hardware: hardware_usage,
+            }),
         }),
         Err(err) => process_response_error(err, timing, hardware_usage),
     }
@@ -70,7 +74,9 @@ pub fn process_response_error(
         result: None,
         status: ApiStatus::Error(error.to_string()),
         time: timing.elapsed().as_secs_f64(),
-        usage: hardware_usage,
+        usage: Some(Usage {
+            hardware: hardware_usage,
+        }),
     };
 
     let mut response_builder = HttpResponse::build(http_code);

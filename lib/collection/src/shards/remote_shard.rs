@@ -955,7 +955,7 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        if let Some(hw_usage) = scroll_response.usage {
+        if let Some(hw_usage) = scroll_response.usage.unwrap_or_default().hardware {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -1029,7 +1029,7 @@ impl ShardOperation for RemoteShard {
             usage,
         } = search_batch_response;
 
-        if let Some(hw_usage) = usage {
+        if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -1094,7 +1094,7 @@ impl ShardOperation for RemoteShard {
             usage,
         } = count_response;
 
-        if let Some(hw_usage) = usage {
+        if let Some(hw_usage) = usage.unwrap_or_default().hardware {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -1143,7 +1143,7 @@ impl ShardOperation for RemoteShard {
             .await?
             .into_inner();
 
-        if let Some(hw_usage) = get_response.usage {
+        if let Some(hw_usage) = get_response.usage.unwrap_or_default().hardware {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
