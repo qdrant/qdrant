@@ -65,7 +65,7 @@ impl Usage {
 }
 
 fn is_usage_none_or_empty(u: &Option<Usage>) -> bool {
-    u.as_ref().map_or(true, |usage| usage.is_empty())
+    u.as_ref().is_none_or(|usage| usage.is_empty())
 }
 
 /// Usage of the hardware resources, spent to process the request
