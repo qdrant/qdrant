@@ -3,6 +3,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use api::grpc::HardwareUsage;
 use api::grpc::qdrant::points_internal_server::PointsInternal;
 use api::grpc::qdrant::{
     ClearPayloadPointsInternal, CoreSearchBatchPointsInternal, CountPointsInternal, CountResponse,
@@ -15,7 +16,6 @@ use api::grpc::qdrant::{
     SyncPointsInternal, UpdateBatchInternal, UpdateVectorsInternal, UpsertPointsInternal,
 };
 use api::grpc::update_operation::Update;
-use api::grpc::{HardwareUsage, Usage};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use collection::operations::universal_query::shard_query::ShardQueryRequest;
 use collection::shards::shard::ShardId;
@@ -375,9 +375,7 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: Option::from(Usage {
-            hardware: request_hw_data.to_grpc_api(),
-        }),
+        usage: request_hw_data.to_grpc_api(),
     };
 
     Ok(Response::new(response))

@@ -9887,7 +9887,7 @@ pub struct QueryBatchResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "5")]
-    pub usage: ::core::option::Option<Usage>,
+    pub usage: ::core::option::Option<HardwareUsage>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]

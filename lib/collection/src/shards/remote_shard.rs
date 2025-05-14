@@ -1201,9 +1201,7 @@ impl ShardOperation for RemoteShard {
         } = batch_response;
 
         if let Some(hw_usage) = usage {
-            if let Some(hardware) = hw_usage.hardware {
-                hw_measurement_acc.accumulate_request(hardware);
-            }
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let result = results
