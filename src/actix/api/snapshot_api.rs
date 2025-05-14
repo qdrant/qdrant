@@ -5,7 +5,7 @@ use actix_multipart::form::tempfile::TempFile;
 use actix_web::{Responder, Result, delete, get, post, put, web};
 use actix_web_validator as valid;
 use collection::common::file_utils::move_file;
-use collection::common::sha_256::{hash_file, hashes_equal};
+use collection::common::sha_256;
 use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotRecover, SnapshotPriority, SnapshotRecover,
@@ -13,12 +13,12 @@ use collection::operations::snapshot_ops::{
 use collection::operations::verification::new_unchecked_verification_pass;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
-use futures::{FutureExt as _, TryFutureExt as _};
+use futures::{FutureExt as _, StreamExt as _, TryFutureExt as _};
 use reqwest::Url;
 use schemars::JsonSchema;
 use segment::data_types::segment_manifest::SegmentManifests;
 use serde::{Deserialize, Serialize};
-use storage::content_manager::errors::StorageError;
+use storage::content_manager::errors::{StorageError, StorageResult};
 use storage::content_manager::snapshots::recover::do_recover_from_snapshot;
 use storage::content_manager::snapshots::{
     do_create_full_snapshot, do_delete_collection_snapshot, do_delete_full_snapshot,
@@ -27,6 +27,7 @@ use storage::content_manager::snapshots::{
 use storage::content_manager::toc::TableOfContent;
 use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
+use tokio::io::AsyncWriteExt as _;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -194,8 +195,8 @@ async fn upload_snapshot(
         access.check_global_access(AccessRequirements::new().manage())?;
 
         if let Some(checksum) = &params.checksum {
-            let snapshot_checksum = hash_file(snapshot.file.path()).await?;
-            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
+            let snapshot_checksum = sha_256::hash_file(snapshot.file.path()).await?;
+            if !sha_256::hashes_equal(&snapshot_checksum, checksum) {
                 return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
             }
         }
@@ -467,30 +468,30 @@ async fn upload_shard_snapshot(
     // - `recover_shard_snapshot_impl` is *not* cancel safe
     //   - but the task is *spawned* on the runtime and won't be cancelled, if request is cancelled
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
         // TODO: Run this check before the multipart blob is uploaded
         let collection_pass = access
             .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);
 
-        if let Some(checksum) = checksum {
-            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
-            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
-                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+        let cancel_safe = async {
+            if let Some(checksum) = checksum {
+                let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
+                if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
+                    return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+                }
             }
-        }
 
-        let future = async {
             let collection = dispatcher
                 .toc(&access, &pass)
                 .get_collection(&collection_pass)
                 .await?;
             collection.assert_shard_exists(shard).await?;
 
-            Result::<_, StorageError>::Ok(collection)
+            Ok(collection)
         };
 
-        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+        let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
@@ -506,7 +507,7 @@ async fn upload_shard_snapshot(
 
         Ok(())
     })
-    .map(|x| x.map_err(Into::into).and_then(|x| x));
+    .map(|res| res.map_err(Into::into).and_then(|res| res));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
@@ -608,30 +609,30 @@ async fn recover_partial_snapshot(
     // nothing to verify.
     let pass = new_unchecked_verification_pass();
 
-    let future = cancel::future::spawn_cancel_on_drop(move |cancel| async move {
+    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
         // TODO: Run this check before the multipart blob is uploaded
         let collection_pass = access
             .check_global_access(AccessRequirements::new().manage())?
             .issue_pass(&collection);
 
-        if let Some(checksum) = checksum {
-            let snapshot_checksum = hash_file(form.snapshot.file.path()).await?;
-            if !hashes_equal(snapshot_checksum.as_str(), checksum.as_str()) {
-                return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+        let cancel_safe = async {
+            if let Some(checksum) = checksum {
+                let snapshot_checksum = sha_256::hash_file(form.snapshot.file.path()).await?;
+                if !sha_256::hashes_equal(&snapshot_checksum, &checksum) {
+                    return Err(StorageError::checksum_mismatch(snapshot_checksum, checksum));
+                }
             }
-        }
 
-        let future = async {
             let collection = dispatcher
                 .toc(&access, &pass)
                 .get_collection(&collection_pass)
                 .await?;
             collection.assert_shard_exists(shard).await?;
 
-            Result::<_, StorageError>::Ok(collection)
+            Ok(collection)
         };
 
-        let collection = cancel::future::cancel_on_token(cancel.clone(), future).await??;
+        let collection = cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
 
         // `recover_shard_snapshot_impl` is *not* cancel safe
         common::snapshots::recover_shard_snapshot_impl(
@@ -647,7 +648,102 @@ async fn recover_partial_snapshot(
 
         Ok(())
     })
-    .map(|x| x.map_err(Into::into).and_then(|x| x));
+    .map(|res| res.map_err(Into::into).and_then(|res| res));
+
+    helpers::time_or_accept(future, wait.unwrap_or(true)).await
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+pub struct PartialSnapshotRecoverFrom {
+    peer_url: Url,
+    api_key: Option<String>,
+}
+
+#[post("/collections/{collection}/shards/{shard}/snapshot/partial/recover_from")]
+async fn recover_partial_snapshot_from(
+    dispatcher: web::Data<Dispatcher>,
+    http_client: web::Data<HttpClient>,
+    path: web::Path<(String, ShardId)>,
+    query: web::Query<SnapshottingParam>,
+    web::Json(request): web::Json<PartialSnapshotRecoverFrom>,
+    ActixAccess(access): ActixAccess,
+) -> impl Responder {
+    let (collection_name, shard_id) = path.into_inner();
+    let PartialSnapshotRecoverFrom { peer_url, api_key } = request;
+    let SnapshottingParam { wait } = query.into_inner();
+
+    // nothing to verify
+    let pass = new_unchecked_verification_pass();
+
+    let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
+        let cancel_safe = async {
+            let toc = dispatcher.toc(&access, &pass);
+
+            let collection_pass = access
+                .check_global_access(AccessRequirements::new().manage())?
+                .issue_pass(&collection_name)
+                .into_static();
+
+            let collection = toc.get_collection(&collection_pass).await?;
+            collection.assert_shard_exists(shard_id).await?;
+
+            let http_client = http_client.client(api_key.as_deref())?;
+
+            let create_snapshot_url = format!(
+                "{peer_url}/collections/{collection_name}/shards/{shard_id}/snapshot/partial/create"
+            );
+
+            let snapshot_manifest = collection.get_partial_snapshot_manifest(shard_id).await?;
+
+            let download_dir = toc.optional_temp_or_snapshot_temp_path()?;
+            let (partial_snapshot_file, partial_snapshot_temp_path) = tempfile::Builder::new()
+                .prefix("partial-snapshot")
+                .suffix(".download")
+                .tempfile_in(&download_dir)?
+                .into_parts();
+
+            let response = http_client
+                .post(create_snapshot_url)
+                .json(&snapshot_manifest)
+                .send()
+                .await?
+                .error_for_status()?;
+
+            let mut partial_snapshot_file =
+                tokio::io::BufWriter::new(tokio::fs::File::from_std(partial_snapshot_file));
+
+            let mut partial_snapshot_stream = response.bytes_stream();
+
+            while let Some(chunk) = partial_snapshot_stream.next().await {
+                partial_snapshot_file.write_all(&chunk?).await?;
+            }
+
+            partial_snapshot_file.flush().await?;
+
+            // TODO: Check partial snapshot checksum!?
+            //
+            // E.g., we can return snapshot checksum as HTTP header in `create_partial_snapshot` response
+
+            StorageResult::Ok((collection, partial_snapshot_temp_path))
+        };
+
+        let (collection, partial_snapshot_temp_path) =
+            cancel::future::cancel_on_token(cancel.clone(), cancel_safe).await??;
+
+        common::snapshots::recover_shard_snapshot_impl(
+            dispatcher.toc(&access, &pass),
+            &collection,
+            shard_id,
+            &partial_snapshot_temp_path,
+            SnapshotPriority::NoSync,
+            RecoveryType::Partial,
+            cancel,
+        )
+        .await?;
+
+        Ok(true)
+    })
+    .map(|res| res.map_err(Into::into).and_then(|res| res));
 
     helpers::time_or_accept(future, wait.unwrap_or(true)).await
 }
@@ -699,5 +795,6 @@ pub fn config_snapshots_api(cfg: &mut web::ServiceConfig) {
         .service(delete_shard_snapshot)
         .service(create_partial_snapshot)
         .service(recover_partial_snapshot)
+        .service(recover_partial_snapshot_from)
         .service(get_partial_snapshot_manifest);
 }
