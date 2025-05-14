@@ -555,7 +555,7 @@ impl PointsInternal for PointsInternalService {
 
         let request_inner = request.into_inner();
 
-        let total_usage = HardwareUsage::default();
+        let mut total_usage = HardwareUsage::default();
 
         let mut last_result = None;
         // This API:
@@ -605,7 +605,12 @@ impl PointsInternal for PointsInternalService {
                     }
                 },
             };
-            let response = result.into_inner();
+            let mut response = result.into_inner();
+
+            if let Some(usage) = response.usage.take() {
+                total_usage.add(usage);
+            }
+
             last_result = Some(response)
         }
 
