@@ -5881,7 +5881,7 @@ pub struct PointsOperationResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -5995,7 +5995,7 @@ pub struct SearchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6007,7 +6007,7 @@ pub struct QueryResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6019,7 +6019,7 @@ pub struct QueryBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6031,7 +6031,7 @@ pub struct QueryGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6050,7 +6050,7 @@ pub struct SearchBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6062,7 +6062,7 @@ pub struct SearchGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6074,7 +6074,7 @@ pub struct CountResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6089,7 +6089,7 @@ pub struct ScrollResponse {
     #[prost(double, tag = "3")]
     pub time: f64,
     #[prost(message, optional, tag = "4")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6125,7 +6125,7 @@ pub struct GetResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6137,7 +6137,7 @@ pub struct RecommendResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6149,7 +6149,7 @@ pub struct RecommendBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6161,7 +6161,7 @@ pub struct DiscoverResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6173,7 +6173,7 @@ pub struct DiscoverBatchResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6185,7 +6185,7 @@ pub struct RecommendGroupsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6217,7 +6217,7 @@ pub struct SearchMatrixPairsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6229,7 +6229,7 @@ pub struct SearchMatrixOffsetsResponse {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(validator::Validate)]
 #[derive(serde::Serialize)]
@@ -6563,6 +6563,16 @@ pub struct GeoPoint {
     pub lon: f64,
     #[prost(double, tag = "2")]
     pub lat: f64,
+}
+/// ---
+///
+/// ## ----------- Measurements collector ----------
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Usage {
+    #[prost(message, optional, tag = "1")]
+    pub hardware: ::core::option::Option<HardwareUsage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
