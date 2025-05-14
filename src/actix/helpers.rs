@@ -33,7 +33,7 @@ pub fn accepted_response(timing: Instant, hardware_usage: Option<HardwareUsage>)
         result: None,
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
-        usage: Option::from(Usage {
+        usage: Some(Usage {
             hardware: hardware_usage,
         }),
     })
@@ -52,7 +52,7 @@ where
             result: Some(res),
             status: ApiStatus::Ok,
             time: timing.elapsed().as_secs_f64(),
-            usage: Option::from(Usage {
+            usage: Some(Usage {
                 hardware: hardware_usage,
             }),
         }),
@@ -74,7 +74,7 @@ pub fn process_response_error(
         result: None,
         status: ApiStatus::Error(error.to_string()),
         time: timing.elapsed().as_secs_f64(),
-        usage: Option::from(Usage {
+        usage: Some(Usage {
             hardware: hardware_usage,
         }),
     };
