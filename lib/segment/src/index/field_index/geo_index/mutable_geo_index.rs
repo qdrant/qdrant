@@ -65,10 +65,6 @@ impl MutableGeoMapIndex {
         &self.db_wrapper
     }
 
-    pub fn files(&self) -> Vec<PathBuf> {
-        Default::default()
-    }
-
     pub fn load(&mut self) -> OperationResult<bool> {
         if !self.db_wrapper.has_column_family()? {
             return Ok(false);

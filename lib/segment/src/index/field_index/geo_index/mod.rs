@@ -575,7 +575,7 @@ impl PayloadFieldIndex for GeoMapIndex {
 
     fn files(&self) -> Vec<PathBuf> {
         match &self {
-            GeoMapIndex::Mutable(index) => index.files(),
+            GeoMapIndex::Mutable(_) => vec![],
             GeoMapIndex::Immutable(index) => index.files(),
             GeoMapIndex::Mmap(index) => index.files(),
         }

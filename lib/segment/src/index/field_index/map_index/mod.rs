@@ -312,7 +312,7 @@ impl<N: MapIndexKey + ?Sized> MapIndex<N> {
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
-            MapIndex::Mutable(_) => Vec::new(),
+            MapIndex::Mutable(_) => vec![],
             MapIndex::Immutable(index) => index.files(),
             MapIndex::Mmap(index) => index.files(),
         }
