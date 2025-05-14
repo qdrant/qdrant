@@ -10,25 +10,17 @@ COLLECTION = "test_collection"
 SHARD = 0
 
 @pytest.mark.parametrize(
-    "bootstrap_points, recover_read, upsert_points, empty_manifest",
+    "bootstrap_points, recover_read, upsert_points",
     [
-        (0,   True,  0, True),
-        (100, True,  0, True),
-        (0,   True,  5, True),
-        (100, True,  5, True),
-
-        (0,   True,  0, False),
-        (100, True,  0, False),
-        (0,   True,  5, False),
-        (100, True,  5, False),
-
-        (0,   False, 0, True),
-        (100, False, 0, True),
-        (0,   False, 0, False),
-        (100, False, 0, False),
+        (0,   True,  0),
+        (100, True,  0),
+        (0,   True,  5),
+        (100, True,  5),
+        (0,   False, 0),
+        (100, False, 0),
     ]
 )
-def test_partial_snapshot(tmp_path: pathlib.Path, bootstrap_points: int, recover_read: bool, upsert_points: int, empty_manifest: bool):
+def test_partial_snapshot(tmp_path: pathlib.Path, bootstrap_points: int, recover_read: bool, upsert_points: int):
     assert_project_root()
 
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points, recover_read)
@@ -36,7 +28,8 @@ def test_partial_snapshot(tmp_path: pathlib.Path, bootstrap_points: int, recover
     if upsert_points > 0:
         upsert(write_peer, upsert_points, offset = bootstrap_points)
 
-    recover_partial(read_peer, write_peer, tmp_path, {} if empty_manifest else None)
+    recover_partial_snapshot_from(read_peer, write_peer)
+    assert_consistency(read_peer, write_peer)
 
 
 def bootstrap_peers(tmp: pathlib.Path, bootstrap_points = 0, recover_read = False):
@@ -95,48 +88,26 @@ def create_collection_snapshot(peer_url: str):
 def recover_collection_snapshot(peer_url: str, snapshot_url: str):
     resp = requests.put(
         f"{peer_url}/collections/{COLLECTION}/snapshots/recover",
-        json = { "location": snapshot_url }
+        json = { "location": snapshot_url },
     )
     assert_http_ok(resp)
 
     return resp.json()["result"]
 
+def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str):
+    resp = requests.post(
+        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from",
+        json = { "peer_url": recover_peer_url },
+    )
+    assert_http_ok(resp)
 
-def recover_partial(peer_url: str, recover_from_url: str, tmp: pathlib.Path, manifest: Any = None):
-    snapshot_path = create_partial_snapshot(recover_from_url, get_snapshot_manifest(peer_url) if manifest is None else manifest, tmp)
-    recover_partial_snapshot(peer_url, snapshot_path)
-
-    assert_consistency(recover_from_url, peer_url)
+    return resp.json()["result"]
 
 def get_snapshot_manifest(peer_url: str):
     resp = requests.get(f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/manifest")
     assert_http_ok(resp)
 
     return resp.json()["result"]
-
-def create_partial_snapshot(peer_url: str, manifest: dict[str, Any], tmp: pathlib.Path):
-    snapshot_resp = requests.post(
-        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/create",
-        json = manifest,
-    )
-    assert_http_ok(snapshot_resp)
-
-    snapshot_path = tmp / "partial-snapshot.tar"
-
-    with open(snapshot_path, "wb") as snapshot_file:
-        snapshot_file.write(snapshot_resp.content)
-
-    return snapshot_path
-
-def recover_partial_snapshot(peer_url: str, snapshot_path: pathlib.Path):
-    with open(snapshot_path, "rb") as snapshot_file:
-        resp = requests.post(
-            f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover",
-            files = { "snapshot": snapshot_file },
-        )
-        assert_http_ok(resp)
-
-        return resp.json()["result"]
 
 
 def assert_consistency(write_peer: str, read_peer: str):
