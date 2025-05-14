@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::Usage;
+use api::grpc::ops::usage_or_none;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
@@ -702,9 +702,7 @@ impl Points for PointsService {
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: Some(Usage {
-                hardware: hw_metrics.to_grpc_api(),
-            }),
+            usage: usage_or_none(hw_metrics.to_grpc_api()),
         };
 
         Ok(Response::new(pairs_response))
@@ -730,9 +728,7 @@ impl Points for PointsService {
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: Some(Usage {
-                hardware: hw_metrics.to_grpc_api(),
-            }),
+            usage: usage_or_none(hw_metrics.to_grpc_api()),
         };
 
         Ok(Response::new(offsets_response))
