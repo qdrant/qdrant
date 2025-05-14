@@ -7,7 +7,7 @@ use crate::visitor::PostingVisitor;
 pub struct PostingIterator<'a, V, S> {
     pub(crate) visitor: PostingVisitor<'a, V, S>,
     current_id: Option<PointOffsetType>,
-    idx: usize,
+    offset: usize,
 }
 
 impl<'a, V, S> PostingIterator<'a, V, S> {
@@ -15,7 +15,7 @@ impl<'a, V, S> PostingIterator<'a, V, S> {
         Self {
             visitor,
             current_id: None,
-            idx: 0,
+            offset: 0,
         }
     }
 }
@@ -24,9 +24,9 @@ impl<S: Copy, V: ValueHandler<V, Sized = S>> Iterator for PostingIterator<'_, V,
     type Item = PostingElement<V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.visitor.get_by_offset(self.idx).inspect(|elem| {
+        self.visitor.get_by_offset(self.offset).inspect(|elem| {
             self.current_id = Some(elem.id);
-            self.idx += 1;
+            self.offset += 1;
         })
     }
 
@@ -45,6 +45,6 @@ impl<S: Copy, V: ValueHandler<V, Sized = S>> Iterator for PostingIterator<'_, V,
 
 impl<S: Copy, V: ValueHandler<V, Sized = S>> ExactSizeIterator for PostingIterator<'_, V, S> {
     fn len(&self) -> usize {
-        self.visitor.list.len().saturating_sub(self.idx)
+        self.visitor.list.len().saturating_sub(self.offset)
     }
 }

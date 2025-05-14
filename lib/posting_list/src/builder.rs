@@ -4,8 +4,8 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::posting_list::{PostingChunk, PostingElement, PostingList};
-use crate::value_handler::ValueHandler;
-use crate::{BitPackerImpl, CHUNK_SIZE};
+use crate::value_handler::{ValueHandler, VarSized};
+use crate::{BitPackerImpl, CHUNK_SIZE, SizedValue, VarSizedValue};
 
 pub struct PostingBuilder<V> {
     elements: Vec<PostingElement<V>>,
@@ -102,5 +102,24 @@ impl<V> PostingBuilder<V> {
             last_id,
             _phantom: PhantomData,
         }
+    }
+}
+
+// Fixed-sized value implementation
+// For fixed-size values, we store them directly in the PostingChunk
+impl<V: SizedValue> PostingBuilder<V> {
+    fn build_sized(self) -> PostingList<V> {
+        self.build_generic::<V>()
+    }
+}
+
+// Variable-sized value implementation.
+// For variable-size values, we store offsets in the PostingChunk that point to
+// the actual values stored in var_size_data.
+// Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_size_data`
+impl<V: VarSizedValue> PostingBuilder<V>
+{
+    fn build_var_sized(builder: PostingBuilder<V>) -> PostingList<V, u32> {
+        builder.build_generic::<VarSized<V>>()
     }
 }

@@ -2,14 +2,12 @@ use std::marker::PhantomData;
 
 use common::types::PointOffsetType;
 
-use crate::builder::PostingBuilder;
-use crate::value_handler::VarSized;
-use crate::{CHUNK_SIZE, CompressedPostingList, FixedSizedValue, VarSizedValue};
+use crate::CHUNK_SIZE;
 
 /// V is the value we are interested to store along with the id.
 /// S is the type of value we store within the chunk, should be small like an int. For
 /// variable-sized values, this acts as a pointer into var_size_data
-pub struct PostingList<V, S> {
+pub struct PostingList<V, S = V> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<S>>,
     pub(crate) remainders: Vec<PostingElement<S>>,
@@ -50,23 +48,5 @@ impl<S: Sized> PostingChunk<S> {
             // Last chunk
             data.len() - chunks[chunk_index].offset as usize
         }
-    }
-}
-
-// Fixed-sized value implementation
-// For fixed-size values, we store them directly in the PostingChunk
-impl<V: FixedSizedValue + Copy + Default> CompressedPostingList<V> for PostingList<V, V> {
-    fn from_builder(builder: PostingBuilder<V>) -> Self {
-        builder.build_generic::<V>()
-    }
-}
-
-// Variable-sized value implementation.
-// For variable-size values, we store offsets in the PostingChunk that point to
-// the actual values stored in var_size_data.
-// Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_size_data`
-impl<V: VarSizedValue + Clone> CompressedPostingList<V> for PostingList<V, u32> {
-    fn from_builder(builder: PostingBuilder<V>) -> Self {
-        builder.build_generic::<VarSized<V>>()
     }
 }

@@ -11,16 +11,12 @@ type BitPackerImpl = bitpacking::BitPacker4x;
 /// How many elements are packed in a single chunk.
 const CHUNK_SIZE: usize = BitPackerImpl::BLOCK_LEN;
 
-pub trait FixedSizedValue: Sized + Copy + std::fmt::Debug {}
+pub trait SizedValue: Sized + Copy + std::fmt::Debug {}
 
 pub trait VarSizedValue {
     fn to_bytes(&self) -> Vec<u8>;
 
     fn from_bytes(data: &[u8]) -> Self;
-}
-
-pub trait CompressedPostingList<V> {
-    fn from_builder(builder: PostingBuilder<V>) -> Self;
 }
 
 pub use builder::PostingBuilder;
