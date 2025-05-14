@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use api::conversions::json::{json_path_from_proto, proto_to_payloads};
+use api::grpc::HardwareUsage;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
@@ -11,7 +12,6 @@ use api::grpc::qdrant::{
     UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
     points_update_operation,
 };
-use api::grpc::{HardwareUsage, Usage};
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
 use collection::operations::CollectionUpdateOperations;
@@ -855,9 +855,7 @@ pub fn points_operation_response_internal(
     PointsOperationResponseInternal {
         result: Some(update_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage: Some(Usage {
-            hardware: usage_hardware,
-        }),
+        usage: usage_hardware,
         // usage: Some(hw_measurement_acc.api)
     }
 }

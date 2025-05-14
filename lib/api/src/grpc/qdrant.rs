@@ -9456,7 +9456,7 @@ pub struct PointsOperationResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<Usage>,
+    pub usage: ::core::option::Option<HardwareUsage>,
 }
 /// Has to be backward compatible with `UpdateResult`!
 #[derive(serde::Serialize)]
@@ -9953,7 +9953,7 @@ pub struct FacetResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<Usage>,
+    pub usage: ::core::option::Option<HardwareUsage>,
 }
 /// Generated client implementations.
 pub mod points_internal_client {

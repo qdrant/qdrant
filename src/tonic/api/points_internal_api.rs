@@ -425,9 +425,7 @@ async fn facet_counts_internal(
     let response = FacetResponseInternal {
         hits: hits.into_iter().map(From::from).collect_vec(),
         time: timing.elapsed().as_secs_f64(),
-        usage: Option::from(Usage {
-            hardware: request_hw_data.to_grpc_api(),
-        }),
+        usage: request_hw_data.to_grpc_api(),
     };
 
     Ok(Response::new(response))
@@ -559,7 +557,7 @@ impl PointsInternal for PointsInternalService {
 
         let request_inner = request.into_inner();
 
-        let mut total_usage = HardwareUsage::default();
+        let total_usage = HardwareUsage::default();
 
         let mut last_result = None;
         // This API:
@@ -609,20 +607,12 @@ impl PointsInternal for PointsInternalService {
                     }
                 },
             };
-            let mut response = result.into_inner();
-
-            let mut usage = response.usage.take();
-            if let Some(usage) = usage.as_mut().and_then(|i| i.hardware.take()) {
-                total_usage.add(usage);
-            }
-
+            let response = result.into_inner();
             last_result = Some(response)
         }
 
         if let Some(mut last_result) = last_result.take() {
-            last_result.usage = Some(Usage {
-                hardware: Some(total_usage),
-            });
+            last_result.usage = Some(total_usage);
             Ok(Response::new(last_result))
         } else {
             // This response is possible if there are no operations in the request

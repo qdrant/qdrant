@@ -427,7 +427,7 @@ impl RemoteShard {
             .await?
             .into_inner();
 
-        if let Some(hw_usage) = point_operation_response.usage.unwrap_or_default().hardware {
+        if let Some(hw_usage) = point_operation_response.usage {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -724,7 +724,7 @@ impl RemoteShard {
             },
         };
 
-        if let Some(hw_usage) = point_operation_response.usage.unwrap_or_default().hardware {
+        if let Some(hw_usage) = point_operation_response.usage {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -1273,9 +1273,7 @@ impl ShardOperation for RemoteShard {
             .into_inner();
 
         if let Some(hw_usage) = response.usage {
-            if let Some(hardware) = hw_usage.hardware {
-                hw_measurement_acc.accumulate_request(hardware);
-            }
+            hw_measurement_acc.accumulate_request(hw_usage);
         }
 
         let hits = response

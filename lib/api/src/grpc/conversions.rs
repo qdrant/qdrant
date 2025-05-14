@@ -33,7 +33,7 @@ use super::qdrant::{
     StrictModeMultivector, StrictModeMultivectorConfig, StrictModeSparse, StrictModeSparseConfig,
     UuidIndexParams, VectorsOutput, WithLookup, raw_query, start_from,
 };
-use super::{Expression, Formula, RecoQuery};
+use super::{Expression, Formula, RecoQuery, Usage};
 use crate::conversions::json::{self, json_to_proto};
 use crate::grpc::qdrant::condition::ConditionOneOf;
 use crate::grpc::qdrant::r#match::MatchValue;
@@ -2243,7 +2243,7 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
         Self {
             result: result.map(Into::into),
             time,
-            usage,
+            usage: Some(Usage { hardware: usage }),
         }
     }
 }
@@ -2259,7 +2259,7 @@ impl From<PointsOperationResponse> for PointsOperationResponseInternal {
         Self {
             result: result.map(Into::into),
             time,
-            usage,
+            usage: usage.unwrap_or_default().hardware,
         }
     }
 }
