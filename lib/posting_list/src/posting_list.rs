@@ -1,8 +1,9 @@
+use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::posting_builder::PostingBuilder;
-use crate::value_handler::{FixedSizeHandler, VarSizeHandler};
-use crate::{CHUNK_SIZE, CompressedPostingList, FixedSizedValue, VarSizedValue};
+use crate::value_handler::{FixedSizeHandler, ValueHandler, VarSizeHandler};
+use crate::{BitPackerImpl, CHUNK_SIZE, CompressedPostingList, FixedSizedValue, VarSizedValue};
 
 /// V is the value we are interested to store along with the id.
 /// S is the type of value we store within the chunk, should be small like an int. For
@@ -15,12 +16,13 @@ pub struct PostingList<V, S = V> {
     pub(crate) _phantom: std::marker::PhantomData<V>,
 }
 
-#[derive(Clone)]
-pub(crate) struct PostingElement<V> {
+#[derive(Clone, Debug)]
+pub(crate) struct PostingElement<S> {
     pub(crate) id: PointOffsetType,
-    pub(crate) value: V,
+    pub(crate) value: S,
 }
 
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct PostingChunk<S: Sized> {
     /// Initial data point id. Used for decompression.
@@ -70,5 +72,115 @@ impl<V: VarSizedValue + Clone> CompressedPostingList<V> for PostingList<V, u32> 
 
     fn from_builder(builder: PostingBuilder<V>) -> Self {
         builder.build_generic::<VarSizeHandler, _>()
+    }
+}
+
+/// A non-owning view of [`PostingList`].
+#[derive(Debug, Clone)]
+pub struct PostingListView<'a, S> {
+    id_data: &'a [u8],
+    var_size_data: &'a [u8],
+    chunks: &'a [PostingChunk<S>],
+    remainders: &'a [PostingElement<S>],
+    last_id: Option<PointOffsetType>,
+}
+
+impl<'a, S> PostingListView<'a, S> {
+    fn decompress_chunk(
+        &self,
+        chunk_index: usize,
+        decompressed_chunk: &mut [PointOffsetType; CHUNK_SIZE],
+    ) {
+        let chunk = &self.chunks[chunk_index];
+        let chunk_size =
+            PostingChunk::calculate_ids_chunk_size(self.chunks, self.id_data, chunk_index);
+        let chunk_bits = chunk_size * u8::BITS as usize / CHUNK_SIZE;
+        BitPackerImpl::new().decompress_strictly_sorted(
+            chunk.initial.checked_sub(1),
+            &self.id_data[chunk.offset as usize..chunk.offset as usize + chunk_size],
+            decompressed_chunk,
+            chunk_bits as u8,
+        );
+    }
+
+    fn sized_values(&self, chunk_idx: usize) -> &[S] {
+        &self.chunks[chunk_idx].sized_values
+    }
+}
+
+struct IteratorPosition {
+    /// Offset within the posting list chunks
+    idx: usize,
+    /// Current point id
+    point_id: Option<PointOffsetType>,
+}
+
+pub struct PostingListIterator<'a, S> {
+    list: PostingListView<'a, S>,
+
+    /// Determines whether the decommpressed chunk contains valid data for the position
+    unpacked: bool,
+
+    /// Lazily decompressed chunk of ids. Never access this directly, prefer [`Self::decompressed_chunk`] function
+    decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
+
+    /// Offset inside the posting list along with optional current id.
+    pos: IteratorPosition,
+}
+
+impl<'a, S: Copy> PostingListIterator<'a, S> {
+    fn new(list: PostingListView<'a, S>) -> Self {
+        Self {
+            list,
+            unpacked: false,
+            decompressed_chunk: [0; CHUNK_SIZE],
+            pos: IteratorPosition {
+                idx: 0,
+                point_id: None,
+            },
+        }
+    }
+
+    fn decompressed_chunk(&mut self) -> &[PointOffsetType; CHUNK_SIZE] {
+        if !self.unpacked {
+            self.list
+                .decompress_chunk(self.pos.idx / CHUNK_SIZE, &mut self.decompressed_chunk);
+            self.unpacked = true;
+        }
+        &self.decompressed_chunk
+    }
+
+    fn current<V, H>(&mut self) -> Option<PostingElement<V>>
+    where
+        H: ValueHandler<V, S>,
+    {
+        let global_idx = self.pos.idx;
+        let chunk_idx = global_idx / CHUNK_SIZE;
+        let local_idx = global_idx % CHUNK_SIZE;
+
+        let current = if chunk_idx < self.list.chunks.len() {
+            let id = self.decompressed_chunk()[chunk_idx];
+            let sized_value = self.list.sized_values(chunk_idx)[local_idx];
+            let next_sized_value = self
+                .list
+                .sized_values(chunk_idx)
+                .get(local_idx + 1)
+                .copied();
+            let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
+
+            Some(PostingElement { id, value })
+        } else {
+            self.list.remainders.get(local_idx).map(|e| {
+                let id = e.id;
+                let next_sized_value = self.list.remainders.get(local_idx + 1).map(|r| r.value);
+                let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
+
+                PostingElement { id, value }
+            })
+        };
+
+        // todo: what to do with current IteratorPosition
+        // self.pos.point_id = current.map(|e| e.id);
+        current
     }
 }
