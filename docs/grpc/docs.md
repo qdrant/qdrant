@@ -171,7 +171,7 @@
     - [GetResponse](#qdrant-GetResponse)
     - [GroupId](#qdrant-GroupId)
     - [GroupsResult](#qdrant-GroupsResult)
-    - [Usage](#qdrant-Usage)
+    - [HardwareUsage](#qdrant-HardwareUsage)
     - [HasIdCondition](#qdrant-HasIdCondition)
     - [HasVectorCondition](#qdrant-HasVectorCondition)
     - [Image](#qdrant-Image)
@@ -266,6 +266,7 @@
     - [UpdatePointVectors](#qdrant-UpdatePointVectors)
     - [UpdateResult](#qdrant-UpdateResult)
     - [UpsertPoints](#qdrant-UpsertPoints)
+    - [Usage](#qdrant-Usage)
     - [ValuesCount](#qdrant-ValuesCount)
     - [Vector](#qdrant-Vector)
     - [VectorExample](#qdrant-VectorExample)
@@ -3047,17 +3048,8 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
-<a name="qdrant-Usage"></a>
-
-### Usage
-
-
-| Field                  | Type                     | Label | Description |
-|------------------------|--------------------------| ----- | ----------- |
-| hardware                 | [HardwareUsage](#qdrant-HardwareUsage) |  |  |
-
-
 <a name="qdrant-HardwareUsage"></a>
+
 ### HardwareUsage
 
 
@@ -4753,6 +4745,23 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | points | [PointStruct](#qdrant-PointStruct) | repeated |  |
 | ordering | [WriteOrdering](#qdrant-WriteOrdering) | optional | Write ordering guarantees |
 | shard_key_selector | [ShardKeySelector](#qdrant-ShardKeySelector) | optional | Option for custom sharding to specify used shard keys |
+
+
+
+
+
+
+<a name="qdrant-Usage"></a>
+
+### Usage
+---------------------------------------------
+----------- Measurements collector ----------
+---------------------------------------------
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| hardware | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
 
 
 
