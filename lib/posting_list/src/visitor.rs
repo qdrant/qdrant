@@ -85,17 +85,15 @@ impl<V, S> PostingListView<'_, V, S> {
     }
 
     /// Find the chunk that may contain the id.
+    /// It doesn't guarantee that the chunk contains the id, but if it is in the posting list, then it must be in the chunk.
+    ///
     /// Assumes the id is in the posting list range.
     pub fn find_chunk(&self, id: PointOffsetType, start_chunk: Option<usize>) -> Option<usize> {
         let remainders = self.remainders;
         let chunks = self.chunks;
 
-        if remainders
-            .first()
-            .map(|elem| id >= elem.id)
-            .unwrap_or(false)
-        {
-            // id is in the remainders list
+        // check if id is in the remainders list
+        if remainders.first().is_some_and(|elem| id >= elem.id) {
             return None;
         }
 
@@ -104,12 +102,27 @@ impl<V, S> PostingListView<'_, V, S> {
         }
 
         let start_chunk = start_chunk.unwrap_or(0);
-        match chunks[start_chunk..].binary_search_by(|chunk| chunk.initial_id.cmp(&id)) {
+        let chunks_slice = &chunks[start_chunk..];
+        if chunks_slice.is_empty() {
+            return None;
+        }
+
+        // No need to check if id is under range of posting list,
+        // this function assumes it is within the range
+        debug_assert!(id > chunks_slice[0].initial_id);
+
+        match chunks_slice.binary_search_by(|chunk| chunk.initial_id.cmp(&id)) {
             // id is the initial value of the chunk with index idx
             Ok(idx) => Some(start_chunk + idx),
-            // chunk idx has larger initial value than id
-            // so we need the previous chunk
-            Err(idx) if idx > 0 => Some(start_chunk + idx - 1),
+
+            // id is not the initial_id of any chunk
+            Err(insert_idx) if insert_idx > 0 => {
+                // this is the index of the chunk that could contain id
+                let idx = insert_idx - 1;
+
+                // id could be within this chunk
+                Some(start_chunk + idx)
+            }
             Err(_) => None,
         }
     }
@@ -131,6 +144,7 @@ impl<V, S> PostingListView<'_, V, S> {
     }
 }
 
+/// A visitor for a posting list which caches the latest decompressed chunk of ids.
 pub(crate) struct PostingVisitor<'a, V, S> {
     pub(crate) list: PostingListView<'a, V, S>,
 
@@ -138,7 +152,7 @@ pub(crate) struct PostingVisitor<'a, V, S> {
     /// It is used to shorten the search range of chunk index for the next value.
     decompressed_chunk_idx: Option<usize>,
 
-    /// Lazily decompressed chunk of ids. Never access this directly, prefer [`Self::decompressed_chunk`] function
+    /// Lazy decompressed chunk of ids. Never access this directly, prefer [`Self::decompressed_chunk`] function
     decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
 }
 
