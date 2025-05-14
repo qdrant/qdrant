@@ -477,7 +477,7 @@ fn build_test_segments_nested_payload(path_struct: &Path, path_plain: &Path) -> 
 
     for (_field, indexes) in struct_segment.payload_index.borrow().field_indexes.iter() {
         for index in indexes {
-            assert!(index.count_indexed_points() < num_points as usize);
+            assert!(index.count_indexed_points() <= num_points as usize);
             assert!(
                 index.count_indexed_points()
                     > (num_points as usize - points_to_delete - points_to_clear)
@@ -626,11 +626,17 @@ fn test_is_empty_conditions(test_segments: &TestSegments) -> Result<()> {
 
     let real_number = plain_result.len();
 
+    let id_tracker = test_segments.struct_segment.id_tracker.borrow();
     let struct_result = test_segments
         .struct_segment
         .payload_index
         .borrow()
-        .query_points(&filter, &hw_counter);
+        .query_points(&filter, &hw_counter)
+        .into_iter()
+        // null index does not track deleted points, so we need to filter them out here. In callsites,
+        // the deleted check is done externally anyway
+        .filter(|id| !id_tracker.is_deleted_point(*id))
+        .collect::<Vec<_>>();
 
     ensure!(plain_result == struct_result);
 

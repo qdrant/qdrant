@@ -9,6 +9,7 @@ use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::index::field_index::{
     CardinalityEstimation, FieldIndexBuilderTrait, PayloadBlockCondition, PayloadFieldIndex,
+    PrimaryCondition,
 };
 use crate::telemetry::PayloadIndexTelemetry;
 use crate::types::{FieldCondition, PayloadKeyType};
@@ -27,6 +28,7 @@ pub struct MmapNullIndex {
     has_values_slice: DynamicMmapFlags,
     /// If true, then payload field contains null value.
     is_null_slice: DynamicMmapFlags,
+    total_point_count: usize,
 }
 
 /// Don't populate null index as it is not essential
@@ -35,7 +37,7 @@ const POPULATE_NULL_INDEX: bool = false;
 
 impl MmapNullIndex {
     pub fn builder(path: &Path) -> OperationResult<MmapNullIndexBuilder> {
-        Ok(MmapNullIndexBuilder(Self::open_or_create(path)?))
+        Ok(MmapNullIndexBuilder(Self::open_or_create(path, 0)?))
     }
 
     /// Creates a new null index at the given path.
@@ -43,21 +45,21 @@ impl MmapNullIndex {
     ///
     /// # Arguments
     /// - `path` - The directory where the index files should live, must be exclusive to this index.
-    pub fn open_or_create(path: &Path) -> OperationResult<Self> {
+    pub fn open_or_create(path: &Path, total_point_count: usize) -> OperationResult<Self> {
         let has_values_dir = path.join(HAS_VALUES_DIRNAME);
         if has_values_dir.is_dir() {
-            Self::open(path)
+            Self::open(path, total_point_count)
         } else {
             std::fs::create_dir_all(path).map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to create null-index directory: {err}, path: {path:?}"
                 ))
             })?;
-            Self::open(path)
+            Self::open(path, total_point_count)
         }
     }
 
-    fn open(path: &Path) -> OperationResult<Self> {
+    fn open(path: &Path, total_point_count: usize) -> OperationResult<Self> {
         if !path.is_dir() {
             return Err(OperationError::service_error(format!(
                 "Path is not a directory {path:?}"
@@ -74,10 +76,11 @@ impl MmapNullIndex {
             base_dir: path.to_path_buf(),
             has_values_slice,
             is_null_slice,
+            total_point_count,
         })
     }
 
-    pub fn open_if_exists(path: &Path) -> OperationResult<Option<Self>> {
+    pub fn open_if_exists(path: &Path, total_point_count: usize) -> OperationResult<Option<Self>> {
         if !path.is_dir() {
             return Ok(None);
         }
@@ -92,6 +95,7 @@ impl MmapNullIndex {
                 base_dir: path.to_path_buf(),
                 has_values_slice,
                 is_null_slice,
+                total_point_count,
             }))
         } else {
             Ok(None)
@@ -143,6 +147,9 @@ impl MmapNullIndex {
             .set_with_resize(id, has_values, hw_counter_ref)?;
         self.is_null_slice
             .set_with_resize(id, is_null, hw_counter_ref)?;
+
+        // Update total_points to track the highest point offset seen
+        self.total_point_count = std::cmp::max(self.total_point_count, id as usize + 1);
 
         Ok(())
     }
@@ -220,6 +227,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             base_dir: _,
             has_values_slice,
             is_null_slice,
+            total_point_count: _,
         } = self;
 
         let is_empty_flusher = has_values_slice.flusher();
@@ -237,6 +245,7 @@ impl PayloadFieldIndex for MmapNullIndex {
             base_dir: _,
             has_values_slice,
             is_null_slice,
+            total_point_count: _,
         } = self;
 
         let mut files = has_values_slice.files();
@@ -262,36 +271,42 @@ impl PayloadFieldIndex for MmapNullIndex {
         } = condition;
 
         if let Some(is_empty) = is_empty {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
+
             if *is_empty {
-                // If we want to iterate over all empty values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
-            } else {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
-                // But we can iterate over all non-empty values, as all of them should
-                // register in the index
-                let iter = (0..self.has_values_slice.len() as PointOffsetType)
-                    .filter(move |&id| self.has_values_slice.get(id))
+                // Iterate over all tracked values, but filter out those which have a value
+                let iter = (0..self.total_point_count as PointOffsetType)
+                    .filter(move |&id| !self.has_values_slice.get(id))
                     .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                Some(Box::new(iter))
+            } else {
+                // Non-empty values are registered in the index explicitly
+                let iter =
+                    self.has_values_slice
+                        .iter_trues()
+                        .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             }
         } else if let Some(is_null) = is_null {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
             if *is_null {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
                 // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
-                let iter = (0..self.is_null_slice.len() as PointOffsetType)
-                    .filter(move |&id| self.is_null_slice.get(id))
-                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                let iter =
+                    self.is_null_slice
+                        .iter_trues()
+                        .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
                 Some(Box::new(iter))
             } else {
-                // If we want to iterate over all non-null values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
+                // Iterate over all tracked values, but filter out those which are null
+                let iter = (0..self.total_point_count as PointOffsetType)
+                    .filter(move |&id| !self.is_null_slice.get(id))
+                    .measure_hw_with_cell(hw_counter, 1, |i| i.payload_index_io_read_counter());
+                Some(Box::new(iter))
             }
         } else {
             None
@@ -304,7 +319,7 @@ impl PayloadFieldIndex for MmapNullIndex {
         hw_counter: &HardwareCounterCell,
     ) -> Option<CardinalityEstimation> {
         let FieldCondition {
-            key: _,
+            key,
             r#match: _,
             range: _,
             geo_bounding_box: _,
@@ -316,34 +331,63 @@ impl PayloadFieldIndex for MmapNullIndex {
         } = condition;
 
         if let Some(is_empty) = is_empty {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
             if *is_empty {
-                // If we want to iterate over all empty values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
+                // We can estimate using the total_point_count, but not exactly since we don't know which are deleted
+                let estimated = self
+                    .total_point_count
+                    .saturating_sub(self.has_values_slice.count_flags());
+
+                Some(CardinalityEstimation {
+                    min: 0,
+                    exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
+                    max: estimated,
+                    primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_empty(
+                        key.clone(),
+                        true,
+                    ))],
+                })
             } else {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.has_values_slice.len() / u8::BITS as usize);
-                // But we can iterate over all non-empty values, as all of them should
-                // register in the index
-                Some(CardinalityEstimation::exact(
-                    self.has_values_slice.count_flags(),
-                ))
+                // All non-empty values are explicitly marked in the index
+                Some(
+                    CardinalityEstimation::exact(self.has_values_slice.count_flags())
+                        .with_primary_clause(PrimaryCondition::from(FieldCondition::new_is_empty(
+                            key.clone(),
+                            false,
+                        ))),
+                )
             }
         } else if let Some(is_null) = is_null {
+            hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
+
             if *is_null {
-                hw_counter
-                    .payload_index_io_read_counter()
-                    .incr_delta(self.is_null_slice.len() / u8::BITS as usize);
-                // We DO have list of all null values, so we can iterate over them
                 // Null values are explicitly marked in the index
-                Some(CardinalityEstimation::exact(
-                    self.is_null_slice.count_flags(),
-                ))
+                Some(
+                    CardinalityEstimation::exact(self.is_null_slice.count_flags())
+                        .with_primary_clause(PrimaryCondition::from(FieldCondition::new_is_null(
+                            key.clone(),
+                            true,
+                        ))),
+                )
             } else {
-                // If we want to iterate over all non-null values, we need to do it externally
-                // as we don't know how many total values are out there
-                None
+                // We can estimate the non-null values from the total number of values
+                let estimated = self
+                    .total_point_count
+                    .saturating_sub(self.is_null_slice.count_flags());
+
+                Some(CardinalityEstimation {
+                    min: 0,                 // assuming all points are deleted
+                    exp: 2 * estimated / 3, // assuming 1/3 of the points are deleted
+                    max: estimated,
+                    primary_clauses: vec![PrimaryCondition::from(FieldCondition::new_is_null(
+                        key.clone(),
+                        false,
+                    ))],
+                })
             }
         } else {
             None
@@ -423,7 +467,7 @@ mod tests {
         let null_index = builder.finalize().unwrap();
         let key = JsonPath::new("test");
 
-        let filter_is_null = FieldCondition::new_is_null(key.clone());
+        let filter_is_null = FieldCondition::new_is_null(key.clone(), true);
 
         let filter_is_not_empty = FieldCondition {
             key: key.clone(),
