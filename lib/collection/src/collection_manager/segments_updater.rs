@@ -399,6 +399,8 @@ pub(crate) fn delete_field_index(
 
 /// Upsert to a point ID with the specified vectors and payload in the given segment.
 ///
+/// If the payload is None, the existing payload will be cleared.
+///
 /// Returns
 /// - Ok(true) if the operation was successful and point replaced existing value
 /// - Ok(false) if the operation was successful and point was inserted
@@ -414,6 +416,8 @@ fn upsert_with_payload(
     let mut res = segment.upsert_point(op_num, point_id, vectors, hw_counter)?;
     if let Some(full_payload) = payload {
         res &= segment.set_full_payload(op_num, point_id, full_payload, hw_counter)?;
+    } else {
+        res &= segment.clear_payload(op_num, point_id, hw_counter)?;
     }
     Ok(res)
 }
