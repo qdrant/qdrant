@@ -7,7 +7,7 @@ use crate::value_handler::ValueHandler;
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
 
-/// Generic posting list.
+/// Generic compressed posting list.
 ///
 /// - `PostingList<Sized<()>>` when there are no values (unit type `()`), there are just compressed ids + remainders
 /// - `PostingList<Sized<V>>` when there are `SizedValue` values, each id includes one value stored within the
