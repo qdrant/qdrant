@@ -377,7 +377,8 @@ impl GraphLayersBuilder {
 
         visited_list.check_and_update_visited(level_entry.idx);
 
-        let mut search_context = SearchContext::new(level_entry, self.ef_construct);
+        let mut search_context = SearchContext::new(self.ef_construct);
+        search_context.process_candidate(level_entry);
 
         self._search_on_level(
             &mut search_context,
