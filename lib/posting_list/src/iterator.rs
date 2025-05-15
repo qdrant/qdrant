@@ -1,3 +1,5 @@
+use std::iter::FusedIterator;
+
 use common::types::PointOffsetType;
 
 use crate::PostingElement;
@@ -48,3 +50,5 @@ impl<H: ValueHandler> ExactSizeIterator for PostingIterator<'_, H> {
         self.visitor.list.len().saturating_sub(self.offset)
     }
 }
+
+impl<H: ValueHandler> FusedIterator for PostingIterator<'_, H> {}
