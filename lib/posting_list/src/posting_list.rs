@@ -11,9 +11,9 @@ use crate::visitor::PostingVisitor;
 ///
 /// - `PostingList<Sized<()>>` when there are no values (unit type `()`), there are just compressed ids + remainders
 /// - `PostingList<Sized<V>>` when there are `SizedValue` values, each id includes one value stored within the
-///     fixed-sized chunks
+///   fixed-sized chunks
 /// - `PostingList<VarSized<V>>` when there are `VarSizedValue` values, each id includes one value in the chunk,
-///     which points to the actual value in the var_size_data
+///   which points to the actual value in the var_size_data
 pub struct PostingList<H: ValueHandler> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<H::Sized>>,
