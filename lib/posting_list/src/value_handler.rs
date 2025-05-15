@@ -25,11 +25,12 @@ pub trait ValueHandler {
     ///
     /// - For sized values it returns the first argument.
     /// - For variable-size values it returns the value between the two sized values in var_data.
-    fn get_value(
+    fn get_value<N>(
         sized_value: Self::Sized,
-        next_sized_value: Option<Self::Sized>,
+        next_sized_value: N,
         var_data: &[u8],
-    ) -> Self::Value;
+    ) -> Self::Value
+    where N: Fn() -> Option<Self::Sized>;
 }
 
 /// Fixed-size value handler
@@ -43,7 +44,7 @@ impl<V: SizedValue + Copy> ValueHandler for Sized<V> {
         (values, Vec::new())
     }
 
-    fn get_value(sized_value: V, _next_sized_value: Option<V>, _var_data: &[u8]) -> V {
+    fn get_value<N>(sized_value: V, _next_sized_value: N, _var_data: &[u8]) -> V where N: Fn() -> Option<Self::Sized> {
         sized_value
     }
 }
@@ -70,12 +71,12 @@ impl<V: VarSizedValue> ValueHandler for VarSized<V> {
         (offsets, var_sized_data)
     }
 
-    fn get_value(
+    fn get_value<N>(
         sized_value: Self::Sized,
-        next_sized_value: Option<Self::Sized>,
+        next_sized_value: N,
         var_data: &[u8],
-    ) -> Self::Value {
-        let range = match next_sized_value {
+    ) -> Self::Value where N: Fn() -> Option<Self::Sized> {
+        let range = match next_sized_value() {
             Some(next_value) => sized_value as usize..next_value as usize,
             None => sized_value as usize..var_data.len(),
         };

@@ -73,7 +73,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
             let chunk_sized_values = self.list.sized_values_unchecked(chunk_idx);
             let sized_value = chunk_sized_values[local_offset];
-            let next_sized_value = chunk_sized_values
+            let next_sized_value = || chunk_sized_values
                 .get(local_offset + 1)
                 .copied()
                 // or check first of the next chunk
@@ -93,7 +93,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         // else, get from remainder
         self.list.remainders.get(local_offset).map(|e| {
             let id = e.id;
-            let next_sized_value = self.list.remainders.get(local_offset + 1).map(|r| r.value);
+            let next_sized_value = || self.list.remainders.get(local_offset + 1).map(|r| r.value);
             let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
 
             PostingElement { id, value }
