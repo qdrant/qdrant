@@ -1,7 +1,9 @@
-use crate::value_handler::VarSized;
-use crate::{PostingBuilder, PostingList, VarSizedValue, CHUNK_SIZE};
-use common::types::PointOffsetType;
 use std::ops::Deref;
+
+use common::types::PointOffsetType;
+
+use crate::value_handler::VarSized;
+use crate::{CHUNK_SIZE, PostingBuilder, PostingList, VarSizedValue};
 
 // Simple struct that implements VarSizedValue for testing
 #[derive(Debug, Clone, PartialEq)]
@@ -56,7 +58,10 @@ fn model_test_var_sized() {
         (300u32, "three hundredth"),
         (400u32, "four hundredth"),
         (500u32, "five hundredth"),
-    ].into_iter().map(|(id, s)| (id, TestString(s.to_string()))).collect::<Vec<_>>();
+    ]
+    .into_iter()
+    .map(|(id, s)| (id, TestString(s.to_string())))
+    .collect::<Vec<_>>();
 
     // Add additional elements to fill more than a CHUNK_SIZE
     for i in 1000..1300 {
@@ -64,14 +69,17 @@ fn model_test_var_sized() {
     }
 
     // Verify we have more than CHUNK_SIZE elements
-    assert!(test_data.len() > CHUNK_SIZE, "Test data should have more than 128 elements but has {}", test_data.len());
+    assert!(
+        test_data.len() > CHUNK_SIZE,
+        "Test data should have more than 128 elements but has {}",
+        test_data.len()
+    );
 
     // Build our reference model - convert all string slices to owned strings
     let reference_model: Vec<(PointOffsetType, TestString)> = test_data
         .iter()
         .map(|(id, s)| (*id, TestString(s.to_string())))
         .collect();
-
 
     // Create the posting list builder and add elements
     let mut builder = PostingBuilder::new();

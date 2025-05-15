@@ -117,8 +117,7 @@ impl<V: SizedValue> PostingBuilder<V> {
 // For variable-size values, we store offsets in the PostingChunk that point to
 // the actual values stored in var_size_data.
 // Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_size_data`
-impl<V: VarSizedValue> PostingBuilder<V>
-{
+impl<V: VarSizedValue> PostingBuilder<V> {
     pub fn build_var_sized(self) -> PostingList<V, VarSized<V>> {
         self.build_generic::<VarSized<V>>()
     }

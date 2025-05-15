@@ -1,5 +1,6 @@
-use crate::{SizedValue, VarSizedValue};
 use std::marker::PhantomData;
+
+use crate::{SizedValue, VarSizedValue};
 
 /// Marker structs for distinguishing implementations
 pub struct SizedMarker;

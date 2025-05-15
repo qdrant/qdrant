@@ -2,7 +2,8 @@ use std::marker::PhantomData;
 
 use common::types::PointOffsetType;
 
-use crate::{value_handler::ValueHandler, CHUNK_SIZE};
+use crate::CHUNK_SIZE;
+use crate::value_handler::ValueHandler;
 
 /// V is the value we are interested to store along with the id.
 /// S is the type of value we store within the chunk, should be small like an int. For
