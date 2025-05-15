@@ -4421,13 +4421,9 @@ checksum = "dc59d1bcc64fc5d021d67521f818db868368028108d37f0e98d74e33f68297b5"
 name = "posting_list"
 version = "0.0.0"
 dependencies = [
- "ahash",
  "bitpacking",
  "common",
- "log",
- "memmap2",
  "rand 0.9.1",
- "serde",
  "tempfile",
 ]
 

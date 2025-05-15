@@ -10,12 +10,8 @@ publish = false
 workspace = true
 
 [dependencies]
-ahash = { workspace = true }
-memmap2 = { workspace = true }
 common = { path = "../common/common" }
-log = { workspace = true }
 bitpacking = { workspace = true }
-serde = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
