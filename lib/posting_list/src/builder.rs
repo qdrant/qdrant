@@ -32,9 +32,9 @@ impl<V> PostingBuilder<V> {
     ///
     /// This method uses the `ValueHandler::process_values` trait function to abstract the
     /// differences between the two implementations, allowing us to share the common logic.
-    pub(crate) fn build_generic<H>(mut self) -> PostingList<V, H>
+    pub(crate) fn build_generic<H>(mut self) -> PostingList<H>
     where
-        H: ValueHandler<V>,
+        H: ValueHandler<Value = V>,
     {
         self.elements.sort_unstable_by_key(|e| e.id);
 
@@ -105,20 +105,32 @@ impl<V> PostingBuilder<V> {
     }
 }
 
-// Fixed-sized value implementation
-// For fixed-size values, we store them directly in the PostingChunk
+impl PostingBuilder<()> {
+    /// Add an id without a value.
+    pub fn add_id(&mut self, id: PointOffsetType) {
+        self.add(id, ());
+    }
+
+    /// Build a posting list with just the compressed ids.
+    pub fn build(self) -> PostingList<Sized<()>> {
+        self.build_generic::<Sized<()>>()
+    }
+}
+
 impl<V: SizedValue> PostingBuilder<V> {
-    fn build_sized(self) -> PostingList<V, Sized<V>> {
+    /// Build a posting list with fixed-sized values to store them directly in the PostingChunk
+    pub fn build_sized(self) -> PostingList<Sized<V>> {
         self.build_generic::<Sized<V>>()
     }
 }
 
 // Variable-sized value implementation.
-// For variable-size values, we store offsets in the PostingChunk that point to
-// the actual values stored in var_size_data.
-// Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_size_data`
 impl<V: VarSizedValue> PostingBuilder<V> {
-    pub fn build_var_sized(self) -> PostingList<V, VarSized<V>> {
+    /// Build a posting list with variable-sized values to store them in the `var_size_data` field.
+    ///
+    /// For variable-size values, we store offsets along with each id to point into a flattened array
+    /// where the var-sized data lives.
+    pub fn build_var_sized(self) -> PostingList<VarSized<V>> {
         self.build_generic::<VarSized<V>>()
     }
 }

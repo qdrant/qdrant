@@ -9,13 +9,13 @@ use crate::value_handler::ValueHandler;
 /// S is the type of value we store within the chunk, should be small like an int. For
 /// variable-sized values, this acts as a pointer into var_size_data
 /// H is the value handler, which is either for sized values or variable-sized values.
-pub struct PostingList<V, H: ValueHandler<V>> {
+pub struct PostingList<H: ValueHandler> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<H::Sized>>,
     pub(crate) remainders: Vec<PostingElement<H::Sized>>,
     pub(crate) var_size_data: Vec<u8>,
     pub(crate) last_id: Option<PointOffsetType>,
-    pub(crate) _phantom: PhantomData<(V, H)>,
+    pub(crate) _phantom: PhantomData<H>,
 }
 
 #[derive(Clone, Debug)]

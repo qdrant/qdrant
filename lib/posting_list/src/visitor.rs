@@ -10,17 +10,17 @@ use crate::{BitPackerImpl, CHUNK_SIZE};
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug, Clone)]
-pub struct PostingListView<'a, V, H: ValueHandler<V>> {
+pub struct PostingListView<'a, H: ValueHandler> {
     id_data: &'a [u8],
     chunks: &'a [PostingChunk<H::Sized>],
     var_size_data: &'a [u8],
     remainders: &'a [PostingElement<H::Sized>],
     last_id: Option<PointOffsetType>,
-    _phantom: PhantomData<(V, H)>,
+    _phantom: PhantomData<H>,
 }
 
-impl<V, H: ValueHandler<V>> PostingList<V, H> {
-    fn view(&self) -> PostingListView<V, H> {
+impl<H: ValueHandler> PostingList<H> {
+    fn view(&self) -> PostingListView<H> {
         let PostingList {
             id_data,
             chunks,
@@ -40,13 +40,13 @@ impl<V, H: ValueHandler<V>> PostingList<V, H> {
         }
     }
 
-    pub fn visitor(&self) -> PostingVisitor<'_, V, H> {
+    pub fn visitor(&self) -> PostingVisitor<'_, H> {
         let view = self.view();
         PostingVisitor::new(view)
     }
 }
 
-impl<V, H: ValueHandler<V>> PostingListView<'_, V, H> {
+impl<H: ValueHandler> PostingListView<'_, H> {
     fn decompress_chunk(
         &self,
         chunk_index: usize,
@@ -110,7 +110,7 @@ impl<V, H: ValueHandler<V>> PostingListView<'_, V, H> {
 
         // No need to check if id is under range of posting list,
         // this function assumes it is within the range
-        debug_assert!(id > chunks_slice[0].initial_id);
+        debug_assert!(id >= chunks_slice[0].initial_id);
 
         match chunks_slice.binary_search_by(|chunk| chunk.initial_id.cmp(&id)) {
             // id is the initial value of the chunk with index idx
@@ -146,8 +146,8 @@ impl<V, H: ValueHandler<V>> PostingListView<'_, V, H> {
 }
 
 /// A visitor for a posting list which caches the latest decompressed chunk of ids.
-pub struct PostingVisitor<'a, V, H: ValueHandler<V>> {
-    pub(crate) list: PostingListView<'a, V, H>,
+pub struct PostingVisitor<'a, H: ValueHandler> {
+    pub(crate) list: PostingListView<'a, H>,
 
     /// Index of the decompressed chunk.
     /// It is used to shorten the search range of chunk index for the next value.
@@ -157,8 +157,8 @@ pub struct PostingVisitor<'a, V, H: ValueHandler<V>> {
     decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
 }
 
-impl<'a, V, H: ValueHandler<V>> PostingVisitor<'a, V, H> {
-    fn new(view: PostingListView<'a, V, H>) -> Self {
+impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
+    fn new(view: PostingListView<'a, H>) -> Self {
         Self {
             list: view,
             decompressed_chunk_idx: None,
@@ -170,6 +170,9 @@ impl<'a, V, H: ValueHandler<V>> PostingVisitor<'a, V, H> {
         self.list.len()
     }
 
+    /// Returns the decompressed slice of ids for a chunk.
+    ///
+    /// Assumes the chunk_idx is valid.
     fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_SIZE] {
         if self.decompressed_chunk_idx != Some(chunk_idx) {
             self.list
@@ -200,7 +203,7 @@ impl<'a, V, H: ValueHandler<V>> PostingVisitor<'a, V, H> {
         }
     }
 
-    pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<V>> {
+    pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<H::Value>> {
         let chunk_idx = offset / CHUNK_SIZE;
         let local_offset = offset % CHUNK_SIZE;
 
@@ -212,7 +215,9 @@ impl<'a, V, H: ValueHandler<V>> PostingVisitor<'a, V, H> {
                 .list
                 .sized_values(chunk_idx)
                 .get(local_offset + 1)
-                .copied();
+                .copied()
+                .or_else(|| self.list.remainders.get(0).map(|e| e.value));
+
             let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
             return Some(PostingElement { id, value });
@@ -229,9 +234,9 @@ impl<'a, V, H: ValueHandler<V>> PostingVisitor<'a, V, H> {
     }
 }
 
-impl<'a, V, H: ValueHandler<V>> IntoIterator for PostingVisitor<'a, V, H> {
-    type Item = PostingElement<V>;
-    type IntoIter = PostingIterator<'a, V, H>;
+impl<'a, H: ValueHandler> IntoIterator for PostingVisitor<'a, H> {
+    type Item = PostingElement<H::Value>;
+    type IntoIter = PostingIterator<'a, H>;
 
     fn into_iter(self) -> Self::IntoIter {
         PostingIterator::new(self)

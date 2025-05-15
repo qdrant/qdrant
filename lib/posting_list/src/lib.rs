@@ -5,6 +5,8 @@ mod posting_list;
 mod tests;
 mod value_handler;
 mod visitor;
+use std::borrow::Cow;
+
 use bitpacking::BitPacker;
 
 type BitPackerImpl = bitpacking::BitPacker4x;
@@ -15,10 +17,14 @@ const CHUNK_SIZE: usize = BitPackerImpl::BLOCK_LEN;
 pub trait SizedValue: Sized + Copy + std::fmt::Debug {}
 
 pub trait VarSizedValue {
-    fn to_bytes(&self) -> Vec<u8>;
+    fn to_bytes(&self) -> Cow<'_, [u8]>;
 
     fn from_bytes(data: &[u8]) -> Self;
 }
+
+impl SizedValue for () {}
+impl SizedValue for u32 {}
+impl SizedValue for u64 {}
 
 pub use builder::PostingBuilder;
 pub use posting_list::{PostingChunk, PostingElement, PostingList};
