@@ -23,6 +23,44 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         PostingVisitor::new(self)
     }
 
+    pub fn components(
+        &self,
+    ) -> (
+        &[u8],
+        &[PostingChunk<H::Sized>],
+        &[u8],
+        &[PostingElement<H::Sized>],
+        Option<PointOffsetType>,
+    ) {
+        let Self {
+            id_data,
+            chunks,
+            var_size_data,
+            remainders,
+            last_id,
+            _phantom,
+        } = self;
+
+        (id_data, chunks, var_size_data, remainders, *last_id)
+    }
+
+    pub fn from_components(
+        id_data: &'a [u8],
+        chunks: &'a [PostingChunk<H::Sized>],
+        var_size_data: &'a [u8],
+        remainders: &'a [PostingElement<H::Sized>],
+        last_id: Option<PointOffsetType>,
+    ) -> Self {
+        Self {
+            id_data,
+            chunks,
+            var_size_data,
+            remainders,
+            last_id,
+            _phantom: PhantomData,
+        }
+    }
+
     pub(crate) fn decompress_chunk(
         &self,
         chunk_index: usize,
