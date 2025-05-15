@@ -580,6 +580,10 @@ impl Collection {
             }
         }
 
+        for transfer in self.get_related_transfers(peer_id).await {
+            self.abort_shard_transfer(transfer.key(), None).await?;
+        }
+
         self.shards_holder
             .read()
             .await
