@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::Deref;
 
 use common::types::PointOffsetType;
@@ -9,24 +10,12 @@ use crate::{CHUNK_SIZE, PostingBuilder, VarSizedValue};
 struct TestString(String);
 
 impl VarSizedValue for TestString {
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(4 + self.0.len());
-        // Store length as u32
-        let len = self.0.len() as u32;
-        result.extend_from_slice(&len.to_le_bytes());
-        // Store actual string bytes
-        result.extend_from_slice(self.0.as_bytes());
-        result
+    fn to_bytes(&self) -> Cow<'_, [u8]> {
+        Cow::Borrowed(self.as_bytes())
     }
 
     fn from_bytes(data: &[u8]) -> Self {
-        // Extract length
-        let mut len_bytes = [0u8; 4];
-        len_bytes.copy_from_slice(&data[0..4]);
-        let len = u32::from_le_bytes(len_bytes) as usize;
-
-        // Extract string
-        let s = String::from_utf8_lossy(&data[4..4 + len]).to_string();
+        let s = String::from_utf8_lossy(data).to_string();
         TestString(s)
     }
 }
@@ -75,14 +64,14 @@ fn model_test_var_sized() {
     );
 
     // Build our reference model - convert all string slices to owned strings
-    let reference_model: Vec<(PointOffsetType, TestString)> = test_data
+    let vec: Vec<(PointOffsetType, TestString)> = test_data
         .iter()
         .map(|(id, s)| (*id, TestString(s.to_string())))
         .collect();
 
     // Create the posting list builder and add elements
     let mut builder = PostingBuilder::new();
-    for (id, value) in &reference_model {
+    for (id, value) in &vec {
         builder.add(*id, value.clone());
     }
 
@@ -93,15 +82,81 @@ fn model_test_var_sized() {
     let mut visitor = posting_list.visitor();
 
     // Validate len()
-    assert_eq!(visitor.len(), reference_model.len());
+    assert_eq!(visitor.len(), vec.len());
 
     // Iterate through the elements in reference_model and check they can be found
-    for (offset, (expected_id, expected_value)) in reference_model.iter().enumerate() {
+    for (offset, (expected_id, expected_value)) in vec.iter().enumerate() {
         let Some(elem) = visitor.get_by_offset(offset) else {
             panic!("Element not found at offset {offset}");
         };
 
         assert_eq!(elem.id, *expected_id);
         assert_eq!(&elem.value, expected_value);
+
+        // also check that contains function works
+        assert!(visitor.contains(*expected_id));
+    }
+}
+
+#[test]
+fn model_test_sized() {
+    // Create initial test data with named values
+    let mut test_data = vec![
+        (1u32, 100u64),
+        (5u32, 500u64),
+        (10u32, 1000u64),
+        (15u32, 1500u64),
+        (20u32, 2000u64),
+        (25u32, 2500u64),
+        (30u32, 3000u64),
+        (100u32, 10000u64),
+        (101u32, 10100u64),
+        (200u32, 20000u64),
+        (300u32, 30000u64),
+        (400u32, 40000u64),
+        (500u32, 50000u64),
+    ];
+
+    // Add additional elements to fill more than a CHUNK_SIZE
+    for i in 1000..1300 {
+        test_data.push((i, u64::from(i) * 100));
+    }
+
+    // Verify we have more than CHUNK_SIZE elements
+    assert!(
+        test_data.len() > CHUNK_SIZE,
+        "Test data should have more than 128 elements but has {}",
+        test_data.len()
+    );
+
+    // Build our reference model
+    let vec: Vec<(PointOffsetType, u64)> = test_data.clone();
+
+    // Create the posting list builder and add elements
+    let mut builder = PostingBuilder::new();
+    for (id, value) in &vec {
+        builder.add(*id, *value);
+    }
+
+    // Build the actual posting list
+    let posting_list = builder.build_sized();
+
+    // Access the posting list
+    let mut visitor = posting_list.visitor();
+
+    // Validate len()
+    assert_eq!(visitor.len(), vec.len());
+
+    // Iterate through the elements in reference_model and check they can be found
+    for (offset, (expected_id, expected_value)) in vec.iter().enumerate() {
+        let Some(elem) = visitor.get_by_offset(offset) else {
+            panic!("Element not found at offset {offset}");
+        };
+
+        assert_eq!(elem.id, *expected_id);
+        assert_eq!(elem.value, *expected_value);
+
+        // also check that contains function works
+        assert!(visitor.contains(*expected_id));
     }
 }

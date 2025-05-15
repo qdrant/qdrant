@@ -11,14 +11,14 @@ use crate::{SizedValue, VarSizedValue};
 /// - For variable-size values, [`ValueHandler::Sized`] is an offset into the var_sized_data
 pub trait ValueHandler {
     /// The type of value in each PostingElement.
-    type Value;
+    type Value: std::fmt::Debug;
     /// The value to store within each chunk, or alongside each id.
-    type Sized: std::marker::Sized + Copy;
+    type Sized: std::fmt::Debug + std::marker::Sized + Copy;
 
     /// Process values before storage and return the necessary var_sized_data
     ///
     /// - For fixed-size values, this returns the values themselves and an empty var_sized_data.
-    /// - For variable-size values, this returns offsets and the actual serialized data.
+    /// - For variable-size values, this returns offsets and the flattened serialized data.
     fn process_values(values: Vec<Self::Value>) -> (Vec<Self::Sized>, Vec<u8>);
 
     /// Retrieve a value.
@@ -70,7 +70,11 @@ impl<V: VarSizedValue> ValueHandler for VarSized<V> {
         (offsets, var_sized_data)
     }
 
-    fn get_value(sized_value: Self::Sized, next_sized_value: Option<Self::Sized>, var_data: &[u8]) -> Self::Value {
+    fn get_value(
+        sized_value: Self::Sized,
+        next_sized_value: Option<Self::Sized>,
+        var_data: &[u8],
+    ) -> Self::Value {
         let range = match next_sized_value {
             Some(next_value) => sized_value as usize..next_value as usize,
             None => sized_value as usize..var_data.len(),

@@ -63,9 +63,12 @@ impl<H: ValueHandler> PostingListView<'_, H> {
             chunk_bits as u8,
         );
     }
-
-    fn sized_values(&self, chunk_idx: usize) -> &[H::Sized] {
+    fn sized_values_unchecked(&self, chunk_idx: usize) -> &[H::Sized] {
         &self.chunks[chunk_idx].sized_values
+    }
+
+    fn sized_values(&self, chunk_idx: usize) -> Option<&[H::Sized; CHUNK_SIZE]> {
+        self.chunks.get(chunk_idx).map(|chunk| &chunk.sized_values)
     }
 
     fn is_in_range(&self, id: PointOffsetType) -> bool {
@@ -210,13 +213,21 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         // get from chunk
         if chunk_idx < self.list.chunks.len() {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
-            let sized_value = self.list.sized_values(chunk_idx)[local_offset];
-            let next_sized_value = self
-                .list
-                .sized_values(chunk_idx)
+            let chunk_sized_values = self.list.sized_values_unchecked(chunk_idx);
+            let sized_value = chunk_sized_values[local_offset];
+            let next_sized_value = chunk_sized_values
                 .get(local_offset + 1)
                 .copied()
-                .or_else(|| self.list.remainders.get(0).map(|e| e.value));
+                // or check first of the next chunk
+                .or_else(|| {
+                    self.list
+                        .sized_values(chunk_idx + 1)
+                        .map(|sized_values| sized_values[0])
+                })
+                // or, if it is the last one, check first from remainders
+                .or_else(|| self.list.remainders.first().map(|e| e.value));
+
+            dbg!(sized_value, next_sized_value);
 
             let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
