@@ -2,10 +2,6 @@ use std::marker::PhantomData;
 
 use crate::{SizedValue, VarSizedValue};
 
-/// Marker structs for distinguishing implementations
-pub struct SizedMarker;
-pub struct VarSizedMarker;
-
 /// Trait to abstract the handling of values in PostingList
 ///
 /// This trait handles the differences between fixed-size and variable-size value

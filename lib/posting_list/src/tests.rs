@@ -2,8 +2,7 @@ use std::ops::Deref;
 
 use common::types::PointOffsetType;
 
-use crate::value_handler::VarSized;
-use crate::{CHUNK_SIZE, PostingBuilder, PostingList, VarSizedValue};
+use crate::{CHUNK_SIZE, PostingBuilder, VarSizedValue};
 
 // Simple struct that implements VarSizedValue for testing
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +64,7 @@ fn model_test_var_sized() {
 
     // Add additional elements to fill more than a CHUNK_SIZE
     for i in 1000..1300 {
-        test_data.push((i, TestString(format!("item_{}", i))));
+        test_data.push((i, TestString(format!("item_{i}"))));
     }
 
     // Verify we have more than CHUNK_SIZE elements
@@ -99,7 +98,7 @@ fn model_test_var_sized() {
     // Iterate through the elements in reference_model and check they can be found
     for (offset, (expected_id, expected_value)) in reference_model.iter().enumerate() {
         let Some(elem) = visitor.get_by_offset(offset) else {
-            panic!("Element not found at offset {}", offset);
+            panic!("Element not found at offset {offset}");
         };
 
         assert_eq!(elem.id, *expected_id);
