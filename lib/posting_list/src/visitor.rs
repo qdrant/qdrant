@@ -227,8 +227,6 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
                 // or, if it is the last one, check first from remainders
                 .or_else(|| self.list.remainders.first().map(|e| e.value));
 
-            dbg!(sized_value, next_sized_value);
-
             let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
             return Some(PostingElement { id, value });
