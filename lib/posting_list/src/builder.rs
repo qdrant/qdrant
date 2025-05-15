@@ -4,7 +4,7 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::posting_list::{PostingChunk, PostingElement, PostingList};
-use crate::value_handler::{ValueHandler, VarSized};
+use crate::value_handler::{Sized, ValueHandler, VarSized};
 use crate::{BitPackerImpl, CHUNK_SIZE, SizedValue, VarSizedValue};
 
 pub struct PostingBuilder<V> {
@@ -32,7 +32,7 @@ impl<V> PostingBuilder<V> {
     ///
     /// This method uses the `ValueHandler::process_values` trait function to abstract the
     /// differences between the two implementations, allowing us to share the common logic.
-    pub(crate) fn build_generic<H>(mut self) -> PostingList<V, H::Sized>
+    pub(crate) fn build_generic<H>(mut self) -> PostingList<V, H>
     where
         H: ValueHandler<V>,
     {
@@ -108,8 +108,8 @@ impl<V> PostingBuilder<V> {
 // Fixed-sized value implementation
 // For fixed-size values, we store them directly in the PostingChunk
 impl<V: SizedValue> PostingBuilder<V> {
-    fn build_sized(self) -> PostingList<V> {
-        self.build_generic::<V>()
+    fn build_sized(self) -> PostingList<V, Sized<V>> {
+        self.build_generic::<Sized<V>>()
     }
 }
 
@@ -119,7 +119,7 @@ impl<V: SizedValue> PostingBuilder<V> {
 // Here `chunk.sized_values` are pointing to the start offset of the actual values in `posting.var_size_data`
 impl<V: VarSizedValue> PostingBuilder<V>
 {
-    fn build_var_sized(builder: PostingBuilder<V>) -> PostingList<V, u32> {
-        builder.build_generic::<VarSized<V>>()
+    pub fn build_var_sized(self) -> PostingList<V, VarSized<V>> {
+        self.build_generic::<VarSized<V>>()
     }
 }

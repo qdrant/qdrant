@@ -3,7 +3,8 @@ mod iterator;
 mod posting_list;
 mod value_handler;
 mod visitor;
-
+#[cfg(test)]
+mod tests;
 use bitpacking::BitPacker;
 
 type BitPackerImpl = bitpacking::BitPacker4x;

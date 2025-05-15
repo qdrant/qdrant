@@ -4,14 +4,14 @@ use crate::PostingElement;
 use crate::value_handler::ValueHandler;
 use crate::visitor::PostingVisitor;
 
-pub struct PostingIterator<'a, V, S> {
-    pub(crate) visitor: PostingVisitor<'a, V, S>,
+pub struct PostingIterator<'a, V, H: ValueHandler<V>> {
+    pub(crate) visitor: PostingVisitor<'a, V, H>,
     current_id: Option<PointOffsetType>,
     offset: usize,
 }
 
-impl<'a, V, S> PostingIterator<'a, V, S> {
-    pub fn new(visitor: PostingVisitor<'a, V, S>) -> Self {
+impl<'a, V, H: ValueHandler<V>> PostingIterator<'a, V, H> {
+    pub fn new(visitor: PostingVisitor<'a, V, H>) -> Self {
         Self {
             visitor,
             current_id: None,
@@ -20,7 +20,7 @@ impl<'a, V, S> PostingIterator<'a, V, S> {
     }
 }
 
-impl<S: Copy, V: ValueHandler<V, Sized = S>> Iterator for PostingIterator<'_, V, S> {
+impl<V, H: ValueHandler<V>> Iterator for PostingIterator<'_, V, H> {
     type Item = PostingElement<V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -43,7 +43,7 @@ impl<S: Copy, V: ValueHandler<V, Sized = S>> Iterator for PostingIterator<'_, V,
     }
 }
 
-impl<S: Copy, V: ValueHandler<V, Sized = S>> ExactSizeIterator for PostingIterator<'_, V, S> {
+impl<V, H: ValueHandler<V>> ExactSizeIterator for PostingIterator<'_, V, H> {
     fn len(&self) -> usize {
         self.visitor.list.len().saturating_sub(self.offset)
     }

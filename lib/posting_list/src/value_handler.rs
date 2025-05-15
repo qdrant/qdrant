@@ -1,6 +1,9 @@
+use crate::{SizedValue, VarSizedValue};
 use std::marker::PhantomData;
 
-use crate::{SizedValue, VarSizedValue};
+/// Marker structs for distinguishing implementations
+pub struct SizedMarker;
+pub struct VarSizedMarker;
 
 /// Trait to abstract the handling of values in PostingList
 ///
@@ -11,7 +14,7 @@ use crate::{SizedValue, VarSizedValue};
 /// - For variable-size values, [`ValueHandler::Fixed`] is an offset (u32) into the var_sized_data
 pub trait ValueHandler<V> {
     /// The value to store within each chunk, or alongside each id.
-    type Sized: Sized + Copy;
+    type Sized: std::marker::Sized + Copy;
 
     /// Process values before storage and return the necessary var_sized_data
     ///
@@ -31,7 +34,9 @@ pub trait ValueHandler<V> {
 }
 
 /// Fixed-size value handler
-impl<V: SizedValue + Copy> ValueHandler<V> for V {
+pub struct Sized<V>(PhantomData<V>);
+
+impl<V: SizedValue + Copy> ValueHandler<V> for Sized<V> {
     type Sized = V;
 
     fn process_values(values: Vec<V>) -> (Vec<V>, Vec<u8>) {
@@ -43,10 +48,9 @@ impl<V: SizedValue + Copy> ValueHandler<V> for V {
     }
 }
 
-/// Wrapper to specify the implementation of ValueHandler for variable-size values
-pub(crate) struct VarSized<V: VarSizedValue>(PhantomData<V>);
-
 /// Var-size value handler
+pub struct VarSized<V>(PhantomData<V>);
+
 impl<V: VarSizedValue> ValueHandler<V> for VarSized<V> {
     type Sized = u32;
 

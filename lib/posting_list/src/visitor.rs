@@ -3,23 +3,24 @@ use std::marker::PhantomData;
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
+use crate::iterator::PostingIterator;
 use crate::posting_list::{PostingChunk, PostingElement, PostingList};
 use crate::value_handler::ValueHandler;
 use crate::{BitPackerImpl, CHUNK_SIZE};
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug, Clone)]
-pub struct PostingListView<'a, V, S> {
+pub struct PostingListView<'a, V, H: ValueHandler<V>> {
     id_data: &'a [u8],
-    chunks: &'a [PostingChunk<S>],
+    chunks: &'a [PostingChunk<H::Sized>],
     var_size_data: &'a [u8],
-    remainders: &'a [PostingElement<S>],
+    remainders: &'a [PostingElement<H::Sized>],
     last_id: Option<PointOffsetType>,
-    _phantom: PhantomData<V>,
+    _phantom: PhantomData<(V, H)>,
 }
 
-impl<V: ValueHandler<V, Sized = S>, S: Copy> PostingList<V, S> {
-    fn view(&self) -> PostingListView<V, S> {
+impl<V, H: ValueHandler<V>> PostingList<V, H> {
+    fn view(&self) -> PostingListView<V, H> {
         let PostingList {
             id_data,
             chunks,
@@ -39,13 +40,13 @@ impl<V: ValueHandler<V, Sized = S>, S: Copy> PostingList<V, S> {
         }
     }
 
-    fn visitor(&self) -> PostingVisitor<V, S> {
+    pub fn visitor(&self) -> PostingVisitor<'_, V, H> {
         let view = self.view();
         PostingVisitor::new(view)
     }
 }
 
-impl<V, S> PostingListView<'_, V, S> {
+impl<V, H: ValueHandler<V>> PostingListView<'_, V, H> {
     fn decompress_chunk(
         &self,
         chunk_index: usize,
@@ -63,7 +64,7 @@ impl<V, S> PostingListView<'_, V, S> {
         );
     }
 
-    fn sized_values(&self, chunk_idx: usize) -> &[S] {
+    fn sized_values(&self, chunk_idx: usize) -> &[H::Sized] {
         &self.chunks[chunk_idx].sized_values
     }
 
@@ -145,8 +146,8 @@ impl<V, S> PostingListView<'_, V, S> {
 }
 
 /// A visitor for a posting list which caches the latest decompressed chunk of ids.
-pub(crate) struct PostingVisitor<'a, V, S> {
-    pub(crate) list: PostingListView<'a, V, S>,
+pub struct PostingVisitor<'a, V, H: ValueHandler<V>> {
+    pub(crate) list: PostingListView<'a, V, H>,
 
     /// Index of the decompressed chunk.
     /// It is used to shorten the search range of chunk index for the next value.
@@ -156,13 +157,17 @@ pub(crate) struct PostingVisitor<'a, V, S> {
     decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
 }
 
-impl<'a, S: Copy, V: ValueHandler<V, Sized = S>> PostingVisitor<'a, V, S> {
-    fn new(view: PostingListView<'a, V, S>) -> Self {
+impl<'a, V, H: ValueHandler<V>> PostingVisitor<'a, V, H> {
+    fn new(view: PostingListView<'a, V, H>) -> Self {
         Self {
             list: view,
             decompressed_chunk_idx: None,
             decompressed_chunk: [0; CHUNK_SIZE],
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.list.len()
     }
 
     fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_SIZE] {
@@ -208,7 +213,7 @@ impl<'a, S: Copy, V: ValueHandler<V, Sized = S>> PostingVisitor<'a, V, S> {
                 .sized_values(chunk_idx)
                 .get(local_offset + 1)
                 .copied();
-            let value = V::get_value(sized_value, next_sized_value, self.list.var_size_data);
+            let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
             return Some(PostingElement { id, value });
         }
@@ -217,9 +222,18 @@ impl<'a, S: Copy, V: ValueHandler<V, Sized = S>> PostingVisitor<'a, V, S> {
         self.list.remainders.get(local_offset).map(|e| {
             let id = e.id;
             let next_sized_value = self.list.remainders.get(local_offset + 1).map(|r| r.value);
-            let value = V::get_value(e.value, next_sized_value, self.list.var_size_data);
+            let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
 
             PostingElement { id, value }
         })
+    }
+}
+
+impl<'a, V, H: ValueHandler<V>> IntoIterator for PostingVisitor<'a, V, H> {
+    type Item = PostingElement<V>;
+    type IntoIter = PostingIterator<'a, V, H>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PostingIterator::new(self)
     }
 }
