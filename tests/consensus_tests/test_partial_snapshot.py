@@ -131,7 +131,7 @@ def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = T
 
 def try_recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = True):
     resp = requests.post(
-        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from?wait={"true" if wait else "false"}",
+        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from?wait={'true' if wait else 'false'}",
         json = { "peer_url": recover_peer_url },
     )
 
