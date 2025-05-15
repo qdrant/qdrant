@@ -116,7 +116,8 @@ pub async fn multipart_upload(
 
     // Initialize CpuBudget to manage concurrency
     let cpu_budget = ResourceBudget::default();
-    let max_concurrency = cpu_budget.available_cpu_budget();
+    // Cap max concurrency to avoid saturating the network on high core count
+    let max_concurrency = std::cmp::min(cpu_budget.available_cpu_budget(), 8);
 
     // Note:
     //  1. write.write() is sync but a worker thread is spawned internally.
