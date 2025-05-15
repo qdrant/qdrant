@@ -4,6 +4,7 @@ mod posting_list;
 #[cfg(test)]
 mod tests;
 mod value_handler;
+mod view;
 mod visitor;
 use std::borrow::Cow;
 
@@ -28,4 +29,4 @@ pub trait VarSizedValue: std::fmt::Debug {
 
 pub use builder::PostingBuilder;
 pub use posting_list::{PostingChunk, PostingElement, PostingList};
-pub use visitor::PostingListView;
+pub use view::PostingListView;

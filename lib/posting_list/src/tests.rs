@@ -57,7 +57,6 @@ fn test_fixed_sized_against_vec() {
     );
 }
 
-
 fn generate_data<T, R: Rng>(
     amount: usize,
     rng: &mut R,

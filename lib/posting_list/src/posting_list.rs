@@ -4,6 +4,8 @@ use common::types::PointOffsetType;
 
 use crate::CHUNK_SIZE;
 use crate::value_handler::ValueHandler;
+use crate::view::PostingListView;
+use crate::visitor::PostingVisitor;
 
 /// V is the value we are interested to store along with the id.
 /// S is the type of value we store within the chunk, should be small like an int. For
@@ -50,5 +52,32 @@ impl<S: Sized> PostingChunk<S> {
             // Last chunk
             data.len() - chunks[chunk_index].offset as usize
         }
+    }
+}
+
+impl<H: ValueHandler> PostingList<H> {
+    pub fn view(&self) -> PostingListView<H> {
+        let PostingList {
+            id_data,
+            chunks,
+            remainders,
+            var_size_data,
+            last_id,
+            _phantom,
+        } = self;
+
+        PostingListView {
+            id_data,
+            chunks,
+            var_size_data,
+            remainders,
+            last_id: *last_id,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn visitor(&self) -> PostingVisitor<'_, H> {
+        let view = self.view();
+        PostingVisitor::new(view)
     }
 }
