@@ -10,6 +10,7 @@ use crate::data_types::vectors::{DenseVector, VectorElementType};
 
 #[target_feature(enable = "sse")]
 #[allow(clippy::missing_safety_doc)]
+#[allow(unused_unsafe)] // TODO remove once we can bump the MSRV to 1.87 (cargo-chef)
 pub unsafe fn hsum128_ps_sse(x: __m128) -> f32 {
     unsafe {
         let x64: __m128 = _mm_add_ps(x, _mm_movehl_ps(x, x));
