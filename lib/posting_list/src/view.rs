@@ -18,20 +18,20 @@ pub struct PostingListView<'a, H: ValueHandler> {
     pub(crate) _phantom: PhantomData<H>,
 }
 
+pub struct PostingListComponents<'a, S> {
+    pub id_data: &'a [u8],
+    pub chunks: &'a [PostingChunk<S>],
+    pub var_size_data: &'a [u8],
+    pub remainders: &'a [PostingElement<S>],
+    pub last_id: Option<PointOffsetType>,
+}
+
 impl<'a, H: ValueHandler> PostingListView<'a, H> {
     pub fn visitor(self) -> PostingVisitor<'a, H> {
         PostingVisitor::new(self)
     }
 
-    pub fn components(
-        &self,
-    ) -> (
-        &[u8],
-        &[PostingChunk<H::Sized>],
-        &[u8],
-        &[PostingElement<H::Sized>],
-        Option<PointOffsetType>,
-    ) {
+    pub fn components(&self) -> PostingListComponents<H::Sized> {
         let Self {
             id_data,
             chunks,
@@ -41,7 +41,13 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             _phantom,
         } = self;
 
-        (id_data, chunks, var_size_data, remainders, *last_id)
+        PostingListComponents {
+            id_data,
+            chunks,
+            var_size_data,
+            remainders,
+            last_id: *last_id,
+        }
     }
 
     pub fn from_components(

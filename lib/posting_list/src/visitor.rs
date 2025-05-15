@@ -73,17 +73,19 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
             let chunk_sized_values = self.list.sized_values_unchecked(chunk_idx);
             let sized_value = chunk_sized_values[local_offset];
-            let next_sized_value = || chunk_sized_values
-                .get(local_offset + 1)
-                .copied()
-                // or check first of the next chunk
-                .or_else(|| {
-                    self.list
-                        .sized_values(chunk_idx + 1)
-                        .map(|sized_values| sized_values[0])
-                })
-                // or, if it is the last one, check first from remainders
-                .or_else(|| self.list.remainders.first().map(|e| e.value));
+            let next_sized_value = || {
+                chunk_sized_values
+                    .get(local_offset + 1)
+                    .copied()
+                    // or check first of the next chunk
+                    .or_else(|| {
+                        self.list
+                            .sized_values(chunk_idx + 1)
+                            .map(|sized_values| sized_values[0])
+                    })
+                    // or, if it is the last one, check first from remainders
+                    .or_else(|| self.list.remainders.first().map(|e| e.value))
+            };
 
             let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
 
