@@ -8,6 +8,7 @@ use crate::data_types::vectors::{DenseVector, VectorElementType};
 #[target_feature(enable = "avx")]
 #[target_feature(enable = "fma")]
 #[allow(clippy::missing_safety_doc)]
+#[allow(unused_unsafe)] // TODO remove once we can bump the MSRV to 1.87 (cargo-chef)
 pub unsafe fn hsum256_ps_avx(x: __m256) -> f32 {
     unsafe {
         let x128: __m128 = _mm_add_ps(_mm256_extractf128_ps(x, 1), _mm256_castps256_ps128(x));
