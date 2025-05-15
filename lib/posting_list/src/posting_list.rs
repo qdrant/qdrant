@@ -7,10 +7,12 @@ use crate::value_handler::ValueHandler;
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
 
-/// V is the value we are interested to store along with the id.
-/// S is the type of value we store within the chunk, should be small like an int. For
-/// variable-sized values, this acts as a pointer into var_size_data
-/// H is the value handler, which is either for sized values or variable-sized values.
+/// Generic posting list.
+///
+/// - If there are no values (`Sized<()>`), there are just compressed ids + remainders
+/// - If there are `Sized<V> values, each id includes one value stored within the fixed-sized chunks
+/// - If there are `VarSized<V> values, each id includes one value in the chunk, which points to the
+/// actual value in the var_size_data
 pub struct PostingList<H: ValueHandler> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<H::Sized>>,

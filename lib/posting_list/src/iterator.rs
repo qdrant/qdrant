@@ -7,7 +7,7 @@ use crate::value_handler::ValueHandler;
 use crate::visitor::PostingVisitor;
 
 pub struct PostingIterator<'a, H: ValueHandler> {
-    pub(crate) visitor: PostingVisitor<'a, H>,
+    visitor: PostingVisitor<'a, H>,
     current_id: Option<PointOffsetType>,
     offset: usize,
 }
