@@ -87,8 +87,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # If scheduled by cron, run for dev branch, Otherwise specified branch (for workflow dispatch & push)
           ref: ${{ github.event_name == 'schedule' && 'dev' || github.ref_name }}
-          fetch-depth: 0
+          fetch-depth: 0 # Fetch all history for all tags and branches
       - name: Install lcov
         run: sudo apt install -y lcov
       - name: Download unit test coverage
