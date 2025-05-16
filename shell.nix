@@ -103,10 +103,14 @@ mkShell {
     [ "''${LINDERA_CACHE+x}" ] ||
       export LINDERA_CACHE="''${XDG_CACHE_HOME:-$HOME/.cache}/lindera"
 
+    # Fix for tikv-jemalloc-sys
+    # https://github.com/NixOS/nixpkgs/issues/370494#issuecomment-2625163369
+    export CFLAGS=-DJEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE
+
     # Fix for older macOS
     # https://github.com/rust-rocksdb/rust-rocksdb/issues/776
     if [[ "$OSTYPE" == "darwin"* ]]; then
-      export CFLAGS="-mmacosx-version-min=10.13"
+      export CFLAGS="$CFLAGS -mmacosx-version-min=10.13"
       export CXXFLAGS="-mmacosx-version-min=10.13"
       export MACOSX_DEPLOYMENT_TARGET="10.13"
     fi
