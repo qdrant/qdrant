@@ -1098,7 +1098,7 @@ def test_strict_mode_max_collection_point_count_upsert_batch(collection_name):
     })
 
     for i in range(32):
-        upsert_points([3, 4]).json()
+        print(upsert_points([3, 4]).json())
 
     # Max limit has been reached and one of the next requests must fail. Due to cache it might not be the first call!
     for i in range(32):
