@@ -604,3 +604,20 @@ impl From<FieldIndexType> for PayloadFieldSchema {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn integer_index_capacities() {
+        let params = PayloadSchemaParams::Integer(IntegerIndexParams {
+            lookup: Some(true),
+            range: Some(true),
+            ..Default::default()
+        });
+        let schema = PayloadFieldSchema::FieldParams(params);
+        let index_types = schema_capacities(&schema);
+        assert!(index_types.contains(&FieldIndexType::IntMatch));
+        assert!(index_types.contains(&FieldIndexType::IntRange));
+    }
+}
