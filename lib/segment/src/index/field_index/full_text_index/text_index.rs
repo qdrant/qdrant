@@ -611,32 +611,32 @@ mod tests {
 
     /// Tries to parse a query. If there is an unknown id to a token, returns `None`
     fn to_parsed_query(
-        query: Vec<String>,
-        token_to_id: impl Fn(String) -> Option<TokenId>,
+        query: &[String],
+        token_to_id: impl Fn(&str) -> Option<TokenId>,
     ) -> Option<ParsedQuery> {
         let tokens = query
-            .into_iter()
-            .map(token_to_id)
+            .iter()
+            .map(|token| token_to_id(token.as_str()))
             .collect::<Option<Vec<_>>>()?;
         Some(ParsedQuery { tokens })
     }
 
-    fn parse_query(query: Vec<String>, index: &FullTextIndex) -> ParsedQuery {
+    fn parse_query(query: &[String], index: &FullTextIndex) -> ParsedQuery {
         let hw_counter = HardwareCounterCell::disposable();
         match index {
             FullTextIndex::Mutable(index) => {
                 let token_to_id =
-                    |token: String| index.inverted_index.get_token_id(&token, &hw_counter);
+                    |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
                 to_parsed_query(query, token_to_id).unwrap()
             }
             FullTextIndex::Immutable(index) => {
                 let token_to_id =
-                    |token: String| index.inverted_index.get_token_id(&token, &hw_counter);
+                    |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
                 to_parsed_query(query, token_to_id).unwrap()
             }
             FullTextIndex::Mmap(index) => {
                 let token_to_id =
-                    |token: String| index.inverted_index.get_token_id(&token, &hw_counter);
+                    |token: &str| index.inverted_index.get_token_id(token, &hw_counter);
                 to_parsed_query(query, token_to_id).unwrap()
             }
         }
@@ -726,9 +726,9 @@ mod tests {
             );
 
             for query_range in [0..1, 2..4, 5..9, 0..10] {
-                let keywords = keywords[query_range].to_vec();
-                let parsed_query_a = parse_query(keywords.clone(), &index_a);
-                let parsed_query_b = parse_query(keywords, index_b);
+                let keywords = &keywords[query_range];
+                let parsed_query_a = parse_query(keywords, &index_a);
+                let parsed_query_b = parse_query(keywords, &index_b);
 
                 let field_condition = FieldCondition::new_values_count(
                     JsonPath::new(FIELD_NAME),
