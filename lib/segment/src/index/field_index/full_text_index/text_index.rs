@@ -692,13 +692,14 @@ mod tests {
         let FullTextIndex::Mutable(index) = &indices[0] else {
             panic!("Expects mutable full text index as first");
         };
-        let keywords = index
+        let mut keywords = index
             .inverted_index
             .vocab
             .keys()
-            .take(10)
             .cloned()
             .collect::<Vec<_>>();
+        keywords.sort_unstable();
+        keywords.drain(11..);
 
         for i in 1..indices.len() {
             let (index_a, index_b) = (&indices[0], &indices[i]);
