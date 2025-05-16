@@ -8,15 +8,15 @@
         "repo": "fenix"
       },
       "branch": "main",
-      "revision": "92823f1b0c919d7e2d806956aaf98e90f3761ab7",
-      "url": "https://github.com/nix-community/fenix/archive/92823f1b0c919d7e2d806956aaf98e90f3761ab7.tar.gz",
-      "hash": "1d57aax13k3dj3bmf5ps2k1lmcw91nxdc3d6cd4h2sgpbvnac2bk"
+      "revision": "34e07cd9d91ece6b1c69ea3c7ae7f9cdeb19448f",
+      "url": "https://github.com/nix-community/fenix/archive/34e07cd9d91ece6b1c69ea3c7ae7f9cdeb19448f.tar.gz",
+      "hash": "1l2m7a64j4b61x3j3zwmqi02qmypkv9rf5wlfrgq4cjyq7qajd2q"
     },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
-      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.05pre758283.d9b69c3ec2a2/nixexprs.tar.xz",
-      "hash": "1g62hhkxw6w8p7f8hvdlph2c2kr42w96lbmsf53gqc1nbskyqyzg"
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.05pre800239.b1bebd0fe266/nixexprs.tar.xz",
+      "hash": "0vnfj9d7kzk673i7s1vnkbx513a4gh5mfcd8fag2c7wi6hz471n6"
     },
     "poetry2nix": {
       "type": "Git",
@@ -26,9 +26,9 @@
         "repo": "poetry2nix"
       },
       "branch": "master",
-      "revision": "d90f9db68a4bda31c346be16dfd8d3263be4547e",
-      "url": "https://github.com/nix-community/poetry2nix/archive/d90f9db68a4bda31c346be16dfd8d3263be4547e.tar.gz",
-      "hash": "0yfg51z8giwapc4kxxcrh47xr0zppwxiwaj7iyy6qsfd3a9649yz"
+      "revision": "ce2369db77f45688172384bbeb962bc6c2ea6f94",
+      "url": "https://github.com/nix-community/poetry2nix/archive/ce2369db77f45688172384bbeb962bc6c2ea6f94.tar.gz",
+      "hash": "0xq52gq2920xnv7n8rchy3myxbijfpap8z0sd572ifla9dnpqzvi"
     }
   },
   "version": 3
