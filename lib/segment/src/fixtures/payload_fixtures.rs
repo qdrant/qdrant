@@ -109,6 +109,24 @@ pub fn random_geo_payload<R: Rng + ?Sized>(
         .collect_vec()
 }
 
+pub fn random_full_text_payload<R: Rng + ?Sized>(
+    rnd_gen: &mut R,
+    num_values: RangeInclusive<usize>,
+    value_size: RangeInclusive<usize>,
+) -> Vec<Value> {
+    (0..rnd_gen.random_range(num_values))
+        .map(|_| {
+            let size = rnd_gen.random_range(value_size.clone());
+            let keyword = rnd_gen
+                .sample_iter(rand::distr::Alphabetic)
+                .map(|c| c as char)
+                .take(size)
+                .collect::<String>();
+            Value::from(keyword)
+        })
+        .collect_vec()
+}
+
 pub fn random_bool_payload<R: Rng + ?Sized>(
     rnd_gen: &mut R,
     num_values: RangeInclusive<usize>,
