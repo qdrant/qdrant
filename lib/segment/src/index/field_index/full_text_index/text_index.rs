@@ -700,55 +700,58 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>();
 
-        for index in &indices[1..] {
-            assert_eq!(indices[0].points_count(), index.points_count());
+        for i in 1..indices.len() {
+            let (index_a, index_b) = (&indices[0], &indices[i]);
+            eprintln!("Testing index type {:?} vs {:?}", TYPES[0], TYPES[i]);
+
+            assert_eq!(index_a.points_count(), index_b.points_count());
             for point_id in 0..POINT_COUNT as PointOffsetType {
                 assert_eq!(
-                    indices[0].values_count(point_id),
-                    index.values_count(point_id),
+                    index_a.values_count(point_id),
+                    index_b.values_count(point_id),
                 );
                 assert_eq!(
-                    indices[0].values_is_empty(point_id),
-                    index.values_is_empty(point_id),
+                    index_a.values_is_empty(point_id),
+                    index_b.values_is_empty(point_id),
                 );
             }
 
             assert_eq!(
-                indices[0].get_token("doesnotexist", &hw_counter),
-                index.get_token("doesnotexist", &hw_counter),
+                index_a.get_token("doesnotexist", &hw_counter),
+                index_b.get_token("doesnotexist", &hw_counter),
             );
             assert!(
-                indices[0].get_token(&keywords[0], &hw_counter).is_some()
-                    == index.get_token(&keywords[0], &hw_counter).is_some(),
+                index_a.get_token(&keywords[0], &hw_counter).is_some()
+                    == index_b.get_token(&keywords[0], &hw_counter).is_some(),
             );
 
             for query_range in [0..1, 2..4, 5..9, 0..10] {
                 let keywords = keywords[query_range].to_vec();
-                let parsed_query_a = parse_query(keywords.clone(), &indices[0]);
-                let parsed_query_b = parse_query(keywords, index);
+                let parsed_query_a = parse_query(keywords.clone(), &index_a);
+                let parsed_query_b = parse_query(keywords, index_b);
 
                 let field_condition = FieldCondition::new_values_count(
                     JsonPath::new(FIELD_NAME),
                     ValuesCount::from(0..10),
                 );
                 let cardinality_a =
-                    indices[0].estimate_cardinality(&parsed_query_a, &field_condition, &hw_counter);
+                    index_a.estimate_cardinality(&parsed_query_a, &field_condition, &hw_counter);
                 let cardinality_b =
-                    index.estimate_cardinality(&parsed_query_b, &field_condition, &hw_counter);
+                    index_b.estimate_cardinality(&parsed_query_b, &field_condition, &hw_counter);
                 assert_eq!(cardinality_a, cardinality_b);
 
                 for point_id in 0..POINT_COUNT as PointOffsetType {
                     assert_eq!(
-                        indices[0].check_match(&parsed_query_a, point_id, &hw_counter),
-                        index.check_match(&parsed_query_b, point_id, &hw_counter),
+                        index_a.check_match(&parsed_query_a, point_id, &hw_counter),
+                        index_b.check_match(&parsed_query_b, point_id, &hw_counter),
                     );
                 }
 
                 assert_eq!(
-                    indices[0]
+                    index_a
                         .filter(parsed_query_a, &hw_counter)
                         .collect::<HashSet<_>>(),
-                    index
+                    index_b
                         .filter(parsed_query_b, &hw_counter)
                         .collect::<HashSet<_>>(),
                 );
@@ -757,10 +760,10 @@ mod tests {
             if !deleted {
                 for threshold in 1..=10 {
                     assert_eq!(
-                        indices[0]
+                        index_a
                             .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
                             .count(),
-                        index
+                        index_b
                             .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
                             .count(),
                     );
