@@ -5,7 +5,7 @@ use api::rest::{
     QueryInterface, QueryRequestInternal, RecommendInput, VectorInput,
 };
 
-use super::service::{InferenceData, InferenceInput, InferenceRequest};
+use super::service::InferenceData;
 
 pub struct BatchAccum {
     pub(crate) objects: HashSet<InferenceData>,
@@ -28,21 +28,6 @@ impl BatchAccum {
 
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
-    }
-}
-
-impl From<&BatchAccum> for InferenceRequest {
-    fn from(batch: &BatchAccum) -> Self {
-        Self {
-            inputs: batch
-                .objects
-                .iter()
-                .cloned()
-                .map(InferenceInput::from)
-                .collect(),
-            inference: None,
-            token: None,
-        }
     }
 }
 

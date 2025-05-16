@@ -5,7 +5,7 @@ feature_flags:
 
 inference:
   address: "http://localhost:2114/api/v1/infer"
-  timeout: 10
+  timeout: 123  # the inference instance may need to wake up from a sleep state
   token: "98eb568c-dea5-4347-a3a5-583478983bb9"
 
 service:
