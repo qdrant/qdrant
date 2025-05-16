@@ -22,11 +22,9 @@ pub struct MultiCustomQueryScorer<
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorage<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
-    TInputQuery: Query<MultiDenseVectorInternal>,
 > {
     vector_storage: &'a TVectorStorage,
     query: TQuery,
-    input_query: PhantomData<TInputQuery>,
     metric: PhantomData<TMetric>,
     element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
@@ -38,15 +36,17 @@ impl<
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorage<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
-    TInputQuery: Query<MultiDenseVectorInternal>
-        + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
-> MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
+> MultiCustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TQuery>
 {
-    pub fn new(
+    pub fn new<TInputQuery>(
         query: TInputQuery,
         vector_storage: &'a TVectorStorage,
         mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    ) -> Self
+    where
+        TInputQuery: Query<MultiDenseVectorInternal>
+            + TransformInto<TQuery, MultiDenseVectorInternal, TypedMultiDenseVector<TElement>>,
+    {
         let mut dim = 0;
         let query = query
             .transform(|vector| {
@@ -73,7 +73,6 @@ impl<
         Self {
             query,
             vector_storage,
-            input_query: PhantomData,
             metric: PhantomData,
             element: PhantomData,
             hardware_counter,
@@ -86,8 +85,7 @@ impl<
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorage<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
-    TInputQuery: Query<MultiDenseVectorInternal>,
-> MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
+> MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
     fn score_ref(&self, against: TypedMultiDenseVectorRef<TElement>) -> ScoreType {
@@ -112,9 +110,8 @@ impl<
     TMetric: Metric<TElement>,
     TVectorStorage: MultiVectorStorage<TElement>,
     TQuery: Query<TypedMultiDenseVector<TElement>>,
-    TInputQuery: Query<MultiDenseVectorInternal>,
 > QueryScorer<TypedMultiDenseVector<TElement>>
-    for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery, TInputQuery>
+    for MultiCustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
