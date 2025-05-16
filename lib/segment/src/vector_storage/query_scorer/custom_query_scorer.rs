@@ -18,13 +18,11 @@ pub struct CustomQueryScorer<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-    TInputQuery: Query<DenseVector>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > {
     vector_storage: &'a TVectorStorage,
     query: TStoredQuery,
     metric: PhantomData<TMetric>,
-    _input_query: PhantomData<TInputQuery>,
     _element: PhantomData<TElement>,
     hardware_counter: HardwareCounterCell,
 }
@@ -34,15 +32,18 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-    TInputQuery: Query<DenseVector> + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
-> CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
+> CustomQueryScorer<'a, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
-    pub fn new(
+    pub fn new<TInputQuery>(
         query: TInputQuery,
         vector_storage: &'a TVectorStorage,
         mut hardware_counter: HardwareCounterCell,
-    ) -> Self {
+    ) -> Self
+    where
+        TInputQuery: Query<DenseVector>
+            + TransformInto<TStoredQuery, DenseVector, TypedDenseVector<TElement>>,
+    {
         let mut dim = 0;
         let query = query
             .transform(|vector| {
@@ -65,7 +66,6 @@ impl<
             query,
             vector_storage,
             metric: PhantomData,
-            _input_query: PhantomData,
             _element: PhantomData,
             hardware_counter,
         }
@@ -76,10 +76,9 @@ impl<
     TElement: PrimitiveVectorElement,
     TMetric: Metric<TElement>,
     TVectorStorage: DenseVectorStorage<TElement>,
-    TInputQuery: Query<DenseVector>,
     TStoredQuery: Query<TypedDenseVector<TElement>>,
 > QueryScorer<[TElement]>
-    for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TInputQuery, TStoredQuery>
+    for CustomQueryScorer<'_, TElement, TMetric, TVectorStorage, TStoredQuery>
 {
     #[inline]
     fn score_stored(&self, idx: PointOffsetType) -> ScoreType {
