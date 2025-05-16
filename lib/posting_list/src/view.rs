@@ -5,7 +5,7 @@ use common::types::PointOffsetType;
 
 use crate::value_handler::ValueHandler;
 use crate::visitor::PostingVisitor;
-use crate::{BitPackerImpl, CHUNK_SIZE, PostingChunk, PostingElement};
+use crate::{BitPackerImpl, PostingChunk, PostingElement, SizedValue, CHUNK_LEN};
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug, Clone)]
@@ -70,12 +70,12 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
     pub(crate) fn decompress_chunk(
         &self,
         chunk_index: usize,
-        decompressed_chunk: &mut [PointOffsetType; CHUNK_SIZE],
+        decompressed_chunk: &mut [PointOffsetType; CHUNK_LEN],
     ) {
         let chunk = &self.chunks[chunk_index];
         let compressed_size =
             PostingChunk::get_compressed_size(self.chunks, self.id_data, chunk_index);
-        let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_SIZE;
+        let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
         BitPackerImpl::new().decompress_strictly_sorted(
             chunk.initial_id.checked_sub(1),
             &self.id_data[chunk.offset as usize..chunk.offset as usize + compressed_size],
@@ -87,7 +87,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         &self.chunks[chunk_idx].sized_values
     }
 
-    pub(crate) fn sized_values(&self, chunk_idx: usize) -> Option<&[H::Sized; CHUNK_SIZE]> {
+    pub(crate) fn sized_values(&self, chunk_idx: usize) -> Option<&[H::Sized; CHUNK_LEN]> {
         self.chunks.get(chunk_idx).map(|chunk| &chunk.sized_values)
     }
 
@@ -159,7 +159,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
 
     /// The total number of elements in the posting list.
     pub fn len(&self) -> usize {
-        self.chunks.len() * CHUNK_SIZE + self.remainders.len()
+        self.chunks.len() * CHUNK_LEN + self.remainders.len()
     }
 
     /// Checks if there are no elements in the posting list.

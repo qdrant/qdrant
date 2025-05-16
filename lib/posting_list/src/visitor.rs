@@ -1,6 +1,6 @@
 use common::types::PointOffsetType;
 
-use crate::CHUNK_SIZE;
+use crate::CHUNK_LEN;
 use crate::iterator::PostingIterator;
 use crate::posting_list::PostingElement;
 use crate::value_handler::ValueHandler;
@@ -15,7 +15,7 @@ pub struct PostingVisitor<'a, H: ValueHandler> {
     decompressed_chunk_idx: Option<usize>,
 
     /// Lazy decompressed chunk of ids. Never access this directly, prefer [`Self::decompressed_chunk`] function
-    decompressed_chunk: [PointOffsetType; CHUNK_SIZE],
+    decompressed_chunk: [PointOffsetType; CHUNK_LEN],
 }
 
 impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
@@ -23,7 +23,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         Self {
             list: view,
             decompressed_chunk_idx: None,
-            decompressed_chunk: [0; CHUNK_SIZE],
+            decompressed_chunk: [0; CHUNK_LEN],
         }
     }
 
@@ -34,7 +34,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
     /// Returns the decompressed slice of ids for a chunk.
     ///
     /// Assumes the chunk_idx is valid.
-    fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_SIZE] {
+    fn decompressed_chunk(&mut self, chunk_idx: usize) -> &[PointOffsetType; CHUNK_LEN] {
         if self.decompressed_chunk_idx != Some(chunk_idx) {
             self.list
                 .decompress_chunk(chunk_idx, &mut self.decompressed_chunk);
@@ -65,8 +65,8 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
     }
 
     pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<H::Value>> {
-        let chunk_idx = offset / CHUNK_SIZE;
-        let local_offset = offset % CHUNK_SIZE;
+        let chunk_idx = offset / CHUNK_LEN;
+        let local_offset = offset % CHUNK_LEN;
 
         // get from chunk
         if chunk_idx < self.list.chunks.len() {

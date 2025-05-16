@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 
 use common::types::PointOffsetType;
 
-use crate::CHUNK_SIZE;
-use crate::value_handler::ValueHandler;
+use crate::CHUNK_LEN;
+use crate::value_handler::{ValueHandler};
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
 
@@ -39,7 +39,7 @@ pub struct PostingChunk<S: Sized> {
     pub offset: u32,
 
     /// Sized values for the chunk.
-    pub sized_values: [S; CHUNK_SIZE],
+    pub sized_values: [S; CHUNK_LEN],
 }
 
 impl<S: Sized> PostingChunk<S> {

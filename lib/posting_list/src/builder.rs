@@ -4,8 +4,8 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::posting_list::{PostingChunk, PostingElement, PostingList};
-use crate::value_handler::{Sized, ValueHandler, VarSized};
-use crate::{BitPackerImpl, CHUNK_SIZE, SizedValue, VarSizedValue};
+use crate::value_handler::{SizedHandler, ValueHandler, UnsizedHandler};
+use crate::{BitPackerImpl, CHUNK_LEN, SizedValue, UnsizedValue};
 
 pub struct PostingBuilder<V> {
     elements: Vec<PostingElement<V>>,
@@ -48,12 +48,12 @@ impl<V> PostingBuilder<V> {
         let (sized_values, var_size_data) = H::process_values(values);
 
         let bitpacker = BitPackerImpl::new();
-        let mut chunks = Vec::with_capacity(ids.len() / CHUNK_SIZE);
+        let mut chunks = Vec::with_capacity(ids.len() / CHUNK_LEN);
         let mut id_data_size = 0;
 
         // process full chunks
-        let ids_chunks_iter = ids.chunks_exact(CHUNK_SIZE);
-        let values_chunks_iter = sized_values.chunks_exact(CHUNK_SIZE);
+        let ids_chunks_iter = ids.chunks_exact(CHUNK_LEN);
+        let values_chunks_iter = sized_values.chunks_exact(CHUNK_LEN);
         let remainder_ids = ids_chunks_iter.remainder();
         let remainder_values = values_chunks_iter.remainder();
 
@@ -73,17 +73,17 @@ impl<V> PostingBuilder<V> {
         }
 
         // now process remainders
-        let mut remainders = Vec::with_capacity(num_elements % CHUNK_SIZE);
+        let mut remainders = Vec::with_capacity(num_elements % CHUNK_LEN);
         for (&id, &value) in remainder_ids.iter().zip(remainder_values) {
             remainders.push(PostingElement { id, value });
         }
 
         // compress id_data
         let mut id_data = vec![0u8; id_data_size];
-        for (chunk_index, chunk_ids) in ids.chunks_exact(CHUNK_SIZE).enumerate() {
+        for (chunk_index, chunk_ids) in ids.chunks_exact(CHUNK_LEN).enumerate() {
             let chunk = &chunks[chunk_index];
             let compressed_size = PostingChunk::get_compressed_size(&chunks, &id_data, chunk_index);
-            let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_SIZE;
+            let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
             bitpacker.compress_strictly_sorted(
                 chunk.initial_id.checked_sub(1),
                 chunk_ids,

@@ -6,7 +6,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 use crate::value_handler::ValueHandler;
-use crate::{CHUNK_SIZE, PostingBuilder, PostingList, VarSizedValue};
+use crate::{CHUNK_LEN, PostingBuilder, PostingList, UnsizedValue};
 
 // Simple struct that implements VarSizedValue for testing
 #[derive(Debug, Clone, PartialEq)]
@@ -83,9 +83,9 @@ where
     let rng = &mut StdRng::seed_from_u64(42);
     let test_data = generate_data(postings_count, rng, gen_value);
 
-    // Verify we have more than CHUNK_SIZE elements
+    // Verify we have more than CHUNK_LEN elements
     assert!(
-        test_data.len() > CHUNK_SIZE,
+        test_data.len() > CHUNK_LEN,
         "Test data should have more than 128 elements but has {}",
         test_data.len()
     );
