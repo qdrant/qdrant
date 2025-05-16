@@ -21,6 +21,9 @@ pub struct FeatureFlags {
 
     /// Whether to use incremental HNSW building.
     pub incremental_hnsw_building: bool,
+
+    /// Whether to enable HNSW healing.
+    pub hnsw_healing: bool,
 }
 
 impl Default for FeatureFlags {
@@ -29,6 +32,7 @@ impl Default for FeatureFlags {
             all: false,
             payload_index_skip_rocksdb: false,
             incremental_hnsw_building: true,
+            hnsw_healing: false,
         }
     }
 }
@@ -47,12 +51,14 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         all,
         payload_index_skip_rocksdb,
         incremental_hnsw_building,
+        hnsw_healing,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
     if *all {
         *payload_index_skip_rocksdb = true;
         *incremental_hnsw_building = true;
+        *hnsw_healing = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);

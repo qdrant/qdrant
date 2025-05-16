@@ -45,7 +45,7 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     ///
     /// If the queue if full, replaces the smallest value and returns it.
     pub fn push(&mut self, value: T) -> Option<T> {
-        if self.heap.len() < self.length.into() {
+        if !self.is_full() {
             self.heap.push(Reverse(value));
             return None;
         }
@@ -89,5 +89,10 @@ impl<T: Ord> FixedLengthPriorityQueue<T> {
     /// Checks if the queue is empty
     pub fn is_empty(&self) -> bool {
         self.heap.is_empty()
+    }
+
+    /// Checks if the queue is full
+    pub fn is_full(&self) -> bool {
+        self.heap.len() >= self.length.into()
     }
 }
