@@ -2240,6 +2240,18 @@ impl ValuesCount {
     }
 }
 
+#[cfg(test)]
+impl From<std::ops::Range<usize>> for ValuesCount {
+    fn from(range: std::ops::Range<usize>) -> Self {
+        Self {
+            gte: Some(range.start),
+            lt: Some(range.end),
+            gt: None,
+            lte: None,
+        }
+    }
+}
+
 /// Geo filter request
 ///
 /// Matches coordinates inside the rectangle, described by coordinates of lop-left and bottom-right edges

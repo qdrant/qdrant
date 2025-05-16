@@ -444,3 +444,328 @@ impl PayloadFieldIndex for FullTextIndex {
         self.payload_blocks(threshold, key)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use rstest::rstest;
+    use tempfile::{Builder, TempDir};
+
+    use super::*;
+    use crate::common::rocksdb_wrapper::open_db_with_existing_cf;
+    use crate::fixtures::payload_fixtures::random_full_text_payload;
+    use crate::index::field_index::field_index_base::FieldIndexBuilderTrait;
+    use crate::types::ValuesCount;
+
+    const FIELD_NAME: &str = "test";
+
+    #[derive(Clone, Copy, PartialEq, Debug)]
+    enum IndexType {
+        Mutable,
+        Immutable,
+        Mmap,
+        RamMmap,
+    }
+
+    enum IndexBuilder {
+        Mutable(FullTextIndexBuilder),
+        Immutable(FullTextIndexBuilder),
+        Mmap(FullTextMmapIndexBuilder),
+        RamMmap(FullTextMmapIndexBuilder),
+    }
+
+    impl IndexBuilder {
+        fn add_point(
+            &mut self,
+            id: PointOffsetType,
+            payload: &[&Value],
+            hw_counter: &HardwareCounterCell,
+        ) -> OperationResult<()> {
+            match self {
+                IndexBuilder::Mutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::Immutable(builder) => builder.add_point(id, payload, hw_counter),
+                IndexBuilder::Mmap(builder) => {
+                    FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                }
+                IndexBuilder::RamMmap(builder) => {
+                    FieldIndexBuilderTrait::add_point(builder, id, payload, hw_counter)
+                }
+            }
+        }
+
+        fn finalize(self) -> OperationResult<FullTextIndex> {
+            match self {
+                IndexBuilder::Mutable(builder) => builder.finalize(),
+                IndexBuilder::Immutable(builder) => {
+                    let FullTextIndex::Mutable(index) = builder.finalize()? else {
+                        panic!("expected mutable index");
+                    };
+
+                    // Deconstruct mutable index, flush pending changes
+                    let MutableFullTextIndex {
+                        db_wrapper,
+                        inverted_index: _,
+                        config,
+                    } = index;
+                    db_wrapper.flusher()().expect("failed to flush");
+
+                    // Open and load immutable index
+                    let mut index = ImmutableFullTextIndex::open_rocksdb(db_wrapper, config);
+                    index.load()?;
+                    let index = FullTextIndex::Immutable(index);
+                    Ok(index)
+                }
+                IndexBuilder::Mmap(builder) => builder.finalize(),
+                IndexBuilder::RamMmap(builder) => {
+                    let FullTextIndex::Mmap(index) = builder.finalize()? else {
+                        panic!("expected mmap index");
+                    };
+
+                    // Load index from mmap
+                    let mut index =
+                        FullTextIndex::Immutable(ImmutableFullTextIndex::open_mmap(*index));
+                    index.load()?;
+                    Ok(index)
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "testing")]
+    fn create_builder(index_type: IndexType) -> (IndexBuilder, TempDir, Arc<RwLock<DB>>) {
+        let temp_dir = Builder::new().prefix("test_dir").tempdir().unwrap();
+        let db = open_db_with_existing_cf(&temp_dir.path().join("test_db")).unwrap();
+        let config = TextIndexParams::default();
+        let mut builder = match index_type {
+            IndexType::Mutable => IndexBuilder::Mutable(FullTextIndex::builder_rocksdb(
+                db.clone(),
+                config,
+                FIELD_NAME,
+            )),
+            IndexType::Immutable => IndexBuilder::Immutable(FullTextIndex::builder_rocksdb(
+                db.clone(),
+                config,
+                FIELD_NAME,
+            )),
+            IndexType::Mmap => IndexBuilder::Mmap(FullTextIndex::builder_mmap(
+                temp_dir.path().to_path_buf(),
+                config,
+                true,
+            )),
+            IndexType::RamMmap => IndexBuilder::RamMmap(FullTextIndex::builder_mmap(
+                temp_dir.path().to_path_buf(),
+                config,
+                false,
+            )),
+        };
+        match &mut builder {
+            IndexBuilder::Mutable(builder) => builder.init().unwrap(),
+            IndexBuilder::Immutable(builder) => builder.init().unwrap(),
+            IndexBuilder::Mmap(builder) => builder.init().unwrap(),
+            IndexBuilder::RamMmap(builder) => builder.init().unwrap(),
+        }
+        (builder, temp_dir, db)
+    }
+
+    fn build_random_index(
+        num_points: usize,
+        num_keywords: usize,
+        keyword_len: usize,
+        index_type: IndexType,
+        deleted: bool,
+    ) -> (FullTextIndex, TempDir, Arc<RwLock<DB>>) {
+        let mut rnd = StdRng::seed_from_u64(42);
+        let (mut builder, temp_dir, db) = create_builder(index_type);
+
+        for idx in 0..num_points {
+            let keywords = random_full_text_payload(
+                &mut rnd,
+                num_keywords..=num_keywords,
+                keyword_len..=keyword_len,
+            );
+            let array_payload = Value::Array(keywords);
+            builder
+                .add_point(
+                    idx as PointOffsetType,
+                    &[&array_payload],
+                    &HardwareCounterCell::new(),
+                )
+                .unwrap();
+        }
+
+        let mut index = builder.finalize().unwrap();
+        assert_eq!(index.points_count(), num_points);
+
+        // Delete some points before loading into a different format
+        if deleted {
+            index.remove_point(20).unwrap();
+            index.remove_point(21).unwrap();
+            index.remove_point(22).unwrap();
+            index.remove_point(200).unwrap();
+            index.remove_point(250).unwrap();
+        }
+
+        (index, temp_dir, db)
+    }
+
+    /// Tries to parse a query. If there is an unknown id to a token, returns `None`
+    fn to_parsed_query(
+        query: Vec<String>,
+        token_to_id: impl Fn(String) -> Option<TokenId>,
+    ) -> Option<ParsedQuery> {
+        let tokens = query
+            .into_iter()
+            .map(token_to_id)
+            .collect::<Option<Vec<_>>>()?;
+        Some(ParsedQuery { tokens })
+    }
+
+    fn parse_query(query: Vec<String>, index: &FullTextIndex) -> ParsedQuery {
+        let hw_counter = HardwareCounterCell::disposable();
+        match index {
+            FullTextIndex::Mutable(index) => {
+                let token_to_id =
+                    |token: String| index.inverted_index.get_token_id(&token, &hw_counter);
+                to_parsed_query(query, token_to_id).unwrap()
+            }
+            FullTextIndex::Immutable(index) => {
+                let token_to_id =
+                    |token: String| index.inverted_index.get_token_id(&token, &hw_counter);
+                to_parsed_query(query, token_to_id).unwrap()
+            }
+            FullTextIndex::Mmap(index) => {
+                let token_to_id =
+                    |token: String| index.inverted_index.get_token_id(&token, &hw_counter);
+                to_parsed_query(query, token_to_id).unwrap()
+            }
+        }
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_congruence(#[case] deleted: bool) {
+        use std::collections::HashSet;
+
+        use crate::json_path::JsonPath;
+
+        const TYPES: [IndexType; 4] = [
+            IndexType::Mutable,
+            IndexType::Immutable,
+            IndexType::Mmap,
+            IndexType::RamMmap,
+        ];
+        const POINT_COUNT: usize = 500;
+        const KEYWORD_COUNT: usize = 5;
+        const KEYWORD_LEN: usize = 2;
+
+        let hw_counter = HardwareCounterCell::disposable();
+
+        let (mut indices, _data): (Vec<_>, Vec<_>) = TYPES
+            .iter()
+            .copied()
+            .map(|index_type| {
+                let (index, temp_dir, db) = build_random_index(
+                    POINT_COUNT,
+                    KEYWORD_COUNT,
+                    KEYWORD_LEN,
+                    index_type,
+                    deleted,
+                );
+                (index, (temp_dir, db))
+            })
+            .unzip();
+
+        // Delete some points after loading
+        if deleted {
+            for index in indices.iter_mut() {
+                index.remove_point(10).unwrap();
+                index.remove_point(11).unwrap();
+                index.remove_point(12).unwrap();
+                index.remove_point(100).unwrap();
+                index.remove_point(150).unwrap();
+            }
+        }
+
+        // Grab 10 keywords to use for querying
+        let FullTextIndex::Mutable(index) = &indices[0] else {
+            panic!("Expects mutable full text index as first");
+        };
+        let keywords = index
+            .inverted_index
+            .vocab
+            .keys()
+            .take(10)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        for index in &indices[1..] {
+            assert_eq!(indices[0].points_count(), index.points_count());
+            for point_id in 0..POINT_COUNT as PointOffsetType {
+                assert_eq!(
+                    indices[0].values_count(point_id),
+                    index.values_count(point_id),
+                );
+                assert_eq!(
+                    indices[0].values_is_empty(point_id),
+                    index.values_is_empty(point_id),
+                );
+            }
+
+            assert_eq!(
+                indices[0].get_token("doesnotexist", &hw_counter),
+                index.get_token("doesnotexist", &hw_counter),
+            );
+            assert!(
+                indices[0].get_token(&keywords[0], &hw_counter).is_some()
+                    == index.get_token(&keywords[0], &hw_counter).is_some(),
+            );
+
+            for query_range in [0..1, 2..4, 5..9, 0..10] {
+                let keywords = keywords[query_range].to_vec();
+                let parsed_query_a = parse_query(keywords.clone(), &indices[0]);
+                let parsed_query_b = parse_query(keywords, index);
+
+                let field_condition = FieldCondition::new_values_count(
+                    JsonPath::new(FIELD_NAME),
+                    ValuesCount::from(0..10),
+                );
+                let cardinality_a =
+                    indices[0].estimate_cardinality(&parsed_query_a, &field_condition, &hw_counter);
+                let cardinality_b =
+                    index.estimate_cardinality(&parsed_query_b, &field_condition, &hw_counter);
+                assert_eq!(cardinality_a, cardinality_b);
+
+                for point_id in 0..POINT_COUNT as PointOffsetType {
+                    assert_eq!(
+                        indices[0].check_match(&parsed_query_a, point_id, &hw_counter),
+                        index.check_match(&parsed_query_b, point_id, &hw_counter),
+                    );
+                }
+
+                assert_eq!(
+                    indices[0]
+                        .filter(parsed_query_a, &hw_counter)
+                        .collect::<HashSet<_>>(),
+                    index
+                        .filter(parsed_query_b, &hw_counter)
+                        .collect::<HashSet<_>>(),
+                );
+            }
+
+            if !deleted {
+                for threshold in 1..=10 {
+                    assert_eq!(
+                        indices[0]
+                            .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
+                            .count(),
+                        index
+                            .payload_blocks(threshold, JsonPath::new(FIELD_NAME))
+                            .count(),
+                    );
+                }
+            }
+        }
+    }
+}

@@ -42,7 +42,7 @@ pub struct PayloadBlockCondition {
     pub cardinality: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CardinalityEstimation {
     /// Conditions that could be used to make a primary point selection.
     pub primary_clauses: Vec<PrimaryCondition>,
