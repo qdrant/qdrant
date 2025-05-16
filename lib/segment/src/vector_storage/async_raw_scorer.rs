@@ -113,7 +113,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             QueryVector::Nearest(vector) => {
                 match vector {
                     VectorInternal::Dense(dense_vector) => {
-                        let query_scorer = MetricQueryScorer::<VectorElementType, TMetric, _>::new(
+                        let query_scorer = MetricQueryScorer::<_, TMetric, _>::new(
                             dense_vector,
                             storage,
                             hardware_counter,
@@ -132,7 +132,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             }
             QueryVector::RecommendBestScore(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                     RecoBestScoreQuery::from(reco_query),
                     storage,
                     hardware_counter,
@@ -141,7 +141,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             }
             QueryVector::RecommendSumScores(reco_query) => {
                 let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-                let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                     RecoSumScoresQuery::from(reco_query),
                     storage,
                     hardware_counter,
@@ -151,7 +151,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             QueryVector::Discovery(discovery_query) => {
                 let discovery_query: DiscoveryQuery<DenseVector> =
                     discovery_query.transform_into()?;
-                let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                     discovery_query,
                     storage,
                     hardware_counter,
@@ -160,7 +160,7 @@ impl<'a> AsyncRawScorerBuilder<'a> {
             }
             QueryVector::Context(context_query) => {
                 let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-                let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+                let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                     context_query,
                     storage,
                     hardware_counter,

@@ -210,7 +210,7 @@ fn new_scorer_with_metric<
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MetricQueryScorer::<VectorElementType, TMetric, _>::new(
+            let query_scorer = MetricQueryScorer::<_, TMetric, _>::new(
                 vector.try_into()?,
                 vector_storage,
                 hardware_counter,
@@ -219,7 +219,7 @@ fn new_scorer_with_metric<
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
                 hardware_counter,
@@ -228,7 +228,7 @@ fn new_scorer_with_metric<
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
                 hardware_counter,
@@ -237,7 +237,7 @@ fn new_scorer_with_metric<
         }
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 discovery_query,
                 vector_storage,
                 hardware_counter,
@@ -246,7 +246,7 @@ fn new_scorer_with_metric<
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 context_query,
                 vector_storage,
                 hardware_counter,
@@ -292,7 +292,7 @@ fn new_scorer_byte_with_metric<
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MetricQueryScorer::<VectorElementTypeByte, TMetric, _>::new(
+            let query_scorer = MetricQueryScorer::<_, TMetric, _>::new(
                 vector.try_into()?,
                 vector_storage,
                 hardware_counter,
@@ -301,7 +301,7 @@ fn new_scorer_byte_with_metric<
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
                 hardware_counter,
@@ -310,7 +310,7 @@ fn new_scorer_byte_with_metric<
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
                 hardware_counter,
@@ -319,7 +319,7 @@ fn new_scorer_byte_with_metric<
         }
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 discovery_query,
                 vector_storage,
                 hardware_counter,
@@ -328,7 +328,7 @@ fn new_scorer_byte_with_metric<
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 context_query,
                 vector_storage,
                 hardware_counter,
@@ -374,7 +374,7 @@ fn new_scorer_half_with_metric<
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MetricQueryScorer::<VectorElementTypeHalf, TMetric, _>::new(
+            let query_scorer = MetricQueryScorer::<_, TMetric, _>::new(
                 vector.try_into()?,
                 vector_storage,
                 hardware_counter_cell,
@@ -383,7 +383,7 @@ fn new_scorer_half_with_metric<
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoBestScoreQuery::from(reco_query),
                 vector_storage,
                 hardware_counter_cell,
@@ -392,7 +392,7 @@ fn new_scorer_half_with_metric<
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<DenseVector> = reco_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
                 hardware_counter_cell,
@@ -401,7 +401,7 @@ fn new_scorer_half_with_metric<
         }
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<DenseVector> = discovery_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 discovery_query,
                 vector_storage,
                 hardware_counter_cell,
@@ -410,7 +410,7 @@ fn new_scorer_half_with_metric<
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<DenseVector> = context_query.transform_into()?;
-            let query_scorer = CustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
+            let query_scorer = CustomQueryScorer::<_, TMetric, _, _>::new(
                 context_query,
                 vector_storage,
                 hardware_counter_cell,
@@ -469,7 +469,7 @@ fn new_multi_scorer_with_metric<
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MultiMetricQueryScorer::<VectorElementType, TMetric, _>::new(
+            let query_scorer = MultiMetricQueryScorer::<_, TMetric, _>::new(
                 &vector.try_into()?,
                 vector_storage,
                 hardware_counter,
@@ -478,7 +478,7 @@ fn new_multi_scorer_with_metric<
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let query_scorer: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
-            let query_scorer = MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoBestScoreQuery::from(query_scorer),
                 vector_storage,
                 hardware_counter,
@@ -487,7 +487,7 @@ fn new_multi_scorer_with_metric<
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
-            let query_scorer = MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 RecoSumScoresQuery::from(reco_query),
                 vector_storage,
                 hardware_counter,
@@ -497,7 +497,7 @@ fn new_multi_scorer_with_metric<
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                 discovery_query.transform_into()?;
-            let query_scorer = MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 discovery_query,
                 vector_storage,
                 hardware_counter,
@@ -507,7 +507,7 @@ fn new_multi_scorer_with_metric<
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<MultiDenseVectorInternal> =
                 context_query.transform_into()?;
-            let query_scorer = MultiCustomQueryScorer::<VectorElementType, TMetric, _, _, _>::new(
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
                 context_query,
                 vector_storage,
                 hardware_counter,
@@ -557,7 +557,7 @@ fn new_multi_scorer_byte_with_metric<
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MultiMetricQueryScorer::<VectorElementTypeByte, TMetric, _>::new(
+            let query_scorer = MultiMetricQueryScorer::<_, TMetric, _>::new(
                 &vector.try_into()?,
                 vector_storage,
                 hardware_counter,
@@ -566,44 +566,40 @@ fn new_multi_scorer_byte_with_metric<
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
-                    RecoBestScoreQuery::from(reco_query),
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                RecoBestScoreQuery::from(reco_query),
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
-                    RecoSumScoresQuery::from(reco_query),
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                RecoSumScoresQuery::from(reco_query),
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                 discovery_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
-                    discovery_query,
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                discovery_query,
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<MultiDenseVectorInternal> =
                 context_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeByte, TMetric, _, _, _>::new(
-                    context_query,
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                context_query,
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
     }
@@ -649,7 +645,7 @@ fn new_multi_scorer_half_with_metric<
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match query {
         QueryVector::Nearest(vector) => {
-            let query_scorer = MultiMetricQueryScorer::<VectorElementTypeHalf, TMetric, _>::new(
+            let query_scorer = MultiMetricQueryScorer::<_, TMetric, _>::new(
                 &vector.try_into()?,
                 vector_storage,
                 hardware_counter,
@@ -658,44 +654,40 @@ fn new_multi_scorer_half_with_metric<
         }
         QueryVector::RecommendBestScore(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
-                    RecoBestScoreQuery::from(reco_query),
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                RecoBestScoreQuery::from(reco_query),
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::RecommendSumScores(reco_query) => {
             let reco_query: RecoQuery<MultiDenseVectorInternal> = reco_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
-                    RecoSumScoresQuery::from(reco_query),
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                RecoSumScoresQuery::from(reco_query),
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Discovery(discovery_query) => {
             let discovery_query: DiscoveryQuery<MultiDenseVectorInternal> =
                 discovery_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
-                    discovery_query,
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                discovery_query,
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
         QueryVector::Context(context_query) => {
             let context_query: ContextQuery<MultiDenseVectorInternal> =
                 context_query.transform_into()?;
-            let query_scorer =
-                MultiCustomQueryScorer::<VectorElementTypeHalf, TMetric, _, _, _>::new(
-                    context_query,
-                    vector_storage,
-                    hardware_counter,
-                );
+            let query_scorer = MultiCustomQueryScorer::<_, TMetric, _, _>::new(
+                context_query,
+                vector_storage,
+                hardware_counter,
+            );
             raw_scorer_from_query_scorer(query_scorer)
         }
     }
