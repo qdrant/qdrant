@@ -239,24 +239,48 @@ def test_strict_mode_unindexed_filter_integer_read_validation(collection_name):
             }
         )
 
+    # works without strict mode
     search_request_with_filter().raise_for_status()
 
+    # enable strict mode `unindexed_filtering_retrieve`
     set_strict_mode(collection_name, {
         "enabled": True,
         "unindexed_filtering_retrieve": True,
     })
 
+    # still works
     search_request_with_filter().raise_for_status()
 
+    # toggle `unindexed_filtering_retrieve`
     set_strict_mode(collection_name, {
         "unindexed_filtering_retrieve": False,
     })
 
+    # search fail because no payload index
     search_fail = search_request_with_filter()
-
     assert "count" in search_fail.json()['status']['error']
     assert not search_fail.ok
 
+    # create payload index
+    request_with_validation(
+        api='/collections/{collection_name}/index',
+        method="PUT",
+        path_params={'collection_name': collection_name},
+        query_params={'wait': 'true'},
+        body={
+            "field_name": "count",
+            "field_schema": {
+                "type": "integer",
+                "lookup": True,
+                "range": True,
+            }
+        }
+    ).raise_for_status()
+
+    # works now by leveraging index
+    search_request_with_filter().raise_for_status()
+
+    # remove lookup capacity on index
     request_with_validation(
         api='/collections/{collection_name}/index',
         method="PUT",
@@ -272,27 +296,10 @@ def test_strict_mode_unindexed_filter_integer_read_validation(collection_name):
         }
     ).raise_for_status()
 
-    # the integer index does not support `lookup` on our match condition
+    # fails because the integer index does not support `lookup` for our match condition
+    search_fail = search_request_with_filter()
     assert "count" in search_fail.json()['status']['error']
     assert not search_fail.ok
-
-    request_with_validation(
-        api='/collections/{collection_name}/index',
-        method="PUT",
-        path_params={'collection_name': collection_name},
-        query_params={'wait': 'true'},
-        body={
-            "field_name": "count",
-            "field_schema": {
-                "type": "integer",
-                "lookup": True,
-                "range": True,
-            }
-        }
-    ).raise_for_status()
-    
-    # We created an index with `lookup` on this field so it should work now
-    search_request_with_filter().raise_for_status()
  
 
 def test_strict_mode_unindexed_filter_write_validation(collection_name):
