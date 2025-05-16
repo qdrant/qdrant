@@ -11499,6 +11499,8 @@
         "type": "object",
         "required": [
           "id",
+          "partial_snapshot_create_requests",
+          "partial_snapshot_recovery_timestamp",
           "remote",
           "replicate_states"
         ],
@@ -11539,6 +11541,16 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/ReplicaState"
             }
+          },
+          "partial_snapshot_create_requests": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "partial_snapshot_recovery_timestamp": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         }
       },
