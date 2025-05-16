@@ -728,8 +728,8 @@ mod tests {
 
             for query_range in [0..1, 2..4, 5..9, 0..10] {
                 let keywords = &keywords[query_range];
-                let parsed_query_a = parse_query(keywords, &index_a);
-                let parsed_query_b = parse_query(keywords, &index_b);
+                let parsed_query_a = parse_query(keywords, index_a);
+                let parsed_query_b = parse_query(keywords, index_b);
 
                 let field_condition = FieldCondition::new_values_count(
                     JsonPath::new(FIELD_NAME),
