@@ -1,3 +1,5 @@
+use std::sync::atomic;
+
 use common::types::TelemetryDetail;
 use segment::types::SizeStats;
 
@@ -27,6 +29,12 @@ impl ShardReplicaSet {
                 .map(|remote| remote.get_telemetry_data(detail))
                 .collect(),
             replicate_states: self.replica_state.read().peers(),
+            partial_snapshot_create_requests: self
+                .partial_snapshot_create_request_tracker
+                .requests(),
+            partial_snapshot_recovery_timestamp: self
+                .partial_snapshot_recovery_timestamp
+                .load(atomic::Ordering::Relaxed),
         }
     }
 

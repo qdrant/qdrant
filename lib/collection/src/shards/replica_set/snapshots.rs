@@ -1,5 +1,8 @@
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, atomic};
+use std::time::{Duration, SystemTime};
 use std::{fs, io};
 
 use common::tar_ext;
@@ -44,6 +47,13 @@ impl ShardReplicaSet {
         save_wal: bool,
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
+
+        // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
+        let _partial_snapshot_create_request_guard = if manifest.is_some() {
+            Some(self.partial_snapshot_create_request_tracker.track_request())
+        } else {
+            None
+        };
 
         if let Some(local) = &*local_read {
             local
@@ -408,6 +418,17 @@ impl ShardReplicaSet {
                 local.replace(Shard::Local(new_local));
                 // remove shard_id initialization flag because shard is fully recovered
                 tokio::fs::remove_file(&shard_flag).await?;
+
+                if recovery_type.is_partial() {
+                    let ts = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or(Duration::ZERO)
+                        .as_secs();
+
+                    self.partial_snapshot_recovery_timestamp
+                        .store(ts, atomic::Ordering::Relaxed);
+                }
+
                 Ok(true)
             }
 
@@ -458,5 +479,42 @@ impl ShardReplicaSet {
                 ))
             })?
             .segment_manifests()
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct RequestTracker {
+    requests: Arc<AtomicUsize>,
+}
+
+impl RequestTracker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn requests(&self) -> usize {
+        self.requests.load(atomic::Ordering::Relaxed)
+    }
+
+    pub fn track_request(&self) -> RequestGuard {
+        RequestGuard::new(self.requests.clone())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RequestGuard {
+    requests: Arc<AtomicUsize>,
+}
+
+impl RequestGuard {
+    fn new(requests: Arc<AtomicUsize>) -> Self {
+        requests.fetch_add(1, atomic::Ordering::Relaxed);
+        Self { requests }
+    }
+}
+
+impl Drop for RequestGuard {
+    fn drop(&mut self) {
+        self.requests.fetch_sub(1, atomic::Ordering::Relaxed);
     }
 }

@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use common::budget::ResourceBudget;
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
+use self::snapshots::RequestTracker;
 use super::CollectionId;
 use super::local_shard::LocalShard;
 use super::local_shard::clock_map::RecoveryPoint;
@@ -113,8 +115,11 @@ pub struct ShardReplicaSet {
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
     write_rate_limiter: Option<parking_lot::Mutex<RateLimiter>>,
+    partial_snapshot_create_request_tracker: RequestTracker,
     partial_snapshot_recovery_lock: Arc<tokio::sync::Mutex<()>>,
     partial_snapshot_read_lock: Arc<tokio::sync::Semaphore>,
+    /// UNIX timestamp of the last successful partial snapshot recovery
+    partial_snapshot_recovery_timestamp: AtomicU64,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
@@ -224,8 +229,10 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
+            partial_snapshot_create_request_tracker: Default::default(),
             partial_snapshot_recovery_lock: Default::default(),
             partial_snapshot_read_lock: Arc::new(tokio::sync::Semaphore::new(1)),
+            partial_snapshot_recovery_timestamp: Default::default(),
         })
     }
 
@@ -366,8 +373,10 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
+            partial_snapshot_create_request_tracker: Default::default(),
             partial_snapshot_recovery_lock: Default::default(),
             partial_snapshot_read_lock: Arc::new(tokio::sync::Semaphore::new(1)),
+            partial_snapshot_recovery_timestamp: Default::default(),
         };
 
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!
