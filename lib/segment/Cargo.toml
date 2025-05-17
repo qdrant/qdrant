@@ -168,10 +168,6 @@ name = "boolean_filtering"
 harness = false
 
 [[bench]]
-name = "segment_filtered_search_asymptotic"
-harness = false
-
-[[bench]]
 name = "numeric_index_check_values"
 harness = false
 
