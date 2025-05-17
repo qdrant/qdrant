@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use criterion::{Criterion, criterion_group, criterion_main};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -104,6 +105,7 @@ pub fn keyword_index_boolean_query_points(c: &mut Criterion) {
         std::collections::HashMap::new(),
         dir.path(),
         true,
+        feature_flags(),
     )
     .unwrap();
 

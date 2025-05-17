@@ -1,9 +1,10 @@
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
 use segment::common::operation_error::OperationResult;
+use segment::index::field_index::histogram::Point;
 use segment::index::field_index::numeric_index::mmap_numeric_index::MmapNumericIndex;
 use segment::index::field_index::numeric_index::mutable_numeric_index::InMemoryNumericIndex;
 use tempfile::Builder;
@@ -51,6 +52,17 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
         })
     });
 
+    group.bench_function("numeric-index-ram-filter-iterator", |b| {
+        b.iter(|| {
+            let random_start = rng.random_range(0.3..0.7);
+            let start_bound =
+                std::ops::Bound::Excluded(Point::new(random_start, PointOffsetType::MIN));
+            let end_bound = std::ops::Bound::Excluded(Point::new(f64::MAX, PointOffsetType::MAX));
+            let count = mutable_index.values_range(start_bound, end_bound).count();
+            black_box(count)
+        })
+    });
+
     let mmap_index = MmapNumericIndex::build(mutable_index, dir.path(), false).unwrap();
 
     group.bench_function("mmap-numeric-index", |b| {
@@ -60,6 +72,19 @@ pub fn struct_numeric_check_values(c: &mut Criterion) {
             if mmap_index.check_values_any(random_index, |value| *value > 0.5, &hw_counter) {
                 count += 1;
             }
+        })
+    });
+
+    group.bench_function("numeric-index-mmap-filter_iterator", |b| {
+        b.iter(|| {
+            let random_start = rng.random_range(0.3..0.7);
+            let start_bound =
+                std::ops::Bound::Excluded(Point::new(random_start, PointOffsetType::MIN));
+            let end_bound = std::ops::Bound::Excluded(Point::new(f64::MAX, PointOffsetType::MAX));
+            let count = mmap_index
+                .values_range(start_bound, end_bound, &hw_counter)
+                .count();
+            black_box(count)
         })
     });
 

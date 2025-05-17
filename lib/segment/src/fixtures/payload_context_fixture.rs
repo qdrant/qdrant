@@ -5,6 +5,7 @@ use std::sync::Arc;
 use atomic_refcell::AtomicRefCell;
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use rand::SeedableRng;
 use rand::prelude::StdRng;
@@ -263,6 +264,7 @@ pub fn create_struct_payload_index(
         std::collections::HashMap::new(),
         path,
         true,
+        feature_flags(),
     )
     .unwrap();
 
