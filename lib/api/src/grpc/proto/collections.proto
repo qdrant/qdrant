@@ -297,6 +297,12 @@ message ProductQuantization {
 
 message BinaryQuantization {
   optional bool always_ram = 1; // If true - quantized vectors always will be stored in RAM, ignoring the config of main storage
+
+  /*
+  Asymmetric quantization configuration allows a query to have different quantization than stored vectors.
+  It can increase the accuracy of search at the cost of performance.
+  */
+  optional QueryQuantizationConfig query_quantization = 2;
 }
 
 message QuantizationConfig {
@@ -305,6 +311,18 @@ message QuantizationConfig {
     ProductQuantization product = 2;
     BinaryQuantization binary = 3;
   }
+}
+
+message QueryQuantizationConfig {
+    enum Setting {
+      Default = 0;
+      Binary = 1;
+      Scalar = 2;
+    }
+
+    oneof variant {
+        Setting setting = 3;
+    }
 }
 
 message Disabled {
