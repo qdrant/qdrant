@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use fnv::FnvBuildHasher;
 use indexmap::IndexSet;
@@ -1195,6 +1196,7 @@ fn test_update_payload_index_type() {
         HashMap::new(),
         dir.path(),
         true,
+        feature_flags(),
     )
     .unwrap();
 

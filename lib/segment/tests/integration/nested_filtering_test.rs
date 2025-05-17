@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use atomic_refcell::AtomicRefCell;
 use common::counter::hardware_counter::HardwareCounterCell;
+use common::flags::feature_flags;
 use common::types::PointOffsetType;
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::index::PayloadIndex;
@@ -77,6 +78,7 @@ fn test_filtering_context_consistency() {
         HashMap::new(),
         dir.path(),
         true,
+        feature_flags(),
     )
     .unwrap();
 
