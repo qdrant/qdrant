@@ -7,42 +7,58 @@ use parking_lot::{RwLock, RwLockReadGuard};
 
 use crate::common::Flusher;
 
+const RELEASE_LOCK_EVERY_N_GETS: usize = 100;
+
 /// A wrapper around `MmapBitSlice` that delays writing changes to the underlying file until they get
 /// flushed manually.
 /// This expects the underlying MmapBitSlice not to grow in size.
 #[derive(Debug)]
 pub struct MmapBitSliceBufferedUpdateWrapper {
-    bitslice: Arc<RwLock<MmapBitSlice>>,
+    state: Arc<RwLock<WrapperState>>,
     len: usize,
-    pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
+}
+
+#[derive(Debug)]
+struct WrapperState {
+    bitslice: MmapBitSlice,
+    pending_updates: AHashMap<usize, bool>,
 }
 
 pub struct MmapBitSliceBufferedUpdateReader<'a> {
-    bitslice: RwLockReadGuard<'a, MmapBitSlice>,
+    wrapper: &'a MmapBitSliceBufferedUpdateWrapper,
+    state: Option<RwLockReadGuard<'a, WrapperState>>,
     len: usize,
-    pending_updates: RwLockReadGuard<'a, AHashMap<usize, bool>>,
+    get_count: usize,
 }
 
 impl<'a> MmapBitSliceBufferedUpdateReader<'a> {
     pub fn new(wrapper: &'a MmapBitSliceBufferedUpdateWrapper) -> Self {
-        let bitslice = wrapper.bitslice.read();
+        let state = Some(wrapper.state.read());
         let len = wrapper.len;
-        let pending_updates = wrapper.pending_updates.read();
         Self {
-            bitslice,
+            wrapper,
+            state,
             len,
-            pending_updates,
+            get_count: 0,
         }
     }
 
-    pub fn get(&self, index: usize) -> Option<bool> {
+    pub fn get(&mut self, index: usize) -> Option<bool> {
         if index >= self.len {
             return None;
         }
-        if let Some(value) = self.pending_updates.get(&index) {
+
+        // Re-acquire locks every `RELEASE_LOCK_EVERY_N_GETS` get calls
+        if self.get_count % RELEASE_LOCK_EVERY_N_GETS == 0 {
+            self.state = Some(self.wrapper.state.read());
+        }
+        self.get_count += 1;
+
+        let state = self.state.as_ref().unwrap();
+        if let Some(value) = state.pending_updates.get(&index) {
             Some(*value)
         } else {
-            self.bitslice.get_bit(index)
+            state.bitslice.get_bit(index)
         }
     }
 }
@@ -51,9 +67,11 @@ impl MmapBitSliceBufferedUpdateWrapper {
     pub fn new(bitslice: MmapBitSlice) -> Self {
         let len = bitslice.len();
         Self {
-            bitslice: Arc::new(RwLock::new(bitslice)),
+            state: Arc::new(RwLock::new(WrapperState {
+                bitslice,
+                pending_updates: AHashMap::new(),
+            })),
             len,
-            pending_updates: Arc::new(RwLock::new(AHashMap::new())),
         }
     }
 
@@ -63,17 +81,18 @@ impl MmapBitSliceBufferedUpdateWrapper {
     /// Panics if the index is out of bounds.
     pub fn set(&self, index: usize, value: bool) {
         assert!(index < self.len, "index {index} out of range: {}", self.len);
-        self.pending_updates.write().insert(index, value);
+        self.state.write().pending_updates.insert(index, value);
     }
 
     pub fn get(&self, index: usize) -> Option<bool> {
         if index >= self.len {
             return None;
         }
-        if let Some(value) = self.pending_updates.read().get(&index) {
+        let state = self.state.read();
+        if let Some(value) = state.pending_updates.get(&index) {
             Some(*value)
         } else {
-            self.bitslice.read().get_bit(index)
+            state.bitslice.get_bit(index)
         }
     }
 
@@ -87,27 +106,24 @@ impl MmapBitSliceBufferedUpdateWrapper {
 
     /// Removes from `pending_updates` all results that are flushed.
     /// If values in `pending_updates` are changed, do not remove them.
-    fn clear_flushed_updates(
-        flushed: AHashMap<usize, bool>,
-        pending_updates: Arc<RwLock<AHashMap<usize, bool>>>,
-    ) {
-        pending_updates
-            .write()
+    fn clear_flushed_updates(flushed: AHashMap<usize, bool>, state: &mut WrapperState) {
+        state
+            .pending_updates
             .retain(|point_id, a| flushed.get(point_id).is_none_or(|b| a != b));
     }
 
     pub fn flusher(&self) -> Flusher {
-        let pending_updates = self.pending_updates.read().clone();
-        let bitslice = self.bitslice.clone();
-        let pending_updates_arc = self.pending_updates.clone();
+        let state_arc = self.state.clone();
 
         Box::new(move || {
-            let mut mmap_slice_write = bitslice.write();
+            let mut state = state_arc.write();
+            let pending_updates = state.pending_updates.clone();
+
             for (index, value) in pending_updates.iter() {
-                mmap_slice_write.set(*index, *value);
+                state.bitslice.set(*index, *value);
             }
-            mmap_slice_write.flusher()()?;
-            Self::clear_flushed_updates(pending_updates, pending_updates_arc);
+            state.bitslice.flusher()()?;
+            Self::clear_flushed_updates(pending_updates, &mut state);
             Ok(())
         })
     }
