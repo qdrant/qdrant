@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::{MmapBitSliceBufferedUpdateReader, MmapBitSliceBufferedUpdateWrapper};
+use crate::common::mmap_bitslice_buffered_update_wrapper::{
+    MmapBitSliceBufferedUpdateReader, MmapBitSliceBufferedUpdateWrapper,
+};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
