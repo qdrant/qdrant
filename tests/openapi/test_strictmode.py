@@ -2175,6 +2175,41 @@ def test_strict_mode_full_scan(full_collection_name):
     assert "Fullscan forbidden on 'dense-multi' – vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
 
 
+def test_strict_mode_full_scan_simple(full_collection_name):
+    collection_name = full_collection_name
+
+    # disable HNSW index
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "strict_mode_config": {
+                "enabled": True,
+                "search_allow_exact": False
+            },
+            "hnsw_config": {
+                "m": 0
+            }
+        }
+    )
+    assert response.ok
+
+    # full scan not allowed
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": 2,
+            "using": "dense-text",
+            "limit": 5
+        }
+    )
+    assert not response.ok
+    assert response.status_code == 403
+
+
 def test_strict_mode_multitenant_full_scan(full_collection_name):
     collection_name = full_collection_name
 
