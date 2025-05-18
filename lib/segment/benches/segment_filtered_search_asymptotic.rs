@@ -10,6 +10,7 @@ use common::flags::{FeatureFlags, feature_flags};
 use criterion::measurement::WallTime;
 use criterion::{BenchmarkGroup, Criterion, black_box, criterion_group, criterion_main};
 use rand::rng;
+use segment::data_types::index::{IntegerIndexParams, IntegerIndexType};
 use segment::data_types::vectors::{DEFAULT_VECTOR_NAME, only_default_vector};
 use segment::entry::entry_point::SegmentEntry;
 use segment::fixtures::index_fixtures::random_vector;
@@ -20,7 +21,7 @@ use segment::payload_json;
 use segment::segment_constructor::segment_builder::SegmentBuilder;
 use segment::segment_constructor::simple_segment_constructor::build_simple_segment;
 use segment::types::{
-    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadSchemaType,
+    Condition, Distance, FieldCondition, Filter, HnswConfig, Indexes, PayloadFieldSchema,
     PayloadStorageType, Range, SearchParams, SegmentConfig, SeqNumberType, VectorDataConfig,
     VectorStorageType,
 };
@@ -30,6 +31,7 @@ fn segment_filtered_search_benchmark_with_flags(
     group: &mut BenchmarkGroup<'_, WallTime>,
     test_prefix: &str,
     feature_flags: FeatureFlags,
+    all_on_disk: bool,
 ) {
     let stopped = AtomicBool::new(false);
 
@@ -78,7 +80,15 @@ fn segment_filtered_search_benchmark_with_flags(
         .create_field_index(
             opnum,
             &JsonPath::new(int_key),
-            Some(&PayloadSchemaType::Integer.into()),
+            Some(&PayloadFieldSchema::FieldParams(
+                segment::types::PayloadSchemaParams::Integer(IntegerIndexParams {
+                    r#type: IntegerIndexType::Integer,
+                    lookup: Some(true),
+                    range: Some(true),
+                    on_disk: Some(all_on_disk),
+                    ..Default::default()
+                }),
+            )),
             &hw_counter,
         )
         .unwrap();
@@ -92,7 +102,9 @@ fn segment_filtered_search_benchmark_with_flags(
                 VectorDataConfig {
                     size: dim,
                     distance,
-                    storage_type: VectorStorageType::Memory,
+                    storage_type: all_on_disk
+                        .then_some(VectorStorageType::Mmap)
+                        .unwrap_or(VectorStorageType::Memory),
                     index: Indexes::Hnsw(HnswConfig {
                         m,
                         ef_construct,
@@ -185,15 +197,17 @@ fn segment_filtered_search_benchmark(c: &mut Criterion) {
     feature_flags.payload_index_skip_rocksdb = true;
     segment_filtered_search_benchmark_with_flags(
         &mut group,
-        "segment-filtered-search-prefetched-mmap",
+        "segment-filtered-search-mmap",
         feature_flags,
+        true,
     );
 
     feature_flags.payload_index_skip_rocksdb = false;
     segment_filtered_search_benchmark_with_flags(
         &mut group,
-        "segment-filtered-search-prefetched-immutable-ram",
+        "segment-filtered-search-ram",
         feature_flags,
+        false,
     );
 
     group.finish();
