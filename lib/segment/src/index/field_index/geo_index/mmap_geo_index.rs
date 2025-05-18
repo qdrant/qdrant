@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::mutable_geo_index::InMemoryGeoMapIndex;
 use crate::common::Flusher;
-use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
+use crate::common::mmap_bitslice_buffered_update_wrapper::{MmapBitSliceBufferedUpdateReader, MmapBitSliceBufferedUpdateWrapper};
 use crate::common::operation_error::OperationResult;
 use crate::index::field_index::geo_hash::GeoHash;
 use crate::index::field_index::mmap_point_to_values::MmapPointToValues;
@@ -360,12 +360,13 @@ impl MmapGeoMapIndex {
             .iter()
             .take_while(move |point_key_value| point_key_value.hash.starts_with(geohash))
             .filter_map(|point_key_value| {
+                let mut deleted = MmapBitSliceBufferedUpdateReader::new(&self.deleted);
                 Some(
                     self.points_map_ids
                         .get(point_key_value.ids_start as usize..point_key_value.ids_end as usize)?
                         .iter()
                         .copied()
-                        .filter(|idx| !self.deleted.get(*idx as usize).unwrap_or(true)),
+                        .filter(move |idx| !deleted.get(*idx as usize).unwrap_or(true)),
                 )
             })
             .flatten()
