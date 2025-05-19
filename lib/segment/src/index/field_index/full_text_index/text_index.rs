@@ -731,15 +731,26 @@ mod tests {
                 let parsed_query_a = parse_query(keywords, index_a);
                 let parsed_query_b = parse_query(keywords, index_b);
 
-                let field_condition = FieldCondition::new_values_count(
-                    JsonPath::new(FIELD_NAME),
-                    ValuesCount::from(0..10),
-                );
-                let cardinality_a =
-                    index_a.estimate_cardinality(&parsed_query_a, &field_condition, &hw_counter);
-                let cardinality_b =
-                    index_b.estimate_cardinality(&parsed_query_b, &field_condition, &hw_counter);
-                assert_eq!(cardinality_a, cardinality_b);
+                // Mutable index behaves different versus the others on point deletion
+                // Mutable index updates postings, the others do not. Cardinality estimations are
+                // not expected to match because of it.
+                if !deleted {
+                    let field_condition = FieldCondition::new_values_count(
+                        JsonPath::new(FIELD_NAME),
+                        ValuesCount::from(0..10),
+                    );
+                    let cardinality_a = index_a.estimate_cardinality(
+                        &parsed_query_a,
+                        &field_condition,
+                        &hw_counter,
+                    );
+                    let cardinality_b = index_b.estimate_cardinality(
+                        &parsed_query_b,
+                        &field_condition,
+                        &hw_counter,
+                    );
+                    assert_eq!(cardinality_a, cardinality_b);
+                }
 
                 for point_id in 0..POINT_COUNT as PointOffsetType {
                     assert_eq!(
