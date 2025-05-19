@@ -10,7 +10,7 @@ use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::{OperationResult, check_process_stopped};
+use segment::common::operation_error::OperationResult;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -579,7 +579,7 @@ pub trait SegmentOptimizer {
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
     ) -> CollectionResult<usize> {
-        check_process_stopped(stopped)?;
+        self.check_cancellation(stopped)?;
 
         let mut timer = ScopeDurationMeasurer::new(self.get_telemetry_counter());
         timer.set_success(false);
@@ -610,7 +610,7 @@ pub trait SegmentOptimizer {
             return Ok(0);
         }
 
-        check_process_stopped(stopped)?;
+        self.check_cancellation(stopped)?;
 
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
@@ -657,9 +657,9 @@ pub trait SegmentOptimizer {
             proxy_ids
         };
 
-        if let Err(e) = check_process_stopped(stopped) {
+        if let Err(e) = self.check_cancellation(stopped) {
             self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
-            return Err(CollectionError::from(e));
+            return Err(e);
         }
 
         // ---- SLOW PART -----
@@ -694,9 +694,9 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        if let Err(e) = check_process_stopped(stopped) {
+        if let Err(e) = self.check_cancellation(stopped) {
             self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
-            return Err(CollectionError::from(e));
+            return Err(e);
         }
 
         {
