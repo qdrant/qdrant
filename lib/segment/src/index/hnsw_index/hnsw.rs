@@ -8,6 +8,7 @@ use std::thread;
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitvec::prelude::BitSlice;
 use bitvec::vec::BitVec;
+use common::counter::hardware_accumulator::HwMeasurementAcc;
 use common::counter::hardware_counter::HardwareCounterCell;
 #[cfg(target_os = "linux")]
 use common::cpu::linux_low_thread_priority;
@@ -397,9 +398,16 @@ impl HNSWIndex {
                     }
                 }
 
+                // Internal operation. No measurements needed
+                let hw_accumulator = HwMeasurementAcc::disposable();
+
                 pool.install(|| {
                     to_migrate.into_par_iter().try_for_each(|old_offset| {
-                        old_index.migrate_point(old_offset, &graph_layers_builder)
+                        old_index.migrate_point(
+                            old_offset,
+                            &graph_layers_builder,
+                            hw_accumulator.get_counter_cell(),
+                        )
                     })
                 })?;
 
@@ -1443,7 +1451,12 @@ impl<'a> OldIndexCandidate<'a> {
         let mut valid_points = 0;
         let mut missing_points = 0;
         let mut old_to_new = vec![None; old_id_tracker.total_point_count()];
-        // Loop 1: use both id trackers to find matching external ids.
+
+        // Loop 1: Loop through all external ids, which present in either new or old index.
+        // So that we have 3 possible cases: `in old`, `in new`, `in both`.
+        //
+        // If we have `in both` case, we need to fill the `old_to_new` mapping.
+        // Otherwise, we are interested in counts of "missing" points - which absence in the new
         for item in itertools::merge_join_by(
             id_tracker.iter_from(None),
             old_id_tracker.iter_from(None),
@@ -1495,7 +1508,8 @@ impl<'a> OldIndexCandidate<'a> {
 
         // Loop 2: find points that once were in the old index, but deleted in
         // its id tracker.
-        for old_offset in 0..old_to_new.len() {
+        // Since loop 1 doesn't detect deleted points, we need to check them explicitly.
+        for old_offset in 0..old_id_tracker.total_point_count() {
             let old_offset = old_offset as PointOffsetType;
             if old_id_tracker.is_deleted_point(old_offset) && old_graph_has_point(old_offset) {
                 missing_points += 1;
@@ -1566,16 +1580,25 @@ impl OldIndex<'_> {
     }
 
     /// Migrate point from old index to new index.
+    ///
+    /// This function considers two cases:
+    ///
+    /// - If all neighbors of the point planned to be migrated into new graph, we copy it as-is.
+    /// - If not, we need to "heal" it.
+    ///
     fn migrate_point(
         &self,
         src_old: PointOffsetType,
         builder: &GraphLayersBuilder,
+        hardware_counter: HardwareCounterCell,
     ) -> OperationResult<()> {
         let links = &self.index.graph.links;
         let point_level = links.point_level(src_old);
 
-        let hardware_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
         let vector_storage = self.index.vector_storage.borrow();
+
+        // For the case of healing: we always heal before inserting new points.
+        // So old graph should contain all required information to heal the point.
         let old_scorer = new_raw_scorer(
             vector_storage.get_vector(src_old).as_vec_ref().into(),
             &vector_storage,
@@ -1583,7 +1606,7 @@ impl OldIndex<'_> {
         )?;
 
         let links_by_level: Vec<Vec<PointOffsetType>> = (0..=point_level)
-            .map(|level| self.links_on_level(src_old, level, builder, old_scorer.as_ref()))
+            .map(|level| self.migrate_point_on_level(src_old, level, builder, old_scorer.as_ref()))
             .collect();
 
         builder.add_new_point(self.old_to_new[src_old as usize].unwrap(), links_by_level);
@@ -1591,7 +1614,7 @@ impl OldIndex<'_> {
         Ok(())
     }
 
-    fn links_on_level(
+    fn migrate_point_on_level(
         &self,
         src_old: PointOffsetType,
         level: usize,
@@ -1612,10 +1635,14 @@ impl OldIndex<'_> {
             }
         }
 
+        // The "healing" case
         if need_fixing > 0 {
+            // First: generate list of candidates
             let shortcuts = builder
                 .search_shortcuts_on_level(src_old, level, old_scorer, self)
                 .into_iter_sorted();
+
+            // Second: process list of candidates with heuristic
             let mut container = LinksContainer::with_capacity(level_m);
             let new_scorer = |a, b| {
                 let a_old = self.new_to_old[a as usize].unwrap();
