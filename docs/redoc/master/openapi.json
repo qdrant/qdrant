@@ -11377,6 +11377,12 @@
             "format": "uint",
             "minimum": 0
           },
+          "max_collections": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0,
+            "nullable": true
+          },
           "collections": {
             "type": "array",
             "items": {
