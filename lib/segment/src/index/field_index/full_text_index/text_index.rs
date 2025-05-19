@@ -699,7 +699,7 @@ mod tests {
             .cloned()
             .collect::<Vec<_>>();
         keywords.sort_unstable();
-        keywords.drain(11..);
+        keywords.truncate(10);
 
         for i in 1..indices.len() {
             let (index_a, index_b) = (&indices[0], &indices[i]);
