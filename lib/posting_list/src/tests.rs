@@ -20,7 +20,7 @@ impl UnsizedValue for TestString {
     }
 
     fn from_bytes(data: &[u8]) -> Self {
-        let s = unsafe { String::from_utf8_unchecked(data.to_vec()) };
+        let s = String::from_utf8(data.to_vec()).expect("Failed to convert bytes to string");
         TestString(s)
     }
 }
