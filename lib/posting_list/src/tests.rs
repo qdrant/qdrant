@@ -12,7 +12,7 @@ struct TestString(String);
 
 impl UnsizedValue for TestString {
     fn write_len(&self) -> usize {
-        self.0.as_bytes().len()
+        self.0.len()
     }
 
     fn write_to(&self, dst: &mut [u8]) {
@@ -60,11 +60,11 @@ fn test_fixed_sized_against_vec() {
 }
 
 fn generate_data<T, R: Rng>(
-    amount: usize,
+    amount: u32,
     rng: &mut R,
     gen_value: impl Fn(&mut R, u32) -> T,
 ) -> Vec<(u32, T)> {
-    let gen_id = |rng: &mut R| rng.random_range(0..amount) as u32;
+    let gen_id = |rng: &mut R| rng.random_range(0..amount);
 
     (0..amount)
         .map(|_| {

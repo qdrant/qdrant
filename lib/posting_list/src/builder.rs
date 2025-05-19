@@ -66,7 +66,8 @@ impl<V> PostingBuilder<V> {
 
             chunks.push(PostingChunk {
                 initial_id: initial,
-                offset: id_data_size as u32,
+                offset: u32::try_from(id_data_size)
+                    .expect("id_data_size should fit in u32, (smaller than 4GB)"),
                 sized_values: chunk_values
                     .try_into()
                     .expect("should be a valid chunk size"),

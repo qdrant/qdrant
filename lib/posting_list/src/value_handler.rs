@@ -62,7 +62,12 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
 
         for value in &values {
             offsets.push(current_offset);
-            current_offset += value.write_len() as u32;
+            let value_len = u32::try_from(value.write_len())
+                .expect("Value larger than 4GB, use u64 offsets instead");
+            // prepare next starting offset
+            current_offset = current_offset
+                .checked_add(value_len)
+                .expect("Size of all values exceeds 4GB");
         }
 
         let last_offset = offsets.last();
