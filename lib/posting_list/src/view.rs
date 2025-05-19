@@ -3,9 +3,11 @@ use std::marker::PhantomData;
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
-use crate::value_handler::ValueHandler;
+use crate::value_handler::{SizedHandler, ValueHandler};
 use crate::visitor::PostingVisitor;
-use crate::{BitPackerImpl, PostingChunk, PostingElement, SizedValue, CHUNK_LEN};
+use crate::{
+    BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingElement, SizedValue,
+};
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug, Clone)]
@@ -24,6 +26,44 @@ pub struct PostingListComponents<'a, S> {
     pub var_size_data: &'a [u8],
     pub remainders: &'a [PostingElement<S>],
     pub last_id: Option<PointOffsetType>,
+}
+
+
+impl<'a> IdsPostingListView<'a> {
+    pub fn from_ids_components(
+        id_data: &'a [u8],
+        chunks: &'a [PostingChunk<()>],
+        remainders: &'a [PostingElement<()>],
+        last_id: Option<PointOffsetType>,
+    ) -> Self {
+        Self {
+            id_data,
+            chunks,
+            var_size_data: &[],
+            remainders,
+            last_id,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
+
+    pub fn from_weighted_ids_components(
+        id_data: &'a [u8],
+        chunks: &'a [PostingChunk<V>],
+        remainders: &'a [PostingElement<V>],
+        last_id: Option<PointOffsetType>,
+    ) -> Self {
+        Self {
+            id_data,
+            chunks,
+            var_size_data: &[],
+            remainders,
+            last_id,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 impl<'a, H: ValueHandler> PostingListView<'a, H> {

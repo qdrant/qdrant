@@ -4,8 +4,10 @@ use bitpacking::BitPacker;
 use common::types::PointOffsetType;
 
 use crate::posting_list::{PostingChunk, PostingElement, PostingList};
-use crate::value_handler::{SizedHandler, ValueHandler, UnsizedHandler};
-use crate::{BitPackerImpl, CHUNK_LEN, SizedValue, UnsizedValue};
+use crate::value_handler::{SizedHandler, UnsizedHandler, ValueHandler};
+use crate::{
+    BitPackerImpl, CHUNK_LEN, SizedValue, UnsizedValue, VarPostingList, WeightsPostingList,
+};
 
 pub struct PostingBuilder<V> {
     elements: Vec<PostingElement<V>>,
@@ -112,25 +114,34 @@ impl PostingBuilder<()> {
     }
 
     /// Build a posting list with just the compressed ids.
-    pub fn build(self) -> PostingList<Sized<()>> {
-        self.build_generic::<Sized<()>>()
+    pub fn build(self) -> PostingList<SizedHandler<()>> {
+        self.build_generic::<SizedHandler<()>>()
     }
 }
 
-impl<V: SizedValue> PostingBuilder<V> {
+impl<W: SizedValue> PostingBuilder<W> {
     /// Build a posting list with fixed-sized values to store them directly in the PostingChunk
-    pub fn build_sized(self) -> PostingList<Sized<V>> {
-        self.build_generic::<Sized<V>>()
+    pub fn build_sized(self) -> WeightsPostingList<W> {
+        self.build_generic::<SizedHandler<W>>()
     }
 }
 
 // Variable-sized value implementation.
-impl<V: VarSizedValue> PostingBuilder<V> {
+impl<V: UnsizedValue> PostingBuilder<V> {
     /// Build a posting list with variable-sized values to store them in the `var_size_data` field.
     ///
     /// For variable-size values, we store offsets along with each id to point into a flattened array
     /// where the var-sized data lives.
-    pub fn build_var_sized(self) -> PostingList<VarSized<V>> {
-        self.build_generic::<VarSized<V>>()
+    pub fn build_unsized(self) -> VarPostingList<V> {
+        self.build_generic::<UnsizedHandler<V>>()
+    }
+}
+
+impl<V, H> From<PostingBuilder<V>> for PostingList<H>
+where
+    H: ValueHandler<Value = V>,
+{
+    fn from(value: PostingBuilder<V>) -> Self {
+        value.build_generic::<H>()
     }
 }

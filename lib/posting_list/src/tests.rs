@@ -12,7 +12,7 @@ use crate::{CHUNK_LEN, PostingBuilder, PostingList, UnsizedValue};
 #[derive(Debug, Clone, PartialEq)]
 struct TestString(String);
 
-impl VarSizedValue for TestString {
+impl UnsizedValue for TestString {
     fn to_bytes(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.0.as_bytes())
     }
@@ -45,7 +45,7 @@ fn test_var_sized_against_vec() {
             let s = alphanumeric.sample_string(rng, len);
             TestString(format!("item_{id} {s}"))
         },
-        |builder| builder.build_var_sized(),
+        |builder| builder.build_unsized(),
     );
 }
 

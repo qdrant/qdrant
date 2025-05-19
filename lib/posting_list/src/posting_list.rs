@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use common::types::PointOffsetType;
 
 use crate::CHUNK_LEN;
-use crate::value_handler::{ValueHandler};
+use crate::value_handler::ValueHandler;
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
 

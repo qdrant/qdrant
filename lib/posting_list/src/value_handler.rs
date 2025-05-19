@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::{SizedValue, VarSizedValue};
+use crate::{SizedValue, UnsizedValue};
 
 /// Trait to abstract the handling of values in PostingList
 ///
@@ -31,9 +31,9 @@ pub trait ValueHandler {
 }
 
 /// Fixed-size value handler
-pub struct Sized<V>(PhantomData<V>);
+pub struct SizedHandler<V>(PhantomData<V>);
 
-impl<V: SizedValue + Copy> ValueHandler for Sized<V> {
+impl<V: SizedValue + Copy> ValueHandler for SizedHandler<V> {
     type Value = V;
     type Sized = V;
 
@@ -50,9 +50,9 @@ impl<V: SizedValue + Copy> ValueHandler for Sized<V> {
 }
 
 /// Var-size value handler
-pub struct VarSized<V>(PhantomData<V>);
+pub struct UnsizedHandler<V>(PhantomData<V>);
 
-impl<V: VarSizedValue> ValueHandler for VarSized<V> {
+impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
     type Value = V;
     type Sized = u32;
 
