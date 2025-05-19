@@ -366,7 +366,7 @@ impl<'a> Extractor<'a> {
                 );
                 return;
             }
-            // Any index will suffice
+            // Any index will suffice to get the satellite null index
             Condition::IsEmpty(is_empty) => {
                 key = &is_empty.is_empty.key;
                 required_index = all_indexes().collect();
@@ -396,7 +396,7 @@ impl<'a> Extractor<'a> {
         match self.payload_schema.get(key) {
             Some(index_info) => {
                 // check if the index present has the right capabilities
-                let index_field_types = schema_capacities(index_info);
+                let index_field_types = schema_capabilities(index_info);
                 let already_indexed = required_indexes
                     .iter()
                     .any(|required| index_field_types.contains(required));
@@ -424,7 +424,11 @@ impl<'a> Extractor<'a> {
                     VariableId::Score(_) => return,
                     VariableId::Payload(json_path) => {
                         key = json_path;
-                        required_index = vec![FieldIndexType::IntMatch, FieldIndexType::FloatRange];
+                        required_index = vec![
+                            FieldIndexType::IntMatch,
+                            FieldIndexType::IntRange,
+                            FieldIndexType::FloatRange,
+                        ];
                     }
                     VariableId::Condition(_) => return,
                 }
@@ -532,13 +536,19 @@ enum FieldIndexType {
     Geo,
 }
 
-fn schema_capacities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
+fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
     let mut index_types = HashSet::new();
     match value {
         PayloadFieldSchema::FieldType(payload_schema_type) => match payload_schema_type {
             PayloadSchemaType::Keyword => index_types.insert(FieldIndexType::KeywordMatch),
-            PayloadSchemaType::Integer => index_types.insert(FieldIndexType::IntMatch),
-            PayloadSchemaType::Uuid => index_types.insert(FieldIndexType::UuidMatch),
+            PayloadSchemaType::Integer => {
+                index_types.insert(FieldIndexType::IntMatch);
+                index_types.insert(FieldIndexType::IntRange)
+            }
+            PayloadSchemaType::Uuid => {
+                index_types.insert(FieldIndexType::UuidMatch);
+                index_types.insert(FieldIndexType::UuidRange)
+            }
             PayloadSchemaType::Bool => index_types.insert(FieldIndexType::BoolMatch),
             PayloadSchemaType::Float => index_types.insert(FieldIndexType::FloatRange),
             PayloadSchemaType::Geo => index_types.insert(FieldIndexType::Geo),
@@ -561,7 +571,10 @@ fn schema_capacities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
                 // unifying match arm types
                 true
             }
-            PayloadSchemaParams::Uuid(_) => index_types.insert(FieldIndexType::UuidMatch),
+            PayloadSchemaParams::Uuid(_) => {
+                index_types.insert(FieldIndexType::UuidMatch);
+                index_types.insert(FieldIndexType::UuidRange)
+            }
             PayloadSchemaParams::Bool(_) => index_types.insert(FieldIndexType::BoolMatch),
             PayloadSchemaParams::Float(_) => index_types.insert(FieldIndexType::FloatRange),
             PayloadSchemaParams::Geo(_) => index_types.insert(FieldIndexType::Geo),
@@ -616,7 +629,7 @@ mod tests {
             ..Default::default()
         });
         let schema = PayloadFieldSchema::FieldParams(params);
-        let index_types = schema_capacities(&schema);
+        let index_types = schema_capabilities(&schema);
         assert!(index_types.contains(&FieldIndexType::IntMatch));
         assert!(index_types.contains(&FieldIndexType::IntRange));
     }
