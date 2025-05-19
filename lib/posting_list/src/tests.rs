@@ -109,7 +109,7 @@ where
     G: Fn(&mut StdRng, PointOffsetType) -> H::Value,
     H: ValueHandler,
     B: FnOnce(PostingBuilder<H::Value>) -> PostingList<H>,
-    H::Value: Clone + PartialEq,
+    H::Value: Clone + PartialEq + std::fmt::Debug,
 {
     let rng = &mut StdRng::seed_from_u64(42);
     let test_data = generate_data(postings_count, rng, gen_value);

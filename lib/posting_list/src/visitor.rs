@@ -1,8 +1,7 @@
 use common::types::PointOffsetType;
 
-use crate::CHUNK_LEN;
+use crate::{PostingElement, CHUNK_LEN};
 use crate::iterator::PostingIterator;
-use crate::posting_list::PostingElement;
 use crate::value_handler::ValueHandler;
 use crate::view::PostingListView;
 
@@ -29,6 +28,10 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
 
     pub fn len(&self) -> usize {
         self.list.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
     }
 
     /// Returns the decompressed slice of ids for a chunk.
@@ -103,7 +106,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
             let next_sized_value = || self.list.remainders.get(local_offset + 1).map(|r| r.value);
             let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
 
-            PostingElement { id, value }
+            PostingElement { id: id.get(), value }
         })
     }
 }

@@ -10,8 +10,8 @@ use memory::madvise::AdviceSetting;
 use memory::mmap_ops;
 use memory::mmap_type::{MmapBitSlice, MmapSlice};
 use mmap_postings::MmapPostings;
+use posting_list::IdsPostingListView;
 
-use super::compressed_posting::compressed_chunks_reader::ChunkReader;
 use super::inverted_index::{InvertedIndex, ParsedQuery};
 use super::postings_iterator::intersect_compressed_postings_iterator;
 use crate::common::mmap_bitslice_buffered_update_wrapper::MmapBitSliceBufferedUpdateWrapper;
@@ -123,12 +123,12 @@ impl MmapInvertedIndex {
         self.vocab.iter().map(|(k, v)| (k, v.first().unwrap()))
     }
 
-    /// Iterate over posting lists, returning chunk reader for each
+    /// Iterate over posting lists, returning a view for each
     #[inline]
     pub(super) fn iter_postings<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = Option<ChunkReader<'a>>> {
+    ) -> impl Iterator<Item = Option<IdsPostingListView<'a>>> {
         self.postings.iter_postings(hw_counter)
     }
 
@@ -273,6 +273,7 @@ impl InvertedIndex for MmapInvertedIndex {
                 .get(*query_token, hw_counter)
                 // unwrap safety: all tokens exist in the vocabulary, otherwise there'd be no query tokens
                 .unwrap()
+                .visitor()
                 .contains(point_id)
         })
     }

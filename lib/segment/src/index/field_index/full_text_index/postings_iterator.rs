@@ -1,9 +1,7 @@
 use common::types::PointOffsetType;
+use posting_list::{PostingListView, ValueHandler};
 
 use super::posting_list::PostingList;
-use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
-use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_iterator::CompressedPostingIterator;
-use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_visitor::CompressedPostingVisitor;
 
 pub fn intersect_postings_iterator<'a>(
     mut postings: Vec<&'a PostingList>,
@@ -23,8 +21,8 @@ pub fn intersect_postings_iterator<'a>(
     Box::new(and_iter)
 }
 
-pub fn intersect_compressed_postings_iterator<'a>(
-    mut postings: Vec<ChunkReader<'a>>,
+pub fn intersect_compressed_postings_iterator<'a, H: ValueHandler + 'a>(
+    mut postings: Vec<PostingListView<'a, H>>,
     filter: impl Fn(PointOffsetType) -> bool + 'a,
 ) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
@@ -34,20 +32,20 @@ pub fn intersect_compressed_postings_iterator<'a>(
         .map(|(idx, _posting)| idx)
         .unwrap();
     let smallest_posting = postings.remove(smallest_posting_idx);
-    let smallest_posting_iterator =
-        CompressedPostingIterator::new(CompressedPostingVisitor::new(smallest_posting));
+    let smallest_posting_iterator = smallest_posting.visitor().into_iter();
 
     let mut posting_visitors = postings
         .into_iter()
-        .map(CompressedPostingVisitor::new)
+        .map(PostingListView::visitor)
         .collect::<Vec<_>>();
 
     let and_iter = smallest_posting_iterator
-        .filter(move |doc_id| filter(*doc_id))
-        .filter(move |doc_id| {
+        .map(|elem| elem.id)
+        .filter(move |id| filter(*id))
+        .filter(move |id| {
             posting_visitors
                 .iter_mut()
-                .all(|posting_visitor| posting_visitor.contains_next_and_advance(*doc_id))
+                .all(|posting_visitor| posting_visitor.contains(*id))
         });
 
     Box::new(and_iter)
@@ -56,8 +54,9 @@ pub fn intersect_compressed_postings_iterator<'a>(
 #[cfg(test)]
 mod tests {
 
+    use posting_list::IdsPostingList;
+
     use super::*;
-    use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
     #[test]
     fn test_postings_iterator() {
@@ -86,13 +85,13 @@ mod tests {
 
         assert_eq!(res, vec![2, 5]);
 
-        let p1_compressed = CompressedPostingList::new(&p1.into_vec());
-        let p2_compressed = CompressedPostingList::new(&p2.into_vec());
-        let p3_compressed = CompressedPostingList::new(&p3.into_vec());
+        let p1_compressed: IdsPostingList = p1.iter().map(|id| (id, ())).collect();
+        let p2_compressed: IdsPostingList = p2.iter().map(|id| (id, ())).collect();
+        let p3_compressed: IdsPostingList = p3.iter().map(|id| (id, ())).collect();
         let compressed_posting_reades = vec![
-            p1_compressed.reader(),
-            p2_compressed.reader(),
-            p3_compressed.reader(),
+            p1_compressed.view(),
+            p2_compressed.view(),
+            p3_compressed.view(),
         ];
         let merged = intersect_compressed_postings_iterator(compressed_posting_reades, |_| true);
 
