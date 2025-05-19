@@ -675,10 +675,7 @@ pub trait SegmentOptimizer {
         ) {
             Ok(segment) => segment,
             Err(error) => {
-                if matches!(error, CollectionError::Cancelled { .. }) {
-                    self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
-                    return Err(error);
-                }
+                self.handle_cancellation(&segments, &proxy_ids, tmp_segment)?;
                 return Err(error);
             }
         };
