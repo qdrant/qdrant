@@ -7,6 +7,7 @@ mod point_ops;
 mod point_ops_internal;
 pub mod request_hw_counter;
 mod snapshots;
+mod telemetry;
 mod temp_directories;
 pub mod transfer;
 
@@ -26,11 +27,9 @@ use collection::shards::channel_service::ChannelService;
 use collection::shards::replica_set::{AbortShardTransfer, ReplicaState};
 use collection::shards::shard::{PeerId, ShardId};
 use collection::shards::{CollectionId, replica_set};
-use collection::telemetry::{CollectionTelemetry, CollectionsAggregatedTelemetry};
 use common::budget::ResourceBudget;
 use common::counter::hardware_accumulator::HwSharedDrain;
 use common::cpu::get_num_cpus;
-use common::types::TelemetryDetail;
 use dashmap::DashMap;
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard, Semaphore};
@@ -459,35 +458,6 @@ impl TableOfContent {
             }
         }
         false
-    }
-
-    pub async fn get_telemetry_data(
-        &self,
-        detail: TelemetryDetail,
-        access: &Access,
-    ) -> Vec<CollectionTelemetry> {
-        let mut result = Vec::new();
-        let all_collections = self.all_collections_whole_access(access).await;
-        for collection_pass in &all_collections {
-            if let Ok(collection) = self.get_collection(collection_pass).await {
-                result.push(collection.get_telemetry_data(detail).await);
-            }
-        }
-        result
-    }
-
-    pub async fn get_aggregated_telemetry_data(
-        &self,
-        access: &Access,
-    ) -> Vec<CollectionsAggregatedTelemetry> {
-        let mut result = Vec::new();
-        let all_collections = self.all_collections_whole_access(access).await;
-        for collection_pass in &all_collections {
-            if let Ok(collection) = self.get_collection(collection_pass).await {
-                result.push(collection.get_aggregated_telemetry_data().await);
-            }
-        }
-        result
     }
 
     /// Cancels all transfers related to the current peer.
