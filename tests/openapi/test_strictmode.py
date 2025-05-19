@@ -2178,6 +2178,20 @@ def test_strict_mode_full_scan(full_collection_name):
 def test_strict_mode_full_scan_simple(full_collection_name):
     collection_name = full_collection_name
 
+    # Enable strict mode with search_allow_exact
+    response = request_with_validation(
+        api='/collections/{collection_name}',
+        method="PATCH",
+        path_params={'collection_name': collection_name},
+        body={
+            "strict_mode_config": {
+                "enabled": True,
+                "search_allow_exact": False
+            },
+        }
+    )
+    assert response.ok
+
     # full scan allowed
     response = request_with_validation(
         api='/collections/{collection_name}/points/query',
@@ -2197,10 +2211,6 @@ def test_strict_mode_full_scan_simple(full_collection_name):
         method="PATCH",
         path_params={'collection_name': collection_name},
         body={
-            "strict_mode_config": {
-                "enabled": True,
-                "search_allow_exact": False
-            },
             "hnsw_config": {
                 "m": 0
             }
