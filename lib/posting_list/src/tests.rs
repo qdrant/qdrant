@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use common::types::PointOffsetType;
 use rand::distr::{Alphanumeric, SampleString};
 use rand::rngs::StdRng;
@@ -13,8 +11,12 @@ use crate::{CHUNK_LEN, PostingBuilder, PostingList, UnsizedValue};
 struct TestString(String);
 
 impl UnsizedValue for TestString {
-    fn to_bytes(&self) -> Cow<'_, [u8]> {
-        Cow::Borrowed(self.0.as_bytes())
+    fn write_len(&self) -> usize {
+        self.0.as_bytes().len()
+    }
+
+    fn write_to(&self, dst: &mut [u8]) {
+        dst.copy_from_slice(self.0.as_bytes());
     }
 
     fn from_bytes(data: &[u8]) -> Self {

@@ -28,7 +28,6 @@ pub struct PostingListComponents<'a, S> {
     pub last_id: Option<PointOffsetType>,
 }
 
-
 impl<'a> IdsPostingListView<'a> {
     pub fn from_ids_components(
         id_data: &'a [u8],
@@ -48,7 +47,6 @@ impl<'a> IdsPostingListView<'a> {
 }
 
 impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
-
     pub fn from_weighted_ids_components(
         id_data: &'a [u8],
         chunks: &'a [PostingChunk<V>],

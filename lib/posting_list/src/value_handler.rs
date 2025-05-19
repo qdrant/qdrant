@@ -57,15 +57,28 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
     type Sized = u32;
 
     fn process_values(values: Vec<Self::Value>) -> (Vec<Self::Sized>, Vec<u8>) {
-        let mut var_sized_data = Vec::new();
         let mut offsets = Vec::with_capacity(values.len());
         let mut current_offset = 0u32;
 
-        for value in values {
+        for value in &values {
             offsets.push(current_offset);
-            let bytes = value.to_bytes();
-            current_offset += bytes.len() as u32;
-            var_sized_data.extend_from_slice(&bytes);
+            current_offset += value.write_len() as u32;
+        }
+
+        let last_offset = offsets.last();
+        let ranges = offsets
+            .windows(2)
+            .map(|w| w[0] as usize..w[1] as usize)
+            // the last one is not included in windows, but goes until the end
+            .chain(
+                last_offset
+                    .iter()
+                    .map(|&last| *last as usize..current_offset as usize),
+            );
+
+        let mut var_sized_data = Vec::with_capacity(current_offset as usize);
+        for (value, range) in values.iter().zip(ranges) {
+            value.write_to(&mut var_sized_data[range]);
         }
 
         (offsets, var_sized_data)

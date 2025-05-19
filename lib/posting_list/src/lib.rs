@@ -6,7 +6,6 @@ mod tests;
 mod value_handler;
 mod view;
 mod visitor;
-use std::borrow::Cow;
 
 use bitpacking::BitPacker;
 
@@ -23,7 +22,9 @@ impl SizedValue for u32 {}
 impl SizedValue for u64 {}
 
 pub trait UnsizedValue: std::fmt::Debug {
-    fn to_bytes(&self) -> Cow<'_, [u8]>;
+    fn write_len(&self) -> usize;
+
+    fn write_to(&self, dst: &mut [u8]);
 
     fn from_bytes(data: &[u8]) -> Self;
 }
