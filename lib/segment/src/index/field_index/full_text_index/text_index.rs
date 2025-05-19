@@ -679,7 +679,7 @@ mod tests {
 
         // Delete some points after loading
         if deleted {
-            for index in indices.iter_mut() {
+            for (index, _type) in indices.iter_mut() {
                 index.remove_point(10).unwrap();
                 index.remove_point(11).unwrap();
                 index.remove_point(12).unwrap();
@@ -689,7 +689,7 @@ mod tests {
         }
 
         // Grab 10 keywords to use for querying
-        let FullTextIndex::Mutable(index) = &indices[0] else {
+        let (FullTextIndex::Mutable(index), _) = &indices[0] else {
             panic!("Expects mutable full text index as first");
         };
         let mut keywords = index
