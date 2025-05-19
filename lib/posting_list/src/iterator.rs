@@ -37,10 +37,7 @@ impl<H: ValueHandler> Iterator for PostingIterator<'_, H> {
         (remaining_len, Some(remaining_len))
     }
 
-    fn count(self) -> usize
-    where
-        Self: Sized,
-    {
+    fn count(self) -> usize {
         self.size_hint().0
     }
 }
