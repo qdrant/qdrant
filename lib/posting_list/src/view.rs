@@ -7,7 +7,7 @@ use crate::iterator::PostingIterator;
 use crate::posting_list::RemainderPosting;
 use crate::value_handler::{SizedHandler, ValueHandler};
 use crate::visitor::PostingVisitor;
-use crate::{BitPackerImpl, IdsPostingListView, PostingChunk, PostingList, SizedValue, CHUNK_LEN};
+use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingList, SizedValue};
 
 /// A non-owning view of [`PostingList`].
 #[derive(Debug)]
@@ -64,7 +64,10 @@ impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
     }
 }
 
-impl<'a, H: ValueHandler> IntoIterator for PostingListView<'a, H> {
+impl<'a, H: ValueHandler> IntoIterator for PostingListView<'a, H>
+where
+    H::Value: Clone,
+{
     type Item = <PostingIterator<'a, H> as Iterator>::Item;
     type IntoIter = PostingIterator<'a, H>;
 
@@ -154,6 +157,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
 
     pub(crate) fn is_in_range(&self, id: PointOffsetType) -> bool {
         let Some(last_id) = self.last_id else {
+            // if there is no last id, it means the posting list is empty
             return false;
         };
 
@@ -166,7 +170,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             return false;
         };
 
-        id >= initial_id && id <= last_id
+        (initial_id..=last_id).contains(&id)
     }
 
     /// Find the chunk that may contain the id.
@@ -177,7 +181,8 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         let remainders = self.remainders;
         let chunks = self.chunks;
 
-        if chunks.is_empty() {
+        // check if id is in the remainders list
+        if remainders.first().is_some_and(|elem| id >= elem.id.get()) {
             return None;
         }
 
@@ -210,10 +215,9 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         }
     }
 
-    pub(crate) fn search_in_remainders(&self, id: PointOffsetType) -> Option<usize> {
+    pub(crate) fn search_in_remainders(&self, id: PointOffsetType) -> Result<usize, usize> {
         self.remainders
             .binary_search_by(|elem| elem.id.get().cmp(&id))
-            .ok()
     }
 
     /// The total number of elements in the posting list.

@@ -24,7 +24,10 @@ pub fn intersect_postings_iterator<'a>(
 pub fn intersect_compressed_postings_iterator<'a, H: ValueHandler + 'a>(
     mut postings: Vec<PostingListView<'a, H>>,
     filter: impl Fn(PointOffsetType) -> bool + 'a,
-) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
+) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
+where
+    H::Value: Clone,
+{
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -32,20 +35,26 @@ pub fn intersect_compressed_postings_iterator<'a, H: ValueHandler + 'a>(
         .map(|(idx, _posting)| idx)
         .unwrap();
     let smallest_posting = postings.remove(smallest_posting_idx);
-    let smallest_posting_iterator = smallest_posting.visitor().into_iter();
+    let smallest_posting_iterator = smallest_posting.into_iter();
 
-    let mut posting_visitors = postings
+    let mut posting_iterators = postings
         .into_iter()
-        .map(PostingListView::visitor)
+        .map(PostingListView::into_iter)
         .collect::<Vec<_>>();
 
     let and_iter = smallest_posting_iterator
         .map(|elem| elem.id)
         .filter(move |id| filter(*id))
         .filter(move |id| {
-            posting_visitors
-                .iter_mut()
-                .all(|posting_visitor| posting_visitor.contains(*id))
+            posting_iterators.iter_mut().all(|posting_iterator| {
+                // Custom "contains" check, which leverages the fact that smallest posting is sorted,
+                // so the next id that must be in all postings is strictly greater than the previous one.
+                //
+                // This means that the other iterators can remember the last id they returned to avoid extra work
+                posting_iterator
+                    .advance_until_greater_or_equal(*id)
+                    .is_some_and(|elem| elem.id == *id)
+            })
         });
 
     Box::new(and_iter)

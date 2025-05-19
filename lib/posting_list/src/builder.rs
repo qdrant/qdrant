@@ -80,7 +80,10 @@ impl<V> PostingBuilder<V> {
         // now process remainders
         let mut remainders = Vec::with_capacity(num_elements % CHUNK_LEN);
         for (&id, &value) in remainder_ids.iter().zip(remainder_values) {
-            remainders.push(RemainderPosting { id: U32::from(id), value });
+            remainders.push(RemainderPosting {
+                id: U32::from(id),
+                value,
+            });
         }
 
         // compress id_data
@@ -92,7 +95,8 @@ impl<V> PostingBuilder<V> {
             bitpacker.compress_strictly_sorted(
                 chunk.initial_id.get().checked_sub(1),
                 chunk_ids,
-                &mut id_data[chunk.offset.get() as usize..chunk.offset.get() as usize + compressed_size],
+                &mut id_data
+                    [chunk.offset.get() as usize..chunk.offset.get() as usize + compressed_size],
                 chunk_bits as u8,
             );
         }

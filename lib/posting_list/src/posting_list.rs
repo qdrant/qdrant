@@ -4,11 +4,11 @@ use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use crate::{PostingBuilder, CHUNK_LEN};
 use crate::iterator::PostingIterator;
 use crate::value_handler::ValueHandler;
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
+use crate::{CHUNK_LEN, PostingBuilder};
 
 /// Generic compressed posting list.
 ///
@@ -40,7 +40,7 @@ pub struct RemainderPosting<S: Sized> {
 /// A single element in the posting list, which contains an id and a value.
 ///
 /// Output-facing structure.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PostingElement<V> {
     pub id: PointOffsetType,
     pub value: V,
@@ -102,7 +102,10 @@ impl<H: ValueHandler> PostingList<H> {
         PostingVisitor::new(view)
     }
 
-    pub fn iter(&self) -> PostingIterator<'_, H> {
+    pub fn iter(&self) -> PostingIterator<'_, H>
+    where
+        H::Value: Clone,
+    {
         self.visitor().into_iter()
     }
 }
