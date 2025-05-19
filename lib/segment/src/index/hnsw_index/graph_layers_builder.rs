@@ -351,11 +351,15 @@ impl GraphLayersBuilder {
 
     /// Add a new point using pre-existing links.
     /// Mutually exclusive with [`Self::link_new_point`].
-    pub fn add_new_point(&self, point_id: PointOffsetType, levels: Vec<Vec<PointOffsetType>>) {
+    pub fn add_new_point(
+        &self,
+        point_id: PointOffsetType,
+        links_by_level: Vec<Vec<PointOffsetType>>,
+    ) {
         let level = self.get_point_level(point_id);
-        debug_assert_eq!(levels.len(), level + 1);
+        debug_assert_eq!(links_by_level.len(), level + 1);
 
-        for (level, neighbours) in levels.iter().enumerate() {
+        for (level, neighbours) in links_by_level.iter().enumerate() {
             let mut links = self.links_layers[point_id as usize][level].write();
             links.fill_from(neighbours.iter().copied());
         }
