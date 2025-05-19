@@ -826,6 +826,7 @@ mod tests {
         num_points: usize,
         num_geo_values: usize,
         index_type: IndexType,
+        deleted: bool,
     ) -> (GeoMapIndex, TempDir, Arc<RwLock<DB>>) {
         let mut rnd = StdRng::seed_from_u64(42);
         let (mut builder, temp_dir, db) = create_builder(index_type);
@@ -842,9 +843,19 @@ mod tests {
                 .unwrap();
         }
 
-        let index = builder.finalize().unwrap();
+        let mut index = builder.finalize().unwrap();
         assert_eq!(index.points_count(), num_points);
         assert_eq!(index.points_values_count(), num_points * num_geo_values);
+
+        // Delete some points before loading into a different format
+        if deleted {
+            index.remove_point(20).unwrap();
+            index.remove_point(21).unwrap();
+            index.remove_point(22).unwrap();
+            index.remove_point(200).unwrap();
+            index.remove_point(250).unwrap();
+        }
+
         (index, temp_dir, db)
     }
 
@@ -900,7 +911,7 @@ mod tests {
             field_condition: FieldCondition,
             index_type: IndexType,
         ) {
-            let (field_index, _, _) = build_random_index(500, 20, index_type);
+            let (field_index, _, _) = build_random_index(500, 20, index_type, false);
             let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
@@ -1042,7 +1053,7 @@ mod tests {
             field_condition: FieldCondition,
             index_type: IndexType,
         ) {
-            let (field_index, _, _) = build_random_index(500, 20, index_type);
+            let (field_index, _, _) = build_random_index(500, 20, index_type, false);
             let exact_points_for_hashes = field_index.iterator(hashes).collect_vec();
             let real_cardinality = exact_points_for_hashes.len();
 
@@ -1097,7 +1108,7 @@ mod tests {
         ) where
             F: Fn(&GeoPoint) -> bool + Clone,
         {
-            let (field_index, _, _) = build_random_index(1000, 5, index_type);
+            let (field_index, _, _) = build_random_index(1000, 5, index_type, false);
 
             let hw_counter = HardwareCounterCell::new();
             let mut matched_points = (0..field_index.count_indexed_points() as PointOffsetType)
@@ -1156,7 +1167,7 @@ mod tests {
     #[case(IndexType::Mmap)]
     #[case(IndexType::RamMmap)]
     fn test_payload_blocks(#[case] index_type: IndexType) {
-        let (field_index, _, _) = build_random_index(1000, 5, index_type);
+        let (field_index, _, _) = build_random_index(1000, 5, index_type, false);
         let hw_counter = HardwareCounterCell::new();
         let top_level_points = field_index.points_of_hash(&Default::default(), &hw_counter);
         assert_eq!(top_level_points, 1_000);
@@ -1488,7 +1499,7 @@ mod tests {
 
         let hw_counter = HardwareCounterCell::new();
 
-        let (field_index, _, _) = build_random_index(0, 0, index_type);
+        let (field_index, _, _) = build_random_index(0, 0, index_type, false);
         assert!(
             field_index
                 .match_cardinality(&hashes, &hw_counter)
@@ -1500,7 +1511,7 @@ mod tests {
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
-        let (field_index, _, _) = build_random_index(0, 100, index_type);
+        let (field_index, _, _) = build_random_index(0, 100, index_type, false);
         assert!(
             field_index
                 .match_cardinality(&hashes, &hw_counter)
@@ -1512,7 +1523,7 @@ mod tests {
                 .equals_min_exp_max(&CardinalityEstimation::exact(0)),
         );
 
-        let (field_index, _, _) = build_random_index(100, 100, index_type);
+        let (field_index, _, _) = build_random_index(100, 100, index_type, false);
         assert!(
             !field_index
                 .match_cardinality(&hashes, &hw_counter)
@@ -1599,7 +1610,8 @@ mod tests {
             .iter()
             .copied()
             .map(|index_type| {
-                let (index, temp_dir, db) = build_random_index(POINT_COUNT, 20, index_type);
+                let (index, temp_dir, db) =
+                    build_random_index(POINT_COUNT, 20, index_type, deleted);
                 (index, (temp_dir, db))
             })
             .unzip();
@@ -1629,6 +1641,7 @@ mod tests {
         };
         let hashes = polygon_hashes(&polygon, GEO_QUERY_MAX_REGION).unwrap();
 
+        // Delete some points after loading
         if deleted {
             for index in indices.iter_mut() {
                 index.remove_point(10).unwrap();
