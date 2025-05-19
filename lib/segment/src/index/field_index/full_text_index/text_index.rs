@@ -673,7 +673,7 @@ mod tests {
                     index_type,
                     deleted,
                 );
-                (index, (temp_dir, db))
+                ((index, index_type), (temp_dir, db))
             })
             .unzip();
 
@@ -702,8 +702,8 @@ mod tests {
         keywords.truncate(10);
 
         for i in 1..indices.len() {
-            let (index_a, index_b) = (&indices[0], &indices[i]);
-            eprintln!("Testing index type {:?} vs {:?}", TYPES[0], TYPES[i]);
+            let ((index_a, type_a), (index_b, type_b)) = (&indices[0], &indices[i]);
+            eprintln!("Testing index type {type_a:?} vs {type_b:?}");
 
             assert_eq!(index_a.points_count(), index_b.points_count());
             for point_id in 0..POINT_COUNT as PointOffsetType {
