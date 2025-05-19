@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 use bitvec::prelude::BitVec;
+use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::{PointOffsetType, ScoredPointOffset};
 use io::file_operations::atomic_save_bin;
 use parking_lot::{Mutex, MutexGuard, RwLock};
@@ -12,6 +13,7 @@ use rand::distr::Uniform;
 
 use super::graph_layers::GraphLayerData;
 use super::graph_links::{GraphLinks, GraphLinksFormat};
+use super::hnsw::OldIndex;
 use super::links_container::{ItemsBuffer, LinksContainer};
 use crate::common::operation_error::OperationResult;
 use crate::index::hnsw_index::entry_points::EntryPoints;
@@ -20,6 +22,7 @@ use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
+use crate::vector_storage::RawScorer;
 
 pub type LockedLinkContainer = RwLock<LinksContainer>;
 pub type LockedLayersContainer = Vec<LockedLinkContainer>;
@@ -348,11 +351,15 @@ impl GraphLayersBuilder {
 
     /// Add a new point using pre-existing links.
     /// Mutually exclusive with [`Self::link_new_point`].
-    pub fn add_new_point(&self, point_id: PointOffsetType, levels: Vec<Vec<PointOffsetType>>) {
+    pub fn add_new_point(
+        &self,
+        point_id: PointOffsetType,
+        links_by_level: Vec<Vec<PointOffsetType>>,
+    ) {
         let level = self.get_point_level(point_id);
-        debug_assert_eq!(levels.len(), level + 1);
+        debug_assert_eq!(links_by_level.len(), level + 1);
 
-        for (level, neighbours) in levels.iter().enumerate() {
+        for (level, neighbours) in links_by_level.iter().enumerate() {
             let mut links = self.links_layers[point_id as usize][level].write();
             links.fill_from(neighbours.iter().copied());
         }
@@ -377,7 +384,8 @@ impl GraphLayersBuilder {
 
         visited_list.check_and_update_visited(level_entry.idx);
 
-        let mut search_context = SearchContext::new(level_entry, self.ef_construct);
+        let mut search_context = SearchContext::new(self.ef_construct);
+        search_context.process_candidate(level_entry);
 
         self._search_on_level(
             &mut search_context,
@@ -488,6 +496,145 @@ impl GraphLayersBuilder {
         } else {
             sum as f32 / count as f32
         }
+    }
+
+    /// Greedy search for non-deleted points accessible through deleted points.
+    ///
+    /// This method combines following concepts:
+    ///
+    /// # Dual-graph search
+    ///
+    /// Search is performed using two graphs at once, in a copy-on-write manner.
+    /// The decision which graph to use is made per point based on whether
+    /// it's marked as ready or not. If a point is ready, then links from the
+    /// new graph are used, otherwise links from the old graph are used.
+    ///
+    /// # Traverse through deleted points
+    ///
+    /// Regular search ([`GraphLayers::search_on_level`]):
+    /// - BFS (queue-based).
+    /// - Deleted points are ignored.
+    /// - Non-deleted points are added into the result AND the search queue.
+    ///
+    /// This method:
+    /// - DFS (stack-based).
+    /// - Deleted points are added into the search queue, but not into the
+    ///   result.
+    /// - Non-deleted points are added into the result, but not into the search
+    ///   queue.
+    ///
+    /// In other words, we search in the scope of deleted points, but
+    /// we want to use points on the border between deleted and non-deleted as candidates
+    /// for the shortcut.
+    pub(super) fn search_shortcuts_on_level(
+        &self,
+        old_offset: PointOffsetType,
+        level: usize,
+        old_scorer: &dyn RawScorer,
+        old_index: &OldIndex,
+    ) -> FixedLengthPriorityQueue<ScoredPointOffset> {
+        let mut visited_list = old_index.graph().get_visited_list_from_pool();
+
+        // Result of the search is stored here.
+        let mut search_context = SearchContext::new(self.ef_construct);
+
+        // Old graph can have extra links, but we don't want to use them (yet)
+        let limit = old_index.graph().get_m(level);
+
+        let mut neighbours_old: Vec<PointOffsetType> = Vec::with_capacity(2 * limit);
+        let mut scores_buffer = Vec::with_capacity(limit);
+
+        // Candidates for the search stack.
+        // ToDo: Try later, instead of using stack, we can use proper priority queue
+        // ToDo: So that in the deleted sub-graph we can navigate towards the point with better scores
+        let mut pending = Vec::new();
+
+        // Find entry into "deleted" sub-graph, do not consider non-deleted neighbors
+        // as they already connected to the "healing" point.
+        visited_list.check_and_update_visited(old_offset);
+        for point in old_index.graph().links.links(old_offset, level).take(limit) {
+            if old_index.old_to_new[point as usize].is_some() {
+                visited_list.check_and_update_visited(point);
+            } else {
+                pending.push(ScoredPointOffset {
+                    idx: point,
+                    score: old_scorer.score_point(point),
+                });
+            }
+        }
+
+        // At this moment `pending` is initialized with at least one deleted point,
+        // now we need to find borders of all "deleted" points sub-graphs
+        while let Some(candidate_old) = pending.pop() {
+            if search_context.nearest.is_full()
+                && candidate_old.score < search_context.nearest.top().unwrap().score
+            {
+                // Stop the search branch early, if it is not promising
+                continue;
+            }
+            if visited_list.check_and_update_visited(candidate_old.idx) {
+                continue;
+            }
+
+            // Here we decide which graph to use to look for neighbors
+            // It might be, that the neighbor was already "healed", so we can
+            // use healed neighbors.
+            // If we detect this case, we need to use the new graph to find neighbors instead of
+            // the old one.
+            let offset_new_ready = old_index.old_to_new[candidate_old.idx as usize]
+                .filter(|&new_offset| self.ready_list.read()[new_offset as usize]);
+
+            neighbours_old.clear();
+            if let Some(offset_new) = offset_new_ready {
+                // This is "already healed" case
+                self.links_map(offset_new, level, |new_link| {
+                    if let Some(old_link) = old_index.new_to_old[new_link as usize] {
+                        // We do the search in context of old ids,
+                        // so we need to convert new id to old id
+                        neighbours_old.push(old_link);
+                    } else {
+                        debug_assert!(
+                            false,
+                            "The new graph points expected to be a subset of the old graph points"
+                        );
+                    }
+                });
+            } else {
+                old_index
+                    .graph()
+                    .links_map(candidate_old.idx, level, |old_link| {
+                        neighbours_old.push(old_link);
+                    });
+            }
+
+            neighbours_old.truncate(limit);
+            neighbours_old.retain(|point_id| !visited_list.check(*point_id));
+
+            if scores_buffer.len() < neighbours_old.len() {
+                scores_buffer.resize(neighbours_old.len(), 0.0);
+            }
+
+            old_scorer.score_points(&neighbours_old, &mut scores_buffer[..neighbours_old.len()]);
+            for (&idx, &score) in neighbours_old.iter().zip(&scores_buffer) {
+                if let Some(new_offset) = old_index.old_to_new[idx as usize] {
+                    // This point is on the "border", as it is reachable from the deleted
+                    // And is not deleted itself
+                    search_context.process_candidate(ScoredPointOffset {
+                        idx: new_offset,
+                        score,
+                    });
+                } else {
+                    // This is just another deleted point
+                    debug_assert!(
+                        offset_new_ready.is_none(),
+                        "For ready points, every neighbor expected to be in the new graph"
+                    );
+                    pending.push(ScoredPointOffset { idx, score });
+                }
+            }
+        }
+
+        search_context.nearest
     }
 }
 

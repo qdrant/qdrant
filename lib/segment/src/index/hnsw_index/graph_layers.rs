@@ -103,7 +103,8 @@ pub trait GraphLayersBase {
     ) -> CancellableResult<FixedLengthPriorityQueue<ScoredPointOffset>> {
         let mut visited_list = self.get_visited_list_from_pool();
         visited_list.check_and_update_visited(level_entry.idx);
-        let mut search_context = SearchContext::new(level_entry, ef);
+        let mut search_context = SearchContext::new(ef);
+        search_context.process_candidate(level_entry);
 
         self._search_on_level(
             &mut search_context,
