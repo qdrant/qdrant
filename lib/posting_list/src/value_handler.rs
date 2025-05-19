@@ -81,8 +81,7 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
                     .map(|&last| *last as usize..current_offset as usize),
             );
 
-        let mut var_sized_data = Vec::with_capacity(current_offset as usize);
-        var_sized_data.resize(current_offset as usize, 0);
+        let mut var_sized_data = vec![0; current_offset as usize];
         for (value, range) in values.iter().zip(ranges) {
             value.write_to(&mut var_sized_data[range]);
         }
