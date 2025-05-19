@@ -2178,6 +2178,19 @@ def test_strict_mode_full_scan(full_collection_name):
 def test_strict_mode_full_scan_simple(full_collection_name):
     collection_name = full_collection_name
 
+    # full scan allowed
+    response = request_with_validation(
+        api='/collections/{collection_name}/points/query',
+        method="POST",
+        path_params={'collection_name': collection_name},
+        body={
+            "query": 2,
+            "using": "dense-text",
+            "limit": 5
+        }
+    )
+    assert response.ok
+
     # disable HNSW index
     response = request_with_validation(
         api='/collections/{collection_name}',
