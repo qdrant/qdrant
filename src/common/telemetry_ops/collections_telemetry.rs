@@ -17,6 +17,9 @@ pub enum CollectionTelemetryEnum {
 pub struct CollectionsTelemetry {
     #[anonymize(false)]
     pub number_of_collections: usize,
+    #[anonymize(false)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_collections: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collections: Option<Vec<CollectionTelemetryEnum>>,
 }
@@ -44,8 +47,11 @@ impl CollectionsTelemetry {
             None
         };
 
+        let max_collections = toc.max_collections();
+
         CollectionsTelemetry {
             number_of_collections,
+            max_collections,
             collections,
         }
     }

@@ -104,6 +104,9 @@ pub struct StorageConfig {
     #[validate(nested)]
     #[serde(default)]
     pub collection: Option<CollectionConfigDefaults>,
+    /// Maximum number of collections to allow in the cluster.
+    #[serde(default)]
+    pub max_collections: Option<usize>,
 }
 
 impl StorageConfig {
