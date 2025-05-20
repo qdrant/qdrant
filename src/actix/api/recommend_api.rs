@@ -49,7 +49,7 @@ async fn recommend_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let shard_selection = match shard_key {
@@ -85,7 +85,7 @@ async fn recommend_points(
                 .collect_vec()
         });
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 
 async fn do_recommend_batch_points(
@@ -140,7 +140,7 @@ async fn recommend_batch_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -173,7 +173,7 @@ async fn recommend_batch_points(
             .collect_vec()
     });
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 
 #[post("/collections/{name}/points/recommend/groups")]
@@ -200,7 +200,7 @@ async fn recommend_point_groups(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let shard_selection = match shard_key {
@@ -228,7 +228,7 @@ async fn recommend_point_groups(
     )
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 // Configure services
 pub fn config_recommend_api(cfg: &mut web::ServiceConfig) {

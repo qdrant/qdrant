@@ -77,7 +77,7 @@ pub async fn upsert(
     .await?;
 
     let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+        points_operation_response_internal(timing, result.0, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -177,7 +177,7 @@ pub async fn update_vectors(
     .await?;
 
     let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+        points_operation_response_internal(timing, result.0, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -823,7 +823,7 @@ pub async fn sync(
         convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
 
     let operation = PointSyncOperation {
-        points,
+        points: points.0,
         from_id: from_id.map(|x| x.try_into()).transpose()?,
         to_id: to_id.map(|x| x.try_into()).transpose()?,
     };

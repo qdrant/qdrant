@@ -5,7 +5,7 @@ use actix_web::http::header;
 use actix_web::http::header::HeaderMap;
 use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, ResponseError, http};
-use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, Usage};
+use api::rest::models::{ApiResponse, ApiStatus, HardwareUsage, InferenceUsage, Usage};
 use collection::operations::types::CollectionError;
 use common::counter::hardware_accumulator::HwMeasurementAcc;
 use serde::Serialize;
@@ -28,13 +28,18 @@ pub fn get_request_hardware_counter(
     )
 }
 
-pub fn accepted_response(timing: Instant, hardware_usage: Option<HardwareUsage>) -> HttpResponse {
+pub fn accepted_response(
+    timing: Instant,
+    hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
+) -> HttpResponse {
     HttpResponse::Accepted().json(ApiResponse::<()> {
         result: None,
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
         usage: Some(Usage {
             hardware: hardware_usage,
+            inference: inference_usage,
         }),
     })
 }
@@ -43,6 +48,7 @@ pub fn process_response<T>(
     response: Result<T, StorageError>,
     timing: Instant,
     hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
 ) -> HttpResponse
 where
     T: Serialize,
@@ -54,9 +60,10 @@ where
             time: timing.elapsed().as_secs_f64(),
             usage: Some(Usage {
                 hardware: hardware_usage,
+                inference: inference_usage,
             }),
         }),
-        Err(err) => process_response_error(err, timing, hardware_usage),
+        Err(err) => process_response_error(err, timing, hardware_usage, inference_usage),
     }
 }
 
@@ -64,6 +71,7 @@ pub fn process_response_error(
     err: StorageError,
     timing: Instant,
     hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
 ) -> HttpResponse {
     log_service_error(&err);
 
@@ -76,6 +84,7 @@ pub fn process_response_error(
         time: timing.elapsed().as_secs_f64(),
         usage: Some(Usage {
             hardware: hardware_usage,
+            inference: inference_usage,
         }),
     };
 
@@ -139,8 +148,8 @@ where
 {
     let instant = Instant::now();
     match future.await.transpose() {
-        Some(res) => process_response(res, instant, None),
-        None => accepted_response(instant, None),
+        Some(res) => process_response(res, instant, None, None),
+        None => accepted_response(instant, None, None),
     }
 }
 

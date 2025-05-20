@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use api::rest::models::InferenceUsage;
 use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
 
@@ -22,9 +23,9 @@ impl BatchAccumInferred {
         objects: HashSet<InferenceData>,
         inference_type: InferenceType,
         inference_token: InferenceToken,
-    ) -> Result<Self, StorageError> {
+    ) -> Result<(Self, Option<InferenceUsage>), StorageError> {
         if objects.is_empty() {
-            return Ok(Self::new());
+            return Ok((Self::new(), None));
         }
 
         let Some(service) = InferenceService::get_global() else {
@@ -42,29 +43,32 @@ impl BatchAccumInferred {
             .map(InferenceInput::from)
             .collect();
 
-        let vectors = service
+        let inference_response = service
             .infer(inference_inputs, inference_type, inference_token)
             .await
             .map_err(|e| StorageError::service_error(
                 format!("Inference request failed. Check if inference service is running and properly configured: {e}")
             ))?;
 
-        if vectors.is_empty() {
+        if inference_response.embeddings.is_empty() {
             return Err(StorageError::service_error(
                 "Inference service returned no vectors. Check if models are properly loaded.",
             ));
         }
 
-        let objects = objects_serialized.into_iter().zip(vectors).collect();
+        let objects = objects_serialized
+            .into_iter()
+            .zip(inference_response.embeddings)
+            .collect();
 
-        Ok(Self { objects })
+        Ok((Self { objects }, inference_response.usage))
     }
 
     pub async fn from_batch_accum(
         batch: BatchAccum,
         inference_type: InferenceType,
         inference_token: &InferenceToken,
-    ) -> Result<Self, StorageError> {
+    ) -> Result<(Self, Option<InferenceUsage>), StorageError> {
         let BatchAccum { objects } = batch;
         Self::from_objects(objects, inference_type, inference_token.clone()).await
     }

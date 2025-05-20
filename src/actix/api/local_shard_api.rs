@@ -72,7 +72,7 @@ async fn get_points(
             .collect::<Vec<_>>()
     });
 
-    process_response(records, timing, request_hw_counter.to_rest_api())
+    process_response(records, timing, request_hw_counter.to_rest_api(), None)
 }
 
 #[post("/collections/{collection}/shards/{shard}/points/scroll")]
@@ -101,7 +101,7 @@ async fn scroll_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -148,7 +148,7 @@ async fn scroll_points(
         Err(err) => Err(err),
     };
 
-    process_response(result, timing, request_hw_counter.to_rest_api())
+    process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 
 #[post("/collections/{collection}/shards/{shard}/points/count")]
@@ -175,7 +175,7 @@ async fn count_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -219,7 +219,7 @@ async fn count_points(
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]

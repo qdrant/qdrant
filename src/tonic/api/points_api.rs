@@ -702,7 +702,7 @@ impl Points for PointsService {
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: usage_or_none(hw_metrics.to_grpc_api()),
+            usage: usage_or_none(hw_metrics.to_grpc_api(), None),
         };
 
         Ok(Response::new(pairs_response))
@@ -728,7 +728,7 @@ impl Points for PointsService {
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: usage_or_none(hw_metrics.to_grpc_api()),
+            usage: usage_or_none(hw_metrics.to_grpc_api(), None),
         };
 
         Ok(Response::new(offsets_response))

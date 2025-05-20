@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
+use ahash::HashMap;
 use schemars::JsonSchema;
 use segment::common::anonymize::Anonymize;
 use serde;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub fn get_git_commit_id() -> Option<String> {
     option_env!("GIT_COMMIT_ID")
@@ -55,12 +56,17 @@ pub struct ApiResponse<D> {
 pub struct Usage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hardware: Option<HardwareUsage>,
+    pub inference: Option<InferenceUsage>,
 }
 
 impl Usage {
     pub fn is_empty(&self) -> bool {
-        let Usage { hardware } = self;
-        hardware.is_none()
+        let Usage {
+            hardware,
+            inference,
+        } = self;
+
+        hardware.is_none() && inference.is_none()
     }
 }
 
@@ -80,6 +86,18 @@ pub struct HardwareUsage {
     pub payload_index_io_write: usize,
     pub vector_io_read: usize,
     pub vector_io_write: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct InferenceUsage {
+    pub models: HashMap<String, ModelUsage>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct ModelUsage {
+    pub tokens: u64,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
