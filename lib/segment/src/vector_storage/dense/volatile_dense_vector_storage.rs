@@ -46,15 +46,12 @@ pub fn new_volatile_dense_half_vector_storage(dim: usize, distance: Distance) ->
 
 impl<T: PrimitiveVectorElement> VolatileDenseVectorStorage<T> {
     pub fn new(dim: usize, distance: Distance) -> Self {
-        let vectors = ChunkedVectors::new(dim);
-        let (deleted, deleted_count) = (BitVec::new(), 0);
-
-        VolatileDenseVectorStorage {
+        Self {
             dim,
             distance,
-            vectors,
-            deleted,
-            deleted_count,
+            vectors: ChunkedVectors::new(dim),
+            deleted: BitVec::new(),
+            deleted_count: 0,
         }
     }
 
