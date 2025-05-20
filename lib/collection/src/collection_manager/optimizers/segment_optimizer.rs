@@ -9,8 +9,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::disk::dir_size;
 use io::storage_version::StorageVersion;
 use itertools::Itertools;
-use parking_lot::lock_api::RwLock;
-use parking_lot::{ArcRwLockWriteGuard, Mutex, RwLockUpgradableReadGuard};
+use parking_lot::lock_api::RwLockWriteGuard;
+use parking_lot::{Mutex, RwLockUpgradableReadGuard};
 use segment::common::operation_error::OperationResult;
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
@@ -738,9 +738,9 @@ pub trait SegmentOptimizer {
     ///
     /// This function is slow and must only be used on an optimization worker.
     #[allow(clippy::too_many_arguments)]
-    fn optimize_segment_propagate_changes(
+    fn optimize_segment_propagate_changes<'a>(
         &self,
-        segments: &LockedSegmentHolder,
+        segments: &'a LockedSegmentHolder,
         optimizing_segments: &[LockedSegment],
         proxy_deleted_points: proxy_segment::LockedRmSet,
         proxy_index_changes: proxy_segment::LockedIndexChanges,
@@ -750,7 +750,7 @@ pub trait SegmentOptimizer {
         hw_counter: &HardwareCounterCell,
     ) -> CollectionResult<(
         Segment,
-        ArcRwLockWriteGuard<parking_lot::RawRwLock, SegmentHolder>,
+        RwLockWriteGuard<'a, parking_lot::RawRwLock, SegmentHolder>,
     )> {
         self.check_cancellation(stopped)?;
 
@@ -783,7 +783,7 @@ pub trait SegmentOptimizer {
         self.check_cancellation(stopped)?;
 
         // This block locks all operations with collection. It should be fast
-        let write_segments_guard = RwLock::write_arc(segments);
+        let write_segments_guard = segments.write();
 
         // Apply index changes before point deletions
         // Point deletions bump the segment version, can cause index changes to be ignored
