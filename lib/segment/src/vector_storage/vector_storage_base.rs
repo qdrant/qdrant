@@ -17,6 +17,7 @@ use super::dense::volatile_dense_vector_storage::VolatileDenseVectorStorage;
 use super::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     AppendableMmapMultiDenseVectorStorage, MultivectorMmapOffset,
 };
+#[cfg(not(feature = "no-rocksdb"))]
 use super::multi_dense::simple_multi_dense_vector_storage::SimpleMultiDenseVectorStorage;
 #[cfg(test)]
 use super::multi_dense::volatile_multi_dense_vector_storage::VolatileMultiDenseVectorStorage;
@@ -248,8 +249,11 @@ pub enum VectorStorageEnum {
     #[cfg(test)]
     SparseVolatile(VolatileSparseVectorStorage),
     SparseMmap(MmapSparseVectorStorage),
+    #[cfg(not(feature = "no-rocksdb"))]
     MultiDenseSimple(SimpleMultiDenseVectorStorage<VectorElementType>),
+    #[cfg(not(feature = "no-rocksdb"))]
     MultiDenseSimpleByte(SimpleMultiDenseVectorStorage<VectorElementTypeByte>),
+    #[cfg(not(feature = "no-rocksdb"))]
     MultiDenseSimpleHalf(SimpleMultiDenseVectorStorage<VectorElementTypeHalf>),
     #[cfg(test)]
     MultiDenseVolatile(VolatileMultiDenseVectorStorage<VectorElementType>),
@@ -341,8 +345,11 @@ impl VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => None,
             VectorStorageEnum::SparseMmap(_) => None,
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(s) => Some(s.multi_vector_config()),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(s) => Some(s.multi_vector_config()),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(s) => Some(s.multi_vector_config()),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(s) => Some(s.multi_vector_config()),
@@ -410,12 +417,15 @@ impl VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => VectorInternal::from(SparseVector::default()),
             VectorStorageEnum::SparseMmap(_) => VectorInternal::from(SparseVector::default()),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => {
                 VectorInternal::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => {
                 VectorInternal::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => {
                 VectorInternal::from(MultiDenseVectorInternal::placeholder(v.vector_dim()))
             }
@@ -491,8 +501,11 @@ impl VectorStorageEnum {
                     "Mmap sparse storage does not know its total size, get from index instead"
                 )
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.size_of_available_vectors_in_bytes(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
@@ -548,8 +561,11 @@ impl VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.populate()?,
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -594,8 +610,11 @@ impl VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
             VectorStorageEnum::SparseMmap(vs) => vs.clear_cache()?,
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -642,8 +661,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.distance(),
             VectorStorageEnum::SparseMmap(v) => v.distance(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.distance(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.distance(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.distance(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.distance(),
@@ -687,8 +709,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.datatype(),
             VectorStorageEnum::SparseMmap(v) => v.datatype(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.datatype(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.datatype(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.datatype(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.datatype(),
@@ -734,8 +759,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.is_on_disk(),
             VectorStorageEnum::SparseMmap(v) => v.is_on_disk(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.is_on_disk(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.is_on_disk(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.is_on_disk(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.is_on_disk(),
@@ -779,8 +807,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.total_vector_count(),
             VectorStorageEnum::SparseMmap(v) => v.total_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.total_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.total_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.total_vector_count(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.total_vector_count(),
@@ -824,8 +855,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.get_vector(key),
             VectorStorageEnum::SparseMmap(v) => v.get_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.get_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector(key),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector(key),
@@ -869,8 +903,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.get_vector_sequential(key),
             VectorStorageEnum::SparseMmap(v) => v.get_vector_sequential(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.get_vector_sequential(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector_sequential(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector_sequential(key),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector_sequential(key),
@@ -914,8 +951,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.get_vector_opt(key),
             VectorStorageEnum::SparseMmap(v) => v.get_vector_opt(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.get_vector_opt(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.get_vector_opt(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.get_vector_opt(key),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.get_vector_opt(key),
@@ -972,8 +1012,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.insert_vector(key, vector, hw_counter),
             VectorStorageEnum::SparseMmap(v) => v.insert_vector(key, vector, hw_counter),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.insert_vector(key, vector, hw_counter),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.insert_vector(key, vector, hw_counter),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.insert_vector(key, vector, hw_counter),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.insert_vector(key, vector, hw_counter),
@@ -1041,8 +1084,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.update_from(other_vectors, stopped),
             VectorStorageEnum::SparseMmap(v) => v.update_from(other_vectors, stopped),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.update_from(other_vectors, stopped),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.update_from(other_vectors, stopped),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.update_from(other_vectors, stopped),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.update_from(other_vectors, stopped),
@@ -1098,8 +1144,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.flusher(),
             VectorStorageEnum::SparseMmap(v) => v.flusher(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.flusher(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.flusher(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.flusher(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.flusher(),
@@ -1143,8 +1192,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.files(),
             VectorStorageEnum::SparseMmap(v) => v.files(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.files(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.files(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.files(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.files(),
@@ -1188,8 +1240,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.delete_vector(key),
             VectorStorageEnum::SparseMmap(v) => v.delete_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.delete_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.delete_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.delete_vector(key),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.delete_vector(key),
@@ -1233,8 +1288,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.is_deleted_vector(key),
             VectorStorageEnum::SparseMmap(v) => v.is_deleted_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.is_deleted_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.is_deleted_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.is_deleted_vector(key),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.is_deleted_vector(key),
@@ -1278,8 +1336,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_count(),
             VectorStorageEnum::SparseMmap(v) => v.deleted_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.deleted_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.deleted_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.deleted_vector_count(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_count(),
@@ -1323,8 +1384,11 @@ impl VectorStorage for VectorStorageEnum {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::SparseMmap(v) => v.deleted_vector_bitslice(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => v.deleted_vector_bitslice(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => v.deleted_vector_bitslice(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => v.deleted_vector_bitslice(),
             #[cfg(test)]
             VectorStorageEnum::MultiDenseVolatile(v) => v.deleted_vector_bitslice(),

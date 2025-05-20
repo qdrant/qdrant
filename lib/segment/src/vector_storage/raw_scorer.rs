@@ -107,8 +107,11 @@ pub fn new_raw_scorer<'a>(
         #[cfg(test)]
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageEnum::MultiDenseSimple(vs) => raw_multi_scorer_impl(query, vs, hc),
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageEnum::MultiDenseSimpleByte(vs) => raw_multi_scorer_byte_impl(query, vs, hc),
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageEnum::MultiDenseSimpleHalf(vs) => raw_multi_scorer_half_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::MultiDenseVolatile(vs) => raw_multi_scorer_impl(query, vs, hc),

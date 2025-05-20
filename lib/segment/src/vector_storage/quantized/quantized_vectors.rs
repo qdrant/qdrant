@@ -294,12 +294,15 @@ impl QuantizedVectors {
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::WrongSparse),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimple(v) => {
                 Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleByte(v) => {
                 Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::MultiDenseSimpleHalf(v) => {
                 Self::create_multi_impl(v, quantization_config, path, max_threads, stopped)
             }

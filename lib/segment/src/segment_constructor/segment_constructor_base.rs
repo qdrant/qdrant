@@ -62,6 +62,7 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
     open_appendable_memmap_multi_vector_storage_byte,
     open_appendable_memmap_multi_vector_storage_half,
 };
+#[cfg(not(feature = "no-rocksdb"))]
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
     open_simple_multi_dense_vector_storage_half,
@@ -98,6 +99,7 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
+#[allow(unused_variables, clippy::needless_pass_by_ref_mut)]
 pub(crate) fn open_vector_storage(
     db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
@@ -108,7 +110,14 @@ pub(crate) fn open_vector_storage(
     let storage_element_type = vector_config.datatype.unwrap_or_default();
 
     match vector_config.storage_type {
-        // In memory
+        // In memory - RocksDB disabled
+        #[cfg(feature = "no-rocksdb")]
+        VectorStorageType::Memory => Err(OperationError::service_error(
+            "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
+        )),
+
+        // In memory - RocksDB enabled
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageType::Memory => {
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
 
@@ -140,12 +149,6 @@ pub(crate) fn open_vector_storage(
                     ),
                 }
             } else {
-                #[cfg(feature = "no-rocksdb")]
-                return Err(OperationError::service_error(
-                    "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
-                ));
-
-                #[cfg(not(feature = "no-rocksdb"))]
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
                         db_builder.require()?,
