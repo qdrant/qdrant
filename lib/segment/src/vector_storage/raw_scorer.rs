@@ -54,8 +54,11 @@ pub fn new_raw_scorer<'a>(
     hc: HardwareCounterCell,
 ) -> OperationResult<Box<dyn RawScorer + 'a>> {
     match vector_storage {
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, hc),
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageEnum::DenseSimpleByte(vs) => raw_scorer_byte_impl(query, vs, hc),
+        #[cfg(not(feature = "no-rocksdb"))]
         VectorStorageEnum::DenseSimpleHalf(vs) => raw_scorer_half_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::DenseVolatile(vs) => raw_scorer_impl(query, vs, hc),

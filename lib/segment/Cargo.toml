@@ -21,6 +21,7 @@ multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing", "gpu/testing"]
 gpu = ["gpu/gpu"]
+no-rocksdb = []
 
 [build-dependencies]
 cc = "1.2"

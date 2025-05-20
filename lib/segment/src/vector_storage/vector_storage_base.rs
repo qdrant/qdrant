@@ -10,6 +10,7 @@ use common::types::PointOffsetType;
 use sparse::common::sparse_vector::SparseVector;
 
 use super::dense::memmap_dense_vector_storage::MemmapDenseVectorStorage;
+#[cfg(not(feature = "no-rocksdb"))]
 use super::dense::simple_dense_vector_storage::SimpleDenseVectorStorage;
 #[cfg(test)]
 use super::dense::volatile_dense_vector_storage::VolatileDenseVectorStorage;
@@ -180,8 +181,11 @@ pub trait MultiVectorStorage<T: PrimitiveVectorElement>: VectorStorage {
 
 #[derive(Debug)]
 pub enum VectorStorageEnum {
+    #[cfg(not(feature = "no-rocksdb"))]
     DenseSimple(SimpleDenseVectorStorage<VectorElementType>),
+    #[cfg(not(feature = "no-rocksdb"))]
     DenseSimpleByte(SimpleDenseVectorStorage<VectorElementTypeByte>),
+    #[cfg(not(feature = "no-rocksdb"))]
     DenseSimpleHalf(SimpleDenseVectorStorage<VectorElementTypeHalf>),
     #[cfg(test)]
     DenseVolatile(VolatileDenseVectorStorage<VectorElementType>),
@@ -312,8 +316,11 @@ pub enum VectorStorageEnum {
 impl VectorStorageEnum {
     pub fn try_multi_vector_config(&self) -> Option<&MultiVectorConfig> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(_) => None,
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(_) => None,
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(_) => None,
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(_) => None,
@@ -354,10 +361,13 @@ impl VectorStorageEnum {
 
     pub(crate) fn default_vector(&self) -> VectorInternal {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => VectorInternal::from(vec![1.0; v.vector_dim()]),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => {
                 VectorInternal::from(vec![1.0; v.vector_dim()])
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => {
                 VectorInternal::from(vec![1.0; v.vector_dim()])
             }
@@ -444,8 +454,11 @@ impl VectorStorageEnum {
 
     pub fn size_of_available_vectors_in_bytes(&self) -> usize {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.size_of_available_vectors_in_bytes(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.size_of_available_vectors_in_bytes(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.size_of_available_vectors_in_bytes(),
@@ -510,8 +523,11 @@ impl VectorStorageEnum {
 
     pub fn populate(&self) -> OperationResult<()> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -553,8 +569,11 @@ impl VectorStorageEnum {
 
     pub fn clear_cache(&self) -> OperationResult<()> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(_) => {} // Can't populate as it is not mmap
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(_) => {} // Can't populate as it is not mmap
@@ -598,8 +617,11 @@ impl VectorStorageEnum {
 impl VectorStorage for VectorStorageEnum {
     fn distance(&self) -> Distance {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.distance(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.distance(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.distance(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.distance(),
@@ -640,8 +662,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn datatype(&self) -> VectorStorageDatatype {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.datatype(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.datatype(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.datatype(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.datatype(),
@@ -684,8 +709,11 @@ impl VectorStorage for VectorStorageEnum {
     /// If true - data is stored on disk, and is not forced to be in RAM
     fn is_on_disk(&self) -> bool {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.is_on_disk(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.is_on_disk(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.is_on_disk(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.is_on_disk(),
@@ -726,8 +754,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn total_vector_count(&self) -> usize {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.total_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.total_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.total_vector_count(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.total_vector_count(),
@@ -768,8 +799,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn get_vector(&self, key: PointOffsetType) -> CowVector {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.get_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.get_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector(key),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.get_vector(key),
@@ -810,8 +844,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn get_vector_sequential(&self, key: PointOffsetType) -> CowVector {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.get_vector_sequential(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.get_vector_sequential(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector_sequential(key),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.get_vector_sequential(key),
@@ -852,8 +889,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn get_vector_opt(&self, key: PointOffsetType) -> Option<CowVector> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.get_vector_opt(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.get_vector_opt(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.get_vector_opt(key),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.get_vector_opt(key),
@@ -899,8 +939,11 @@ impl VectorStorage for VectorStorageEnum {
         hw_counter: &HardwareCounterCell,
     ) -> OperationResult<()> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.insert_vector(key, vector, hw_counter),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.insert_vector(key, vector, hw_counter),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.insert_vector(key, vector, hw_counter),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.insert_vector(key, vector, hw_counter),
@@ -969,8 +1012,11 @@ impl VectorStorage for VectorStorageEnum {
         stopped: &AtomicBool,
     ) -> OperationResult<Range<PointOffsetType>> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.update_from(other_vectors, stopped),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.update_from(other_vectors, stopped),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.update_from(other_vectors, stopped),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.update_from(other_vectors, stopped),
@@ -1027,8 +1073,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn flusher(&self) -> Flusher {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.flusher(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.flusher(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.flusher(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.flusher(),
@@ -1069,8 +1118,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn files(&self) -> Vec<PathBuf> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.files(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.files(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.files(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.files(),
@@ -1111,8 +1163,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn delete_vector(&mut self, key: PointOffsetType) -> OperationResult<bool> {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.delete_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.delete_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.delete_vector(key),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.delete_vector(key),
@@ -1153,8 +1208,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn is_deleted_vector(&self, key: PointOffsetType) -> bool {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.is_deleted_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.is_deleted_vector(key),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.is_deleted_vector(key),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.is_deleted_vector(key),
@@ -1195,8 +1253,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn deleted_vector_count(&self) -> usize {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.deleted_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.deleted_vector_count(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.deleted_vector_count(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_count(),
@@ -1237,8 +1298,11 @@ impl VectorStorage for VectorStorageEnum {
 
     fn deleted_vector_bitslice(&self) -> &BitSlice {
         match self {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => v.deleted_vector_bitslice(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => v.deleted_vector_bitslice(),
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => v.deleted_vector_bitslice(),
             #[cfg(test)]
             VectorStorageEnum::DenseVolatile(v) => v.deleted_vector_bitslice(),

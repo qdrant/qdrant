@@ -77,6 +77,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     {
         let orig_iter = points.iter().flat_map(|multivec| multivec.multi_vectors());
         match storage as &VectorStorageEnum {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(_)
             | VectorStorageEnum::DenseSimpleByte(_)
             | VectorStorageEnum::DenseSimpleHalf(_) => unreachable!(),

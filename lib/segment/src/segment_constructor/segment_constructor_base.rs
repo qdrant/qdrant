@@ -51,6 +51,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
     open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
 };
+#[cfg(not(feature = "no-rocksdb"))]
 use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
     open_simple_dense_vector_storage,
@@ -139,6 +140,12 @@ pub(crate) fn open_vector_storage(
                     ),
                 }
             } else {
+                #[cfg(feature = "no-rocksdb")]
+                return Err(OperationError::service_error(
+                    "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
+                ));
+
+                #[cfg(not(feature = "no-rocksdb"))]
                 match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
                         db_builder.require()?,

@@ -333,12 +333,15 @@ impl GpuVectorStorage {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(vector_storage) => {
                 Self::new_dense_f32(device, vector_storage, force_half_precision, stopped)
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(vector_storage) => {
                 Self::new_dense(device, vector_storage, stopped)
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(vector_storage) => {
                 Self::new_dense_f16(device, vector_storage, stopped)
             }

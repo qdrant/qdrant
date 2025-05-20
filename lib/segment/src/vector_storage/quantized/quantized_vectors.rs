@@ -239,12 +239,15 @@ impl QuantizedVectors {
         stopped: &AtomicBool,
     ) -> OperationResult<Self> {
         match vector_storage {
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimple(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleByte(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
+            #[cfg(not(feature = "no-rocksdb"))]
             VectorStorageEnum::DenseSimpleHalf(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
