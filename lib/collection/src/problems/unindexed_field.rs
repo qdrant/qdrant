@@ -8,7 +8,6 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::index::IntegerIndexParams;
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use segment::json_path::JsonPath;
 use segment::types::{
@@ -384,7 +383,10 @@ impl<'a> Extractor<'a> {
         let full_key = JsonPath::extend_or_new(nested_prefix, key);
 
         if self.needs_index(&full_key, &required_index) {
-            let schemas = required_index.into_iter().map(PayloadFieldSchema::from);
+            let schemas = required_index
+                .into_iter()
+                .map(PayloadSchemaType::from)
+                .map(PayloadFieldSchema::FieldType);
             self.unindexed_schema
                 .entry(full_key)
                 .or_default()
@@ -512,7 +514,10 @@ impl<'a> Extractor<'a> {
         }
 
         if self.needs_index(&key, &required_index) {
-            let schemas = required_index.into_iter().map(PayloadFieldSchema::from);
+            let schemas = required_index
+                .into_iter()
+                .map(PayloadSchemaType::from)
+                .map(PayloadFieldSchema::FieldType);
             self.unindexed_schema
                 .entry(key)
                 .or_default()
@@ -585,42 +590,29 @@ fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
     index_types
 }
 
-impl From<FieldIndexType> for PayloadFieldSchema {
+impl From<FieldIndexType> for PayloadSchemaType {
     fn from(val: FieldIndexType) -> Self {
         match val {
-            FieldIndexType::IntMatch => {
-                let params = IntegerIndexParams {
-                    lookup: Some(true),
-                    ..Default::default()
-                };
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params))
-            }
-            FieldIndexType::IntRange => {
-                let params = IntegerIndexParams {
-                    range: Some(true),
-                    ..Default::default()
-                };
-                PayloadFieldSchema::FieldParams(PayloadSchemaParams::Integer(params))
-            }
-            FieldIndexType::KeywordMatch => {
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword)
-            }
-            FieldIndexType::FloatRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
-            FieldIndexType::Text => PayloadFieldSchema::FieldType(PayloadSchemaType::Text),
-            FieldIndexType::BoolMatch => PayloadFieldSchema::FieldType(PayloadSchemaType::Bool),
-            FieldIndexType::UuidMatch => PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
-            FieldIndexType::UuidRange => PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid),
-            FieldIndexType::DatetimeRange => {
-                PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)
-            }
-            FieldIndexType::Geo => PayloadFieldSchema::FieldType(PayloadSchemaType::Geo),
+            FieldIndexType::IntMatch => PayloadSchemaType::Integer,
+            FieldIndexType::IntRange => PayloadSchemaType::Integer,
+            FieldIndexType::KeywordMatch => PayloadSchemaType::Keyword,
+            FieldIndexType::FloatRange => PayloadSchemaType::Float,
+            FieldIndexType::Text => PayloadSchemaType::Text,
+            FieldIndexType::BoolMatch => PayloadSchemaType::Bool,
+            FieldIndexType::UuidMatch => PayloadSchemaType::Uuid,
+            FieldIndexType::UuidRange => PayloadSchemaType::Uuid,
+            FieldIndexType::DatetimeRange => PayloadSchemaType::Datetime,
+            FieldIndexType::Geo => PayloadSchemaType::Geo,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use segment::data_types::index::IntegerIndexParams;
+
     use super::*;
+
     #[test]
     fn integer_index_capacities() {
         let params = PayloadSchemaParams::Integer(IntegerIndexParams {
