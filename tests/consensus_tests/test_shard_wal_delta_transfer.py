@@ -202,7 +202,7 @@ def test_shard_wal_delta_transfer_manual_recovery(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 10)
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # All nodes must have one shard
@@ -301,7 +301,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 10)
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # Start inserting into the fourth peer again
@@ -322,7 +322,7 @@ def test_shard_wal_delta_transfer_manual_recovery_chain(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[3], COLLECTION_NAME, None, 10)
+    wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 1)
     wait_for_collection_shard_transfers_count(peer_api_uris[3], COLLECTION_NAME, 0)
 
     upload_process_1.kill()
@@ -450,7 +450,7 @@ def test_shard_wal_delta_transfer_abort_and_retry(tmp_path: pathlib.Path):
     assert_http_ok(r)
 
     # Assert WAL delta transfer progress, and wait for it to finish
-    wait_for_collection_shard_transfer_progress(peer_api_uris[0], COLLECTION_NAME, None, 10)
+    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
     wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 0)
 
     # All nodes must have one shard
