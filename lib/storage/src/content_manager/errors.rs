@@ -147,7 +147,7 @@ impl StorageError {
                 description: overriding_description,
                 backtrace: None,
             },
-            CollectionError::StrictMode { description } => StorageError::Forbidden { description },
+            CollectionError::StrictMode { description } => StorageError::BadRequest { description },
             CollectionError::InferenceError { description } => {
                 StorageError::InferenceError { description }
             }
@@ -206,7 +206,7 @@ impl From<CollectionError> for StorageError {
                 description: format!("{err}"),
                 backtrace: None,
             },
-            CollectionError::StrictMode { description } => StorageError::Forbidden { description },
+            CollectionError::StrictMode { description } => StorageError::BadRequest { description },
             CollectionError::InferenceError { description } => {
                 StorageError::InferenceError { description }
             }
