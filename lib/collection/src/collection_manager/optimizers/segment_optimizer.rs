@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use common::budget::{ResourceBudget, ResourcePermit};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -11,7 +11,7 @@ use io::storage_version::StorageVersion;
 use itertools::Itertools;
 use parking_lot::lock_api::RwLockWriteGuard;
 use parking_lot::{Mutex, RwLockUpgradableReadGuard};
-use segment::common::operation_error::OperationResult;
+use segment::common::operation_error::{OperationResult, check_process_stopped};
 use segment::common::operation_time_statistics::{
     OperationDurationsAggregator, ScopeDurationMeasurer,
 };
@@ -342,16 +342,6 @@ pub trait SegmentOptimizer {
         restored_segment_ids
     }
 
-    /// Checks if optimization cancellation is requested.
-    fn check_cancellation(&self, stopped: &AtomicBool) -> CollectionResult<()> {
-        if stopped.load(Ordering::Relaxed) {
-            return Err(CollectionError::Cancelled {
-                description: "optimization cancelled by service".to_string(),
-            });
-        }
-        Ok(())
-    }
-
     /// Unwraps proxy, adds temp segment into collection
     ///
     /// # Arguments
@@ -409,7 +399,7 @@ pub trait SegmentOptimizer {
     ) -> CollectionResult<Segment> {
         let mut segment_builder = self.optimized_segment_builder(optimizing_segments)?;
 
-        self.check_cancellation(stopped)?;
+        check_process_stopped(stopped)?;
 
         let segments: Vec<_> = optimizing_segments
             .iter()
@@ -544,7 +534,7 @@ pub trait SegmentOptimizer {
                         .delete_field_index_if_incompatible(*version, field_name, schema)?;
                 }
             }
-            self.check_cancellation(stopped)?;
+            check_process_stopped(stopped)?;
         }
 
         for (point_id, versions) in deleted_points_snapshot {
@@ -582,7 +572,7 @@ pub trait SegmentOptimizer {
         resource_budget: ResourceBudget,
         stopped: &AtomicBool,
     ) -> CollectionResult<usize> {
-        self.check_cancellation(stopped)?;
+        check_process_stopped(stopped)?;
 
         let mut timer = ScopeDurationMeasurer::new(self.get_telemetry_counter());
         timer.set_success(false);
@@ -613,7 +603,7 @@ pub trait SegmentOptimizer {
             return Ok(0);
         }
 
-        self.check_cancellation(stopped)?;
+        check_process_stopped(stopped)?;
 
         let hw_counter = HardwareCounterCell::disposable(); // Internal operation, no measurement needed!
 
@@ -752,7 +742,7 @@ pub trait SegmentOptimizer {
         Segment,
         RwLockWriteGuard<'a, parking_lot::RawRwLock, SegmentHolder>,
     )> {
-        self.check_cancellation(stopped)?;
+        check_process_stopped(stopped)?;
 
         // ---- SLOW PART -----
 
@@ -780,7 +770,7 @@ pub trait SegmentOptimizer {
 
         // ---- SLOW PART ENDS HERE -----
 
-        self.check_cancellation(stopped)?;
+        check_process_stopped(stopped)?;
 
         // This block locks all operations with collection. It should be fast
         let write_segments_guard = segments.write();
@@ -809,7 +799,7 @@ pub trait SegmentOptimizer {
                 }
             }
 
-            self.check_cancellation(stopped)?;
+            check_process_stopped(stopped)?;
         }
 
         let deleted_points = proxy_deleted_points.read();
