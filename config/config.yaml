@@ -238,6 +238,10 @@ storage:
       # Max oversampling value allowed in search.
       search_max_oversampling: null
 
+  # Maximum number of collections allowed to be created
+  # If null - no limit.
+  max_collections: null
+
 service:
   # Maximum size of POST data in a single request in megabytes
   max_request_size_mb: 32

@@ -70,6 +70,7 @@ fn test_alias_operation() {
         // update_concurrency: None,
         shard_transfer_method: None,
         collection: None,
+        max_collections: None,
     };
 
     let search_runtime = Runtime::new().unwrap();

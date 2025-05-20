@@ -49,10 +49,18 @@ impl TableOfContent {
             uuid,
         } = operation;
 
-        self.collections
-            .read()
-            .await
-            .validate_collection_not_exists(collection_name)?;
+        {
+            let collections = self.collections.read().await;
+            collections.validate_collection_not_exists(collection_name)?;
+
+            if let Some(max_collections) = self.storage_config.max_collections {
+                if collections.len() >= max_collections {
+                    return Err(StorageError::forbidden(format!(
+                        "Can't create collection with name {collection_name}. Max collections limit reached: {max_collections}",
+                    )));
+                }
+            }
+        }
 
         if self
             .alias_persistence
