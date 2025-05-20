@@ -1688,7 +1688,7 @@ def test_strict_mode_group_limits(collection_name):
     )
 
     assert not response.ok
-    assert "Forbidden: Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
+    assert "Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
@@ -1703,7 +1703,7 @@ def test_strict_mode_group_limits(collection_name):
         },
     )
     assert not response.ok
-    assert "Forbidden: Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
+    assert "Limit exceeded 30 > 15 for \"limit\"" in response.json()['status']['error']
 
 def test_strict_mode_distance_matrix_limits(collection_name):
     response = request_with_validation(
@@ -1733,7 +1733,7 @@ def test_strict_mode_distance_matrix_limits(collection_name):
         },
     )
     assert not response.ok
-    assert "Forbidden: Limit exceeded 20 > 15 for \"limit\"" in response.json()['status']['error']
+    assert "Limit exceeded 20 > 15 for \"limit\"" in response.json()['status']['error']
 
 
 def test_read_rate_limiter_many_vectors(full_collection_name):
@@ -1860,7 +1860,7 @@ def test_strict_mode_group_by_unindexed(collection_name):
     )
 
     assert not response.ok
-    assert "Forbidden: Index required but not found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
+    assert "Index required but not found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
@@ -1875,7 +1875,7 @@ def test_strict_mode_group_by_unindexed(collection_name):
         },
     )
     assert not response.ok
-    assert "Forbidden: Index required but not found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
+    assert "Index required but not found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
 
     # create geo index
     request_with_validation(
@@ -1904,7 +1904,7 @@ def test_strict_mode_group_by_unindexed(collection_name):
     )
 
     assert not response.ok
-    assert "Forbidden: Index of type \"Geo\" found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
+    assert "Index of type \"Geo\" found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
 
     response = request_with_validation(
         api="/collections/{collection_name}/points/query/groups",
@@ -1919,7 +1919,7 @@ def test_strict_mode_group_by_unindexed(collection_name):
         },
     )
     assert not response.ok
-    assert "Forbidden: Index of type \"Geo\" found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
+    assert "Index of type \"Geo\" found for \"docId\". Help: Create an index supporting `match` for this key." in response.json()['status']['error']
 
     # create keyword index (supporting match)
     request_with_validation(

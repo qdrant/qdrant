@@ -55,7 +55,7 @@ impl TableOfContent {
 
             if let Some(max_collections) = self.storage_config.max_collections {
                 if collections.len() >= max_collections {
-                    return Err(StorageError::forbidden(format!(
+                    return Err(StorageError::bad_request(format!(
                         "Can't create collection with name {collection_name}. Max collections limit reached: {max_collections}",
                     )));
                 }
