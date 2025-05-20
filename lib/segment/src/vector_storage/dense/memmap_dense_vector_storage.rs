@@ -310,13 +310,12 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::data_types::vectors::{DenseVector, QueryVector};
     use crate::fixtures::payload_context_fixture::FixtureIdTracker;
     use crate::id_tracker::id_tracker_base::IdTracker;
     use crate::index::hnsw_index::point_scorer::FilteredScorer;
     use crate::types::{PointIdType, QuantizationConfig, ScalarQuantizationConfig};
-    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+    use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
     use crate::vector_storage::{DEFAULT_STOPPED, new_raw_scorer};
 
@@ -347,16 +346,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let mut storage2 = open_simple_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                4,
-                Distance::Dot,
-                &AtomicBool::new(false),
-            )
-            .unwrap();
+            let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 storage2
                     .insert_vector(0, points[0].as_slice().into(), &hw_counter)
@@ -387,16 +377,7 @@ mod tests {
         borrowed_id_tracker.drop(PointIdType::NumId(2)).unwrap();
 
         {
-            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let mut storage2 = open_simple_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                4,
-                Distance::Dot,
-                &AtomicBool::new(false),
-            )
-            .unwrap();
+            let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 storage2
                     .insert_vector(3, points[3].as_slice().into(), &hw_counter)
@@ -458,16 +439,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let mut storage2 = open_simple_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                4,
-                Distance::Dot,
-                &AtomicBool::new(false),
-            )
-            .unwrap();
+            let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
@@ -583,16 +555,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let mut storage2 = open_simple_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                4,
-                Distance::Dot,
-                &AtomicBool::new(false),
-            )
-            .unwrap();
+            let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 points.iter().enumerate().for_each(|(i, vec)| {
                     storage2
@@ -665,16 +628,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let mut storage2 = open_simple_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                4,
-                Distance::Dot,
-                &AtomicBool::new(false),
-            )
-            .unwrap();
+            let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
@@ -748,16 +702,7 @@ mod tests {
         let hw_counter = HardwareCounterCell::new();
 
         {
-            let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-            let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-            let mut storage2 = open_simple_dense_vector_storage(
-                db,
-                DB_VECTOR_CF,
-                4,
-                Distance::Dot,
-                &AtomicBool::new(false),
-            )
-            .unwrap();
+            let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
             {
                 for (i, vec) in points.iter().enumerate() {
                     storage2
