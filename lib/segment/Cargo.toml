@@ -132,6 +132,7 @@ io-uring = "0.7.7"
 [[bench]]
 name = "vector_search"
 harness = false
+required-features = ["rocksdb"]
 
 [[bench]]
 name = "hnsw_build_graph"
@@ -180,10 +181,12 @@ harness = false
 [[bench]]
 name = "sparse_index_build"
 harness = false
+required-features = ["rocksdb"]
 
 [[bench]]
 name = "sparse_vector_storage"
 harness = false
+required-features = ["rocksdb"]
 
 [[bench]]
 name = "multi_vector_search"
