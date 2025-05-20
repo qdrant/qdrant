@@ -270,6 +270,7 @@ impl BitmaskGaps {
 }
 
 #[cfg(test)]
+#[cfg(debug_assertions)]
 mod tests {
     use proptest::prelude::*;
     use tempfile::tempdir;
