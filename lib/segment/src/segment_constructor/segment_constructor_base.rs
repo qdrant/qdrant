@@ -99,13 +99,12 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
     segment_path.join(get_vector_name_with_prefix(VECTOR_INDEX_PATH, vector_name))
 }
 
-#[allow(unused_variables, clippy::needless_pass_by_ref_mut)]
 pub(crate) fn open_vector_storage(
-    db_builder: &mut RocksDbBuilder,
+    #[cfg(not(feature = "no-rocksdb"))] db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
-    stopped: &AtomicBool,
+    #[cfg(not(feature = "no-rocksdb"))] stopped: &AtomicBool,
     vector_storage_path: &Path,
-    vector_name: &VectorName,
+    #[cfg(not(feature = "no-rocksdb"))] vector_name: &VectorName,
 ) -> OperationResult<VectorStorageEnum> {
     let storage_element_type = vector_config.datatype.unwrap_or_default();
 
@@ -579,10 +578,13 @@ fn create_segment(
 
         // Select suitable vector storage type based on configuration
         let vector_storage = sp(open_vector_storage(
+            #[cfg(not(feature = "no-rocksdb"))]
             &mut db_builder,
             vector_config,
+            #[cfg(not(feature = "no-rocksdb"))]
             stopped,
             &vector_storage_path,
+            #[cfg(not(feature = "no-rocksdb"))]
             vector_name,
         )?);
 

@@ -102,10 +102,13 @@ impl SegmentBuilder {
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
             let vector_storage = open_vector_storage(
+                #[cfg(not(feature = "no-rocksdb"))]
                 &mut db_builder,
                 vector_config,
+                #[cfg(not(feature = "no-rocksdb"))]
                 &stopped,
                 &vector_storage_path,
+                #[cfg(not(feature = "no-rocksdb"))]
                 vector_name,
             )?;
 
