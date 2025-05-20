@@ -8,14 +8,13 @@ use http::{HeaderMap, HeaderValue, Method, Uri};
 use issues::{Action, Code, ImmediateSolution, Issue, Solution};
 use itertools::Itertools;
 use segment::common::operation_error::OperationError;
-use segment::data_types::index::{TextIndexParams, TextIndexType, TokenizerType};
 use segment::index::query_optimization::rescore_formula::parsed_formula::VariableId;
 use segment::json_path::JsonPath;
 use segment::types::{
     AnyVariants, Condition, FieldCondition, Filter, Match, MatchValue, PayloadFieldSchema,
     PayloadKeyType, PayloadSchemaParams, PayloadSchemaType, RangeInterface, UuidPayloadType,
 };
-use strum::IntoEnumIterator as _;
+use strum::{EnumIter, IntoEnumIterator as _};
 
 use crate::operations::universal_query::formula::ExpressionInternal;
 #[derive(Debug)]
@@ -162,33 +161,33 @@ impl Issue for UnindexedField {
 }
 
 /// Suggest any index, let user choose depending on their data type
-fn all_indexes() -> impl Iterator<Item = PayloadFieldSchema> {
-    PayloadSchemaType::iter().map(PayloadFieldSchema::FieldType)
+fn all_indexes() -> impl Iterator<Item = FieldIndexType> {
+    FieldIndexType::iter()
 }
 
-fn infer_schema_from_match_value(value: &MatchValue) -> Vec<PayloadFieldSchema> {
+fn infer_index_from_match_value(value: &MatchValue) -> Vec<FieldIndexType> {
     match &value.value {
         segment::types::ValueVariants::String(string) => {
             let mut inferred = Vec::new();
 
             if UuidPayloadType::parse_str(string).is_ok() {
-                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid))
+                inferred.push(FieldIndexType::UuidMatch)
             }
 
-            inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword));
+            inferred.push(FieldIndexType::KeywordMatch);
 
             inferred
         }
         segment::types::ValueVariants::Integer(_integer) => {
-            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
+            vec![FieldIndexType::IntMatch]
         }
         segment::types::ValueVariants::Bool(_boolean) => {
-            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Bool)]
+            vec![FieldIndexType::BoolMatch]
         }
     }
 }
 
-fn infer_schema_from_any_variants(value: &AnyVariants) -> Vec<PayloadFieldSchema> {
+fn infer_index_from_any_variants(value: &AnyVariants) -> Vec<FieldIndexType> {
     match value {
         AnyVariants::Strings(strings) => {
             let mut inferred = Vec::new();
@@ -197,20 +196,20 @@ fn infer_schema_from_any_variants(value: &AnyVariants) -> Vec<PayloadFieldSchema
                 .iter()
                 .all(|s| UuidPayloadType::parse_str(s).is_ok())
             {
-                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Uuid))
+                inferred.push(FieldIndexType::UuidMatch)
             }
 
-            inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Keyword));
+            inferred.push(FieldIndexType::KeywordMatch);
 
             inferred
         }
         AnyVariants::Integers(_integers) => {
-            vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Integer)]
+            vec![FieldIndexType::IntMatch]
         }
     }
 }
 
-fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<PayloadFieldSchema> {
+fn infer_index_from_field_condition(field_condition: &FieldCondition) -> Vec<FieldIndexType> {
     let FieldCondition {
         key: _key,
         r#match,
@@ -223,47 +222,36 @@ fn infer_schema_from_field_condition(field_condition: &FieldCondition) -> Vec<Pa
         is_null,
     } = field_condition;
 
-    let mut inferred = Vec::new();
+    let mut required_indexes = Vec::new();
 
     if let Some(r#match) = r#match {
-        inferred.extend(match r#match {
-            Match::Value(match_value) => infer_schema_from_match_value(match_value),
-            Match::Text(_match_text) => {
-                vec![PayloadFieldSchema::FieldParams(PayloadSchemaParams::Text(
-                    TextIndexParams {
-                        r#type: TextIndexType::Text,
-                        tokenizer: TokenizerType::default(),
-                        min_token_len: None,
-                        max_token_len: None,
-                        lowercase: None,
-                        on_disk: None,
-                    },
-                ))]
-            }
-            Match::Any(match_any) => infer_schema_from_any_variants(&match_any.any),
-            Match::Except(match_except) => infer_schema_from_any_variants(&match_except.except),
+        required_indexes.extend(match r#match {
+            Match::Value(match_value) => infer_index_from_match_value(match_value),
+            Match::Text(_match_text) => vec![FieldIndexType::Text],
+            Match::Any(match_any) => infer_index_from_any_variants(&match_any.any),
+            Match::Except(match_except) => infer_index_from_any_variants(&match_except.except),
         })
     }
     if let Some(range_interface) = range {
         match range_interface {
             RangeInterface::DateTime(_) => {
-                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime));
+                required_indexes.push(FieldIndexType::DatetimeRange);
             }
             RangeInterface::Float(_) => {
-                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Float));
-                inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Integer));
+                required_indexes.push(FieldIndexType::FloatRange);
+                required_indexes.push(FieldIndexType::IntRange);
             }
         }
     }
     if geo_bounding_box.is_some() || geo_radius.is_some() || geo_polygon.is_some() {
-        inferred.push(PayloadFieldSchema::FieldType(PayloadSchemaType::Geo));
+        required_indexes.push(FieldIndexType::Geo);
     }
     if values_count.is_some() || is_empty.is_some() || is_null.is_some() {
         // Any index will do, let user choose depending on their data type
-        inferred.extend(all_indexes());
+        required_indexes.extend(all_indexes());
     }
 
-    inferred
+    required_indexes
 }
 
 pub struct IssueExtractor<'a> {
@@ -359,12 +347,12 @@ impl<'a> Extractor<'a> {
 
     fn update_from_condition(&mut self, nested_prefix: Option<&JsonPath>, condition: &Condition) {
         let key;
-        let inferred;
+        let required_index;
 
         match condition {
             Condition::Field(field_condition) => {
                 key = &field_condition.key;
-                inferred = infer_schema_from_field_condition(field_condition);
+                required_index = infer_index_from_field_condition(field_condition);
             }
             Condition::Filter(filter) => {
                 self.update_from_filter(nested_prefix, filter);
@@ -377,14 +365,14 @@ impl<'a> Extractor<'a> {
                 );
                 return;
             }
-            // Any index will suffice
+            // Any index will suffice to get the satellite null index
             Condition::IsEmpty(is_empty) => {
                 key = &is_empty.is_empty.key;
-                inferred = all_indexes().collect();
+                required_index = all_indexes().collect();
             }
             Condition::IsNull(is_null) => {
                 key = &is_null.is_null.key;
-                inferred = all_indexes().collect();
+                required_index = all_indexes().collect();
             }
             // No index needed
             Condition::HasId(_) => return,
@@ -394,35 +382,26 @@ impl<'a> Extractor<'a> {
 
         let full_key = JsonPath::extend_or_new(nested_prefix, key);
 
-        if self.needs_index(&full_key, &inferred) {
+        if self.needs_index(&full_key, &required_index) {
+            let schemas = required_index
+                .into_iter()
+                .map(PayloadSchemaType::from)
+                .map(PayloadFieldSchema::FieldType);
             self.unindexed_schema
                 .entry(full_key)
                 .or_default()
-                .extend(inferred);
+                .extend(schemas);
         }
     }
 
-    fn needs_index(&self, key: &JsonPath, inferred: &[PayloadFieldSchema]) -> bool {
+    fn needs_index(&self, key: &JsonPath, required_indexes: &[FieldIndexType]) -> bool {
         match self.payload_schema.get(key) {
             Some(index_info) => {
-                let index_info_kind = index_info.kind();
-
-                let already_indexed = inferred
+                // check if the index present has the right capabilities
+                let index_field_types = schema_capabilities(index_info);
+                let already_indexed = required_indexes
                     .iter()
-                    // TODO(strict-mode):
-                    // Use better comparisons for parametrized indexes. An idea is to make the inferring step
-                    // also output valid parametrized indexes and compare those instead of just the kind (index type)
-                    //
-                    // The only reason why it would be needed is because integer index can be parametrized
-                    // with just lookup or just range, so it is possible to make a false negative here. E.g.
-                    //
-                    // condition: MatchValue
-                    // inferred: FieldType(Integer)
-                    // index_info: FieldParams(IntegerIndex(range))
-                    //
-                    // In this case, we would assume that the field is indexed correctly when it is not
-                    .map(PayloadFieldSchema::kind)
-                    .any(|inferred| inferred == index_info_kind);
+                    .any(|required| index_field_types.contains(required));
 
                 !already_indexed
             }
@@ -432,7 +411,7 @@ impl<'a> Extractor<'a> {
 
     pub fn update_from_expression(&mut self, expression: &ExpressionInternal) {
         let key;
-        let inferred;
+        let required_index;
 
         match expression {
             ExpressionInternal::Constant(_) => return,
@@ -447,9 +426,10 @@ impl<'a> Extractor<'a> {
                     VariableId::Score(_) => return,
                     VariableId::Payload(json_path) => {
                         key = json_path;
-                        inferred = vec![
-                            PayloadFieldSchema::FieldType(PayloadSchemaType::Integer),
-                            PayloadFieldSchema::FieldType(PayloadSchemaType::Float),
+                        required_index = vec![
+                            FieldIndexType::IntMatch,
+                            FieldIndexType::IntRange,
+                            FieldIndexType::FloatRange,
                         ];
                     }
                     VariableId::Condition(_) => return,
@@ -461,12 +441,12 @@ impl<'a> Extractor<'a> {
             }
             ExpressionInternal::GeoDistance { origin: _, to } => {
                 key = to.clone();
-                inferred = vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Geo)];
+                required_index = vec![FieldIndexType::Geo];
             }
             ExpressionInternal::Datetime(_) => return,
             ExpressionInternal::DatetimeKey(variable) => {
                 key = variable.clone();
-                inferred = vec![PayloadFieldSchema::FieldType(PayloadSchemaType::Datetime)];
+                required_index = vec![FieldIndexType::DatetimeRange];
             }
             ExpressionInternal::Mult(expression_internals) => {
                 for expr in expression_internals {
@@ -533,11 +513,116 @@ impl<'a> Extractor<'a> {
             }
         }
 
-        if self.needs_index(&key, &inferred) {
+        if self.needs_index(&key, &required_index) {
+            let schemas = required_index
+                .into_iter()
+                .map(PayloadSchemaType::from)
+                .map(PayloadFieldSchema::FieldType);
             self.unindexed_schema
                 .entry(key)
                 .or_default()
-                .extend(inferred);
+                .extend(schemas);
         }
+    }
+}
+
+/// All types of internal indexes
+#[derive(Debug, Eq, PartialEq, EnumIter, Hash)]
+enum FieldIndexType {
+    IntMatch,
+    IntRange,
+    KeywordMatch,
+    FloatRange,
+    Text,
+    BoolMatch,
+    UuidMatch,
+    UuidRange,
+    DatetimeRange,
+    Geo,
+}
+
+fn schema_capabilities(value: &PayloadFieldSchema) -> HashSet<FieldIndexType> {
+    let mut index_types = HashSet::new();
+    match value {
+        PayloadFieldSchema::FieldType(payload_schema_type) => match payload_schema_type {
+            PayloadSchemaType::Keyword => index_types.insert(FieldIndexType::KeywordMatch),
+            PayloadSchemaType::Integer => {
+                index_types.insert(FieldIndexType::IntMatch);
+                index_types.insert(FieldIndexType::IntRange)
+            }
+            PayloadSchemaType::Uuid => {
+                index_types.insert(FieldIndexType::UuidMatch);
+                index_types.insert(FieldIndexType::UuidRange)
+            }
+            PayloadSchemaType::Bool => index_types.insert(FieldIndexType::BoolMatch),
+            PayloadSchemaType::Float => index_types.insert(FieldIndexType::FloatRange),
+            PayloadSchemaType::Geo => index_types.insert(FieldIndexType::Geo),
+            PayloadSchemaType::Text => index_types.insert(FieldIndexType::Text),
+            PayloadSchemaType::Datetime => index_types.insert(FieldIndexType::DatetimeRange),
+        },
+        PayloadFieldSchema::FieldParams(payload_schema_params) => match payload_schema_params {
+            PayloadSchemaParams::Keyword(_) => index_types.insert(FieldIndexType::KeywordMatch),
+            PayloadSchemaParams::Integer(integer_index_params) => {
+                if integer_index_params.lookup == Some(true) {
+                    index_types.insert(FieldIndexType::IntMatch);
+                }
+                if integer_index_params.range == Some(true) {
+                    index_types.insert(FieldIndexType::IntRange);
+                }
+                debug_assert!(
+                    !index_types.is_empty(),
+                    "lookup or range must be true for Integer payload index"
+                );
+                // unifying match arm types
+                true
+            }
+            PayloadSchemaParams::Uuid(_) => {
+                index_types.insert(FieldIndexType::UuidMatch);
+                index_types.insert(FieldIndexType::UuidRange)
+            }
+            PayloadSchemaParams::Bool(_) => index_types.insert(FieldIndexType::BoolMatch),
+            PayloadSchemaParams::Float(_) => index_types.insert(FieldIndexType::FloatRange),
+            PayloadSchemaParams::Geo(_) => index_types.insert(FieldIndexType::Geo),
+            PayloadSchemaParams::Text(_) => index_types.insert(FieldIndexType::Text),
+            PayloadSchemaParams::Datetime(_) => index_types.insert(FieldIndexType::DatetimeRange),
+        },
+    };
+    index_types
+}
+
+impl From<FieldIndexType> for PayloadSchemaType {
+    fn from(val: FieldIndexType) -> Self {
+        match val {
+            FieldIndexType::IntMatch => PayloadSchemaType::Integer,
+            FieldIndexType::IntRange => PayloadSchemaType::Integer,
+            FieldIndexType::KeywordMatch => PayloadSchemaType::Keyword,
+            FieldIndexType::FloatRange => PayloadSchemaType::Float,
+            FieldIndexType::Text => PayloadSchemaType::Text,
+            FieldIndexType::BoolMatch => PayloadSchemaType::Bool,
+            FieldIndexType::UuidMatch => PayloadSchemaType::Uuid,
+            FieldIndexType::UuidRange => PayloadSchemaType::Uuid,
+            FieldIndexType::DatetimeRange => PayloadSchemaType::Datetime,
+            FieldIndexType::Geo => PayloadSchemaType::Geo,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use segment::data_types::index::IntegerIndexParams;
+
+    use super::*;
+
+    #[test]
+    fn integer_index_capacities() {
+        let params = PayloadSchemaParams::Integer(IntegerIndexParams {
+            lookup: Some(true),
+            range: Some(true),
+            ..Default::default()
+        });
+        let schema = PayloadFieldSchema::FieldParams(params);
+        let index_types = schema_capabilities(&schema);
+        assert!(index_types.contains(&FieldIndexType::IntMatch));
+        assert!(index_types.contains(&FieldIndexType::IntRange));
     }
 }
