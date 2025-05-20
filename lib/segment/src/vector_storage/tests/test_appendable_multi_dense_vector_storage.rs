@@ -76,37 +76,40 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     {
         let orig_iter = points.iter().flat_map(|multivec| multivec.multi_vectors());
         match storage as &VectorStorageEnum {
-            VectorStorageEnum::DenseSimple(_) => unreachable!(),
-            VectorStorageEnum::DenseSimpleByte(_) => unreachable!(),
-            VectorStorageEnum::DenseSimpleHalf(_) => unreachable!(),
-            VectorStorageEnum::DenseMemmap(_) => unreachable!(),
-            VectorStorageEnum::DenseMemmapByte(_) => unreachable!(),
-            VectorStorageEnum::DenseMemmapHalf(_) => unreachable!(),
-            VectorStorageEnum::DenseAppendableMemmap(_) => unreachable!(),
-            VectorStorageEnum::DenseAppendableMemmapByte(_) => unreachable!(),
-            VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
-            VectorStorageEnum::SparseSimple(_) => unreachable!(),
-            VectorStorageEnum::SparseMmap(_) => unreachable!(),
+            VectorStorageEnum::DenseSimple(_)
+            | VectorStorageEnum::DenseSimpleByte(_)
+            | VectorStorageEnum::DenseSimpleHalf(_) => unreachable!(),
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatile(_)
+            | VectorStorageEnum::DenseVolatileByte(_)
+            | VectorStorageEnum::DenseVolatileHalf(_) => unreachable!(),
+            VectorStorageEnum::DenseMemmap(_)
+            | VectorStorageEnum::DenseMemmapByte(_)
+            | VectorStorageEnum::DenseMemmapHalf(_) => unreachable!(),
+            VectorStorageEnum::DenseAppendableMemmap(_)
+            | VectorStorageEnum::DenseAppendableMemmapByte(_)
+            | VectorStorageEnum::DenseAppendableMemmapHalf(_) => unreachable!(),
+            VectorStorageEnum::SparseSimple(_) | VectorStorageEnum::SparseMmap(_) => unreachable!(),
             VectorStorageEnum::MultiDenseSimple(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec);
                 }
             }
-            VectorStorageEnum::MultiDenseSimpleByte(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseSimpleHalf(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseSimpleByte(_)
+            | VectorStorageEnum::MultiDenseSimpleHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec);
                 }
             }
-            VectorStorageEnum::MultiDenseAppendableMemmapByte(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => unreachable!(),
-            VectorStorageEnum::DenseAppendableInRam(_) => unreachable!(),
-            VectorStorageEnum::DenseAppendableInRamByte(_) => unreachable!(),
-            VectorStorageEnum::DenseAppendableInRamHalf(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseAppendableInRam(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseAppendableInRamByte(_) => unreachable!(),
-            VectorStorageEnum::MultiDenseAppendableInRamHalf(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableMemmapByte(_)
+            | VectorStorageEnum::MultiDenseAppendableMemmapHalf(_) => unreachable!(),
+            VectorStorageEnum::DenseAppendableInRam(_)
+            | VectorStorageEnum::DenseAppendableInRamByte(_)
+            | VectorStorageEnum::DenseAppendableInRamHalf(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseAppendableInRam(_)
+            | VectorStorageEnum::MultiDenseAppendableInRamByte(_)
+            | VectorStorageEnum::MultiDenseAppendableInRamHalf(_) => unreachable!(),
         };
     }
 

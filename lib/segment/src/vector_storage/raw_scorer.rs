@@ -57,6 +57,12 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseSimple(vs) => raw_scorer_impl(query, vs, hc),
         VectorStorageEnum::DenseSimpleByte(vs) => raw_scorer_byte_impl(query, vs, hc),
         VectorStorageEnum::DenseSimpleHalf(vs) => raw_scorer_half_impl(query, vs, hc),
+        #[cfg(test)]
+        VectorStorageEnum::DenseVolatile(vs) => raw_scorer_impl(query, vs, hc),
+        #[cfg(test)]
+        VectorStorageEnum::DenseVolatileByte(vs) => raw_scorer_byte_impl(query, vs, hc),
+        #[cfg(test)]
+        VectorStorageEnum::DenseVolatileHalf(vs) => raw_scorer_half_impl(query, vs, hc),
 
         VectorStorageEnum::DenseMemmap(vs) => {
             if vs.has_async_reader() {
