@@ -24,7 +24,7 @@ use crate::vector_storage::{
 
 #[derive(Clone, Copy)]
 enum MultiDenseStorageType {
-    #[cfg(not(feature = "no-rocksdb"))]
+    #[cfg(feature = "rocksdb")]
     RocksDbFloat,
     AppendableMmapFloat,
 }
@@ -75,7 +75,7 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
     {
         let orig_iter = points.iter().flat_map(|multivec| multivec.multi_vectors());
         match storage as &VectorStorageEnum {
-            #[cfg(not(feature = "no-rocksdb"))]
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::DenseSimple(_)
             | VectorStorageEnum::DenseSimpleByte(_)
             | VectorStorageEnum::DenseSimpleHalf(_) => unreachable!(),
@@ -92,13 +92,13 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             VectorStorageEnum::SparseSimple(_) | VectorStorageEnum::SparseMmap(_) => unreachable!(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => unreachable!(),
-            #[cfg(not(feature = "no-rocksdb"))]
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::MultiDenseSimple(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec);
                 }
             }
-            #[cfg(not(feature = "no-rocksdb"))]
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::MultiDenseSimpleByte(_)
             | VectorStorageEnum::MultiDenseSimpleHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseVolatile(v) => {
@@ -266,7 +266,7 @@ fn create_vector_storage(
     path: &Path,
 ) -> VectorStorageEnum {
     match storage_type {
-        #[cfg(not(feature = "no-rocksdb"))]
+        #[cfg(feature = "rocksdb")]
         MultiDenseStorageType::RocksDbFloat => {
             use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
             use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
@@ -293,7 +293,7 @@ fn create_vector_storage(
 }
 
 #[rstest]
-#[cfg_attr(not(feature = "no-rocksdb"), case(MultiDenseStorageType::RocksDbFloat))]
+#[cfg_attr(feature = "rocksdb", case(MultiDenseStorageType::RocksDbFloat))]
 #[case(MultiDenseStorageType::AppendableMmapFloat)]
 fn test_delete_points_in_multi_dense_vector_storage(#[case] storage_type: MultiDenseStorageType) {
     let vec_dim = 1024;
@@ -319,7 +319,7 @@ fn test_delete_points_in_multi_dense_vector_storage(#[case] storage_type: MultiD
 }
 
 #[rstest]
-#[cfg_attr(not(feature = "no-rocksdb"), case(MultiDenseStorageType::RocksDbFloat))]
+#[cfg_attr(feature = "rocksdb", case(MultiDenseStorageType::RocksDbFloat))]
 #[case(MultiDenseStorageType::AppendableMmapFloat)]
 fn test_update_from_delete_points_multi_dense_vector_storage(
     #[case] storage_type: MultiDenseStorageType,
@@ -347,7 +347,7 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
 }
 
 #[rstest]
-#[cfg_attr(not(feature = "no-rocksdb"), case(MultiDenseStorageType::RocksDbFloat))]
+#[cfg_attr(feature = "rocksdb", case(MultiDenseStorageType::RocksDbFloat))]
 #[case(MultiDenseStorageType::AppendableMmapFloat)]
 fn test_large_multi_dense_vector_storage(#[case] storage_type: MultiDenseStorageType) {
     assert!(MAX_MULTIVECTOR_FLATTENED_LEN * std::mem::size_of::<VectorElementType>() < CHUNK_SIZE);

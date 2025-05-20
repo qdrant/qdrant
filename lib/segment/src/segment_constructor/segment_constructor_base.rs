@@ -51,7 +51,7 @@ use crate::vector_storage::dense::appendable_dense_vector_storage::{
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
     open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
 };
-#[cfg(not(feature = "no-rocksdb"))]
+#[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
     open_simple_dense_vector_storage,
@@ -62,7 +62,7 @@ use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_stora
     open_appendable_memmap_multi_vector_storage_byte,
     open_appendable_memmap_multi_vector_storage_half,
 };
-#[cfg(not(feature = "no-rocksdb"))]
+#[cfg(feature = "rocksdb")]
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
     open_simple_multi_dense_vector_storage_half,
@@ -100,23 +100,23 @@ pub fn get_vector_index_path(segment_path: &Path, vector_name: &VectorName) -> P
 }
 
 pub(crate) fn open_vector_storage(
-    #[cfg(not(feature = "no-rocksdb"))] db_builder: &mut RocksDbBuilder,
+    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     vector_config: &VectorDataConfig,
-    #[cfg(not(feature = "no-rocksdb"))] stopped: &AtomicBool,
+    #[cfg(feature = "rocksdb")] stopped: &AtomicBool,
     vector_storage_path: &Path,
-    #[cfg(not(feature = "no-rocksdb"))] vector_name: &VectorName,
+    #[cfg(feature = "rocksdb")] vector_name: &VectorName,
 ) -> OperationResult<VectorStorageEnum> {
     let storage_element_type = vector_config.datatype.unwrap_or_default();
 
     match vector_config.storage_type {
         // In memory - RocksDB disabled
-        #[cfg(feature = "no-rocksdb")]
+        #[cfg(not(feature = "rocksdb"))]
         VectorStorageType::Memory => Err(OperationError::service_error(
             "Failed to load 'Memory' storage type, RocksDB disabled in this Qdrant version",
         )),
 
         // In memory - RocksDB enabled
-        #[cfg(not(feature = "no-rocksdb"))]
+        #[cfg(feature = "rocksdb")]
         VectorStorageType::Memory => {
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
 
@@ -578,13 +578,13 @@ fn create_segment(
 
         // Select suitable vector storage type based on configuration
         let vector_storage = sp(open_vector_storage(
-            #[cfg(not(feature = "no-rocksdb"))]
+            #[cfg(feature = "rocksdb")]
             &mut db_builder,
             vector_config,
-            #[cfg(not(feature = "no-rocksdb"))]
+            #[cfg(feature = "rocksdb")]
             stopped,
             &vector_storage_path,
-            #[cfg(not(feature = "no-rocksdb"))]
+            #[cfg(feature = "rocksdb")]
             vector_name,
         )?);
 
