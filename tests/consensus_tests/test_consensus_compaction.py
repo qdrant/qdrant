@@ -129,7 +129,7 @@ def test_consensus_compaction_shard_keys(tmp_path: pathlib.Path):
 
 
 def put_metadata_key(peer_uris: list[str], key: str, value: Any):
-    resp = requests.put(f"{peer_uris[0]}/cluster/metadata/keys/{key}", json=value)
+    resp = requests.put(f"{peer_uris[0]}/cluster/metadata/keys/{key}?wait=true", json=value)
     assert_http_ok(resp)
     sleep(CONSENSUS_WAIT_SECONDS)
     get_metadata_key(peer_uris, key, value)
