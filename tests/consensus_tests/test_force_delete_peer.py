@@ -52,11 +52,7 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     )
 
     # Wait for start of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
-
-    transfers = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)[
-        "shard_transfers"
-    ]
+    transfers = wait_for_collection_shard_transfers_count_and_return_transfers(peer_api_uris[0], COLLECTION_NAME, 1)
     assert len(transfers) == 1
     assert transfers[0]["to"] == list(peer_id_to_url.keys())[-1] # last peer was restarted
     from_peer_id = transfers[0]["from"]
