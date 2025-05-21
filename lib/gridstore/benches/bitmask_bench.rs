@@ -1,5 +1,7 @@
+use std::hint::black_box;
+
 use bitvec::vec::BitVec;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::bitmask::Bitmask;
 use gridstore::config::DEFAULT_REGION_SIZE_BLOCKS;
 use rand::Rng;
