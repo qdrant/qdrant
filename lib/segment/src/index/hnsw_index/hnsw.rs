@@ -482,9 +482,9 @@ impl HNSWIndex {
 
             let required_connectivity = if average_links_per_0_level_int >= 4 {
                 let global_graph_connectivity = [
-                    graph_layers_builder.subgraph_connectivity(&all_points, 0, percolation),
-                    graph_layers_builder.subgraph_connectivity(&all_points, 0, percolation),
-                    graph_layers_builder.subgraph_connectivity(&all_points, 0, percolation),
+                    graph_layers_builder.subgraph_connectivity(&all_points, percolation),
+                    graph_layers_builder.subgraph_connectivity(&all_points, percolation),
+                    graph_layers_builder.subgraph_connectivity(&all_points, percolation),
                 ];
 
                 debug!("graph connectivity: {global_graph_connectivity:?} @ {percolation}");
@@ -526,7 +526,7 @@ impl HNSWIndex {
             #[cfg(not(feature = "gpu"))]
             let mut gpu_insert_context = None;
 
-            for (field, _) in indexed_fields {
+            for (index_pos, (field, _)) in indexed_fields.into_iter().enumerate() {
                 debug!("building additional index for field {}", &field);
 
                 let is_tenant = payload_index_ref.is_tenant(&field);
@@ -555,14 +555,11 @@ impl HNSWIndex {
                         &vector_storage_ref,
                     );
 
-                    if !is_tenant {
+                    if !is_tenant && index_pos > 0 {
                         if let Some(required_connectivity) = required_connectivity {
                             // Always build for tenants
-                            let graph_connectivity = graph_layers_builder.subgraph_connectivity(
-                                &points_to_index,
-                                0,
-                                percolation,
-                            );
+                            let graph_connectivity = graph_layers_builder
+                                .subgraph_connectivity(&points_to_index, percolation);
 
                             if graph_connectivity >= required_connectivity {
                                 trace!(
