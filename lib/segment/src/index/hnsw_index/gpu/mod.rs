@@ -97,10 +97,8 @@ mod tests {
     use common::types::PointOffsetType;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
-    use tempfile::TempDir;
 
     use super::batched_points::BatchedPoints;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
     use crate::data_types::vectors::DenseVector;
     use crate::fixtures::index_fixtures::TestRawScorerProducer;
     use crate::fixtures::payload_fixtures::random_vector;
@@ -110,11 +108,10 @@ mod tests {
     use crate::spaces::simple::CosineMetric;
     use crate::types::Distance;
     use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
-    use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+    use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
     use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
     pub struct GpuGraphTestData {
-        pub _temp_dir: TempDir,
         pub vector_storage: VectorStorageEnum,
         pub vector_holder: TestRawScorerProducer<CosineMetric>,
         pub graph_layers_builder: GraphLayersBuilder,
@@ -134,16 +131,7 @@ mod tests {
         let vector_holder = TestRawScorerProducer::<CosineMetric>::new(dim, num_vectors, &mut rng);
 
         // upload vectors to storage
-        let temp_dir = tempfile::Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(temp_dir.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage = open_simple_dense_vector_storage(
-            db,
-            DB_VECTOR_CF,
-            dim,
-            Distance::Cosine,
-            &false.into(),
-        )
-        .unwrap();
+        let mut storage = new_volatile_dense_vector_storage(dim, Distance::Cosine);
         for idx in 0..num_vectors {
             let v = vector_holder.get_vector(idx as PointOffsetType);
             storage
@@ -179,7 +167,6 @@ mod tests {
             .collect();
 
         GpuGraphTestData {
-            _temp_dir: temp_dir,
             vector_storage: storage,
             vector_holder,
             graph_layers_builder,

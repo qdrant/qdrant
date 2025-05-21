@@ -14,6 +14,7 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum, new_raw_scorer};
 
@@ -50,7 +51,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(
         storage.deleted_vector_count(),
         2,
-        "2 vectors must be deleted"
+        "2 vectors must be deleted",
     );
 
     let vector = vec![0.0, 1.0, 1.1, 1.0];
@@ -93,7 +94,7 @@ fn do_test_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(
         storage.deleted_vector_count(),
         5,
-        "all vectors must be deleted"
+        "all vectors must be deleted",
     );
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
@@ -120,16 +121,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
     let hw_counter = HardwareCounterCell::new();
     {
-        let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage2 = open_simple_dense_vector_storage(
-            db,
-            DB_VECTOR_CF,
-            4,
-            Distance::Dot,
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        let mut storage2 = new_volatile_dense_vector_storage(4, Distance::Dot);
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
@@ -152,7 +144,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(
         storage.deleted_vector_count(),
         2,
-        "2 vectors must be deleted from other storage"
+        "2 vectors must be deleted from other storage",
     );
 
     let vector = vec![0.0, 1.0, 1.1, 1.0];
@@ -176,7 +168,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
     assert_eq!(
         storage.deleted_vector_count(),
         5,
-        "all vectors must be deleted"
+        "all vectors must be deleted",
     );
 }
 
@@ -353,6 +345,7 @@ fn test_delete_points_in_simple_vector_storages() {
         do_test_delete_points(&mut storage);
         storage.flusher()().unwrap();
     }
+
     let db = open_db(dir.path(), &[DB_VECTOR_CF]).unwrap();
     let _storage = open_simple_dense_vector_storage(
         db,
@@ -446,6 +439,32 @@ fn test_score_quantized_points_simple_vector_storages() {
         &AtomicBool::new(false),
     )
     .unwrap();
+}
+
+// ----------------------------------------------
+
+#[test]
+fn test_delete_points_in_volatile_vector_storages() {
+    let mut storage = new_volatile_dense_vector_storage(4, Distance::Dot);
+    do_test_delete_points(&mut storage);
+}
+
+#[test]
+fn test_update_from_delete_points_volatile_vector_storages() {
+    let mut storage = new_volatile_dense_vector_storage(4, Distance::Dot);
+    do_test_update_from_delete_points(&mut storage);
+}
+
+#[test]
+fn test_score_points_in_volatile_vector_storages() {
+    let mut storage = new_volatile_dense_vector_storage(4, Distance::Dot);
+    do_test_score_points(&mut storage);
+}
+
+#[test]
+fn test_score_quantized_points_volatile_vector_storages() {
+    let mut storage = new_volatile_dense_vector_storage(4, Distance::Dot);
+    test_score_quantized_points(&mut storage);
 }
 
 // ----------------------------------------------

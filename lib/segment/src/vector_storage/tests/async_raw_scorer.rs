@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicBool;
-
 use bitvec::slice::BitSlice;
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
@@ -8,7 +6,6 @@ use rand::SeedableRng as _;
 use rand::seq::IteratorRandom as _;
 
 use super::utils::{Result, delete_random_vectors, insert_distributed_vectors, sampler};
-use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::QueryVector;
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::id_tracker::IdTracker;
@@ -16,7 +13,7 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::Distance;
 use crate::vector_storage::VectorStorageEnum;
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 
 #[test]
@@ -62,27 +59,15 @@ fn test_async_raw_scorer(
     let mut id_tracker = FixtureIdTracker::new(points);
 
     {
-        let dir = tempfile::Builder::new()
-            .prefix("mutable-storage")
-            .tempdir()?;
+        let mut volatile_storage = new_volatile_dense_vector_storage(dim, distance);
 
-        let db = rocksdb_wrapper::open_db(dir.path(), &[rocksdb_wrapper::DB_VECTOR_CF])?;
-
-        let mut mutable_storage = open_simple_dense_vector_storage(
-            db,
-            rocksdb_wrapper::DB_VECTOR_CF,
-            dim,
-            distance,
-            &AtomicBool::new(false),
-        )?;
-
-        insert_random_vectors(&mut rng, dim, &mut mutable_storage, points)?;
-        delete_random_vectors(&mut rng, &mut mutable_storage, &mut id_tracker, delete)?;
+        insert_random_vectors(&mut rng, dim, &mut volatile_storage, points)?;
+        delete_random_vectors(&mut rng, &mut volatile_storage, &mut id_tracker, delete)?;
 
         let mut iter = (0..points).map(|i| {
             let i = i as PointOffsetType;
-            let vec = mutable_storage.get_vector(i);
-            let deleted = mutable_storage.is_deleted_vector(i);
+            let vec = volatile_storage.get_vector(i);
+            let deleted = volatile_storage.is_deleted_vector(i);
             (vec, deleted)
         });
         storage.update_from(&mut iter, &Default::default())?;
