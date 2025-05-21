@@ -69,18 +69,21 @@ impl Query {
                         .get_params(using)
                         .and_then(|param| param.hnsw_config.as_ref());
 
-                    let vector_hnsw_m = vector_hnsw_config.and_then(|hnsw| hnsw.m).unwrap_or(0);
-                    let vector_hnsw_payload_m = vector_hnsw_config
-                        .and_then(|hnsw| hnsw.payload_m)
-                        .unwrap_or(0);
+                    // fallback to global configuration if no vector specific one
+                    let (vector_hnsw_m, vector_hnsw_payload_m) =
+                        if let Some(vector_hnsw_config) = vector_hnsw_config {
+                            (
+                                vector_hnsw_config.m.unwrap_or(0),
+                                vector_hnsw_config.payload_m.unwrap_or(0),
+                            )
+                        } else {
+                            (
+                                config.hnsw_config.m,
+                                config.hnsw_config.payload_m.unwrap_or(0),
+                            )
+                        };
 
-                    let is_hnsw_disabled = vector_hnsw_m == 0 && vector_hnsw_payload_m == 0;
-                    if !is_hnsw_disabled {
-                        // fast path when no additional checks required
-                        return Ok(());
-                    }
-
-                    // allow querying without HNSW if there is a filtering condition on a multitenant indexed payload key
+                    // check hnsw.payload_m if there is a filter
                     if let Some(filter) = filter {
                         let uses_multitenant_filter = filter
                             .iter_conditions()
@@ -88,8 +91,8 @@ impl Query {
                             .filter_map(|key| collection.payload_key_index_schema(&key))
                             .any(|index_schema| index_schema.is_tenant());
 
+                        // allow querying without HNSW if there is a filtering condition on a multitenant indexed payload key
                         if uses_multitenant_filter && vector_hnsw_payload_m != 0 {
-                            // allow multitenant query
                             return Ok(());
                         } else {
                             return Err(CollectionError::strict_mode(
@@ -97,15 +100,17 @@ impl Query {
                                 "Filter by multitenant aware indexed payload key and enable vector indexing (hnsw_config.payload._m)",
                             ));
                         }
-                    };
+                    }
 
                     // HNSW disabled AND no filters
-                    return Err(CollectionError::strict_mode(
-                        format!(
-                            "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
-                        ),
-                        "Enable vector indexing or use a prefetch query before rescoring",
-                    ));
+                    if vector_hnsw_m == 0 {
+                        return Err(CollectionError::strict_mode(
+                            format!(
+                                "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
+                            ),
+                            "Enable vector indexing or use a prefetch query before rescoring",
+                        ));
+                    }
                 }
             }
         }
