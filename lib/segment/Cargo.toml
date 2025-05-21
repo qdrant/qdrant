@@ -22,6 +22,9 @@ multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing", "gpu/testing"]
 gpu = ["gpu/gpu"]
+
+# Disabling RocksDB feature only partially disables RocksDB usage
+# More work is still required to eventually completely disable and remove it
 rocksdb = []
 
 [build-dependencies]

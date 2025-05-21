@@ -7,6 +7,7 @@ use super::segment_constructor_base::get_vector_name_with_prefix;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper;
 use crate::types::SegmentConfig;
+
 /// Struct to optionally create and open a RocksDB instance in a lazy way.
 /// Used as helper to eventually completely remove RocksDB.
 #[derive(Debug)]
