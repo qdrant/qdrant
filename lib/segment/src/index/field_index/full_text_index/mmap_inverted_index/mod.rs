@@ -21,6 +21,10 @@ use crate::index::field_index::full_text_index::inverted_index::TokenId;
 
 mod mmap_postings;
 
+/// Old implementation of mmap postings, used to test backwards compatibility temporarily
+#[cfg(test)]
+mod old_mmap_postings;
+
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
 const POINT_TO_TOKENS_COUNT_FILE: &str = "point_to_tokens_count.dat";
