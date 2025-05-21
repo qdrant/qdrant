@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
-use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::schema::{ScoredPoint, Vector};
