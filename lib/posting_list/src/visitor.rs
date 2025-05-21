@@ -68,6 +68,11 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         let chunk_idx = offset / CHUNK_LEN;
         let local_offset = offset % CHUNK_LEN;
 
+        // bound check
+        if offset >= self.list.len() {
+            return None;
+        }
+
         // get from chunk
         if chunk_idx < self.list.chunks.len() {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
