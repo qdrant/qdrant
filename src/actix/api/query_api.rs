@@ -144,8 +144,7 @@ async fn query_points_batch(
             batch.push((request, shard_selection));
         }
 
-        let first_inference_usage: Option<InferenceUsage> =
-            inference_usages.into_iter().flatten().next();
+        let inference_usage: Option<InferenceUsage> = inference_usages.into_iter().flatten().next();
 
         let pass = check_strict_mode_batch(
             batch.iter().map(|i| &i.0),
@@ -175,7 +174,7 @@ async fn query_points_batch(
                     .collect_vec(),
             })
             .collect_vec();
-        Ok((res, first_inference_usage))
+        Ok((res, inference_usage))
     }
     .await;
 
