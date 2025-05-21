@@ -80,10 +80,6 @@ impl SegmentBuilder {
         temp_dir: &Path,
         segment_config: &SegmentConfig,
     ) -> OperationResult<Self> {
-        // When we build a new segment, it is empty at first,
-        // so we can ignore the `stopped` flag
-        let stopped = AtomicBool::new(false);
-
         let temp_dir = create_temp_dir(temp_dir)?;
 
         let id_tracker = if segment_config.is_appendable() {
@@ -102,10 +98,13 @@ impl SegmentBuilder {
         for (vector_name, vector_config) in &segment_config.vector_data {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
             let vector_storage = open_vector_storage(
+                #[cfg(feature = "rocksdb")]
                 &mut db_builder,
                 vector_config,
-                &stopped,
+                #[cfg(feature = "rocksdb")]
+                &Default::default(),
                 &vector_storage_path,
+                #[cfg(feature = "rocksdb")]
                 vector_name,
             )?;
 
@@ -122,11 +121,14 @@ impl SegmentBuilder {
             let vector_storage_path = get_vector_storage_path(temp_dir.path(), vector_name);
 
             let vector_storage = create_sparse_vector_storage(
+                #[cfg(feature = "rocksdb")]
                 &mut db_builder,
                 &vector_storage_path,
+                #[cfg(feature = "rocksdb")]
                 vector_name,
                 &sparse_vector_config.storage_type,
-                &stopped,
+                #[cfg(feature = "rocksdb")]
+                &Default::default(),
             )?;
 
             vector_data.insert(

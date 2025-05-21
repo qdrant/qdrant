@@ -12,6 +12,7 @@ edition = "2024"
 workspace = true
 
 [features]
+default = ["rocksdb"]
 multiling-chinese = [
     "charabia/chinese-segmentation",
     "charabia/chinese-normalization",
@@ -21,6 +22,10 @@ multiling-japanese = ["charabia/japanese"]
 multiling-korean = ["charabia/korean"]
 testing = ["common/testing", "sparse/testing", "gpu/testing"]
 gpu = ["gpu/gpu"]
+
+# Disabling RocksDB feature only partially disables RocksDB usage
+# More work is still required to eventually completely disable and remove it
+rocksdb = []
 
 [build-dependencies]
 cc = "1.2"
@@ -130,6 +135,7 @@ io-uring = "0.7.7"
 [[bench]]
 name = "vector_search"
 harness = false
+required-features = ["rocksdb"]
 
 [[bench]]
 name = "hnsw_build_graph"
@@ -178,10 +184,12 @@ harness = false
 [[bench]]
 name = "sparse_index_build"
 harness = false
+required-features = ["rocksdb"]
 
 [[bench]]
 name = "sparse_vector_storage"
 harness = false
+required-features = ["rocksdb"]
 
 [[bench]]
 name = "multi_vector_search"
