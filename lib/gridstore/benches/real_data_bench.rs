@@ -1,9 +1,10 @@
 use std::fs::File;
+use std::hint::black_box;
 use std::io::BufReader;
 use std::path::Path;
 
 use common::counter::hardware_counter::HardwareCounterCell;
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use gridstore::fixtures::{HM_FIELDS, Payload, empty_storage};
 use rand::Rng;
 use serde_json::Value;

@@ -1,7 +1,8 @@
 use std::fs::File;
+use std::hint::black_box;
 use std::iter;
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use memmap2::MmapMut;
 use memory::mmap_type::MmapBitSlice;
 use rand::prelude::*;
