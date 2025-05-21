@@ -73,6 +73,9 @@ impl GraphLayersBase for GraphLayersBuilder {
     }
 }
 
+/// Budget of how many checks have to be done at minimum to consider subgraph-connectivity approximation correct.
+const SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET: usize = 64;
+
 impl GraphLayersBuilder {
     pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
         self.entry_points.lock()
@@ -124,48 +127,70 @@ impl GraphLayersBuilder {
         let entry_layer = self.get_point_level(entry_point);
 
         let mut queue: Vec<u32> = vec![];
-        visited.set(entry_point as usize, true);
 
+        // Amount of points reached when searching the graph.
         let mut reached_points = 1;
 
-        // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
-        let mut previous_visited_points = vec![entry_point];
+        // Current amount of retries if the point threshold hasn't been met.
+        let mut threshold_retry = 0;
 
-        for current_layer in (0..=entry_layer).rev() {
-            // On each layer, we do not skip edges on the first entry point links
-            // to avoid random noise and improve accuracy.
-            let mut first = true;
+        // Retry loop, in case Subgraph connectivity search threshold haven't been met.
+        loop {
+            // Prevent looping inifinitly.
+            if threshold_retry > 10 {
+                break;
+            }
 
-            // Set entry points to visited points of previous layer.
-            queue.append(&mut previous_visited_points);
+            visited.set(entry_point as usize, true);
 
-            // Do BFS through all points on the current layer.
-            while let Some(current_point) = queue.pop() {
-                let links = self.links_layers[current_point as usize][current_layer].read();
+            // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
+            let mut previous_visited_points = vec![entry_point];
 
-                for link in links.iter() {
-                    // Flip a coin to decide if the edge is removed or not
-                    let coin_flip = rnd.random_range(0.0..1.0);
-                    if coin_flip < q && !first {
-                        continue;
-                    }
+            // For each layer in HNSW...
+            for current_layer in (0..=entry_layer).rev() {
+                // Set entry points to visited points of previous layer.
+                if previous_visited_points.is_empty() {
+                    // If we didn't find points on previous layer, use entrypoint again.
+                    queue.push(entry_point);
+                } else {
+                    queue.append(&mut previous_visited_points);
+                }
 
-                    let is_selected = point_selection.get_bit(link as usize).unwrap_or(false);
-                    let is_visited = visited.get_bit(link as usize).unwrap_or(false);
+                // Do BFS through all points on the current layer.
+                while let Some(current_point) = queue.pop() {
+                    let links = self.links_layers[current_point as usize][current_layer].read();
 
-                    if !is_visited && is_selected {
-                        visited.set(link as usize, true);
-                        reached_points += 1;
-                        queue.push(link);
-                        previous_visited_points.push(link);
+                    for link in links.iter() {
+                        // Flip a coin to decide if the edge is removed or not
+                        let coin_flip = rnd.random_range(0.0..1.0);
+                        if coin_flip < q {
+                            continue;
+                        }
+
+                        let is_selected = point_selection.get_bit(link as usize).unwrap_or(false);
+                        let is_visited = visited.get_bit(link as usize).unwrap_or(false);
+
+                        if !is_visited && is_selected {
+                            visited.set(link as usize, true);
+                            reached_points += 1;
+                            queue.push(link);
+                            previous_visited_points.push(link);
+                        }
                     }
                 }
 
-                first = false;
+                // Reset visited points to do BFS again on the next layer.
+                bitvec_set_all(&mut visited, false);
             }
 
-            // Reset visited points to do BFS again on the next layer.
-            bitvec_set_all(&mut visited, false);
+            if reached_points > SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET.min(points.len()) {
+                break;
+            }
+
+            threshold_retry += 1;
+
+            queue.clear();
+            reached_points = 1; // Reset reached points
         }
 
         reached_points as f32 / points.len() as f32
