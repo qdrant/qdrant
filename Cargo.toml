@@ -18,7 +18,7 @@ default-run = "qdrant"
 workspace = true
 
 [features]
-default = ["web", "parking_lot"]
+default = ["web", "parking_lot", "rocksdb"]
 web = ["actix-web"]
 multiling-chinese = ["segment/multiling-chinese"]
 multiling-japanese = ["segment/multiling-japanese"]
@@ -40,6 +40,7 @@ chaos-testing = []
 data-consistency-check = ["collection/data-consistency-check"]
 gpu = ["gpu/gpu", "segment/gpu"]
 deb = []
+rocksdb = ["segment/rocksdb"]
 
 [dev-dependencies]
 serde_urlencoded = "0.7"
@@ -104,7 +105,7 @@ common = { path = "lib/common/common" }
 cancel = { path = "lib/common/cancel" }
 memory = { path = "lib/common/memory" }
 issues = { path = "lib/common/issues" }
-segment = { path = "lib/segment" }
+segment = { path = "lib/segment", default-features = false }
 collection = { path = "lib/collection" }
 storage = { path = "lib/storage" }
 api = { path = "lib/api" }
