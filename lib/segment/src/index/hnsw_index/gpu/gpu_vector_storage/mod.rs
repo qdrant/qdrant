@@ -408,6 +408,21 @@ impl GpuVectorStorage {
             VectorStorageEnum::MultiDenseSimpleHalf(vector_storage) => {
                 Self::new_multi_f16(device, vector_storage, stopped)
             }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatile(vector_storage) => Self::new_multi_f32(
+                device.clone(),
+                vector_storage,
+                force_half_precision,
+                stopped,
+            ),
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileByte(vector_storage) => {
+                Self::new_multi(device, vector_storage, stopped)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::MultiDenseVolatileHalf(vector_storage) => {
+                Self::new_multi_f16(device, vector_storage, stopped)
+            }
             VectorStorageEnum::MultiDenseAppendableMemmap(vector_storage) => Self::new_multi_f32(
                 device.clone(),
                 vector_storage.as_ref(),

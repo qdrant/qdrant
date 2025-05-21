@@ -20,13 +20,14 @@ use crate::types::{Distance, MultiVectorConfig};
 use crate::vector_storage::common::CHUNK_SIZE;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::open_appendable_memmap_multi_vector_storage;
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::open_simple_multi_dense_vector_storage;
+use crate::vector_storage::multi_dense::volatile_multi_dense_vector_storage::new_volatile_multi_dense_vector_storage;
 use crate::vector_storage::{
     DEFAULT_STOPPED, MultiVectorStorage, VectorStorage, VectorStorageEnum,
 };
 
 #[derive(Clone, Copy)]
 enum MultiDenseStorageType {
-    SimpleRamFloat,
+    RocksDbFloat,
     AppendableMmapFloat,
 }
 
@@ -97,6 +98,13 @@ fn do_test_delete_points(vector_dim: usize, vec_count: usize, storage: &mut Vect
             }
             VectorStorageEnum::MultiDenseSimpleByte(_)
             | VectorStorageEnum::MultiDenseSimpleHalf(_) => unreachable!(),
+            VectorStorageEnum::MultiDenseVolatile(v) => {
+                for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
+                    assert_eq!(orig, vec);
+                }
+            }
+            VectorStorageEnum::MultiDenseVolatileByte(_)
+            | VectorStorageEnum::MultiDenseVolatileHalf(_) => unreachable!(),
             VectorStorageEnum::MultiDenseAppendableMemmap(v) => {
                 for (orig, vec) in orig_iter.zip(v.iterate_inner_vectors()) {
                     assert_eq!(orig, vec);
@@ -193,17 +201,11 @@ fn do_test_update_from_delete_points(
     let hw_counter = HardwareCounterCell::new();
 
     {
-        let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage2 = open_simple_multi_dense_vector_storage(
-            db,
-            DB_VECTOR_CF,
+        let mut storage2 = new_volatile_multi_dense_vector_storage(
             vector_dim,
             Distance::Dot,
             MultiVectorConfig::default(),
-            &AtomicBool::new(false),
-        )
-        .unwrap();
+        );
         {
             points.iter().enumerate().for_each(|(i, vec)| {
                 storage2
@@ -261,7 +263,7 @@ fn create_vector_storage(
     path: &Path,
 ) -> VectorStorageEnum {
     match storage_type {
-        MultiDenseStorageType::SimpleRamFloat => {
+        MultiDenseStorageType::RocksDbFloat => {
             let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
             open_simple_multi_dense_vector_storage(
                 db,
@@ -286,7 +288,7 @@ fn create_vector_storage(
 #[rstest]
 fn test_delete_points_in_multi_dense_vector_storage(
     #[values(
-        MultiDenseStorageType::SimpleRamFloat,
+        MultiDenseStorageType::RocksDbFloat,
         MultiDenseStorageType::AppendableMmapFloat
     )]
     storage_type: MultiDenseStorageType,
@@ -316,7 +318,7 @@ fn test_delete_points_in_multi_dense_vector_storage(
 #[rstest]
 fn test_update_from_delete_points_multi_dense_vector_storage(
     #[values(
-        MultiDenseStorageType::SimpleRamFloat,
+        MultiDenseStorageType::RocksDbFloat,
         MultiDenseStorageType::AppendableMmapFloat
     )]
     storage_type: MultiDenseStorageType,
@@ -346,7 +348,7 @@ fn test_update_from_delete_points_multi_dense_vector_storage(
 #[rstest]
 fn test_large_multi_dense_vector_storage(
     #[values(
-        MultiDenseStorageType::SimpleRamFloat,
+        MultiDenseStorageType::RocksDbFloat,
         MultiDenseStorageType::AppendableMmapFloat
     )]
     storage_type: MultiDenseStorageType,
@@ -357,6 +359,67 @@ fn test_large_multi_dense_vector_storage(
     let vec_count = 100;
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     let mut storage = create_vector_storage(storage_type, vec_dim, dir.path());
+
+    let vectors = vec![vec![0.0; vec_dim]; vec_count];
+    let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
+
+    let hw_counter = HardwareCounterCell::new();
+    let result = storage.insert_vector(0, VectorRef::from(&multivec), &hw_counter);
+    match result {
+        Ok(_) => {
+            panic!("Inserting vector should fail");
+        }
+        Err(e) => {
+            assert!(e.to_string().contains("too large"));
+        }
+    }
+}
+
+#[test]
+fn test_delete_points_in_volatile_multi_dense_vector_storage() {
+    let vec_dim = 1024;
+    let vec_count = 5;
+    let mut storage = new_volatile_multi_dense_vector_storage(
+        vec_dim,
+        Distance::Dot,
+        MultiVectorConfig::default(),
+    );
+    do_test_delete_points(vec_dim, vec_count, &mut storage);
+
+    // retrieve all vectors from storage
+    for id in 0..storage.total_vector_count() {
+        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+    }
+}
+
+#[test]
+fn test_update_from_delete_points_volatile_multi_dense_vector_storage() {
+    let vec_dim = 1024;
+    let vec_count = 5;
+    let mut storage = new_volatile_multi_dense_vector_storage(
+        vec_dim,
+        Distance::Dot,
+        MultiVectorConfig::default(),
+    );
+    do_test_update_from_delete_points(vec_dim, vec_count, &mut storage);
+
+    // retrieve all vectors from storage
+    for id in 0..storage.total_vector_count() {
+        assert!(storage.get_vector_opt(id as PointOffsetType).is_some());
+    }
+}
+
+#[test]
+fn test_large_volatile_multi_dense_vector_storage() {
+    assert!(MAX_MULTIVECTOR_FLATTENED_LEN * std::mem::size_of::<VectorElementType>() < CHUNK_SIZE);
+
+    let vec_dim = 100_000;
+    let vec_count = 100;
+    let mut storage = new_volatile_multi_dense_vector_storage(
+        vec_dim,
+        Distance::Dot,
+        MultiVectorConfig::default(),
+    );
 
     let vectors = vec![vec![0.0; vec_dim]; vec_count];
     let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
