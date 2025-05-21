@@ -8,6 +8,7 @@ mod postings_iterator;
 pub mod text_index;
 mod tokenizers;
 
+#[cfg(test)]
 mod compressed_posting;
 mod immutable_inverted_index;
 mod mutable_inverted_index;
