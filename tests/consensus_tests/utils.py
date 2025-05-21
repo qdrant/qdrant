@@ -439,19 +439,13 @@ def check_collection_local_shards_point_count(peer_api_uri: str, collection_name
 
     return is_correct
 
+
 def check_collection_shard_transfers_count(peer_api_uri: str, collection_name: str,
                                            expected_shard_transfers_count: int, headers={}) -> bool:
     collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-    shard_transfers = collection_cluster_info["shard_transfers"]
-    return len(shard_transfers) == expected_shard_transfers_count
+    local_shard_count = len(collection_cluster_info["shard_transfers"])
+    return local_shard_count == expected_shard_transfers_count
 
-def check_collection_shard_transfers_count_and_return(peer_api_uri: str, collection_name: str,
-                                           expected_shard_transfers_count: int, headers={}) -> Tuple[bool, List[dict]]:
-    collection_cluster_info = get_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-    shard_transfers = collection_cluster_info["shard_transfers"]
-    if len(shard_transfers) == expected_shard_transfers_count:
-        return (True, shard_transfers)
-    return (False, [])
 
 def check_collection_resharding_operations_count(peer_api_uri: str, collection_name: str,
                                            expected_resharding_operations_count: int, headers={}) -> bool:
@@ -628,14 +622,6 @@ def wait_for_collection_shard_transfers_count(peer_api_uri: str, collection_name
         raise e
 
 
-def wait_for_collection_shard_transfers_count_and_return(peer_api_uri: str, collection_name: str,
-                                              expected_shard_transfer_count: int, headers={}) -> List[dict]:
-    try:
-        return wait_with_return(check_collection_shard_transfers_count_and_return, peer_api_uri, collection_name, expected_shard_transfer_count, headers=headers)
-    except Exception as e:
-        print_collection_cluster_info(peer_api_uri, collection_name, headers=headers)
-        raise e
-
 def wait_for_collection_shard_transfer_method(peer_api_uri: str, collection_name: str,
                                               expected_method: str):
     try:
@@ -701,20 +687,6 @@ def wait_for_strict_mode_disabled(peer_api_uri: str, collection_name: str):
 def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_SEC, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
     start = time.time()
     while not condition(*args, **kwargs):
-        elapsed = time.time() - start
-        if elapsed > wait_for_timeout:
-            raise Exception(
-                f"Timeout waiting for condition {condition.__name__} to be satisfied in {wait_for_timeout} seconds")
-        else:
-            time.sleep(wait_for_interval)
-
-def wait_with_return(condition: Callable[..., Tuple[bool, any]], *args, wait_for_timeout=WAIT_TIME_SEC, wait_for_interval=RETRY_INTERVAL_SEC, **kwargs):
-    start = time.time()
-    while True:
-        success, return_value = condition(*args, **kwargs)
-        if success:
-            return return_value
-
         elapsed = time.time() - start
         if elapsed > wait_for_timeout:
             raise Exception(
