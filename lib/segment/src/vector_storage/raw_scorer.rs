@@ -101,6 +101,8 @@ pub fn new_raw_scorer<'a>(
             raw_scorer_half_impl(query, vs.as_ref(), hc)
         }
         VectorStorageEnum::SparseSimple(vs) => raw_sparse_scorer_impl(query, vs, hc),
+        #[cfg(test)]
+        VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::SparseMmap(vs) => raw_sparse_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseSimple(vs) => raw_multi_scorer_impl(query, vs, hc),
         VectorStorageEnum::MultiDenseSimpleByte(vs) => raw_multi_scorer_byte_impl(query, vs, hc),

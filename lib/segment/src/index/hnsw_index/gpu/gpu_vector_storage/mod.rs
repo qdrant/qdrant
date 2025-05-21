@@ -393,6 +393,10 @@ impl GpuVectorStorage {
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
+            #[cfg(test)]
+            VectorStorageEnum::SparseVolatile(_) => Err(OperationError::from(
+                gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
+            )),
             VectorStorageEnum::SparseMmap(_) => Err(OperationError::from(
                 gpu::GpuError::NotSupported("Sparse vectors are not supported on GPU".to_string()),
             )),
