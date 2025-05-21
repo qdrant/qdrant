@@ -13,6 +13,7 @@ use crate::id_tracker::IdTrackerSS;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::types::{Distance, PointIdType, QuantizationConfig, ScalarQuantizationConfig};
 use crate::vector_storage::dense::appendable_dense_vector_storage::open_appendable_memmap_vector_storage;
+#[cfg(feature = "rocksdb")]
 use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
@@ -329,6 +330,7 @@ fn test_score_quantized_points(storage: &mut VectorStorageEnum) {
 }
 
 #[test]
+#[cfg(feature = "rocksdb")]
 fn test_delete_points_in_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
 
@@ -358,6 +360,7 @@ fn test_delete_points_in_simple_vector_storages() {
 }
 
 #[test]
+#[cfg(feature = "rocksdb")]
 fn test_update_from_delete_points_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
@@ -386,6 +389,7 @@ fn test_update_from_delete_points_simple_vector_storages() {
 }
 
 #[test]
+#[cfg(feature = "rocksdb")]
 fn test_score_points_in_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {
@@ -414,6 +418,7 @@ fn test_score_points_in_simple_vector_storages() {
 }
 
 #[test]
+#[cfg(feature = "rocksdb")]
 fn test_score_quantized_points_simple_vector_storages() {
     let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
     {

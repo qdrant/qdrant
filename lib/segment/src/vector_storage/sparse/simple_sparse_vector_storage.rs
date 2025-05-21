@@ -22,8 +22,6 @@ use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::common::StoredRecord;
 use crate::vector_storage::{SparseVectorStorage, VectorStorage, VectorStorageEnum};
 
-pub const SPARSE_VECTOR_DISTANCE: Distance = Distance::Dot;
-
 type StoredSparseVector = StoredRecord<SparseVector>;
 
 /// In-memory vector storage with on-update persistence using `store`
@@ -176,7 +174,7 @@ impl SparseVectorStorage for SimpleSparseVectorStorage {
 
 impl VectorStorage for SimpleSparseVectorStorage {
     fn distance(&self) -> Distance {
-        SPARSE_VECTOR_DISTANCE
+        super::SPARSE_VECTOR_DISTANCE
     }
 
     fn datatype(&self) -> VectorStorageDatatype {

@@ -6,7 +6,8 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use super::segment_constructor_base::get_vector_name_with_prefix;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_wrapper;
-use crate::types::{SegmentConfig, SparseVectorStorageType};
+use crate::types::SegmentConfig;
+
 /// Struct to optionally create and open a RocksDB instance in a lazy way.
 /// Used as helper to eventually completely remove RocksDB.
 #[derive(Debug)]
@@ -30,14 +31,18 @@ impl RocksDbBuilder {
                 .sparse_vector_data
                 .iter()
                 .filter_map(|(vector_name, config)| {
-                    if matches!(config.storage_type, SparseVectorStorageType::OnDisk) {
-                        Some(get_vector_name_with_prefix(
+                    #[cfg(feature = "rocksdb")]
+                    if matches!(
+                        config.storage_type,
+                        crate::types::SparseVectorStorageType::OnDisk
+                    ) {
+                        return Some(get_vector_name_with_prefix(
                             rocksdb_wrapper::DB_VECTOR_CF,
                             vector_name,
-                        ))
-                    } else {
-                        None
+                        ));
                     }
+                    let (_, _) = (vector_name, config);
+                    None
                 });
 
         let column_families: Vec<_> = vector_cfs.chain(sparse_vector_cfs).collect();

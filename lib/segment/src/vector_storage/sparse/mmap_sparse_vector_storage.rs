@@ -12,7 +12,6 @@ use gridstore::config::{Compression, StorageOptions};
 use parking_lot::RwLock;
 use sparse::common::sparse_vector::SparseVector;
 
-use super::simple_sparse_vector_storage::SPARSE_VECTOR_DISTANCE;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
 use crate::data_types::named_vectors::CowVector;
 use crate::data_types::vectors::VectorRef;
@@ -217,7 +216,7 @@ impl SparseVectorStorage for MmapSparseVectorStorage {
 
 impl VectorStorage for MmapSparseVectorStorage {
     fn distance(&self) -> crate::types::Distance {
-        SPARSE_VECTOR_DISTANCE
+        super::SPARSE_VECTOR_DISTANCE
     }
 
     fn datatype(&self) -> crate::types::VectorStorageDatatype {
