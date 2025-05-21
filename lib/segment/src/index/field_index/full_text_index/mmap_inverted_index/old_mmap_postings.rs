@@ -7,7 +7,7 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::open_read_mmap;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -235,19 +235,5 @@ impl MmapPostings {
             header,
             on_disk: !populate,
         })
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) {
-        self.mmap.populate();
-    }
-
-    /// Iterate over posting lists, returning chunk reader for each
-    pub fn iter_postings<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = Option<ChunkReader<'a>>> {
-        (0..self.header.posting_count as u32).map(|posting_idx| self.get(posting_idx, hw_counter))
     }
 }

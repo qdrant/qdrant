@@ -24,7 +24,7 @@ fn test_mmap_posting_lists_compatibility() {
     // old compressed postings implementation
     let old_compressed_postings = postings
         .iter()
-        .map(|ids| CompressedPostingList::new(&ids))
+        .map(|ids| CompressedPostingList::new(ids))
         .collect::<Vec<_>>();
 
     let dir = tempfile::tempdir().unwrap();
