@@ -16,6 +16,7 @@ use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::vector_storage::query::RecoQuery;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
 use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+use crate::vector_storage::sparse::volatile_sparse_vector_storage::new_volatile_sparse_vector_storage;
 use crate::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 
 fn do_test_delete_points(storage: &mut VectorStorageEnum) {
@@ -132,10 +133,7 @@ fn do_test_update_from_delete_points(storage: &mut VectorStorageEnum) {
 
     let borrowed_id_tracker = id_tracker.borrow_mut();
     {
-        let dir2 = Builder::new().prefix("db_dir").tempdir().unwrap();
-        let db = open_db(dir2.path(), &[DB_VECTOR_CF]).unwrap();
-        let mut storage2 =
-            open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
+        let mut storage2 = new_volatile_sparse_vector_storage();
 
         points.iter().enumerate().for_each(|(i, opt_vec)| {
             if let Some(vec) = opt_vec {

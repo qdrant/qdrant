@@ -1381,11 +1381,9 @@ impl VectorDataConfig {
 #[derive(Debug, Deserialize, Serialize, JsonSchema, Anonymize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SparseVectorStorageType {
-    /// Storage on disk
-    // (rocksdb storage)
+    /// Storage on disk (rocksdb storage)
     OnDisk,
-    /// Storage in memory maps
-    // (gridstore storage)
+    /// Storage in memory maps (gridstore storage)
     #[default]
     Mmap,
 }
