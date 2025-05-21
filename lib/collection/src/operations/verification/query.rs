@@ -70,22 +70,18 @@ impl Query {
                         .get_params(using)
                         .and_then(|param| param.hnsw_config.as_ref());
 
-                    // fallback to global configuration if no vector specific one
-                    let (vector_hnsw_m, vector_hnsw_payload_m) =
-                        if let Some(vector_hnsw_config) = vector_hnsw_config {
-                            (
-                                vector_hnsw_config.m.unwrap_or(0),
-                                vector_hnsw_config.payload_m.unwrap_or(0),
-                            )
-                        } else {
-                            (
-                                config.hnsw_config.m,
-                                config.hnsw_config.payload_m.unwrap_or(0),
-                            )
-                        };
+                    let vector_hnsw_m = vector_hnsw_config
+                        .map(|hnsw_config| hnsw_config.m)
+                        .flatten()
+                        .unwrap_or(config.hnsw_config.m);
+
+                    let vector_hnsw_payload_m = vector_hnsw_config
+                        .map(|hnsw_config| hnsw_config.payload_m)
+                        .flatten()
+                        .unwrap_or(config.hnsw_config.payload_m.unwrap_or(vector_hnsw_m));
 
                     // no further check necessary if there is a global HNSW index
-                    if vector_hnsw_m != 0 {
+                    if vector_hnsw_m > 0 {
                         return Ok(());
                     }
 
@@ -97,31 +93,37 @@ impl Query {
                     };
 
                     // check hnsw.payload_m if there is a filter
-                    if let Some(filter) = filter {
-                        let uses_multitenant_filter = filter
+                    let uses_multitenant_filter = if let Some(filter) = filter {
+                        filter
                             .iter_conditions()
                             .filter_map(|c| c.targeted_key())
                             .filter_map(|key| collection.payload_key_index_schema(&key))
-                            .any(|index_schema| index_schema.is_tenant());
+                            .any(|index_schema| index_schema.is_tenant())
+                    } else {
+                        false
+                    };
 
-                        // allow querying without HNSW if there is a filtering condition on a multitenant indexed payload key
-                        if uses_multitenant_filter && vector_hnsw_payload_m != 0 {
-                            return Ok(());
-                        } else {
-                            return Err(CollectionError::strict_mode(
-                                format!("Filtered scan forbidden{vector_error_label}"),
-                                "Filter by tenant payload key and enable vector indexing (hnsw_config.payload_m)",
-                            ));
-                        }
+                    if !uses_multitenant_filter {
+                        // HNSW disabled AND no filters
+                        return Err(CollectionError::strict_mode(
+                            format!(
+                                "Request is forbidden{vector_error_label} because global vector indexing is disabled (hnsw_config.m = 0)"
+                            ),
+                            "Use tenant-specific filter, enable global vector indexing or enable strict mode `search_allow_exact` option",
+                        ));
                     }
 
-                    // HNSW disabled AND no filters
-                    return Err(CollectionError::strict_mode(
-                        format!(
-                            "Fullscan forbidden{vector_error_label} because vector indexing is disabled (hnsw_config.m = 0)"
-                        ),
-                        "Enable vector indexing or use a prefetch query before rescoring",
-                    ));
+                    if vector_hnsw_payload_m == 0 {
+                        // HNSW disabled AND no filters
+                        return Err(CollectionError::strict_mode(
+                            format!(
+                                "Request is forbidden{vector_error_label} because vector indexing is disabled (hnsw_config.m = 0 and hnsw_config.payload_m = 0)"
+                            ),
+                            "Enable vector indexing, use a prefetch query with indexed vectors or enable strict mode `search_allow_exact` option",
+                        ));
+                    }
+
+                    return Ok(());
                 }
             }
         }
