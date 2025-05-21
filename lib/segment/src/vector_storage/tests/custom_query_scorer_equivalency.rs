@@ -12,7 +12,6 @@ use rand::{Rng, SeedableRng};
 use rstest::rstest;
 
 use super::utils::sampler;
-use crate::common::rocksdb_wrapper;
 use crate::data_types::vectors::{QueryVector, VectorElementType};
 use crate::fixtures::payload_context_fixture::FixtureIdTracker;
 use crate::fixtures::query_fixtures::QueryVariant;
@@ -25,7 +24,7 @@ use crate::types::{
 use crate::vector_storage::VectorStorageEnum;
 #[cfg(target_os = "linux")]
 use crate::vector_storage::dense::memmap_dense_vector_storage::open_memmap_vector_storage_with_async_io;
-use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
+use crate::vector_storage::dense::volatile_dense_vector_storage::new_volatile_dense_vector_storage;
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::vector_storage_base::VectorStorage;
 
@@ -54,15 +53,8 @@ fn random_query<R: Rng + ?Sized>(
     })
 }
 
-fn ram_storage(dir: &Path) -> VectorStorageEnum {
-    open_simple_dense_vector_storage(
-        rocksdb_wrapper::open_db(dir, &[rocksdb_wrapper::DB_VECTOR_CF]).unwrap(),
-        rocksdb_wrapper::DB_VECTOR_CF,
-        DIMS,
-        DISTANCE,
-        &AtomicBool::new(false),
-    )
-    .unwrap()
+fn ram_storage(_dir: &Path) -> VectorStorageEnum {
+    new_volatile_dense_vector_storage(DIMS, DISTANCE)
 }
 
 #[cfg(target_os = "linux")]
@@ -123,17 +115,7 @@ fn scoring_equivalency(
         .map(|v| (Some(v.0), Some(v.1)))
         .unwrap_or_default();
 
-    let raw_dir = tempfile::Builder::new().prefix("raw-storage").tempdir()?;
-
-    let db = rocksdb_wrapper::open_db(raw_dir.path(), &[rocksdb_wrapper::DB_VECTOR_CF])?;
-
-    let mut raw_storage = open_simple_dense_vector_storage(
-        db,
-        rocksdb_wrapper::DB_VECTOR_CF,
-        DIMS,
-        DISTANCE,
-        &AtomicBool::default(),
-    )?;
+    let mut raw_storage = new_volatile_dense_vector_storage(DIMS, DISTANCE);
 
     let mut rng = StdRng::seed_from_u64(SEED);
     let gen_sampler = quant_sampler.unwrap_or_else(|| Box::new(|rng| Box::new(sampler(rng))));

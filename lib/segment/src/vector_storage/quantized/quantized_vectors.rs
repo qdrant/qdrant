@@ -248,6 +248,18 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseSimpleHalf(v) => {
                 Self::create_impl(v, quantization_config, path, max_threads, stopped)
             }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatile(v) => {
+                Self::create_impl(v, quantization_config, path, max_threads, stopped)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileByte(v) => {
+                Self::create_impl(v, quantization_config, path, max_threads, stopped)
+            }
+            #[cfg(test)]
+            VectorStorageEnum::DenseVolatileHalf(v) => {
+                Self::create_impl(v, quantization_config, path, max_threads, stopped)
+            }
             VectorStorageEnum::DenseMemmap(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
