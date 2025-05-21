@@ -2118,7 +2118,7 @@ def test_strict_mode_full_scan(full_collection_name):
         }
     )
     assert not response.ok
-    assert "Fullscan forbidden on 'dense-multi' because vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
+    assert "Request is forbidden on 'dense-multi' because global vector indexing is disabled (hnsw_config.m = 0). Help: Use tenant-specific filter, enable global vector indexing or enable strict mode `search_allow_exact` option" in response.json()['status']['error']
 
     # sparse vector still works
     response = request_with_validation(
@@ -2172,7 +2172,7 @@ def test_strict_mode_full_scan(full_collection_name):
         }
     )
     assert not response.ok
-    assert "Fullscan forbidden on 'dense-multi' because vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
+    assert "Request is forbidden on 'dense-multi' because global vector indexing is disabled (hnsw_config.m = 0). Help: Use tenant-specific filter, enable global vector indexing or enable strict mode `search_allow_exact` option" in response.json()['status']['error']
 
 
 def test_strict_mode_full_scan_simple(full_collection_name):
@@ -2288,7 +2288,7 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
     # filtered search not allowed anymore because no HNSW index
     response = filtered_query()
     assert not response.ok
-    assert "Filtered scan forbidden on 'dense-multi'" in response.json()['status']['error']
+    assert "Request is forbidden on 'dense-multi'" in response.json()['status']['error']
 
     # add payload index
     request_with_validation(
@@ -2305,7 +2305,7 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
     # still not allowed although we have payload index for the filter
     response = filtered_query()
     assert not response.ok
-    assert "Filtered scan forbidden on 'dense-multi'" in response.json()['status']['error']
+    assert "Request is forbidden on 'dense-multi'" in response.json()['status']['error']
 
     # add multitenant payload index
     request_with_validation(
@@ -2325,7 +2325,7 @@ def test_strict_mode_multitenant_full_scan(full_collection_name):
     # still not allowed although we have a multitenant payload index for the filter
     response = filtered_query()
     assert not response.ok
-    assert "Filtered scan forbidden on 'dense-multi'" in response.json()['status']['error']
+    assert "Request is forbidden on 'dense-multi'" in response.json()['status']['error']
 
     # enabled HNSW payload based index
     response = request_with_validation(
