@@ -240,12 +240,9 @@ async fn test_new_segment_when_all_over_capacity() {
         indexing_threshold_kb: 1_000_000,
     };
 
-    let payload_schema_file = Builder::new()
-        .suffix("payload_schema.json")
-        .tempfile()
-        .unwrap();
+    let payload_schema_file = dir.path().join("payload.schema");
     let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
-        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file.path()).unwrap());
+        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
 
     let mut holder = SegmentHolder::default();
 

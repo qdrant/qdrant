@@ -2081,12 +2081,9 @@ mod tests {
         let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
         let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
 
-        let payload_schema_file = Builder::new()
-            .suffix("payload_schema.json")
-            .tempfile()
-            .unwrap();
+        let payload_schema_file = dir.path().join("payload.schema");
         let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
-            Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file.path()).unwrap());
+            Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
 
         SegmentHolder::snapshot_all_segments(
             holder.clone(),
