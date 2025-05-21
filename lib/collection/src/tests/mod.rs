@@ -37,6 +37,7 @@ use crate::collection_manager::optimizers::segment_optimizer::OptimizerThreshold
 use crate::config::CollectionParams;
 use crate::operations::types::VectorsConfig;
 use crate::operations::vector_params_builder::VectorParamsBuilder;
+use crate::save_on_disk::SaveOnDisk;
 use crate::update_handler::{Optimizer, UpdateHandler};
 
 #[tokio::test]
@@ -238,7 +239,14 @@ async fn test_new_segment_when_all_over_capacity() {
         memmap_threshold_kb: 1_000_000,
         indexing_threshold_kb: 1_000_000,
     };
-    let payload_index_schema = PayloadIndexSchema::default();
+
+    let payload_schema_file = Builder::new()
+        .suffix("payload_schema.json")
+        .tempfile()
+        .unwrap();
+    let payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+        Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file.path()).unwrap());
+
     let mut holder = SegmentHolder::default();
 
     holder.add_new(random_segment(dir.path(), 100, 3, dim));
@@ -258,7 +266,7 @@ async fn test_new_segment_when_all_over_capacity() {
         dir.path(),
         &collection_params,
         &optimizer_thresholds,
-        &payload_index_schema,
+        payload_index_schema.clone(),
     )
     .unwrap();
     assert_eq!(segments.read().len(), 6);
@@ -269,7 +277,7 @@ async fn test_new_segment_when_all_over_capacity() {
         dir.path(),
         &collection_params,
         &optimizer_thresholds,
-        &payload_index_schema,
+        payload_index_schema.clone(),
     )
     .unwrap();
 
@@ -314,7 +322,7 @@ async fn test_new_segment_when_all_over_capacity() {
         dir.path(),
         &collection_params,
         &optimizer_thresholds,
-        &payload_index_schema,
+        payload_index_schema,
     )
     .unwrap();
     assert_eq!(segments.read().len(), 7);
