@@ -33,6 +33,7 @@ use crate::collection::payload_index_schema::PayloadIndexSchema;
 use crate::collection_manager::holders::proxy_segment::ProxySegment;
 use crate::config::CollectionParams;
 use crate::operations::types::CollectionError;
+use crate::save_on_disk::SaveOnDisk;
 use crate::shards::update_tracker::UpdateTracker;
 
 pub type SegmentId = usize;
@@ -994,7 +995,7 @@ impl SegmentHolder {
         segments: LockedSegmentHolder,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
-        payload_index_schema: &PayloadIndexSchema,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         mut f: F,
     ) -> OperationResult<()>
     where
@@ -1071,7 +1072,7 @@ impl SegmentHolder {
         &mut self,
         segments_path: &Path,
         collection_params: &CollectionParams,
-        payload_index_schema: &PayloadIndexSchema,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<LockedSegment> {
         let segment = self.build_tmp_segment(
             segments_path,
@@ -1104,7 +1105,7 @@ impl SegmentHolder {
         &self,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
-        payload_index_schema: &PayloadIndexSchema,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         save_version: bool,
     ) -> OperationResult<LockedSegment> {
         let config = match collection_params {
@@ -1135,7 +1136,8 @@ impl SegmentHolder {
         // Internal operation.
         let hw_counter = HardwareCounterCell::disposable();
 
-        for (key, schema) in &payload_index_schema.schema {
+        let payload_schema_lock = payload_index_schema.read();
+        for (key, schema) in payload_schema_lock.schema.iter() {
             segment.create_field_index(0, key, Some(schema), &hw_counter)?;
         }
 
@@ -1148,7 +1150,7 @@ impl SegmentHolder {
         segments_lock: RwLockUpgradableReadGuard<'a, SegmentHolder>,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
-        payload_index_schema: &PayloadIndexSchema,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<(
         Vec<(SegmentId, SegmentId, LockedSegment)>,
         LockedSegment,
@@ -1366,7 +1368,7 @@ impl SegmentHolder {
         segments: LockedSegmentHolder,
         segments_path: &Path,
         collection_params: Option<&CollectionParams>,
-        payload_index_schema: &PayloadIndexSchema,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
         temp_dir: &Path,
         tar: &tar_ext::BuilderExt,
         format: SnapshotFormat,
@@ -2078,11 +2080,16 @@ mod tests {
         let temp_dir = Builder::new().prefix("temp_dir").tempdir().unwrap();
         let snapshot_file = Builder::new().suffix(".snapshot.tar").tempfile().unwrap();
         let tar = tar_ext::BuilderExt::new_seekable_owned(File::create(&snapshot_file).unwrap());
+
+        let payload_schema_file = dir.path().join("payload.schema");
+        let schema: Arc<SaveOnDisk<PayloadIndexSchema>> =
+            Arc::new(SaveOnDisk::load_or_init_default(payload_schema_file).unwrap());
+
         SegmentHolder::snapshot_all_segments(
             holder.clone(),
             segments_dir.path(),
             None,
-            &PayloadIndexSchema::default(),
+            schema,
             temp_dir.path(),
             &tar,
             SnapshotFormat::Regular,
