@@ -694,7 +694,6 @@ def wait_for(condition: Callable[..., bool], *args, wait_for_timeout=WAIT_TIME_S
         else:
             time.sleep(wait_for_interval)
 
-
 def peer_is_online(peer_api_uri: str, path: str = "/readyz") -> bool:
     try:
         r = requests.get(f"{peer_api_uri}{path}")

@@ -28,48 +28,23 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
         collection_name=COLLECTION_NAME, peer_api_uris=peer_api_uris
     )
 
-    peer_id_to_url = {}
+    peer_url_to_id = {}
     for peer_api_uri in peer_api_uris:
         peer_id = get_peer_id(peer_api_uri)
-        peer_id_to_url[peer_id] = peer_api_uri
+        peer_url_to_id[peer_api_uri] = peer_id
 
     # Insert some initial number of points
     upsert_random_points(peer_api_uris[0], 3000)
 
-    # Kill last peer
-    p = processes.pop()
-    p.kill()
-    sleep(1)  # Give killed peer time to release WAL lock
-
-    # Upsert points to mark dummy replica as dead, that will trigger recovery transfer
-    upsert_random_points(peer_api_uris[0], 100)
-
-    # Restart same peer
-    peer_api_uris[-1] = start_peer(
-        peer_dirs[-1],
-        f"peer_{N_PEERS}_restarted.log",
-        bootstrap_uri,
-    )
-
-    # Wait for start of shard transfer
-    wait_for_collection_shard_transfers_count(peer_api_uris[0], COLLECTION_NAME, 1)
-
-    transfers = get_collection_cluster_info(peer_api_uris[0], COLLECTION_NAME)[
-        "shard_transfers"
-    ]
-    assert len(transfers) == 1
-    assert transfers[0]["to"] == list(peer_id_to_url.keys())[-1] # last peer was restarted
-    from_peer_id = transfers[0]["from"]
-
-    # Stop the 'source' node to simulate an unreachable node which needs to be deleted
-    source_peer_url = peer_id_to_url[from_peer_id]
-    peer_idx = peer_api_uris.index(source_peer_url)
-    peer_api_uris.pop(peer_idx) # Remove from urls so we don't try to call it
+    # Start a transfer from first peer to last peer ID
+    from_peer_id = peer_url_to_id[peer_api_uris[-1]]
+    to_peer_id = peer_url_to_id[peer_api_uris[0]]
+    replicate_shard(peer_api_uris[-1], COLLECTION_NAME, 0, from_peer_id, to_peer_id)
 
     # Force delete 'from' peer ID by requesting remaining peers to do so
     force_delete_peer(peer_api_uris[0], from_peer_id)
 
-    # We expect transfers to be aborted
+    # We expect all transfers to be aborted (peer was force deleted before transfer finished) or finished
     wait_for_collection_shard_transfers_count(
         peer_api_uris[0], COLLECTION_NAME, 0
     )
