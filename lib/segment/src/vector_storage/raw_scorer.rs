@@ -103,6 +103,7 @@ pub fn new_raw_scorer<'a>(
         VectorStorageEnum::DenseAppendableInRamHalf(vs) => {
             raw_scorer_half_impl(query, vs.as_ref(), hc)
         }
+        #[cfg(feature = "rocksdb")]
         VectorStorageEnum::SparseSimple(vs) => raw_sparse_scorer_impl(query, vs, hc),
         #[cfg(test)]
         VectorStorageEnum::SparseVolatile(vs) => raw_sparse_scorer_impl(query, vs, hc),

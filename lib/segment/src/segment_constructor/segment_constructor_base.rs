@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::{DB_MAPPING_CF, DB_VECTOR_CF};
+use crate::common::rocksdb_wrapper::DB_MAPPING_CF;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
@@ -69,7 +69,6 @@ use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
 };
 use crate::vector_storage::quantized::quantized_vectors::QuantizedVectors;
 use crate::vector_storage::sparse::mmap_sparse_vector_storage::MmapSparseVectorStorage;
-use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
 use crate::vector_storage::{VectorStorage, VectorStorageEnum};
 
 pub const PAYLOAD_INDEX_PATH: &str = "payload_index";
@@ -118,6 +117,8 @@ pub(crate) fn open_vector_storage(
         // In memory - RocksDB enabled
         #[cfg(feature = "rocksdb")]
         VectorStorageType::Memory => {
+            use crate::common::rocksdb_wrapper::DB_VECTOR_CF;
+
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
 
             if let Some(multi_vec_config) = &vector_config.multivector_config {
@@ -493,14 +494,18 @@ pub(crate) fn create_sparse_vector_index(
 }
 
 pub(crate) fn create_sparse_vector_storage(
-    db_builder: &mut RocksDbBuilder,
+    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
     path: &Path,
-    vector_name: &VectorName,
+    #[cfg(feature = "rocksdb")] vector_name: &VectorName,
     storage_type: &SparseVectorStorageType,
-    stopped: &AtomicBool,
+    #[cfg(feature = "rocksdb")] stopped: &AtomicBool,
 ) -> OperationResult<VectorStorageEnum> {
     match storage_type {
+        #[cfg(feature = "rocksdb")]
         SparseVectorStorageType::OnDisk => {
+            use crate::common::rocksdb_wrapper::DB_VECTOR_CF;
+            use crate::vector_storage::sparse::simple_sparse_vector_storage::open_simple_sparse_vector_storage;
+
             let db_column_name = get_vector_name_with_prefix(DB_VECTOR_CF, vector_name);
             open_simple_sparse_vector_storage(db_builder.require()?, &db_column_name, stopped)
         }
@@ -596,10 +601,13 @@ fn create_segment(
 
         // Select suitable sparse vector storage type based on configuration
         let vector_storage = sp(create_sparse_vector_storage(
+            #[cfg(feature = "rocksdb")]
             &mut db_builder,
             &vector_storage_path,
+            #[cfg(feature = "rocksdb")]
             vector_name,
             &sparse_config.storage_type,
+            #[cfg(feature = "rocksdb")]
             stopped,
         )?);
 

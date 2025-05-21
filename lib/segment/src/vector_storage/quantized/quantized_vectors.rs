@@ -290,6 +290,7 @@ impl QuantizedVectors {
             VectorStorageEnum::DenseAppendableInRamHalf(v) => {
                 Self::create_impl(v.as_ref(), quantization_config, path, max_threads, stopped)
             }
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => Err(OperationError::WrongSparse),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => Err(OperationError::WrongSparse),

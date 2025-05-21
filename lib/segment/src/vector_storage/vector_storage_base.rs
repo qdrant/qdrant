@@ -37,6 +37,7 @@ use crate::vector_storage::chunked_mmap_vectors::ChunkedMmapVectors;
 use crate::vector_storage::common::VECTOR_READ_BATCH_SIZE;
 use crate::vector_storage::dense::appendable_dense_vector_storage::AppendableMmapDenseVectorStorage;
 use crate::vector_storage::in_ram_persisted_vectors::InRamPersistedVectors;
+#[cfg(feature = "rocksdb")]
 use crate::vector_storage::sparse::simple_sparse_vector_storage::SimpleSparseVectorStorage;
 
 /// Trait for vector storage
@@ -245,6 +246,7 @@ pub enum VectorStorageEnum {
             >,
         >,
     ),
+    #[cfg(feature = "rocksdb")]
     SparseSimple(SimpleSparseVectorStorage),
     #[cfg(test)]
     SparseVolatile(VolatileSparseVectorStorage),
@@ -341,6 +343,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(_) => None,
             VectorStorageEnum::DenseAppendableInRamByte(_) => None,
             VectorStorageEnum::DenseAppendableInRamHalf(_) => None,
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => None,
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => None,
@@ -413,6 +416,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRamHalf(v) => {
                 VectorInternal::from(vec![1.0; v.vector_dim()])
             }
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => VectorInternal::from(SparseVector::default()),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => VectorInternal::from(SparseVector::default()),
@@ -493,6 +497,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRamHalf(v) => {
                 v.size_of_available_vectors_in_bytes()
             }
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.size_of_available_vectors_in_bytes(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.size_of_available_vectors_in_bytes(),
@@ -557,6 +562,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableInRamByte(vs) => vs.populate()?,
             VectorStorageEnum::DenseAppendableInRamHalf(vs) => vs.populate()?,
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
@@ -606,6 +612,7 @@ impl VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableInRamByte(vs) => vs.clear_cache()?,
             VectorStorageEnum::DenseAppendableInRamHalf(vs) => vs.clear_cache()?,
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(_) => {} // Can't populate as it is not mmap
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(_) => {} // Can't populate as it is not mmap
@@ -657,6 +664,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.distance(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.distance(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.distance(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.distance(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.distance(),
@@ -705,6 +713,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.datatype(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.datatype(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.datatype(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.datatype(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.datatype(),
@@ -755,6 +764,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.is_on_disk(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.is_on_disk(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.is_on_disk(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.is_on_disk(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.is_on_disk(),
@@ -803,6 +813,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.total_vector_count(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.total_vector_count(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.total_vector_count(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.total_vector_count(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.total_vector_count(),
@@ -851,6 +862,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector(key),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector(key),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector(key),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.get_vector(key),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.get_vector(key),
@@ -899,6 +911,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector_sequential(key),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector_sequential(key),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector_sequential(key),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.get_vector_sequential(key),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.get_vector_sequential(key),
@@ -947,6 +960,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.get_vector_opt(key),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.get_vector_opt(key),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.get_vector_opt(key),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.get_vector_opt(key),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.get_vector_opt(key),
@@ -1008,6 +1022,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRamHalf(v) => {
                 v.insert_vector(key, vector, hw_counter)
             }
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.insert_vector(key, vector, hw_counter),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.insert_vector(key, vector, hw_counter),
@@ -1080,6 +1095,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.update_from(other_vectors, stopped),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.update_from(other_vectors, stopped),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.update_from(other_vectors, stopped),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.update_from(other_vectors, stopped),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.update_from(other_vectors, stopped),
@@ -1140,6 +1156,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.flusher(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.flusher(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.flusher(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.flusher(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.flusher(),
@@ -1188,6 +1205,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.files(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.files(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.files(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.files(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.files(),
@@ -1236,6 +1254,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.delete_vector(key),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.delete_vector(key),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.delete_vector(key),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.delete_vector(key),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.delete_vector(key),
@@ -1284,6 +1303,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.is_deleted_vector(key),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.is_deleted_vector(key),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.is_deleted_vector(key),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.is_deleted_vector(key),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.is_deleted_vector(key),
@@ -1332,6 +1352,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.deleted_vector_count(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.deleted_vector_count(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.deleted_vector_count(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.deleted_vector_count(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_count(),
@@ -1380,6 +1401,7 @@ impl VectorStorage for VectorStorageEnum {
             VectorStorageEnum::DenseAppendableInRam(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::DenseAppendableInRamByte(v) => v.deleted_vector_bitslice(),
             VectorStorageEnum::DenseAppendableInRamHalf(v) => v.deleted_vector_bitslice(),
+            #[cfg(feature = "rocksdb")]
             VectorStorageEnum::SparseSimple(v) => v.deleted_vector_bitslice(),
             #[cfg(test)]
             VectorStorageEnum::SparseVolatile(v) => v.deleted_vector_bitslice(),

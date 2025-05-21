@@ -1382,6 +1382,7 @@ impl VectorDataConfig {
 #[serde(rename_all = "snake_case")]
 pub enum SparseVectorStorageType {
     /// Storage on disk (rocksdb storage)
+    #[cfg(feature = "rocksdb")]
     OnDisk,
     /// Storage in memory maps (gridstore storage)
     #[default]
@@ -1394,6 +1395,7 @@ impl SparseVectorStorageType {
         match self {
             // Both options are on disk, but we keep it explicit for the case if someone adds a new
             // storage type in the future
+            #[cfg(feature = "rocksdb")]
             Self::OnDisk => true,
             Self::Mmap => true,
         }
@@ -1413,8 +1415,15 @@ pub struct SparseVectorDataConfig {
 }
 
 /// If the storage type is not in config, it means it is the OnDisk variant
-const fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
-    SparseVectorStorageType::OnDisk
+fn default_sparse_vector_storage_type_when_not_in_config() -> SparseVectorStorageType {
+    #[cfg(feature = "rocksdb")]
+    {
+        SparseVectorStorageType::OnDisk
+    }
+    #[cfg(not(feature = "rocksdb"))]
+    {
+        SparseVectorStorageType::default()
+    }
 }
 
 impl SparseVectorDataConfig {
