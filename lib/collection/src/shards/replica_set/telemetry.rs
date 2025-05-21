@@ -27,6 +27,13 @@ impl ShardReplicaSet {
                 .map(|remote| remote.get_telemetry_data(detail))
                 .collect(),
             replicate_states: self.replica_state.read().peers(),
+            ongoing_create_partial_snapshot_requests: Some(
+                self.partial_snapshot_meta
+                    .ongoing_create_snapshot_requests(),
+            ),
+            partial_snapshot_recovery_timestamp: Some(
+                self.partial_snapshot_meta.recovery_timestamp(),
+            ),
         }
     }
 
