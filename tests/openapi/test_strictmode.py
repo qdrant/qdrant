@@ -2230,7 +2230,7 @@ def test_strict_mode_full_scan_simple(full_collection_name):
         }
     )
     assert not response.ok
-    assert response.status_code == 403
+    assert response.status_code == 400
 
 
 def test_strict_mode_multitenant_full_scan(full_collection_name):
