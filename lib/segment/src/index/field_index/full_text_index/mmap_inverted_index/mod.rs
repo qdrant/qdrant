@@ -24,6 +24,8 @@ mod mmap_postings;
 /// Old implementation of mmap postings, used to test backwards compatibility temporarily
 #[cfg(test)]
 mod old_mmap_postings;
+#[cfg(test)]
+mod tests;
 
 const POSTINGS_FILE: &str = "postings.dat";
 const VOCAB_FILE: &str = "vocab.dat";
