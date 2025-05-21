@@ -2,9 +2,8 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use rand::Rng;
 
-use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
-
 use super::{mmap_postings, old_mmap_postings};
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 
 fn generate_ids(rng: &mut impl Rng, amount: usize) -> Vec<PointOffsetType> {
     let distr = rand::distr::Uniform::new(0, amount as u32).unwrap();

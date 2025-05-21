@@ -139,8 +139,8 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         let compressed_size =
             PostingChunk::get_compressed_size(self.chunks, self.id_data, chunk_index);
         let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
-        BitPackerImpl::new().decompress_strictly_sorted(
-            chunk.initial_id.get().checked_sub(1),
+        BitPackerImpl::new().decompress_sorted(
+            chunk.initial_id.get(),
             &self.id_data
                 [chunk.offset.get() as usize..chunk.offset.get() as usize + compressed_size],
             decompressed_chunk,
