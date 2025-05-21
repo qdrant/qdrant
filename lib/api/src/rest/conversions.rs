@@ -7,17 +7,17 @@ use super::{
     FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, OrderByInterface,
     Query, QueryInterface, VectorOutput, VectorStructOutput,
 };
-use crate::grpc::{InferenceUsage as GrpcInferenceUsage, ModelUsage};
+use crate::grpc;
 use crate::rest::models::InferenceUsage;
 use crate::rest::{DenseVector, NamedVectorStruct};
 
-impl From<InferenceUsage> for GrpcInferenceUsage {
+impl From<InferenceUsage> for grpc::InferenceUsage {
     fn from(value: InferenceUsage) -> Self {
-        let mut grpc_usage = GrpcInferenceUsage::default();
+        let mut grpc_usage = grpc::InferenceUsage::default();
         for (model, usage) in value.models {
             grpc_usage.model.insert(
                 model,
-                ModelUsage {
+                grpc::ModelUsage {
                     tokens: usage.tokens,
                 },
             );
