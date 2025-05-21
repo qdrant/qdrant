@@ -300,7 +300,7 @@ def test_strict_mode_unindexed_filter_integer_read_validation(collection_name):
     search_fail = search_request_with_filter()
     assert "count" in search_fail.json()['status']['error']
     assert not search_fail.ok
- 
+
 
 def test_strict_mode_unindexed_filter_write_validation(collection_name):
     def update_request_with_filter():
@@ -2118,7 +2118,7 @@ def test_strict_mode_full_scan(full_collection_name):
         }
     )
     assert not response.ok
-    assert "Fullscan forbidden on 'dense-multi' – vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
+    assert "Fullscan forbidden on 'dense-multi' because vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
 
     # sparse vector still works
     response = request_with_validation(
@@ -2172,7 +2172,7 @@ def test_strict_mode_full_scan(full_collection_name):
         }
     )
     assert not response.ok
-    assert "Fullscan forbidden on 'dense-multi' – vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
+    assert "Fullscan forbidden on 'dense-multi' because vector indexing is disabled (hnsw_config.m = 0). Help: Enable vector indexing or use a prefetch query before rescoring" in response.json()['status']['error']
 
 
 def test_strict_mode_full_scan_simple(full_collection_name):

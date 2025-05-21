@@ -118,7 +118,7 @@ impl Query {
                     // HNSW disabled AND no filters
                     return Err(CollectionError::strict_mode(
                         format!(
-                            "Fullscan forbidden{vector_error_label} – vector indexing is disabled (hnsw_config.m = 0)"
+                            "Fullscan forbidden{vector_error_label} because vector indexing is disabled (hnsw_config.m = 0)"
                         ),
                         "Enable vector indexing or use a prefetch query before rescoring",
                     ));
