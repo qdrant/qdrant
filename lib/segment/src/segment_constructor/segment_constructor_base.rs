@@ -10,18 +10,21 @@ use common::budget::ResourcePermit;
 use common::flags::FeatureFlags;
 use io::storage_version::StorageVersion;
 use log::info;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
+#[cfg(feature = "rocksdb")]
+use parking_lot::RwLock;
 use rand::Rng;
+#[cfg(feature = "rocksdb")]
 use rocksdb::DB;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use super::rocksdb_builder::RocksDbBuilder;
 use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
-use crate::common::rocksdb_wrapper::DB_MAPPING_CF;
 use crate::data_types::vectors::DEFAULT_VECTOR_NAME;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
 use crate::id_tracker::mutable_id_tracker::MutableIdTracker;
+#[cfg(feature = "rocksdb")]
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::id_tracker::{IdTracker, IdTrackerEnum, IdTrackerSS};
 use crate::index::VectorIndexEnum;
@@ -341,6 +344,7 @@ pub(crate) fn create_mutable_id_tracker(segment_path: &Path) -> OperationResult<
     MutableIdTracker::open(segment_path)
 }
 
+#[cfg(feature = "rocksdb")]
 pub(crate) fn create_rocksdb_id_tracker(
     database: Arc<RwLock<DB>>,
 ) -> OperationResult<SimpleIdTracker> {
@@ -537,6 +541,7 @@ fn create_segment(
     let id_tracker = create_segment_id_tracker(
         use_mutable_id_tracker,
         segment_path,
+        #[cfg(feature = "rocksdb")]
         &mut db_builder,
     )?;
 
@@ -702,7 +707,7 @@ fn create_segment(
 fn create_segment_id_tracker(
     mutable_id_tracker: bool,
     segment_path: &Path,
-    db_builder: &mut RocksDbBuilder,
+    #[cfg(feature = "rocksdb")] db_builder: &mut RocksDbBuilder,
 ) -> OperationResult<Arc<AtomicRefCell<IdTrackerEnum>>> {
     if !mutable_id_tracker {
         return Ok(sp(IdTrackerEnum::ImmutableIdTracker(
@@ -712,33 +717,38 @@ fn create_segment_id_tracker(
 
     // Determine whether we use the new (file based) or old (RocksDB) mutable ID tracker
     // Decide based on the feature flag and state on disk
-    let use_rocksdb_mutable_tracker = if let Some(db) = db_builder.read() {
-        // New ID tracker is enabled by default, but we still use the old tracker if we have
-        // any mappings stored in RocksDB
-        //
-        // TODO(1.15 or later): remove this check and use new mutable ID tracker unconditionally
-        if let Some(cf) = db.cf_handle(DB_MAPPING_CF) {
-            let count = db
-                .property_int_value_cf(cf, rocksdb::properties::ESTIMATE_NUM_KEYS)
-                .map_err(|err| {
-                    OperationError::service_error(format!(
-                        "Failed to get estimated number of keys from RocksDB: {err}"
-                    ))
-                })?
-                .unwrap_or_default();
+    #[cfg(feature = "rocksdb")]
+    {
+        use crate::common::rocksdb_wrapper::DB_MAPPING_CF;
 
-            count > 0
+        let use_rocksdb_mutable_tracker = if let Some(db) = db_builder.read() {
+            // New ID tracker is enabled by default, but we still use the old tracker if we have
+            // any mappings stored in RocksDB
+            //
+            // TODO(1.15 or later): remove this check and use new mutable ID tracker unconditionally
+            if let Some(cf) = db.cf_handle(DB_MAPPING_CF) {
+                let count = db
+                    .property_int_value_cf(cf, rocksdb::properties::ESTIMATE_NUM_KEYS)
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to get estimated number of keys from RocksDB: {err}"
+                        ))
+                    })?
+                    .unwrap_or_default();
+
+                count > 0
+            } else {
+                false
+            }
         } else {
             false
-        }
-    } else {
-        false
-    };
+        };
 
-    if use_rocksdb_mutable_tracker {
-        return Ok(sp(IdTrackerEnum::RocksDbIdTracker(
-            create_rocksdb_id_tracker(db_builder.require()?)?,
-        )));
+        if use_rocksdb_mutable_tracker {
+            return Ok(sp(IdTrackerEnum::RocksDbIdTracker(
+                create_rocksdb_id_tracker(db_builder.require()?)?,
+            )));
+        }
     }
 
     Ok(sp(IdTrackerEnum::MutableIdTracker(

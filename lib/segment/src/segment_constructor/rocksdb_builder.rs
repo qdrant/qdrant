@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use parking_lot::{RwLock, RwLockReadGuard};
+use parking_lot::RwLock;
 
 use super::segment_constructor_base::get_vector_name_with_prefix;
 use crate::common::operation_error::{OperationError, OperationResult};
@@ -61,7 +61,8 @@ impl RocksDbBuilder {
         })
     }
 
-    pub fn read(&self) -> Option<RwLockReadGuard<'_, rocksdb::DB>> {
+    #[cfg(feature = "rocksdb")]
+    pub fn read(&self) -> Option<parking_lot::RwLockReadGuard<'_, rocksdb::DB>> {
         self.rocksdb.as_ref().map(|db| db.read())
     }
 
