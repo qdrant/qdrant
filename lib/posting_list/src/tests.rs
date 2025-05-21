@@ -32,7 +32,7 @@ fn test_just_ids_against_vec() {
 
         // validate that chunks' sized values are empty
         if let Some(first_chunk) = posting_list.chunks.first() {
-            let chunks_size = size_of_val(&first_chunk);
+            let chunks_size = size_of_val(first_chunk);
             let expected_chunk_size = size_of::<u32>() * 2;
             assert_eq!(chunks_size, expected_chunk_size);
         }
