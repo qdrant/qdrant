@@ -12015,14 +12015,14 @@
       "SparseVectorStorageType": {
         "oneOf": [
           {
-            "description": "Storage on disk",
+            "description": "Storage on disk (rocksdb storage)",
             "type": "string",
             "enum": [
               "on_disk"
             ]
           },
           {
-            "description": "Storage in memory maps",
+            "description": "Storage in memory maps (gridstore storage)",
             "type": "string",
             "enum": [
               "mmap"
