@@ -33,14 +33,19 @@ pub fn accepted_response(
     hardware_usage: Option<HardwareUsage>,
     inference_usage: Option<InferenceUsage>,
 ) -> HttpResponse {
+    let usage = {
+        let u = Usage {
+            hardware: hardware_usage,
+            inference: inference_usage,
+        };
+        if u.is_empty() { None } else { Some(u) }
+    };
+
     HttpResponse::Accepted().json(ApiResponse::<()> {
         result: None,
         status: ApiStatus::Accepted,
         time: timing.elapsed().as_secs_f64(),
-        usage: Some(Usage {
-            hardware: hardware_usage,
-            inference: inference_usage,
-        }),
+        usage,
     })
 }
 
