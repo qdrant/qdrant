@@ -1,3 +1,4 @@
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
 use segment::types::{Filter, StrictModeConfig};
 
 use super::{StrictModeVerification, check_grouping_field};
@@ -83,6 +84,18 @@ impl Query {
                             )
                         };
 
+                    // no further check necessary if there is a global HNSW index
+                    if vector_hnsw_m != 0 {
+                        return Ok(());
+                    }
+
+                    // specialized error message if not default vector
+                    let vector_error_label = if using == DEFAULT_VECTOR_NAME {
+                        ""
+                    } else {
+                        &format!(" on '{using}'")
+                    };
+
                     // check hnsw.payload_m if there is a filter
                     if let Some(filter) = filter {
                         let uses_multitenant_filter = filter
@@ -96,21 +109,19 @@ impl Query {
                             return Ok(());
                         } else {
                             return Err(CollectionError::strict_mode(
-                                format!("Filtered scan forbidden on '{using}'"),
-                                "Filter by multitenant aware indexed payload key and enable vector indexing (hnsw_config.payload._m)",
+                                format!("Filtered scan forbidden{vector_error_label}"),
+                                "Filter by tenant payload key and enable vector indexing (hnsw_config.payload_m)",
                             ));
                         }
                     }
 
                     // HNSW disabled AND no filters
-                    if vector_hnsw_m == 0 {
-                        return Err(CollectionError::strict_mode(
-                            format!(
-                                "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
-                            ),
-                            "Enable vector indexing or use a prefetch query before rescoring",
-                        ));
-                    }
+                    return Err(CollectionError::strict_mode(
+                        format!(
+                            "Fullscan forbidden{vector_error_label} – vector indexing is disabled (hnsw_config.m = 0)"
+                        ),
+                        "Enable vector indexing or use a prefetch query before rescoring",
+                    ));
                 }
             }
         }
