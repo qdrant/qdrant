@@ -1,5 +1,6 @@
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::schema::{ScoredPoint, Vector};
@@ -13,16 +14,18 @@ use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<InferenceUsage> for grpc::InferenceUsage {
     fn from(value: InferenceUsage) -> Self {
-        let mut grpc_usage = grpc::InferenceUsage::default();
+        let mut grpc_usage_models = HashMap::default();
         for (model, usage) in value.models {
-            grpc_usage.model.insert(
+            grpc_usage_models.insert(
                 model,
                 grpc::ModelUsage {
                     tokens: usage.tokens,
                 },
             );
         }
-        grpc_usage
+        grpc::InferenceUsage {
+            model: grpc_usage_models,
+        }
     }
 }
 
