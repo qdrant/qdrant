@@ -425,7 +425,7 @@ impl UpdateHandler {
         segments_path: &Path,
         collection_params: &CollectionParams,
         thresholds_config: &OptimizerThresholds,
-        payload_index_schema: &PayloadIndexSchema,
+        payload_index_schema: Arc<SaveOnDisk<PayloadIndexSchema>>,
     ) -> OperationResult<()> {
         let no_segment_with_capacity = {
             let segments_read = segments.read();
@@ -610,7 +610,7 @@ impl UpdateHandler {
                     optimizer.segments_path(),
                     &optimizer.collection_params(),
                     optimizer.threshold_config(),
-                    &payload_index_schema.read(),
+                    payload_index_schema.clone(),
                 );
                 if let Err(err) = result {
                     log::error!(
