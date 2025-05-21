@@ -483,6 +483,7 @@ impl SegmentBuilder {
                 IdTrackerEnum::ImmutableIdTracker(_) => {
                     unreachable!("ImmutableIdTracker should not be used for building segment")
                 }
+                #[cfg(feature = "rocksdb")]
                 IdTrackerEnum::RocksDbIdTracker(_) => id_tracker,
             };
 

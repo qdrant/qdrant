@@ -12,6 +12,7 @@ use super::mutable_id_tracker::MutableIdTracker;
 use crate::common::Flusher;
 use crate::common::operation_error::OperationResult;
 use crate::id_tracker::immutable_id_tracker::ImmutableIdTracker;
+#[cfg(feature = "rocksdb")]
 use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 use crate::types::{PointIdType, SeqNumberType};
 
@@ -177,6 +178,7 @@ pub enum IdTrackerEnum {
     InMemoryIdTracker(InMemoryIdTracker),
 
     // Deprecated since Qdrant 1.14
+    #[cfg(feature = "rocksdb")]
     RocksDbIdTracker(SimpleIdTracker),
 }
 
@@ -190,6 +192,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.internal_version(internal_id)
             }
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.internal_version(internal_id),
         }
     }
@@ -209,6 +212,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.set_internal_version(internal_id, version)
             }
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
                 id_tracker.set_internal_version(internal_id, version)
             }
@@ -220,6 +224,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.internal_id(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.internal_id(external_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.internal_id(external_id),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.internal_id(external_id),
         }
     }
@@ -229,6 +234,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.external_id(internal_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.external_id(internal_id),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.external_id(internal_id),
         }
     }
@@ -248,6 +254,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.set_link(external_id, internal_id)
             }
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => {
                 id_tracker.set_link(external_id, internal_id)
             }
@@ -259,6 +266,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.drop(external_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.drop(external_id),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.drop(external_id),
         }
     }
@@ -268,6 +276,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_external(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_external(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_external(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_external(),
         }
     }
@@ -277,6 +286,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_internal(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_internal(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_internal(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_internal(),
         }
     }
@@ -289,6 +299,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_from(external_id),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_from(external_id),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_from(external_id),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_from(external_id),
         }
     }
@@ -298,6 +309,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_ids(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_ids(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_ids(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_ids(),
         }
     }
@@ -307,6 +319,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.iter_random(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.iter_random(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.iter_random(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.iter_random(),
         }
     }
@@ -316,6 +329,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.mapping_flusher(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.mapping_flusher(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.mapping_flusher(),
         }
     }
@@ -325,6 +339,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.versions_flusher(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.versions_flusher(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.versions_flusher(),
         }
     }
@@ -334,6 +349,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.total_point_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.total_point_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.total_point_count(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.total_point_count(),
         }
     }
@@ -343,6 +359,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_count(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_count(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_count(),
         }
     }
@@ -352,6 +369,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.deleted_point_bitslice(),
         }
     }
@@ -365,6 +383,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => {
                 id_tracker.is_deleted_point(internal_id)
             }
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.is_deleted_point(internal_id),
         }
     }
@@ -374,6 +393,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.name(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.name(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.name(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.name(),
         }
     }
@@ -383,6 +403,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.cleanup_versions(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.cleanup_versions(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.cleanup_versions(),
         }
     }
@@ -392,6 +413,7 @@ impl IdTracker for IdTrackerEnum {
             IdTrackerEnum::MutableIdTracker(id_tracker) => id_tracker.files(),
             IdTrackerEnum::ImmutableIdTracker(id_tracker) => id_tracker.files(),
             IdTrackerEnum::InMemoryIdTracker(id_tracker) => id_tracker.files(),
+            #[cfg(feature = "rocksdb")]
             IdTrackerEnum::RocksDbIdTracker(id_tracker) => id_tracker.files(),
         }
     }
