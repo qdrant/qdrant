@@ -27,64 +27,6 @@ enum StoredPointId {
     String(String),
 }
 
-impl From<&ExtendedPointId> for PointIdType {
-    fn from(point_id: &ExtendedPointId) -> Self {
-        match point_id {
-            ExtendedPointId::NumId(idx) => PointIdType::NumId(*idx),
-            ExtendedPointId::Uuid(uuid) => PointIdType::Uuid(*uuid),
-        }
-    }
-}
-
-impl From<&ExtendedPointId> for StoredPointId {
-    fn from(point_id: &ExtendedPointId) -> Self {
-        match point_id {
-            ExtendedPointId::NumId(idx) => StoredPointId::NumId(*idx),
-            ExtendedPointId::Uuid(uuid) => StoredPointId::Uuid(*uuid),
-        }
-    }
-}
-
-impl From<ExtendedPointId> for StoredPointId {
-    fn from(point_id: ExtendedPointId) -> Self {
-        Self::from(&point_id)
-    }
-}
-
-impl From<&StoredPointId> for ExtendedPointId {
-    fn from(point_id: &StoredPointId) -> Self {
-        match point_id {
-            StoredPointId::NumId(idx) => ExtendedPointId::NumId(*idx),
-            StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(*uuid),
-            StoredPointId::String(str) => {
-                unimplemented!("cannot convert internal string id '{str}' to external id")
-            }
-        }
-    }
-}
-
-impl From<StoredPointId> for ExtendedPointId {
-    fn from(point_id: StoredPointId) -> Self {
-        match point_id {
-            StoredPointId::NumId(idx) => ExtendedPointId::NumId(idx),
-            StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(uuid),
-            StoredPointId::String(str) => {
-                unimplemented!("cannot convert internal string id '{str}' to external id")
-            }
-        }
-    }
-}
-
-#[inline]
-fn stored_to_external_id(point_id: StoredPointId) -> PointIdType {
-    point_id.into()
-}
-
-#[inline]
-fn external_to_stored_id(point_id: &PointIdType) -> StoredPointId {
-    point_id.into()
-}
-
 #[derive(Debug)]
 pub struct SimpleIdTracker {
     internal_to_version: Vec<SeqNumberType>,
@@ -187,12 +129,12 @@ impl SimpleIdTracker {
     }
 
     fn store_key(external_id: &PointIdType) -> Vec<u8> {
-        bincode::serialize(&external_to_stored_id(external_id)).unwrap()
+        bincode::serialize(&StoredPointId::from(external_id)).unwrap()
     }
 
     fn restore_key(data: &[u8]) -> PointIdType {
         let stored_external_id: StoredPointId = bincode::deserialize(data).unwrap();
-        stored_to_external_id(stored_external_id)
+        PointIdType::from(stored_external_id)
     }
 
     fn delete_key(&self, external_id: &PointIdType) -> OperationResult<()> {
@@ -356,6 +298,45 @@ impl IdTracker for SimpleIdTracker {
 
     fn files(&self) -> Vec<PathBuf> {
         vec![]
+    }
+}
+
+impl From<&ExtendedPointId> for StoredPointId {
+    fn from(point_id: &ExtendedPointId) -> Self {
+        match point_id {
+            ExtendedPointId::NumId(idx) => StoredPointId::NumId(*idx),
+            ExtendedPointId::Uuid(uuid) => StoredPointId::Uuid(*uuid),
+        }
+    }
+}
+
+impl From<ExtendedPointId> for StoredPointId {
+    fn from(point_id: ExtendedPointId) -> Self {
+        Self::from(&point_id)
+    }
+}
+
+impl From<&StoredPointId> for ExtendedPointId {
+    fn from(point_id: &StoredPointId) -> Self {
+        match point_id {
+            StoredPointId::NumId(idx) => ExtendedPointId::NumId(*idx),
+            StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(*uuid),
+            StoredPointId::String(str) => {
+                unimplemented!("cannot convert internal string id '{str}' to external id")
+            }
+        }
+    }
+}
+
+impl From<StoredPointId> for ExtendedPointId {
+    fn from(point_id: StoredPointId) -> Self {
+        match point_id {
+            StoredPointId::NumId(idx) => ExtendedPointId::NumId(idx),
+            StoredPointId::Uuid(uuid) => ExtendedPointId::Uuid(uuid),
+            StoredPointId::String(str) => {
+                unimplemented!("cannot convert internal string id '{str}' to external id")
+            }
+        }
     }
 }
 

@@ -10,7 +10,7 @@ use common::types::PointOffsetType;
 pub use id_tracker_base::*;
 use itertools::Itertools as _;
 
-use crate::types::ExtendedPointId;
+use crate::types::{ExtendedPointId, PointIdType};
 
 /// Calling [`for_each_unique_point`] will yield this struct for each unique
 /// point.
@@ -68,6 +68,15 @@ pub fn for_each_unique_point<'a>(
         }
     }
     f(best_item);
+}
+
+impl From<&ExtendedPointId> for PointIdType {
+    fn from(point_id: &ExtendedPointId) -> Self {
+        match point_id {
+            ExtendedPointId::NumId(idx) => PointIdType::NumId(*idx),
+            ExtendedPointId::Uuid(uuid) => PointIdType::Uuid(*uuid),
+        }
+    }
 }
 
 #[cfg(test)]
