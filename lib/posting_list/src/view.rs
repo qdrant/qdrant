@@ -154,12 +154,12 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         let remainders = self.remainders;
         let chunks = self.chunks;
 
-        // check if id is in the remainders list
-        if remainders.first().is_some_and(|elem| id >= elem.id) {
+        if chunks.is_empty() {
             return None;
         }
 
-        if chunks.is_empty() {
+        // check if id is in the remainders list
+        if remainders.first().is_some_and(|elem| id >= elem.id) {
             return None;
         }
 
@@ -172,6 +172,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         // No need to check if id is under range of posting list,
         // this function assumes it is within the range
         debug_assert!(id >= chunks_slice[0].initial_id);
+        debug_assert!(self.last_id.is_some_and(|last_id| id <= last_id));
 
         match chunks_slice.binary_search_by(|chunk| chunk.initial_id.cmp(&id)) {
             // id is the initial value of the chunk with index idx
