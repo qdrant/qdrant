@@ -27,36 +27,46 @@ impl UnsizedValue for TestString {
 
 #[test]
 fn test_just_ids_against_vec() {
-    let posting_list = check_against_sorted_vec(|_rng, _id| (), |builder| builder.build());
+    check_various_lengths(|len| {
+        let posting_list = check_against_sorted_vec(|_rng, _id| (), |builder| builder.build(), len);
 
-    // validate that chunks sized values are empty
-    let chunks_size = size_of_val(&posting_list.chunks[0]);
-    let expected_chunk_size = size_of::<u32>() * 2;
-    assert_eq!(chunks_size, expected_chunk_size);
+        // validate that chunks' sized values are empty
+        if let Some(first_chunk) = posting_list.chunks.first() {
+            let chunks_size = size_of_val(&first_chunk);
+            let expected_chunk_size = size_of::<u32>() * 2;
+            assert_eq!(chunks_size, expected_chunk_size);
+        }
 
-    // validate var_sized_data is empty
-    assert_eq!(posting_list.var_size_data.len(), 0);
+        // validate var_sized_data is empty
+        assert_eq!(posting_list.var_size_data.len(), 0);
+    })
 }
 
 #[test]
 fn test_var_sized_against_vec() {
     let alphanumeric = Alphanumeric;
-    check_against_sorted_vec(
-        |rng, id| {
-            let len = rng.random_range(1..=20);
-            let s = alphanumeric.sample_string(rng, len);
-            TestString(format!("item_{id} {s}"))
-        },
-        |builder| builder.build_unsized(),
-    );
+    check_various_lengths(|len| {
+        check_against_sorted_vec(
+            |rng, id| {
+                let len = rng.random_range(1..=20);
+                let s = alphanumeric.sample_string(rng, len);
+                TestString(format!("item_{id} {s}"))
+            },
+            |builder| builder.build_unsized(),
+            len,
+        );
+    })
 }
 
 #[test]
 fn test_fixed_sized_against_vec() {
-    check_against_sorted_vec(
-        |_rng, id| u64::from(id) * 100,
-        |builder| builder.build_sized(),
-    );
+    check_various_lengths(|len| {
+        check_against_sorted_vec(
+            |_rng, id| u64::from(id) * 100,
+            |builder| builder.build_sized(),
+            len,
+        );
+    });
 }
 
 fn generate_data<T, R: Rng>(
@@ -74,23 +84,35 @@ fn generate_data<T, R: Rng>(
         .collect()
 }
 
-fn check_against_sorted_vec<G, H, B>(gen_value: G, build: B) -> PostingList<H>
+fn check_various_lengths(check: impl Fn(u32)) {
+    let lengths = [
+        0,
+        1,
+        2,
+        9,
+        10,
+        CHUNK_LEN - 1,
+        CHUNK_LEN,
+        CHUNK_LEN + 1,
+        100 * CHUNK_LEN,
+        500 * CHUNK_LEN + 1,
+        500 * CHUNK_LEN - 1,
+        500 * CHUNK_LEN + CHUNK_LEN / 2,
+    ];
+    for len in lengths {
+        check(len as u32);
+    }
+}
+
+fn check_against_sorted_vec<G, H, B>(gen_value: G, build: B, postings_count: u32) -> PostingList<H>
 where
     G: Fn(&mut StdRng, PointOffsetType) -> H::Value,
     H: ValueHandler,
     B: FnOnce(PostingBuilder<H::Value>) -> PostingList<H>,
     H::Value: Clone + PartialEq,
 {
-    let postings_count = 10000;
     let rng = &mut StdRng::seed_from_u64(42);
     let test_data = generate_data(postings_count, rng, gen_value);
-
-    // Verify we have more than CHUNK_LEN elements
-    assert!(
-        test_data.len() > CHUNK_LEN,
-        "Test data should have more than 128 elements but has {}",
-        test_data.len()
-    );
 
     // Build our reference model
     let mut model = test_data.clone();
@@ -123,5 +145,14 @@ where
         // also check that contains function works
         assert!(visitor.contains(*expected_id));
     }
+
+    // Bounds check
+    assert!(visitor.get_by_offset(postings_count as usize).is_none());
+    let out_of_range = (postings_count.next_multiple_of(CHUNK_LEN as u32)) as usize;
+    assert!(visitor.get_by_offset(out_of_range).is_none());
+
+    // There is no such id
+    assert!(!visitor.contains(postings_count));
+
     posting_list
 }
