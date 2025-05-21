@@ -34,7 +34,7 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
         peer_id_to_url[peer_id] = peer_api_uri
 
     # Insert some initial number of points
-    upsert_random_points(peer_api_uris[0], 3000)
+    upsert_random_points(peer_api_uris[0], 100)
 
     # Kill last peer
     p = processes.pop()
@@ -42,7 +42,7 @@ def test_force_delete_source_peer_during_transfers(tmp_path: pathlib.Path):
     sleep(1)  # Give killed peer time to release WAL lock
 
     # Upsert points to mark dummy replica as dead, that will trigger recovery transfer
-    upsert_random_points(peer_api_uris[0], 100)
+    upsert_random_points(peer_api_uris[0], 3000)
 
     # Restart same peer
     peer_api_uris[-1] = start_peer(
