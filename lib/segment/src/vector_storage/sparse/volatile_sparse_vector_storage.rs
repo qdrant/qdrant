@@ -68,6 +68,18 @@ impl VolatileSparseVectorStorage {
         }
 
         let entry = &mut self.vectors[key as usize];
+
+        // Update bookkeeping of total sparse size
+        let elements_removed = entry.as_ref().map_or(0, |v| v.indices.len());
+        let elements_added = vector
+            .as_ref()
+            .filter(|_| !deleted)
+            .map_or(0, |v| v.indices.len());
+        self.total_sparse_size = self
+            .total_sparse_size
+            .saturating_sub(elements_removed)
+            .saturating_add(elements_added);
+
         if deleted {
             entry.take();
         } else {
@@ -115,7 +127,7 @@ impl VectorStorage for VolatileSparseVectorStorage {
     }
 
     fn is_on_disk(&self) -> bool {
-        true
+        false
     }
 
     fn total_vector_count(&self) -> usize {
