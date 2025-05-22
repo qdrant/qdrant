@@ -187,6 +187,7 @@ impl HttpError {
             StorageError::Forbidden { .. } => {}
             StorageError::PreconditionFailed { .. } => {}
             StorageError::InferenceError { .. } => {}
+            StorageError::ShardUnavailable { .. } => {}
         }
         headers
     }
@@ -207,6 +208,7 @@ impl ResponseError for HttpError {
             StorageError::PreconditionFailed { .. } => http::StatusCode::INTERNAL_SERVER_ERROR,
             StorageError::InferenceError { .. } => http::StatusCode::BAD_REQUEST,
             StorageError::RateLimitExceeded { .. } => http::StatusCode::TOO_MANY_REQUESTS,
+            StorageError::ShardUnavailable { .. } => http::StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }

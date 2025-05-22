@@ -42,6 +42,8 @@ pub enum StorageError {
         description: String,
         retry_after: Option<Duration>,
     },
+    #[error("Shard temporarily unavailable: {description}")]
+    ShardUnavailable { description: String },
 }
 
 impl StorageError {
@@ -158,6 +160,9 @@ impl StorageError {
                 description,
                 retry_after,
             },
+            CollectionError::ShardUnavailable { .. } => StorageError::ShardUnavailable {
+                description: overriding_description,
+            },
         }
     }
 }
@@ -217,6 +222,9 @@ impl From<CollectionError> for StorageError {
                 description,
                 retry_after,
             },
+            CollectionError::ShardUnavailable { description } => {
+                StorageError::ShardUnavailable { description }
+            }
         }
     }
 }
