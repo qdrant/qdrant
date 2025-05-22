@@ -225,7 +225,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
-            partial_snapshot_meta: PartialSnapshotMeta::new(),
+            partial_snapshot_meta: PartialSnapshotMeta::default(),
         })
     }
 
@@ -366,7 +366,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
-            partial_snapshot_meta: PartialSnapshotMeta::new(),
+            partial_snapshot_meta: PartialSnapshotMeta::default(),
         };
 
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!

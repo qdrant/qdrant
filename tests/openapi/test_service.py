@@ -84,7 +84,7 @@ def test_telemetry_detail(level: int):
         assert set(collection.keys()) == {'id', 'init_time_ms', 'config', 'shards', 'transfers', 'resharding'}
 
         shard = collection['shards'][0]
-        assert set(shard.keys()) == {'id', 'key', 'local', 'remote', 'replicate_states'}
+        assert set(shard.keys()) == {'id', 'key', 'local', 'remote', 'replicate_states', 'partial_snapshot'}
 
         local_shard = shard['local']
 
