@@ -1159,7 +1159,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "fnv",
- "fs4 0.13.1",
+ "fs4",
  "fs_extra",
  "futures",
  "hashring",
@@ -1291,9 +1291,9 @@ dependencies = [
 
 [[package]]
 name = "console-api"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86ed14aa9c9f927213c6e4f3ef75faaad3406134efe84ba2cb7983431d5f0931"
+checksum = "8030735ecb0d128428b64cd379809817e620a40e5001c54465b99ec5feec2857"
 dependencies = [
  "futures-core",
  "prost 0.13.1",
@@ -1304,9 +1304,9 @@ dependencies = [
 
 [[package]]
 name = "console-subscriber"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e3a111a37f3333946ebf9da370ba5c5577b18eb342ec683eb488dd21980302"
+checksum = "6539aa9c6a4cd31f4b1c040f860a1eac9aa80e7df6b05d506a6e7179936d6a01"
 dependencies = [
  "console-api",
  "crossbeam-channel",
@@ -1445,11 +1445,10 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-channel"
-version = "0.5.8"
+version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a33c2bf77f2df06183c3aa30d1e96c0695a313d4f9c453cc3762a6db39f99200"
+checksum = "82b8f8f868b36967f9606790d1903570de9ceaf870a7bf9fbbd3016d636a2cb2"
 dependencies = [
- "cfg-if",
  "crossbeam-utils",
 ]
 
@@ -2048,16 +2047,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
 dependencies = [
  "percent-encoding",
-]
-
-[[package]]
-name = "fs4"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e871a4cfa68bb224863b53149d973df1ac8d1ed2fa1d1bfc37ac1bb65dd37207"
-dependencies = [
- "rustix 0.38.40",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5133,16 +5122,6 @@ dependencies = [
 
 [[package]]
 name = "rand_distr"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32cb0b9bc82b0a0876c2dd994a7e7a2683d3e7390ca40e6886785ef0c7e3ee31"
-dependencies = [
- "num-traits",
- "rand 0.8.5",
-]
-
-[[package]]
-name = "rand_distr"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8615d50dcf34fa31f7ab52692afec947c4dd0ab803cc87cb3b0b4570ff7463"
@@ -5869,7 +5848,7 @@ dependencies = [
  "proptest",
  "quantization",
  "rand 0.9.1",
- "rand_distr 0.5.1",
+ "rand_distr",
  "rayon",
  "rmp-serde",
  "rocksdb",
@@ -7296,19 +7275,19 @@ dependencies = [
 [[package]]
 name = "wal"
 version = "0.1.2"
-source = "git+https://github.com/qdrant/wal.git?rev=f42e853debf22a3a746de444d625bb8cc1d2e61e#f42e853debf22a3a746de444d625bb8cc1d2e61e"
+source = "git+https://github.com/qdrant/wal.git?rev=c4b26b9c0ccc0e06ba7391189e4c8eac051ca531#c4b26b9c0ccc0e06ba7391189e4c8eac051ca531"
 dependencies = [
  "byteorder",
  "crc32c",
  "crossbeam-channel",
  "docopt",
  "env_logger",
- "fs4 0.11.1",
+ "fs4",
  "log",
  "memmap2",
- "rand 0.8.5",
- "rand_distr 0.4.3",
- "rustix 0.38.40",
+ "rand 0.9.1",
+ "rand_distr",
+ "rustix 1.0.2",
  "serde",
 ]
 
