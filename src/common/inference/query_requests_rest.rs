@@ -1,9 +1,9 @@
-use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
-    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryRequest, Query,
-    VectorInputInternal, VectorQuery,
+    CollectionPrefetch, CollectionQueryGroupsRequest, CollectionQueryGroupsRequestWithUsage,
+    CollectionQueryRequest, CollectionQueryRequestWithUsage, Query, VectorInputInternal,
+    VectorQuery,
 };
 use collection::operations::universal_query::formula::FormulaInternal;
 use collection::operations::universal_query::shard_query::{FusionInternal, SampleInternal};
@@ -19,21 +19,11 @@ use crate::common::inference::batch_processing::{
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
-pub struct CollectionQueryRequestWithUsage {
-    pub request: CollectionQueryRequest,
-    pub usage: Option<InferenceUsage>,
-}
-
-pub struct CollectionQueryGroupsRequestWithUsage {
-    pub request: CollectionQueryGroupsRequest,
-    pub usage: Option<InferenceUsage>,
-}
-
 pub async fn convert_query_groups_request_from_rest(
-    request: rest::QueryGroupsRequestInternal,
+    qg_request_internal: rest::QueryGroupsRequestInternal,
     inference_token: InferenceToken,
 ) -> Result<CollectionQueryGroupsRequestWithUsage, StorageError> {
-    let batch = collect_query_groups_request(&request);
+    let batch = collect_query_groups_request(&qg_request_internal);
     let rest::QueryGroupsRequestInternal {
         prefetch,
         query,
@@ -45,14 +35,28 @@ pub async fn convert_query_groups_request_from_rest(
         with_payload,
         lookup_from,
         group_request,
-    } = request;
+    } = qg_request_internal;
 
     let (inferred, usage) =
-        BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, &inference_token)
-            .await?;
+        match BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, &inference_token)
+            .await
+        {
+            Ok(res) => res,
+            Err(err) => {
+                return Err(StorageError::InferenceError {
+                    description: err.to_string(),
+                    usage: None,
+                });
+            }
+        };
+
     let query = query
         .map(|q| convert_query_with_inferred(q, &inferred))
-        .transpose()?;
+        .transpose()
+        .map_err(|err| StorageError::InferenceError {
+            description: err.to_string(),
+            usage: usage.clone(),
+        })?;
 
     let prefetch = prefetch
         .map(|prefetches| {
@@ -61,7 +65,11 @@ pub async fn convert_query_groups_request_from_rest(
                 .map(|p| convert_prefetch_with_inferred(p, &inferred))
                 .collect::<Result<Vec<_>, _>>()
         })
-        .transpose()?
+        .transpose()
+        .map_err(|err| StorageError::InferenceError {
+            description: err.to_string(),
+            usage: usage.clone(),
+        })?
         .unwrap_or_default();
 
     let collection_query_groups_request = CollectionQueryGroupsRequest {
@@ -116,14 +124,26 @@ pub async fn convert_query_request_from_rest(
         .map(|prefetches| {
             prefetches
                 .into_iter()
-                .map(|p| convert_prefetch_with_inferred(p, &inferred))
+                .map(|p| {
+                    convert_prefetch_with_inferred(p, &inferred).map_err(|err| {
+                        StorageError::InferenceError {
+                            description: err.to_string(),
+                            usage: usage.clone(),
+                        }
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()
         })
         .transpose()?
         .unwrap_or_default();
 
     let query = query
-        .map(|q| convert_query_with_inferred(q, &inferred))
+        .map(|q| {
+            convert_query_with_inferred(q, &inferred).map_err(|err| StorageError::InferenceError {
+                description: err.to_string(),
+                usage: usage.clone(),
+            })
+        })
         .transpose()?;
 
     let collection_query_request = CollectionQueryRequest {
@@ -139,6 +159,7 @@ pub async fn convert_query_request_from_rest(
         with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
         lookup_from,
     };
+
     Ok(CollectionQueryRequestWithUsage {
         request: collection_query_request,
         usage,
@@ -163,7 +184,7 @@ fn convert_vector_input_with_inferred(
         rest::VectorInput::Document(doc) => {
             let data = InferenceData::Document(doc);
             let vector = inferred.get_vector(&data).ok_or_else(|| {
-                StorageError::inference_error("Missing inferred vector for document")
+                StorageError::inference_error("Missing inferred vector for document", None)
             })?;
             Ok(VectorInputInternal::Vector(VectorInternal::from(
                 vector.clone(),
@@ -172,7 +193,7 @@ fn convert_vector_input_with_inferred(
         rest::VectorInput::Image(img) => {
             let data = InferenceData::Image(img);
             let vector = inferred.get_vector(&data).ok_or_else(|| {
-                StorageError::inference_error("Missing inferred vector for image")
+                StorageError::inference_error("Missing inferred vector for image", None)
             })?;
             Ok(VectorInputInternal::Vector(VectorInternal::from(
                 vector.clone(),
@@ -181,7 +202,7 @@ fn convert_vector_input_with_inferred(
         rest::VectorInput::Object(obj) => {
             let data = InferenceData::Object(obj);
             let vector = inferred.get_vector(&data).ok_or_else(|| {
-                StorageError::inference_error("Missing inferred vector for object")
+                StorageError::inference_error("Missing inferred vector for object", None)
             })?;
             Ok(VectorInputInternal::Vector(VectorInternal::from(
                 vector.clone(),
@@ -197,7 +218,13 @@ fn convert_query_with_inferred(
     let query = rest::Query::from(query);
     match query {
         rest::Query::Nearest(nearest) => {
-            let vector = convert_vector_input_with_inferred(nearest.nearest, inferred)?;
+            let vector =
+                convert_vector_input_with_inferred(nearest.nearest, inferred).map_err(|err| {
+                    StorageError::InferenceError {
+                        description: err.to_string(),
+                        usage: None,
+                    }
+                })?;
             Ok(Query::Vector(VectorQuery::Nearest(vector)))
         }
         rest::Query::Recommend(recommend) => {
@@ -206,16 +233,33 @@ fn convert_query_with_inferred(
                 negative,
                 strategy,
             } = recommend.recommend;
+
             let positives = positive
                 .into_iter()
                 .flatten()
-                .map(|v| convert_vector_input_with_inferred(v, inferred))
+                .map(|v| {
+                    convert_vector_input_with_inferred(v, inferred).map_err(|err| {
+                        StorageError::InferenceError {
+                            description: err.to_string(),
+                            usage: None,
+                        }
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
+
             let negatives = negative
                 .into_iter()
                 .flatten()
-                .map(|v| convert_vector_input_with_inferred(v, inferred))
+                .map(|v| {
+                    convert_vector_input_with_inferred(v, inferred).map_err(|err| {
+                        StorageError::InferenceError {
+                            description: err.to_string(),
+                            usage: None,
+                        }
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
+
             let reco_query = RecoQuery::new(positives, negatives);
             match strategy.unwrap_or_default() {
                 rest::RecommendStrategy::AverageVector => Ok(Query::Vector(
@@ -231,12 +275,26 @@ fn convert_query_with_inferred(
         }
         rest::Query::Discover(discover) => {
             let rest::DiscoverInput { target, context } = discover.discover;
-            let target = convert_vector_input_with_inferred(target, inferred)?;
+            let target = convert_vector_input_with_inferred(target, inferred).map_err(|err| {
+                StorageError::InferenceError {
+                    description: err.to_string(),
+                    usage: None,
+                }
+            })?;
+
             let context = context
                 .into_iter()
                 .flatten()
-                .map(|pair| context_pair_from_rest_with_inferred(pair, inferred))
+                .map(|pair| {
+                    context_pair_from_rest_with_inferred(pair, inferred).map_err(|err| {
+                        StorageError::InferenceError {
+                            description: err.to_string(),
+                            usage: None,
+                        }
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
+
             Ok(Query::Vector(VectorQuery::Discover(DiscoveryQuery::new(
                 target, context,
             ))))
@@ -246,8 +304,16 @@ fn convert_query_with_inferred(
             let context_pairs = context_pairs_opt
                 .into_iter()
                 .flatten()
-                .map(|pair| context_pair_from_rest_with_inferred(pair, inferred))
+                .map(|pair| {
+                    context_pair_from_rest_with_inferred(pair, inferred).map_err(|err| {
+                        StorageError::InferenceError {
+                            description: err.to_string(),
+                            usage: None,
+                        }
+                    })
+                })
                 .collect::<Result<Vec<_>, _>>()?;
+
             Ok(Query::Vector(VectorQuery::Context(ContextQuery::new(
                 context_pairs,
             ))))

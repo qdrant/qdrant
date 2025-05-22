@@ -74,6 +74,7 @@ pub async fn convert_point_struct(
                             Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                                 return Err(StorageError::inference_error(
                                     "Inference required but service returned no results for named vector",
+                                    None,
                                 ));
                             }
                         },
@@ -90,6 +91,7 @@ pub async fn convert_point_struct(
                     None => {
                         return Err(StorageError::inference_error(
                             "Inference required for document but service returned no results",
+                            None,
                         ));
                     }
                 };
@@ -109,6 +111,7 @@ pub async fn convert_point_struct(
                     None => {
                         return Err(StorageError::inference_error(
                             "Inference required for image but service returned no results",
+                            None,
                         ));
                     }
                 };
@@ -128,6 +131,7 @@ pub async fn convert_point_struct(
                     None => {
                         return Err(StorageError::inference_error(
                             "Inference required for object but service returned no results",
+                            None,
                         ));
                     }
                 };
@@ -185,16 +189,19 @@ pub async fn convert_batch(
         BatchVectorStruct::Document(_) => {
             return Err(StorageError::inference_error(
                 "Direct Document processing is not supported in top-level batch vectors. Use named vectors.",
+                None,
             ));
         }
         BatchVectorStruct::Image(_) => {
             return Err(StorageError::inference_error(
                 "Direct Image processing is not supported in top-level batch vectors. Use named vectors.",
+                None,
             ));
         }
         BatchVectorStruct::Object(_) => {
             return Err(StorageError::inference_error(
                 "Direct Object processing is not supported in top-level batch vectors. Use named vectors.",
+                None,
             ));
         }
     };
@@ -257,6 +264,7 @@ pub async fn convert_point_vectors(
                             Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                                 return Err(StorageError::inference_error(
                                     "Inference required for named vector in PointVectors but no results",
+                                    None,
                                 ));
                             }
                         },
@@ -269,16 +277,19 @@ pub async fn convert_point_vectors(
             VectorStruct::Document(_) => {
                 return Err(StorageError::inference_error(
                     "Direct Document processing not supported for PointVectors. Use named vectors.",
+                    None,
                 ));
             }
             VectorStruct::Image(_) => {
                 return Err(StorageError::inference_error(
                     "Direct Image processing not supported for PointVectors. Use named vectors.",
+                    None,
                 ));
             }
             VectorStruct::Object(_) => {
                 return Err(StorageError::inference_error(
                     "Direct Object processing not supported for PointVectors. Use named vectors.",
+                    None,
                 ));
             }
         };
@@ -404,6 +415,7 @@ pub async fn convert_vectors(
                 Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                     Err(StorageError::inference_error(
                         "Inference required but no inference service results available",
+                        None,
                     ))
                 }
             },
@@ -424,22 +436,20 @@ fn convert_vector_with_inferred(
         Vector::Document(doc) => {
             let data = InferenceData::Document(doc);
             inferred.get_vector(&data).cloned().ok_or_else(|| {
-                StorageError::inference_error("Missing inferred vector for document")
+                StorageError::inference_error("Missing inferred vector for document", None)
             })
         }
         Vector::Image(img) => {
             let data = InferenceData::Image(img);
-            inferred
-                .get_vector(&data)
-                .cloned()
-                .ok_or_else(|| StorageError::inference_error("Missing inferred vector for image"))
+            inferred.get_vector(&data).cloned().ok_or_else(|| {
+                StorageError::inference_error("Missing inferred vector for image", None)
+            })
         }
         Vector::Object(obj) => {
             let data = InferenceData::Object(obj);
-            inferred
-                .get_vector(&data)
-                .cloned()
-                .ok_or_else(|| StorageError::inference_error("Missing inferred vector for object"))
+            inferred.get_vector(&data).cloned().ok_or_else(|| {
+                StorageError::inference_error("Missing inferred vector for object", None)
+            })
         }
     }
 }
