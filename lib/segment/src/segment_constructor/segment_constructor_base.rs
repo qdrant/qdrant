@@ -961,14 +961,19 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
 ) -> OperationResult<MutableIdTracker> {
     log::info!("Migrating ID tracker from RocksDB into new format");
 
-    // Construct mutable ID tracker, copy all mappings to it
+    // Construct mutable ID tracker
     let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
-    {
-        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
-            let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
-            new_id_tracker.set_link(external_id, internal_id)?;
-            new_id_tracker.set_internal_version(internal_id, version)?;
-        }
+    assert_eq!(
+        new_id_tracker.total_point_count(),
+        0,
+        "new mutable ID tracker must be empty",
+    );
+
+    // Copy all mappings into it
+    for (external_id, internal_id) in old_id_tracker.iter_from(None) {
+        let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
+        new_id_tracker.set_link(external_id, internal_id)?;
+        new_id_tracker.set_internal_version(internal_id, version)?;
     }
 
     // Flush mappings and versions
