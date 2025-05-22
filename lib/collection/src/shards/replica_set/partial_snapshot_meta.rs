@@ -2,6 +2,27 @@ use std::sync::Arc;
 
 use crate::operations::types::{CollectionError, CollectionResult};
 
+/// API Flow:
+///
+///  ┌─────────────────┐
+///  │ recover_from API│
+///  └───────┬─────────┘
+///          │◄──────────────
+///          │             recovery_lock.take
+///  ┌───────▼─────────┐   (accept reads, but decline
+///  │ Download snap   │            new recover requests)
+///  └───────┬─────────┘
+///          │◄───────────────
+///          │              search_lock.write
+///  ┌───────▼─────────┐    (After this, reject reads)
+///  │ Recover snapshot│
+///  └───────┬─────────┘
+///          │
+///          │
+///  ┌───────▼─────────┐
+///  │ Swap shard      │
+///  └─────────────────┘
+///
 #[derive(Debug, Default)]
 pub struct PartialSnapshotMeta {
     recovery_lock: Arc<tokio::sync::Mutex<()>>,
