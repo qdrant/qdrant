@@ -1,15 +1,17 @@
 use collection::collection::Collection;
+use collection::collection::payload_index_schema::{PAYLOAD_INDEX_CONFIG_FILE, PayloadIndexSchema};
 use collection::common::sha_256::{hash_file, hashes_equal};
 use collection::config::CollectionConfigInternal;
 use collection::operations::snapshot_ops::{SnapshotPriority, SnapshotRecover};
 use collection::operations::verification::new_unchecked_verification_pass;
+use collection::save_on_disk::SaveOnDisk;
 use collection::shards::check_shard_path;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::{PeerId, ShardId};
 
 use crate::content_manager::collection_meta_ops::{
-    CollectionMetaOperations, CreateCollectionOperation,
+    CollectionMetaOperations, CreateCollectionOperation, CreatePayloadIndex,
 };
 use crate::content_manager::snapshots::download::download_snapshot;
 use crate::dispatcher::Dispatcher;
@@ -146,6 +148,17 @@ async fn _do_recover_from_snapshot(
     let snapshot_config = CollectionConfigInternal::load(tmp_collection_dir.path())?;
     snapshot_config.validate_and_warn();
 
+    let payload_index_file = tmp_collection_dir.path().join(PAYLOAD_INDEX_CONFIG_FILE);
+
+    let payload_schema: SaveOnDisk<PayloadIndexSchema> =
+        SaveOnDisk::load_or_init_default(&payload_index_file).map_err(|err| {
+            StorageError::service_error(format!(
+                "Failed to load payload index schema from {payload_index_file:?}: {err}"
+            ))
+        })?;
+
+    let schema = payload_schema.read().schema.clone();
+
     let collection = match toc.get_collection(&collection_pass).await.ok() {
         Some(collection) => collection,
         None => {
@@ -156,8 +169,25 @@ async fn _do_recover_from_snapshot(
                     snapshot_config.clone().into(),
                 )?);
             dispatcher
-                .submit_collection_meta_op(operation, access, None)
+                .submit_collection_meta_op(operation, access.clone(), None)
                 .await?;
+
+            // Since we not just copy files into a collection dir,
+            // but create collection in consensus and then copy data into recreated collection,
+            // we also need to register all associated payload indexes in consensus.
+            for (field_name, field_schema) in schema.iter() {
+                let consensus_op =
+                    CollectionMetaOperations::CreatePayloadIndex(CreatePayloadIndex {
+                        collection_name: collection_pass.to_string(),
+                        field_name: field_name.clone(),
+                        field_schema: field_schema.clone(),
+                    });
+
+                dispatcher
+                    .submit_collection_meta_op(consensus_op, access.clone(), None)
+                    .await?;
+            }
+
             toc.get_collection(&collection_pass).await?
         }
     };
