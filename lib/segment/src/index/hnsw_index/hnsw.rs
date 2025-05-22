@@ -454,6 +454,7 @@ impl HNSWIndex {
         }
 
         let payload_m = config.payload_m.unwrap_or(config.m);
+        let payload_m0 = config.payload_m0.unwrap_or(config.m0);
 
         if payload_m > 0 {
             // Calculate true average number of links per vertex in the HNSW graph
@@ -508,11 +509,19 @@ impl HNSWIndex {
                     if payload_block.cardinality > max_block_size {
                         continue;
                     }
+
+                    let points_to_index = Self::condition_points(
+                        payload_block.condition,
+                        id_tracker_ref.deref(),
+                        &payload_index_ref,
+                        &vector_storage_ref,
+                    );
+
                     // ToDo: reuse graph layer for same payload
                     let mut additional_graph = GraphLayersBuilder::new_with_params(
                         total_vector_count,
                         payload_m,
-                        config.payload_m0.unwrap_or(config.m0),
+                        payload_m0,
                         config.ef_construct,
                         1,
                         HNSW_USE_HEURISTIC,
@@ -528,7 +537,7 @@ impl HNSWIndex {
                         &pool,
                         stopped,
                         &mut additional_graph,
-                        payload_block.condition,
+                        points_to_index,
                         &mut block_filter_list,
                         &mut indexed_vectors_set,
                     )?;
@@ -587,6 +596,33 @@ impl HNSWIndex {
         })
     }
 
+    /// Get list of points for indexing, associated with payload block filtering condition
+    fn condition_points(
+        condition: FieldCondition,
+        id_tracker: &IdTrackerSS,
+        payload_index: &StructPayloadIndex,
+        vector_storage: &VectorStorageEnum,
+    ) -> Vec<PointOffsetType> {
+        let filter = Filter::new_must(Field(condition));
+
+        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
+
+        let deleted_bitslice = vector_storage.deleted_vector_bitslice();
+
+        let cardinality_estimation =
+            payload_index.estimate_cardinality(&filter, &disposed_hw_counter);
+
+        payload_index
+            .iter_filtered_points(
+                &filter,
+                id_tracker,
+                &cardinality_estimation,
+                &disposed_hw_counter,
+            )
+            .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
+            .collect()
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[allow(unused_variables)]
     #[allow(clippy::needless_pass_by_ref_mut)]
@@ -599,30 +635,11 @@ impl HNSWIndex {
         pool: &ThreadPool,
         stopped: &AtomicBool,
         graph_layers_builder: &mut GraphLayersBuilder,
-        condition: FieldCondition,
+        points_to_index: Vec<PointOffsetType>,
         block_filter_list: &mut VisitedListHandle,
         indexed_vectors_set: &mut BitVec,
     ) -> OperationResult<()> {
         block_filter_list.next_iteration();
-
-        let filter = Filter::new_must(Field(condition));
-
-        let deleted_bitslice = vector_storage.deleted_vector_bitslice();
-
-        let disposed_hw_counter = HardwareCounterCell::disposable(); // Internal operation. No measurements needed
-
-        let cardinality_estimation =
-            payload_index.estimate_cardinality(&filter, &disposed_hw_counter);
-
-        let points_to_index: Vec<_> = payload_index
-            .iter_filtered_points(
-                &filter,
-                id_tracker,
-                &cardinality_estimation,
-                &disposed_hw_counter,
-            )
-            .filter(|&point_id| !deleted_bitslice.get_bit(point_id as usize).unwrap_or(false))
-            .collect();
 
         for block_point_id in points_to_index.iter().copied() {
             block_filter_list.check_and_update_visited(block_point_id);
