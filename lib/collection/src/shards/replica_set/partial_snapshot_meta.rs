@@ -84,7 +84,7 @@ impl PartialSnapshotMeta {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct RequestTracker {
     requests: Arc<AtomicUsize>,
 }
