@@ -122,7 +122,7 @@ impl ShardReplicaSet {
             )));
         };
 
-        self.check_partial_snapshot_read_lock()?;
+        let _partial_snapshot_search_lock = self.try_take_search_read_lock()?;
 
         read_operation(local.get()).await
     }
@@ -157,7 +157,7 @@ impl ShardReplicaSet {
 
         let local_operation = if local_is_active {
             let local_operation = async {
-                self.check_partial_snapshot_read_lock()?;
+                let _partial_snapshot_search_lock = self.try_take_search_read_lock()?;
 
                 let Some(local) = local else {
                     return Err(CollectionError::service_error(format!(
