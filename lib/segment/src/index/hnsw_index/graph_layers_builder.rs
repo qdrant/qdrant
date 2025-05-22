@@ -23,6 +23,7 @@ use crate::index::hnsw_index::graph_links::GraphLinksSerializer;
 use crate::index::hnsw_index::point_scorer::FilteredScorer;
 use crate::index::hnsw_index::search_context::SearchContext;
 use crate::index::visited_pool::{VisitedListHandle, VisitedPool};
+use crate::utils::bitvec::bitvec_set_all;
 use crate::vector_storage::RawScorer;
 
 pub type LockedLinkContainer = RwLock<LinksContainer>;
@@ -72,6 +73,9 @@ impl GraphLayersBase for GraphLayersBuilder {
     }
 }
 
+/// Budget of how many checks have to be done at minimum to consider subgraph-connectivity approximation correct.
+const SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET: usize = 64;
+
 impl GraphLayersBuilder {
     pub fn get_entry_points(&self) -> MutexGuard<EntryPoints> {
         self.entry_points.lock()
@@ -82,12 +86,11 @@ impl GraphLayersBuilder {
     ///  - Select entry point, it would be a point with the highest level. If there are several, pick first one.
     ///  - Start Breadth-First Search (BFS) from the entry point, on each edge flip a coin to decide if the edge is removed or not.
     ///  - Count number of nodes reachable from the entry point.
+    ///  - Use visited points as entry points for the next layer below and repeat until layer 0 has reached.
     ///  - Return the fraction of reachable nodes to the total number of nodes in the sub-graph.
     ///
     /// Coin probability `q` is a parameter of this function. By default, it is 0.5.
-    pub fn subgraph_connectivity(&self, points: &[PointOffsetType], layer: usize, q: f32) -> f32 {
-        let mut reached_points = 0;
-
+    pub fn subgraph_connectivity(&self, points: &[PointOffsetType], q: f32) -> f32 {
         if points.is_empty() {
             return 1.0;
         }
@@ -95,15 +98,13 @@ impl GraphLayersBuilder {
         let max_point_id = *points.iter().max().unwrap();
 
         let mut visited: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
-        let mut bitmask: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
+        let mut point_selection: BitVec = BitVec::repeat(false, max_point_id as usize + 1);
 
         for point_id in points {
-            bitmask.set(*point_id as usize, true);
+            point_selection.set(*point_id as usize, true);
         }
 
         let mut rnd = rand::rng();
-
-        let mut queue = Vec::new();
 
         // Try to get entry point from the entry points list
         // If not found, select the point with the highest level
@@ -111,56 +112,88 @@ impl GraphLayersBuilder {
             .entry_points
             .lock()
             .get_random_entry_point(&mut rnd, |point_id| {
-                bitmask.get_bit(point_id as usize).unwrap_or(false)
+                point_selection.get_bit(point_id as usize).unwrap_or(false)
             })
             .map(|ep| ep.point_id);
 
         // Select entry point by selecting the point with the highest level
-
-        let entry_point = if let Some(entry_point) = entry_point {
-            // Entry point is found
-            entry_point
-        } else {
+        let entry_point = entry_point.unwrap_or_else(|| {
             points
                 .iter()
                 .max_by_key(|point_id| self.links_layers[**point_id as usize].len())
                 .cloned()
                 .unwrap()
-        };
+        });
+        let entry_layer = self.get_point_level(entry_point);
 
-        // Start BFS from the entry point
+        let mut queue: Vec<u32> = vec![];
 
-        queue.push(entry_point);
+        // Amount of points reached when searching the graph.
+        let mut reached_points = 1;
 
-        let already_visited = visited.replace(entry_point as usize, true);
-        if !already_visited {
-            reached_points += 1;
-        }
+        // Current amount of retries if the point threshold hasn't been met.
+        let mut threshold_retry = 0;
 
-        // Do not skip edges on the first point links
-        // to avoid random noise
-        let mut first = true;
-
-        while let Some(current_point) = queue.pop() {
-            let links = self.links_layers[current_point as usize][layer].read();
-
-            for link in links.iter() {
-                // Flip a coin to decide if the edge is removed or not
-                let coin_flip = rnd.random_range(0.0..1.0);
-                if coin_flip < q && !first {
-                    continue;
-                }
-
-                let is_selected = bitmask.get_bit(link as usize).unwrap_or(false);
-                let is_visited = visited.get_bit(link as usize).unwrap_or(false);
-
-                if !is_visited && is_selected {
-                    visited.replace(link as usize, true);
-                    reached_points += 1;
-                    queue.push(link);
-                }
+        // Retry loop, in case Subgraph connectivity search threshold haven't been met.
+        loop {
+            // Prevent looping inifinitly.
+            if threshold_retry > 10 {
+                break;
             }
-            first = false;
+
+            // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
+            let mut previous_visited_points = vec![entry_point];
+
+            // For each layer in HNSW...
+            for current_layer in (0..=entry_layer).rev() {
+                // Set entry points to visited points of previous layer.
+                if previous_visited_points.is_empty() {
+                    // If we didn't find points on previous layer, use entrypoint again.
+                    queue.push(entry_point);
+                } else {
+                    queue.append(&mut previous_visited_points);
+                }
+
+                // Set entry points to visited=true.
+                for i in queue.iter() {
+                    visited.set(*i as usize, true);
+                }
+
+                // Do BFS through all points on the current layer.
+                while let Some(current_point) = queue.pop() {
+                    let links = self.links_layers[current_point as usize][current_layer].read();
+
+                    for link in links.iter() {
+                        // Flip a coin to decide if the edge is removed or not
+                        let coin_flip = rnd.random_range(0.0..1.0);
+                        if coin_flip < q {
+                            continue;
+                        }
+
+                        let is_selected = point_selection.get_bit(link as usize).unwrap_or(false);
+                        let is_visited = visited.get_bit(link as usize).unwrap_or(false);
+
+                        if !is_visited && is_selected {
+                            visited.set(link as usize, true);
+                            reached_points += 1;
+                            queue.push(link);
+                            previous_visited_points.push(link);
+                        }
+                    }
+                }
+
+                // Reset visited points to do BFS again on the next layer.
+                bitvec_set_all(&mut visited, false);
+            }
+
+            if reached_points > SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET.min(points.len()) {
+                break;
+            }
+
+            threshold_retry += 1;
+
+            queue.clear();
+            reached_points = 1; // Reset reached points
         }
 
         reached_points as f32 / points.len() as f32
