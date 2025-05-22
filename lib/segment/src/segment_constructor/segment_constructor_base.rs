@@ -538,12 +538,49 @@ fn create_segment(
 
     let use_mutable_id_tracker =
         appendable_flag || !ImmutableIdTracker::mappings_file_path(segment_path).is_file();
-    let id_tracker = create_segment_id_tracker(
+    let mut id_tracker = create_segment_id_tracker(
         use_mutable_id_tracker,
         segment_path,
         #[cfg(feature = "rocksdb")]
         &mut db_builder,
     )?;
+
+    // Actively migrate RocksDB based ID tracker into mutable ID tracker
+    #[cfg(feature = "rocksdb")]
+    {
+        if matches!(&*id_tracker.borrow(), IdTrackerEnum::RocksDbIdTracker(_)) {
+            log::info!("Migrating ID tracker from RocksDB into new format");
+
+            // Construct mutable ID tracker, write mappings into it
+            let mut mutable_id_tracker = create_mutable_id_tracker(segment_path)?;
+            {
+                let rocksdb_id_tracker = id_tracker.borrow();
+                for (external_id, internal_id) in rocksdb_id_tracker.iter_from(None) {
+                    let version = rocksdb_id_tracker
+                        .internal_version(internal_id)
+                        .unwrap_or(0);
+                    mutable_id_tracker.set_link(external_id, internal_id)?;
+                    mutable_id_tracker.set_internal_version(internal_id, version)?;
+                }
+            }
+
+            // Flush mappings and versions
+            mutable_id_tracker.mapping_flusher()()?;
+            mutable_id_tracker.versions_flusher()()?;
+
+            // Replace RocksDB with mutable ID tracker
+            let mutable_id_tracker = sp(IdTrackerEnum::MutableIdTracker(mutable_id_tracker));
+            let old_id_tracker = std::mem::replace(&mut id_tracker, mutable_id_tracker);
+
+            // Destroy persisted RocksDB ID tracker data
+            let IdTrackerEnum::RocksDbIdTracker(ref mut rocksdb_id_tracker) =
+                *old_id_tracker.borrow_mut()
+            else {
+                unreachable!();
+            };
+            rocksdb_id_tracker.destroy()?;
+        }
+    }
 
     let mut vector_storages = HashMap::new();
 
