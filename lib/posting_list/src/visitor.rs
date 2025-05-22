@@ -97,7 +97,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         let remainder_offset = match self.list.search_in_remainders(id) {
             Ok(found_remainder_offset) => found_remainder_offset,
             Err(closest_remainder_offset) => {
-                if closest_remainder_offset >= self.list.remainders.len() {
+                if closest_remainder_offset >= self.list.remainders_len() {
                     // There is no greater or equal id in the posting list
                     return None;
                 }
@@ -106,7 +106,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
             }
         };
 
-        Some(remainder_offset + self.list.chunks.len() * CHUNK_LEN)
+        Some(remainder_offset + self.list.chunks_len() * CHUNK_LEN)
     }
 
     pub fn contains(&mut self, id: PointOffsetType) -> bool {
@@ -120,12 +120,12 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
 
         // Find the chunk that may contain the id and check if the id is in the chunk
         let chunk_index = self.list.find_chunk(id, None);
-        if let Some(chunk_index) = chunk_index {
-            if self.list.chunks[chunk_index].initial_id == id {
+        if let Some(chunk_idx) = chunk_index {
+            if self.list.get_chunk_unchecked(chunk_idx).initial_id == id {
                 return true;
             }
 
-            self.decompressed_chunk(chunk_index)
+            self.decompressed_chunk(chunk_idx)
                 .binary_search(&id)
                 .is_ok()
         } else {
@@ -143,9 +143,9 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         }
 
         // get from chunk
-        if chunk_idx < self.list.chunks.len() {
+        if chunk_idx < self.list.chunks_len() {
             let id = self.decompressed_chunk(chunk_idx)[local_offset];
-            let chunk_sized_values = self.list.sized_values_unchecked(chunk_idx);
+            let chunk_sized_values = self.list.get_chunk_unchecked(chunk_idx).sized_values;
             let sized_value = chunk_sized_values[local_offset];
             let next_sized_value = || {
                 chunk_sized_values
@@ -154,23 +154,33 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
                     // or check first of the next chunk
                     .or_else(|| {
                         self.list
-                            .sized_values(chunk_idx + 1)
-                            .map(|sized_values| sized_values[0])
+                            .get_chunk(chunk_idx + 1)
+                            .map(|chunk| chunk.sized_values[0])
                     })
                     // or, if it is the last one, check first from remainders
-                    .or_else(|| self.list.remainders.first().map(|e| e.value))
+                    .or_else(|| self.list.get_remainder(0).map(|e| e.value))
             };
 
-            let value = H::get_value(sized_value, next_sized_value, self.list.var_size_data);
+            let value = H::get_value(
+                sized_value,
+                next_sized_value,
+                self.list.var_size_data,
+                &self.list.hw_counter,
+            );
 
             return Some(PostingElement { id, value });
         }
 
         // else, get from remainder
-        self.list.remainders.get(local_offset).map(|e| {
+        self.list.get_remainder(local_offset).map(|e| {
             let id = e.id;
-            let next_sized_value = || self.list.remainders.get(local_offset + 1).map(|r| r.value);
-            let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
+            let next_sized_value = || self.list.get_remainder(local_offset + 1).map(|r| r.value);
+            let value = H::get_value(
+                e.value,
+                next_sized_value,
+                self.list.var_size_data,
+                &self.list.hw_counter,
+            );
 
             PostingElement {
                 id: id.get(),
