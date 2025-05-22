@@ -141,8 +141,6 @@ impl GraphLayersBuilder {
                 break;
             }
 
-            visited.set(entry_point as usize, true);
-
             // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
             let mut previous_visited_points = vec![entry_point];
 
@@ -154,6 +152,11 @@ impl GraphLayersBuilder {
                     queue.push(entry_point);
                 } else {
                     queue.append(&mut previous_visited_points);
+                }
+
+                // Set entry points to visited=true.
+                for i in queue.iter() {
+                    visited.set(*i as usize, true);
                 }
 
                 // Do BFS through all points on the current layer.
