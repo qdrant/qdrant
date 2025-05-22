@@ -21,10 +21,7 @@ pub struct ReplicaSetTelemetry {
     pub remote: Vec<RemoteShardTelemetry>,
     #[anonymize(with = anonymize_collection_with_u64_hashable_key)]
     pub replicate_states: HashMap<PeerId, ReplicaState>,
-    #[anonymize(false)]
-    pub ongoing_create_partial_snapshot_requests: Option<usize>,
-    #[anonymize(false)]
-    pub partial_snapshot_recovery_timestamp: Option<u64>,
+    pub partial_snapshot: Option<PartialSnapshotTelemetry>,
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema, Anonymize)]
@@ -75,4 +72,12 @@ pub struct OptimizerTelemetry {
     pub optimizations: OperationDurationStatistics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub log: Option<Vec<TrackerTelemetry>>,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, JsonSchema, Anonymize)]
+pub struct PartialSnapshotTelemetry {
+    #[anonymize(false)]
+    pub ongoing_create_snapshot_requests: usize,
+    #[anonymize(false)]
+    pub recovery_timestamp: u64,
 }
