@@ -27,9 +27,13 @@ use crate::operations::types::{CollectionError, CollectionResult};
 ///
 #[derive(Debug, Default)]
 pub struct PartialSnapshotMeta {
+    /// Tracks ongoing operations of creation of partial snapshots.
+    /// There might be multiple parallel requests to create partial snapshots,
+    /// so we track them with a counter.
     ongoing_create_snapshot_requests_tracker: RequestTracker,
     recovery_lock: Arc<tokio::sync::Mutex<()>>,
     search_lock: Arc<tokio::sync::RwLock<()>>,
+    /// Timestamp of the last successful snapshot recovery.
     recovery_timestamp: AtomicU64,
 }
 

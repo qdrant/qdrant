@@ -21,6 +21,7 @@ pub struct ReplicaSetTelemetry {
     pub remote: Vec<RemoteShardTelemetry>,
     #[anonymize(with = anonymize_collection_with_u64_hashable_key)]
     pub replicate_states: HashMap<PeerId, ReplicaState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub partial_snapshot: Option<PartialSnapshotTelemetry>,
 }
 
