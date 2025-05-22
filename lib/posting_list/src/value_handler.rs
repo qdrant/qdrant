@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use common::counter::conditioned_counter::ConditionedCounter;
+
 use crate::{SizedValue, UnsizedValue};
 
 /// Trait to abstract the handling of values in PostingList
@@ -25,7 +27,12 @@ pub trait ValueHandler {
     ///
     /// - For sized values it returns the first argument.
     /// - For variable-size values it returns the value between the two sized values in var_data.
-    fn get_value<N>(sized_value: Self::Sized, next_sized_value: N, var_data: &[u8]) -> Self::Value
+    fn get_value<N>(
+        sized_value: Self::Sized,
+        next_sized_value: N,
+        var_data: &[u8],
+        hw_counter: &ConditionedCounter,
+    ) -> Self::Value
     where
         N: Fn() -> Option<Self::Sized>;
 }
@@ -42,7 +49,12 @@ impl<V: SizedValue + Copy> ValueHandler for SizedHandler<V> {
         (values, Vec::new())
     }
 
-    fn get_value<N>(sized_value: V, _next_sized_value: N, _var_data: &[u8]) -> V
+    fn get_value<N>(
+        sized_value: V,
+        _next_sized_value: N,
+        _var_data: &[u8],
+        _hw_counter: &ConditionedCounter,
+    ) -> V
     where
         N: Fn() -> Option<Self::Sized>,
     {
@@ -91,7 +103,12 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         (offsets, var_sized_data)
     }
 
-    fn get_value<N>(sized_value: Self::Sized, next_sized_value: N, var_data: &[u8]) -> Self::Value
+    fn get_value<N>(
+        sized_value: Self::Sized,
+        next_sized_value: N,
+        var_data: &[u8],
+        hw_counter: &ConditionedCounter,
+    ) -> Self::Value
     where
         N: Fn() -> Option<Self::Sized>,
     {
@@ -99,6 +116,11 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
             Some(next_value) => sized_value as usize..next_value as usize,
             None => sized_value as usize..var_data.len(),
         };
+
+        hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(range.len());
+
         V::from_bytes(&var_data[range])
     }
 }
