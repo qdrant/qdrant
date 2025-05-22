@@ -1,3 +1,4 @@
+import concurrent.futures
 import pathlib
 import requests
 from typing import Any
@@ -30,6 +31,34 @@ def test_partial_snapshot(tmp_path: pathlib.Path, bootstrap_points: int, recover
 
     recover_partial_snapshot_from(read_peer, write_peer)
     assert_consistency(read_peer, write_peer)
+
+def test_partial_snapshot_recovery_lock(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    write_peer, read_peer = bootstrap_peers(tmp_path, 100_000)
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers = 3)
+    futures = [executor.submit(try_recover_partial_snapshot_from, read_peer, write_peer, wait = False) for _ in range(3)]
+    responses = [future.result() for future in concurrent.futures.as_completed(futures)]
+
+    assert any(response.status_code == 400 for response in responses), "Subsequent partial snapshot recovery requests have to be rejected during partial snapshot recovery"
+
+def test_partial_snapshot_read_lock(tmp_path: pathlib.Path):
+    assert_project_root()
+
+    write_peer, read_peer = bootstrap_peers(tmp_path, 100_000)
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
+    recover_future = executor.submit(recover_partial_snapshot_from, read_peer, write_peer)
+
+    is_search_rejected = False
+    while not recover_future.done():
+        response = try_search_random(read_peer)
+        if response.status_code == 500:
+            is_search_rejected = True
+            break
+
+    assert is_search_rejected, "Search requests have to be rejected during partial snapshot recovery"
 
 
 def bootstrap_peers(tmp: pathlib.Path, bootstrap_points = 0, recover_read = False):
@@ -94,20 +123,35 @@ def recover_collection_snapshot(peer_url: str, snapshot_url: str):
 
     return resp.json()["result"]
 
-def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str):
-    resp = requests.post(
-        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from",
-        json = { "peer_url": recover_peer_url },
-    )
+def recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = True):
+    resp = try_recover_partial_snapshot_from(peer_url, recover_peer_url)
     assert_http_ok(resp)
 
     return resp.json()["result"]
+
+def try_recover_partial_snapshot_from(peer_url: str, recover_peer_url: str, wait = True):
+    resp = requests.post(
+        f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/recover_from?wait={'true' if wait else 'false'}",
+        json = { "peer_url": recover_peer_url },
+    )
+
+    return resp
 
 def get_snapshot_manifest(peer_url: str):
     resp = requests.get(f"{peer_url}/collections/{COLLECTION}/shards/{SHARD}/snapshot/partial/manifest")
     assert_http_ok(resp)
 
     return resp.json()["result"]
+
+def try_search_random(peer_url: str):
+    resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/search", json = {
+        "vector": random_dense_vector(),
+        "limit": 10,
+        "with_vectors": True,
+        "with_payload": True,
+    })
+
+    return resp
 
 
 def assert_consistency(write_peer: str, read_peer: str):

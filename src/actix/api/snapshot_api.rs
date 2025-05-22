@@ -37,6 +37,7 @@ use crate::actix::helpers::{self, HttpError};
 use crate::common;
 use crate::common::collections::*;
 use crate::common::http_client::HttpClient;
+use crate::common::snapshots::try_take_partial_snapshot_recovery_lock;
 
 #[derive(Deserialize, Serialize, JsonSchema, Validate)]
 pub struct SnapshotUploadingParam {
@@ -609,7 +610,19 @@ async fn recover_partial_snapshot(
     // nothing to verify.
     let pass = new_unchecked_verification_pass();
 
+    let try_take_recovery_lock_future =
+        try_take_partial_snapshot_recovery_lock(&dispatcher, &collection, shard, &access, &pass);
+
+    let recovery_lock = match try_take_recovery_lock_future.await {
+        Ok(recovery_lock) => recovery_lock,
+        Err(err) => {
+            return helpers::process_response_error(err, tokio::time::Instant::now(), None);
+        }
+    };
+
     let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
+        let _recovery_lock = recovery_lock;
+
         // TODO: Run this check before the multipart blob is uploaded
         let collection_pass = access
             .check_global_access(AccessRequirements::new().manage())?
@@ -675,7 +688,24 @@ async fn recover_partial_snapshot_from(
     // nothing to verify
     let pass = new_unchecked_verification_pass();
 
+    let try_take_recovery_lock_future = try_take_partial_snapshot_recovery_lock(
+        &dispatcher,
+        &collection_name,
+        shard_id,
+        &access,
+        &pass,
+    );
+
+    let recovery_lock = match try_take_recovery_lock_future.await {
+        Ok(recovery_lock) => recovery_lock,
+        Err(err) => {
+            return helpers::process_response_error(err, tokio::time::Instant::now(), None);
+        }
+    };
+
     let future = cancel::future::spawn_cancel_on_drop(async move |cancel| {
+        let _recovery_lock = recovery_lock;
+
         let cancel_safe = async {
             let toc = dispatcher.toc(&access, &pass);
 

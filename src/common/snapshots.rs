@@ -6,6 +6,7 @@ use collection::common::snapshot_stream::SnapshotStream;
 use collection::operations::snapshot_ops::{
     ShardSnapshotLocation, SnapshotDescription, SnapshotPriority,
 };
+use collection::operations::verification::VerificationPass;
 use collection::shards::replica_set::ReplicaState;
 use collection::shards::replica_set::snapshots::RecoveryType;
 use collection::shards::shard::ShardId;
@@ -13,7 +14,9 @@ use segment::data_types::segment_manifest::SegmentManifests;
 use storage::content_manager::errors::StorageError;
 use storage::content_manager::snapshots;
 use storage::content_manager::toc::TableOfContent;
+use storage::dispatcher::Dispatcher;
 use storage::rbac::{Access, AccessRequirements};
+use tokio::sync::OwnedMutexGuard;
 
 use super::http_client::HttpClient;
 
@@ -310,4 +313,25 @@ pub async fn recover_shard_snapshot_impl(
     }
 
     Ok(())
+}
+
+pub async fn try_take_partial_snapshot_recovery_lock(
+    dispatcher: &Dispatcher,
+    collection_name: &str,
+    shard_id: ShardId,
+    access: &Access,
+    pass: &VerificationPass,
+) -> Result<Option<OwnedMutexGuard<()>>, StorageError> {
+    let collection_pass = access
+        .check_global_access(AccessRequirements::new().manage())?
+        .issue_pass(collection_name);
+
+    let recovery_lock = dispatcher
+        .toc(access, pass)
+        .get_collection(&collection_pass)
+        .await?
+        .try_take_partial_snapshot_recovery_lock(shard_id, RecoveryType::Partial)
+        .await?;
+
+    Ok(recovery_lock)
 }

@@ -1017,6 +1017,10 @@ impl ShardHolder {
 
         task.await??;
 
+        let _partial_snapshot_search_lock = self
+            .take_partial_snapshot_search_write_lock(shard_id, recovery_type)
+            .await?;
+
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
         let recovered = self
@@ -1063,6 +1067,43 @@ impl ShardHolder {
             .await?;
 
         Ok(res)
+    }
+
+    pub fn try_take_partial_snapshot_recovery_lock(
+        &self,
+        shard_id: ShardId,
+        recovery_type: RecoveryType,
+    ) -> CollectionResult<Option<tokio::sync::OwnedMutexGuard<()>>> {
+        match recovery_type {
+            RecoveryType::Full => Ok(None),
+            RecoveryType::Partial => {
+                let lock = self
+                    .get_shard(shard_id)
+                    .ok_or_else(|| shard_not_found_error(shard_id))?
+                    .try_take_partial_snapshot_recovery_lock()?;
+
+                Ok(Some(lock))
+            }
+        }
+    }
+
+    async fn take_partial_snapshot_search_write_lock(
+        &self,
+        shard_id: ShardId,
+        recovery_type: RecoveryType,
+    ) -> CollectionResult<Option<tokio::sync::OwnedRwLockWriteGuard<()>>> {
+        match recovery_type {
+            RecoveryType::Full => Ok(None),
+            RecoveryType::Partial => {
+                let lock = self
+                    .get_shard(shard_id)
+                    .ok_or_else(|| shard_not_found_error(shard_id))?
+                    .take_search_write_lock()
+                    .await;
+
+                Ok(Some(lock))
+            }
+        }
     }
 
     /// # Cancel safety

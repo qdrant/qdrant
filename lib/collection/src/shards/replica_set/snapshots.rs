@@ -60,6 +60,22 @@ impl ShardReplicaSet {
         Ok(())
     }
 
+    pub fn try_take_partial_snapshot_recovery_lock(
+        &self,
+    ) -> CollectionResult<tokio::sync::OwnedMutexGuard<()>> {
+        self.partial_snapshot_meta.try_take_recovery_lock()
+    }
+
+    pub async fn take_search_write_lock(&self) -> tokio::sync::OwnedRwLockWriteGuard<()> {
+        self.partial_snapshot_meta.take_search_write_lock().await
+    }
+
+    pub fn try_take_search_read_lock(
+        &self,
+    ) -> CollectionResult<tokio::sync::OwnedRwLockReadGuard<()>> {
+        self.partial_snapshot_meta.try_take_search_read_lock()
+    }
+
     pub fn restore_snapshot(
         snapshot_path: &Path,
         this_peer_id: PeerId,

@@ -1,6 +1,7 @@
 pub mod clock_set;
 mod execute_read_operation;
 mod locally_disabled_peers;
+mod partial_snapshot_meta;
 mod read_ops;
 mod shard_transfer;
 pub mod snapshots;
@@ -23,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, RwLock};
 
+use self::partial_snapshot_meta::PartialSnapshotMeta;
 use super::CollectionId;
 use super::local_shard::LocalShard;
 use super::local_shard::clock_map::RecoveryPoint;
@@ -113,6 +115,7 @@ pub struct ShardReplicaSet {
     /// Local clock set, used to tag new operations on this shard.
     clock_set: Mutex<ClockSet>,
     write_rate_limiter: Option<parking_lot::Mutex<RateLimiter>>,
+    partial_snapshot_meta: PartialSnapshotMeta,
 }
 
 pub type AbortShardTransfer = Arc<dyn Fn(ShardTransfer, &str) + Send + Sync>;
@@ -222,6 +225,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
+            partial_snapshot_meta: PartialSnapshotMeta::new(),
         })
     }
 
@@ -362,6 +366,7 @@ impl ShardReplicaSet {
             write_ordering_lock: Mutex::new(()),
             clock_set: Default::default(),
             write_rate_limiter,
+            partial_snapshot_meta: PartialSnapshotMeta::new(),
         };
 
         // `active_remote_shards` includes `Active` and `ReshardingScaleDown` replicas!

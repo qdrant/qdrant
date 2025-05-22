@@ -1043,6 +1043,8 @@ pub enum CollectionError {
         description: String,
         retry_after: Option<Duration>,
     },
+    #[error("Shard temporarily unavailable: {description}")]
+    ShardUnavailable { description: String },
 }
 
 impl CollectionError {
@@ -1152,6 +1154,12 @@ impl CollectionError {
         }
     }
 
+    pub fn shard_unavailable(description: impl Into<String>) -> Self {
+        Self::ShardUnavailable {
+            description: description.into(),
+        }
+    }
+
     /// Returns true if the error is transient and the operation can be retried.
     /// Returns false if the error is not transient and the operation should fail on all replicas.
     pub fn is_transient(&self) -> bool {
@@ -1162,6 +1170,7 @@ impl CollectionError {
             Self::Cancelled { .. } => true,
             Self::OutOfMemory { .. } => true,
             Self::PreConditionFailed { .. } => true,
+            Self::ShardUnavailable { .. } => true,
             // Not transient
             Self::BadInput { .. } => false,
             Self::NotFound { .. } => false,

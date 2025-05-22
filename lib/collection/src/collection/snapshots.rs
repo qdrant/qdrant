@@ -337,6 +337,17 @@ impl Collection {
             .assert_shard_exists(shard_id)
     }
 
+    pub async fn try_take_partial_snapshot_recovery_lock(
+        &self,
+        shard_id: ShardId,
+        recovery_type: RecoveryType,
+    ) -> CollectionResult<Option<tokio::sync::OwnedMutexGuard<()>>> {
+        self.shards_holder
+            .read()
+            .await
+            .try_take_partial_snapshot_recovery_lock(shard_id, recovery_type)
+    }
+
     pub async fn get_partial_snapshot_manifest(
         &self,
         shard_id: ShardId,
