@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::flags::FeatureFlags;
+use common::flags::{FeatureFlags, feature_flags};
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -547,7 +547,9 @@ fn create_segment(
 
     // Actively migrate RocksDB based ID tracker into mutable ID tracker
     #[cfg(feature = "rocksdb")]
-    try_migrate_rocksdb_id_tracker_to_mutable(&mut id_tracker, segment_path)?;
+    if feature_flags().migrate_rocksdb_id_tracker {
+        try_migrate_rocksdb_id_tracker_to_mutable(&mut id_tracker, segment_path)?;
+    }
 
     let mut vector_storages = HashMap::new();
 
