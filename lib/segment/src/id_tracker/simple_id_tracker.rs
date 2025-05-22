@@ -157,7 +157,7 @@ impl SimpleIdTracker {
     }
 
     /// Destroy this simple ID tracker, remove persisted data from RocksDB
-    pub fn destroy(&mut self) -> OperationResult<()> {
+    pub fn destroy(self) -> OperationResult<()> {
         self.mapping_db_wrapper.remove_column_family()?;
         self.versions_db_wrapper.remove_column_family()?;
         Ok(())
