@@ -547,40 +547,7 @@ fn create_segment(
 
     // Actively migrate RocksDB based ID tracker into mutable ID tracker
     #[cfg(feature = "rocksdb")]
-    {
-        if matches!(&*id_tracker.borrow(), IdTrackerEnum::RocksDbIdTracker(_)) {
-            log::info!("Migrating ID tracker from RocksDB into new format");
-
-            // Construct mutable ID tracker, write mappings into it
-            let mut mutable_id_tracker = create_mutable_id_tracker(segment_path)?;
-            {
-                let rocksdb_id_tracker = id_tracker.borrow();
-                for (external_id, internal_id) in rocksdb_id_tracker.iter_from(None) {
-                    let version = rocksdb_id_tracker
-                        .internal_version(internal_id)
-                        .unwrap_or(0);
-                    mutable_id_tracker.set_link(external_id, internal_id)?;
-                    mutable_id_tracker.set_internal_version(internal_id, version)?;
-                }
-            }
-
-            // Flush mappings and versions
-            mutable_id_tracker.mapping_flusher()()?;
-            mutable_id_tracker.versions_flusher()()?;
-
-            // Replace RocksDB with mutable ID tracker
-            let mutable_id_tracker = sp(IdTrackerEnum::MutableIdTracker(mutable_id_tracker));
-            let old_id_tracker = std::mem::replace(&mut id_tracker, mutable_id_tracker);
-
-            // Destroy persisted RocksDB ID tracker data
-            let IdTrackerEnum::RocksDbIdTracker(ref mut rocksdb_id_tracker) =
-                *old_id_tracker.borrow_mut()
-            else {
-                unreachable!();
-            };
-            rocksdb_id_tracker.destroy()?;
-        }
-    }
+    try_migrate_rocksdb_id_tracker_to_mutable(&mut id_tracker, segment_path)?;
 
     let mut vector_storages = HashMap::new();
 
@@ -791,6 +758,56 @@ fn create_segment_id_tracker(
     Ok(sp(IdTrackerEnum::MutableIdTracker(
         create_mutable_id_tracker(segment_path)?,
     )))
+}
+
+/// Try to migrate a RocksDB based ID tracker to a mutable ID tracker.
+///
+/// If a RocksDB ID tracker is used, a new mutable ID tracker is created and all mappings are
+/// copied into it. The given ID tracker is swapped in place with the newly created one. The
+/// persisted RocksDB data is deleted so that only the new tracker will be loaded next time.
+///
+/// Does nothing if a different type of ID tracker is used.
+#[cfg(feature = "rocksdb")]
+fn try_migrate_rocksdb_id_tracker_to_mutable(
+    id_tracker: &mut Arc<AtomicRefCell<IdTrackerEnum>>,
+    segment_path: &Path,
+) -> OperationResult<()> {
+    // Don't migrate if not using RocksDB
+    if !matches!(&*id_tracker.borrow(), IdTrackerEnum::RocksDbIdTracker(_)) {
+        return Ok(());
+    }
+
+    log::info!("Migrating ID tracker from RocksDB into new format");
+
+    // Construct mutable ID tracker, copy all mappings to it
+    let mut mutable_id_tracker = create_mutable_id_tracker(segment_path)?;
+    {
+        let rocksdb_id_tracker = id_tracker.borrow();
+        for (external_id, internal_id) in rocksdb_id_tracker.iter_from(None) {
+            let version = rocksdb_id_tracker
+                .internal_version(internal_id)
+                .unwrap_or(0);
+            mutable_id_tracker.set_link(external_id, internal_id)?;
+            mutable_id_tracker.set_internal_version(internal_id, version)?;
+        }
+    }
+
+    // Flush mappings and versions
+    mutable_id_tracker.mapping_flusher()()?;
+    mutable_id_tracker.versions_flusher()()?;
+
+    // Swap used ID tracker with new mutable ID tracker
+    let mutable_id_tracker = sp(IdTrackerEnum::MutableIdTracker(mutable_id_tracker));
+    let old_id_tracker = std::mem::replace(id_tracker, mutable_id_tracker);
+
+    // Destroy persisted RocksDB ID tracker data
+    let IdTrackerEnum::RocksDbIdTracker(ref mut rocksdb_id_tracker) = *old_id_tracker.borrow_mut()
+    else {
+        unreachable!();
+    };
+    rocksdb_id_tracker.destroy()?;
+
+    Ok(())
 }
 
 pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
