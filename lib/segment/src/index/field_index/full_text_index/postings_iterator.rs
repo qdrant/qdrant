@@ -1,5 +1,5 @@
 use common::types::PointOffsetType;
-use posting_list::{PostingListView, ValueHandler};
+use posting_list::{IdsPostingListView, PostingListView};
 
 use super::posting_list::PostingList;
 
@@ -21,13 +21,10 @@ pub fn intersect_postings_iterator<'a>(
     Box::new(and_iter)
 }
 
-pub fn intersect_compressed_postings_iterator<'a, H: ValueHandler + 'a>(
-    mut postings: Vec<PostingListView<'a, H>>,
+pub fn intersect_compressed_postings_iterator<'a>(
+    mut postings: Vec<IdsPostingListView<'a>>,
     filter: impl Fn(PointOffsetType) -> bool + 'a,
-) -> Box<dyn Iterator<Item = PointOffsetType> + 'a>
-where
-    H::Value: Clone,
-{
+) -> Box<dyn Iterator<Item = PointOffsetType> + 'a> {
     let smallest_posting_idx = postings
         .iter()
         .enumerate()
@@ -44,17 +41,17 @@ where
 
     let and_iter = smallest_posting_iterator
         .map(|elem| elem.id)
-        .filter(move |id| filter(*id))
         .filter(move |id| {
-            posting_iterators.iter_mut().all(|posting_iterator| {
-                // Custom "contains" check, which leverages the fact that smallest posting is sorted,
-                // so the next id that must be in all postings is strictly greater than the previous one.
-                //
-                // This means that the other iterators can remember the last id they returned to avoid extra work
-                posting_iterator
-                    .advance_until_greater_or_equal(*id)
-                    .is_some_and(|elem| elem.id == *id)
-            })
+            filter(*id)
+                && posting_iterators.iter_mut().all(|posting_iterator| {
+                    // Custom "contains" check, which leverages the fact that smallest posting is sorted,
+                    // so the next id that must be in all postings is strictly greater than the previous one.
+                    //
+                    // This means that the other iterators can remember the last id they returned to avoid extra work
+                    posting_iterator
+                        .advance_until_greater_or_equal(*id)
+                        .is_some_and(|elem| elem.id == *id)
+                })
         });
 
     Box::new(and_iter)

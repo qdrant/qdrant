@@ -108,6 +108,14 @@ impl<H: ValueHandler> PostingList<H> {
     {
         self.visitor().into_iter()
     }
+
+    pub fn len(&self) -> usize {
+        self.chunks.len() * CHUNK_LEN + self.remainders.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<H> FromIterator<(PointOffsetType, H::Value)> for PostingList<H>

@@ -50,7 +50,7 @@ impl PostingListHeader {
     fn posting_size(&self) -> usize {
         self.data_bytes_count as usize
             + self.alignment_bytes_count as usize
-            + self.remainder_count as usize * size_of::<PointOffsetType>()
+            + self.remainder_count as usize * size_of::<RemainderPosting<()>>()
             + self.chunks_count as usize * size_of::<PostingChunk<()>>()
             + size_of::<PointOffsetType>() // last_doc_id
     }

@@ -77,14 +77,14 @@ impl InvertedIndex for ImmutableInvertedIndex {
     }
 
     fn get_posting_len(&self, token_id: TokenId, _: &HardwareCounterCell) -> Option<usize> {
-        self.postings.get(token_id as usize).map(|p| p.view().len())
+        self.postings.get(token_id as usize).map(|p| p.len())
     }
 
     fn vocab_with_postings_len_iter(&self) -> impl Iterator<Item = (&str, usize)> + '_ {
         self.vocab.iter().filter_map(|(token, &posting_idx)| {
             self.postings
                 .get(posting_idx as usize)
-                .map(|posting| (token.as_str(), posting.view().len()))
+                .map(|posting| (token.as_str(), posting.len()))
         })
     }
 
@@ -105,8 +105,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
         // Check that all tokens are in document
         parsed_query.tokens.iter().all(|token_id| {
-            let postings = &self.postings[*token_id as usize];
-            postings.visitor().contains(point_id)
+            let posting_list = &self.postings[*token_id as usize];
+            posting_list.visitor().contains(point_id)
         })
     }
 

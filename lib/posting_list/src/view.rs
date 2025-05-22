@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
+use zerocopy::little_endian::U32;
 
 use crate::iterator::PostingIterator;
 use crate::posting_list::RemainderPosting;
@@ -25,7 +26,7 @@ pub struct PostingListComponents<'a, S> {
     pub chunks: &'a [PostingChunk<S>],
     pub var_size_data: &'a [u8],
     pub remainders: &'a [RemainderPosting<S>],
-    pub last_id: Option<PointOffsetType>,
+    pub last_id: Option<U32>,
 }
 
 impl<'a> IdsPostingListView<'a> {
@@ -109,7 +110,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             chunks,
             var_size_data,
             remainders,
-            last_id: *last_id,
+            last_id: last_id.map(U32::from),
         }
     }
 
