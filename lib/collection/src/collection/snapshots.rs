@@ -337,7 +337,7 @@ impl Collection {
             .assert_shard_exists(shard_id)
     }
 
-    pub async fn take_partial_snapshot_lock(
+    pub async fn try_take_partial_snapshot_recovery_lock(
         &self,
         shard_id: ShardId,
         recovery_type: RecoveryType,
@@ -345,7 +345,7 @@ impl Collection {
         self.shards_holder
             .read()
             .await
-            .take_partial_snapshot_recovery_lock(shard_id, recovery_type)
+            .try_take_partial_snapshot_recovery_lock(shard_id, recovery_type)
     }
 
     pub async fn get_partial_snapshot_manifest(

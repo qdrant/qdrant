@@ -1017,8 +1017,8 @@ impl ShardHolder {
 
         task.await??;
 
-        let _partial_snapshot_read_operation_lock =
-            self.take_partial_snapshot_read_operation_lock(shard_id, recovery_type)?;
+        let _partial_snapshot_read_lock =
+            self.try_take_partial_snapshot_read_lock(shard_id, recovery_type)?;
 
         // `ShardHolder::recover_local_shard_from` is *not* cancel safe
         // (see `ShardReplicaSet::restore_local_replica_from`)
@@ -1068,7 +1068,7 @@ impl ShardHolder {
         Ok(res)
     }
 
-    pub fn take_partial_snapshot_recovery_lock(
+    pub fn try_take_partial_snapshot_recovery_lock(
         &self,
         shard_id: ShardId,
         recovery_type: RecoveryType,
@@ -1079,14 +1079,14 @@ impl ShardHolder {
                 let lock = self
                     .get_shard(shard_id)
                     .ok_or_else(|| shard_not_found_error(shard_id))?
-                    .take_partial_snapshot_recovery_lock()?;
+                    .try_take_partial_snapshot_recovery_lock()?;
 
                 Ok(Some(lock))
             }
         }
     }
 
-    fn take_partial_snapshot_read_operation_lock(
+    fn try_take_partial_snapshot_read_lock(
         &self,
         shard_id: ShardId,
         recovery_type: RecoveryType,
@@ -1097,7 +1097,7 @@ impl ShardHolder {
                 let lock = self
                     .get_shard(shard_id)
                     .ok_or_else(|| shard_not_found_error(shard_id))?
-                    .take_partial_snapshot_read_lock()?;
+                    .try_take_partial_snapshot_read_lock()?;
 
                 Ok(Some(lock))
             }

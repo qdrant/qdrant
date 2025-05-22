@@ -16,13 +16,13 @@ impl PartialSnapshotMeta {
         }
     }
 
-    pub fn take_recovery_lock(&self) -> CollectionResult<tokio::sync::OwnedMutexGuard<()>> {
+    pub fn try_take_recovery_lock(&self) -> CollectionResult<tokio::sync::OwnedMutexGuard<()>> {
         self.recovery_lock.clone().try_lock_owned().map_err(|_| {
             CollectionError::bad_request("partial snapshot recovery is already in progress")
         })
     }
 
-    pub fn take_read_lock(&self) -> CollectionResult<tokio::sync::OwnedSemaphorePermit> {
+    pub fn try_take_read_lock(&self) -> CollectionResult<tokio::sync::OwnedSemaphorePermit> {
         self.read_lock.clone().try_acquire_owned().map_err(|_| {
             CollectionError::bad_request("partial snapshot recovery is already in progress")
         })

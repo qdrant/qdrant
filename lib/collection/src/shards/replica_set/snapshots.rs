@@ -60,16 +60,16 @@ impl ShardReplicaSet {
         Ok(())
     }
 
-    pub fn take_partial_snapshot_recovery_lock(
+    pub fn try_take_partial_snapshot_recovery_lock(
         &self,
     ) -> CollectionResult<tokio::sync::OwnedMutexGuard<()>> {
-        self.partial_snapshot_meta.take_recovery_lock()
+        self.partial_snapshot_meta.try_take_recovery_lock()
     }
 
-    pub fn take_partial_snapshot_read_lock(
+    pub fn try_take_partial_snapshot_read_lock(
         &self,
     ) -> CollectionResult<tokio::sync::OwnedSemaphorePermit> {
-        self.partial_snapshot_meta.take_read_lock()
+        self.partial_snapshot_meta.try_take_read_lock()
     }
 
     pub fn check_partial_snapshot_read_lock(&self) -> CollectionResult<()> {
