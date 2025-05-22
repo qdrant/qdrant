@@ -3,9 +3,7 @@ use actix_web_validator::{Json, Path, Query};
 use api::rest::models::{InferenceUsage, ModelUsage};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
-use collection::operations::universal_query::collection_query::{
-    CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
-};
+use collection::operations::universal_query::collection_query::CollectionQueryGroupsRequestWithUsage;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -161,7 +159,7 @@ async fn query_points_batch(
                 shard_key,
             } = request_item;
 
-            let CollectionQueryRequestWithUsage { request, usage } =
+            let collection::operations::universal_query::collection_query::CollectionQueryRequestWithUsage { request, usage } =
                 convert_query_request_from_rest(internal, &inference_token).await?;
 
             inference_usages.push(usage);
@@ -178,17 +176,17 @@ async fn query_points_batch(
         let mut total_usage = InferenceUsage::default();
         for inference_usage in inference_usages.iter_mut().flatten() {
             let usage = inference_usage;
-            for (model, usage) in usage.models.iter() {
-                total_usage
-                    .models
-                    .entry(model.clone())
-                    .and_modify(|e| {
-                        e.tokens += usage.tokens;
-                    })
-                    .or_insert_with(|| ModelUsage {
-                        tokens: usage.tokens,
-                    });
-            }
+                for (model, usage) in usage.models.iter() {
+                    total_usage
+                        .models
+                        .entry(model.clone())
+                        .and_modify(|e| {
+                            e.tokens += usage.tokens;
+                        })
+                        .or_insert_with(|| ModelUsage {
+                            tokens: usage.tokens,
+                        });
+                }
         }
 
         let inference_usage: Option<InferenceUsage> = {
@@ -206,11 +204,7 @@ async fn query_points_batch(
             &dispatcher,
             &access,
         )
-        .await
-        .map_err(|err| StorageError::InferenceError {
-            description: err.to_string(),
-            usage: inference_usage.clone(),
-        })?;
+        .await?;
 
         let res = dispatcher
             .toc(&access, &pass)
@@ -222,11 +216,7 @@ async fn query_points_batch(
                 params.timeout(),
                 hw_measurement_acc,
             )
-            .await
-            .map_err(|err| StorageError::InferenceError {
-                description: err.to_string(),
-                usage: inference_usage.clone(),
-            })?
+            .await?
             .into_iter()
             .map(|response| QueryResponse {
                 points: response
@@ -297,11 +287,7 @@ async fn query_points_groups(
             &dispatcher,
             &access,
         )
-        .await
-        .map_err(|err| StorageError::InferenceError {
-            description: err.to_string(),
-            usage: usage.clone(),
-        })?;
+        .await?;
 
         let query_result = do_query_point_groups(
             dispatcher.toc(&access, &pass),
@@ -313,11 +299,7 @@ async fn query_points_groups(
             params.timeout(),
             hw_measurement_acc,
         )
-        .await
-        .map_err(|err| StorageError::InferenceError {
-            description: err.to_string(),
-            usage: usage.clone(),
-        })?;
+        .await?;
         Ok((query_result, usage))
     }
     .await;
