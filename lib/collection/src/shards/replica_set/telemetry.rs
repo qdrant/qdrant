@@ -3,7 +3,7 @@ use segment::types::SizeStats;
 
 use crate::operations::types::OptimizersStatus;
 use crate::shards::replica_set::ShardReplicaSet;
-use crate::shards::telemetry::ReplicaSetTelemetry;
+use crate::shards::telemetry::{PartialSnapshotTelemetry, ReplicaSetTelemetry};
 
 impl ShardReplicaSet {
     pub(crate) async fn get_telemetry_data(&self, detail: TelemetryDetail) -> ReplicaSetTelemetry {
@@ -27,6 +27,12 @@ impl ShardReplicaSet {
                 .map(|remote| remote.get_telemetry_data(detail))
                 .collect(),
             replicate_states: self.replica_state.read().peers(),
+            partial_snapshot: Some(PartialSnapshotTelemetry {
+                ongoing_create_snapshot_requests: self
+                    .partial_snapshot_meta
+                    .ongoing_create_snapshot_requests(),
+                recovery_timestamp: self.partial_snapshot_meta.recovery_timestamp(),
+            }),
         }
     }
 

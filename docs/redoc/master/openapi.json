@@ -11545,6 +11545,16 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/ReplicaState"
             }
+          },
+          "partial_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartialSnapshotTelemetry"
+              },
+              {
+                "nullable": true
+              }
+            ]
           }
         }
       },
@@ -12329,6 +12339,25 @@
           },
           "updates": {
             "$ref": "#/components/schemas/OperationDurationStatistics"
+          }
+        }
+      },
+      "PartialSnapshotTelemetry": {
+        "type": "object",
+        "required": [
+          "ongoing_create_snapshot_requests",
+          "recovery_timestamp"
+        ],
+        "properties": {
+          "ongoing_create_snapshot_requests": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "recovery_timestamp": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         }
       },

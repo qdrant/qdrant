@@ -45,6 +45,13 @@ impl ShardReplicaSet {
     ) -> CollectionResult<()> {
         let local_read = self.local.read().await;
 
+        // Track concurrent `create_partial_snapshot` requests, so that cluster manager can load-balance them
+        let _partial_snapshot_create_request_guard = if manifest.is_some() {
+            Some(self.partial_snapshot_meta.track_create_snapshot_request())
+        } else {
+            None
+        };
+
         if let Some(local) = &*local_read {
             local
                 .create_snapshot(temp_path, tar, format, manifest, save_wal)
@@ -389,6 +396,11 @@ impl ShardReplicaSet {
                 local.replace(Shard::Local(new_local));
                 // remove shard_id initialization flag because shard is fully recovered
                 tokio::fs::remove_file(&shard_flag).await?;
+
+                if recovery_type.is_partial() {
+                    self.partial_snapshot_meta.snapshot_recovered();
+                }
+
                 Ok(true)
             }
 
