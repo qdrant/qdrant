@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
-use common::flags::{FeatureFlags, feature_flags};
+use common::flags::FeatureFlags;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -748,7 +748,7 @@ fn create_segment_id_tracker(
             let id_tracker = create_rocksdb_id_tracker(db_builder.require()?)?;
 
             // Actively migrate RocksDB based ID tracker into mutable ID tracker
-            if feature_flags().migrate_rocksdb_id_tracker {
+            if common::flags::feature_flags().migrate_rocksdb_id_tracker {
                 let id_tracker = migrate_rocksdb_id_tracker_to_mutable(id_tracker, segment_path)?;
                 return Ok(sp(IdTrackerEnum::MutableIdTracker(id_tracker)));
             }
