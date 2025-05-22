@@ -1,4 +1,5 @@
-use segment::types::StrictModeConfig;
+use segment::data_types::vectors::DEFAULT_VECTOR_NAME;
+use segment::types::{Filter, StrictModeConfig};
 
 use super::{StrictModeVerification, check_grouping_field};
 use crate::collection::Collection;
@@ -40,6 +41,7 @@ impl Query {
     async fn check_fullscan(
         &self,
         using: &str,
+        filter: Option<&Filter>,
         collection: &Collection,
         strict_mode_config: &StrictModeConfig,
     ) -> CollectionResult<()> {
@@ -68,16 +70,60 @@ impl Query {
                         .get_params(using)
                         .and_then(|param| param.hnsw_config.as_ref());
 
-                    let vector_hnsw_m = vector_hnsw_config.and_then(|hnsw| hnsw.m);
-                    // TODO(strict-mode) check also payload_m if if there is a filter by tenant/principal
-                    if vector_hnsw_m == Some(0) {
+                    let vector_hnsw_m = vector_hnsw_config
+                        .map(|hnsw_config| hnsw_config.m)
+                        .flatten()
+                        .unwrap_or(config.hnsw_config.m);
+
+                    let vector_hnsw_payload_m = vector_hnsw_config
+                        .map(|hnsw_config| hnsw_config.payload_m)
+                        .flatten()
+                        .unwrap_or(config.hnsw_config.payload_m.unwrap_or(vector_hnsw_m));
+
+                    // no further check necessary if there is a global HNSW index
+                    if vector_hnsw_m > 0 {
+                        return Ok(());
+                    }
+
+                    // specialized error message if not default vector
+                    let vector_error_label = if using == DEFAULT_VECTOR_NAME {
+                        ""
+                    } else {
+                        &format!(" on '{using}'")
+                    };
+
+                    // check hnsw.payload_m if there is a filter
+                    let uses_multitenant_filter = if let Some(filter) = filter {
+                        filter
+                            .iter_conditions()
+                            .filter_map(|c| c.targeted_key())
+                            .filter_map(|key| collection.payload_key_index_schema(&key))
+                            .any(|index_schema| index_schema.is_tenant())
+                    } else {
+                        false
+                    };
+
+                    if !uses_multitenant_filter {
+                        // HNSW disabled AND no filters
                         return Err(CollectionError::strict_mode(
                             format!(
-                                "Fullscan forbidden on '{using}' – vector indexing is disabled (hnsw_config.m = 0)"
+                                "Request is forbidden{vector_error_label} because global vector indexing is disabled (hnsw_config.m = 0)"
                             ),
-                            "Enable vector indexing or use a prefetch query before rescoring",
+                            "Use tenant-specific filter, enable global vector indexing or enable strict mode `search_allow_exact` option",
                         ));
                     }
+
+                    if vector_hnsw_payload_m == 0 {
+                        // HNSW disabled AND no filters
+                        return Err(CollectionError::strict_mode(
+                            format!(
+                                "Request is forbidden{vector_error_label} because vector indexing is disabled (hnsw_config.m = 0 and hnsw_config.payload_m = 0)"
+                            ),
+                            "Enable vector indexing, use a prefetch query with indexed vectors or enable strict mode `search_allow_exact` option",
+                        ));
+                    }
+
+                    return Ok(());
                 }
             }
         }
@@ -102,7 +148,12 @@ impl StrictModeVerification for CollectionQueryRequest {
             // check query can perform fullscan when not rescoring
             if self.prefetch.is_empty() {
                 query
-                    .check_fullscan(&self.using, collection, strict_mode_config)
+                    .check_fullscan(
+                        &self.using,
+                        self.filter.as_ref(),
+                        collection,
+                        strict_mode_config,
+                    )
                     .await?;
             }
             // check for unindexed fields in formula
@@ -149,7 +200,12 @@ impl StrictModeVerification for CollectionPrefetch {
         if let Some(query) = self.query.as_ref() {
             // check if prefetch can perform a fullscan
             query
-                .check_fullscan(&self.using, collection, strict_mode_config)
+                .check_fullscan(
+                    &self.using,
+                    self.filter.as_ref(),
+                    collection,
+                    strict_mode_config,
+                )
                 .await?;
             // check for unindexed fields in formula
             query
@@ -191,7 +247,12 @@ impl StrictModeVerification for CollectionQueryGroupsRequest {
             // check query can perform fullscan when not rescoring
             if self.prefetch.is_empty() {
                 query
-                    .check_fullscan(&self.using, collection, strict_mode_config)
+                    .check_fullscan(
+                        &self.using,
+                        self.filter.as_ref(),
+                        collection,
+                        strict_mode_config,
+                    )
                     .await?;
             }
             // check for unindexed fields in formula

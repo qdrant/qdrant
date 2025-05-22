@@ -2793,6 +2793,17 @@ impl Condition {
             | Condition::HasVector(_) => 0,
         }
     }
+
+    pub fn targeted_key(&self) -> Option<PayloadKeyType> {
+        match self {
+            Condition::Field(field_condition) => Some(field_condition.key.clone()),
+            Condition::IsEmpty(is_empty_condition) => Some(is_empty_condition.is_empty.key.clone()),
+            Condition::IsNull(is_null_condition) => Some(is_null_condition.is_null.key.clone()),
+            Condition::Nested(nested_condition) => Some(nested_condition.array_key()),
+            Condition::Filter(filter) => filter.iter_conditions().find_map(|c| c.targeted_key()),
+            Condition::HasId(_) | Condition::HasVector(_) | Condition::CustomIdChecker(_) => None,
+        }
+    }
 }
 
 // The validator crate does not support deriving for enums.
