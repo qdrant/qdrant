@@ -762,38 +762,6 @@ fn create_segment_id_tracker(
     )))
 }
 
-/// Migrate a RocksDB based ID tracker into a mutable ID tracker.
-///
-/// Creates a new mutable ID tracker and copies all mappings from the RocksDB based ID tracker into
-/// it. The persisted RocksDB data is deleted so that only the new tracker will be loaded next
-/// time. The new ID tracker is returned.
-#[cfg(feature = "rocksdb")]
-fn migrate_rocksdb_id_tracker_to_mutable(
-    old_id_tracker: SimpleIdTracker,
-    segment_path: &Path,
-) -> OperationResult<MutableIdTracker> {
-    log::info!("Migrating ID tracker from RocksDB into new format");
-
-    // Construct mutable ID tracker, copy all mappings to it
-    let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
-    {
-        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
-            let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
-            new_id_tracker.set_link(external_id, internal_id)?;
-            new_id_tracker.set_internal_version(internal_id, version)?;
-        }
-    }
-
-    // Flush mappings and versions
-    new_id_tracker.mapping_flusher()()?;
-    new_id_tracker.versions_flusher()()?;
-
-    // Destroy persisted RocksDB ID tracker data
-    old_id_tracker.destroy()?;
-
-    Ok(new_id_tracker)
-}
-
 pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option<Segment>> {
     if path
         .extension()
@@ -979,4 +947,36 @@ fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
                 err
             ))
         })
+}
+
+/// Migrate a RocksDB based ID tracker into a mutable ID tracker.
+///
+/// Creates a new mutable ID tracker and copies all mappings from the RocksDB based ID tracker into
+/// it. The persisted RocksDB data is deleted so that only the new tracker will be loaded next
+/// time. The new ID tracker is returned.
+#[cfg(feature = "rocksdb")]
+fn migrate_rocksdb_id_tracker_to_mutable(
+    old_id_tracker: SimpleIdTracker,
+    segment_path: &Path,
+) -> OperationResult<MutableIdTracker> {
+    log::info!("Migrating ID tracker from RocksDB into new format");
+
+    // Construct mutable ID tracker, copy all mappings to it
+    let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
+    {
+        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
+            let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
+            new_id_tracker.set_link(external_id, internal_id)?;
+            new_id_tracker.set_internal_version(internal_id, version)?;
+        }
+    }
+
+    // Flush mappings and versions
+    new_id_tracker.mapping_flusher()()?;
+    new_id_tracker.versions_flusher()()?;
+
+    // Destroy persisted RocksDB ID tracker data
+    old_id_tracker.destroy()?;
+
+    Ok(new_id_tracker)
 }
