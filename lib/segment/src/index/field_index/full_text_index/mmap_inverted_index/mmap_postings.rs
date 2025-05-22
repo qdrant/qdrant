@@ -124,6 +124,7 @@ impl MmapPostings {
             chunks,
             remainder_postings,
             Some(last_doc_id),
+            hw_counter,
         ))
     }
 
