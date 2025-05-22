@@ -955,7 +955,7 @@ fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
 /// it. The persisted RocksDB data is deleted so that only the new tracker will be loaded next
 /// time. The new ID tracker is returned.
 #[cfg(feature = "rocksdb")]
-fn migrate_rocksdb_id_tracker_to_mutable(
+pub fn migrate_rocksdb_id_tracker_to_mutable(
     old_id_tracker: SimpleIdTracker,
     segment_path: &Path,
 ) -> OperationResult<MutableIdTracker> {
