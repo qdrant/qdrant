@@ -33,14 +33,9 @@ fn test_just_ids_against_vec() {
         let posting_list = check_against_sorted_vec::<_, SizedHandler<()>>(|_rng, _id| (), len);
 
         // validate that chunks' sized values are empty
-        if let Some(first_chunk) = posting_list.chunks.first() {
-            let chunks_size = size_of_val(first_chunk);
-            let expected_chunk_size = size_of::<u32>() * 2;
-            assert_eq!(chunks_size, expected_chunk_size);
-        }
-
-        // validate var_sized_data is empty
-        assert_eq!(posting_list.var_size_data.len(), 0);
+        let chunks_size = size_of_val(&posting_list.chunks[0]);
+        let expected_chunk_size = size_of::<u32>() * 2;
+        assert_eq!(chunks_size, expected_chunk_size);
     })
 }
 

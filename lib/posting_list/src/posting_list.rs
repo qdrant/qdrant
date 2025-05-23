@@ -23,7 +23,7 @@ pub struct PostingList<H: ValueHandler> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<H::Sized>>,
     pub(crate) remainders: Vec<RemainderPosting<H::Sized>>,
-    pub(crate) var_size_data: Vec<u8>,
+    pub(crate) var_size_data: H::VarSizeData,
     pub(crate) last_id: Option<PointOffsetType>,
     pub(crate) _phantom: PhantomData<H>,
 }

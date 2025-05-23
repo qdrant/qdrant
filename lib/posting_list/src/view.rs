@@ -16,17 +16,17 @@ use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingL
 pub struct PostingListView<'a, H: ValueHandler> {
     pub(crate) id_data: &'a [u8],
     chunks: &'a [PostingChunk<H::Sized>],
-    pub(crate) var_size_data: &'a [u8],
+    pub(crate) var_size_data: &'a H::VarSizeData,
     remainders: &'a [RemainderPosting<H::Sized>],
     pub(crate) last_id: Option<PointOffsetType>,
     pub(crate) hw_counter: ConditionedCounter<'a>,
     pub(crate) _phantom: PhantomData<H>,
 }
 
-pub struct PostingListComponents<'a, S> {
+pub struct PostingListComponents<'a, S, D> {
     pub id_data: &'a [u8],
     pub chunks: &'a [PostingChunk<S>],
-    pub var_size_data: &'a [u8],
+    pub var_size_data: &'a D,
     pub remainders: &'a [RemainderPosting<S>],
     pub last_id: Option<U32>,
 }
@@ -42,7 +42,7 @@ impl<'a> IdsPostingListView<'a> {
         Self {
             id_data,
             chunks,
-            var_size_data: &[],
+            var_size_data: &(),
             remainders,
             last_id,
             hw_counter,
@@ -62,7 +62,7 @@ impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
         Self {
             id_data,
             chunks,
-            var_size_data: &[],
+            var_size_data: &(),
             remainders,
             last_id,
             hw_counter,
@@ -94,14 +94,14 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         PostingList {
             id_data: self.id_data.to_vec(),
             chunks: self.chunks.to_vec(),
-            var_size_data: self.var_size_data.to_vec(),
+            var_size_data: self.var_size_data.to_owned(),
             remainders: self.remainders.to_vec(),
             last_id: self.last_id,
             _phantom: PhantomData,
         }
     }
 
-    pub fn components(&self) -> PostingListComponents<H::Sized> {
+    pub fn components(&self) -> PostingListComponents<H::Sized, H::VarSizeData> {
         let Self {
             id_data,
             chunks,
@@ -124,7 +124,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
     pub fn from_components(
         id_data: &'a [u8],
         chunks: &'a [PostingChunk<H::Sized>],
-        var_size_data: &'a [u8],
+        var_size_data: &'a H::VarSizeData,
         remainders: &'a [RemainderPosting<H::Sized>],
         last_id: Option<PointOffsetType>,
         hw_counter: ConditionedCounter<'a>,
