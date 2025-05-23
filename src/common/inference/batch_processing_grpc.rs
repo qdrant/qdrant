@@ -8,7 +8,7 @@ use api::grpc::qdrant::{
 use api::rest::schema as rest;
 use tonic::Status;
 
-use super::service::{InferenceData, InferenceInput, InferenceRequest};
+use super::service::InferenceData;
 
 pub struct BatchAccumGrpc {
     pub(crate) objects: HashSet<InferenceData>,
@@ -31,21 +31,6 @@ impl BatchAccumGrpc {
 
     pub fn is_empty(&self) -> bool {
         self.objects.is_empty()
-    }
-}
-
-impl From<&BatchAccumGrpc> for InferenceRequest {
-    fn from(batch: &BatchAccumGrpc) -> Self {
-        Self {
-            inputs: batch
-                .objects
-                .iter()
-                .cloned()
-                .map(InferenceInput::from)
-                .collect(),
-            inference: None,
-            token: None,
-        }
     }
 }
 

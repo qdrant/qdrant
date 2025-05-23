@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use storage::content_manager::errors::StorageError;
 
-use crate::common::inference::InferenceToken;
 use crate::common::inference::config::InferenceConfig;
 
 const DOCUMENT_DATA_TYPE: &str = "text";
@@ -36,9 +35,8 @@ impl Display for InferenceType {
 #[derive(Debug, Serialize)]
 pub struct InferenceRequest {
     pub(crate) inputs: Vec<InferenceInput>,
+    pub(crate) token: String,
     pub(crate) inference: Option<InferenceType>,
-    #[serde(default)]
-    pub(crate) token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,6 +44,7 @@ pub struct InferenceInput {
     data: Value,
     data_type: String,
     model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<HashMap<String, Value>>,
 }
 
@@ -169,22 +168,8 @@ impl InferenceService {
 
     pub async fn infer(
         &self,
-        inference_inputs: Vec<InferenceInput>,
-        inference_type: InferenceType,
-        inference_token: InferenceToken,
+        request: InferenceRequest,
     ) -> Result<Vec<VectorPersisted>, StorageError> {
-        // Assume that either:
-        // - User doesn't have access to generating random JWT tokens (like in serverless)
-        // - Inference server checks validity of the tokens.
-
-        let token = inference_token.0.or_else(|| self.config.token.clone());
-
-        let request = InferenceRequest {
-            inputs: inference_inputs,
-            inference: Some(inference_type),
-            token,
-        };
-
         let url = self.config.address.as_ref().ok_or_else(|| {
             StorageError::service_error(
                 "InferenceService URL not configured - please provide valid address in config",
