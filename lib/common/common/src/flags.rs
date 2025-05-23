@@ -16,7 +16,7 @@ pub struct FeatureFlags {
     /// Whether to skip usage of RocksDB in immutable payload indices.
     ///
     /// First implemented in Qdrant 1.13.5.
-    // TODO(1.15): enable by default
+    /// Enabled by default in Qdrant 1.14.1
     pub payload_index_skip_rocksdb: bool,
 
     /// Whether to use incremental HNSW building.
@@ -30,7 +30,7 @@ impl Default for FeatureFlags {
     fn default() -> FeatureFlags {
         FeatureFlags {
             all: false,
-            payload_index_skip_rocksdb: false,
+            payload_index_skip_rocksdb: true,
             incremental_hnsw_building: true,
             hnsw_healing: false,
         }
