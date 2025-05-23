@@ -378,7 +378,14 @@ impl StructPayloadIndex {
         &self.config
     }
 
-    // Iterates over points which satisfy the filter. Might include already deleted points.
+    pub fn is_tenant(&self, field: &PayloadKeyType) -> bool {
+        self.config
+            .indexed_fields
+            .get(field)
+            .map(|indexed_field| indexed_field.is_tenant())
+            .unwrap_or(false)
+    }
+
     pub fn iter_filtered_points<'a>(
         &'a self,
         filter: &'a Filter,

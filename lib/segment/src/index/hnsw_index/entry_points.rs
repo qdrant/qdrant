@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use common::fixed_length_priority_queue::FixedLengthPriorityQueue;
 use common::types::PointOffsetType;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq)]
@@ -108,6 +109,41 @@ impl EntryPoints {
                     .cloned()
                     .max_by_key(|ep| ep.level)
             })
+    }
+
+    pub fn get_random_entry_point<F, R: Rng + ?Sized>(
+        &self,
+        rnd: &mut R,
+        checker: F,
+    ) -> Option<EntryPoint>
+    where
+        F: Fn(PointOffsetType) -> bool,
+    {
+        let filtered_entry_points: Vec<_> = self
+            .entry_points
+            .iter()
+            .filter(|entry| checker(entry.point_id))
+            .cloned()
+            .collect();
+
+        if !filtered_entry_points.is_empty() {
+            let random_index = rnd.random_range(0..filtered_entry_points.len());
+            return Some(filtered_entry_points[random_index].clone());
+        }
+
+        let filtered_extra_entry_points: Vec<_> = self
+            .extra_entry_points
+            .iter_unsorted()
+            .filter(|entry| checker(entry.point_id))
+            .cloned()
+            .collect();
+
+        if !filtered_extra_entry_points.is_empty() {
+            let random_index = rnd.random_range(0..filtered_extra_entry_points.len());
+            return Some(filtered_extra_entry_points[random_index].clone());
+        }
+
+        None
     }
 }
 
