@@ -121,19 +121,8 @@ impl<'a> ChunkReader<'a> {
         ChunkReaderIter::new(self)
     }
 
-    pub fn to_vec(&self) -> Vec<PointOffsetType> {
-        let postings: Vec<PointOffsetType> = self.iter().collect();
-        debug_assert!(postings.is_sorted());
-        debug_assert_eq!(postings.len(), self.len());
-        postings
-    }
-
     pub fn len(&self) -> usize {
         self.chunks.len() * BitPackerImpl::BLOCK_LEN + self.remainder_postings.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.chunks.is_empty() && self.remainder_postings.is_empty()
     }
 
     pub fn chunks_len(&self) -> usize {

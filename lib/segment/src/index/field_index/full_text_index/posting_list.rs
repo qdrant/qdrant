@@ -44,9 +44,4 @@ impl PostingList {
     pub fn iter(&self) -> impl Iterator<Item = PointOffsetType> + '_ {
         self.list.iter().copied()
     }
-
-    #[inline]
-    pub fn into_vec(self) -> Vec<PointOffsetType> {
-        self.list
-    }
 }

@@ -117,6 +117,7 @@ common = { path = "../common/common" }
 io = { path = "../common/io" }
 macros = { path = "../macros" }
 memory = { path = "../common/memory" }
+posting_list = { path = "../posting_list" }
 quantization = { path = "../quantization" }
 sparse = { path = "../sparse" }
 gpu = { path = "../gpu" }
