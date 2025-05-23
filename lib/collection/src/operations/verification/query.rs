@@ -204,7 +204,12 @@ impl StrictModeVerification for CollectionQueryRequestWithUsage {
             // check query can perform fullscan when not rescoring
             if self.request.prefetch.is_empty() {
                 query
-                    .check_fullscan(&self.request.using, collection, strict_mode_config)
+                    .check_fullscan(
+                        &self.request.using,
+                        self.request.filter.as_ref(),
+                        collection,
+                        strict_mode_config,
+                    )
                     .await?;
             }
             // check for unindexed fields in formula

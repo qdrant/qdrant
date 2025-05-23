@@ -179,8 +179,11 @@ pub async fn convert_batch(
             for (name, vecs) in named {
                 let (converted_vectors, batch_usage) =
                     convert_vectors(vecs, InferenceType::Update, inference_token.clone()).await?;
-                if inference_usage.is_none() && batch_usage.is_some() {
-                    inference_usage = batch_usage;
+                if let Some(batch_usage) = batch_usage {
+                    inference_usage = match inference_usage.take() {
+                        Some(accum) => Some(accum.merge(batch_usage)),
+                        None => Some(batch_usage),
+                    };
                 }
                 named_vectors.insert(name, converted_vectors);
             }

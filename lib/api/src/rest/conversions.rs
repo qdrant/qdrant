@@ -15,7 +15,7 @@ use crate::rest::{DenseVector, NamedVectorStruct};
 
 impl From<InferenceUsage> for grpc::InferenceUsage {
     fn from(value: InferenceUsage) -> Self {
-        let mut grpc_usage_models = HashMap::default();
+        let mut grpc_usage_models = HashMap::with_capacity(value.models.len());
         for (model, usage) in value.models {
             grpc_usage_models.insert(
                 model,

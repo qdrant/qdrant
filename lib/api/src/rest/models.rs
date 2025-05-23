@@ -70,6 +70,18 @@ impl Usage {
     }
 }
 
+impl InferenceUsage {
+    pub fn merge(mut self, other: InferenceUsage) -> InferenceUsage {
+        for (model_name, other_usage) in other.models {
+            self.models
+                .entry(model_name)
+                .and_modify(|usage| usage.tokens += other_usage.tokens)
+                .or_insert(other_usage);
+        }
+        self
+    }
+}
+
 fn is_usage_none_or_empty(u: &Option<Usage>) -> bool {
     u.as_ref().is_none_or(|usage| usage.is_empty())
 }

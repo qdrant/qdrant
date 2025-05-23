@@ -692,8 +692,11 @@ pub async fn do_batch_update_points(
         };
 
         results.push(current_update_result);
-        if inference_usage.is_none() && current_operation_usage_opt.is_some() {
-            inference_usage = current_operation_usage_opt;
+        if let Some(current_usage) = current_operation_usage_opt {
+            inference_usage = match inference_usage {
+                Some(accum) => Some(accum.merge(current_usage)),
+                None => Some(current_usage),
+            };
         }
     }
     Ok((results, inference_usage))
