@@ -745,9 +745,15 @@ fn create_segment_id_tracker(
         };
 
         if use_rocksdb_mutable_tracker {
-            return Ok(sp(IdTrackerEnum::RocksDbIdTracker(
-                create_rocksdb_id_tracker(db_builder.require()?)?,
-            )));
+            let id_tracker = create_rocksdb_id_tracker(db_builder.require()?)?;
+
+            // Actively migrate RocksDB based ID tracker into mutable ID tracker
+            if common::flags::feature_flags().migrate_rocksdb_id_tracker {
+                let id_tracker = migrate_rocksdb_id_tracker_to_mutable(id_tracker, segment_path)?;
+                return Ok(sp(IdTrackerEnum::MutableIdTracker(id_tracker)));
+            }
+
+            return Ok(sp(IdTrackerEnum::RocksDbIdTracker(id_tracker)));
         }
     }
 
@@ -941,4 +947,41 @@ fn load_segment_state_v5(segment_path: &Path) -> OperationResult<SegmentState> {
                 err
             ))
         })
+}
+
+/// Migrate a RocksDB based ID tracker into a mutable ID tracker.
+///
+/// Creates a new mutable ID tracker and copies all mappings from the RocksDB based ID tracker into
+/// it. The persisted RocksDB data is deleted so that only the new tracker will be loaded next
+/// time. The new ID tracker is returned.
+#[cfg(feature = "rocksdb")]
+pub fn migrate_rocksdb_id_tracker_to_mutable(
+    old_id_tracker: SimpleIdTracker,
+    segment_path: &Path,
+) -> OperationResult<MutableIdTracker> {
+    log::info!("Migrating ID tracker from RocksDB into new format");
+
+    // Construct mutable ID tracker
+    let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
+    assert_eq!(
+        new_id_tracker.total_point_count(),
+        0,
+        "new mutable ID tracker must be empty",
+    );
+
+    // Copy all mappings into it
+    for (external_id, internal_id) in old_id_tracker.iter_from(None) {
+        let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
+        new_id_tracker.set_link(external_id, internal_id)?;
+        new_id_tracker.set_internal_version(internal_id, version)?;
+    }
+
+    // Flush mappings and versions
+    new_id_tracker.mapping_flusher()()?;
+    new_id_tracker.versions_flusher()()?;
+
+    // Destroy persisted RocksDB ID tracker data
+    old_id_tracker.destroy()?;
+
+    Ok(new_id_tracker)
 }
