@@ -1,7 +1,9 @@
 use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
+use api::rest::models::{InferenceUsage, ModelUsage};
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
+use collection::operations::universal_query::collection_query::CollectionQueryGroupsRequestWithUsage;
 use itertools::Itertools;
 use storage::content_manager::collection_verification::{
     check_strict_mode, check_strict_mode_batch,
@@ -32,7 +34,7 @@ async fn query_points(
     inference_token: InferenceToken,
 ) -> impl Responder {
     let QueryRequest {
-        internal: query_request,
+        internal: internal_request,
         shard_key,
     } = request.into_inner();
 
@@ -43,48 +45,87 @@ async fn query_points(
         None,
     );
     let timing = Instant::now();
-
-    let shard_selection = match shard_key {
-        None => ShardSelectorInternal::All,
-        Some(shard_keys) => shard_keys.into(),
-    };
     let hw_measurement_acc = request_hw_counter.get_counter();
-    let result = async move {
-        let request = convert_query_request_from_rest(query_request, &inference_token).await?;
 
-        let pass = check_strict_mode(
-            &request,
-            params.timeout_as_secs(),
-            &collection.name,
-            &dispatcher,
-            &access,
-        )
-        .await?;
+    let collection_query_with_usage_result =
+        convert_query_request_from_rest(internal_request, &inference_token).await;
 
-        let points = dispatcher
-            .toc(&access, &pass)
+    let (converted_query_request, inference_usage_from_conversion) =
+        match collection_query_with_usage_result {
+            Ok(val) => (val.request, val.usage),
+            Err(err) => {
+                let usage = match &err {
+                    StorageError::InferenceError { usage, .. } => usage.clone(),
+                    _ => None,
+                };
+                return helpers::process_response::<QueryResponse>(
+                    Err(err),
+                    timing,
+                    request_hw_counter.to_rest_api(),
+                    usage,
+                );
+            }
+        };
+
+    let verification_pass = match check_strict_mode(
+        &converted_query_request,
+        params.timeout_as_secs(),
+        &collection.name,
+        &dispatcher,
+        &access,
+    )
+    .await
+    {
+        Ok(pass) => pass,
+        Err(err) => {
+            return helpers::process_response::<QueryResponse>(
+                Err(err),
+                timing,
+                request_hw_counter.to_rest_api(),
+                inference_usage_from_conversion,
+            );
+        }
+    };
+
+    let shard_selection = shard_key.map_or(ShardSelectorInternal::All, Into::into);
+
+    let result: Result<QueryResponse, StorageError> = async {
+        let points_result_list = dispatcher
+            .toc(&access, &verification_pass)
             .query_batch(
                 &collection.name,
-                vec![(request, shard_selection)],
+                vec![(converted_query_request, shard_selection)],
                 params.consistency,
                 access,
                 params.timeout(),
                 hw_measurement_acc,
             )
-            .await?
-            .pop()
-            .ok_or_else(|| {
-                StorageError::service_error("Expected at least one response for one query")
+            .await
+            .map_err(|err| StorageError::InferenceError {
+                description: err.to_string(),
+                usage: inference_usage_from_conversion.clone(),
             })?
-            .into_iter()
-            .map(api::rest::ScoredPoint::from)
-            .collect_vec();
+            .pop()
+            .ok_or_else(|| StorageError::InferenceError {
+                description: "Expected at least one response for one query".to_string(),
+                usage: inference_usage_from_conversion.clone(),
+            })?;
 
-        Ok(QueryResponse { points })
+        Ok(QueryResponse {
+            points: points_result_list
+                .into_iter()
+                .map(api::rest::ScoredPoint::from)
+                .collect_vec(),
+        })
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response(
+        result,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage_from_conversion,
+    )
 }
 
 #[post("/collections/{name}/points/query/batch")]
@@ -110,13 +151,19 @@ async fn query_points_batch(
 
     let result = async move {
         let mut batch = Vec::with_capacity(searches.len());
-        for request in searches {
+        let mut inference_usages: Vec<Option<InferenceUsage>> = Vec::with_capacity(searches.len());
+
+        for request_item in searches {
             let QueryRequest {
                 internal,
                 shard_key,
-            } = request;
+            } = request_item;
 
-            let request = convert_query_request_from_rest(internal, &inference_token).await?;
+            let collection::operations::universal_query::collection_query::CollectionQueryRequestWithUsage { request, usage } =
+                convert_query_request_from_rest(internal, &inference_token).await?;
+
+            inference_usages.push(usage);
+
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
                 Some(shard_keys) => shard_keys.into(),
@@ -124,6 +171,31 @@ async fn query_points_batch(
 
             batch.push((request, shard_selection));
         }
+
+        // aggregate usages from searches
+        let mut total_usage = InferenceUsage::default();
+        for inference_usage in inference_usages.iter_mut().flatten() {
+            let usage = inference_usage;
+                for (model, usage) in usage.models.iter() {
+                    total_usage
+                        .models
+                        .entry(model.clone())
+                        .and_modify(|e| {
+                            e.tokens += usage.tokens;
+                        })
+                        .or_insert_with(|| ModelUsage {
+                            tokens: usage.tokens,
+                        });
+                }
+        }
+
+        let inference_usage: Option<InferenceUsage> = {
+            if total_usage.models.is_empty() {
+                None
+            } else {
+                Some(total_usage)
+            }
+        };
 
         let pass = check_strict_mode_batch(
             batch.iter().map(|i| &i.0),
@@ -153,11 +225,27 @@ async fn query_points_batch(
                     .collect_vec(),
             })
             .collect_vec();
-        Ok(res)
+        Ok((res, inference_usage))
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    let (result, final_inference_usage) = match result {
+        Ok((res, usage)) => (Ok(res), usage),
+        Err(err) => {
+            let usage = match &err {
+                StorageError::InferenceError { usage, .. } => usage.clone(),
+                _ => None,
+            };
+            (Err(err), usage)
+        }
+    };
+
+    helpers::process_response(
+        result,
+        timing,
+        request_hw_counter.to_rest_api(),
+        final_inference_usage,
+    )
 }
 
 #[post("/collections/{name}/points/query/groups")]
@@ -189,11 +277,11 @@ async fn query_points_groups(
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
-        let query_group_request =
+        let CollectionQueryGroupsRequestWithUsage { request, usage } =
             convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
 
         let pass = check_strict_mode(
-            &query_group_request,
+            &request,
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
@@ -201,21 +289,38 @@ async fn query_points_groups(
         )
         .await?;
 
-        do_query_point_groups(
+        let query_result = do_query_point_groups(
             dispatcher.toc(&access, &pass),
             &collection.name,
-            query_group_request,
+            request,
             params.consistency,
             shard_selection,
             access,
             params.timeout(),
             hw_measurement_acc,
         )
-        .await
+        .await?;
+        Ok((query_result, usage))
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    let (result, inference_usage) = match result {
+        Ok((res, usage)) => (Ok(res), usage),
+        Err(err) => {
+            let usage = match &err {
+                StorageError::InferenceError { usage, .. } => usage.clone(),
+                _ => None,
+            };
+            (Err(err), usage)
+        }
+    };
+
+    helpers::process_response(
+        result,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage,
+    )
 }
 
 pub fn config_query_api(cfg: &mut web::ServiceConfig) {

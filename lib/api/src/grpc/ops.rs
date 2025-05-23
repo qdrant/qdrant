@@ -1,4 +1,4 @@
-use crate::grpc::{HardwareUsage, Usage};
+use crate::grpc::{HardwareUsage, InferenceUsage, Usage};
 
 impl HardwareUsage {
     pub fn add(&mut self, other: Self) {
@@ -24,13 +24,22 @@ impl HardwareUsage {
 
 impl Usage {
     pub fn is_empty(&self) -> bool {
-        let Usage { hardware } = self;
+        let Usage {
+            hardware,
+            inference,
+        } = self;
 
-        hardware.is_none()
+        hardware.is_none() && inference.is_none()
     }
 }
 
-pub fn usage_or_none(hardware: Option<HardwareUsage>) -> Option<Usage> {
-    let usage = Usage { hardware };
+pub fn usage_or_none(
+    hardware: Option<HardwareUsage>,
+    inference: Option<InferenceUsage>,
+) -> Option<Usage> {
+    let usage = Usage {
+        hardware,
+        inference,
+    };
     if usage.is_empty() { None } else { Some(usage) }
 }

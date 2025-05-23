@@ -132,7 +132,7 @@ pub async fn search(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(hw_measurement_acc.to_grpc_api()),
+        usage: usage_or_none(hw_measurement_acc.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -180,7 +180,7 @@ pub async fn core_search_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -238,7 +238,7 @@ pub async fn core_search_list(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -293,7 +293,7 @@ pub async fn search_groups(
     let response = SearchGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -346,7 +346,7 @@ pub async fn recommend(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -403,7 +403,7 @@ pub async fn recommend_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -457,7 +457,7 @@ pub async fn recommend_groups(
     let response = RecommendGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -503,7 +503,7 @@ pub async fn discover(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -559,7 +559,7 @@ pub async fn discover_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -638,7 +638,7 @@ pub async fn scroll(
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
         result: points,
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -696,7 +696,7 @@ pub async fn count(
     let response = CountResponse {
         result: Some(count_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -761,7 +761,7 @@ pub async fn get(
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -816,7 +816,7 @@ pub async fn query(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -872,7 +872,7 @@ pub async fn query_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))
@@ -927,7 +927,7 @@ pub async fn query_groups(
     let response = QueryGroupsResponse {
         result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api()),
+        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
     };
 
     Ok(Response::new(response))

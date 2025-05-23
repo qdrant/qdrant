@@ -178,11 +178,14 @@
     - [Image.OptionsEntry](#qdrant-Image-OptionsEntry)
     - [InferenceObject](#qdrant-InferenceObject)
     - [InferenceObject.OptionsEntry](#qdrant-InferenceObject-OptionsEntry)
+    - [InferenceUsage](#qdrant-InferenceUsage)
+    - [InferenceUsage.ModelEntry](#qdrant-InferenceUsage-ModelEntry)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
     - [Match](#qdrant-Match)
     - [MinShould](#qdrant-MinShould)
+    - [ModelUsage](#qdrant-ModelUsage)
     - [MultExpression](#qdrant-MultExpression)
     - [MultiDenseVector](#qdrant-MultiDenseVector)
     - [NamedVectors](#qdrant-NamedVectors)
@@ -3165,6 +3168,37 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 
 
+<a name="qdrant-InferenceUsage"></a>
+
+### InferenceUsage
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| model | [InferenceUsage.ModelEntry](#qdrant-InferenceUsage-ModelEntry) | repeated |  |
+
+
+
+
+
+
+<a name="qdrant-InferenceUsage-ModelEntry"></a>
+
+### InferenceUsage.ModelEntry
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| key | [string](#string) |  |  |
+| value | [ModelUsage](#qdrant-ModelUsage) |  |  |
+
+
+
+
+
+
 <a name="qdrant-IsEmptyCondition"></a>
 
 ### IsEmptyCondition
@@ -3244,6 +3278,21 @@ Additionally, the first and last points of each GeoLineString must be the same.
 | ----- | ---- | ----- | ----------- |
 | conditions | [Condition](#qdrant-Condition) | repeated |  |
 | min_count | [uint64](#uint64) |  |  |
+
+
+
+
+
+
+<a name="qdrant-ModelUsage"></a>
+
+### ModelUsage
+
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| tokens | [uint64](#uint64) |  |  |
 
 
 
@@ -4762,6 +4811,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | hardware | [HardwareUsage](#qdrant-HardwareUsage) | optional |  |
+| inference | [InferenceUsage](#qdrant-InferenceUsage) | optional |  |
 
 
 

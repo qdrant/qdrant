@@ -4,6 +4,7 @@ use std::hash::Hash;
 use std::sync::Arc;
 use std::time::Duration;
 
+use api::rest::models::InferenceUsage;
 use api::rest::{Document, Image, InferenceObject};
 use collection::operations::point_ops::VectorPersisted;
 use parking_lot::RwLock;
@@ -50,8 +51,9 @@ pub struct InferenceInput {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct InferenceResponse {
-    pub(crate) embeddings: Vec<VectorPersisted>,
+pub struct InferenceResponse {
+    pub embeddings: Vec<VectorPersisted>,
+    pub usage: Option<InferenceUsage>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -172,7 +174,7 @@ impl InferenceService {
         inference_inputs: Vec<InferenceInput>,
         inference_type: InferenceType,
         inference_token: InferenceToken,
-    ) -> Result<Vec<VectorPersisted>, StorageError> {
+    ) -> Result<InferenceResponse, StorageError> {
         // Assume that either:
         // - User doesn't have access to generating random JWT tokens (like in serverless)
         // - Inference server checks validity of the tokens.
@@ -215,23 +217,15 @@ impl InferenceService {
     pub(crate) fn handle_inference_response(
         status: reqwest::StatusCode,
         response_body: &str,
-    ) -> Result<Vec<VectorPersisted>, StorageError> {
+    ) -> Result<InferenceResponse, StorageError> {
         match status {
             reqwest::StatusCode::OK => {
-                let inference_response: InferenceResponse = serde_json::from_str(response_body)
+                serde_json::from_str(response_body)
                     .map_err(|e| {
                         StorageError::service_error(format!(
                             "Failed to parse successful inference response: {e}. Response body: {response_body}",
                         ))
-                    })?;
-
-                if inference_response.embeddings.is_empty() {
-                    Err(StorageError::service_error(
-                        "Inference response contained no embeddings - this may indicate an issue with the model or input",
-                    ))
-                } else {
-                    Ok(inference_response.embeddings)
-                }
+                    })
             }
             reqwest::StatusCode::BAD_REQUEST => {
                 let error_json: Value = serde_json::from_str(response_body).map_err(|e| {

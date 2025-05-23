@@ -2243,7 +2243,10 @@ impl From<PointsOperationResponseInternal> for PointsOperationResponse {
         Self {
             result: result.map(Into::into),
             time,
-            usage: Some(Usage { hardware: usage }),
+            usage: Some(Usage {
+                hardware: usage,
+                inference: None,
+            }),
         }
     }
 }

@@ -1171,8 +1171,21 @@ message GeoPoint {
 // ---------------------------------------------
 message Usage {
   optional HardwareUsage hardware = 1;
+  optional InferenceUsage inference = 2;
 }
 
+
+// ---------------------------------------------
+// ------------ Inference measurements ----------
+// ---------------------------------------------
+
+message InferenceUsage {
+  map<string, ModelUsage> model = 1;
+}
+
+message ModelUsage {
+  uint64 tokens = 1;
+}
 
 // ---------------------------------------------
 // ------------ Hardware measurements ----------

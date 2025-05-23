@@ -65,14 +65,14 @@ pub async fn convert_query_point_groups_from_grpc(
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
     let query = if let Some(q) = query {
-        Some(convert_query_with_inferred(q, &inferred)?)
+        Some(convert_query_with_inferred(q, &inferred.0)?)
     } else {
         None
     };
 
     let prefetch = prefetch
         .into_iter()
-        .map(|p| convert_prefetch_with_inferred(p, &inferred))
+        .map(|p| convert_prefetch_with_inferred(p, &inferred.0))
         .collect::<Result<Vec<_>, _>>()?;
 
     let request = CollectionQueryGroupsRequest {
@@ -145,11 +145,11 @@ pub async fn convert_query_points_from_grpc(
 
     let prefetch = prefetch
         .into_iter()
-        .map(|p| convert_prefetch_with_inferred(p, &inferred))
+        .map(|p| convert_prefetch_with_inferred(p, &inferred.0))
         .collect::<Result<Vec<_>, _>>()?;
 
     let query = query
-        .map(|q| convert_query_with_inferred(q, &inferred))
+        .map(|q| convert_query_with_inferred(q, &inferred.0))
         .transpose()?;
 
     Ok(CollectionQueryRequest {

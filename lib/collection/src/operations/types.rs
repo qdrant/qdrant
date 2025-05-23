@@ -1037,7 +1037,10 @@ pub enum CollectionError {
     #[error("Strict mode error: {description}")]
     StrictMode { description: String },
     #[error("{description}")]
-    InferenceError { description: String },
+    InferenceError {
+        description: String,
+        usage: Option<api::rest::models::InferenceUsage>,
+    },
     #[error("Rate limiting exceeded: {description}")]
     RateLimitExceeded {
         description: String,

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use segment::data_types::order_by::OrderBy;
 use segment::data_types::vectors::{VectorInternal, VectorStructInternal};
 use uuid::Uuid;
@@ -7,7 +9,26 @@ use super::{
     FacetRequestInternal, FacetResponse, FacetValue, FacetValueHit, NearestQuery, OrderByInterface,
     Query, QueryInterface, VectorOutput, VectorStructOutput,
 };
+use crate::grpc;
+use crate::rest::models::InferenceUsage;
 use crate::rest::{DenseVector, NamedVectorStruct};
+
+impl From<InferenceUsage> for grpc::InferenceUsage {
+    fn from(value: InferenceUsage) -> Self {
+        let mut grpc_usage_models = HashMap::with_capacity(value.models.len());
+        for (model, usage) in value.models {
+            grpc_usage_models.insert(
+                model,
+                grpc::ModelUsage {
+                    tokens: usage.tokens,
+                },
+            );
+        }
+        grpc::InferenceUsage {
+            model: grpc_usage_models,
+        }
+    }
+}
 
 impl From<VectorInternal> for VectorOutput {
     fn from(value: VectorInternal) -> Self {

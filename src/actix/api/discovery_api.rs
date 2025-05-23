@@ -40,7 +40,7 @@ async fn discover_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let shard_selection = match shard_key {
@@ -76,7 +76,7 @@ async fn discover_points(
                 .collect_vec()
         });
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 
 #[post("/collections/{name}/points/discover/batch")]
@@ -100,7 +100,7 @@ async fn discover_batch_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
+        Err(err) => return process_response_error(err, Instant::now(), None, None),
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -133,7 +133,7 @@ async fn discover_batch_points(
             .collect_vec()
     });
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api(), None)
 }
 
 pub fn config_discovery_api(cfg: &mut web::ServiceConfig) {

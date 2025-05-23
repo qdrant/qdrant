@@ -70,7 +70,7 @@ async fn metrics(
     ActixAccess(access): ActixAccess,
 ) -> HttpResponse {
     if let Err(err) = access.check_global_access(AccessRequirements::new()) {
-        return process_response_error(err, Instant::now(), None);
+        return process_response_error(err, Instant::now(), None, None);
     }
 
     let anonymize = params.anonymize.unwrap_or(false);
@@ -182,7 +182,7 @@ fn kubernetes_healthz() -> impl Responder {
 async fn get_logger_config(handle: web::Data<tracing::LoggerHandle>) -> impl Responder {
     let timing = Instant::now();
     let result = handle.get_config().await;
-    helpers::process_response(Ok(result), timing, None)
+    helpers::process_response(Ok(result), timing, None, None)
 }
 
 #[post("/logger")]
@@ -198,7 +198,7 @@ async fn update_logger_config(
         .map(|_| true)
         .map_err(|err| StorageError::service_error(err.to_string()));
 
-    helpers::process_response(result, timing, None)
+    helpers::process_response(result, timing, None, None)
 }
 
 // Configure services

@@ -2,6 +2,7 @@ use std::backtrace::Backtrace;
 use std::io::Error as IoError;
 use std::time::Duration;
 
+use api::rest::models::InferenceUsage;
 use collection::operations::types::CollectionError;
 use io::file_operations::FileStorageError;
 use tempfile::PersistError;
@@ -36,7 +37,10 @@ pub enum StorageError {
     #[error("Pre-condition failure: {description}")]
     PreconditionFailed { description: String }, // system is not in the state to perform the operation
     #[error("{description}")]
-    InferenceError { description: String },
+    InferenceError {
+        description: String,
+        usage: Option<InferenceUsage>,
+    },
     #[error("Rate limiting exceeded: {description}")]
     RateLimitExceeded {
         description: String,
@@ -47,9 +51,13 @@ pub enum StorageError {
 }
 
 impl StorageError {
-    pub fn inference_error(description: impl Into<String>) -> StorageError {
+    pub fn inference_error(
+        description: impl Into<String>,
+        usage: Option<InferenceUsage>,
+    ) -> StorageError {
         StorageError::InferenceError {
             description: description.into(),
+            usage,
         }
     }
 
@@ -150,8 +158,8 @@ impl StorageError {
                 backtrace: None,
             },
             CollectionError::StrictMode { description } => StorageError::BadRequest { description },
-            CollectionError::InferenceError { description } => {
-                StorageError::InferenceError { description }
+            CollectionError::InferenceError { description, usage } => {
+                StorageError::InferenceError { description, usage }
             }
             CollectionError::RateLimitExceeded {
                 description,
@@ -212,8 +220,8 @@ impl From<CollectionError> for StorageError {
                 backtrace: None,
             },
             CollectionError::StrictMode { description } => StorageError::BadRequest { description },
-            CollectionError::InferenceError { description } => {
-                StorageError::InferenceError { description }
+            CollectionError::InferenceError { description, usage } => {
+                StorageError::InferenceError { description, usage }
             }
             CollectionError::RateLimitExceeded {
                 description,

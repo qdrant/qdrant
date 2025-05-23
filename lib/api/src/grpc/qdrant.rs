@@ -6573,6 +6573,22 @@ pub struct GeoPoint {
 pub struct Usage {
     #[prost(message, optional, tag = "1")]
     pub hardware: ::core::option::Option<HardwareUsage>,
+    #[prost(message, optional, tag = "2")]
+    pub inference: ::core::option::Option<InferenceUsage>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InferenceUsage {
+    #[prost(map = "string, message", tag = "1")]
+    pub model: ::std::collections::HashMap<::prost::alloc::string::String, ModelUsage>,
+}
+#[derive(serde::Serialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ModelUsage {
+    #[prost(uint64, tag = "1")]
+    pub tokens: u64,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]

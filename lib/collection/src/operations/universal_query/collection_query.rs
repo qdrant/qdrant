@@ -1,5 +1,6 @@
 use ahash::AHashSet;
 use api::rest::LookupLocation;
+use api::rest::models::InferenceUsage;
 use common::types::ScoreType;
 use itertools::Itertools;
 use segment::data_types::order_by::OrderBy;
@@ -37,6 +38,12 @@ pub struct CollectionQueryRequest {
     pub with_vector: WithVector,
     pub with_payload: WithPayloadInterface,
     pub lookup_from: Option<LookupLocation>,
+}
+
+/// Internal wrapper that adds inference usage to the request
+pub struct CollectionQueryRequestWithUsage {
+    pub request: CollectionQueryRequest,
+    pub usage: Option<InferenceUsage>,
 }
 
 impl CollectionQueryRequest {
@@ -77,6 +84,12 @@ pub struct CollectionQueryGroupsRequest {
     pub group_size: usize,
     pub limit: usize,
     pub with_lookup: Option<WithLookup>,
+}
+
+/// Internal wrapper that adds inference usage to the group request
+pub struct CollectionQueryGroupsRequestWithUsage {
+    pub request: CollectionQueryGroupsRequest,
+    pub usage: Option<InferenceUsage>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

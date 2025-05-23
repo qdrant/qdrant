@@ -15274,6 +15274,43 @@
                 "nullable": true
               }
             ]
+          },
+          "inference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InferenceUsage"
+              },
+              {
+                "nullable": true
+              }
+            ]
+          }
+        }
+      },
+      "InferenceUsage": {
+        "type": "object",
+        "required": [
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ModelUsage"
+            }
+          }
+        }
+      },
+      "ModelUsage": {
+        "type": "object",
+        "required": [
+          "tokens"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           }
         }
       }
