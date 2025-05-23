@@ -1437,7 +1437,7 @@ impl<'a> OldIndexCandidate<'a> {
 
         if old_id_tracker.deleted_point_count() != 0 {
             // Old index has deleted points.
-            if feature_flags.hnsw_healing {
+            if !feature_flags.hnsw_healing {
                 return None;
             }
         }
@@ -1485,7 +1485,7 @@ impl<'a> OldIndexCandidate<'a> {
                 (None, Some(_)) => {
                     // Vector was in the old index, but not in the new one.
                     missing_points += 1;
-                    if feature_flags.hnsw_healing {
+                    if !feature_flags.hnsw_healing {
                         return None;
                     }
                 }
@@ -1498,7 +1498,7 @@ impl<'a> OldIndexCandidate<'a> {
                     } else {
                         // Vector is changed.
                         missing_points += 1;
-                        if feature_flags.hnsw_healing {
+                        if !feature_flags.hnsw_healing {
                             return None;
                         }
                     }
@@ -1513,7 +1513,7 @@ impl<'a> OldIndexCandidate<'a> {
             let old_offset = old_offset as PointOffsetType;
             if old_id_tracker.is_deleted_point(old_offset) && old_graph_has_point(old_offset) {
                 missing_points += 1;
-                if feature_flags.hnsw_healing {
+                if !feature_flags.hnsw_healing {
                     return None;
                 }
             }
