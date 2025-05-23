@@ -9,7 +9,7 @@ mod field_index_base;
 pub mod full_text_index;
 pub mod geo_hash;
 pub mod geo_index;
-mod histogram;
+pub mod histogram;
 mod immutable_point_to_values;
 pub mod index_selector;
 pub mod map_index;
