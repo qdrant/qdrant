@@ -244,3 +244,23 @@ impl From<std::io::Error> for HttpError {
         HttpError(err.into()) // TODO: Is this good enough?.. 🤔
     }
 }
+
+pub fn aggregate_inference_usages(usages: Vec<InferenceUsage>) -> Option<InferenceUsage> {
+    if usages.is_empty() {
+        return None;
+    }
+
+    let mut aggregated = InferenceUsage::default();
+
+    for usage in usages {
+        for (model_name, model_usage) in usage.models {
+            aggregated
+                .models
+                .entry(model_name)
+                .and_modify(|existing| existing.tokens += model_usage.tokens)
+                .or_insert(model_usage);
+        }
+    }
+
+    Some(aggregated)
+}

@@ -123,7 +123,7 @@ async fn query_points_batch(
 
     let result = async move {
         let mut batch = Vec::with_capacity(searches.len());
-        let mut inference_usages: Vec<Option<InferenceUsage>> = Vec::with_capacity(searches.len());
+        let mut all_usages: Vec<InferenceUsage> = Vec::with_capacity(searches.len());
 
         for request_item in searches {
             let QueryRequest {
@@ -134,7 +134,9 @@ async fn query_points_batch(
             let CollectionQueryRequestWithUsage { request, usage } =
                 convert_query_request_from_rest(internal, &inference_token).await?;
 
-            inference_usages.push(usage);
+            if let Some(usage) = usage {
+                all_usages.push(usage);
+            }
 
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
@@ -144,7 +146,7 @@ async fn query_points_batch(
             batch.push((request, shard_selection));
         }
 
-        let inference_usage: Option<InferenceUsage> = inference_usages.into_iter().flatten().next();
+        let aggregated_usage = helpers::aggregate_inference_usages(all_usages);
 
         let pass = check_strict_mode_batch(
             batch.iter().map(|i| &i.0),
@@ -174,7 +176,7 @@ async fn query_points_batch(
                     .collect_vec(),
             })
             .collect_vec();
-        Ok((res, inference_usage))
+        Ok((res, aggregated_usage))
     }
     .await;
 
