@@ -175,7 +175,7 @@ impl MmapPostings {
             } = view.components();
 
             let data_len = id_data.len();
-            let alignment_len = ALIGNMENT - data_len % ALIGNMENT;
+            let alignment_len = data_len.next_multiple_of(ALIGNMENT) - data_len;
 
             let posting_list_header = PostingListHeader {
                 offset: posting_offset as u64,
@@ -216,8 +216,9 @@ impl MmapPostings {
 
             // Example:
             // For data size = 5, alignment = 3 as (5 + 3 = 8)
-            // alignment = 4 - 5 % 4 = 3
-            bufw.write_zeros(ALIGNMENT - id_data.len() % ALIGNMENT)?;
+            // alignment = 8 - 5 = 3
+            let data_len = id_data.len();
+            bufw.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)?;
 
             for element in remainders {
                 bufw.write_all(element.as_bytes())?;
