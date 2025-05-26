@@ -692,8 +692,19 @@ pub async fn do_batch_update_points(
         };
 
         results.push(current_update_result);
-        if inference_usage.is_none() && current_operation_usage_opt.is_some() {
-            inference_usage = current_operation_usage_opt;
+
+        if let Some(usage) = current_operation_usage_opt {
+            match &mut inference_usage {
+                Some(agg) => {
+                    for (model_name, model_usage) in usage.models {
+                        agg.models
+                            .entry(model_name)
+                            .and_modify(|existing| existing.tokens += model_usage.tokens)
+                            .or_insert(model_usage);
+                    }
+                }
+                None => inference_usage = Some(usage),
+            }
         }
     }
     Ok((results, inference_usage))
