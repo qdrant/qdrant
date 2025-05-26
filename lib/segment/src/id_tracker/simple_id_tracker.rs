@@ -162,6 +162,16 @@ impl SimpleIdTracker {
         self.versions_db_wrapper.remove_column_family()?;
         Ok(())
     }
+
+    /// Iterate over all point versions
+    ///
+    /// Includes deleted points.
+    pub(crate) fn iter_versions(&self) -> impl Iterator<Item = (PointOffsetType, SeqNumberType)> {
+        self.internal_to_version
+            .iter()
+            .enumerate()
+            .map(|(internal_id, &version)| (internal_id as PointOffsetType, version))
+    }
 }
 
 impl IdTracker for SimpleIdTracker {
