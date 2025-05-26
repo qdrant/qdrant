@@ -55,10 +55,20 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         id: PointOffsetType,
         offset_hint: Option<usize>,
     ) -> Option<usize> {
-        let start_chunk = offset_hint.map(|offset| offset / CHUNK_LEN);
+        let start_chunk = offset_hint.map(|offset| offset / CHUNK_LEN).unwrap_or(0);
+
+        // check if the first in the chunk is already greater or equal to the target id
+        if self
+            .list
+            .chunks
+            .get(start_chunk)
+            .is_some_and(|chunk| chunk.initial_id.get() >= id)
+        {
+            return Some(start_chunk * CHUNK_LEN);
+        }
 
         // Find the chunk that may contain the id and check if the id is in the chunk
-        let chunk_index = self.list.find_chunk(id, start_chunk);
+        let chunk_index = self.list.find_chunk(id, Some(start_chunk));
 
         if let Some(chunk_index) = chunk_index {
             let local_offset = match self.decompressed_chunk(chunk_index).binary_search(&id) {

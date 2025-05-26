@@ -182,7 +182,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         let remainders = self.remainders;
         let chunks = self.chunks;
 
-        // check if id is in the remainders list
+        // check if id might be in the remainders list
         if remainders.first().is_some_and(|elem| id >= elem.id.get()) {
             return None;
         }
