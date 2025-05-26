@@ -17,7 +17,8 @@ use validator::Validate;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error, process_response_with_inference_usage,
+    get_request_hardware_counter, process_response, process_response_error,
+    process_response_with_inference_usage,
 };
 use crate::common::inference::InferenceToken;
 use crate::common::update::*;
