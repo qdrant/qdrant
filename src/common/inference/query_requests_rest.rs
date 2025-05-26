@@ -242,14 +242,14 @@ fn convert_query_with_inferred(
             ))))
         }
         rest::Query::Context(context) => {
-            let rest::ContextInput(context_pairs_opt) = context.context;
-            let context_pairs = context_pairs_opt
+            let rest::ContextInput(context) = context.context;
+            let context = context
                 .into_iter()
                 .flatten()
                 .map(|pair| context_pair_from_rest_with_inferred(pair, inferred))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(Query::Vector(VectorQuery::Context(ContextQuery::new(
-                context_pairs,
+                context,
             ))))
         }
         rest::Query::OrderBy(order_by) => Ok(Query::OrderBy(OrderBy::from(order_by.order_by))),
@@ -274,7 +274,7 @@ fn convert_prefetch_with_inferred(
         lookup_from,
     } = prefetch;
 
-    let converted_query = query
+    let query = query
         .map(|q| convert_query_with_inferred(q, inferred))
         .transpose()?;
     let nested_prefetches = prefetch
@@ -289,7 +289,7 @@ fn convert_prefetch_with_inferred(
 
     Ok(CollectionPrefetch {
         prefetch: nested_prefetches,
-        query: converted_query,
+        query,
         using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
         filter,
         score_threshold,

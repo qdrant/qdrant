@@ -49,7 +49,7 @@ pub fn accepted_response(
     })
 }
 
-pub fn process_response<T>(
+pub fn process_response_with_inference_usage<T>(
     response: Result<T, StorageError>,
     timing: Instant,
     hardware_usage: Option<HardwareUsage>,
@@ -68,11 +68,27 @@ where
                 inference: inference_usage,
             }),
         }),
-        Err(err) => process_response_error(err, timing, hardware_usage, inference_usage),
+        Err(err) => process_response_error_with_inference_usage(
+            err,
+            timing,
+            hardware_usage,
+            inference_usage,
+        ),
     }
 }
 
-pub fn process_response_error(
+pub fn process_response<T>(
+    response: Result<T, StorageError>,
+    timing: Instant,
+    hardware_usage: Option<HardwareUsage>,
+) -> HttpResponse
+where
+    T: Serialize,
+{
+    process_response_with_inference_usage(response, timing, hardware_usage, None)
+}
+
+pub fn process_response_error_with_inference_usage(
     err: StorageError,
     timing: Instant,
     hardware_usage: Option<HardwareUsage>,
@@ -98,6 +114,14 @@ pub fn process_response_error(
         response_builder.insert_header(header_pair);
     }
     response_builder.json(json_body)
+}
+
+pub fn process_response_error(
+    err: StorageError,
+    timing: Instant,
+    hardware_usage: Option<HardwareUsage>,
+) -> HttpResponse {
+    process_response_error_with_inference_usage(err, timing, hardware_usage, None)
 }
 
 /// Response wrapper for a `Future` returning `Result`.
@@ -153,7 +177,7 @@ where
 {
     let instant = Instant::now();
     match future.await.transpose() {
-        Some(res) => process_response(res, instant, None, None),
+        Some(res) => process_response(res, instant, None),
         None => accepted_response(instant, None, None),
     }
 }

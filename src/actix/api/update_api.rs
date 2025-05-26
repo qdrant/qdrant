@@ -17,7 +17,7 @@ use validator::Validate;
 use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
-    get_request_hardware_counter, process_response, process_response_error,
+    get_request_hardware_counter, process_response, process_response_error, process_response_with_inference_usage,
 };
 use crate::common::inference::InferenceToken;
 use crate::common::update::*;
@@ -42,10 +42,10 @@ async fn upsert_points(
     let pass =
         match check_strict_mode(&operation.0, None, &collection.name, &dispatcher, &access).await {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None, None),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
 
-    let operation_inner = operation.into_inner();
+    let operation = operation.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -58,7 +58,7 @@ async fn upsert_points(
     let result_with_usage = do_upsert_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -72,7 +72,7 @@ async fn upsert_points(
         Err(err) => (Err(err), None),
     };
 
-    process_response(
+    process_response_with_inference_usage(
         res,
         timing,
         request_hw_counter.to_rest_api(),
@@ -90,19 +90,12 @@ async fn delete_points(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let operation_inner = operation.into_inner();
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
-    };
+    let operation = operation.into_inner();
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -115,7 +108,7 @@ async fn delete_points(
     let res = do_delete_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -124,7 +117,7 @@ async fn delete_points(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[put("/collections/{name}/points/vectors")]
@@ -149,7 +142,7 @@ async fn update_vectors(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -177,7 +170,7 @@ async fn update_vectors(
         Err(err) => (Err(err), None),
     };
 
-    process_response(
+    process_response_with_inference_usage(
         res,
         timing,
         request_hw_counter.to_rest_api(),
@@ -196,19 +189,12 @@ async fn delete_vectors(
 ) -> impl Responder {
     let timing = Instant::now();
 
-    let operation_inner = operation.into_inner();
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, timing, None, None),
-    };
+    let operation = operation.into_inner();
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, timing, None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -221,7 +207,7 @@ async fn delete_vectors(
     let response = do_delete_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -229,7 +215,7 @@ async fn delete_vectors(
     )
     .await;
 
-    process_response(response, timing, request_hw_counter.to_rest_api(), None)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/payload")]
@@ -241,20 +227,13 @@ async fn set_payload(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation_inner = operation.into_inner();
+    let operation = operation.into_inner();
 
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -267,7 +246,7 @@ async fn set_payload(
     let res = do_set_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -275,7 +254,7 @@ async fn set_payload(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[put("/collections/{name}/points/payload")]
@@ -287,19 +266,12 @@ async fn overwrite_payload(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation_inner = operation.into_inner();
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
-    };
+    let operation = operation.into_inner();
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -312,7 +284,7 @@ async fn overwrite_payload(
     let res = do_overwrite_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -320,7 +292,7 @@ async fn overwrite_payload(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/payload/delete")]
@@ -332,19 +304,12 @@ async fn delete_payload(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation_inner = operation.into_inner();
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
-    };
+    let operation = operation.into_inner();
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -357,7 +322,7 @@ async fn delete_payload(
     let res = do_delete_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -365,7 +330,7 @@ async fn delete_payload(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/payload/clear")]
@@ -377,19 +342,12 @@ async fn clear_payload(
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
 ) -> impl Responder {
-    let operation_inner = operation.into_inner();
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
-    };
+    let operation = operation.into_inner();
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -402,7 +360,7 @@ async fn clear_payload(
     let res = do_clear_payload(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -410,7 +368,7 @@ async fn clear_payload(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/batch")]
@@ -424,28 +382,22 @@ async fn update_batch(
     inference_token: InferenceToken,
 ) -> impl Responder {
     let timing = Instant::now();
-    let operations_inner = operations.into_inner();
+    let operations = operations.into_inner();
 
     let mut vpass = None;
-    for operation in operations_inner.operations.iter() {
-        let pass_check = match check_strict_mode(
-            operation,
-            None,
-            &collection.name,
-            &dispatcher,
-            &access,
-        )
-        .await
+    for operation in operations.operations.iter() {
+        let pass = match check_strict_mode(operation, None, &collection.name, &dispatcher, &access)
+            .await
         {
             Ok(pass) => pass,
-            Err(err) => return process_response_error(err, Instant::now(), None, None),
+            Err(err) => return process_response_error(err, Instant::now(), None),
         };
-        vpass = Some(pass_check);
+        vpass = Some(pass);
     }
 
     // vpass == None => No update operation available
     let Some(pass) = vpass else {
-        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None, None);
+        return process_response::<Vec<UpdateResult>>(Ok(vec![]), timing, None);
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -460,7 +412,7 @@ async fn update_batch(
     let result_with_usage = do_batch_update_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operations_inner.operations,
+        operations.operations,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -474,7 +426,7 @@ async fn update_batch(
         Err(err) => (Err(err), None),
     };
 
-    process_response(
+    process_response_with_inference_usage(
         response_data,
         timing,
         request_hw_counter.to_rest_api(),
@@ -492,7 +444,7 @@ async fn create_field_index(
     service_config: web::Data<ServiceConfig>,
 ) -> impl Responder {
     let timing = Instant::now();
-    let operation_inner = operation.into_inner();
+    let operation = operation.into_inner();
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -504,7 +456,7 @@ async fn create_field_index(
     let response = do_create_index(
         dispatcher.into_inner(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
@@ -515,7 +467,6 @@ async fn create_field_index(
     process_response(
         response, timing,
         None, // Do not report hardware counter for index creation, as it might be not accurate due to consensus
-        None,
     )
 }
 
@@ -539,7 +490,7 @@ async fn delete_field_index(
         HwMeasurementAcc::disposable(), // API unmeasured
     )
     .await;
-    process_response(response, timing, None, None)
+    process_response(response, timing, None)
 }
 
 // Configure services

@@ -94,6 +94,34 @@ pub struct InferenceUsage {
     pub models: HashMap<String, ModelUsage>,
 }
 
+impl InferenceUsage {
+    pub fn is_empty(&self) -> bool {
+        self.models.is_empty()
+    }
+
+    pub fn into_non_empty(self) -> Option<Self> {
+        if self.is_empty() { None } else { Some(self) }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        for (model_name, model_usage) in other.models {
+            self.models
+                .entry(model_name)
+                .and_modify(|existing| {
+                    let ModelUsage { tokens } = existing;
+                    *tokens += model_usage.tokens;
+                })
+                .or_insert(model_usage);
+        }
+    }
+
+    pub fn merge_opt(&mut self, other: Option<Self>) {
+        if let Some(other) = other {
+            self.merge(other);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct ModelUsage {

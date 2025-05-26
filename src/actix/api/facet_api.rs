@@ -40,7 +40,7 @@ async fn facet(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, timing, None, None),
+        Err(err) => return process_response_error(err, timing, None),
     };
 
     let facet_params = From::from(facet_request);
@@ -71,7 +71,7 @@ async fn facet(
         .await
         .map(FacetResponse::from);
 
-    process_response(response, timing, request_hw_counter.to_rest_api(), None)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 pub fn config_facet_api(cfg: &mut web::ServiceConfig) {

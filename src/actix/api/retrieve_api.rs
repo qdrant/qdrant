@@ -86,14 +86,14 @@ async fn get_point(
     .await
     {
         Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let Ok(point_id) = point.id.parse::<PointIdType>() else {
         let err = StorageError::BadInput {
             description: format!("Can not recognize \"{}\" as point id", point.id),
         };
-        return process_response_error(err, Instant::now(), None, None);
+        return process_response_error(err, Instant::now(), None);
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -121,7 +121,7 @@ async fn get_point(
     })
     .map(api::rest::Record::from);
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points")]
@@ -142,7 +142,7 @@ async fn get_points(
     .await
     {
         Ok(p) => p,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let PointRequest {
@@ -181,7 +181,7 @@ async fn get_points(
     })
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/scroll")]
@@ -208,7 +208,7 @@ async fn scroll_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -237,5 +237,5 @@ async fn scroll_points(
         )
         .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api(), None)
+    process_response(res, timing, request_hw_counter.to_rest_api())
 }

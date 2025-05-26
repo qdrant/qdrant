@@ -59,20 +59,21 @@ pub async fn convert_query_point_groups_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    let inferred =
+    // ToDo: _usage should also be returned, but currently not used
+    let (inferred, _usage) =
         BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
     let query = if let Some(q) = query {
-        Some(convert_query_with_inferred(q, &inferred.0)?)
+        Some(convert_query_with_inferred(q, &inferred)?)
     } else {
         None
     };
 
     let prefetch = prefetch
         .into_iter()
-        .map(|p| convert_prefetch_with_inferred(p, &inferred.0))
+        .map(|p| convert_prefetch_with_inferred(p, &inferred))
         .collect::<Result<Vec<_>, _>>()?;
 
     let request = CollectionQueryGroupsRequest {
@@ -138,18 +139,19 @@ pub async fn convert_query_points_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    let inferred =
+    // ToDo: _usage should be returned as well, but currently not used
+    let (inferred, _usage) =
         BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
 
     let prefetch = prefetch
         .into_iter()
-        .map(|p| convert_prefetch_with_inferred(p, &inferred.0))
+        .map(|p| convert_prefetch_with_inferred(p, &inferred))
         .collect::<Result<Vec<_>, _>>()?;
 
     let query = query
-        .map(|q| convert_query_with_inferred(q, &inferred.0))
+        .map(|q| convert_query_with_inferred(q, &inferred))
         .transpose()?;
 
     Ok(CollectionQueryRequest {

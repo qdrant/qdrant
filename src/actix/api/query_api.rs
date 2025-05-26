@@ -51,9 +51,13 @@ async fn query_points(
         Some(shard_keys) => shard_keys.into(),
     };
     let hw_measurement_acc = request_hw_counter.get_counter();
-    let result = async move {
+    let mut inference_usage = InferenceUsage::default();
+
+    let result = async {
         let CollectionQueryRequestWithUsage { request, usage } =
             convert_query_request_from_rest(query_request, &inference_token).await?;
+
+        inference_usage.merge_opt(usage);
 
         let pass = check_strict_mode(
             &request,
@@ -83,20 +87,15 @@ async fn query_points(
             .map(api::rest::ScoredPoint::from)
             .collect_vec();
 
-        Ok((QueryResponse { points }, usage))
+        Ok(QueryResponse { points })
     }
     .await;
 
-    let (result, inference_usage) = match result {
-        Ok((res, usage)) => (Ok(res), usage),
-        Err(err) => (Err(err), None),
-    };
-
-    helpers::process_response(
+    helpers::process_response_with_inference_usage(
         result,
         timing,
         request_hw_counter.to_rest_api(),
-        inference_usage,
+        inference_usage.into_non_empty(),
     )
 }
 
@@ -121,9 +120,10 @@ async fn query_points_batch(
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
 
-    let result = async move {
+    let mut all_usages: InferenceUsage = InferenceUsage::default();
+
+    let result = async {
         let mut batch = Vec::with_capacity(searches.len());
-        let mut all_usages: Option<InferenceUsage> = None;
 
         for request_item in searches {
             let QueryRequest {
@@ -134,19 +134,7 @@ async fn query_points_batch(
             let CollectionQueryRequestWithUsage { request, usage } =
                 convert_query_request_from_rest(internal, &inference_token).await?;
 
-            if let Some(usage) = usage {
-                match &mut all_usages {
-                    Some(agg) => {
-                        for (model_name, model_usage) in usage.models {
-                            agg.models
-                                .entry(model_name)
-                                .and_modify(|existing| existing.tokens += model_usage.tokens)
-                                .or_insert(model_usage);
-                        }
-                    }
-                    None => all_usages = Some(usage),
-                }
-            }
+            all_usages.merge_opt(usage);
 
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
@@ -184,20 +172,15 @@ async fn query_points_batch(
                     .collect_vec(),
             })
             .collect_vec();
-        Ok((res, all_usages))
+        Ok(res)
     }
     .await;
 
-    let (result, final_inference_usage) = match result {
-        Ok((res, usage)) => (Ok(res), usage),
-        Err(err) => (Err(err), None),
-    };
-
-    helpers::process_response(
+    helpers::process_response_with_inference_usage(
         result,
         timing,
         request_hw_counter.to_rest_api(),
-        final_inference_usage,
+        all_usages.into_non_empty(),
     )
 }
 
@@ -224,14 +207,17 @@ async fn query_points_groups(
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
+    let mut inference_usage = InferenceUsage::default();
 
-    let result = async move {
+    let result = async {
         let shard_selection = match shard_key {
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
         let CollectionQueryGroupsRequestWithUsage { request, usage } =
             convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
+
+        inference_usage.merge_opt(usage);
 
         let pass = check_strict_mode(
             &request,
@@ -253,20 +239,15 @@ async fn query_points_groups(
             hw_measurement_acc,
         )
         .await?;
-        Ok((query_result, usage))
+        Ok(query_result)
     }
     .await;
 
-    let (result, inference_usage) = match result {
-        Ok((res, usage)) => (Ok(res), usage),
-        Err(err) => (Err(err), None),
-    };
-
-    helpers::process_response(
+    helpers::process_response_with_inference_usage(
         result,
         timing,
         request_hw_counter.to_rest_api(),
-        inference_usage,
+        inference_usage.into_non_empty(),
     )
 }
 

@@ -48,7 +48,7 @@ async fn search_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -83,7 +83,7 @@ async fn search_points(
             .collect_vec()
     });
 
-    process_response(result, timing, request_hw_counter.to_rest_api(), None)
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/batch")]
@@ -124,7 +124,7 @@ async fn batch_search_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let request_hw_counter = get_request_hardware_counter(
@@ -158,7 +158,7 @@ async fn batch_search_points(
             .collect_vec()
     });
 
-    process_response(result, timing, request_hw_counter.to_rest_api(), None)
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/groups")]
@@ -185,7 +185,7 @@ async fn search_point_groups(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -213,7 +213,7 @@ async fn search_point_groups(
     )
     .await;
 
-    process_response(result, timing, request_hw_counter.to_rest_api(), None)
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/matrix/pairs")]
@@ -240,7 +240,7 @@ async fn search_points_matrix_pairs(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -269,7 +269,7 @@ async fn search_points_matrix_pairs(
     .await
     .map(SearchMatrixPairsResponse::from);
 
-    process_response(response, timing, request_hw_counter.to_rest_api(), None)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 #[post("/collections/{name}/points/search/matrix/offsets")]
@@ -296,7 +296,7 @@ async fn search_points_matrix_offsets(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selection = match shard_key {
@@ -325,7 +325,7 @@ async fn search_points_matrix_offsets(
     .await
     .map(SearchMatrixOffsetsResponse::from);
 
-    process_response(response, timing, request_hw_counter.to_rest_api(), None)
+    process_response(response, timing, request_hw_counter.to_rest_api())
 }
 
 // Configure services

@@ -64,7 +64,8 @@ pub async fn upsert(
         .await?;
 
     let timing = Instant::now();
-    let result = do_upsert_points(
+    // ToDo: _usage should be returned
+    let (result, _usage) = do_upsert_points(
         toc.clone(),
         collection_name,
         operation,
@@ -77,7 +78,7 @@ pub async fn upsert(
     .await?;
 
     let response =
-        points_operation_response_internal(timing, result.0, request_hw_counter.to_grpc_api());
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -164,7 +165,8 @@ pub async fn update_vectors(
         .await?;
 
     let timing = Instant::now();
-    let result = do_update_vectors(
+    // ToDo: _usage should be returned
+    let (result, _usage) = do_update_vectors(
         toc.clone(),
         collection_name,
         operation,
@@ -177,7 +179,7 @@ pub async fn update_vectors(
     .await?;
 
     let response =
-        points_operation_response_internal(timing, result.0, request_hw_counter.to_grpc_api());
+        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
     Ok(Response::new(response))
 }
 
@@ -819,11 +821,12 @@ pub async fn sync(
 
     // No actual inference should happen here, as we are just syncing existing points
     // So this function is used for consistency only
-    let points =
+    // ToDo: _usage should be returned
+    let (points, _usage) =
         convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
 
     let operation = PointSyncOperation {
-        points: points.0,
+        points,
         from_id: from_id.map(|x| x.try_into()).transpose()?,
         to_id: to_id.map(|x| x.try_into()).transpose()?,
     };

@@ -118,7 +118,7 @@ async fn create_collection(
         CreateCollectionOperation::new(collection.name.clone(), operation.into_inner());
 
     let Ok(create_collection_op) = create_collection_op else {
-        return process_response(create_collection_op, timing, None, None);
+        return process_response(create_collection_op, timing, None);
     };
 
     let response = dispatcher
@@ -128,7 +128,7 @@ async fn create_collection(
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None, None)
+    process_response(response, timing, None)
 }
 
 #[patch("/collections/{name}")]
@@ -151,7 +151,7 @@ async fn update_collection(
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None, None)
+    process_response(response, timing, None)
 }
 
 #[delete("/collections/{name}")]
@@ -171,7 +171,7 @@ async fn delete_collection(
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None, None)
+    process_response(response, timing, None)
 }
 
 #[post("/collections/aliases")]
@@ -189,7 +189,7 @@ async fn update_aliases(
             query.timeout(),
         )
         .await;
-    process_response(response, timing, None, None)
+    process_response(response, timing, None)
 }
 
 #[get("/collections/{name}/cluster")]
@@ -227,7 +227,7 @@ async fn update_collection_cluster(
         wait_timeout,
     )
     .await;
-    process_response(response, timing, None, None)
+    process_response(response, timing, None)
 }
 
 // Configure services

@@ -5,7 +5,9 @@ use collection::operations::point_ops::VectorPersisted;
 use storage::content_manager::errors::StorageError;
 
 use super::batch_processing::BatchAccum;
-use super::service::{InferenceData, InferenceInput, InferenceService, InferenceType};
+use super::service::{
+    InferenceData, InferenceInput, InferenceResponse, InferenceService, InferenceType,
+};
 use crate::common::inference::InferenceToken;
 
 pub struct BatchAccumInferred {
@@ -43,25 +45,25 @@ impl BatchAccumInferred {
             .map(InferenceInput::from)
             .collect();
 
-        let inference_response = service
+        let InferenceResponse {
+            embeddings,
+            usage,
+        } = service
             .infer(inference_inputs, inference_type, inference_token)
             .await
             .map_err(|e| StorageError::service_error(
                 format!("Inference request failed. Check if inference service is running and properly configured: {e}")
             ))?;
 
-        if inference_response.embeddings.is_empty() {
+        if embeddings.is_empty() {
             return Err(StorageError::service_error(
                 "Inference service returned no vectors. Check if models are properly loaded.",
             ));
         }
 
-        let objects = objects_serialized
-            .into_iter()
-            .zip(inference_response.embeddings)
-            .collect();
+        let objects = objects_serialized.into_iter().zip(embeddings).collect();
 
-        Ok((Self { objects }, inference_response.usage))
+        Ok((Self { objects }, usage))
     }
 
     pub async fn from_batch_accum(

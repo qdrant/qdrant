@@ -37,7 +37,7 @@ async fn count_points(
     .await
     {
         Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None, None),
+        Err(err) => return process_response_error(err, Instant::now(), None),
     };
 
     let shard_selector = match shard_key {
@@ -66,5 +66,5 @@ async fn count_points(
     )
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api(), None)
+    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
 }
