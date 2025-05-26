@@ -4,6 +4,25 @@ use common::counter::conditioned_counter::ConditionedCounter;
 
 use crate::{SizedValue, UnsizedValue};
 
+/// Trait for types that can be used as posting list values
+///
+/// This trait associates a value type with its appropriate handler.
+/// It is sealed to ensure consistency in the posting list implementation.
+pub trait PostingValue: Clone {
+    type Handler: ValueHandler<Value = Self>;
+}
+
+// Implementations for built-in sized types
+impl PostingValue for () {
+    type Handler = SizedHandler<()>;
+}
+impl PostingValue for u32 {
+    type Handler = SizedHandler<u32>;
+}
+impl PostingValue for u64 {
+    type Handler = SizedHandler<u64>;
+}
+
 /// Trait to abstract the handling of values in PostingList
 ///
 /// This trait handles the differences between fixed-size and variable-size value
@@ -15,9 +34,9 @@ pub trait ValueHandler {
     /// The type of value in each PostingElement.
     type Value;
     /// The value to store within each chunk, or alongside each id.
-    type Sized: std::marker::Sized + Copy;
+    type Sized: std::marker::Sized + Copy + std::fmt::Debug;
     /// The type to store variable-size data
-    type VarSizeData: ToOwned<Owned = Self::VarSizeData>;
+    type VarSizeData: ToOwned<Owned = Self::VarSizeData> + std::fmt::Debug + Clone;
 
     /// Process values before storage and return the necessary var_sized_data
     ///
@@ -41,9 +60,9 @@ pub trait ValueHandler {
 
 /// Fixed-size value handler
 #[derive(Default, Debug, Clone, Copy)]
-pub struct SizedHandler<V>(PhantomData<V>);
+pub struct SizedHandler<V: SizedValue>(PhantomData<V>);
 
-impl<V: SizedValue + Copy> ValueHandler for SizedHandler<V> {
+impl<V: SizedValue> ValueHandler for SizedHandler<V> {
     type Value = V;
     type Sized = V;
     type VarSizeData = ();
@@ -67,7 +86,7 @@ impl<V: SizedValue + Copy> ValueHandler for SizedHandler<V> {
 
 /// Var-size value handler
 #[derive(Default, Debug, Clone, Copy)]
-pub struct UnsizedHandler<V>(PhantomData<V>);
+pub struct UnsizedHandler<V: UnsizedValue>(PhantomData<V>);
 
 impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
     type Value = V;

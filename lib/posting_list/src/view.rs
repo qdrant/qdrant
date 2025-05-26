@@ -8,19 +8,20 @@ use zerocopy::little_endian::U32;
 
 use crate::iterator::PostingIterator;
 use crate::posting_list::RemainderPosting;
-use crate::value_handler::{SizedHandler, ValueHandler};
+use crate::value_handler::{PostingValue, ValueHandler};
 use crate::visitor::PostingVisitor;
 use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingList, SizedValue};
 
 /// A non-owning view of [`PostingList`].
-pub struct PostingListView<'a, H: ValueHandler> {
+#[derive(Debug)]
+pub struct PostingListView<'a, V: PostingValue> {
     pub(crate) id_data: &'a [u8],
-    chunks: &'a [PostingChunk<H::Sized>],
-    pub(crate) var_size_data: &'a H::VarSizeData,
-    remainders: &'a [RemainderPosting<H::Sized>],
+    chunks: &'a [PostingChunk<<V::Handler as ValueHandler>::Sized>],
+    pub(crate) var_size_data: &'a <V::Handler as ValueHandler>::VarSizeData,
+    remainders: &'a [RemainderPosting<<V::Handler as ValueHandler>::Sized>],
     pub(crate) last_id: Option<PointOffsetType>,
     pub(crate) hw_counter: ConditionedCounter<'a>,
-    pub(crate) _phantom: PhantomData<H>,
+    pub(crate) _phantom: PhantomData<V>,
 }
 
 pub struct PostingListComponents<'a, S, D> {
@@ -51,7 +52,10 @@ impl<'a> IdsPostingListView<'a> {
     }
 }
 
-impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
+impl<'a, V: PostingValue + SizedValue> PostingListView<'a, V>
+where
+    V::Handler: ValueHandler<Value = V, Sized = V, VarSizeData = ()>,
+{
     pub fn from_weighted_ids_components(
         id_data: &'a [u8],
         chunks: &'a [PostingChunk<V>],
@@ -71,26 +75,23 @@ impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
     }
 }
 
-impl<'a, H: ValueHandler> IntoIterator for PostingListView<'a, H>
-where
-    H::Value: Clone,
-{
-    type Item = <PostingIterator<'a, H> as Iterator>::Item;
-    type IntoIter = PostingIterator<'a, H>;
+impl<'a, V: PostingValue> IntoIterator for PostingListView<'a, V> {
+    type Item = <PostingIterator<'a, V> as Iterator>::Item;
+    type IntoIter = PostingIterator<'a, V>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.visitor().into_iter()
     }
 }
 
-impl<'a, H: ValueHandler> PostingListView<'a, H> {
-    pub fn visitor(self) -> PostingVisitor<'a, H> {
+impl<'a, V: PostingValue> PostingListView<'a, V> {
+    pub fn visitor(self) -> PostingVisitor<'a, V> {
         PostingVisitor::new(self)
     }
 
     // not implemented as ToOwned trait because it requires PostingList's Borrow to return
     // a &PostingListView, which is not possible because it's a non-owning view
-    pub fn to_owned(self) -> PostingList<H> {
+    pub fn to_owned(self) -> PostingList<V> {
         PostingList {
             id_data: self.id_data.to_vec(),
             chunks: self.chunks.to_vec(),
@@ -101,7 +102,12 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         }
     }
 
-    pub fn components(&self) -> PostingListComponents<H::Sized, H::VarSizeData> {
+    pub fn components(
+        &self,
+    ) -> PostingListComponents<
+        <V::Handler as ValueHandler>::Sized,
+        <V::Handler as ValueHandler>::VarSizeData,
+    > {
         let Self {
             id_data,
             chunks,
@@ -123,9 +129,9 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
 
     pub fn from_components(
         id_data: &'a [u8],
-        chunks: &'a [PostingChunk<H::Sized>],
-        var_size_data: &'a H::VarSizeData,
-        remainders: &'a [RemainderPosting<H::Sized>],
+        chunks: &'a [PostingChunk<<V::Handler as ValueHandler>::Sized>],
+        var_size_data: &'a <V::Handler as ValueHandler>::VarSizeData,
+        remainders: &'a [RemainderPosting<<V::Handler as ValueHandler>::Sized>],
         last_id: Option<PointOffsetType>,
         hw_counter: ConditionedCounter<'a>,
     ) -> Self {
@@ -166,19 +172,25 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         );
     }
 
-    pub(crate) fn get_chunk_unchecked(&self, chunk_idx: usize) -> &PostingChunk<H::Sized> {
+    pub(crate) fn get_chunk_unchecked(
+        &self,
+        chunk_idx: usize,
+    ) -> &PostingChunk<<V::Handler as ValueHandler>::Sized> {
         self.hw_counter
             .payload_index_io_read_counter()
-            .incr_delta(size_of::<PostingChunk<H::Sized>>());
+            .incr_delta(size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>());
 
         &self.chunks[chunk_idx]
     }
 
-    pub(crate) fn get_chunk(&self, chunk_idx: usize) -> Option<&PostingChunk<H::Sized>> {
+    pub(crate) fn get_chunk(
+        &self,
+        chunk_idx: usize,
+    ) -> Option<&PostingChunk<<V::Handler as ValueHandler>::Sized>> {
         self.chunks.get(chunk_idx).inspect(|_| {
             self.hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(size_of::<PostingChunk<H::Sized>>());
+                .incr_delta(size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>());
         })
     }
 
@@ -190,11 +202,16 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         self.remainders.len()
     }
 
-    pub(crate) fn get_remainder(&self, idx: usize) -> Option<&RemainderPosting<H::Sized>> {
+    pub(crate) fn get_remainder(
+        &self,
+        idx: usize,
+    ) -> Option<&RemainderPosting<<V::Handler as ValueHandler>::Sized>> {
         self.remainders.get(idx).inspect(|_| {
             self.hw_counter
                 .payload_index_io_read_counter()
-                .incr_delta(size_of::<RemainderPosting<H::Sized>>());
+                .incr_delta(size_of::<
+                    RemainderPosting<<V::Handler as ValueHandler>::Sized>,
+                >());
         })
     }
 
@@ -236,9 +253,10 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         debug_assert!(self.last_id.is_some_and(|last_id| id <= last_id));
 
         // Measure with complexity of the binary search
-        self.hw_counter
-            .payload_index_io_read_counter()
-            .incr_delta(chunks_slice.len().ilog2() as usize * size_of::<PostingChunk<H::Sized>>());
+        self.hw_counter.payload_index_io_read_counter().incr_delta(
+            chunks_slice.len().ilog2() as usize
+                * size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>(),
+        );
 
         match chunks_slice.binary_search_by(|chunk| chunk.initial_id.get().cmp(&id)) {
             // id is the initial value of the chunk with index idx

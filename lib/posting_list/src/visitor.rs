@@ -1,13 +1,13 @@
 use common::types::PointOffsetType;
 
 use crate::iterator::PostingIterator;
-use crate::value_handler::ValueHandler;
+use crate::value_handler::{PostingValue, ValueHandler};
 use crate::view::PostingListView;
 use crate::{CHUNK_LEN, PostingElement};
 
 /// A visitor for a posting list which caches the latest decompressed chunk of ids.
-pub struct PostingVisitor<'a, H: ValueHandler> {
-    pub(crate) list: PostingListView<'a, H>,
+pub struct PostingVisitor<'a, V: PostingValue> {
+    pub(crate) list: PostingListView<'a, V>,
 
     /// Index of the decompressed chunk.
     /// It is used to shorten the search range of chunk index for the next value.
@@ -17,8 +17,8 @@ pub struct PostingVisitor<'a, H: ValueHandler> {
     decompressed_chunk: [PointOffsetType; CHUNK_LEN],
 }
 
-impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
-    pub(crate) fn new(view: PostingListView<'a, H>) -> Self {
+impl<'a, V: PostingValue> PostingVisitor<'a, V> {
+    pub(crate) fn new(view: PostingListView<'a, V>) -> Self {
         Self {
             list: view,
             decompressed_chunk_idx: None,
@@ -133,7 +133,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         }
     }
 
-    pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<H::Value>> {
+    pub(crate) fn get_by_offset(&mut self, offset: usize) -> Option<PostingElement<V>> {
         let chunk_idx = offset / CHUNK_LEN;
         let local_offset = offset % CHUNK_LEN;
 
@@ -161,7 +161,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
                     .or_else(|| self.list.get_remainder(0).map(|e| e.value))
             };
 
-            let value = H::get_value(
+            let value = V::Handler::get_value(
                 sized_value,
                 next_sized_value,
                 self.list.var_size_data,
@@ -175,7 +175,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         self.list.get_remainder(local_offset).map(|e| {
             let id = e.id;
             let next_sized_value = || self.list.get_remainder(local_offset + 1).map(|r| r.value);
-            let value = H::get_value(
+            let value = V::Handler::get_value(
                 e.value,
                 next_sized_value,
                 self.list.var_size_data,
@@ -190,12 +190,9 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
     }
 }
 
-impl<'a, H: ValueHandler> IntoIterator for PostingVisitor<'a, H>
-where
-    H::Value: Clone,
-{
-    type Item = PostingElement<H::Value>;
-    type IntoIter = PostingIterator<'a, H>;
+impl<'a, V: PostingValue> IntoIterator for PostingVisitor<'a, V> {
+    type Item = PostingElement<V>;
+    type IntoIter = PostingIterator<'a, V>;
 
     fn into_iter(self) -> Self::IntoIter {
         PostingIterator::new(self)

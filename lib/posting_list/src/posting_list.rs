@@ -6,26 +6,31 @@ use zerocopy::little_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use crate::iterator::PostingIterator;
-use crate::value_handler::ValueHandler;
+use crate::value_handler::{PostingValue, ValueHandler};
 use crate::view::PostingListView;
 use crate::visitor::PostingVisitor;
 use crate::{CHUNK_LEN, PostingBuilder};
 
 /// Generic compressed posting list.
 ///
-/// - `PostingList<Sized<()>>` when there are no values (unit type `()`), there are just compressed ids + remainders
-/// - `PostingList<Sized<V>>` when there are `SizedValue` values, each id includes one value stored within the
-///   fixed-sized chunks
-/// - `PostingList<VarSized<V>>` when there are `VarSizedValue` values, each id includes one value in the chunk,
-///   which points to the actual value in the var_size_data
+/// - `PostingList<()>` when there are no values (unit type `()`), there are just compressed ids + remainders
+/// - `PostingList<V>` when there are values associated to each id. The value must implement `PostingValue`, which chooses the appropriate value handler.
+///   There are two available handlers:
+///   - [`SizedHandler`][1]: needs the value to implement [`SizedValue`][3]. Stores the value within the chunk.
+///   - [`UnsizedHandler`][2]: needs the value to implement [`UnsizedValue`][4]. Stores the value in the var_size_data.
+///
+/// [1]: crate::value_handler::SizedHandler
+/// [2]: crate::value_handler::UnsizedHandler
+/// [3]: crate::SizedValue
+/// [4]: crate::UnsizedValue
 #[derive(Debug, Clone)]
-pub struct PostingList<H: ValueHandler> {
+pub struct PostingList<V: PostingValue> {
     pub(crate) id_data: Vec<u8>,
-    pub(crate) chunks: Vec<PostingChunk<H::Sized>>,
-    pub(crate) remainders: Vec<RemainderPosting<H::Sized>>,
-    pub(crate) var_size_data: H::VarSizeData,
+    pub(crate) chunks: Vec<PostingChunk<<V::Handler as ValueHandler>::Sized>>,
+    pub(crate) remainders: Vec<RemainderPosting<<V::Handler as ValueHandler>::Sized>>,
+    pub(crate) var_size_data: <V::Handler as ValueHandler>::VarSizeData,
     pub(crate) last_id: Option<PointOffsetType>,
-    pub(crate) _phantom: PhantomData<H>,
+    pub(crate) _phantom: PhantomData<V>,
 }
 
 /// A single element in the posting list, which contains an id and a value.
@@ -79,8 +84,8 @@ impl<S: Sized> PostingChunk<S> {
     }
 }
 
-impl<H: ValueHandler> PostingList<H> {
-    pub fn view(&self) -> PostingListView<H> {
+impl<V: PostingValue> PostingList<V> {
+    pub fn view(&self) -> PostingListView<V> {
         let PostingList {
             id_data,
             chunks,
@@ -100,15 +105,12 @@ impl<H: ValueHandler> PostingList<H> {
         )
     }
 
-    pub fn visitor(&self) -> PostingVisitor<'_, H> {
+    pub fn visitor(&self) -> PostingVisitor<'_, V> {
         let view = self.view();
         PostingVisitor::new(view)
     }
 
-    pub fn iter(&self) -> PostingIterator<'_, H>
-    where
-        H::Value: Clone,
-    {
+    pub fn iter(&self) -> PostingIterator<'_, V> {
         self.visitor().into_iter()
     }
 
@@ -121,15 +123,12 @@ impl<H: ValueHandler> PostingList<H> {
     }
 }
 
-impl<H> FromIterator<(PointOffsetType, H::Value)> for PostingList<H>
-where
-    H: ValueHandler,
-{
-    fn from_iter<T: IntoIterator<Item = (PointOffsetType, H::Value)>>(iter: T) -> Self {
+impl<V: PostingValue> FromIterator<(PointOffsetType, V)> for PostingList<V> {
+    fn from_iter<T: IntoIterator<Item = (PointOffsetType, V)>>(iter: T) -> Self {
         let mut builder = PostingBuilder::new();
         for (id, value) in iter {
             builder.add(id, value);
         }
-        builder.build_generic::<H>()
+        builder.build()
     }
 }
