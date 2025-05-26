@@ -171,6 +171,13 @@ impl MutableIdTracker {
             pending_mappings: Default::default(),
         })
     }
+
+    pub fn segment_files(segment_path: &Path) -> Vec<PathBuf> {
+        [mappings_path(segment_path), versions_path(segment_path)]
+            .into_iter()
+            .filter(|path| path.is_file())
+            .collect()
+    }
 }
 
 impl IdTracker for MutableIdTracker {
@@ -336,14 +343,9 @@ impl IdTracker for MutableIdTracker {
         "mutable id tracker"
     }
 
+    #[inline]
     fn files(&self) -> Vec<PathBuf> {
-        [
-            mappings_path(&self.segment_path),
-            versions_path(&self.segment_path),
-        ]
-        .into_iter()
-        .filter(|path| path.is_file())
-        .collect()
+        Self::segment_files(&self.segment_path)
     }
 }
 

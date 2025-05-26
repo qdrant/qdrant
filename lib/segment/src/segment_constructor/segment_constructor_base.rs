@@ -961,24 +961,47 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
 ) -> OperationResult<MutableIdTracker> {
     log::info!("Migrating ID tracker from RocksDB into new format");
 
-    // Construct mutable ID tracker
-    let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
-    assert_eq!(
-        new_id_tracker.total_point_count(),
-        0,
-        "new mutable ID tracker must be empty",
-    );
+    fn make_mutable(
+        old_id_tracker: &SimpleIdTracker,
+        segment_path: &Path,
+    ) -> OperationResult<MutableIdTracker> {
+        // Construct mutable ID tracker
+        let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
+        assert_eq!(
+            new_id_tracker.total_point_count(),
+            0,
+            "new mutable ID tracker must be empty",
+        );
 
-    // Copy all mappings into it
-    for (external_id, internal_id) in old_id_tracker.iter_from(None) {
-        let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
-        new_id_tracker.set_link(external_id, internal_id)?;
-        new_id_tracker.set_internal_version(internal_id, version)?;
+        // Copy all mappings into it
+        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
+            let version = old_id_tracker.internal_version(internal_id).unwrap_or(0);
+            new_id_tracker.set_link(external_id, internal_id)?;
+            new_id_tracker.set_internal_version(internal_id, version)?;
+        }
+
+        // Flush mappings and versions
+        new_id_tracker.mapping_flusher()()?;
+        new_id_tracker.versions_flusher()()?;
+
+        Ok(new_id_tracker)
     }
 
-    // Flush mappings and versions
-    new_id_tracker.mapping_flusher()()?;
-    new_id_tracker.versions_flusher()()?;
+    let new_id_tracker = match make_mutable(&old_id_tracker, segment_path) {
+        Ok(new_id_tracker) => new_id_tracker,
+        // On migration error, remove al mutable ID tracker files
+        Err(err) => {
+            for file in MutableIdTracker::segment_files(segment_path) {
+                if let Err(err) = std::fs::remove_file(&file) {
+                    log::error!(
+                        "ID tracker migration to mutable failed, failed to remove mutable file {} for cleanup: {err}",
+                        file.display(),
+                    );
+                }
+            }
+            return Err(err);
+        }
+    };
 
     // Destroy persisted RocksDB ID tracker data
     old_id_tracker.destroy()?;
