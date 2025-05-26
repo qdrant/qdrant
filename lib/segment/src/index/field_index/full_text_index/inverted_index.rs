@@ -282,9 +282,10 @@ mod tests {
 
                 let orig_posting = mutable.postings.get(*orig_token as usize).cloned().unwrap();
 
+                let mut posting_visitor = new_posting.visitor();
                 let new_contains_orig = orig_posting
                     .iter()
-                    .all(|point_id| new_posting.visitor().contains(point_id));
+                    .all(|point_id| posting_visitor.contains(point_id));
 
                 let orig_contains_new = new_posting
                     .iter()
