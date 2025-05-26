@@ -967,7 +967,7 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
     ) -> OperationResult<MutableIdTracker> {
         // Construct mutable ID tracker
         let mut new_id_tracker = create_mutable_id_tracker(segment_path)?;
-        assert_eq!(
+        debug_assert_eq!(
             new_id_tracker.total_point_count(),
             0,
             "new mutable ID tracker must be empty",
