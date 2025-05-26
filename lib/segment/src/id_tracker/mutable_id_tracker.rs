@@ -198,7 +198,7 @@ impl IdTracker for MutableIdTracker {
         }
 
         // Set version and persist if changed
-        let changed = self.internal_to_version[internal_id as usize] != version;
+        let changed = self.internal_to_version[internal_id as usize] != version || version == 0;
         if changed {
             self.internal_to_version[internal_id as usize] = version;
             self.pending_versions.lock().insert(internal_id, version);
