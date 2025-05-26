@@ -53,6 +53,7 @@ where
             return None;
         };
 
+        debug_assert!(offset >= self.offset);
         let greater_or_equal = self.visitor.get_by_offset(offset);
 
         self.current_elem = greater_or_equal.clone();

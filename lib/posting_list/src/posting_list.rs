@@ -63,7 +63,7 @@ impl<S: Sized> PostingChunk<S> {
     /// Get byte size of the compressed ids chunk.
     pub(crate) fn get_compressed_size(
         chunks: &[PostingChunk<S>],
-        data: &[u8],
+        ids_data: &[u8],
         chunk_index: usize,
     ) -> usize {
         if chunk_index + 1 < chunks.len() {
@@ -71,7 +71,7 @@ impl<S: Sized> PostingChunk<S> {
                 - chunks[chunk_index].offset.get() as usize
         } else {
             // Last chunk
-            data.len() - chunks[chunk_index].offset.get() as usize
+            ids_data.len() - chunks[chunk_index].offset.get() as usize
         }
     }
 }

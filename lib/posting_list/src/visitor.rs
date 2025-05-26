@@ -57,14 +57,14 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
     ) -> Option<usize> {
         let start_chunk = offset_hint.map(|offset| offset / CHUNK_LEN).unwrap_or(0);
 
+        let ids_range = self.list.ids_range(start_chunk)?;
         // check if the first in the chunk is already greater or equal to the target id
-        if self
-            .list
-            .chunks
-            .get(start_chunk)
-            .is_some_and(|chunk| chunk.initial_id.get() >= id)
-        {
+        if ids_range.start() >= &id {
             return Some(start_chunk * CHUNK_LEN);
+        }
+        // check if the target id is already greater than the last id
+        if ids_range.end() < &id {
+            return None;
         }
 
         // Find the chunk that may contain the id and check if the id is in the chunk
@@ -108,7 +108,11 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
     }
 
     pub fn contains(&mut self, id: PointOffsetType) -> bool {
-        if !self.list.is_in_range(id) {
+        if self
+            .list
+            .ids_range(0)
+            .is_none_or(|range| !range.contains(&id))
+        {
             return false;
         }
 

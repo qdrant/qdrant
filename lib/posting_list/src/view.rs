@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::RangeInclusive;
 
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
@@ -140,10 +141,13 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         let compressed_size =
             PostingChunk::get_compressed_size(self.chunks, self.id_data, chunk_index);
         let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
+
+        let start_offset = chunk.offset.get() as usize;
+        let end_offset = start_offset + compressed_size;
+
         BitPackerImpl::new().decompress_sorted(
             chunk.initial_id.get(),
-            &self.id_data
-                [chunk.offset.get() as usize..chunk.offset.get() as usize + compressed_size],
+            &self.id_data[start_offset..end_offset],
             decompressed_chunk,
             chunk_bits as u8,
         );
@@ -156,22 +160,17 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         self.chunks.get(chunk_idx).map(|chunk| &chunk.sized_values)
     }
 
-    pub(crate) fn is_in_range(&self, id: PointOffsetType) -> bool {
-        let Some(last_id) = self.last_id else {
-            // if there is no last id, it means the posting list is empty
-            return false;
-        };
+    pub(crate) fn ids_range(&self, start_chunk: usize) -> Option<RangeInclusive<u32>> {
+        // if there is no last id, it means the posting list is empty
+        let last_id = self.last_id?;
 
-        let Some(initial_id) = self
+        let initial_id = self
             .chunks
-            .first()
+            .get(start_chunk)
             .map(|chunk| chunk.initial_id.get())
-            .or_else(|| self.remainders.first().map(|elem| elem.id.get()))
-        else {
-            return false;
-        };
+            .or_else(|| self.remainders.first().map(|elem| elem.id.get()))?;
 
-        (initial_id..=last_id).contains(&id)
+        Some(initial_id..=last_id)
     }
 
     /// Find the chunk that may contain the id.
@@ -188,9 +187,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         }
 
         let start_chunk = start_chunk.unwrap_or(0);
-        let Some(chunks_slice) = &chunks.get(start_chunk..) else {
-            return None;
-        };
+        let chunks_slice = chunks.get(start_chunk..)?;
         if chunks_slice.is_empty() {
             return None;
         }
