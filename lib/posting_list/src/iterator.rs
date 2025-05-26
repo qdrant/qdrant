@@ -48,16 +48,17 @@ where
             .visitor
             .search_greater_or_equal(target_id, Some(self.offset))
         else {
+            self.current_elem = None;
             self.offset = self.visitor.len();
             return None;
         };
 
-        let next = self.visitor.get_by_offset(offset);
+        let greater_or_equal = self.visitor.get_by_offset(offset);
 
-        self.current_elem = next.clone();
+        self.current_elem = greater_or_equal.clone();
         self.offset = offset;
 
-        next
+        greater_or_equal
     }
 }
 
