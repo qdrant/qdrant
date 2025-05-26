@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use api::rest::models::InferenceUsage;
 use api::rest::*;
 use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -573,15 +574,12 @@ pub async fn do_batch_update_points(
     access: Access,
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
-) -> Result<(Vec<UpdateResult>, Option<models::InferenceUsage>), StorageError> {
+) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
     let mut results = Vec::with_capacity(operations.len());
-    let mut inference_usage: Option<models::InferenceUsage> = None;
+    let mut inference_usage = InferenceUsage::default();
 
     for operation in operations {
-        let (current_update_result, current_operation_usage_opt): (
-            UpdateResult,
-            Option<models::InferenceUsage>,
-        ) = match operation {
+        let current_update_result = match operation {
             UpdateOperation::Upsert(operation) => {
                 let (update_res, usage_opt) = do_upsert_points(
                     toc.clone(),
@@ -594,10 +592,11 @@ pub async fn do_batch_update_points(
                     hw_measurement_acc.clone(),
                 )
                 .await?;
-                (update_res, usage_opt)
+                inference_usage.merge_opt(usage_opt);
+                update_res
             }
             UpdateOperation::Delete(operation) => {
-                let update_res = do_delete_points(
+                do_delete_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.delete,
@@ -607,11 +606,10 @@ pub async fn do_batch_update_points(
                     inference_token.clone(), // delete_points takes token, assumed not to produce usage currently
                     hw_measurement_acc.clone(),
                 )
-                .await?;
-                (update_res, None)
+                .await?
             }
             UpdateOperation::SetPayload(operation) => {
-                let update_res = do_set_payload(
+                do_set_payload(
                     toc.clone(),
                     collection_name.clone(),
                     operation.set_payload,
@@ -620,11 +618,10 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await?;
-                (update_res, None)
+                .await?
             }
             UpdateOperation::OverwritePayload(operation) => {
-                let update_res = do_overwrite_payload(
+                do_overwrite_payload(
                     toc.clone(),
                     collection_name.clone(),
                     operation.overwrite_payload,
@@ -633,11 +630,10 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await?;
-                (update_res, None)
+                .await?
             }
             UpdateOperation::DeletePayload(operation) => {
-                let update_res = do_delete_payload(
+                do_delete_payload(
                     toc.clone(),
                     collection_name.clone(),
                     operation.delete_payload,
@@ -646,11 +642,10 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await?;
-                (update_res, None)
+                .await?
             }
             UpdateOperation::ClearPayload(operation) => {
-                let update_res = do_clear_payload(
+                do_clear_payload(
                     toc.clone(),
                     collection_name.clone(),
                     operation.clear_payload,
@@ -659,8 +654,7 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await?;
-                (update_res, None)
+                .await?
             }
             UpdateOperation::UpdateVectors(operation) => {
                 let (update_res, usage_opt) = do_update_vectors(
@@ -674,10 +668,11 @@ pub async fn do_batch_update_points(
                     hw_measurement_acc.clone(),
                 )
                 .await?;
-                (update_res, usage_opt)
+                inference_usage.merge_opt(usage_opt);
+                update_res
             }
             UpdateOperation::DeleteVectors(operation) => {
-                let update_res = do_delete_vectors(
+                do_delete_vectors(
                     toc.clone(),
                     collection_name.clone(),
                     operation.delete_vectors,
@@ -686,28 +681,13 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await?;
-                (update_res, None)
+                .await?
             }
         };
 
         results.push(current_update_result);
-
-        if let Some(usage) = current_operation_usage_opt {
-            match &mut inference_usage {
-                Some(agg) => {
-                    for (model_name, model_usage) in usage.models {
-                        agg.models
-                            .entry(model_name)
-                            .and_modify(|existing| existing.tokens += model_usage.tokens)
-                            .or_insert(model_usage);
-                    }
-                }
-                None => inference_usage = Some(usage),
-            }
-        }
     }
-    Ok((results, inference_usage))
+    Ok((results, inference_usage.into_non_empty()))
 }
 
 pub async fn do_create_index(

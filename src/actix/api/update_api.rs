@@ -131,20 +131,13 @@ async fn update_vectors(
     ActixAccess(access): ActixAccess,
     inference_token: InferenceToken,
 ) -> impl Responder {
-    let operation_inner = operation.into_inner();
+    let operation = operation.into_inner();
 
-    let pass = match check_strict_mode(
-        &operation_inner,
-        None,
-        &collection.name,
-        &dispatcher,
-        &access,
-    )
-    .await
-    {
-        Ok(pass) => pass,
-        Err(err) => return process_response_error(err, Instant::now(), None),
-    };
+    let pass =
+        match check_strict_mode(&operation, None, &collection.name, &dispatcher, &access).await {
+            Ok(pass) => pass,
+            Err(err) => return process_response_error(err, Instant::now(), None),
+        };
 
     let request_hw_counter = get_request_hardware_counter(
         &dispatcher,
@@ -157,7 +150,7 @@ async fn update_vectors(
     let res = do_update_vectors(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
-        operation_inner,
+        operation,
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
