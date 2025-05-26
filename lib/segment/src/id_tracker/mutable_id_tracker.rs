@@ -196,8 +196,14 @@ impl IdTracker for MutableIdTracker {
             }
             self.internal_to_version.resize(internal_id as usize + 1, 0);
         }
-        self.internal_to_version[internal_id as usize] = version;
-        self.pending_versions.lock().insert(internal_id, version);
+
+        // Set version and persist if changed
+        let changed = self.internal_to_version[internal_id as usize] != version;
+        if changed {
+            self.internal_to_version[internal_id as usize] = version;
+            self.pending_versions.lock().insert(internal_id, version);
+        }
+
         Ok(())
     }
 
@@ -214,18 +220,30 @@ impl IdTracker for MutableIdTracker {
         external_id: PointIdType,
         internal_id: PointOffsetType,
     ) -> OperationResult<()> {
-        self.mappings.set_link(external_id, internal_id);
-        self.pending_mappings
-            .lock()
-            .push(MappingChange::Insert(external_id, internal_id));
+        let old_internal_id = self.mappings.set_link(external_id, internal_id);
+
+        // Persist if changed
+        let changed = old_internal_id.is_none_or(|old| old != internal_id);
+        if changed {
+            self.pending_mappings
+                .lock()
+                .push(MappingChange::Insert(external_id, internal_id));
+        }
+
         Ok(())
     }
 
     fn drop(&mut self, external_id: PointIdType) -> OperationResult<()> {
-        self.mappings.drop(external_id);
-        self.pending_mappings
-            .lock()
-            .push(MappingChange::Delete(external_id));
+        let old_internal_id = self.mappings.drop(external_id);
+
+        // Persist if changed
+        let changed = old_internal_id.is_some();
+        if changed {
+            self.pending_mappings
+                .lock()
+                .push(MappingChange::Delete(external_id));
+        }
+
         Ok(())
     }
 
