@@ -973,11 +973,13 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
             "new mutable ID tracker must be empty",
         );
 
+        // Set external ID to internal ID mapping
+        for (external_id, internal_id) in old_id_tracker.iter_from(None) {
+            new_id_tracker.set_link(external_id, internal_id)?;
+        }
+
         // Copy all point versions and set known mappings
         for (internal_id, version) in old_id_tracker.iter_versions() {
-            if let Some(external_id) = old_id_tracker.external_id(internal_id) {
-                new_id_tracker.set_link(external_id, internal_id)?;
-            }
             new_id_tracker.set_internal_version(internal_id, version)?;
         }
 
