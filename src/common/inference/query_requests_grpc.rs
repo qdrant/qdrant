@@ -59,7 +59,8 @@ pub async fn convert_query_point_groups_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    let inferred =
+    // ToDo: _usage should also be returned, but currently not used
+    let (inferred, _usage) =
         BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
@@ -138,7 +139,8 @@ pub async fn convert_query_points_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    let inferred =
+    // ToDo: _usage should be returned as well, but currently not used
+    let (inferred, _usage) =
         BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;

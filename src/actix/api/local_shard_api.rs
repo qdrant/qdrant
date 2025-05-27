@@ -219,7 +219,7 @@ async fn count_points(
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    process_response(result, timing, request_hw_counter.to_rest_api())
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Deserialize)]

@@ -64,7 +64,8 @@ pub async fn upsert(
         .await?;
 
     let timing = Instant::now();
-    let result = do_upsert_points(
+    // ToDo: _usage should be returned
+    let (result, _usage) = do_upsert_points(
         toc.clone(),
         collection_name,
         operation,
@@ -164,7 +165,8 @@ pub async fn update_vectors(
         .await?;
 
     let timing = Instant::now();
-    let result = do_update_vectors(
+    // ToDo: _usage should be returned
+    let (result, _usage) = do_update_vectors(
         toc.clone(),
         collection_name,
         operation,
@@ -819,7 +821,8 @@ pub async fn sync(
 
     // No actual inference should happen here, as we are just syncing existing points
     // So this function is used for consistency only
-    let points =
+    // ToDo: _usage should be returned
+    let (points, _usage) =
         convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
 
     let operation = PointSyncOperation {

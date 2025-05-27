@@ -1,3 +1,4 @@
+use api::rest::models::InferenceUsage;
 use api::rest::schema as rest;
 use collection::lookup::WithLookup;
 use collection::operations::universal_query::collection_query::{
@@ -18,10 +19,20 @@ use crate::common::inference::batch_processing::{
 use crate::common::inference::infer_processing::BatchAccumInferred;
 use crate::common::inference::service::{InferenceData, InferenceType};
 
+pub struct CollectionQueryRequestWithUsage {
+    pub request: CollectionQueryRequest,
+    pub usage: Option<InferenceUsage>,
+}
+
+pub struct CollectionQueryGroupsRequestWithUsage {
+    pub request: CollectionQueryGroupsRequest,
+    pub usage: Option<InferenceUsage>,
+}
+
 pub async fn convert_query_groups_request_from_rest(
     request: rest::QueryGroupsRequestInternal,
     inference_token: InferenceToken,
-) -> Result<CollectionQueryGroupsRequest, StorageError> {
+) -> Result<CollectionQueryGroupsRequestWithUsage, StorageError> {
     let batch = collect_query_groups_request(&request);
     let rest::QueryGroupsRequestInternal {
         prefetch,
@@ -36,7 +47,7 @@ pub async fn convert_query_groups_request_from_rest(
         group_request,
     } = request;
 
-    let inferred =
+    let (inferred, usage) =
         BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, &inference_token)
             .await?;
     let query = query
@@ -53,7 +64,7 @@ pub async fn convert_query_groups_request_from_rest(
         .transpose()?
         .unwrap_or_default();
 
-    Ok(CollectionQueryGroupsRequest {
+    let collection_query_groups_request = CollectionQueryGroupsRequest {
         prefetch,
         query,
         using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
@@ -71,16 +82,22 @@ pub async fn convert_query_groups_request_from_rest(
             .group_size
             .unwrap_or(CollectionQueryRequest::DEFAULT_GROUP_SIZE),
         with_lookup: group_request.with_lookup.map(WithLookup::from),
+    };
+
+    Ok(CollectionQueryGroupsRequestWithUsage {
+        request: collection_query_groups_request,
+        usage,
     })
 }
 
 pub async fn convert_query_request_from_rest(
     request: rest::QueryRequestInternal,
     inference_token: &InferenceToken,
-) -> Result<CollectionQueryRequest, StorageError> {
+) -> Result<CollectionQueryRequestWithUsage, StorageError> {
     let batch = collect_query_request(&request);
-    let inferred =
+    let (inferred, usage) =
         BatchAccumInferred::from_batch_accum(batch, InferenceType::Search, inference_token).await?;
+
     let rest::QueryRequestInternal {
         prefetch,
         query,
@@ -109,7 +126,7 @@ pub async fn convert_query_request_from_rest(
         .map(|q| convert_query_with_inferred(q, &inferred))
         .transpose()?;
 
-    Ok(CollectionQueryRequest {
+    let collection_query_request = CollectionQueryRequest {
         prefetch,
         query,
         using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
@@ -121,6 +138,10 @@ pub async fn convert_query_request_from_rest(
         with_vector: with_vector.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
         with_payload: with_payload.unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
         lookup_from,
+    };
+    Ok(CollectionQueryRequestWithUsage {
+        request: collection_query_request,
+        usage,
     })
 }
 
