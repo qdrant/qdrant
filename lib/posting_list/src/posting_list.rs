@@ -29,11 +29,12 @@ pub struct PostingList<H: ValueHandler> {
 
 /// A single element in the posting list, which contains an id and a value.
 ///
-/// Internal structure to store the remainder of the posting list. So that IntoBytes can be derived
+/// Stores a remainder of the posting list. The difference with [`PostingElement`] is
+/// so that this is zerocopy friendly
 #[derive(Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)] // Required for IntoBytes to work correctly
 pub struct RemainderPosting<S: Sized> {
-    /// U32 is required for pining endianness of the id
+    /// U32 is required for pinning endianness of the id
     pub id: U32,
     pub value: S,
 }
