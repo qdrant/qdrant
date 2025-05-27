@@ -1,5 +1,6 @@
 use actix_web::{Responder, post, web};
 use actix_web_validator::{Json, Path, Query};
+use api::rest::models::InferenceUsage;
 use api::rest::{QueryGroupsRequest, QueryRequest, QueryRequestBatch, QueryResponse};
 use collection::operations::shard_selector_internal::ShardSelectorInternal;
 use itertools::Itertools;
@@ -16,6 +17,7 @@ use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{self, get_request_hardware_counter};
 use crate::common::inference::InferenceToken;
 use crate::common::inference::query_requests_rest::{
+    CollectionQueryGroupsRequestWithUsage, CollectionQueryRequestWithUsage,
     convert_query_groups_request_from_rest, convert_query_request_from_rest,
 };
 use crate::common::query::do_query_point_groups;
@@ -49,8 +51,13 @@ async fn query_points(
         Some(shard_keys) => shard_keys.into(),
     };
     let hw_measurement_acc = request_hw_counter.get_counter();
-    let result = async move {
-        let request = convert_query_request_from_rest(query_request, &inference_token).await?;
+    let mut inference_usage = InferenceUsage::default();
+
+    let result = async {
+        let CollectionQueryRequestWithUsage { request, usage } =
+            convert_query_request_from_rest(query_request, &inference_token).await?;
+
+        inference_usage.merge_opt(usage);
 
         let pass = check_strict_mode(
             &request,
@@ -84,7 +91,12 @@ async fn query_points(
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response_with_inference_usage(
+        result,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage.into_non_empty(),
+    )
 }
 
 #[post("/collections/{name}/points/query/batch")]
@@ -108,15 +120,22 @@ async fn query_points_batch(
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
 
-    let result = async move {
+    let mut all_usages: InferenceUsage = InferenceUsage::default();
+
+    let result = async {
         let mut batch = Vec::with_capacity(searches.len());
-        for request in searches {
+
+        for request_item in searches {
             let QueryRequest {
                 internal,
                 shard_key,
-            } = request;
+            } = request_item;
 
-            let request = convert_query_request_from_rest(internal, &inference_token).await?;
+            let CollectionQueryRequestWithUsage { request, usage } =
+                convert_query_request_from_rest(internal, &inference_token).await?;
+
+            all_usages.merge_opt(usage);
+
             let shard_selection = match shard_key {
                 None => ShardSelectorInternal::All,
                 Some(shard_keys) => shard_keys.into(),
@@ -157,7 +176,12 @@ async fn query_points_batch(
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response_with_inference_usage(
+        result,
+        timing,
+        request_hw_counter.to_rest_api(),
+        all_usages.into_non_empty(),
+    )
 }
 
 #[post("/collections/{name}/points/query/groups")]
@@ -183,17 +207,20 @@ async fn query_points_groups(
     );
     let timing = Instant::now();
     let hw_measurement_acc = request_hw_counter.get_counter();
+    let mut inference_usage = InferenceUsage::default();
 
-    let result = async move {
+    let result = async {
         let shard_selection = match shard_key {
             None => ShardSelectorInternal::All,
             Some(shard_keys) => shard_keys.into(),
         };
-        let query_group_request =
+        let CollectionQueryGroupsRequestWithUsage { request, usage } =
             convert_query_groups_request_from_rest(search_group_request, inference_token).await?;
 
+        inference_usage.merge_opt(usage);
+
         let pass = check_strict_mode(
-            &query_group_request,
+            &request,
             params.timeout_as_secs(),
             &collection.name,
             &dispatcher,
@@ -201,21 +228,27 @@ async fn query_points_groups(
         )
         .await?;
 
-        do_query_point_groups(
+        let query_result = do_query_point_groups(
             dispatcher.toc(&access, &pass),
             &collection.name,
-            query_group_request,
+            request,
             params.consistency,
             shard_selection,
             access,
             params.timeout(),
             hw_measurement_acc,
         )
-        .await
+        .await?;
+        Ok(query_result)
     }
     .await;
 
-    helpers::process_response(result, timing, request_hw_counter.to_rest_api())
+    helpers::process_response_with_inference_usage(
+        result,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage.into_non_empty(),
+    )
 }
 
 pub fn config_query_api(cfg: &mut web::ServiceConfig) {

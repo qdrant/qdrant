@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use api::rest::models::InferenceUsage;
 use api::rest::{Batch, BatchVectorStruct, PointStruct, PointVectors, Vector, VectorStruct};
 use collection::operations::point_ops::{
     BatchPersisted, BatchVectorStructPersisted, PointStructPersisted, VectorPersisted,
@@ -17,7 +18,7 @@ pub async fn convert_point_struct(
     point_structs: Vec<PointStruct>,
     inference_type: InferenceType,
     inference_token: InferenceToken,
-) -> Result<Vec<PointStructPersisted>, StorageError> {
+) -> Result<(Vec<PointStructPersisted>, Option<InferenceUsage>), StorageError> {
     let mut batch_accum = BatchAccum::new();
 
     for point_struct in &point_structs {
@@ -41,13 +42,13 @@ pub async fn convert_point_struct(
         }
     }
 
-    let inferred = if !batch_accum.objects.is_empty() {
-        Some(
+    let (inferred, usage) = if !batch_accum.objects.is_empty() {
+        let (inferred_data, usage) =
             BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
-                .await?,
-        )
+                .await?;
+        (Some(inferred_data), usage)
     } else {
-        None
+        (None, None)
     };
 
     let mut converted_points: Vec<PointStructPersisted> = Vec::new();
@@ -63,16 +64,16 @@ pub async fn convert_point_struct(
             VectorStruct::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
             VectorStruct::Named(named) => {
                 let mut named_vectors = HashMap::new();
-                for (name, vector) in named {
+                for (name, vector_data) in named {
                     let converted_vector = match &inferred {
-                        Some(inferred) => convert_vector_with_inferred(vector, inferred)?,
-                        None => match vector {
+                        Some(inferred) => convert_vector_with_inferred(vector_data, inferred)?,
+                        None => match vector_data {
                             Vector::Dense(dense) => VectorPersisted::Dense(dense),
                             Vector::Sparse(sparse) => VectorPersisted::Sparse(sparse),
                             Vector::MultiDense(multi) => VectorPersisted::MultiDense(multi),
                             Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                                 return Err(StorageError::inference_error(
-                                    "Inference required but service returned no results",
+                                    "Inference required but service returned no results for named vector",
                                 ));
                             }
                         },
@@ -82,54 +83,60 @@ pub async fn convert_point_struct(
                 VectorStructPersisted::Named(named_vectors)
             }
             VectorStruct::Document(doc) => {
-                let vector = match &inferred {
+                let vector_data = match &inferred {
                     Some(inferred) => {
                         convert_vector_with_inferred(Vector::Document(doc), inferred)?
                     }
                     None => {
                         return Err(StorageError::inference_error(
-                            "Inference required but service returned no results",
+                            "Inference required for document but service returned no results",
                         ));
                     }
                 };
-                match vector {
+                match vector_data {
                     VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
                     VectorPersisted::Sparse(_) => {
-                        return Err(StorageError::bad_request("Sparse vector should be named"));
+                        return Err(StorageError::bad_request(
+                            "Sparse vector from document inference should be named",
+                        ));
                     }
                     VectorPersisted::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 }
             }
             VectorStruct::Image(img) => {
-                let vector = match &inferred {
+                let vector_data = match &inferred {
                     Some(inferred) => convert_vector_with_inferred(Vector::Image(img), inferred)?,
                     None => {
                         return Err(StorageError::inference_error(
-                            "Inference required but service returned no results",
+                            "Inference required for image but service returned no results",
                         ));
                     }
                 };
-                match vector {
+                match vector_data {
                     VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
                     VectorPersisted::Sparse(_) => {
-                        return Err(StorageError::bad_request("Sparse vector should be named"));
+                        return Err(StorageError::bad_request(
+                            "Sparse vector from image inference should be named",
+                        ));
                     }
                     VectorPersisted::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 }
             }
             VectorStruct::Object(obj) => {
-                let vector = match &inferred {
+                let vector_data = match &inferred {
                     Some(inferred) => convert_vector_with_inferred(Vector::Object(obj), inferred)?,
                     None => {
                         return Err(StorageError::inference_error(
-                            "Inference required but service returned no results",
+                            "Inference required for object but service returned no results",
                         ));
                     }
                 };
-                match vector {
+                match vector_data {
                     VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
                     VectorPersisted::Sparse(_) => {
-                        return Err(StorageError::bad_request("Sparse vector should be named"));
+                        return Err(StorageError::bad_request(
+                            "Sparse vector from object inference should be named",
+                        ));
                     }
                     VectorPersisted::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 }
@@ -145,64 +152,65 @@ pub async fn convert_point_struct(
         converted_points.push(converted);
     }
 
-    Ok(converted_points)
+    Ok((converted_points, usage))
 }
 
 pub async fn convert_batch(
     batch: Batch,
     inference_token: InferenceToken,
-) -> Result<BatchPersisted, StorageError> {
+) -> Result<(BatchPersisted, Option<InferenceUsage>), StorageError> {
     let Batch {
         ids,
         vectors,
         payloads,
     } = batch;
 
+    let mut inference_usage = InferenceUsage::default();
+
+    let batch_persisted = match vectors {
+        BatchVectorStruct::Single(single) => BatchVectorStructPersisted::Single(single),
+        BatchVectorStruct::MultiDense(multi) => BatchVectorStructPersisted::MultiDense(multi),
+        BatchVectorStruct::Named(named) => {
+            let mut named_vectors = HashMap::new();
+            for (name, vecs) in named {
+                let (converted_vectors, batch_usage) =
+                    convert_vectors(vecs, InferenceType::Update, inference_token.clone()).await?;
+                inference_usage.merge_opt(batch_usage);
+                named_vectors.insert(name, converted_vectors);
+            }
+            BatchVectorStructPersisted::Named(named_vectors)
+        }
+        BatchVectorStruct::Document(_) => {
+            return Err(StorageError::inference_error(
+                "Direct Document processing is not supported in top-level batch vectors. Use named vectors.",
+            ));
+        }
+        BatchVectorStruct::Image(_) => {
+            return Err(StorageError::inference_error(
+                "Direct Image processing is not supported in top-level batch vectors. Use named vectors.",
+            ));
+        }
+        BatchVectorStruct::Object(_) => {
+            return Err(StorageError::inference_error(
+                "Direct Object processing is not supported in top-level batch vectors. Use named vectors.",
+            ));
+        }
+    };
+
     let batch_persisted = BatchPersisted {
         ids,
-        vectors: match vectors {
-            BatchVectorStruct::Single(single) => BatchVectorStructPersisted::Single(single),
-            BatchVectorStruct::MultiDense(multi) => BatchVectorStructPersisted::MultiDense(multi),
-            BatchVectorStruct::Named(named) => {
-                let mut named_vectors = HashMap::new();
-
-                for (name, vectors) in named {
-                    let converted_vectors =
-                        convert_vectors(vectors, InferenceType::Update, inference_token.clone())
-                            .await?;
-                    named_vectors.insert(name, converted_vectors);
-                }
-
-                BatchVectorStructPersisted::Named(named_vectors)
-            }
-            BatchVectorStruct::Document(_) => {
-                return Err(StorageError::inference_error(
-                    "Document processing is not supported in batch operations.",
-                ));
-            }
-            BatchVectorStruct::Image(_) => {
-                return Err(StorageError::inference_error(
-                    "Image processing is not supported in batch operations.",
-                ));
-            }
-            BatchVectorStruct::Object(_) => {
-                return Err(StorageError::inference_error(
-                    "Object processing is not supported in batch operations.",
-                ));
-            }
-        },
+        vectors: batch_persisted,
         payloads,
     };
 
-    Ok(batch_persisted)
+    Ok((batch_persisted, inference_usage.into_non_empty()))
 }
 
 pub async fn convert_point_vectors(
     point_vectors_list: Vec<PointVectors>,
     inference_type: InferenceType,
     inference_token: InferenceToken,
-) -> Result<Vec<PointVectorsPersisted>, StorageError> {
-    let mut converted_point_vectors = Vec::new();
+) -> Result<(Vec<PointVectorsPersisted>, Option<InferenceUsage>), StorageError> {
     let mut batch_accum = BatchAccum::new();
 
     for point_vectors in &point_vectors_list {
@@ -218,15 +226,19 @@ pub async fn convert_point_vectors(
         }
     }
 
+    let mut inference_usage = InferenceUsage::default();
+
     let inferred = if !batch_accum.objects.is_empty() {
-        Some(
+        let (inferred_data, usage) =
             BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
-                .await?,
-        )
+                .await?;
+        inference_usage.merge_opt(usage);
+        Some(inferred_data)
     } else {
         None
     };
 
+    let mut converted_point_vectors: Vec<PointVectorsPersisted> = Vec::new();
     for point_vectors in point_vectors_list {
         let PointVectors { id, vector } = point_vectors;
 
@@ -245,7 +257,7 @@ pub async fn convert_point_vectors(
                             Vector::MultiDense(multi) => VectorPersisted::MultiDense(multi),
                             Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                                 return Err(StorageError::inference_error(
-                                    "Inference required but service returned no results",
+                                    "Inference required for named vector in PointVectors but no results",
                                 ));
                             }
                         },
@@ -257,30 +269,28 @@ pub async fn convert_point_vectors(
             }
             VectorStruct::Document(_) => {
                 return Err(StorageError::inference_error(
-                    "Document processing is not supported for point vectors.",
+                    "Direct Document processing not supported for PointVectors. Use named vectors.",
                 ));
             }
             VectorStruct::Image(_) => {
                 return Err(StorageError::inference_error(
-                    "Image processing is not supported for point vectors.",
+                    "Direct Image processing not supported for PointVectors. Use named vectors.",
                 ));
             }
             VectorStruct::Object(_) => {
                 return Err(StorageError::inference_error(
-                    "Object processing is not supported for point vectors.",
+                    "Direct Object processing not supported for PointVectors. Use named vectors.",
                 ));
             }
         };
 
-        let converted_point_vector = PointVectorsPersisted {
+        converted_point_vectors.push(PointVectorsPersisted {
             id,
             vector: converted_vector,
-        };
-
-        converted_point_vectors.push(converted_point_vector);
+        });
     }
 
-    Ok(converted_point_vectors)
+    Ok((converted_point_vectors, inference_usage.into_non_empty()))
 }
 
 fn convert_point_struct_with_inferred(
@@ -300,18 +310,21 @@ fn convert_point_struct_with_inferred(
                 VectorStruct::MultiDense(multi) => VectorStructPersisted::MultiDense(multi),
                 VectorStruct::Named(named) => {
                     let mut named_vectors = HashMap::new();
-                    for (name, vector) in named {
-                        let converted_vector = convert_vector_with_inferred(vector, inferred)?;
+                    for (name, vector_data) in named {
+                        let converted_vector = convert_vector_with_inferred(vector_data, inferred)?;
                         named_vectors.insert(name, converted_vector);
                     }
                     VectorStructPersisted::Named(named_vectors)
                 }
                 VectorStruct::Document(doc) => {
-                    let vector = convert_vector_with_inferred(Vector::Document(doc), inferred)?;
-                    match vector {
+                    let vector_data =
+                        convert_vector_with_inferred(Vector::Document(doc), inferred)?;
+                    match vector_data {
                         VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
                         VectorPersisted::Sparse(_) => {
-                            return Err(StorageError::bad_request("Sparse vector should be named"));
+                            return Err(StorageError::bad_request(
+                                "Sparse vector from document inference must be named",
+                            ));
                         }
                         VectorPersisted::MultiDense(multi) => {
                             VectorStructPersisted::MultiDense(multi)
@@ -319,11 +332,13 @@ fn convert_point_struct_with_inferred(
                     }
                 }
                 VectorStruct::Image(img) => {
-                    let vector = convert_vector_with_inferred(Vector::Image(img), inferred)?;
-                    match vector {
+                    let vector_data = convert_vector_with_inferred(Vector::Image(img), inferred)?;
+                    match vector_data {
                         VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
                         VectorPersisted::Sparse(_) => {
-                            return Err(StorageError::bad_request("Sparse vector should be named"));
+                            return Err(StorageError::bad_request(
+                                "Sparse vector from image inference must be named",
+                            ));
                         }
                         VectorPersisted::MultiDense(multi) => {
                             VectorStructPersisted::MultiDense(multi)
@@ -331,11 +346,13 @@ fn convert_point_struct_with_inferred(
                     }
                 }
                 VectorStruct::Object(obj) => {
-                    let vector = convert_vector_with_inferred(Vector::Object(obj), inferred)?;
-                    match vector {
+                    let vector_data = convert_vector_with_inferred(Vector::Object(obj), inferred)?;
+                    match vector_data {
                         VectorPersisted::Dense(dense) => VectorStructPersisted::Single(dense),
                         VectorPersisted::Sparse(_) => {
-                            return Err(StorageError::bad_request("Sparse vector should be named"));
+                            return Err(StorageError::bad_request(
+                                "Sparse vector from object inference must be named",
+                            ));
                         }
                         VectorPersisted::MultiDense(multi) => {
                             VectorStructPersisted::MultiDense(multi)
@@ -357,7 +374,7 @@ pub async fn convert_vectors(
     vectors: Vec<Vector>,
     inference_type: InferenceType,
     inference_token: InferenceToken,
-) -> Result<Vec<VectorPersisted>, StorageError> {
+) -> Result<(Vec<VectorPersisted>, Option<InferenceUsage>), StorageError> {
     let mut batch_accum = BatchAccum::new();
     for vector in &vectors {
         match vector {
@@ -368,31 +385,36 @@ pub async fn convert_vectors(
         }
     }
 
+    let mut inference_usage = InferenceUsage::default();
+
     let inferred = if !batch_accum.objects.is_empty() {
-        Some(
+        let (inferred_data, usage) =
             BatchAccumInferred::from_batch_accum(batch_accum, inference_type, &inference_token)
-                .await?,
-        )
+                .await?;
+        inference_usage.merge_opt(usage);
+        Some(inferred_data)
     } else {
         None
     };
 
-    vectors
+    let converted_vectors: Result<Vec<VectorPersisted>, StorageError> = vectors
         .into_iter()
-        .map(|vector| match &inferred {
-            Some(inferred) => convert_vector_with_inferred(vector, inferred),
-            None => match vector {
+        .map(|vector_data| match &inferred {
+            Some(inferred) => convert_vector_with_inferred(vector_data, inferred),
+            None => match vector_data {
                 Vector::Dense(dense) => Ok(VectorPersisted::Dense(dense)),
                 Vector::Sparse(sparse) => Ok(VectorPersisted::Sparse(sparse)),
                 Vector::MultiDense(multi) => Ok(VectorPersisted::MultiDense(multi)),
                 Vector::Document(_) | Vector::Image(_) | Vector::Object(_) => {
                     Err(StorageError::inference_error(
-                        "Inference required but service returned no results",
+                        "Inference required but no inference service results available",
                     ))
                 }
             },
         })
-        .collect()
+        .collect();
+
+    converted_vectors.map(|vecs| (vecs, inference_usage.into_non_empty()))
 }
 
 fn convert_vector_with_inferred(

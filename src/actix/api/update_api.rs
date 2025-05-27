@@ -18,6 +18,7 @@ use super::CollectionPath;
 use crate::actix::auth::ActixAccess;
 use crate::actix::helpers::{
     get_request_hardware_counter, process_response, process_response_error,
+    process_response_with_inference_usage,
 };
 use crate::common::inference::InferenceToken;
 use crate::common::update::*;
@@ -55,7 +56,7 @@ async fn upsert_points(
     );
     let timing = Instant::now();
 
-    let res = do_upsert_points(
+    let result_with_usage = do_upsert_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operation,
@@ -67,7 +68,17 @@ async fn upsert_points(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    let (res, inference_usage) = match result_with_usage {
+        Ok((update_result, usage)) => (Ok(update_result), usage),
+        Err(err) => (Err(err), None),
+    };
+
+    process_response_with_inference_usage(
+        res,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage,
+    )
 }
 
 #[post("/collections/{name}/points/delete")]
@@ -148,7 +159,17 @@ async fn update_vectors(
     )
     .await;
 
-    process_response(res, timing, request_hw_counter.to_rest_api())
+    let (res, inference_usage) = match res {
+        Ok((update_result, usage)) => (Ok(update_result), usage),
+        Err(err) => (Err(err), None),
+    };
+
+    process_response_with_inference_usage(
+        res,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage,
+    )
 }
 
 #[post("/collections/{name}/points/vectors/delete")]
@@ -382,7 +403,7 @@ async fn update_batch(
 
     let timing = Instant::now();
 
-    let response = do_batch_update_points(
+    let result_with_usage = do_batch_update_points(
         dispatcher.toc(&access, &pass).clone(),
         collection.into_inner().name,
         operations.operations,
@@ -393,7 +414,18 @@ async fn update_batch(
         request_hw_counter.get_counter(),
     )
     .await;
-    process_response(response, timing, request_hw_counter.to_rest_api())
+
+    let (response_data, inference_usage) = match result_with_usage {
+        Ok((update_results, usage)) => (Ok(update_results), usage),
+        Err(err) => (Err(err), None),
+    };
+
+    process_response_with_inference_usage(
+        response_data,
+        timing,
+        request_hw_counter.to_rest_api(),
+        inference_usage,
+    )
 }
 
 #[put("/collections/{name}/index")]

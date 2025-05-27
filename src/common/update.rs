@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use api::rest::models::InferenceUsage;
 use api::rest::*;
 use collection::collection::Collection;
 use collection::operations::conversions::write_ordering_from_proto;
@@ -238,36 +239,46 @@ pub async fn do_upsert_points(
     access: Access,
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
-) -> Result<UpdateResult, StorageError> {
-    let (shard_key, operation) = match operation {
-        PointInsertOperations::PointsBatch(PointsBatch { batch, shard_key }) => (
-            shard_key,
-            PointInsertOperationsInternal::PointsBatch(
-                convert_batch(batch, inference_token).await?,
-            ),
-        ),
-        PointInsertOperations::PointsList(PointsList { points, shard_key }) => (
-            shard_key,
-            PointInsertOperationsInternal::PointsList(
-                convert_point_struct(points, InferenceType::Update, inference_token).await?,
-            ),
-        ),
+) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
+    let (shard_key, internal_operation, usage_opt) = match operation {
+        PointInsertOperations::PointsBatch(batch_struct) => {
+            let (batch_persisted_data, usage) =
+                convert_batch(batch_struct.batch, inference_token).await?;
+            (
+                batch_struct.shard_key,
+                PointInsertOperationsInternal::PointsBatch(batch_persisted_data),
+                usage,
+            )
+        }
+        PointInsertOperations::PointsList(list_struct) => {
+            let (points_persisted_data, usage) =
+                convert_point_struct(list_struct.points, InferenceType::Update, inference_token)
+                    .await?;
+            (
+                list_struct.shard_key,
+                PointInsertOperationsInternal::PointsList(points_persisted_data),
+                usage,
+            )
+        }
     };
 
-    let operation =
-        CollectionUpdateOperations::PointOperation(PointOperations::UpsertPoints(operation));
+    let collection_operation = CollectionUpdateOperations::PointOperation(
+        PointOperations::UpsertPoints(internal_operation),
+    );
 
-    update(
+    let update_result = update(
         &toc,
         &collection_name,
-        operation,
+        collection_operation,
         internal_params,
         params,
         shard_key,
         access,
         hw_measurement_acc,
     )
-    .await
+    .await?;
+
+    Ok((update_result, usage_opt))
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -315,29 +326,31 @@ pub async fn do_update_vectors(
     access: Access,
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
-) -> Result<UpdateResult, StorageError> {
+) -> Result<(UpdateResult, Option<models::InferenceUsage>), StorageError> {
     let UpdateVectors { points, shard_key } = operation;
 
-    let persisted_points =
+    let (persisted_points, usage_opt) =
         convert_point_vectors(points, InferenceType::Update, inference_token).await?;
 
-    let operation = CollectionUpdateOperations::VectorOperation(VectorOperations::UpdateVectors(
-        UpdateVectorsOp {
+    let collection_operation = CollectionUpdateOperations::VectorOperation(
+        VectorOperations::UpdateVectors(UpdateVectorsOp {
             points: persisted_points,
-        },
-    ));
+        }),
+    );
 
-    update(
+    let update_result = update(
         &toc,
         &collection_name,
-        operation,
+        collection_operation,
         internal_params,
         params,
         shard_key,
         access,
         hw_measurement_acc,
     )
-    .await
+    .await?;
+
+    Ok((update_result, usage_opt))
 }
 
 pub async fn do_delete_vectors(
@@ -561,12 +574,14 @@ pub async fn do_batch_update_points(
     access: Access,
     inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
-) -> Result<Vec<UpdateResult>, StorageError> {
+) -> Result<(Vec<UpdateResult>, Option<InferenceUsage>), StorageError> {
     let mut results = Vec::with_capacity(operations.len());
+    let mut inference_usage = InferenceUsage::default();
+
     for operation in operations {
-        let result = match operation {
+        let current_update_result = match operation {
             UpdateOperation::Upsert(operation) => {
-                do_upsert_points(
+                let (update_res, usage_opt) = do_upsert_points(
                     toc.clone(),
                     collection_name.clone(),
                     operation.upsert,
@@ -576,7 +591,9 @@ pub async fn do_batch_update_points(
                     inference_token.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?;
+                inference_usage.merge_opt(usage_opt);
+                update_res
             }
             UpdateOperation::Delete(operation) => {
                 do_delete_points(
@@ -586,10 +603,10 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     access.clone(),
-                    inference_token.clone(),
+                    inference_token.clone(), // delete_points takes token, assumed not to produce usage currently
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?
             }
             UpdateOperation::SetPayload(operation) => {
                 do_set_payload(
@@ -601,7 +618,7 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?
             }
             UpdateOperation::OverwritePayload(operation) => {
                 do_overwrite_payload(
@@ -613,7 +630,7 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?
             }
             UpdateOperation::DeletePayload(operation) => {
                 do_delete_payload(
@@ -625,7 +642,7 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?
             }
             UpdateOperation::ClearPayload(operation) => {
                 do_clear_payload(
@@ -637,10 +654,10 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?
             }
             UpdateOperation::UpdateVectors(operation) => {
-                do_update_vectors(
+                let (update_res, usage_opt) = do_update_vectors(
                     toc.clone(),
                     collection_name.clone(),
                     operation.update_vectors,
@@ -650,7 +667,9 @@ pub async fn do_batch_update_points(
                     inference_token.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?;
+                inference_usage.merge_opt(usage_opt);
+                update_res
             }
             UpdateOperation::DeleteVectors(operation) => {
                 do_delete_vectors(
@@ -662,12 +681,13 @@ pub async fn do_batch_update_points(
                     access.clone(),
                     hw_measurement_acc.clone(),
                 )
-                .await
+                .await?
             }
-        }?;
-        results.push(result);
+        };
+
+        results.push(current_update_result);
     }
-    Ok(results)
+    Ok((results, inference_usage.into_non_empty()))
 }
 
 pub async fn do_create_index(
