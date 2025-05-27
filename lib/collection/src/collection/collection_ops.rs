@@ -408,13 +408,13 @@ impl Collection {
             .unwrap_or_else(|| serde_json::json!({}));
         if let Some(obj) = properties.as_object_mut() {
             obj.insert(key.to_string(), value);
-            config.properties = Some(serde_json::Value::Object(obj.clone()));
         } else {
             // If properties is not an object, reset to a new object
             let mut map = serde_json::Map::new();
             map.insert(key.to_string(), value);
-            config.properties = Some(serde_json::Value::Object(map));
+            properties = serde_json::Value::Object(map);
         }
+        config.properties = Some(properties);
         config.save(&self.path)?;
         Ok(())
     }
@@ -435,7 +435,11 @@ impl Collection {
         Ok(())
     }
 
-    /// Get a collection-level property (returns Option<Value>)
+    /// Get a collection-level property by key.
+    ///
+    /// # Special cases
+    /// - If key is "*", returns all properties as a JSON object (empty object if no properties exist)
+    /// - Otherwise returns the specific property value if it exists
     pub async fn get_property(&self, key: &str) -> Option<serde_json::Value> {
         let config = self.collection_config.read().await;
         if key == "*" {

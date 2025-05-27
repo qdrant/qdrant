@@ -272,3 +272,13 @@ def test_collection_properties_endpoints(collection_name):
     )
     assert response.status_code == 400
     assert "Payload must be a JSON object" in response.text
+
+    # Test deleting non-existent property
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties/{key}',
+        method='DELETE',
+        path_params={'collection_name': collection_name, 'key': 'non_existent'},
+    )
+    # The API currently returns 200 even if the key does not exist
+    assert response.ok
+    assert response.json()["result"] == "ok"
