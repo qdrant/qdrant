@@ -323,7 +323,11 @@ impl SegmentBuilder {
 
         let vector_storages: Vec<_> = segments.iter().map(|i| &i.vector_data).collect();
 
-        let mut new_internal_range = None;
+        let internal_range_start = self.id_tracker.available_point_count() as PointOffsetType;
+        let internal_range_end = internal_range_start + points_to_insert.len() as PointOffsetType;
+
+        let new_internal_range = internal_range_start..internal_range_end;
+
         for (vector_name, vector_data) in &mut self.vector_data {
             check_process_stopped(stopped)?;
 
@@ -352,88 +356,86 @@ impl SegmentBuilder {
                 .vector_storage
                 .update_from(&mut vectors_iter, stopped)?;
 
-            match &new_internal_range {
-                Some(new_internal_range) => {
-                    if new_internal_range != &internal_range {
-                        return Err(OperationError::service_error(format!(
-                            "Internal ids range mismatch between self segment vectors and other segment vectors\n\
-                                vector_name: {vector_name}, self range: {new_internal_range:?}, other range: {internal_range:?}"
-                        )));
-                    }
-                }
-                None => new_internal_range = Some(internal_range),
+            if new_internal_range != internal_range {
+                debug_assert!(
+                    new_internal_range != internal_range,
+                    "Internal ids range mismatch between self segment vectors and other segment vectors\n\
+                        vector_name: {vector_name}, self range: {new_internal_range:?}, other range: {internal_range:?}"
+                );
+                return Err(OperationError::service_error(format!(
+                    "Internal ids range mismatch between self segment vectors and other segment vectors\n\
+                        vector_name: {vector_name}, self range: {new_internal_range:?}, other range: {internal_range:?}"
+                )));
             }
         }
 
         let hw_counter = HardwareCounterCell::disposable(); // Disposable counter for internal operations.
 
-        if let Some(new_internal_range) = new_internal_range {
-            let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
+        let internal_id_iter = new_internal_range.zip(points_to_insert.iter());
 
-            for (new_internal_id, point_data) in internal_id_iter {
-                check_process_stopped(stopped)?;
+        for (new_internal_id, point_data) in internal_id_iter {
+            check_process_stopped(stopped)?;
 
-                let old_internal_id = point_data.internal_id;
+            let old_internal_id = point_data.internal_id;
 
-                let other_payload = payloads[point_data.segment_index.get() as usize]
-                    .get_payload_sequential(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
+            let other_payload = payloads[point_data.segment_index.get() as usize]
+                .get_payload_sequential(old_internal_id, &hw_counter)?; // Internal operation, no measurement needed!
 
-                match self
-                    .id_tracker
-                    .internal_id(ExtendedPointId::from(point_data.external_id))
-                {
-                    Some(existing_internal_id) => {
-                        debug_assert!(
-                            false,
-                            "This code should not be reachable, cause points were resolved with `merged_points`"
-                        );
+            match self
+                .id_tracker
+                .internal_id(ExtendedPointId::from(point_data.external_id))
+            {
+                Some(existing_internal_id) => {
+                    debug_assert!(
+                        false,
+                        "This code should not be reachable, cause points were resolved with `merged_points`"
+                    );
 
-                        let existing_external_version = self
-                            .id_tracker
-                            .internal_version(existing_internal_id)
-                            .unwrap();
+                    let existing_external_version = self
+                        .id_tracker
+                        .internal_version(existing_internal_id)
+                        .unwrap();
 
-                        let remove_id = if existing_external_version < point_data.version {
-                            // Other version is the newest, remove the existing one and replace
-                            self.id_tracker
-                                .drop(ExtendedPointId::from(point_data.external_id))?;
-                            self.id_tracker.set_link(
-                                ExtendedPointId::from(point_data.external_id),
-                                new_internal_id,
-                            )?;
-                            self.id_tracker
-                                .set_internal_version(new_internal_id, point_data.version)?;
-                            self.payload_storage
-                                .clear(existing_internal_id, &hw_counter)?;
-
-                            existing_internal_id
-                        } else {
-                            // Old version is still good, do not move anything else
-                            // Mark newly added vector as removed
-                            new_internal_id
-                        };
-                        for vector_data in self.vector_data.values_mut() {
-                            vector_data.vector_storage.delete_vector(remove_id)?;
-                        }
-                    }
-                    None => {
+                    let remove_id = if existing_external_version < point_data.version {
+                        // Other version is the newest, remove the existing one and replace
+                        self.id_tracker
+                            .drop(ExtendedPointId::from(point_data.external_id))?;
                         self.id_tracker.set_link(
                             ExtendedPointId::from(point_data.external_id),
                             new_internal_id,
                         )?;
                         self.id_tracker
                             .set_internal_version(new_internal_id, point_data.version)?;
+                        self.payload_storage
+                            .clear(existing_internal_id, &hw_counter)?;
+
+                        existing_internal_id
+                    } else {
+                        // Old version is still good, do not move anything else
+                        // Mark newly added vector as removed
+                        new_internal_id
+                    };
+                    for vector_data in self.vector_data.values_mut() {
+                        vector_data.vector_storage.delete_vector(remove_id)?;
                     }
                 }
-
-                // Propagate payload to new segment
-                if !other_payload.is_empty() {
-                    self.payload_storage.set(
+                None => {
+                    self.id_tracker.set_link(
+                        ExtendedPointId::from(point_data.external_id),
                         new_internal_id,
-                        &other_payload,
-                        &HardwareCounterCell::disposable(),
                     )?;
+                    self.id_tracker
+                        .set_internal_version(new_internal_id, point_data.version)?;
                 }
+            }
+
+            // Propagate payload to new segment
+            if !other_payload.is_empty() {
+                self.payload_storage.set(
+                    new_internal_id,
+                    &other_payload,
+                    &HardwareCounterCell::disposable(),
+                )?;
             }
         }
 
