@@ -190,3 +190,85 @@ def test_edit_collection_params(on_disk_vectors, on_disk_payload, collection_nam
     assert config["quantization_config"]["scalar"]["type"] == "int8"
     assert config["quantization_config"]["scalar"]["quantile"] == 0.99
     assert config["quantization_config"]["scalar"]["always_ram"]
+
+
+def test_collection_properties_endpoints(collection_name):
+    # Initially, properties should be empty
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='GET',
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert response.json() == {}
+
+    # Set multiple properties
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='PATCH',
+        path_params={'collection_name': collection_name},
+        body={"main_column": "column a", "foo": 123, "bar": {"baz": True}},
+    )
+    assert response.ok
+    assert response.json()["result"] == "ok"
+
+    # Get properties and check values
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='GET',
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    props = response.json()
+    assert props["main_column"] == "column a"
+    assert props["foo"] == 123
+    assert props["bar"] == {"baz": True}
+
+    # Update a property
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='PATCH',
+        path_params={'collection_name': collection_name},
+        body={"main_column": "column b"},
+    )
+    assert response.ok
+    assert response.json()["result"] == "ok"
+
+    # Confirm update
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='GET',
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    assert response.json()["main_column"] == "column b"
+
+    # Delete a property
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties/{key}',
+        method='DELETE',
+        path_params={'collection_name': collection_name, 'key': 'foo'},
+    )
+    assert response.ok
+    assert response.json()["result"] == "ok"
+
+    # Confirm deletion
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='GET',
+        path_params={'collection_name': collection_name},
+    )
+    assert response.ok
+    props = response.json()
+    assert "foo" not in props
+    assert "main_column" in props
+
+    # Try to PATCH with invalid (non-object) payload
+    response = request_with_validation(
+        api='/collections/{collection_name}/properties',
+        method='PATCH',
+        path_params={'collection_name': collection_name},
+        body=[1, 2, 3],
+    )
+    assert response.status_code == 400
+    assert "Payload must be a JSON object" in response.text
