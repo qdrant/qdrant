@@ -1,7 +1,7 @@
 use api::conversions::json::json_path_from_proto;
-use api::grpc::qdrant as grpc;
 use api::grpc::qdrant::RecommendInput;
 use api::grpc::qdrant::query::Variant;
+use api::grpc::{InferenceUsage, qdrant as grpc};
 use api::rest;
 use api::rest::RecommendStrategy;
 use collection::operations::universal_query::collection_query::{
@@ -26,7 +26,7 @@ use crate::common::inference::service::{InferenceData, InferenceType};
 pub async fn convert_query_point_groups_from_grpc(
     query: grpc::QueryPointGroups,
     inference_token: InferenceToken,
-) -> Result<CollectionQueryGroupsRequest, Status> {
+) -> Result<(CollectionQueryGroupsRequest, InferenceUsage), Status> {
     let grpc::QueryPointGroups {
         collection_name: _,
         prefetch,
@@ -59,8 +59,7 @@ pub async fn convert_query_point_groups_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    // ToDo: _usage should also be returned, but currently not used
-    let (inferred, _usage) =
+    let (inferred, usage) =
         BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
@@ -101,14 +100,14 @@ pub async fn convert_query_point_groups_from_grpc(
         with_lookup: with_lookup.map(TryFrom::try_from).transpose()?,
     };
 
-    Ok(request)
+    Ok((request, usage.unwrap_or_default().into()))
 }
 
 /// ToDo: this function is supposed to call an inference endpoint internally
 pub async fn convert_query_points_from_grpc(
     query: grpc::QueryPoints,
     inference_token: InferenceToken,
-) -> Result<CollectionQueryRequest, Status> {
+) -> Result<(CollectionQueryRequest, InferenceUsage), Status> {
     let grpc::QueryPoints {
         collection_name: _,
         prefetch,
@@ -139,8 +138,7 @@ pub async fn convert_query_points_from_grpc(
 
     let BatchAccumGrpc { objects } = batch;
 
-    // ToDo: _usage should be returned as well, but currently not used
-    let (inferred, _usage) =
+    let (inferred, usage) =
         BatchAccumInferred::from_objects(objects, InferenceType::Search, inference_token)
             .await
             .map_err(|e| Status::internal(format!("Inference error: {e}")))?;
@@ -154,28 +152,31 @@ pub async fn convert_query_points_from_grpc(
         .map(|q| convert_query_with_inferred(q, &inferred))
         .transpose()?;
 
-    Ok(CollectionQueryRequest {
-        prefetch,
-        query,
-        using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
-        filter: filter.map(TryFrom::try_from).transpose()?,
-        score_threshold,
-        limit: limit
-            .map(|l| l as usize)
-            .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
-        offset: offset
-            .map(|o| o as usize)
-            .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
-        params: params.map(From::from),
-        with_vector: with_vectors
-            .map(From::from)
-            .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
-        with_payload: with_payload
-            .map(TryFrom::try_from)
-            .transpose()?
-            .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
-        lookup_from: lookup_from.map(From::from),
-    })
+    Ok((
+        CollectionQueryRequest {
+            prefetch,
+            query,
+            using: using.unwrap_or(DEFAULT_VECTOR_NAME.to_owned()),
+            filter: filter.map(TryFrom::try_from).transpose()?,
+            score_threshold,
+            limit: limit
+                .map(|l| l as usize)
+                .unwrap_or(CollectionQueryRequest::DEFAULT_LIMIT),
+            offset: offset
+                .map(|o| o as usize)
+                .unwrap_or(CollectionQueryRequest::DEFAULT_OFFSET),
+            params: params.map(From::from),
+            with_vector: with_vectors
+                .map(From::from)
+                .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_VECTOR),
+            with_payload: with_payload
+                .map(TryFrom::try_from)
+                .transpose()?
+                .unwrap_or(CollectionQueryRequest::DEFAULT_WITH_PAYLOAD),
+            lookup_from: lookup_from.map(From::from),
+        },
+        usage.unwrap_or_default().into(),
+    ))
 }
 
 fn convert_prefetch_with_inferred(

@@ -66,14 +66,18 @@ impl PointsInternalService {
 
         let sync_points = extract_internal_request(sync_points)?;
 
-        sync(
+        // Exclude the `inference_token` for internal call
+        let (response, _inference_usage) = sync(
             self.toc.clone(),
             sync_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
         )
-        .await
+        .await?
+        .into_inner();
+
+        Ok(Response::new(response))
     }
 
     async fn upsert_internal(
@@ -93,7 +97,7 @@ impl PointsInternalService {
             upsert_points.collection_name.clone(),
         );
 
-        upsert(
+        let (response, _inference_usage) = upsert(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             upsert_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
@@ -101,13 +105,14 @@ impl PointsInternalService {
             inference_token.clone(),
             hw_metrics,
         )
-        .await
+        .await?
+        .into_inner();
+        Ok(Response::new(response))
     }
 
     async fn delete_internal(
         &self,
         delete_points_internal: DeletePointsInternal,
-        inference_token: InferenceToken,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         let DeletePointsInternal {
             delete_points,
@@ -126,7 +131,6 @@ impl PointsInternalService {
             delete_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
-            inference_token,
             hw_metrics,
         )
         .await
@@ -149,7 +153,8 @@ impl PointsInternalService {
             update_point_vectors.collection_name.clone(),
         );
 
-        crate::tonic::api::update_common::update_vectors(
+        // Exclude the `inference_token` for internal call
+        let (response, _inference_usage) = crate::tonic::api::update_common::update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
@@ -157,7 +162,10 @@ impl PointsInternalService {
             inference_token.clone(),
             hw_metrics,
         )
-        .await
+        .await?
+        .into_inner();
+
+        Ok(Response::new(response))
     }
 
     async fn delete_vectors_internal(
@@ -464,10 +472,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = extract_token(&request);
-
-        self.delete_internal(request.into_inner(), inference_token)
-            .await
+        self.delete_internal(request.into_inner()).await
     }
 
     async fn update_vectors(
@@ -574,10 +579,7 @@ impl PointsInternal for PointsInternalService {
                         self.upsert_internal(upsert, inference_token.clone())
                             .await?
                     }
-                    Update::Delete(delete) => {
-                        self.delete_internal(delete, inference_token.clone())
-                            .await?
-                    }
+                    Update::Delete(delete) => self.delete_internal(delete).await?,
                     Update::UpdateVectors(update_vectors) => {
                         self.update_vectors_internal(update_vectors, inference_token.clone())
                             .await?

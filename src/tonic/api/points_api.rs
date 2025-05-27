@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use api::grpc::ops::usage_or_none;
+use api::grpc::Usage;
 use api::grpc::qdrant::points_server::Points;
 use api::grpc::qdrant::{
     ClearPayloadPoints, CountPoints, CountResponse, CreateFieldIndexCollection,
@@ -72,6 +72,7 @@ impl Points for PointsService {
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hardware_usage = hw_metrics.clone().to_grpc_api();
 
         upsert(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -82,7 +83,14 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| {
+            resp.map(|(internal, inference_usage)| {
+                let mut response: PointsOperationResponse = internal.into();
+                response.usage =
+                    Usage::new(hardware_usage, inference_usage.into_non_empty()).into_non_empty();
+                response
+            })
+        })
     }
 
     async fn delete(
@@ -92,7 +100,6 @@ impl Points for PointsService {
         validate(request.get_ref())?;
 
         let access = extract_access(&mut request);
-        let inference_token = extract_token(&request);
 
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
@@ -103,7 +110,6 @@ impl Points for PointsService {
             request.into_inner(),
             InternalUpdateParams::default(),
             access,
-            inference_token,
             hw_metrics,
         )
         .await
@@ -144,6 +150,7 @@ impl Points for PointsService {
         let collection_name = request.get_ref().collection_name.clone();
         let wait = Some(request.get_ref().wait.unwrap_or(false));
         let hw_metrics = self.get_request_collection_hw_usage_counter(collection_name, wait);
+        let hardware_usage = hw_metrics.clone().to_grpc_api();
 
         update_vectors(
             StrictModeCheckedTocProvider::new(&self.dispatcher),
@@ -154,7 +161,14 @@ impl Points for PointsService {
             hw_metrics,
         )
         .await
-        .map(|resp| resp.map(Into::into))
+        .map(|resp| {
+            resp.map(|(internal, inference_usage)| {
+                let mut response: PointsOperationResponse = internal.into();
+                response.usage =
+                    Usage::new(hardware_usage, inference_usage.into_non_empty()).into_non_empty();
+                response
+            })
+        })
     }
 
     async fn delete_vectors(
@@ -702,7 +716,7 @@ impl Points for PointsService {
         let pairs_response = SearchMatrixPairsResponse {
             result: Some(SearchMatrixPairs::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: usage_or_none(hw_metrics.to_grpc_api(), None),
+            usage: Usage::from_hardware_usage(hw_metrics.to_grpc_api()).into_non_empty(),
         };
 
         Ok(Response::new(pairs_response))
@@ -728,7 +742,7 @@ impl Points for PointsService {
         let offsets_response = SearchMatrixOffsetsResponse {
             result: Some(SearchMatrixOffsets::from(search_matrix_response)),
             time: timing.elapsed().as_secs_f64(),
-            usage: usage_or_none(hw_metrics.to_grpc_api(), None),
+            usage: Usage::from_hardware_usage(hw_metrics.to_grpc_api()).into_non_empty(),
         };
 
         Ok(Response::new(offsets_response))

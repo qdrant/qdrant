@@ -281,7 +281,6 @@ pub async fn do_upsert_points(
     Ok((update_result, usage_opt))
 }
 
-#[expect(clippy::too_many_arguments)]
 pub async fn do_delete_points(
     toc: Arc<TableOfContent>,
     collection_name: String,
@@ -289,7 +288,6 @@ pub async fn do_delete_points(
     internal_params: InternalUpdateParams,
     params: UpdateParams,
     access: Access,
-    _inference_token: InferenceToken,
     hw_measurement_acc: HwMeasurementAcc,
 ) -> Result<UpdateResult, StorageError> {
     let (point_operation, shard_key) = match points {
@@ -603,7 +601,6 @@ pub async fn do_batch_update_points(
                     internal_params,
                     params,
                     access.clone(),
-                    inference_token.clone(), // delete_points takes token, assumed not to produce usage currently
                     hw_measurement_acc.clone(),
                 )
                 .await?

@@ -89,7 +89,7 @@ async fn delete_points(
     params: Query<UpdateParams>,
     service_config: web::Data<ServiceConfig>,
     ActixAccess(access): ActixAccess,
-    inference_token: InferenceToken,
+    _inference_token: InferenceToken, // can we remove it?
 ) -> impl Responder {
     let operation = operation.into_inner();
     let pass =
@@ -113,7 +113,6 @@ async fn delete_points(
         InternalUpdateParams::default(),
         params.into_inner(),
         access,
-        inference_token,
         request_hw_counter.get_counter(),
     )
     .await;
