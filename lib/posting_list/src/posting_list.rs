@@ -31,8 +31,9 @@ pub struct PostingList<H: ValueHandler> {
 ///
 /// Internal structure to store the remainder of the posting list. So that IntoBytes can be derived
 #[derive(Clone, Debug, FromBytes, Immutable, IntoBytes, KnownLayout)]
-#[repr(C)]
+#[repr(C)] // Required for IntoBytes to work correctly
 pub struct RemainderPosting<S: Sized> {
+    /// U32 is required for pining endianness of the id
     pub id: U32,
     pub value: S,
 }

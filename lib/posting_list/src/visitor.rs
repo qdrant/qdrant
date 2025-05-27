@@ -53,9 +53,11 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
     pub(crate) fn search_greater_or_equal(
         &mut self,
         id: PointOffsetType,
-        offset_hint: Option<usize>,
+        start_from_offset: Option<usize>,
     ) -> Option<usize> {
-        let start_chunk = offset_hint.map(|offset| offset / CHUNK_LEN).unwrap_or(0);
+        let start_chunk = start_from_offset
+            .map(|offset| offset / CHUNK_LEN)
+            .unwrap_or(0);
 
         let ids_range = self.list.ids_range(start_chunk)?;
         // check if the first in the chunk is already greater or equal to the target id
