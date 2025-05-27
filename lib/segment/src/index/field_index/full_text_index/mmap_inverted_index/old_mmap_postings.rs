@@ -7,13 +7,13 @@ use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
 use common::zeros::WriteZerosExt;
 use memmap2::Mmap;
-use memory::madvise::{Advice, AdviceSetting, Madviseable};
+use memory::madvise::{Advice, AdviceSetting};
 use memory::mmap_ops::open_read_mmap;
-use posting_list::{
-    IdsPostingList, IdsPostingListView, PostingChunk, PostingListComponents, RemainderPosting,
-};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+use crate::index::field_index::full_text_index::compressed_posting::compressed_chunks_reader::ChunkReader;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_common::CompressedPostingChunksIndex;
+use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
 
 const ALIGNMENT: usize = 4;
@@ -50,8 +50,8 @@ impl PostingListHeader {
     fn posting_size(&self) -> usize {
         self.data_bytes_count as usize
             + self.alignment_bytes_count as usize
-            + self.remainder_count as usize * size_of::<RemainderPosting<()>>()
-            + self.chunks_count as usize * size_of::<PostingChunk<()>>()
+            + self.remainder_count as usize * size_of::<PointOffsetType>()
+            + self.chunks_count as usize * size_of::<CompressedPostingChunksIndex>()
             + size_of::<PointOffsetType>() // last_doc_id
     }
 }
@@ -89,16 +89,16 @@ impl MmapPostings {
     ///
     /// ```ignore
     /// last_doc_id: &'a PointOffsetType,
-    /// chunks_index: &'a [PostingChunk<()>],
+    /// chunks_index: &'a [CompressedPostingChunksIndex],
     /// data: &'a [u8],
     /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
     /// remainder_postings: &'a [PointOffsetType],
     /// ```
-    fn get_view<'a>(
+    fn get_reader<'a>(
         &'a self,
         header: &PostingListHeader,
         hw_counter: ConditionedCounter<'a>,
-    ) -> Option<IdsPostingListView<'a>> {
+    ) -> Option<ChunkReader<'a>> {
         let counter = hw_counter.payload_index_io_read_counter();
 
         let bytes = self.mmap.get(header.offset as usize..)?;
@@ -106,24 +106,24 @@ impl MmapPostings {
 
         let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(bytes).ok()?;
 
-        counter.incr_delta(size_of::<PostingChunk<()>>());
-        let (chunks, bytes) =
-            <[PostingChunk<()>]>::ref_from_prefix_with_elems(bytes, header.chunks_count as usize)
-                .ok()?;
+        counter.incr_delta(size_of::<CompressedPostingChunksIndex>());
+        let (chunks, bytes) = <[CompressedPostingChunksIndex]>::ref_from_prefix_with_elems(
+            bytes,
+            header.chunks_count as usize,
+        )
+        .ok()?;
         let (data, bytes) = bytes.split_at(header.data_bytes_count as usize);
         let bytes = bytes.get(header.alignment_bytes_count as usize..)?;
 
-        let (remainder_postings, _) = <[RemainderPosting<()>]>::ref_from_prefix_with_elems(
-            bytes,
-            header.remainder_count as usize,
-        )
-        .ok()?;
+        let (remainder_postings, _) =
+            <[u32]>::ref_from_prefix_with_elems(bytes, header.remainder_count as usize).ok()?;
 
-        Some(IdsPostingListView::from_ids_components(
-            data,
+        Some(ChunkReader::new(
+            last_doc_id,
             chunks,
+            data,
             remainder_postings,
-            Some(last_doc_id),
+            hw_counter,
         ))
     }
 
@@ -131,7 +131,7 @@ impl MmapPostings {
         &'a self,
         token_id: TokenId,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<IdsPostingListView<'a>> {
+    ) -> Option<ChunkReader<'a>> {
         let hw_counter = ConditionedCounter::new(self.on_disk, hw_counter);
 
         hw_counter
@@ -140,12 +140,12 @@ impl MmapPostings {
 
         let header = self.get_header(token_id)?;
 
-        self.get_view(header, hw_counter)
+        self.get_reader(header, hw_counter)
     }
 
     /// Given a vector of compressed posting lists, this function writes them to the `path` file.
     /// The format of the file is compatible with the `MmapPostings` structure.
-    pub fn create(path: PathBuf, compressed_postings: &[IdsPostingList]) -> io::Result<()> {
+    pub fn create(path: PathBuf, compressed_postings: &[CompressedPostingList]) -> io::Result<()> {
         // Create a new empty file, where we will write the compressed posting lists and the header
         let file = tempfile::Builder::new()
             .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
@@ -165,24 +165,17 @@ impl MmapPostings {
         let mut posting_offset = size_of::<PostingsHeader>() + postings_lists_headers_size;
 
         for compressed_posting in compressed_postings {
-            let view = compressed_posting.view();
-            let PostingListComponents {
-                id_data,
-                chunks,
-                var_size_data: _, // not used with just ids postings
-                remainders,
-                last_id: _, // not used for the header
-            } = view.components();
+            let (data, chunks, remainder_postings) = compressed_posting.internal_structs();
 
-            let data_len = id_data.len();
-            let alignment_len = data_len.next_multiple_of(ALIGNMENT) - data_len;
+            let data_len = data.len();
+            let alignment_len = ALIGNMENT - data_len % ALIGNMENT;
 
             let posting_list_header = PostingListHeader {
                 offset: posting_offset as u64,
                 chunks_count: chunks.len() as u32,
-                data_bytes_count: data_len as u32,
+                data_bytes_count: data.len() as u32,
                 alignment_bytes_count: alignment_len as u8,
-                remainder_count: remainders.len() as u8,
+                remainder_count: remainder_postings.len() as u8,
                 _reserved: [0; 6],
             };
 
@@ -193,35 +186,25 @@ impl MmapPostings {
         }
 
         for compressed_posting in compressed_postings {
-            let view = compressed_posting.view();
-            let PostingListComponents {
-                id_data,
-                chunks,
-                var_size_data: _, // not used with just ids postings
-                remainders,
-                last_id,
-            } = view.components();
+            let (data, chunks, remainder_postings) = compressed_posting.internal_structs();
 
-            bufw.write_all(
-                last_id
-                    .expect("posting must have at least one element")
-                    .as_bytes(),
-            )?;
+            let last_doc_id = compressed_posting.last_doc_id();
+
+            bufw.write_all(last_doc_id.as_bytes())?;
 
             for chunk in chunks {
                 bufw.write_all(chunk.as_bytes())?;
             }
 
-            bufw.write_all(id_data)?;
+            bufw.write_all(data)?;
 
             // Example:
             // For data size = 5, alignment = 3 as (5 + 3 = 8)
-            // alignment = 8 - 5 = 3
-            let data_len = id_data.len();
-            bufw.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)?;
+            // alignment = 4 - 5 % 4 = 3
+            bufw.write_zeros(ALIGNMENT - data.len() % ALIGNMENT)?;
 
-            for element in remainders {
-                bufw.write_all(element.as_bytes())?;
+            for posting in remainder_postings {
+                bufw.write_all(posting.as_bytes())?;
             }
         }
 
@@ -252,19 +235,5 @@ impl MmapPostings {
             header,
             on_disk: !populate,
         })
-    }
-
-    /// Populate all pages in the mmap.
-    /// Block until all pages are populated.
-    pub fn populate(&self) {
-        self.mmap.populate();
-    }
-
-    /// Iterate over posting lists, returning a view for each
-    pub fn iter_postings<'a>(
-        &'a self,
-        hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = Option<IdsPostingListView<'a>>> {
-        (0..self.header.posting_count as u32).map(|posting_idx| self.get(posting_idx, hw_counter))
     }
 }

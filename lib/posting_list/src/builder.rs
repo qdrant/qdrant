@@ -2,8 +2,9 @@ use std::marker::PhantomData;
 
 use bitpacking::BitPacker;
 use common::types::PointOffsetType;
+use zerocopy::little_endian::U32;
 
-use crate::posting_list::{PostingChunk, PostingElement, PostingList};
+use crate::posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};
 use crate::value_handler::{SizedHandler, UnsizedHandler, ValueHandler};
 use crate::{
     BitPackerImpl, CHUNK_LEN, SizedValue, UnsizedValue, VarPostingList, WeightsPostingList,
@@ -61,13 +62,14 @@ impl<V> PostingBuilder<V> {
 
         for (chunk_ids, chunk_values) in ids_chunks_iter.zip(values_chunks_iter) {
             let initial = chunk_ids[0];
-            let chunk_bits = bitpacker.num_bits_strictly_sorted(initial.checked_sub(1), chunk_ids);
+            let chunk_bits = bitpacker.num_bits_sorted(initial, chunk_ids);
             let chunk_size = BitPackerImpl::compressed_block_size(chunk_bits);
 
             chunks.push(PostingChunk {
-                initial_id: initial,
+                initial_id: U32::from(initial),
                 offset: u32::try_from(id_data_size)
-                    .expect("id_data_size should fit in u32, (smaller than 4GB)"),
+                    .expect("id_data_size should fit in u32, (smaller than 4GB)")
+                    .into(),
                 sized_values: chunk_values
                     .try_into()
                     .expect("should be a valid chunk size"),
@@ -78,7 +80,10 @@ impl<V> PostingBuilder<V> {
         // now process remainders
         let mut remainders = Vec::with_capacity(num_elements % CHUNK_LEN);
         for (&id, &value) in remainder_ids.iter().zip(remainder_values) {
-            remainders.push(PostingElement { id, value });
+            remainders.push(RemainderPosting {
+                id: U32::from(id),
+                value,
+            });
         }
 
         // compress id_data
@@ -87,10 +92,11 @@ impl<V> PostingBuilder<V> {
             let chunk = &chunks[chunk_index];
             let compressed_size = PostingChunk::get_compressed_size(&chunks, &id_data, chunk_index);
             let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
-            bitpacker.compress_strictly_sorted(
-                chunk.initial_id.checked_sub(1),
+            bitpacker.compress_sorted(
+                chunk.initial_id.get(),
                 chunk_ids,
-                &mut id_data[chunk.offset as usize..chunk.offset as usize + compressed_size],
+                &mut id_data
+                    [chunk.offset.get() as usize..chunk.offset.get() as usize + compressed_size],
                 chunk_bits as u8,
             );
         }

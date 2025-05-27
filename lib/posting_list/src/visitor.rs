@@ -1,10 +1,9 @@
 use common::types::PointOffsetType;
 
-use crate::CHUNK_LEN;
 use crate::iterator::PostingIterator;
-use crate::posting_list::PostingElement;
 use crate::value_handler::ValueHandler;
 use crate::view::PostingListView;
+use crate::{CHUNK_LEN, PostingElement};
 
 /// A visitor for a posting list which caches the latest decompressed chunk of ids.
 pub struct PostingVisitor<'a, H: ValueHandler> {
@@ -31,6 +30,10 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         self.list.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.list.is_empty()
+    }
+
     /// Returns the decompressed slice of ids for a chunk.
     ///
     /// Assumes the chunk_idx is valid.
@@ -44,8 +47,74 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
         &self.decompressed_chunk
     }
 
+    /// Returns the first offset whose element id is greater or equal to the given id.
+    ///
+    /// Returns `None` if there is no such element in the posting list
+    pub(crate) fn search_greater_or_equal(
+        &mut self,
+        id: PointOffsetType,
+        start_from_offset: Option<usize>,
+    ) -> Option<usize> {
+        let start_chunk = start_from_offset
+            .map(|offset| offset / CHUNK_LEN)
+            .unwrap_or(0);
+
+        let ids_range = self.list.ids_range(start_chunk)?;
+        // check if the first in the chunk is already greater or equal to the target id
+        if ids_range.start() >= &id {
+            return Some(start_chunk * CHUNK_LEN);
+        }
+        // check if the target id is already greater than the last id
+        if ids_range.end() < &id {
+            return None;
+        }
+
+        // Find the chunk that may contain the id and check if the id is in the chunk
+        let chunk_index = self.list.find_chunk(id, Some(start_chunk));
+
+        if let Some(chunk_index) = chunk_index {
+            let local_offset = match self.decompressed_chunk(chunk_index).binary_search(&id) {
+                Ok(found_local_offset) => found_local_offset,
+                Err(closest_local_offset) => {
+                    // If the target id is bigger than all the values here, and smaller than the first id
+                    // in the next chunk or remainders, then that next id is the closest greater id
+                    if closest_local_offset >= CHUNK_LEN {
+                        let next_offset = (chunk_index + 1) * CHUNK_LEN;
+
+                        let next_offset_exists = next_offset < self.len();
+
+                        return next_offset_exists.then_some(next_offset);
+                    }
+
+                    closest_local_offset
+                }
+            };
+
+            return Some(local_offset + (chunk_index * CHUNK_LEN));
+        }
+
+        // Check in remainders
+        let remainder_offset = match self.list.search_in_remainders(id) {
+            Ok(found_remainder_offset) => found_remainder_offset,
+            Err(closest_remainder_offset) => {
+                if closest_remainder_offset >= self.list.remainders.len() {
+                    // There is no greater or equal id in the posting list
+                    return None;
+                }
+
+                closest_remainder_offset
+            }
+        };
+
+        Some(remainder_offset + self.list.chunks.len() * CHUNK_LEN)
+    }
+
     pub fn contains(&mut self, id: PointOffsetType) -> bool {
-        if !self.list.is_in_range(id) {
+        if self
+            .list
+            .ids_range(0)
+            .is_none_or(|range| !range.contains(&id))
+        {
             return false;
         }
 
@@ -60,7 +129,7 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
                 .binary_search(&id)
                 .is_ok()
         } else {
-            self.list.search_in_remainders(id).is_some()
+            self.list.search_in_remainders(id).is_ok()
         }
     }
 
@@ -103,12 +172,18 @@ impl<'a, H: ValueHandler> PostingVisitor<'a, H> {
             let next_sized_value = || self.list.remainders.get(local_offset + 1).map(|r| r.value);
             let value = H::get_value(e.value, next_sized_value, self.list.var_size_data);
 
-            PostingElement { id, value }
+            PostingElement {
+                id: id.get(),
+                value,
+            }
         })
     }
 }
 
-impl<'a, H: ValueHandler> IntoIterator for PostingVisitor<'a, H> {
+impl<'a, H: ValueHandler> IntoIterator for PostingVisitor<'a, H>
+where
+    H::Value: Clone,
+{
     type Item = PostingElement<H::Value>;
     type IntoIter = PostingIterator<'a, H>;
 

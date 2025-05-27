@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 common = { path = "../common/common" }
 bitpacking = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
