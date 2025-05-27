@@ -10,7 +10,7 @@ use crate::iterator::PostingIterator;
 use crate::posting_list::RemainderPosting;
 use crate::value_handler::{PostingValue, ValueHandler};
 use crate::visitor::PostingVisitor;
-use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingList};
+use crate::{BitPackerImpl, CHUNK_LEN, PostingChunk, PostingList};
 
 /// A non-owning view of [`PostingList`].
 pub struct PostingListView<'a, V: PostingValue> {
@@ -29,26 +29,6 @@ pub struct PostingListComponents<'a, S, D> {
     pub var_size_data: &'a D,
     pub remainders: &'a [RemainderPosting<S>],
     pub last_id: Option<U32>,
-}
-
-impl<'a> IdsPostingListView<'a> {
-    pub fn from_ids_components(
-        id_data: &'a [u8],
-        chunks: &'a [PostingChunk<()>],
-        remainders: &'a [RemainderPosting<()>],
-        last_id: Option<PointOffsetType>,
-        hw_counter: ConditionedCounter<'a>,
-    ) -> Self {
-        Self {
-            id_data,
-            chunks,
-            var_size_data: &(),
-            remainders,
-            last_id,
-            hw_counter,
-            _phantom: PhantomData,
-        }
-    }
 }
 
 impl<'a, V: PostingValue> IntoIterator for PostingListView<'a, V> {

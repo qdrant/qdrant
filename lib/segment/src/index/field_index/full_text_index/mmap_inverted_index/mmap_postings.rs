@@ -1,5 +1,7 @@
+use std::fmt::Debug;
 use std::io;
 use std::io::Write;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use common::counter::conditioned_counter::ConditionedCounter;
@@ -10,13 +12,97 @@ use memmap2::Mmap;
 use memory::madvise::{Advice, AdviceSetting, Madviseable};
 use memory::mmap_ops::open_read_mmap;
 use posting_list::{
-    IdsPostingList, IdsPostingListView, PostingChunk, PostingListComponents, RemainderPosting,
+    PostingChunk, PostingList, PostingListComponents, PostingListView, PostingValue,
+    RemainderPosting, ValueHandler,
 };
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, Unaligned};
 
 use crate::index::field_index::full_text_index::inverted_index::TokenId;
+use crate::index::field_index::full_text_index::positions::Positions;
 
 const ALIGNMENT: usize = 4;
+
+pub type JustIds = ();
+
+/// Trait marker to enrich [`posting_list::PostingValue`] for handling mmap files with the posting list.
+pub(in crate::index::field_index::full_text_index) trait MmapPostingValue:
+    PostingValue<
+    Handler: ValueHandler<Sized: FromBytes + Immutable + IntoBytes + KnownLayout + Unaligned>
+                 + Clone
+                 + Debug,
+>
+{
+    /// Length in bytes of the variable size data section.
+    fn var_size_data_len(var_size_data: &<Self::Handler as ValueHandler>::VarSizeData) -> usize;
+
+    /// Writes the two sections of data together, and pads them to [`ALIGNMENT`]
+    fn write_data(
+        writer: &mut impl Write,
+        id_data: &[u8],
+        var_data: &<Self::Handler as ValueHandler>::VarSizeData,
+    ) -> Result<(), std::io::Error>;
+
+    /// Splits the data into the corresponding var_size_data, and the rest of the data
+    fn split_var_size_data(
+        bytes: &[u8],
+        var_size_data_len: usize,
+    ) -> (&<Self::Handler as ValueHandler>::VarSizeData, &[u8]);
+}
+
+impl MmapPostingValue for JustIds {
+    fn var_size_data_len(_var_size_data: &()) -> usize {
+        0
+    }
+
+    fn write_data(
+        writer: &mut impl Write,
+        id_data: &[u8],
+        _var_data: &(),
+    ) -> Result<(), std::io::Error> {
+        writer.write_all(id_data)?;
+
+        // Example:
+        // For data size = 5, alignment = 3 as (5 + 3 = 8)
+        // alignment = 8 - 5 = 3
+        let data_len = id_data.len();
+        writer.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)
+    }
+
+    fn split_var_size_data(
+        bytes: &[u8],
+        var_size_data_len: usize,
+    ) -> (&<Self::Handler as ValueHandler>::VarSizeData, &[u8]) {
+        debug_assert_eq!(var_size_data_len, 0);
+        (&(), bytes)
+    }
+}
+
+impl MmapPostingValue for Positions {
+    fn var_size_data_len(var_size_data: &[u8]) -> usize {
+        var_size_data.len()
+    }
+
+    fn write_data(
+        writer: &mut impl Write,
+        id_data: &[u8],
+        var_data: &[u8],
+    ) -> Result<(), std::io::Error> {
+        writer.write_all(id_data)?;
+
+        // write var_size_data if it exists
+        writer.write_all(var_data)?;
+
+        // Example:
+        // For data size = 5, alignment = 3 as (5 + 3 = 8)
+        // alignment = 8 - 5 = 3
+        let data_len = id_data.len() + var_data.len();
+        writer.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)
+    }
+
+    fn split_var_size_data(bytes: &[u8], var_size_data_len: usize) -> (&[u8], &[u8]) {
+        bytes.split_at(var_size_data_len)
+    }
+}
 
 #[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
@@ -27,31 +113,37 @@ struct PostingsHeader {
 }
 
 /// This data structure should contain all the necessary information to
-/// construct `CompressedMmapPostingList` from the mmap file.
+/// construct `PostingListView<V>` from the mmap file.
 #[derive(Debug, Default, Clone, FromBytes, Immutable, IntoBytes, KnownLayout)]
 #[repr(C)]
-struct PostingListHeader {
+pub(in crate::index::field_index::full_text_index) struct PostingListHeader {
     /// Offset in bytes from the start of the mmap file
     /// where the posting list data starts
     offset: u64,
     /// Amount of chunks in compressed posting list
     chunks_count: u32,
     /// Length in bytes for the compressed postings data
-    data_bytes_count: u32,
+    ids_data_bytes_count: u32,
     /// Length in bytes for the alignment bytes
     alignment_bytes_count: u8,
     /// Length in bytes for the remainder postings
     remainder_count: u8,
-    _reserved: [u8; 6],
+
+    _reserved: [u8; 2],
+
+    /// Length in bytes for the var-sized data. Add-on for phrase matching, otherwise 0
+    var_size_data_bytes_count: u32,
 }
 
 impl PostingListHeader {
-    /// Size of the posting list this header represents
-    fn posting_size(&self) -> usize {
-        self.data_bytes_count as usize
+    fn posting_size<V: PostingValue>(&self) -> usize {
+        self.ids_data_bytes_count as usize
+            + self.var_size_data_bytes_count as usize
             + self.alignment_bytes_count as usize
-            + self.remainder_count as usize * size_of::<RemainderPosting<()>>()
-            + self.chunks_count as usize * size_of::<PostingChunk<()>>()
+            + self.remainder_count as usize
+                * size_of::<RemainderPosting<<V::Handler as ValueHandler>::Sized>>()
+            + self.chunks_count as usize
+                * size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>()
             + size_of::<PointOffsetType>() // last_doc_id
     }
 }
@@ -62,14 +154,15 @@ impl PostingListHeader {
 /// `| PostingsHeader |
 /// [ PostingListHeader, PostingListHeader, ... ] |
 /// [ CompressedMmapPostingList, CompressedMmapPostingList, ... ] |`
-pub struct MmapPostings {
+pub struct MmapPostings<V: MmapPostingValue> {
     _path: PathBuf,
     mmap: Mmap,
     header: PostingsHeader,
     on_disk: bool,
+    _value_type: PhantomData<V>,
 }
 
-impl MmapPostings {
+impl<V: MmapPostingValue> MmapPostings<V> {
     fn get_header(&self, token_id: TokenId) -> Option<&PostingListHeader> {
         if self.header.posting_count <= token_id as usize {
             return None;
@@ -83,7 +176,7 @@ impl MmapPostings {
             .map(|(header, _)| header)
     }
 
-    /// Create ChunkReader from the given header
+    /// Create PostingListView<V> from the given header
     ///
     /// Assume the following layout:
     ///
@@ -91,14 +184,15 @@ impl MmapPostings {
     /// last_doc_id: &'a PointOffsetType,
     /// chunks_index: &'a [PostingChunk<()>],
     /// data: &'a [u8],
+    /// var_size_data: &'a [u8], // might be empty in case of only ids
     /// _alignment: &'a [u8], // 0-3 extra bytes to align the data
     /// remainder_postings: &'a [PointOffsetType],
     /// ```
     fn get_view<'a>(
         &'a self,
-        header: &PostingListHeader,
+        header: &'a PostingListHeader,
         hw_counter: ConditionedCounter<'a>,
-    ) -> Option<IdsPostingListView<'a>> {
+    ) -> Option<PostingListView<'a, V>> {
         let counter = hw_counter.payload_index_io_read_counter();
 
         let bytes = self.mmap.get(header.offset as usize..)?;
@@ -106,22 +200,32 @@ impl MmapPostings {
 
         let (last_doc_id, bytes) = PointOffsetType::read_from_prefix(bytes).ok()?;
 
-        counter.incr_delta(size_of::<PostingChunk<()>>());
+        counter.incr_delta(size_of::<PostingChunk<<V::Handler as ValueHandler>::Sized>>());
         let (chunks, bytes) =
-            <[PostingChunk<()>]>::ref_from_prefix_with_elems(bytes, header.chunks_count as usize)
-                .ok()?;
-        let (data, bytes) = bytes.split_at(header.data_bytes_count as usize);
+            <[PostingChunk<<V::Handler as ValueHandler>::Sized>]>::ref_from_prefix_with_elems(
+                bytes,
+                header.chunks_count as usize,
+            )
+            .ok()?;
+
+        let (id_data, bytes) = bytes.split_at(header.ids_data_bytes_count as usize);
+
+        let (var_size_data, bytes) =
+            V::split_var_size_data(bytes, header.var_size_data_bytes_count as usize);
+
         let bytes = bytes.get(header.alignment_bytes_count as usize..)?;
 
-        let (remainder_postings, _) = <[RemainderPosting<()>]>::ref_from_prefix_with_elems(
-            bytes,
-            header.remainder_count as usize,
-        )
-        .ok()?;
+        let (remainder_postings, _) =
+            <[RemainderPosting<<V::Handler as ValueHandler>::Sized>]>::ref_from_prefix_with_elems(
+                bytes,
+                header.remainder_count as usize,
+            )
+            .ok()?;
 
-        Some(IdsPostingListView::from_ids_components(
-            data,
+        Some(PostingListView::from_components(
+            id_data,
             chunks,
+            var_size_data,
             remainder_postings,
             Some(last_doc_id),
             hw_counter,
@@ -132,7 +236,7 @@ impl MmapPostings {
         &'a self,
         token_id: TokenId,
         hw_counter: &'a HardwareCounterCell,
-    ) -> Option<IdsPostingListView<'a>> {
+    ) -> Option<PostingListView<'a, V>> {
         let hw_counter = ConditionedCounter::new(self.on_disk, hw_counter);
 
         hw_counter
@@ -146,7 +250,7 @@ impl MmapPostings {
 
     /// Given a vector of compressed posting lists, this function writes them to the `path` file.
     /// The format of the file is compatible with the `MmapPostings` structure.
-    pub fn create(path: PathBuf, compressed_postings: &[IdsPostingList]) -> io::Result<()> {
+    pub fn create(path: PathBuf, compressed_postings: &[PostingList<V>]) -> io::Result<()> {
         // Create a new empty file, where we will write the compressed posting lists and the header
         let file = tempfile::Builder::new()
             .prefix(path.file_name().ok_or(io::ErrorKind::InvalidInput)?)
@@ -170,27 +274,30 @@ impl MmapPostings {
             let PostingListComponents {
                 id_data,
                 chunks,
-                var_size_data: _, // not used with just ids postings
+                var_size_data,
                 remainders,
                 last_id: _, // not used for the header
             } = view.components();
 
-            let data_len = id_data.len();
+            let id_data_len = id_data.len();
+            let var_size_data_len = V::var_size_data_len(var_size_data);
+            let data_len = id_data_len + var_size_data_len;
             let alignment_len = data_len.next_multiple_of(ALIGNMENT) - data_len;
 
             let posting_list_header = PostingListHeader {
                 offset: posting_offset as u64,
                 chunks_count: chunks.len() as u32,
-                data_bytes_count: data_len as u32,
+                ids_data_bytes_count: id_data_len as u32,
+                var_size_data_bytes_count: var_size_data_len as u32,
                 alignment_bytes_count: alignment_len as u8,
                 remainder_count: remainders.len() as u8,
-                _reserved: [0; 6],
+                _reserved: [0; 2],
             };
 
             // Write the posting list header to the buffer
             bufw.write_all(posting_list_header.as_bytes())?;
 
-            posting_offset += posting_list_header.posting_size();
+            posting_offset += posting_list_header.posting_size::<V>();
         }
 
         for compressed_posting in compressed_postings {
@@ -198,7 +305,7 @@ impl MmapPostings {
             let PostingListComponents {
                 id_data,
                 chunks,
-                var_size_data: _, // not used with just ids postings
+                var_size_data, // not used with just ids postings
                 remainders,
                 last_id,
             } = view.components();
@@ -213,13 +320,8 @@ impl MmapPostings {
                 bufw.write_all(chunk.as_bytes())?;
             }
 
-            bufw.write_all(id_data)?;
-
-            // Example:
-            // For data size = 5, alignment = 3 as (5 + 3 = 8)
-            // alignment = 8 - 5 = 3
-            let data_len = id_data.len();
-            bufw.write_zeros(data_len.next_multiple_of(ALIGNMENT) - data_len)?;
+            // write all unaligned data together, and align it accordingly
+            V::write_data(&mut bufw, id_data, var_size_data)?;
 
             for element in remainders {
                 bufw.write_all(element.as_bytes())?;
@@ -252,6 +354,7 @@ impl MmapPostings {
             mmap,
             header,
             on_disk: !populate,
+            _value_type: PhantomData,
         })
     }
 
@@ -265,7 +368,7 @@ impl MmapPostings {
     pub fn iter_postings<'a>(
         &'a self,
         hw_counter: &'a HardwareCounterCell,
-    ) -> impl Iterator<Item = Option<IdsPostingListView<'a>>> {
+    ) -> impl Iterator<Item = Option<PostingListView<'a, V>>> {
         (0..self.header.posting_count as u32).map(|posting_idx| self.get(posting_idx, hw_counter))
     }
 }

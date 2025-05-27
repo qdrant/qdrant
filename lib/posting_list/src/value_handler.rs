@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use common::counter::conditioned_counter::ConditionedCounter;
+use zerocopy::little_endian::U32;
 
 use crate::{SizedValue, UnsizedValue};
 
@@ -93,7 +94,7 @@ pub struct UnsizedHandler<V: UnsizedValue>(PhantomData<V>);
 
 impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
     type Value = V;
-    type Sized = u32;
+    type Sized = U32;
 
     type VarSizeData = [u8];
 
@@ -102,7 +103,7 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         let mut current_offset = 0u32;
 
         for value in &values {
-            offsets.push(current_offset);
+            offsets.push(U32::from(current_offset));
             let value_len = u32::try_from(value.write_len())
                 .expect("Value larger than 4GB, use u64 offsets instead");
             // prepare next starting offset
@@ -114,12 +115,12 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         let last_offset = offsets.last();
         let ranges = offsets
             .windows(2)
-            .map(|w| w[0] as usize..w[1] as usize)
+            .map(|w| w[0].get() as usize..w[1].get() as usize)
             // the last one is not included in windows, but goes until the end
             .chain(
                 last_offset
                     .iter()
-                    .map(|&last| *last as usize..current_offset as usize),
+                    .map(|&last| last.get() as usize..current_offset as usize),
             );
 
         let mut var_sized_data = vec![0; current_offset as usize];
@@ -140,8 +141,8 @@ impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {
         N: Fn() -> Option<Self::Sized>,
     {
         let range = match next_sized_value() {
-            Some(next_value) => sized_value as usize..next_value as usize,
-            None => sized_value as usize..var_data.len(),
+            Some(next_value) => sized_value.get() as usize..next_value.get() as usize,
+            None => sized_value.get() as usize..var_data.len(),
         };
 
         hw_counter

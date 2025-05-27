@@ -38,7 +38,8 @@ fn test_mmap_posting_lists_compatibility() {
     let old_postings = old_mmap_postings::MmapPostings::open(postings_path.clone(), true).unwrap();
 
     // open with new impl
-    let new_postings = mmap_postings::MmapPostings::open(postings_path.clone(), true).unwrap();
+    let new_postings =
+        mmap_postings::MmapPostings::<()>::open(postings_path.clone(), true).unwrap();
 
     let hw_counter = HardwareCounterCell::disposable();
 
