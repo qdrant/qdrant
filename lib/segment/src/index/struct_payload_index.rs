@@ -820,4 +820,8 @@ impl PayloadIndex for StructPayloadIndex {
         files.push(self.config_path());
         files
     }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        Vec::new() // TODO!
+    }
 }
