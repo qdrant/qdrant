@@ -1396,6 +1396,8 @@ pub const DEFAULT_SPARSE_FULL_SCAN_THRESHOLD: usize = 5_000;
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub struct SegmentState {
+    #[serde(default)]
+    pub initial_version: Option<SeqNumberType>,
     pub version: Option<SeqNumberType>,
     pub config: SegmentConfig,
 }

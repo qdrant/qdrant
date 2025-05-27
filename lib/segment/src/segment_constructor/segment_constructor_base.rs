@@ -521,6 +521,7 @@ pub(crate) fn create_sparse_vector_storage(
 }
 
 fn create_segment(
+    initial_version: Option<SeqNumberType>,
     version: Option<SeqNumberType>,
     segment_path: &Path,
     config: &SegmentConfig,
@@ -688,6 +689,7 @@ fn create_segment(
     };
 
     Ok(Segment {
+        initial_version,
         version,
         persisted_version: Arc::new(Mutex::new(version)),
         current_path: segment_path.to_owned(),
@@ -815,7 +817,13 @@ pub fn load_segment(path: &Path, stopped: &AtomicBool) -> OperationResult<Option
 
     let segment_state = Segment::load_state(path)?;
 
-    let segment = create_segment(segment_state.version, path, &segment_state.config, stopped)?;
+    let segment = create_segment(
+        segment_state.initial_version,
+        segment_state.version,
+        path,
+        &segment_state.config,
+        stopped,
+    )?;
 
     Ok(Some(segment))
 }
@@ -845,7 +853,7 @@ pub fn build_segment(
 
     std::fs::create_dir_all(&segment_path)?;
 
-    let segment = create_segment(None, &segment_path, config, &AtomicBool::new(false))?;
+    let segment = create_segment(None, None, &segment_path, config, &AtomicBool::new(false))?;
     segment.save_current_state()?;
 
     // Version is the last file to save, as it will be used to check if segment was built correctly.
@@ -913,6 +921,7 @@ fn load_segment_state_v3(segment_path: &Path) -> OperationResult<SegmentState> {
             };
 
             SegmentState {
+                initial_version: None,
                 version: Some(state.version),
                 config: segment_config.into(),
             }
