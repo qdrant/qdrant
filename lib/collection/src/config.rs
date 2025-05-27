@@ -212,6 +212,9 @@ pub struct CollectionConfigInternal {
     pub strict_mode_config: Option<StrictModeConfig>,
     #[serde(default)]
     pub uuid: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Arbitrary collection-level properties (metadata)
+    pub properties: Option<serde_json::Value>,
 }
 
 impl CollectionConfigInternal {
@@ -246,6 +249,27 @@ impl CollectionConfigInternal {
     pub fn validate_and_warn(&self) {
         if let Err(ref errs) = self.validate() {
             validation::warn_validation_errors("Collection configuration file", errs);
+        }
+    }
+
+    pub fn new(
+        params: CollectionParams,
+        hnsw_config: HnswConfig,
+        optimizer_config: OptimizersConfig,
+        wal_config: WalConfig,
+        quantization_config: Option<QuantizationConfig>,
+        strict_mode_config: Option<StrictModeConfig>,
+        uuid: Option<Uuid>,
+    ) -> Self {
+        Self {
+            params,
+            hnsw_config,
+            optimizer_config,
+            wal_config,
+            quantization_config,
+            strict_mode_config,
+            uuid,
+            properties: None,
         }
     }
 }

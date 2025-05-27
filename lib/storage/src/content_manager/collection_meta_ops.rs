@@ -423,6 +423,7 @@ impl From<CollectionConfigInternal> for CreateCollection {
             quantization_config,
             strict_mode_config,
             uuid,
+            ..
         } = value;
 
         let CollectionParams {

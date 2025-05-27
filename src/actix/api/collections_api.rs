@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use actix_web::rt::time::Instant;
 use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
-use actix_web_validator::{Json, Path, Query};
+use actix_web_validator::{Path, Query};
+use actix_web::web::Json;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
@@ -230,6 +231,90 @@ async fn update_collection_cluster(
     process_response(response, timing, None)
 }
 
+#[get("/collections/{name}/properties")]
+async fn get_collection_properties(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    ActixAccess(access): ActixAccess,
+) -> HttpResponse {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&access, &pass);
+    let collection_pass = match access.check_collection_access(&collection.name, Default::default())
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response::<()>(Err(err), Instant::now(), None),
+    };
+    match toc.get_collection(&collection_pass).await {
+        Ok(collection_ref) => match collection_ref.get_property("*").await {
+            Some(properties) => HttpResponse::Ok().json(properties),
+            None => HttpResponse::Ok().json(serde_json::json!({})),
+        },
+        Err(err) => process_response::<()>(Err(err), Instant::now(), None),
+    }
+}
+
+#[patch("/collections/{name}/properties")]
+async fn patch_collection_properties(
+    dispatcher: web::Data<Dispatcher>,
+    collection: Path<CollectionPath>,
+    Json(payload): Json<serde_json::Value>,
+    ActixAccess(access): ActixAccess,
+) -> HttpResponse {
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&access, &pass);
+    let collection_pass = match access.check_collection_access(&collection.name, Default::default())
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response::<()>(Err(err), Instant::now(), None),
+    };
+    match toc.get_collection(&collection_pass).await {
+        Ok(collection_ref) => {
+            let obj = payload.as_object();
+            if obj.is_none() {
+                return HttpResponse::BadRequest().body("Payload must be a JSON object");
+            }
+            let mut errors = vec![];
+            for (k, v) in obj.unwrap() {
+                if let Err(e) = collection_ref.set_property(k.clone(), v.clone()).await {
+                    errors.push((k.clone(), e.to_string()));
+                }
+            }
+            if errors.is_empty() {
+                HttpResponse::Ok().json(serde_json::json!({"result": "ok"}))
+            } else {
+                HttpResponse::BadRequest().json(serde_json::json!({"errors": errors}))
+            }
+        }
+        Err(err) => process_response::<()>(Err(err), Instant::now(), None),
+    }
+}
+
+#[delete("/collections/{name}/properties/{key}")]
+async fn delete_collection_property(
+    dispatcher: web::Data<Dispatcher>,
+    path: web::Path<(String, String)>,
+    ActixAccess(access): ActixAccess,
+) -> HttpResponse {
+    let (collection_name, key) = path.into_inner();
+    let pass = new_unchecked_verification_pass();
+    let toc = dispatcher.toc(&access, &pass);
+    let collection_pass = match access.check_collection_access(&collection_name, Default::default())
+    {
+        Ok(pass) => pass,
+        Err(err) => return process_response::<()>(Err(err), Instant::now(), None),
+    };
+    match toc.get_collection(&collection_pass).await {
+        Ok(collection_ref) => {
+            if let Err(e) = collection_ref.remove_property(&key).await {
+                HttpResponse::InternalServerError().body(e.to_string())
+            } else {
+                HttpResponse::Ok().json(serde_json::json!({"result": "ok"}))
+            }
+        }
+        Err(err) => process_response::<()>(Err(err), Instant::now(), None),
+    }
+}
+
 // Configure services
 pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
     // Ordering of services is important for correct path pattern matching
@@ -244,7 +329,10 @@ pub fn config_collections_api(cfg: &mut web::ServiceConfig) {
         .service(get_aliases)
         .service(get_collection_aliases)
         .service(get_cluster_info)
-        .service(update_collection_cluster);
+        .service(update_collection_cluster)
+        .service(get_collection_properties)
+        .service(patch_collection_properties)
+        .service(delete_collection_property);
 }
 
 #[cfg(test)]

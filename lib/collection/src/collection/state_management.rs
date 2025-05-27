@@ -135,6 +135,7 @@ impl Collection {
                 quantization_config,
                 strict_mode_config,
                 uuid: _,
+                ..
             } = &new_config;
 
             let is_core_config_updated = params != &config.params

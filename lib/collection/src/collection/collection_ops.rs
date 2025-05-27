@@ -398,4 +398,62 @@ impl Collection {
         };
         Ok(info)
     }
+
+    /// Set or update a collection-level property (arbitrary metadata)
+    pub async fn set_property(
+        &self,
+        key: String,
+        value: serde_json::Value,
+    ) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        let mut properties = config
+            .properties
+            .take()
+            .unwrap_or_else(|| serde_json::json!({}));
+        if let Some(obj) = properties.as_object_mut() {
+            obj.insert(key, value);
+            config.properties = Some(serde_json::Value::Object(obj.clone()));
+        } else {
+            // If properties is not an object, reset to a new object
+            let mut map = serde_json::Map::new();
+            map.insert(key, value);
+            config.properties = Some(serde_json::Value::Object(map));
+        }
+        config.save(&self.path)?;
+        Ok(())
+    }
+
+    /// Remove a collection-level property
+    pub async fn remove_property(&self, key: &str) -> CollectionResult<()> {
+        let mut config = self.collection_config.write().await;
+        let mut changed = false;
+        if let Some(serde_json::Value::Object(mut obj)) = config.properties.take() {
+            if obj.remove(key).is_some() {
+                changed = true;
+            }
+            config.properties = Some(serde_json::Value::Object(obj));
+        }
+        if changed {
+            config.save(&self.path)?;
+        }
+        Ok(())
+    }
+
+    /// Get a collection-level property (returns Option<Value>)
+    pub async fn get_property(&self, key: &str) -> Option<serde_json::Value> {
+        let config = self.collection_config.read().await;
+        if key == "*" {
+            // Return the entire properties object, or empty object if None
+            return Some(
+                config
+                    .properties
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            );
+        }
+        config
+            .properties
+            .as_ref()
+            .and_then(|props| props.get(key).cloned())
+    }
 }

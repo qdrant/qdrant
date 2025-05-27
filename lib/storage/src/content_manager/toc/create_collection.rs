@@ -210,13 +210,14 @@ impl TableOfContent {
             .into();
 
         let collection_config = CollectionConfigInternal {
-            wal_config,
             params: collection_params,
-            optimizer_config: optimizers_config,
             hnsw_config,
+            optimizer_config: optimizers_config,
+            wal_config,
             quantization_config,
             strict_mode_config,
             uuid,
+            properties: None,
         };
 
         // No shard key mapping on creation, shard keys are set up after creating the collection

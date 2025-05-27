@@ -213,8 +213,8 @@ impl From<CollectionConfigInternal> for CollectionConfig {
             wal_config,
             quantization_config,
             strict_mode_config,
-            // Internal UUID to identify unique collections in consensus snapshots
             uuid: _,
+            ..
         } = config;
 
         CollectionConfig {
@@ -256,6 +256,9 @@ pub struct CollectionInfo {
     pub config: CollectionConfig,
     /// Types of stored payload
     pub payload_schema: HashMap<PayloadKeyType, PayloadIndexInfo>,
+    /// Arbitrary collection-level metadata/properties (user-defined)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub properties: Option<serde_json::Value>,
 }
 
 impl CollectionInfo {
@@ -267,8 +270,9 @@ impl CollectionInfo {
             indexed_vectors_count: Some(0),
             points_count: Some(0),
             segments_count: 0,
-            config: CollectionConfig::from(collection_config),
+            config: CollectionConfig::from(collection_config.clone()),
             payload_schema: HashMap::new(),
+            properties: collection_config.properties,
         }
     }
 }
@@ -292,8 +296,9 @@ impl From<ShardInfoInternal> for CollectionInfo {
             indexed_vectors_count: Some(indexed_vectors_count),
             points_count: Some(points_count),
             segments_count,
-            config: CollectionConfig::from(config),
+            config: CollectionConfig::from(config.clone()),
             payload_schema,
+            properties: config.properties,
         }
     }
 }

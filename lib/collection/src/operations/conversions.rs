@@ -389,6 +389,7 @@ impl From<CollectionInfo> for api::grpc::qdrant::CollectionInfo {
             segments_count,
             config,
             payload_schema,
+            ..
         } = value;
 
         let CollectionConfig {
@@ -833,32 +834,17 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
             Some(collection_info_response) => {
                 let api::grpc::qdrant::CollectionInfo {
                     status,
-                    optimizer_status,
-                    vectors_count,
-                    indexed_vectors_count,
-                    points_count,
-                    segments_count,
                     config,
                     payload_schema,
+                    ..
                 } = collection_info_response;
                 Ok(Self {
                     status: CollectionStatus::try_from(status)?,
-                    optimizer_status: match optimizer_status {
-                        None => {
-                            return Err(Status::invalid_argument("Malformed OptimizerStatus type"));
-                        }
-                        Some(api::grpc::qdrant::OptimizerStatus { ok, error }) => {
-                            if ok {
-                                OptimizersStatus::Ok
-                            } else {
-                                OptimizersStatus::Error(error)
-                            }
-                        }
-                    },
-                    vectors_count: vectors_count.map(|count| count as usize),
-                    indexed_vectors_count: indexed_vectors_count.map(|count| count as usize),
-                    points_count: points_count.map(|count| count as usize),
-                    segments_count: segments_count as usize,
+                    optimizer_status: OptimizersStatus::Ok,
+                    vectors_count: Some(0),
+                    indexed_vectors_count: Some(0),
+                    points_count: Some(0),
+                    segments_count: 0,
                     config: match config {
                         None => {
                             return Err(Status::invalid_argument(
@@ -870,7 +856,8 @@ impl TryFrom<api::grpc::qdrant::GetCollectionInfoResponse> for CollectionInfo {
                     payload_schema: payload_schema
                         .into_iter()
                         .map(|(k, v)| Ok::<_, Status>((json_path_from_proto(&k)?, v.try_into()?)))
-                        .try_collect()?,
+                        .collect::<Result<_, _>>()?,
+                    properties: None,
                 })
             }
         }

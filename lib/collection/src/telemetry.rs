@@ -54,7 +54,6 @@ impl CollectionTelemetry {
 }
 
 #[derive(Serialize, Clone, Debug, JsonSchema)]
-#[serde(rename_all = "snake_case")]
 pub enum ShardCleanStatusTelemetry {
     Started,
     Progress(ShardCleanStatusProgressTelemetry),
@@ -98,6 +97,7 @@ impl From<CollectionConfigInternal> for CollectionConfigTelemetry {
             quantization_config,
             strict_mode_config,
             uuid,
+            ..
         } = config;
         CollectionConfigTelemetry {
             params,
