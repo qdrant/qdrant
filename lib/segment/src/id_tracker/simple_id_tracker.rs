@@ -155,6 +155,23 @@ impl SimpleIdTracker {
             bincode::serialize(&internal_id).unwrap(),
         )
     }
+
+    /// Destroy this simple ID tracker, remove persisted data from RocksDB
+    pub fn destroy(self) -> OperationResult<()> {
+        self.mapping_db_wrapper.remove_column_family()?;
+        self.versions_db_wrapper.remove_column_family()?;
+        Ok(())
+    }
+
+    /// Iterate over all point versions
+    ///
+    /// Includes deleted points.
+    pub(crate) fn iter_versions(&self) -> impl Iterator<Item = (PointOffsetType, SeqNumberType)> {
+        self.internal_to_version
+            .iter()
+            .enumerate()
+            .map(|(internal_id, &version)| (internal_id as PointOffsetType, version))
+    }
 }
 
 impl IdTracker for SimpleIdTracker {
@@ -342,12 +359,36 @@ impl From<StoredPointId> for ExtendedPointId {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{HashMap, HashSet};
+
     use itertools::Itertools;
+    use rand::rngs::StdRng;
+    use rand::{RngCore, SeedableRng};
     use serde::de::DeserializeOwned;
     use tempfile::Builder;
 
     use super::*;
     use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::segment_constructor::migrate_rocksdb_id_tracker_to_mutable;
+
+    const RAND_SEED: u64 = 42;
+    const DEFAULT_VERSION: SeqNumberType = 42;
+
+    pub const TEST_POINTS: &[PointIdType] = &[
+        PointIdType::NumId(100),
+        PointIdType::Uuid(Uuid::from_u128(123_u128)),
+        PointIdType::Uuid(Uuid::from_u128(156_u128)),
+        PointIdType::NumId(150),
+        PointIdType::NumId(120),
+        PointIdType::Uuid(Uuid::from_u128(12_u128)),
+        PointIdType::NumId(180),
+        PointIdType::NumId(110),
+        PointIdType::NumId(115),
+        PointIdType::Uuid(Uuid::from_u128(673_u128)),
+        PointIdType::NumId(190),
+        PointIdType::NumId(177),
+        PointIdType::Uuid(Uuid::from_u128(971_u128)),
+    ];
 
     fn check_bincode_serialization<
         T: Serialize + DeserializeOwned + PartialEq + std::fmt::Debug,
@@ -425,5 +466,96 @@ mod tests {
         values.sort();
 
         assert_eq!(sorted_from_tracker, values);
+    }
+
+    /// Create RocksDB based ID tracker with mappings and various mutations.
+    /// Migrate it to the mutable ID tracker and ensure that the mappings are correct.
+    ///
+    /// Test based upton [`super::mutable_id_tracker::tests::test_store_load_mutated`]
+    #[test]
+    fn test_migrate_simple_to_mutable() {
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        let db_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(db_dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        // Create RocksDB ID tracker and insert test points
+        let mut id_tracker = SimpleIdTracker::open(db).unwrap();
+        for value in TEST_POINTS.iter() {
+            let internal_id = id_tracker.total_point_count() as PointOffsetType;
+            id_tracker.set_link(*value, internal_id).unwrap();
+            id_tracker
+                .set_internal_version(internal_id, DEFAULT_VERSION)
+                .unwrap()
+        }
+
+        // Mutate mappings
+        let mut dropped_points = HashSet::new();
+        let mut custom_version = HashMap::new();
+        for (index, point) in TEST_POINTS.iter().enumerate() {
+            if index % 2 == 0 {
+                continue;
+            }
+
+            if index % 3 == 0 {
+                id_tracker.drop(*point).unwrap();
+                dropped_points.insert(*point);
+                continue;
+            }
+
+            if index % 5 == 0 {
+                let new_version = rng.next_u64();
+                id_tracker
+                    .set_internal_version(index as PointOffsetType, new_version)
+                    .unwrap();
+                custom_version.insert(index as PointOffsetType, new_version);
+            }
+        }
+
+        let available_point_count = id_tracker.available_point_count();
+        let total_point_count = id_tracker.total_point_count();
+
+        // Migrate from RocksDB to mutable ID tracker
+        let segment_dir = Builder::new().prefix("segment_dir").tempdir().unwrap();
+        let id_tracker = migrate_rocksdb_id_tracker_to_mutable(id_tracker, segment_dir.path())
+            .expect("failed to migrate from RocksDB to mutable");
+
+        // We can drop RocksDB storage now
+        db_dir.close().expect("failed to drop RocksDB storage");
+
+        // Assert point counts
+        // The mutable ID tracker recognizes deletions because there are gaps in mappings
+        // The available and total point counts remains the same, because the last point mapping was not deleted
+        assert_eq!(id_tracker.available_point_count(), available_point_count);
+        assert_eq!(id_tracker.total_point_count(), total_point_count);
+
+        // Assert mapping correctness
+        for (index, point) in TEST_POINTS.iter().enumerate() {
+            let internal_id = index as PointOffsetType;
+
+            if dropped_points.contains(point) {
+                assert!(id_tracker.is_deleted_point(internal_id));
+                assert_eq!(id_tracker.external_id(internal_id), None);
+                assert!(id_tracker.mappings.internal_id(point).is_none());
+
+                continue;
+            }
+
+            // Check version
+            let expect_version = custom_version
+                .get(&internal_id)
+                .copied()
+                .unwrap_or(DEFAULT_VERSION);
+            assert_eq!(
+                id_tracker.internal_version(internal_id),
+                Some(expect_version),
+            );
+
+            // Check that unmodified points still haven't changed.
+            assert_eq!(
+                id_tracker.external_id(index as PointOffsetType),
+                Some(*point),
+            );
+        }
     }
 }
