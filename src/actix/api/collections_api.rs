@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use actix_web::rt::time::Instant;
+use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
 use actix_web_validator::{Path, Query};
-use actix_web::web::Json;
 use collection::operations::cluster_ops::ClusterOperations;
 use collection::operations::verification::new_unchecked_verification_pass;
 use serde::Deserialize;
@@ -275,7 +275,7 @@ async fn patch_collection_properties(
             }
             let mut errors = vec![];
             for (k, v) in obj.unwrap() {
-                if let Err(e) = collection_ref.set_property(k.clone(), v.clone()).await {
+                if let Err(e) = collection_ref.set_property(k, v.clone()).await {
                     errors.push((k.clone(), e.to_string()));
                 }
             }

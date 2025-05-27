@@ -400,23 +400,19 @@ impl Collection {
     }
 
     /// Set or update a collection-level property (arbitrary metadata)
-    pub async fn set_property(
-        &self,
-        key: String,
-        value: serde_json::Value,
-    ) -> CollectionResult<()> {
+    pub async fn set_property(&self, key: &str, value: serde_json::Value) -> CollectionResult<()> {
         let mut config = self.collection_config.write().await;
         let mut properties = config
             .properties
             .take()
             .unwrap_or_else(|| serde_json::json!({}));
         if let Some(obj) = properties.as_object_mut() {
-            obj.insert(key, value);
+            obj.insert(key.to_string(), value);
             config.properties = Some(serde_json::Value::Object(obj.clone()));
         } else {
             // If properties is not an object, reset to a new object
             let mut map = serde_json::Map::new();
-            map.insert(key, value);
+            map.insert(key.to_string(), value);
             config.properties = Some(serde_json::Value::Object(map));
         }
         config.save(&self.path)?;
