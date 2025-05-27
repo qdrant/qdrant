@@ -771,6 +771,7 @@ mod tests {
             quantization_config: None,
             strict_mode_config: None,
             uuid: None,
+            properties: None,
         };
 
         let payload_index_schema_dir = Builder::new().prefix("qdrant-test").tempdir().unwrap();

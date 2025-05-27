@@ -6624,6 +6624,9 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/PayloadIndexInfo"
             }
+          },
+          "properties": {
+            "description": "Arbitrary collection-level metadata/properties (user-defined)"
           }
         }
       },
@@ -12366,18 +12369,18 @@
           {
             "type": "string",
             "enum": [
-              "started",
-              "done",
-              "cancelled"
+              "Started",
+              "Done",
+              "Cancelled"
             ]
           },
           {
             "type": "object",
             "required": [
-              "progress"
+              "Progress"
             ],
             "properties": {
-              "progress": {
+              "Progress": {
                 "$ref": "#/components/schemas/ShardCleanStatusProgressTelemetry"
               }
             },
@@ -12386,10 +12389,10 @@
           {
             "type": "object",
             "required": [
-              "failed"
+              "Failed"
             ],
             "properties": {
-              "failed": {
+              "Failed": {
                 "$ref": "#/components/schemas/ShardCleanStatusFailedTelemetry"
               }
             },
