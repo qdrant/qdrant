@@ -11,9 +11,9 @@ use crate::{SizedValue, UnsizedValue};
 /// - For variable-size values, [`ValueHandler::Sized`] is an offset into the var_sized_data
 pub trait ValueHandler {
     /// The type of value in each PostingElement.
-    type Value: std::fmt::Debug;
+    type Value;
     /// The value to store within each chunk, or alongside each id.
-    type Sized: std::fmt::Debug + std::marker::Sized + Copy;
+    type Sized: std::marker::Sized + Copy;
 
     /// Process values before storage and return the necessary var_sized_data
     ///
@@ -31,6 +31,7 @@ pub trait ValueHandler {
 }
 
 /// Fixed-size value handler
+#[derive(Debug, Clone, Copy)]
 pub struct SizedHandler<V>(PhantomData<V>);
 
 impl<V: SizedValue + Copy> ValueHandler for SizedHandler<V> {
@@ -50,6 +51,7 @@ impl<V: SizedValue + Copy> ValueHandler for SizedHandler<V> {
 }
 
 /// Var-size value handler
+#[derive(Debug, Clone, Copy)]
 pub struct UnsizedHandler<V>(PhantomData<V>);
 
 impl<V: UnsizedValue> ValueHandler for UnsizedHandler<V> {

@@ -282,12 +282,14 @@ mod tests {
 
                 let orig_posting = mutable.postings.get(*orig_token as usize).cloned().unwrap();
 
+                let mut posting_visitor = new_posting.visitor();
                 let new_contains_orig = orig_posting
                     .iter()
-                    .all(|point_id| new_posting.reader().contains(point_id));
+                    .all(|point_id| posting_visitor.contains(point_id));
 
                 let orig_contains_new = new_posting
                     .iter()
+                    .map(|elem| elem.id)
                     .all(|point_id| orig_posting.contains(point_id));
 
                 new_contains_orig && orig_contains_new
@@ -326,20 +328,20 @@ mod tests {
 
         // Check same postings
         for (token_id, posting) in immutable.postings.iter().enumerate() {
-            let mutable_ids = posting.iter().collect::<HashSet<_>>();
+            let mutable_elems = posting.iter().collect::<HashSet<_>>();
 
             // Check mutable vs mmap
-            let mmap_ids = mmap
+            let mmap_elems = mmap
                 .postings
                 .get(token_id as u32, &hw_counter)
                 .unwrap()
-                .iter()
+                .into_iter()
                 .collect();
-            assert_eq!(mutable_ids, mmap_ids);
+            assert_eq!(mutable_elems, mmap_elems);
 
             // Check mutable vs immutable mmap
-            let imm_mmap_ids = imm_mmap.postings[token_id].iter().collect();
-            assert_eq!(mutable_ids, imm_mmap_ids);
+            let imm_mmap_elems = imm_mmap.postings[token_id].iter().collect();
+            assert_eq!(mutable_elems, imm_mmap_elems);
         }
 
         for (point_id, count) in immutable.point_to_tokens_count.iter().enumerate() {

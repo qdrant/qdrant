@@ -2,11 +2,11 @@ use std::collections::HashMap;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use posting_list::{IdsPostingList, IdsPostingListView, PostingBuilder};
 
 use super::inverted_index::InvertedIndex;
 use super::mmap_inverted_index::MmapInvertedIndex;
 use crate::common::operation_error::{OperationError, OperationResult};
-use crate::index::field_index::full_text_index::compressed_posting::compressed_posting_list::CompressedPostingList;
 use crate::index::field_index::full_text_index::inverted_index::{ParsedQuery, TokenId};
 use crate::index::field_index::full_text_index::mutable_inverted_index::MutableInvertedIndex;
 use crate::index::field_index::full_text_index::postings_iterator::intersect_compressed_postings_iterator;
@@ -14,7 +14,7 @@ use crate::index::field_index::full_text_index::postings_iterator::intersect_com
 #[cfg_attr(test, derive(Clone))]
 #[derive(Default, Debug)]
 pub struct ImmutableInvertedIndex {
-    pub(in crate::index::field_index::full_text_index) postings: Vec<CompressedPostingList>,
+    pub(in crate::index::field_index::full_text_index) postings: Vec<IdsPostingList>,
     pub(in crate::index::field_index::full_text_index) vocab: HashMap<String, TokenId>,
     pub(in crate::index::field_index::full_text_index) point_to_tokens_count: Vec<Option<usize>>,
     pub(in crate::index::field_index::full_text_index) points_count: usize,
@@ -66,7 +66,7 @@ impl InvertedIndex for ImmutableInvertedIndex {
             .iter()
             // We can safely pass hw_counter here because it's not measured.
             // Due to lifetime issues, we can't return a disposable counter.
-            .map(|posting| posting.reader())
+            .map(|posting| posting.view())
             .collect();
 
         // in case of immutable index, deleted documents are still in the postings
@@ -105,8 +105,8 @@ impl InvertedIndex for ImmutableInvertedIndex {
 
         // Check that all tokens are in document
         parsed_query.tokens.iter().all(|token_id| {
-            let postings = &self.postings[*token_id as usize];
-            postings.reader().contains(point_id)
+            let posting_list = &self.postings[*token_id as usize];
+            posting_list.visitor().contains(point_id)
         })
     }
 
@@ -159,11 +159,18 @@ impl From<MutableInvertedIndex> for ImmutableInvertedIndex {
             })
             .collect();
 
-        let postings: Vec<CompressedPostingList> = postings
-            .into_iter()
-            .map(|posting| CompressedPostingList::new(&posting.into_vec()))
-            .collect();
         vocab.shrink_to_fit();
+
+        let postings: Vec<IdsPostingList> = postings
+            .into_iter()
+            .map(|posting| {
+                let mut builder = PostingBuilder::new();
+                for id in posting.iter() {
+                    builder.add_id(id);
+                }
+                builder.build()
+            })
+            .collect();
 
         ImmutableInvertedIndex {
             postings,
@@ -207,9 +214,9 @@ impl From<&MmapInvertedIndex> for ImmutableInvertedIndex {
             })
             .collect();
 
-        let postings: Vec<CompressedPostingList> = postings
+        let postings: Vec<IdsPostingList> = postings
             .into_iter()
-            .map(|postings| CompressedPostingList::new(&postings.to_vec()))
+            .map(IdsPostingListView::to_owned)
             .collect();
         vocab.shrink_to_fit();
 

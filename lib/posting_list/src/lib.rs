@@ -15,13 +15,13 @@ type BitPackerImpl = bitpacking::BitPacker4x;
 const CHUNK_LEN: usize = 128;
 const _: () = assert!(128 == BitPackerImpl::BLOCK_LEN);
 
-pub trait SizedValue: Sized + Copy + std::fmt::Debug {}
+pub trait SizedValue: Sized + Copy {}
 
 impl SizedValue for () {}
 impl SizedValue for u32 {}
 impl SizedValue for u64 {}
 
-pub trait UnsizedValue: std::fmt::Debug {
+pub trait UnsizedValue {
     fn write_len(&self) -> usize;
 
     fn write_to(&self, dst: &mut [u8]);
@@ -48,6 +48,7 @@ pub type WeightsPostingListView<'a, W> = PostingListView<'a, SizedHandler<W>>;
 pub type VarPostingListView<'a, V> = PostingListView<'a, UnsizedHandler<V>>;
 
 pub use builder::PostingBuilder;
-pub use posting_list::{PostingChunk, PostingElement, PostingList};
-use value_handler::{SizedHandler, UnsizedHandler};
-pub use view::PostingListView;
+pub use posting_list::{PostingChunk, PostingElement, PostingList, RemainderPosting};
+pub use value_handler::{SizedHandler, UnsizedHandler, ValueHandler};
+pub use view::{PostingListComponents, PostingListView};
+pub use visitor::PostingVisitor;
