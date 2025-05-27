@@ -55,6 +55,7 @@ impl FromIterator<TokenId> for TokenSet {
 
 /// Contains the token ids that make up a document, in the same order that appear in the document.
 #[derive(Clone)]
+#[expect(dead_code)]
 pub struct Document(Vec<TokenId>);
 
 impl Document {

@@ -227,7 +227,7 @@ impl InvertedIndex for MutableInvertedIndex {
     }
 
     fn values_is_empty(&self, point_id: PointOffsetType) -> bool {
-        self.get_tokens(point_id).map_or(true, |x| x.is_empty())
+        self.get_tokens(point_id).is_none_or(|x| x.is_empty())
     }
 
     fn values_count(&self, point_id: PointOffsetType) -> usize {
