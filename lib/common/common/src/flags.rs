@@ -24,6 +24,10 @@ pub struct FeatureFlags {
 
     /// Whether to enable HNSW healing.
     pub hnsw_healing: bool,
+
+    /// Whether to actively migrate RocksDB based ID trackers into a new format.
+    // TODO(1.15): enable by default
+    pub migrate_rocksdb_id_tracker: bool,
 }
 
 impl Default for FeatureFlags {
@@ -33,6 +37,7 @@ impl Default for FeatureFlags {
             payload_index_skip_rocksdb: true,
             incremental_hnsw_building: true,
             hnsw_healing: false,
+            migrate_rocksdb_id_tracker: false,
         }
     }
 }
@@ -52,6 +57,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         payload_index_skip_rocksdb,
         incremental_hnsw_building,
         hnsw_healing,
+        migrate_rocksdb_id_tracker,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -59,6 +65,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *payload_index_skip_rocksdb = true;
         *incremental_hnsw_building = true;
         *hnsw_healing = true;
+        *migrate_rocksdb_id_tracker = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);

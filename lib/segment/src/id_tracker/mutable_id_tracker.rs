@@ -98,7 +98,7 @@ impl MappingChangeType {
 pub struct MutableIdTracker {
     segment_path: PathBuf,
     internal_to_version: Vec<SeqNumberType>,
-    mappings: PointMappings,
+    pub(super) mappings: PointMappings,
 
     /// List of point versions pending to be persisted, will be persisted on flush
     pending_versions: Mutex<BTreeMap<PointOffsetType, SeqNumberType>>,
@@ -170,6 +170,13 @@ impl MutableIdTracker {
             pending_versions: Default::default(),
             pending_mappings: Default::default(),
         })
+    }
+
+    pub fn segment_files(segment_path: &Path) -> Vec<PathBuf> {
+        [mappings_path(segment_path), versions_path(segment_path)]
+            .into_iter()
+            .filter(|path| path.is_file())
+            .collect()
     }
 }
 
@@ -336,14 +343,9 @@ impl IdTracker for MutableIdTracker {
         "mutable id tracker"
     }
 
+    #[inline]
     fn files(&self) -> Vec<PathBuf> {
-        [
-            mappings_path(&self.segment_path),
-            versions_path(&self.segment_path),
-        ]
-        .into_iter()
-        .filter(|path| path.is_file())
-        .collect()
+        Self::segment_files(&self.segment_path)
     }
 }
 
@@ -796,6 +798,7 @@ pub(super) mod tests {
     use crate::id_tracker::simple_id_tracker::SimpleIdTracker;
 
     const RAND_SEED: u64 = 42;
+    const DEFAULT_VERSION: SeqNumberType = 42;
 
     #[test]
     fn test_iterator() {
@@ -1200,8 +1203,6 @@ pub(super) mod tests {
         );
         assert_eq!(std::fs::metadata(&mappings_path).unwrap().len(), 26);
     }
-
-    const DEFAULT_VERSION: SeqNumberType = 42;
 
     fn make_in_memory_tracker_from_memory() -> InMemoryIdTracker {
         let mut id_tracker = InMemoryIdTracker::new();
