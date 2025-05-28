@@ -34,11 +34,16 @@ fn test_just_ids_against_vec() {
     check_various_lengths(|len| {
         let posting_list = check_against_sorted_vec(|_rng, _id| (), len);
 
-        // validate that chunks' sized values are empty
-        let chunks_size = size_of_val(&posting_list.chunks[0]);
-        let expected_chunk_size = size_of::<u32>() * 2;
-        assert_eq!(chunks_size, expected_chunk_size);
-    })
+        // validate that chunks' sized values are empty, so we only have initial_id and offset
+        if let Some(chunk) = posting_list.chunks.first() {
+            assert_eq!(size_of_val(chunk), size_of::<u32>() * 2);
+        }
+
+        // similarly, validate that the remainder is equivalent to just one id
+        if let Some(remainder) = posting_list.remainders.first() {
+            assert_eq!(size_of_val(remainder), size_of::<u32>());
+        }
+    });
 }
 
 #[test]
