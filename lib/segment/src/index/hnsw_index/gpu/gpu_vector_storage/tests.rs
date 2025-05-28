@@ -22,8 +22,8 @@ use crate::types::{
     ProductQuantizationConfig, QuantizationConfig, ScalarQuantization, ScalarQuantizationConfig,
 };
 use crate::vector_storage::dense::simple_dense_vector_storage::{
-    open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
-    open_simple_dense_vector_storage,
+    open_simple_dense_byte_vector_storage, open_simple_dense_full_vector_storage,
+    open_simple_dense_half_vector_storage,
 };
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
     open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
@@ -349,7 +349,8 @@ fn create_vector_storage_f32(
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
     let mut vector_storage =
-        open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, distance, &false.into()).unwrap();
+        open_simple_dense_full_vector_storage(db, DB_VECTOR_CF, dim, distance, &false.into())
+            .unwrap();
     for i in 0..num_vectors {
         let vec = random_vector(&mut rnd, dim);
         let vec = match distance {

@@ -13,7 +13,7 @@ use segment::data_types::vectors::{DenseVector, VectorInternal, VectorRef};
 use segment::fixtures::payload_context_fixture::FixtureIdTracker;
 use segment::id_tracker::IdTrackerSS;
 use segment::index::hnsw_index::point_scorer::FilteredScorer;
-use segment::types::Distance;
+use segment::types::{Distance, VectorStorageDatatype};
 use segment::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use segment::vector_storage::{DEFAULT_STOPPED, VectorStorage, VectorStorageEnum};
 use tempfile::Builder;
@@ -35,9 +35,15 @@ fn init_vector_storage(
 ) -> (VectorStorageEnum, Arc<AtomicRefCell<IdTrackerSS>>) {
     let db = open_db(path, &[DB_VECTOR_CF]).unwrap();
     let id_tracker = Arc::new(AtomicRefCell::new(FixtureIdTracker::new(num)));
-    let mut storage =
-        open_simple_dense_vector_storage(db, DB_VECTOR_CF, dim, dist, &AtomicBool::new(false))
-            .unwrap();
+    let mut storage = open_simple_dense_vector_storage(
+        VectorStorageDatatype::Float32,
+        db,
+        DB_VECTOR_CF,
+        dim,
+        dist,
+        &AtomicBool::new(false),
+    )
+    .unwrap();
 
     let hw_counter = HardwareCounterCell::new();
 

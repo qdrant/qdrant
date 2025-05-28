@@ -90,6 +90,39 @@ fn open_simple_dense_vector_storage_impl<T: PrimitiveVectorElement>(
 }
 
 pub fn open_simple_dense_vector_storage(
+    storage_element_type: VectorStorageDatatype,
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    stopped: &AtomicBool,
+) -> OperationResult<VectorStorageEnum> {
+    match storage_element_type {
+        VectorStorageDatatype::Float32 => open_simple_dense_full_vector_storage(
+            database,
+            database_column_name,
+            dim,
+            distance,
+            stopped,
+        ),
+        VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
+            database,
+            database_column_name,
+            dim,
+            distance,
+            stopped,
+        ),
+        VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
+            database,
+            database_column_name,
+            dim,
+            distance,
+            stopped,
+        ),
+    }
+}
+
+pub fn open_simple_dense_full_vector_storage(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
     dim: usize,

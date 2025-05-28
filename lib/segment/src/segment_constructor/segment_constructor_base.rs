@@ -56,10 +56,7 @@ use crate::vector_storage::dense::memmap_dense_vector_storage::{
     open_memmap_vector_storage, open_memmap_vector_storage_byte, open_memmap_vector_storage_half,
 };
 #[cfg(feature = "rocksdb")]
-use crate::vector_storage::dense::simple_dense_vector_storage::{
-    open_simple_dense_byte_vector_storage, open_simple_dense_half_vector_storage,
-    open_simple_dense_vector_storage,
-};
+use crate::vector_storage::dense::simple_dense_vector_storage::open_simple_dense_vector_storage;
 use crate::vector_storage::multi_dense::appendable_mmap_multi_dense_vector_storage::{
     open_appendable_in_ram_multi_vector_storage, open_appendable_in_ram_multi_vector_storage_byte,
     open_appendable_in_ram_multi_vector_storage_half, open_appendable_memmap_multi_vector_storage,
@@ -153,29 +150,14 @@ pub(crate) fn open_vector_storage(
                     ),
                 }
             } else {
-                let storage = match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    )?,
-                    VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    )?,
-                    VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
-                        db_builder.require()?,
-                        &db_column_name,
-                        vector_config.size,
-                        vector_config.distance,
-                        stopped,
-                    )?,
-                };
+                let storage = open_simple_dense_vector_storage(
+                    storage_element_type,
+                    db_builder.require()?,
+                    &db_column_name,
+                    vector_config.size,
+                    vector_config.distance,
+                    stopped,
+                )?;
 
                 // Actively migrate away from RocksDB
                 if feature_flags().migrate_rocksdb_dense_vector_storage {
