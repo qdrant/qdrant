@@ -136,6 +136,12 @@ impl SimpleSparseVectorStorage {
         let available_size = (self.total_sparse_size as f32 * available_fraction) as usize;
         available_size * (std::mem::size_of::<DimWeight>() + std::mem::size_of::<DimId>())
     }
+
+    /// Destroy this vector storage, remove persisted data from RocksDB
+    pub fn destroy(self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()?;
+        Ok(())
+    }
 }
 
 impl SparseVectorStorage for SimpleSparseVectorStorage {
