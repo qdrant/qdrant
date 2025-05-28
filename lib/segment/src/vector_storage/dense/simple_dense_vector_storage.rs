@@ -339,3 +339,77 @@ impl<T: PrimitiveVectorElement> VectorStorage for SimpleDenseVectorStorage<T> {
         self.deleted.as_bitslice()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::segment_constructor::migrate_rocksdb_dense_vector_storage_to_mmap;
+
+    const RAND_SEED: u64 = 42;
+
+    /// Create RocksDB based ID tracker with mappings and various mutations.
+    /// Migrate it to the mutable ID tracker and ensure that the mappings are correct.
+    ///
+    /// Test based upton [`super::mutable_id_tracker::tests::test_store_load_mutated`]
+    #[test]
+    fn test_migrate_simple_to_mmap() {
+        const POINT_COUNT: PointOffsetType = 128;
+        const DIM: usize = 128;
+
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+
+        let db_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let db = open_db(db_dir.path(), &[DB_VECTOR_CF]).unwrap();
+
+        // Create simple dense vector storage and insert test points
+        let mut storage = open_simple_dense_full_vector_storage(
+            db,
+            DB_VECTOR_CF,
+            DIM,
+            Distance::Dot,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        for internal_id in 0..POINT_COUNT {
+            let point = std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                .take(DIM)
+                .collect::<Vec<_>>();
+            storage
+                .insert_vector(
+                    internal_id as PointOffsetType,
+                    VectorRef::from(point.as_slice()),
+                    &HardwareCounterCell::disposable(),
+                )
+                .unwrap();
+        }
+
+        let total_vector_count = storage.total_vector_count();
+
+        // Migrate from RocksDB to mutable ID tracker
+        let storage_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let new_storage =
+            migrate_rocksdb_dense_vector_storage_to_mmap(storage, DIM, storage_dir.path())
+                .expect("failed to migrate from RocksDB to mmap");
+
+        // We can drop RocksDB storage now
+        db_dir.close().expect("failed to drop RocksDB storage");
+
+        // Assert vector counts and data
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        assert_eq!(new_storage.total_vector_count(), total_vector_count);
+        for internal_id in 0..POINT_COUNT {
+            let point = std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                .take(DIM)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                new_storage.get_vector_sequential(internal_id),
+                CowVector::from(point),
+            );
+        }
+    }
+}
