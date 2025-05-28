@@ -66,6 +66,43 @@ impl<T: fmt::Debug + PrimitiveVectorElement> fmt::Debug for SimpleMultiDenseVect
 }
 
 pub fn open_simple_multi_dense_vector_storage(
+    storage_element_type: VectorStorageDatatype,
+    database: Arc<RwLock<DB>>,
+    database_column_name: &str,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+    stopped: &AtomicBool,
+) -> OperationResult<VectorStorageEnum> {
+    match storage_element_type {
+        VectorStorageDatatype::Float32 => open_simple_multi_dense_vector_storage_full(
+            database,
+            database_column_name,
+            dim,
+            distance,
+            multi_vector_config,
+            stopped,
+        ),
+        VectorStorageDatatype::Uint8 => open_simple_multi_dense_vector_storage_byte(
+            database,
+            database_column_name,
+            dim,
+            distance,
+            multi_vector_config,
+            stopped,
+        ),
+        VectorStorageDatatype::Float16 => open_simple_multi_dense_vector_storage_half(
+            database,
+            database_column_name,
+            dim,
+            distance,
+            multi_vector_config,
+            stopped,
+        ),
+    }
+}
+
+pub fn open_simple_multi_dense_vector_storage_full(
     database: Arc<RwLock<DB>>,
     database_column_name: &str,
     dim: usize,

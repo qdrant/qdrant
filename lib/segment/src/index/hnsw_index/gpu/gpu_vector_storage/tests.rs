@@ -26,7 +26,7 @@ use crate::vector_storage::dense::simple_dense_vector_storage::{
     open_simple_dense_half_vector_storage,
 };
 use crate::vector_storage::multi_dense::simple_multi_dense_vector_storage::{
-    open_simple_multi_dense_vector_storage, open_simple_multi_dense_vector_storage_byte,
+    open_simple_multi_dense_vector_storage_byte, open_simple_multi_dense_vector_storage_full,
     open_simple_multi_dense_vector_storage_half,
 };
 use crate::vector_storage::{RawScorer, new_raw_scorer_for_test};
@@ -431,7 +431,7 @@ fn create_vector_storage_f32_multi(
 ) -> VectorStorageEnum {
     let mut rnd = StdRng::seed_from_u64(42);
     let multivector_config = Default::default();
-    let mut vector_storage = open_simple_multi_dense_vector_storage(
+    let mut vector_storage = open_simple_multi_dense_vector_storage_full(
         db,
         DB_VECTOR_CF,
         dim,

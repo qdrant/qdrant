@@ -328,6 +328,35 @@ impl<
 }
 
 pub fn open_appendable_memmap_multi_vector_storage(
+    storage_element_type: VectorStorageDatatype,
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+) -> OperationResult<VectorStorageEnum> {
+    match storage_element_type {
+        VectorStorageDatatype::Float32 => open_appendable_memmap_multi_vector_storage_full(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+        ),
+        VectorStorageDatatype::Uint8 => open_appendable_memmap_multi_vector_storage_byte(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+        ),
+        VectorStorageDatatype::Float16 => open_appendable_memmap_multi_vector_storage_half(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+        ),
+    }
+}
+
+pub fn open_appendable_memmap_multi_vector_storage_full(
     path: &Path,
     dim: usize,
     distance: Distance,
@@ -423,6 +452,35 @@ pub fn open_appendable_memmap_multi_vector_storage_impl<T: PrimitiveVectorElemen
 }
 
 pub fn open_appendable_in_ram_multi_vector_storage(
+    storage_element_type: VectorStorageDatatype,
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+    multi_vector_config: MultiVectorConfig,
+) -> OperationResult<VectorStorageEnum> {
+    match storage_element_type {
+        VectorStorageDatatype::Float32 => open_appendable_in_ram_multi_vector_storage_full(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+        ),
+        VectorStorageDatatype::Float16 => open_appendable_in_ram_multi_vector_storage_half(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+        ),
+        VectorStorageDatatype::Uint8 => open_appendable_in_ram_multi_vector_storage_byte(
+            path,
+            dim,
+            distance,
+            multi_vector_config,
+        ),
+    }
+}
+
+pub fn open_appendable_in_ram_multi_vector_storage_full(
     path: &Path,
     dim: usize,
     distance: Distance,
