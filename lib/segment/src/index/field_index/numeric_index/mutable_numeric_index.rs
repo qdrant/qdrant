@@ -335,7 +335,7 @@ impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIn
     pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
         match self.storage {
             Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
-            Storage::Mmap(_) => None,
+            Storage::Gridstore(_) => None,
         }
     }
 

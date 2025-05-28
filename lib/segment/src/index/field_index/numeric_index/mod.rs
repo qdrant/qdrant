@@ -598,8 +598,8 @@ pub struct NumericIndexImmutableBuilder<
 }
 
 #[cfg(test)]
-impl<T: Encodable + Numericable + MmapValue + Default, P> FieldIndexBuilderTrait
-    for NumericIndexImmutableBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>
+    FieldIndexBuilderTrait for NumericIndexImmutableBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
 {
@@ -607,7 +607,7 @@ where
 
     fn init(&mut self) -> OperationResult<()> {
         match &mut self.index.inner {
-            NumericIndexInner::Mutable(index) => index.db_wrapper().recreate_column_family(),
+            NumericIndexInner::Mutable(index) => index.clear(),
             NumericIndexInner::Immutable(_) => unreachable!(),
             NumericIndexInner::Mmap(_) => unreachable!(),
         }

@@ -347,7 +347,12 @@ fn test_numeric_index_load_from_disk(#[case] index_type: IndexType) {
     let index = index_builder.finalize().unwrap();
 
     let db = match index.inner() {
-        NumericIndexInner::Mutable(index) => Some(index.db_wrapper().get_database()),
+        NumericIndexInner::Mutable(index) => Some(
+            index
+                .db_wrapper()
+                .expect("expect RocksDB based index")
+                .get_database(),
+        ),
         NumericIndexInner::Immutable(index) => index.db_wrapper().map(|db| db.get_database()),
         NumericIndexInner::Mmap(_) => None,
     };
@@ -528,7 +533,18 @@ fn test_numeric_index(#[case] index_type: IndexType) {
     );
 }
 
-fn test_cond<T: Encodable + Numericable + PartialOrd + Clone + MmapValue + Default + 'static>(
+fn test_cond<
+    T: Encodable
+        + Numericable
+        + PartialOrd
+        + Clone
+        + MmapValue
+        + Blob
+        + Send
+        + Sync
+        + Default
+        + 'static,
+>(
     index: &NumericIndexInner<T>,
     rng: Range<FloatPayloadType>,
     result: Vec<u32>,
