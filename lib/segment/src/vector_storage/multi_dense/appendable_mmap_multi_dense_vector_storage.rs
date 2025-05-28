@@ -562,3 +562,85 @@ pub fn open_appendable_in_ram_multi_vector_storage_impl<T: PrimitiveVectorElemen
         _phantom: Default::default(),
     })
 }
+
+/// Find files related to this dense vector storage
+pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {
+    let vectors_path = vector_storage_path.join(VECTORS_DIR_PATH);
+    let offsets_path = vector_storage_path.join(OFFSETS_DIR_PATH);
+    let deleted_path = vector_storage_path.join(DELETED_DIR_PATH);
+
+    let mut files = vec![];
+    files.extend(common::disk::list_files(&vectors_path)?);
+    files.extend(common::disk::list_files(&offsets_path)?);
+    files.extend(common::disk::list_files(&deleted_path)?);
+    Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use tempfile::Builder;
+
+    use super::*;
+    use crate::data_types::vectors::MultiDenseVectorInternal;
+
+    const RAND_SEED: u64 = 42;
+
+    /// Test that `find_storage_files` finds all files that are reported by the storage.
+    #[test]
+    fn test_find_storage_files() {
+        // Numbers chosen so we get 3 data chunks, not just 1
+        const POINT_COUNT: PointOffsetType = 1000;
+        const DIM: usize = 128;
+
+        let mutli_vector_config = MultiVectorConfig::default();
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let mut storage = open_appendable_memmap_multi_vector_storage_full(
+            dir.path(),
+            DIM,
+            Distance::Dot,
+            mutli_vector_config,
+        )
+        .unwrap();
+
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        let hw_counter = HardwareCounterCell::disposable();
+
+        // Insert points, delete 10% of it, and flush
+        for internal_id in 0..POINT_COUNT {
+            let size = rng.random_range(1..=4);
+            let vectors = std::iter::repeat_with(|| {
+                std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                    .take(DIM)
+                    .collect()
+            })
+            .take(size)
+            .collect::<Vec<Vec<_>>>();
+            let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
+            storage
+                .insert_vector(internal_id, VectorRef::from(&multivec), &hw_counter)
+                .unwrap();
+        }
+        for internal_id in 0..POINT_COUNT {
+            if !rng.random_bool(0.1) {
+                continue;
+            }
+            storage.delete_vector(internal_id).unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
+        let found_files = find_storage_files(dir.path())
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        assert_eq!(
+            storage_files, found_files,
+            "find_storage_files must find same files that storage reports",
+        );
+    }
+}
