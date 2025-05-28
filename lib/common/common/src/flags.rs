@@ -29,9 +29,9 @@ pub struct FeatureFlags {
     // TODO(1.15): enable by default
     pub migrate_rocksdb_id_tracker: bool,
 
-    /// Whether to actively migrate RocksDB based dense vector storage into a new format.
+    /// Whether to actively migrate RocksDB based vector storages into a new format.
     // TODO(1.15): enable by default
-    pub migrate_rocksdb_dense_vector_storage: bool,
+    pub migrate_rocksdb_vector_storage: bool,
 }
 
 impl Default for FeatureFlags {
@@ -42,7 +42,7 @@ impl Default for FeatureFlags {
             incremental_hnsw_building: true,
             hnsw_healing: false,
             migrate_rocksdb_id_tracker: false,
-            migrate_rocksdb_dense_vector_storage: false,
+            migrate_rocksdb_vector_storage: false,
         }
     }
 }
@@ -63,7 +63,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         incremental_hnsw_building,
         hnsw_healing,
         migrate_rocksdb_id_tracker,
-        migrate_rocksdb_dense_vector_storage,
+        migrate_rocksdb_vector_storage: migrate_rocksdb_dense_vector_storage,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags

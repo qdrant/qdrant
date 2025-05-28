@@ -160,7 +160,7 @@ pub(crate) fn open_vector_storage(
                 )?;
 
                 // Actively migrate away from RocksDB
-                if feature_flags().migrate_rocksdb_dense_vector_storage {
+                if feature_flags().migrate_rocksdb_vector_storage {
                     return migrate_rocksdb_dense_vector_storage_to_mmap(
                         storage,
                         vector_config.size,
