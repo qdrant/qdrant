@@ -960,7 +960,10 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
     old_id_tracker: SimpleIdTracker,
     segment_path: &Path,
 ) -> OperationResult<MutableIdTracker> {
-    log::info!("Migrating ID tracker from RocksDB into new format");
+    log::info!(
+        "Migrating {} points in ID tracker from RocksDB into new format",
+        old_id_tracker.total_point_count(),
+    );
 
     fn migrate(
         old_id_tracker: &SimpleIdTracker,
@@ -1026,7 +1029,10 @@ pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
 ) -> OperationResult<VectorStorageEnum> {
     use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
 
-    log::info!("Migrating dense vector storage from RocksDB into new format");
+    log::info!(
+        "Migrating {} points in dense vector storage from RocksDB into new format",
+        old_storage.total_vector_count(),
+    );
 
     fn migrate(
         old_storage: &VectorStorageEnum,
