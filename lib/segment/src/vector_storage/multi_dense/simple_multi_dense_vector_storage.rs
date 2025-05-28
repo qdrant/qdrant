@@ -1,7 +1,7 @@
 use std::fmt;
 use std::ops::Range;
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use bitvec::prelude::{BitSlice, BitVec};
 use common::counter::hardware_counter::HardwareCounterCell;
@@ -10,9 +10,9 @@ use common::types::PointOffsetType;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
-use crate::common::Flusher;
-use crate::common::operation_error::{OperationError, OperationResult, check_process_stopped};
+use crate::common::operation_error::{check_process_stopped, OperationError, OperationResult};
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
+use crate::common::Flusher;
 use crate::data_types::named_vectors::{CowMultiVector, CowVector};
 use crate::data_types::primitive::PrimitiveVectorElement;
 use crate::data_types::vectors::{
@@ -22,7 +22,7 @@ use crate::types::{Distance, MultiVectorConfig, VectorStorageDatatype};
 use crate::vector_storage::bitvec::bitvec_set_deleted;
 use crate::vector_storage::chunked_vector_storage::VectorOffsetType;
 use crate::vector_storage::chunked_vectors::ChunkedVectors;
-use crate::vector_storage::common::{CHUNK_SIZE, StoredRecord};
+use crate::vector_storage::common::{StoredRecord, CHUNK_SIZE};
 use crate::vector_storage::{MultiVectorStorage, VectorStorage, VectorStorageEnum};
 
 type StoredMultiDenseVector<T> = StoredRecord<TypedMultiDenseVector<T>>;
@@ -484,7 +484,7 @@ mod tests {
     use tempfile::Builder;
 
     use super::*;
-    use crate::common::rocksdb_wrapper::{DB_VECTOR_CF, open_db};
+    use crate::common::rocksdb_wrapper::{open_db, DB_VECTOR_CF};
     use crate::data_types::vectors::MultiDenseVectorInternal;
     use crate::segment_constructor::migrate_rocksdb_multi_dense_vector_storage_to_mmap;
 
