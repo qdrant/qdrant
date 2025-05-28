@@ -271,6 +271,25 @@ pub fn open_appendable_memmap_vector_storage_impl<T: PrimitiveVectorElement>(
 }
 
 pub fn open_appendable_in_ram_vector_storage(
+    storage_element_type: VectorStorageDatatype,
+    path: &Path,
+    dim: usize,
+    distance: Distance,
+) -> OperationResult<VectorStorageEnum> {
+    match storage_element_type {
+        VectorStorageDatatype::Float32 => {
+            open_appendable_in_ram_vector_storage_full(path, dim, distance)
+        }
+        VectorStorageDatatype::Float16 => {
+            open_appendable_in_ram_vector_storage_half(path, dim, distance)
+        }
+        VectorStorageDatatype::Uint8 => {
+            open_appendable_in_ram_vector_storage_byte(path, dim, distance)
+        }
+    }
+}
+
+fn open_appendable_in_ram_vector_storage_full(
     path: &Path,
     dim: usize,
     distance: Distance,
@@ -281,7 +300,7 @@ pub fn open_appendable_in_ram_vector_storage(
     Ok(VectorStorageEnum::DenseAppendableInRam(Box::new(storage)))
 }
 
-pub fn open_appendable_in_ram_vector_storage_byte(
+fn open_appendable_in_ram_vector_storage_byte(
     path: &Path,
     dim: usize,
     distance: Distance,
@@ -293,7 +312,7 @@ pub fn open_appendable_in_ram_vector_storage_byte(
     )))
 }
 
-pub fn open_appendable_in_ram_vector_storage_half(
+fn open_appendable_in_ram_vector_storage_half(
     path: &Path,
     dim: usize,
     distance: Distance,

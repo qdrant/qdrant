@@ -47,8 +47,7 @@ use crate::types::{
     VectorStorageType,
 };
 use crate::vector_storage::dense::appendable_dense_vector_storage::{
-    open_appendable_in_ram_vector_storage, open_appendable_in_ram_vector_storage_byte,
-    open_appendable_in_ram_vector_storage_half, open_appendable_memmap_vector_storage,
+    open_appendable_in_ram_vector_storage, open_appendable_memmap_vector_storage,
     open_appendable_memmap_vector_storage_byte, open_appendable_memmap_vector_storage_half,
 };
 use crate::vector_storage::dense::memmap_dense_vector_storage::{
@@ -299,23 +298,12 @@ pub(crate) fn open_vector_storage(
                     }
                 }
             } else {
-                match storage_element_type {
-                    VectorStorageDatatype::Float32 => open_appendable_in_ram_vector_storage(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Uint8 => open_appendable_in_ram_vector_storage_byte(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                    VectorStorageDatatype::Float16 => open_appendable_in_ram_vector_storage_half(
-                        vector_storage_path,
-                        vector_config.size,
-                        vector_config.distance,
-                    ),
-                }
+                open_appendable_in_ram_vector_storage(
+                    storage_element_type,
+                    vector_storage_path,
+                    vector_config.size,
+                    vector_config.distance,
+                )
             }
         }
     }
