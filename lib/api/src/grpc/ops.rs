@@ -44,7 +44,7 @@ impl HardwareUsage {
     }
 
     pub fn into_non_empty(self) -> Option<Self> {
-        if self.is_empty() { None } else { Some(self) }
+        (!self.is_empty()).then_some(self)
     }
 }
 
@@ -69,7 +69,7 @@ impl Usage {
     }
 
     pub fn into_non_empty(self) -> Option<Self> {
-        if self.is_empty() { None } else { Some(self) }
+        (!self.is_empty()).then_some(self)
     }
 
     pub fn from_hardware_usage(hardware: Option<HardwareUsage>) -> Self {

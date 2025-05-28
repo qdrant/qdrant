@@ -66,7 +66,7 @@ impl PointsInternalService {
 
         let sync_points = extract_internal_request(sync_points)?;
 
-        // Exclude the `inference_token` for internal call
+        // Exclude the `inference_usage` for internal call
         let (response, _inference_usage) = sync(
             self.toc.clone(),
             sync_points,
@@ -153,7 +153,7 @@ impl PointsInternalService {
             update_point_vectors.collection_name.clone(),
         );
 
-        // Exclude the `inference_token` for internal call
+        // Exclude the `inference_usage` for internal call
         let (response, _inference_usage) = crate::tonic::api::update_common::update_vectors(
             StrictModeCheckedInternalTocProvider::new(&self.toc),
             update_point_vectors,

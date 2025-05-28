@@ -817,11 +817,7 @@ pub async fn query(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: Usage::new(
-            request_hw_counter.to_grpc_api(),
-            inference_usage.into_non_empty(),
-        )
-        .into_non_empty(),
+        usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -883,7 +879,7 @@ pub async fn query_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(
             request_hw_counter.to_grpc_api(),
-            total_inference_usage.into_non_empty(),
+            Some(total_inference_usage),
         )
         .into_non_empty(),
     };
@@ -941,11 +937,7 @@ pub async fn query_groups(
     let response = QueryGroupsResponse {
         result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: Usage::new(
-            request_hw_counter.to_grpc_api(),
-            inference_usage.into_non_empty(),
-        )
-        .into_non_empty(),
+        usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
     };
 
     Ok(Response::new(response))

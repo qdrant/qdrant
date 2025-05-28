@@ -655,7 +655,7 @@ pub async fn update_batch(
         time: timing.elapsed().as_secs_f64(),
         usage: Usage::new(
             request_hw_counter.to_grpc_api(),
-            total_inference_usage.into_non_empty(),
+            Some(total_inference_usage),
         )
         .into_non_empty(),
     }))
