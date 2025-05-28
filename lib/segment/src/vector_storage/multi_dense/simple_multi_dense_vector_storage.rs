@@ -490,10 +490,9 @@ mod tests {
 
     const RAND_SEED: u64 = 42;
 
-    /// Create RocksDB based ID tracker with mappings and various mutations.
-    /// Migrate it to the mutable ID tracker and ensure that the mappings are correct.
+    /// Create RocksDB based multi dense vector storage.
     ///
-    /// Test based upton [`super::mutable_id_tracker::tests::test_store_load_mutated`]
+    /// Migrate it to the mmap based multi dense vector storage and assert vector data is correct.
     #[test]
     fn test_migrate_simple_to_mmap() {
         const POINT_COUNT: PointOffsetType = 128;
