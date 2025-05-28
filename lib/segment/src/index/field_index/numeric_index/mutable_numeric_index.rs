@@ -1,10 +1,13 @@
 use std::collections::BTreeSet;
 use std::ops::Bound;
 use std::ops::Bound::{Excluded, Unbounded};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use common::counter::hardware_counter::HardwareCounterCell;
 use common::types::PointOffsetType;
+use gridstore::config::StorageOptions;
+use gridstore::{Blob, Gridstore};
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -12,15 +15,22 @@ use super::mmap_numeric_index::MmapNumericIndex;
 use super::{
     Encodable, HISTOGRAM_MAX_BUCKET_SIZE, HISTOGRAM_PRECISION, numeric_index_storage_cf_name,
 };
+use crate::common::Flusher;
 use crate::common::operation_error::{OperationError, OperationResult};
 use crate::common::rocksdb_buffered_delete_wrapper::DatabaseColumnScheduledDeleteWrapper;
 use crate::common::rocksdb_wrapper::DatabaseColumnWrapper;
 use crate::index::field_index::histogram::{Histogram, Numericable, Point};
 use crate::index::field_index::mmap_point_to_values::MmapValue;
 
-pub struct MutableNumericIndex<T: Encodable + Numericable> {
-    db_wrapper: DatabaseColumnScheduledDeleteWrapper,
+pub struct MutableNumericIndex<T: Encodable + Numericable + Blob> {
+    // Backing storage, source of state, persists deletions
+    storage: Storage<T>,
     in_memory_index: InMemoryNumericIndex<T>,
+}
+
+enum Storage<T: Encodable + Numericable + Blob> {
+    RocksDb(DatabaseColumnScheduledDeleteWrapper),
+    Gridstore(Box<Gridstore<Vec<T>>>),
 }
 
 // Numeric Index with insertions and deletions without persistence
@@ -205,41 +215,65 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
-    pub fn new_from_db_wrapper(db_wrapper: DatabaseColumnScheduledDeleteWrapper) -> Self {
-        Self {
-            db_wrapper,
-            in_memory_index: InMemoryNumericIndex::default(),
-        }
-    }
-
-    pub fn into_in_memory_index(self) -> InMemoryNumericIndex<T> {
-        self.in_memory_index
-    }
-
-    pub fn db_wrapper(&self) -> &DatabaseColumnScheduledDeleteWrapper {
-        &self.db_wrapper
-    }
-
-    pub fn new(db: Arc<RwLock<DB>>, field: &str) -> Self {
+impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
+    /// Open mutable numeric index from RocksDB storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> Self {
         let store_cf_name = numeric_index_storage_cf_name(field);
         let db_wrapper = DatabaseColumnScheduledDeleteWrapper::new(DatabaseColumnWrapper::new(
             db,
             &store_cf_name,
         ));
+        Self::open_rocksdb_db_wrapper(db_wrapper)
+    }
+
+    pub fn open_rocksdb_db_wrapper(db_wrapper: DatabaseColumnScheduledDeleteWrapper) -> Self {
         Self {
-            db_wrapper,
+            storage: Storage::RocksDb(db_wrapper),
             in_memory_index: InMemoryNumericIndex::default(),
         }
     }
 
-    pub fn load(&mut self) -> OperationResult<bool> {
-        if !self.db_wrapper.has_column_family()? {
+    /// Open mutable numeric index from Gridstore storage
+    ///
+    /// Note: after opening, the data must be loaded into memory separately using [`load`].
+    pub fn open_gridstore(path: PathBuf) -> OperationResult<Self> {
+        let options = StorageOptions::default();
+        let store = Gridstore::open_or_create(path, options).map_err(|err| {
+            OperationError::service_error(format!(
+                "failed to open mutable numeric index on gridstore: {err}"
+            ))
+        })?;
+        Ok(Self {
+            storage: Storage::Gridstore(Box::new(store)),
+            in_memory_index: InMemoryNumericIndex::default(),
+        })
+    }
+
+    /// Load storage
+    ///
+    /// Loads in-memory index from backing RocksDB or Gridstore storage.
+    pub(super) fn load(&mut self) -> OperationResult<bool> {
+        match self.storage {
+            Storage::RocksDb(_) => self.load_rocksdb(),
+            Storage::Gridstore(_) => Ok(self.load_gridstore()),
+        }
+    }
+
+    /// Load from RocksDB storage
+    ///
+    /// Loads in-memory index from RocksDB storage.
+    fn load_rocksdb(&mut self) -> OperationResult<bool> {
+        let Storage::RocksDb(db_wrapper) = &self.storage else {
             return Ok(false);
         };
 
-        self.in_memory_index = self
-            .db_wrapper
+        if !db_wrapper.has_column_family()? {
+            return Ok(false);
+        };
+
+        self.in_memory_index = db_wrapper
             .lock_db()
             .iter()?
             .map(|(key, value)| {
@@ -260,6 +294,74 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
         Ok(true)
     }
 
+    /// Load from Gridstore storage
+    ///
+    /// Loads in-memory index from Gridstore storage.
+    fn load_gridstore(&mut self) -> bool {
+        let Storage::Gridstore(store) = &self.storage else {
+            return false;
+        };
+
+        let hw_counter = HardwareCounterCell::disposable();
+        let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+        store
+            .iter(
+                |idx, values| {
+                    self.in_memory_index.add_many_to_list(idx, values.clone());
+                    Ok(true)
+                },
+                hw_counter_ref,
+            )
+            // unwrap safety: never returns an error
+            .unwrap();
+
+        true
+    }
+
+    pub fn into_in_memory_index(self) -> InMemoryNumericIndex<T> {
+        self.in_memory_index
+    }
+
+    #[cfg(test)]
+    pub(super) fn db_wrapper(&self) -> Option<&DatabaseColumnScheduledDeleteWrapper> {
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => Some(db_wrapper),
+            Storage::Mmap(_) => None,
+        }
+    }
+
+    #[inline]
+    pub(super) fn clear(&mut self) -> OperationResult<()> {
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => db_wrapper.recreate_column_family(),
+            Storage::Gridstore(ref mut store) => store.clear().map_err(|err| {
+                OperationError::service_error(format!(
+                    "Failed to clear mutable numeric index: {err}",
+                ))
+            }),
+        }
+    }
+
+    #[inline]
+    pub(super) fn files(&self) -> Vec<PathBuf> {
+        match self.storage {
+            Storage::RocksDb(_) => vec![],
+            Storage::Gridstore(ref store) => store.files(),
+        }
+    }
+
+    #[inline]
+    pub(super) fn flusher(&self) -> Flusher {
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
+            Storage::Gridstore(ref store) => {
+                // TODO: return async flusher!
+                let result = store.flush();
+                Box::new(|| result.map_err(Into::into))
+            }
+        }
+    }
+
     pub fn add_many_to_list(
         &mut self,
         idx: PointOffsetType,
@@ -270,10 +372,26 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
             .payload_index_io_write_counter()
             .write_back_counter();
 
-        for value in &values {
-            let key = value.encode_key(idx);
-            self.db_wrapper.put(&key, idx.to_be_bytes())?;
-            hw_cell_wb.incr_delta(size_of_val(&key) + size_of_val(&idx));
+        // Update persisted storage
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => {
+                for value in &values {
+                    let key = value.encode_key(idx);
+                    db_wrapper.put(&key, idx.to_be_bytes())?;
+                    hw_cell_wb.incr_delta(size_of_val(&key) + size_of_val(&idx));
+                }
+            }
+            Storage::Gridstore(ref mut store) => {
+                let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
+                store
+                    .put_value(idx, &values, hw_counter_ref)
+                    .map_err(|err| {
+                        OperationError::service_error(format!(
+                            "failed to put value in mutable numeric index gridstore: {err}"
+                        ))
+                    })?;
+                hw_cell_wb.incr_delta(size_of_val(&idx) + size_of::<T>() * values.len());
+            }
         }
 
         self.in_memory_index.add_many_to_list(idx, values);
@@ -281,15 +399,24 @@ impl<T: Encodable + Numericable + Default> MutableNumericIndex<T> {
     }
 
     pub fn remove_point(&mut self, idx: PointOffsetType) -> OperationResult<()> {
-        self.in_memory_index
-            .get_values(idx)
-            .map(|mut values| {
-                values.try_for_each(|value| {
-                    let key = value.encode_key(idx);
-                    self.db_wrapper.remove(key)
-                })
-            })
-            .transpose()?;
+        // Update persisted storage
+        match self.storage {
+            Storage::RocksDb(ref db_wrapper) => {
+                self.in_memory_index
+                    .get_values(idx)
+                    .map(|mut values| {
+                        values.try_for_each(|value| {
+                            let key = value.encode_key(idx);
+                            db_wrapper.remove(key)
+                        })
+                    })
+                    .transpose()?;
+            }
+            Storage::Gridstore(ref mut store) => {
+                store.delete_value(idx);
+            }
+        }
+
         self.in_memory_index.remove_point(idx);
         Ok(())
     }

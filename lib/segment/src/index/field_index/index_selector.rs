@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -184,7 +185,7 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn numeric_new<T: Encodable + Numericable + MmapValue + Default, P>(
+    fn numeric_new<T: Encodable + Numericable + MmapValue + Blob + Default, P>(
         &self,
         field: &JsonPath,
     ) -> OperationResult<NumericIndex<T, P>> {
@@ -198,7 +199,7 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn numeric_builder<T: Encodable + Numericable + MmapValue + Default, P>(
+    fn numeric_builder<T: Encodable + Numericable + MmapValue + Blob + Default, P>(
         &self,
         field: &JsonPath,
         make_rocksdb: fn(NumericIndexBuilder<T, P>) -> FieldIndexBuilder,

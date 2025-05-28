@@ -6,6 +6,7 @@ use std::sync::Arc;
 use bitvec::vec::BitVec;
 use common::ext::BitSliceExt as _;
 use common::types::PointOffsetType;
+use gridstore::Blob;
 use parking_lot::RwLock;
 use rocksdb::DB;
 
@@ -151,8 +152,8 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIter
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> {
-    /// Open immutable map index from RocksDB storage
+impl<T: Encodable + Numericable + MmapValue + Blob + Default> ImmutableNumericIndex<T> {
+    /// Open immutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub(super) fn open_rocksdb(db: Arc<RwLock<DB>>, field: &str) -> Self {
@@ -175,7 +176,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
         }
     }
 
-    /// Open immutable map index from mmap storage
+    /// Open immutable numeric index from mmap storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
     pub(super) fn open_mmap(index: MmapNumericIndex<T>) -> Self {
@@ -211,7 +212,7 @@ impl<T: Encodable + Numericable + MmapValue + Default> ImmutableNumericIndex<T> 
             return Ok(false);
         };
 
-        let mut mutable = MutableNumericIndex::<T>::new_from_db_wrapper(db_wrapper.clone());
+        let mut mutable = MutableNumericIndex::<T>::open_rocksdb_db_wrapper(db_wrapper.clone());
         mutable.load()?;
         let InMemoryNumericIndex {
             map,
