@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -89,14 +90,14 @@ impl<H: ValueHandler> PostingList<H> {
             _phantom,
         } = self;
 
-        PostingListView {
+        PostingListView::from_components(
             id_data,
             chunks,
             var_size_data,
             remainders,
-            last_id: *last_id,
-            _phantom: PhantomData,
-        }
+            *last_id,
+            ConditionedCounter::never(),
+        )
     }
 
     pub fn visitor(&self) -> PostingVisitor<'_, H> {

@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::ops::RangeInclusive;
 
 use bitpacking::BitPacker;
+use common::counter::conditioned_counter::ConditionedCounter;
 use common::types::PointOffsetType;
 use zerocopy::little_endian::U32;
 
@@ -12,13 +13,13 @@ use crate::visitor::PostingVisitor;
 use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingList, SizedValue};
 
 /// A non-owning view of [`PostingList`].
-#[derive(Debug)]
 pub struct PostingListView<'a, H: ValueHandler> {
     pub(crate) id_data: &'a [u8],
-    pub(crate) chunks: &'a [PostingChunk<H::Sized>],
+    chunks: &'a [PostingChunk<H::Sized>],
     pub(crate) var_size_data: &'a [u8],
-    pub(crate) remainders: &'a [RemainderPosting<H::Sized>],
+    remainders: &'a [RemainderPosting<H::Sized>],
     pub(crate) last_id: Option<PointOffsetType>,
+    pub(crate) hw_counter: ConditionedCounter<'a>,
     pub(crate) _phantom: PhantomData<H>,
 }
 
@@ -36,6 +37,7 @@ impl<'a> IdsPostingListView<'a> {
         chunks: &'a [PostingChunk<()>],
         remainders: &'a [RemainderPosting<()>],
         last_id: Option<PointOffsetType>,
+        hw_counter: ConditionedCounter<'a>,
     ) -> Self {
         Self {
             id_data,
@@ -43,6 +45,7 @@ impl<'a> IdsPostingListView<'a> {
             var_size_data: &[],
             remainders,
             last_id,
+            hw_counter,
             _phantom: PhantomData,
         }
     }
@@ -54,6 +57,7 @@ impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
         chunks: &'a [PostingChunk<V>],
         remainders: &'a [RemainderPosting<V>],
         last_id: Option<PointOffsetType>,
+        hw_counter: ConditionedCounter<'a>,
     ) -> Self {
         Self {
             id_data,
@@ -61,6 +65,7 @@ impl<'a, V: SizedValue> PostingListView<'a, SizedHandler<V>> {
             var_size_data: &[],
             remainders,
             last_id,
+            hw_counter,
             _phantom: PhantomData,
         }
     }
@@ -103,6 +108,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             var_size_data,
             remainders,
             last_id,
+            hw_counter: _,
             _phantom,
         } = self;
 
@@ -121,6 +127,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         var_size_data: &'a [u8],
         remainders: &'a [RemainderPosting<H::Sized>],
         last_id: Option<PointOffsetType>,
+        hw_counter: ConditionedCounter<'a>,
     ) -> Self {
         Self {
             id_data,
@@ -128,6 +135,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             var_size_data,
             remainders,
             last_id,
+            hw_counter,
             _phantom: PhantomData,
         }
     }
@@ -142,6 +150,11 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             PostingChunk::get_compressed_size(self.chunks, self.id_data, chunk_index);
         let chunk_bits = compressed_size * u8::BITS as usize / CHUNK_LEN;
 
+        // Measure the compressed size
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(compressed_size);
+
         let start_offset = chunk.offset.get() as usize;
         let end_offset = start_offset + compressed_size;
 
@@ -152,12 +165,37 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             chunk_bits as u8,
         );
     }
-    pub(crate) fn sized_values_unchecked(&self, chunk_idx: usize) -> &[H::Sized] {
-        &self.chunks[chunk_idx].sized_values
+
+    pub(crate) fn get_chunk_unchecked(&self, chunk_idx: usize) -> &PostingChunk<H::Sized> {
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(size_of::<PostingChunk<H::Sized>>());
+
+        &self.chunks[chunk_idx]
     }
 
-    pub(crate) fn sized_values(&self, chunk_idx: usize) -> Option<&[H::Sized; CHUNK_LEN]> {
-        self.chunks.get(chunk_idx).map(|chunk| &chunk.sized_values)
+    pub(crate) fn get_chunk(&self, chunk_idx: usize) -> Option<&PostingChunk<H::Sized>> {
+        self.chunks.get(chunk_idx).inspect(|_| {
+            self.hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(size_of::<PostingChunk<H::Sized>>());
+        })
+    }
+
+    pub(crate) fn chunks_len(&self) -> usize {
+        self.chunks.len()
+    }
+
+    pub(crate) fn remainders_len(&self) -> usize {
+        self.remainders.len()
+    }
+
+    pub(crate) fn get_remainder(&self, idx: usize) -> Option<&RemainderPosting<H::Sized>> {
+        self.remainders.get(idx).inspect(|_| {
+            self.hw_counter
+                .payload_index_io_read_counter()
+                .incr_delta(size_of::<RemainderPosting<H::Sized>>());
+        })
     }
 
     pub(crate) fn ids_range(&self, start_chunk: usize) -> Option<RangeInclusive<u32>> {
@@ -168,7 +206,7 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
             .chunks
             .get(start_chunk)
             .map(|chunk| chunk.initial_id.get())
-            .or_else(|| self.remainders.first().map(|elem| elem.id.get()))?;
+            .or_else(|| self.get_remainder(0).map(|elem| elem.id.get()))?;
 
         Some(initial_id..=last_id)
     }
@@ -196,6 +234,11 @@ impl<'a, H: ValueHandler> PostingListView<'a, H> {
         // this function assumes it is within the range
         debug_assert!(id >= chunks_slice[0].initial_id.get());
         debug_assert!(self.last_id.is_some_and(|last_id| id <= last_id));
+
+        // Measure with complexity of the binary search
+        self.hw_counter
+            .payload_index_io_read_counter()
+            .incr_delta(chunks_slice.len().ilog2() as usize * size_of::<PostingChunk<H::Sized>>());
 
         match chunks_slice.binary_search_by(|chunk| chunk.initial_id.get().cmp(&id)) {
             // id is the initial value of the chunk with index idx
