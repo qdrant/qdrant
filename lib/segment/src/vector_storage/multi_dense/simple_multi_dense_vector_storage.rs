@@ -321,6 +321,12 @@ impl<T: PrimitiveVectorElement> SimpleMultiDenseVectorStorage<T> {
         self.update_stored(key, is_deleted, Some(multi_vector), hw_counter)?;
         Ok(())
     }
+
+    /// Destroy this vector storage, remove persisted data from RocksDB
+    pub fn destroy(self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()?;
+        Ok(())
+    }
 }
 
 impl<T: PrimitiveVectorElement> MultiVectorStorage<T> for SimpleMultiDenseVectorStorage<T> {
