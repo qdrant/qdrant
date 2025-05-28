@@ -131,16 +131,11 @@ impl GraphLayersBuilder {
         // Amount of points reached when searching the graph.
         let mut reached_points = 1;
 
-        // Current amount of retries if the point threshold hasn't been met.
-        let mut threshold_retry = 0;
+        // Total points visited (also across retries).
+        let mut visited_points_total = 0;
 
-        // Retry loop, in case Subgraph connectivity search threshold haven't been met.
+        // Retry loop, in case some budget is left.
         loop {
-            // Prevent looping inifinitly.
-            if threshold_retry > 10 {
-                break;
-            }
-
             // Points visited in the previous layer (Get used as entry point in the iteration over the next layer)
             let mut previous_visited_points = vec![entry_point];
 
@@ -164,6 +159,8 @@ impl GraphLayersBuilder {
                     let links = self.links_layers[current_point as usize][current_layer].read();
 
                     for link in links.iter() {
+                        visited_points_total += 1;
+
                         // Flip a coin to decide if the edge is removed or not
                         let coin_flip = rnd.random_range(0.0..1.0);
                         if coin_flip < q {
@@ -186,11 +183,10 @@ impl GraphLayersBuilder {
                 bitvec_set_all(&mut visited, false);
             }
 
-            if reached_points > SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET.min(points.len()) {
+            // Budget exhausted, don't retry.
+            if visited_points_total > SUBGRARPH_CONNECTIVITY_SEARCH_BUDGET {
                 break;
             }
-
-            threshold_retry += 1;
 
             queue.clear();
             reached_points = 1; // Reset reached points
