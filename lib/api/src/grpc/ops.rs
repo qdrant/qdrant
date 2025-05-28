@@ -107,7 +107,7 @@ impl InferenceUsage {
     }
 
     pub fn into_non_empty(self) -> Option<Self> {
-        if self.is_empty() { None } else { Some(self) }
+        (!self.is_empty()).then_some(self)
     }
 
     pub fn merge(&mut self, other: Self) {
