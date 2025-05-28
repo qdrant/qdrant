@@ -348,3 +348,91 @@ pub fn open_appendable_in_ram_vector_storage_impl<T: PrimitiveVectorElement>(
         _phantom: Default::default(),
     })
 }
+
+/// Find files related to this dense vector storage
+pub(crate) fn find_storage_files(vector_storage_path: &Path) -> OperationResult<Vec<PathBuf>> {
+    let vectors_path = vector_storage_path.join(VECTORS_DIR_PATH);
+    let deleted_path = vector_storage_path.join(DELETED_DIR_PATH);
+
+    let mut files = vec![];
+    files.extend(list_files(&vectors_path)?);
+    files.extend(list_files(&deleted_path)?);
+    Ok(files)
+}
+
+/// List all files in the given directory recursively.
+fn list_files(dir: &Path) -> OperationResult<Vec<PathBuf>> {
+    if !dir.is_dir() {
+        return Ok(vec![]);
+    }
+
+    let mut files = Vec::new();
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_file() || file_type.is_symlink() {
+            files.push(entry.path());
+        } else {
+            debug_assert!(file_type.is_dir(), "path is expected to be a dir");
+            files.extend(list_files(&entry.path())?);
+        }
+    }
+
+    Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+    use tempfile::Builder;
+
+    use super::*;
+
+    const RAND_SEED: u64 = 42;
+
+    /// Test that `find_storage_files` finds all files that are reported by the storage.
+    #[test]
+    fn test_find_storage_files() {
+        // Numbers chosen so we get 3 data chunks, not just 1
+        const POINT_COUNT: PointOffsetType = 2500;
+        const DIM: usize = 128;
+
+        let dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
+        let mut storage =
+            open_appendable_memmap_vector_storage(dir.path(), DIM, Distance::Dot).unwrap();
+
+        let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        let hw_counter = HardwareCounterCell::disposable();
+
+        // Insert points, delete 10% of it, and flush
+        for internal_id in 0..POINT_COUNT {
+            let point = std::iter::repeat_with(|| rng.random_range(-1.0..1.0))
+                .take(DIM)
+                .collect::<Vec<_>>();
+            storage
+                .insert_vector(internal_id, VectorRef::from(&point), &hw_counter)
+                .unwrap();
+        }
+        for internal_id in 0..POINT_COUNT {
+            if !rng.random_bool(0.1) {
+                continue;
+            }
+            storage.delete_vector(internal_id).unwrap();
+        }
+        storage.flusher()().unwrap();
+
+        let storage_files = storage.files().into_iter().collect::<HashSet<_>>();
+        let found_files = find_storage_files(dir.path())
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>();
+
+        assert_eq!(
+            storage_files, found_files,
+            "find_storage_files must find same files that storage reports",
+        );
+    }
+}
