@@ -223,8 +223,7 @@ impl PayloadStorage for MmapPayloadStorage {
                 OperationError::service_error(format!(
                     "Failed to flush mmap payload storage: {err}"
                 ))
-            })?;
-            Ok(())
+            })
         })
     }
 

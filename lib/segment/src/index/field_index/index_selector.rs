@@ -185,7 +185,7 @@ impl IndexSelector<'_> {
         }
     }
 
-    fn numeric_new<T: Encodable + Numericable + MmapValue + Blob + Default, P>(
+    fn numeric_new<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
     ) -> OperationResult<NumericIndex<T, P>> {
@@ -199,7 +199,7 @@ impl IndexSelector<'_> {
         })
     }
 
-    fn numeric_builder<T: Encodable + Numericable + MmapValue + Blob + Default, P>(
+    fn numeric_builder<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>(
         &self,
         field: &JsonPath,
         make_rocksdb: fn(NumericIndexBuilder<T, P>) -> FieldIndexBuilder,

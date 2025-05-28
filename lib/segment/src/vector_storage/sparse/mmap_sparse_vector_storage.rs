@@ -300,8 +300,7 @@ impl VectorStorage for MmapSparseVectorStorage {
                 OperationError::service_error(format!(
                     "Failed to flush mmap sparse vector storage: {err}"
                 ))
-            })?;
-            Ok(())
+            })
         })
     }
 

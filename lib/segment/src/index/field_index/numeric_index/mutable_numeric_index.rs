@@ -30,7 +30,7 @@ pub struct MutableNumericIndex<T: Encodable + Numericable + Blob> {
 
 enum Storage<T: Encodable + Numericable + Blob> {
     RocksDb(DatabaseColumnScheduledDeleteWrapper),
-    Gridstore(Box<Gridstore<Vec<T>>>),
+    Gridstore(Arc<RwLock<Gridstore<Vec<T>>>>),
 }
 
 // Numeric Index with insertions and deletions without persistence
@@ -215,7 +215,7 @@ impl<T: Encodable + Numericable + Default> InMemoryNumericIndex<T> {
     }
 }
 
-impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
+impl<T: Encodable + Numericable + Blob + Send + Sync + Default> MutableNumericIndex<T> {
     /// Open mutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].
@@ -246,7 +246,7 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
             ))
         })?;
         Ok(Self {
-            storage: Storage::Gridstore(Box::new(store)),
+            storage: Storage::Gridstore(Arc::new(RwLock::new(store))),
             in_memory_index: InMemoryNumericIndex::default(),
         })
     }
@@ -305,6 +305,7 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
         let hw_counter = HardwareCounterCell::disposable();
         let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
         store
+            .read()
             .iter(
                 |idx, values| {
                     self.in_memory_index.add_many_to_list(idx, values.clone());
@@ -334,7 +335,7 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
     pub(super) fn clear(&mut self) -> OperationResult<()> {
         match self.storage {
             Storage::RocksDb(ref db_wrapper) => db_wrapper.recreate_column_family(),
-            Storage::Gridstore(ref mut store) => store.clear().map_err(|err| {
+            Storage::Gridstore(ref mut store) => store.write().clear().map_err(|err| {
                 OperationError::service_error(format!(
                     "Failed to clear mutable numeric index: {err}",
                 ))
@@ -346,7 +347,7 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
     pub(super) fn files(&self) -> Vec<PathBuf> {
         match self.storage {
             Storage::RocksDb(_) => vec![],
-            Storage::Gridstore(ref store) => store.files(),
+            Storage::Gridstore(ref store) => store.read().files(),
         }
     }
 
@@ -355,9 +356,14 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
         match self.storage {
             Storage::RocksDb(ref db_wrapper) => db_wrapper.flusher(),
             Storage::Gridstore(ref store) => {
-                // TODO: return async flusher!
-                let result = store.flush();
-                Box::new(|| result.map_err(Into::into))
+                let store = store.clone();
+                Box::new(move || {
+                    store.read().flush().map_err(|err| {
+                        OperationError::service_error(format!(
+                            "Failed to flush mutable numeric index gridstore: {err}"
+                        ))
+                    })
+                })
             }
         }
     }
@@ -384,6 +390,7 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
             Storage::Gridstore(ref mut store) => {
                 let hw_counter_ref = hw_counter.ref_payload_io_write_counter();
                 store
+                    .write()
                     .put_value(idx, &values, hw_counter_ref)
                     .map_err(|err| {
                         OperationError::service_error(format!(
@@ -413,7 +420,7 @@ impl<T: Encodable + Numericable + Blob + Default> MutableNumericIndex<T> {
                     .transpose()?;
             }
             Storage::Gridstore(ref mut store) => {
-                store.delete_value(idx);
+                store.write().delete_value(idx);
             }
         }
 

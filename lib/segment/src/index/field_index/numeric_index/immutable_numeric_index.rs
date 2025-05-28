@@ -152,7 +152,9 @@ impl<T: Encodable + Numericable> DoubleEndedIterator for NumericKeySortedVecIter
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Default> ImmutableNumericIndex<T> {
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default>
+    ImmutableNumericIndex<T>
+{
     /// Open immutable numeric index from RocksDB storage
     ///
     /// Note: after opening, the data must be loaded into memory separately using [`load`].

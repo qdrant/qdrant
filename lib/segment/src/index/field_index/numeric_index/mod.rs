@@ -160,13 +160,13 @@ impl<T: Encodable + Numericable> Range<T> {
     }
 }
 
-pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Blob + Default> {
+pub enum NumericIndexInner<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default> {
     Mutable(MutableNumericIndex<T>),
     Immutable(ImmutableNumericIndex<T>),
     Mmap(MmapNumericIndex<T>),
 }
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Default> NumericIndexInner<T> {
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default> NumericIndexInner<T> {
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         if is_appendable {
             NumericIndexInner::Mutable(MutableNumericIndex::open_rocksdb(db, field))
@@ -465,7 +465,7 @@ impl<T: Encodable + Numericable + MmapValue + Blob + Default> NumericIndexInner<
     }
 }
 
-pub struct NumericIndex<T: Encodable + Numericable + MmapValue + Blob + Default, P> {
+pub struct NumericIndex<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P> {
     inner: NumericIndexInner<T>,
     _phantom: PhantomData<P>,
 }
@@ -474,7 +474,7 @@ pub trait NumericIndexIntoInnerValue<T, P> {
     fn into_inner_value(value: P) -> T;
 }
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Default, P> NumericIndex<T, P> {
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P> NumericIndex<T, P> {
     pub fn new_rocksdb(db: Arc<RwLock<DB>>, field: &str, is_appendable: bool) -> Self {
         Self {
             inner: NumericIndexInner::new_rocksdb(db, field, is_appendable),
@@ -548,14 +548,15 @@ impl<T: Encodable + Numericable + MmapValue + Blob + Default, P> NumericIndex<T,
     }
 }
 
-pub struct NumericIndexBuilder<T: Encodable + Numericable + MmapValue + Blob + Default, P>(
-    NumericIndex<T, P>,
-)
+pub struct NumericIndexBuilder<
+    T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default,
+    P,
+>(NumericIndex<T, P>)
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>;
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Default, P> FieldIndexBuilderTrait
-    for NumericIndexBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>
+    FieldIndexBuilderTrait for NumericIndexBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
 {
@@ -585,8 +586,10 @@ where
 }
 
 #[cfg(test)]
-pub struct NumericIndexImmutableBuilder<T: Encodable + Numericable + MmapValue + Blob + Default, P>
-where
+pub struct NumericIndexImmutableBuilder<
+    T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default,
+    P,
+> where
     NumericIndex<T, P>: ValueIndexer<ValueType = P>,
 {
     index: NumericIndex<T, P>,
@@ -634,7 +637,7 @@ where
 
 pub struct NumericIndexMmapBuilder<T, P>
 where
-    T: Encodable + Numericable + MmapValue + Blob + Default,
+    T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default,
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
 {
     path: PathBuf,
@@ -643,8 +646,8 @@ where
     _phantom: PhantomData<P>,
 }
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Default, P> FieldIndexBuilderTrait
-    for NumericIndexMmapBuilder<T, P>
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default, P>
+    FieldIndexBuilderTrait for NumericIndexMmapBuilder<T, P>
 where
     NumericIndex<T, P>: ValueIndexer<ValueType = P> + NumericIndexIntoInnerValue<T, P>,
 {
@@ -688,7 +691,7 @@ where
     }
 }
 
-impl<T: Encodable + Numericable + MmapValue + Blob + Default> PayloadFieldIndex
+impl<T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default> PayloadFieldIndex
     for NumericIndexInner<T>
 {
     fn count_indexed_points(&self) -> usize {
@@ -1021,7 +1024,7 @@ impl NumericIndexIntoInnerValue<UuidIntType, UuidPayloadType>
 
 impl<T> StreamRange<T> for NumericIndexInner<T>
 where
-    T: Encodable + Numericable + MmapValue + Blob + Default,
+    T: Encodable + Numericable + MmapValue + Blob + Send + Sync + Default,
 {
     fn stream_range(
         &self,
