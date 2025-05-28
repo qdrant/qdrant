@@ -187,6 +187,12 @@ impl<T: PrimitiveVectorElement> SimpleDenseVectorStorage<T> {
 
         Ok(())
     }
+
+    /// Destroy this vector storage, remove persisted data from RocksDB
+    pub fn destroy(self) -> OperationResult<()> {
+        self.db_wrapper.remove_column_family()?;
+        Ok(())
+    }
 }
 
 impl<T: PrimitiveVectorElement> DenseVectorStorage<T> for SimpleDenseVectorStorage<T> {

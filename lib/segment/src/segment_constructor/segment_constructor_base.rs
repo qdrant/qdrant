@@ -7,7 +7,9 @@ use std::sync::atomic::AtomicBool;
 
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
+use common::counter::hardware_counter::HardwareCounterCell;
 use common::flags::FeatureFlags;
+use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use log::info;
 use parking_lot::Mutex;
@@ -949,7 +951,7 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
 ) -> OperationResult<MutableIdTracker> {
     log::info!("Migrating ID tracker from RocksDB into new format");
 
-    fn make_mutable(
+    fn migrate(
         old_id_tracker: &SimpleIdTracker,
         segment_path: &Path,
     ) -> OperationResult<MutableIdTracker> {
@@ -978,9 +980,9 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
         Ok(new_id_tracker)
     }
 
-    let new_id_tracker = match make_mutable(&old_id_tracker, segment_path) {
+    let new_id_tracker = match migrate(&old_id_tracker, segment_path) {
         Ok(new_id_tracker) => new_id_tracker,
-        // On migration error, remove al mutable ID tracker files
+        // On migration error, clean up and remove all new ID tracker files
         Err(err) => {
             for file in MutableIdTracker::segment_files(segment_path) {
                 if let Err(err) = std::fs::remove_file(&file) {
@@ -998,4 +1000,87 @@ pub fn migrate_rocksdb_id_tracker_to_mutable(
     old_id_tracker.destroy()?;
 
     Ok(new_id_tracker)
+}
+
+/// Migrate a RocksDB based dense vector storage into the mmap format
+///
+/// Creates a new mutable in-memory vector storage on top of memory maps, and copies all vectors
+/// from the RocksDB based storage into it. The persisted RocksDB data is deleted so that only the
+/// new vector storage will be loaded next time. The new vector storage is returned.
+#[cfg(feature = "rocksdb")]
+pub fn migrate_rocksdb_dense_vector_storage_to_mmap(
+    old_storage: VectorStorageEnum,
+    dim: usize,
+    vector_storage_path: &Path,
+) -> OperationResult<VectorStorageEnum> {
+    use crate::vector_storage::dense::appendable_dense_vector_storage::find_storage_files;
+
+    log::info!("Migrating dense vector storage from RocksDB into new format");
+
+    fn migrate(
+        old_storage: &VectorStorageEnum,
+        dim: usize,
+        vector_storage_path: &Path,
+    ) -> OperationResult<VectorStorageEnum> {
+        // Construct mmap based dense vector storage
+        let mut new_storage = open_appendable_in_ram_vector_storage(
+            old_storage.datatype(),
+            vector_storage_path,
+            dim,
+            old_storage.distance(),
+        )?;
+        debug_assert_eq!(
+            new_storage.total_vector_count(),
+            0,
+            "new dense vector storage must be empty",
+        );
+
+        // Copy all vectors into new storage
+        let hw_counter = HardwareCounterCell::disposable();
+        for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
+            let vector = old_storage.get_vector_sequential(internal_id);
+            new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
+        }
+
+        // Flush new storage
+        new_storage.flusher()()?;
+
+        Ok(new_storage)
+    }
+
+    let new_storage = match migrate(&old_storage, dim, vector_storage_path) {
+        Ok(new_storage) => new_storage,
+        // On migration error, clean up and remove all new storage files
+        Err(err) => {
+            let files = find_storage_files(vector_storage_path);
+            match files {
+                Ok(files) => {
+                    for file in files {
+                        if let Err(err) = std::fs::remove_file(&file) {
+                            log::error!(
+                                "Dense vector storage migration to mmap failed, failed to remove mmap file {} for cleanup: {err}",
+                                file.display(),
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!(
+                        "Dense vector storage migration to mmap failed, failed to list its storage files, they will be left behind: {err}",
+                    );
+                }
+            }
+            return Err(err);
+        }
+    };
+
+    // Destroy persisted RocksDB dense vector data
+    match old_storage {
+        VectorStorageEnum::DenseSimple(storage) => storage.destroy()?,
+        VectorStorageEnum::DenseSimpleByte(storage) => storage.destroy()?,
+        VectorStorageEnum::DenseSimpleHalf(storage) => storage.destroy()?,
+        _ => unreachable!("unexpected vector storage type"),
+    }
+
+    Ok(new_storage)
 }
