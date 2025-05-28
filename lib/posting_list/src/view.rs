@@ -10,10 +10,9 @@ use crate::iterator::PostingIterator;
 use crate::posting_list::RemainderPosting;
 use crate::value_handler::{PostingValue, ValueHandler};
 use crate::visitor::PostingVisitor;
-use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingList, SizedValue};
+use crate::{BitPackerImpl, CHUNK_LEN, IdsPostingListView, PostingChunk, PostingList};
 
 /// A non-owning view of [`PostingList`].
-#[derive(Debug)]
 pub struct PostingListView<'a, V: PostingValue> {
     pub(crate) id_data: &'a [u8],
     chunks: &'a [PostingChunk<<V::Handler as ValueHandler>::Sized>],
@@ -37,29 +36,6 @@ impl<'a> IdsPostingListView<'a> {
         id_data: &'a [u8],
         chunks: &'a [PostingChunk<()>],
         remainders: &'a [RemainderPosting<()>],
-        last_id: Option<PointOffsetType>,
-        hw_counter: ConditionedCounter<'a>,
-    ) -> Self {
-        Self {
-            id_data,
-            chunks,
-            var_size_data: &(),
-            remainders,
-            last_id,
-            hw_counter,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'a, V: PostingValue + SizedValue> PostingListView<'a, V>
-where
-    V::Handler: ValueHandler<Value = V, Sized = V, VarSizeData = ()>,
-{
-    pub fn from_weighted_ids_components(
-        id_data: &'a [u8],
-        chunks: &'a [PostingChunk<V>],
-        remainders: &'a [RemainderPosting<V>],
         last_id: Option<PointOffsetType>,
         hw_counter: ConditionedCounter<'a>,
     ) -> Self {
@@ -106,7 +82,7 @@ impl<'a, V: PostingValue> PostingListView<'a, V> {
         &self,
     ) -> PostingListComponents<
         <V::Handler as ValueHandler>::Sized,
-        <V::Handler as ValueHandler>::VarSizeData,
+        &<V::Handler as ValueHandler>::VarSizeData,
     > {
         let Self {
             id_data,

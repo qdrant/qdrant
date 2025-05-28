@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::marker::PhantomData;
 
 use common::counter::conditioned_counter::ConditionedCounter;
@@ -28,7 +29,7 @@ pub struct PostingList<V: PostingValue> {
     pub(crate) id_data: Vec<u8>,
     pub(crate) chunks: Vec<PostingChunk<<V::Handler as ValueHandler>::Sized>>,
     pub(crate) remainders: Vec<RemainderPosting<<V::Handler as ValueHandler>::Sized>>,
-    pub(crate) var_size_data: <V::Handler as ValueHandler>::VarSizeData,
+    pub(crate) var_size_data: <<V::Handler as ValueHandler>::VarSizeData as ToOwned>::Owned,
     pub(crate) last_id: Option<PointOffsetType>,
     pub(crate) _phantom: PhantomData<V>,
 }
@@ -98,7 +99,7 @@ impl<V: PostingValue> PostingList<V> {
         PostingListView::from_components(
             id_data,
             chunks,
-            var_size_data,
+            var_size_data.borrow(),
             remainders,
             *last_id,
             ConditionedCounter::never(),

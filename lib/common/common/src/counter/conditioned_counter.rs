@@ -4,7 +4,7 @@ use super::hardware_counter::HardwareCounterCell;
 
 /// A counter that measures or disposes measurements based on a condition.
 /// This is needed in places where we need to decide at runtime whether to measure or not.
-#[derive(Debug, Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct ConditionedCounter<'a> {
     parent: Option<&'a HardwareCounterCell>,
 }
