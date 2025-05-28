@@ -8,7 +8,7 @@ use std::sync::atomic::AtomicBool;
 use atomic_refcell::AtomicRefCell;
 use common::budget::ResourcePermit;
 use common::counter::hardware_counter::HardwareCounterCell;
-use common::flags::FeatureFlags;
+use common::flags::{FeatureFlags, feature_flags};
 use common::types::PointOffsetType;
 use io::storage_version::StorageVersion;
 use log::info;
@@ -153,29 +153,40 @@ pub(crate) fn open_vector_storage(
                     ),
                 }
             } else {
-                match storage_element_type {
+                let storage = match storage_element_type {
                     VectorStorageDatatype::Float32 => open_simple_dense_vector_storage(
                         db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
                         stopped,
-                    ),
+                    )?,
                     VectorStorageDatatype::Uint8 => open_simple_dense_byte_vector_storage(
                         db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
                         stopped,
-                    ),
+                    )?,
                     VectorStorageDatatype::Float16 => open_simple_dense_half_vector_storage(
                         db_builder.require()?,
                         &db_column_name,
                         vector_config.size,
                         vector_config.distance,
                         stopped,
-                    ),
+                    )?,
+                };
+
+                // Actively migrate away from RocksDB
+                if feature_flags().migrate_rocksdb_dense_vector_storage {
+                    return migrate_rocksdb_dense_vector_storage_to_mmap(
+                        storage,
+                        vector_config.size,
+                        vector_storage_path,
+                    );
                 }
+
+                Ok(storage)
             }
         }
         // Mmap on disk, not appendable

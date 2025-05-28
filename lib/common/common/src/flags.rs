@@ -28,6 +28,10 @@ pub struct FeatureFlags {
     /// Whether to actively migrate RocksDB based ID trackers into a new format.
     // TODO(1.15): enable by default
     pub migrate_rocksdb_id_tracker: bool,
+
+    /// Whether to actively migrate RocksDB based dense vector storage into a new format.
+    // TODO(1.15): enable by default
+    pub migrate_rocksdb_dense_vector_storage: bool,
 }
 
 impl Default for FeatureFlags {
@@ -38,6 +42,7 @@ impl Default for FeatureFlags {
             incremental_hnsw_building: true,
             hnsw_healing: false,
             migrate_rocksdb_id_tracker: false,
+            migrate_rocksdb_dense_vector_storage: false,
         }
     }
 }
@@ -58,6 +63,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         incremental_hnsw_building,
         hnsw_healing,
         migrate_rocksdb_id_tracker,
+        migrate_rocksdb_dense_vector_storage,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -66,6 +72,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *incremental_hnsw_building = true;
         *hnsw_healing = true;
         *migrate_rocksdb_id_tracker = true;
+        *migrate_rocksdb_dense_vector_storage = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);
