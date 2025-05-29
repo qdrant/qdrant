@@ -63,7 +63,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         incremental_hnsw_building,
         hnsw_healing,
         migrate_rocksdb_id_tracker,
-        migrate_rocksdb_vector_storage: migrate_rocksdb_dense_vector_storage,
+        migrate_rocksdb_vector_storage,
     } = &mut flags;
 
     // If all is set, explicitly set all feature flags
@@ -72,7 +72,7 @@ pub fn init_feature_flags(mut flags: FeatureFlags) {
         *incremental_hnsw_building = true;
         *hnsw_healing = true;
         *migrate_rocksdb_id_tracker = true;
-        *migrate_rocksdb_dense_vector_storage = true;
+        *migrate_rocksdb_vector_storage = true;
     }
 
     let res = FEATURE_FLAGS.set(flags);
