@@ -498,6 +498,7 @@ mod tests {
     fn test_migrate_simple_to_mmap() {
         const POINT_COUNT: PointOffsetType = 128;
         const DIM: usize = 128;
+        const DELETE_PROBABILITY: f64 = 0.1;
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
 
@@ -505,7 +506,7 @@ mod tests {
         let db_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(db_dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-        // Create simple multi dense vector storage and insert test points
+        // Create simple multi dense vector storage, insert test points and delete some of them again
         let mut storage = open_simple_multi_dense_vector_storage_full(
             db,
             DB_VECTOR_CF,
@@ -527,13 +528,17 @@ mod tests {
             let multivec = MultiDenseVectorInternal::try_from(vectors).unwrap();
             storage
                 .insert_vector(
-                    internal_id as PointOffsetType,
+                    internal_id,
                     VectorRef::from(&multivec),
                     &HardwareCounterCell::disposable(),
                 )
                 .unwrap();
+            if rng.random_bool(DELETE_PROBABILITY) {
+                storage.delete_vector(internal_id).unwrap();
+            }
         }
 
+        let deleted_vector_count = storage.deleted_vector_count();
         let total_vector_count = storage.total_vector_count();
 
         // Migrate from RocksDB to mmap storage
@@ -551,6 +556,7 @@ mod tests {
 
         // Assert vector counts and data
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        assert_eq!(new_storage.deleted_vector_count(), deleted_vector_count);
         assert_eq!(new_storage.total_vector_count(), total_vector_count);
         for internal_id in 0..POINT_COUNT {
             let size = rng.random_range(1..=4);
@@ -565,6 +571,10 @@ mod tests {
             assert_eq!(
                 new_storage.get_vector_sequential(internal_id),
                 CowVector::from(&multivec),
+            );
+            assert_eq!(
+                new_storage.is_deleted_vector(internal_id),
+                rng.random_bool(DELETE_PROBABILITY)
             );
         }
     }
