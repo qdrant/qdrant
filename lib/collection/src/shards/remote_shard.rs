@@ -427,7 +427,7 @@ impl RemoteShard {
             .await?
             .into_inner();
 
-        if let Some(hw_usage) = point_operation_response.usage {
+        if let Some(hw_usage) = point_operation_response.hardware_usage {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -724,7 +724,7 @@ impl RemoteShard {
             },
         };
 
-        if let Some(hw_usage) = point_operation_response.usage {
+        if let Some(hw_usage) = point_operation_response.hardware_usage {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 
@@ -1197,10 +1197,11 @@ impl ShardOperation for RemoteShard {
         let QueryBatchResponseInternal {
             results,
             time: _,
-            usage,
+            hardware_usage,
+            inference_usage: _, // Remote shards don't have inference usage, so we can ignore it
         } = batch_response;
 
-        if let Some(hw_usage) = usage {
+        if let Some(hw_usage) = hardware_usage {
             hw_measurement_acc.accumulate_request(hw_usage);
         }
 

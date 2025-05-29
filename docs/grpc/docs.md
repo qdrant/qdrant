@@ -179,7 +179,7 @@
     - [InferenceObject](#qdrant-InferenceObject)
     - [InferenceObject.OptionsEntry](#qdrant-InferenceObject-OptionsEntry)
     - [InferenceUsage](#qdrant-InferenceUsage)
-    - [InferenceUsage.ModelEntry](#qdrant-InferenceUsage-ModelEntry)
+    - [InferenceUsage.ModelsEntry](#qdrant-InferenceUsage-ModelsEntry)
     - [IsEmptyCondition](#qdrant-IsEmptyCondition)
     - [IsNullCondition](#qdrant-IsNullCondition)
     - [LookupLocation](#qdrant-LookupLocation)
@@ -3176,16 +3176,16 @@ Additionally, the first and last points of each GeoLineString must be the same.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| model | [InferenceUsage.ModelEntry](#qdrant-InferenceUsage-ModelEntry) | repeated |  |
+| models | [InferenceUsage.ModelsEntry](#qdrant-InferenceUsage-ModelsEntry) | repeated |  |
 
 
 
 
 
 
-<a name="qdrant-InferenceUsage-ModelEntry"></a>
+<a name="qdrant-InferenceUsage-ModelsEntry"></a>
 
-### InferenceUsage.ModelEntry
+### InferenceUsage.ModelsEntry
 
 
 
@@ -4740,6 +4740,7 @@ For example, if `oversampling` is 2.4 and `limit` is 100, then 240 vectors will 
 | ----- | ---- | ----- | ----------- |
 | result | [UpdateResult](#qdrant-UpdateResult) | repeated |  |
 | time | [double](#double) |  | Time spent to process |
+| usage | [Usage](#qdrant-Usage) | optional |  |
 
 
 

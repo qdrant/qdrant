@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use api::conversions::json::json_path_from_proto;
-use api::grpc::ops::usage_or_none;
 use api::grpc::qdrant::{
     BatchResult, CoreSearchPoints, CountPoints, CountResponse, DiscoverBatchResponse,
     DiscoverPoints, DiscoverResponse, FacetCounts, FacetResponse, GetPoints, GetResponse,
@@ -11,6 +10,7 @@ use api::grpc::qdrant::{
     ScrollPoints, ScrollResponse, SearchBatchResponse, SearchGroupsResponse, SearchMatrixPoints,
     SearchPointGroups, SearchPoints, SearchResponse,
 };
+use api::grpc::{InferenceUsage, Usage};
 use api::rest::OrderByInterface;
 use collection::collection::distance_matrix::{
     CollectionSearchMatrixRequest, CollectionSearchMatrixResponse,
@@ -132,7 +132,7 @@ pub async fn search(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(hw_measurement_acc.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(hw_measurement_acc.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -180,7 +180,7 @@ pub async fn core_search_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -238,7 +238,7 @@ pub async fn core_search_list(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -293,7 +293,7 @@ pub async fn search_groups(
     let response = SearchGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -346,7 +346,7 @@ pub async fn recommend(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -403,7 +403,7 @@ pub async fn recommend_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -457,7 +457,7 @@ pub async fn recommend_groups(
     let response = RecommendGroupsResponse {
         result: Some(groups_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -503,7 +503,7 @@ pub async fn discover(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -559,7 +559,7 @@ pub async fn discover_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -638,7 +638,7 @@ pub async fn scroll(
         next_page_offset: scrolled_points.next_page_offset.map(|n| n.into()),
         result: points,
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -696,7 +696,7 @@ pub async fn count(
     let response = CountResponse {
         result: Some(count_result.into()),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -761,7 +761,7 @@ pub async fn get(
     let response = GetResponse {
         result: records.into_iter().map(|point| point.into()).collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::from_hardware_usage(request_hw_counter.to_grpc_api()).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -784,7 +784,8 @@ pub async fn query(
         .transpose()?;
     let collection_name = query_points.collection_name.clone();
     let timeout = query_points.timeout;
-    let request = convert_query_points_from_grpc(query_points, inference_token).await?;
+    let (request, inference_usage) =
+        convert_query_points_from_grpc(query_points, inference_token).await?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -816,7 +817,7 @@ pub async fn query(
             .map(|point| point.into())
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -835,10 +836,14 @@ pub async fn query_batch(
 ) -> Result<Response<QueryBatchResponse>, Status> {
     let read_consistency = ReadConsistency::try_from_optional(read_consistency)?;
     let mut requests = Vec::with_capacity(points.len());
+    let mut total_inference_usage = InferenceUsage::default();
+
     for query_points in points {
         let shard_key_selector = query_points.shard_key_selector.clone();
         let shard_selector = convert_shard_selector_for_read(None, shard_key_selector);
-        let request = convert_query_points_from_grpc(query_points, inference_token.clone()).await?;
+        let (request, usage) =
+            convert_query_points_from_grpc(query_points, inference_token.clone()).await?;
+        total_inference_usage.merge(usage);
         requests.push((request, shard_selector));
     }
 
@@ -872,7 +877,11 @@ pub async fn query_batch(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::new(
+            request_hw_counter.to_grpc_api(),
+            total_inference_usage.into_non_empty(),
+        )
+        .into_non_empty(),
     };
 
     Ok(Response::new(response))
@@ -895,7 +904,8 @@ pub async fn query_groups(
         .transpose()?;
     let timeout = query_points.timeout;
     let collection_name = query_points.collection_name.clone();
-    let request = convert_query_point_groups_from_grpc(query_points, inference_token).await?;
+    let (request, inference_usage) =
+        convert_query_point_groups_from_grpc(query_points, inference_token).await?;
 
     let toc = toc_provider
         .check_strict_mode(
@@ -927,7 +937,7 @@ pub async fn query_groups(
     let response = QueryGroupsResponse {
         result: Some(grpc_group_result),
         time: timing.elapsed().as_secs_f64(),
-        usage: usage_or_none(request_hw_counter.to_grpc_api(), None),
+        usage: Usage::new(request_hw_counter.to_grpc_api(), Some(inference_usage)).into_non_empty(),
     };
 
     Ok(Response::new(response))

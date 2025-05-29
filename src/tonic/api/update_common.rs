@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use api::conversions::json::{json_path_from_proto, proto_to_payloads};
-use api::grpc::HardwareUsage;
+use api::grpc;
 use api::grpc::qdrant::payload_index_params::IndexParams;
 use api::grpc::qdrant::points_update_operation::{ClearPayload, Operation, PointStructList};
 use api::grpc::qdrant::{
@@ -12,6 +12,7 @@ use api::grpc::qdrant::{
     UpdateBatchPoints, UpdateBatchResponse, UpdatePointVectors, UpsertPoints,
     points_update_operation,
 };
+use api::grpc::{HardwareUsage, InferenceUsage, Usage};
 use api::rest::schema::{PointInsertOperations, PointsList};
 use api::rest::{PointStruct, PointVectors, ShardKeySelector, UpdateVectors, VectorStruct};
 use collection::operations::CollectionUpdateOperations;
@@ -64,8 +65,7 @@ pub async fn upsert(
         .await?;
 
     let timing = Instant::now();
-    // ToDo: _usage should be returned
-    let (result, _usage) = do_upsert_points(
+    let (result, inference_usage) = do_upsert_points(
         toc.clone(),
         collection_name,
         operation,
@@ -77,8 +77,12 @@ pub async fn upsert(
     )
     .await?;
 
-    let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+    let response = points_operation_response_internal_with_inference_usage(
+        timing,
+        result,
+        request_hw_counter.to_grpc_api(),
+        inference_usage.map(grpc::InferenceUsage::from),
+    );
     Ok(Response::new(response))
 }
 
@@ -87,7 +91,6 @@ pub async fn delete(
     delete_points: DeletePoints,
     internal_params: InternalUpdateParams,
     access: Access,
-    inference_token: InferenceToken,
     request_hw_counter: RequestHwCounter,
 ) -> Result<Response<PointsOperationResponseInternal>, Status> {
     let DeletePoints {
@@ -115,7 +118,6 @@ pub async fn delete(
         internal_params,
         UpdateParams::from_grpc(wait, ordering)?,
         access,
-        inference_token,
         request_hw_counter.get_counter(),
     )
     .await?;
@@ -165,8 +167,7 @@ pub async fn update_vectors(
         .await?;
 
     let timing = Instant::now();
-    // ToDo: _usage should be returned
-    let (result, _usage) = do_update_vectors(
+    let (result, usage) = do_update_vectors(
         toc.clone(),
         collection_name,
         operation,
@@ -178,8 +179,12 @@ pub async fn update_vectors(
     )
     .await?;
 
-    let response =
-        points_operation_response_internal(timing, result, request_hw_counter.to_grpc_api());
+    let response = points_operation_response_internal_with_inference_usage(
+        timing,
+        result,
+        request_hw_counter.to_grpc_api(),
+        usage.map(grpc::InferenceUsage::from),
+    );
     Ok(Response::new(response))
 }
 
@@ -433,13 +438,15 @@ pub async fn update_batch(
 
     let timing = Instant::now();
     let mut results = Vec::with_capacity(operations.len());
+    let mut total_inference_usage = InferenceUsage::default();
+
     for op in operations {
         let operation = op
             .operation
             .ok_or_else(|| Status::invalid_argument("Operation is missing"))?;
         let collection_name = collection_name.clone();
         let ordering = ordering.clone();
-        let result = match operation {
+        let mut result = match operation {
             points_update_operation::Operation::Upsert(PointStructList {
                 points,
                 shard_key_selector,
@@ -472,7 +479,6 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
-                    inference_token.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
@@ -519,7 +525,7 @@ pub async fn update_batch(
                         points_selector,
                         ordering,
                         shard_key_selector,
-                        // overwrite operation don't support it
+                        // overwrite operation doesn't support it
                         key: None,
                     },
                     internal_params,
@@ -646,20 +652,26 @@ pub async fn update_batch(
                     },
                     internal_params,
                     access.clone(),
-                    inference_token.clone(),
                     request_hw_counter.clone(),
                 )
                 .await
             }
         }?;
+
+        total_inference_usage.merge_opt(result.get_mut().inference_usage.take());
         results.push(result);
     }
     Ok(Response::new(UpdateBatchResponse {
         result: results
             .into_iter()
-            .map(|response| response.into_inner().result.unwrap().into())
+            .map(|response| grpc::UpdateResult::from(response.into_inner().result.unwrap()))
             .collect(),
         time: timing.elapsed().as_secs_f64(),
+        usage: Usage::new(
+            request_hw_counter.to_grpc_api(),
+            total_inference_usage.into_non_empty(),
+        )
+        .into_non_empty(),
     }))
 }
 
@@ -805,7 +817,7 @@ pub async fn sync(
     internal_params: InternalUpdateParams,
     access: Access,
     inference_token: InferenceToken,
-) -> Result<Response<PointsOperationResponseInternal>, Status> {
+) -> Result<Response<(PointsOperationResponseInternal, InferenceUsage)>, Status> {
     let SyncPoints {
         collection_name,
         wait,
@@ -820,9 +832,8 @@ pub async fn sync(
     let point_structs: Result<_, _> = points.into_iter().map(PointStruct::try_from).collect();
 
     // No actual inference should happen here, as we are just syncing existing points
-    // So this function is used for consistency only
-    // ToDo: _usage should be returned
-    let (points, _usage) =
+    // So, this function is used for consistency only
+    let (points, usage) =
         convert_point_struct(point_structs?, InferenceType::Update, inference_token).await?;
 
     let operation = PointSyncOperation {
@@ -847,20 +858,34 @@ pub async fn sync(
     .await?;
 
     let response = points_operation_response_internal(timing, result, None);
-    Ok(Response::new(response))
+    Ok(Response::new((response, usage.unwrap_or_default().into())))
+}
+
+pub fn points_operation_response_internal_with_inference_usage(
+    timing: Instant,
+    update_result: collection::operations::types::UpdateResult,
+    hardware_usage: Option<HardwareUsage>,
+    inference_usage: Option<InferenceUsage>,
+) -> PointsOperationResponseInternal {
+    PointsOperationResponseInternal {
+        result: Some(update_result.into()),
+        time: timing.elapsed().as_secs_f64(),
+        hardware_usage,
+        inference_usage,
+    }
 }
 
 pub fn points_operation_response_internal(
     timing: Instant,
     update_result: collection::operations::types::UpdateResult,
-    usage_hardware: Option<HardwareUsage>,
+    hardware_usage: Option<HardwareUsage>,
 ) -> PointsOperationResponseInternal {
-    PointsOperationResponseInternal {
-        result: Some(update_result.into()),
-        time: timing.elapsed().as_secs_f64(),
-        usage: usage_hardware,
-        // usage: Some(hw_measurement_acc.api)
-    }
+    points_operation_response_internal_with_inference_usage(
+        timing,
+        update_result,
+        hardware_usage,
+        None, // No inference usage for this operation
+    )
 }
 
 fn extract_points_selector(

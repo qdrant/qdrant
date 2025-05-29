@@ -25,7 +25,7 @@ impl From<InferenceUsage> for grpc::InferenceUsage {
             );
         }
         grpc::InferenceUsage {
-            model: grpc_usage_models,
+            models: grpc_usage_models,
         }
     }
 }

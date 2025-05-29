@@ -989,6 +989,7 @@ message RecommendGroupsResponse {
 message UpdateBatchResponse {
   repeated UpdateResult result = 1;
   double time = 2; // Time spent to process
+  optional Usage usage = 3;
 }
 
 message FacetResponse {
@@ -1180,7 +1181,7 @@ message Usage {
 // ---------------------------------------------
 
 message InferenceUsage {
-  map<string, ModelUsage> model = 1;
+  map<string, ModelUsage> models = 1;
 }
 
 message ModelUsage {

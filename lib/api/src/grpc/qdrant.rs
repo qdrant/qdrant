@@ -6196,6 +6196,8 @@ pub struct UpdateBatchResponse {
     /// Time spent to process
     #[prost(double, tag = "2")]
     pub time: f64,
+    #[prost(message, optional, tag = "3")]
+    pub usage: ::core::option::Option<Usage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -6581,7 +6583,7 @@ pub struct Usage {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct InferenceUsage {
     #[prost(map = "string, message", tag = "1")]
-    pub model: ::std::collections::HashMap<::prost::alloc::string::String, ModelUsage>,
+    pub models: ::std::collections::HashMap<::prost::alloc::string::String, ModelUsage>,
 }
 #[derive(serde::Serialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -9472,7 +9474,9 @@ pub struct PointsOperationResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "3")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub hardware_usage: ::core::option::Option<HardwareUsage>,
+    #[prost(message, optional, tag = "4")]
+    pub inference_usage: ::core::option::Option<InferenceUsage>,
 }
 /// Has to be backward compatible with `UpdateResult`!
 #[derive(serde::Serialize)]
@@ -9903,7 +9907,9 @@ pub struct QueryBatchResponseInternal {
     #[prost(double, tag = "2")]
     pub time: f64,
     #[prost(message, optional, tag = "5")]
-    pub usage: ::core::option::Option<HardwareUsage>,
+    pub hardware_usage: ::core::option::Option<HardwareUsage>,
+    #[prost(message, optional, tag = "6")]
+    pub inference_usage: ::core::option::Option<InferenceUsage>,
 }
 #[derive(serde::Serialize)]
 #[derive(validator::Validate)]
