@@ -123,7 +123,8 @@ message UpdateBatchInternal {
 message PointsOperationResponseInternal {
   UpdateResultInternal result = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 3;
+  optional HardwareUsage hardware_usage = 3;
+  optional InferenceUsage inference_usage = 4;
 }
 
 // Has to be backward compatible with `UpdateResult`!
@@ -314,7 +315,8 @@ message QueryResultInternal {
 message QueryBatchResponseInternal {
   repeated QueryResultInternal results = 1;
   double time = 2; // Time spent to process
-  optional HardwareUsage usage = 5;
+  optional HardwareUsage hardware_usage = 5;
+  optional InferenceUsage inference_usage = 6;
 }
 
 message FacetCountsInternal {

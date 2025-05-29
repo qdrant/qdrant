@@ -66,14 +66,18 @@ impl PointsInternalService {
 
         let sync_points = extract_internal_request(sync_points)?;
 
-        sync(
+        // Exclude the `inference_usage` for internal call
+        let (response, _inference_usage) = sync(
             self.toc.clone(),
             sync_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
             inference_token,
         )
-        .await
+        .await?
+        .into_inner();
+
+        Ok(Response::new(response))
     }
 
     async fn upsert_internal(
@@ -107,7 +111,6 @@ impl PointsInternalService {
     async fn delete_internal(
         &self,
         delete_points_internal: DeletePointsInternal,
-        inference_token: InferenceToken,
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         let DeletePointsInternal {
             delete_points,
@@ -126,7 +129,6 @@ impl PointsInternalService {
             delete_points,
             InternalUpdateParams::from_grpc(shard_id, clock_tag),
             FULL_ACCESS.clone(),
-            inference_token,
             hw_metrics,
         )
         .await
@@ -375,7 +377,8 @@ pub async fn query_batch_internal(
             })
             .collect(),
         time: timing.elapsed().as_secs_f64(),
-        usage: request_hw_data.to_grpc_api(),
+        hardware_usage: request_hw_data.to_grpc_api(),
+        inference_usage: None, // No inference in internal API
     };
 
     Ok(Response::new(response))
@@ -464,10 +467,7 @@ impl PointsInternal for PointsInternalService {
     ) -> Result<Response<PointsOperationResponseInternal>, Status> {
         validate_and_log(request.get_ref());
 
-        let inference_token = extract_token(&request);
-
-        self.delete_internal(request.into_inner(), inference_token)
-            .await
+        self.delete_internal(request.into_inner()).await
     }
 
     async fn update_vectors(
@@ -574,10 +574,7 @@ impl PointsInternal for PointsInternalService {
                         self.upsert_internal(upsert, inference_token.clone())
                             .await?
                     }
-                    Update::Delete(delete) => {
-                        self.delete_internal(delete, inference_token.clone())
-                            .await?
-                    }
+                    Update::Delete(delete) => self.delete_internal(delete).await?,
                     Update::UpdateVectors(update_vectors) => {
                         self.update_vectors_internal(update_vectors, inference_token.clone())
                             .await?
@@ -607,7 +604,7 @@ impl PointsInternal for PointsInternalService {
             };
             let mut response = result.into_inner();
 
-            if let Some(usage) = response.usage.take() {
+            if let Some(usage) = response.hardware_usage.take() {
                 total_usage.add(usage);
             }
 
@@ -615,14 +612,15 @@ impl PointsInternal for PointsInternalService {
         }
 
         if let Some(mut last_result) = last_result.take() {
-            last_result.usage = Some(total_usage);
+            last_result.hardware_usage = Some(total_usage);
             Ok(Response::new(last_result))
         } else {
             // This response is possible if there are no operations in the request
             Ok(Response::new(PointsOperationResponseInternal {
                 result: None,
                 time: 0.0,
-                usage: None,
+                hardware_usage: None,
+                inference_usage: None, // No inference in internal API
             }))
         }
     }
