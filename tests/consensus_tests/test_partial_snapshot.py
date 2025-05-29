@@ -11,23 +11,71 @@ COLLECTION = "test_collection"
 SHARD = 0
 
 @pytest.mark.parametrize(
-    "bootstrap_points, recover_read, upsert_points",
+    # bootstrap_points - upsert points when creating collection on write peer
+    #                    (useful when used with `recove_read = True`)
+    #
+    # recover_read     - bootstrap read peer by recovering collection snapshot from write peer
+    #                    (ensures segments on both peers are *exactly* the same)
+    #
+    # append_points    - append *new* points to write peer
+    #                    (this should not modify indexed segment on write peer)
+    #
+    # update_points    - update (if > 0) or delete (if < 0) *existing* points on write peer
+    #                    (this should modify indexed segment on write peer)
+
+    "bootstrap_points, recover_read, append_points, update_points",
     [
-        (0,   True,  0),
-        (100, True,  0),
-        (0,   True,  5),
-        (100, True,  5),
-        (0,   False, 0),
-        (100, False, 0),
+        # Test *overwriting* partial snapshots:
+        #
+        # - new collection is created on read peer (`recover_read = False`)
+        #   - so read and write peers have *different* segments
+        # - partial snapshot recovered on read peer
+        #   - partial snapshot should act as regular shard snapshot
+        # - (`append_points`/`update_points` is meaningless in this case)
+        (0,   False, 0,  0),
+        (100, False, 0,  0),
+
+        # Test *empty* (or *partially-empty*) partial snapshots:
+        #
+        # - read peer bootstrapped from write peer
+        # - no changes or only changes to appendable segments on write peer
+        # - partial snapshot recovered on read peer
+        #   - appendable segment is either empty (first two tests) or full (second two)
+        #   - indexed segment is empty in all tests
+        (0,   True,  0,  0),
+        (100, True,  0,  0),
+        (0,   True,  5,  0),
+        (100, True,  5,  0),
+
+        # Test *true* partial snapshots:
+        #
+        # - read peer is bootstrapped from write peer
+        # - indexed points updated/deleted on write peer
+        # - partial snapshot recovered on read peer
+        #   - indexed segment should should exclude immutable files (e.g., ID mappings file)
+        (100, True,  0,  5),
+        (100, True,  0, -5),
     ]
 )
-def test_partial_snapshot(tmp_path: pathlib.Path, bootstrap_points: int, recover_read: bool, upsert_points: int):
+def test_partial_snapshot(
+    tmp_path: pathlib.Path,
+    bootstrap_points: int,
+    recover_read: bool,
+    append_points: int,
+    update_points: int,
+):
     assert_project_root()
 
     write_peer, read_peer = bootstrap_peers(tmp_path, bootstrap_points, recover_read)
 
-    if upsert_points > 0:
-        upsert(write_peer, upsert_points, offset = bootstrap_points)
+    if append_points > 0:
+        upsert(write_peer, append_points, offset = bootstrap_points)
+
+    if update_points > 0:
+        upsert(write_peer, update_points)
+
+    if update_points < 0:
+        delete(write_peer, -update_points)
 
     recover_partial_snapshot_from(read_peer, write_peer)
     assert_consistency(read_peer, write_peer)
@@ -94,7 +142,15 @@ def bootstrap_peer(path: pathlib.Path, port: int):
     return uris[0]
 
 def bootstrap_collection(peer_url, bootstrap_points = 0):
-    create_collection(peer_url, shard_number = 1, replication_factor = 1, indexing_threshold = 1000000, sparse_vectors = False)
+    create_collection(
+        peer_url,
+        shard_number = 1,
+        replication_factor = 1,
+        default_segment_number = 1,
+        indexing_threshold = 1,
+        sparse_vectors = False,
+    )
+
     wait_collection_exists_and_active_on_all_peers(COLLECTION, [peer_url])
 
     if bootstrap_points > 0:
@@ -186,3 +242,9 @@ def scroll_points(peer_url: str):
 
 def upsert(peer_url: str, points: int, offset = 0):
     upsert_random_points(peer_url, points, offset = offset, batch_size = 10, with_sparse_vector = False)
+
+def delete(peer_url: str, until_id: int, from_id = 0):
+    resp = requests.post(f"{peer_url}/collections/{COLLECTION}/points/delete?wait=true", json = {
+        "points": [id for id in range(from_id, until_id)],
+    })
+    assert_http_ok(resp)
