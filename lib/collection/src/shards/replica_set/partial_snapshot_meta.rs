@@ -49,7 +49,7 @@ impl PartialSnapshotMeta {
 
     pub fn try_take_recovery_lock(&self) -> CollectionResult<tokio::sync::OwnedMutexGuard<()>> {
         self.recovery_lock.clone().try_lock_owned().map_err(|_| {
-            CollectionError::bad_request("partial snapshot recovery is already in progress")
+            CollectionError::shard_unavailable("partial snapshot recovery is already in progress")
         })
     }
 
@@ -60,13 +60,9 @@ impl PartialSnapshotMeta {
     pub fn try_take_search_read_lock(
         &self,
     ) -> CollectionResult<tokio::sync::OwnedRwLockReadGuard<()>> {
-        self.search_lock
-            .clone()
-            .try_read_owned()
-            .map_err(|_| CollectionError::ServiceError {
-                error: "shard unavailable, partial snapshot recovery is in progress".into(),
-                backtrace: None,
-            })
+        self.search_lock.clone().try_read_owned().map_err(|_| {
+            CollectionError::shard_unavailable("partial snapshot recovery is in progress")
+        })
     }
 
     pub fn recovery_timestamp(&self) -> u64 {
