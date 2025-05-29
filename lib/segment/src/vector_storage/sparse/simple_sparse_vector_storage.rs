@@ -285,8 +285,8 @@ impl VectorStorage for SimpleSparseVectorStorage {
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
     use sparse::common::sparse_vector_fixture::random_sparse_vector;
     use tempfile::Builder;
 
@@ -303,26 +303,31 @@ mod tests {
     fn test_migrate_simple_to_mmap() {
         const POINT_COUNT: PointOffsetType = 128;
         const DIM: usize = 1024;
+        const DELETE_PROBABILITY: f64 = 0.1;
 
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
 
         let db_dir = Builder::new().prefix("storage_dir").tempdir().unwrap();
         let db = open_db(db_dir.path(), &[DB_VECTOR_CF]).unwrap();
 
-        // Create simple sparse vector storage and insert test points
+        // Create simple sparse vector storage, insert test points and delete some of them again
         let mut storage =
             open_simple_sparse_vector_storage(db, DB_VECTOR_CF, &AtomicBool::new(false)).unwrap();
         for internal_id in 0..POINT_COUNT {
             let vector = random_sparse_vector(&mut rng, DIM);
             storage
                 .insert_vector(
-                    internal_id as PointOffsetType,
+                    internal_id,
                     VectorRef::from(&vector),
                     &HardwareCounterCell::disposable(),
                 )
                 .unwrap();
+            if rng.random_bool(DELETE_PROBABILITY) {
+                storage.delete_vector(internal_id).unwrap();
+            }
         }
 
+        let deleted_vector_count = storage.deleted_vector_count();
         let total_vector_count = storage.total_vector_count();
 
         // Migrate from RocksDB to mmap storage
@@ -336,13 +341,18 @@ mod tests {
 
         // Assert vector counts and data
         let mut rng = StdRng::seed_from_u64(RAND_SEED);
+        assert_eq!(new_storage.deleted_vector_count(), deleted_vector_count);
         assert_eq!(new_storage.total_vector_count(), total_vector_count);
         for internal_id in 0..POINT_COUNT {
             let vector = random_sparse_vector(&mut rng, DIM);
-            assert_eq!(
-                new_storage.get_vector_sequential(internal_id),
-                CowVector::from(vector),
-            );
+            let deleted = new_storage.is_deleted_vector(internal_id);
+            assert_eq!(deleted, rng.random_bool(DELETE_PROBABILITY));
+            if !deleted {
+                assert_eq!(
+                    new_storage.get_vector_sequential(internal_id),
+                    CowVector::from(vector),
+                );
+            }
         }
     }
 }

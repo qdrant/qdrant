@@ -1162,11 +1162,16 @@ pub fn migrate_rocksdb_sparse_vector_storage_to_mmap(
             "new sparse vector storage must be empty",
         );
 
-        // Copy all vectors into new storage
+        // Copy all vectors and deletes into new storage
         let hw_counter = HardwareCounterCell::disposable();
         for internal_id in 0..old_storage.total_vector_count() as PointOffsetType {
             let vector = old_storage.get_vector_sequential(internal_id);
             new_storage.insert_vector(internal_id, vector.as_vec_ref(), &hw_counter)?;
+
+            let is_deleted = old_storage.is_deleted_vector(internal_id);
+            if is_deleted {
+                new_storage.delete_vector(internal_id)?;
+            }
         }
 
         // Flush new storage
