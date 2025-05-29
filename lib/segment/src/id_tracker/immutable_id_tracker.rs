@@ -496,6 +496,10 @@ impl IdTracker for ImmutableIdTracker {
             Self::version_mapping_file_path(&self.path),
         ]
     }
+
+    fn immutable_files(&self) -> Vec<PathBuf> {
+        vec![Self::mappings_file_path(&self.path)]
+    }
 }
 
 #[cfg(test)]
